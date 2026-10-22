@@ -7,7 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from agent_provider import Completion
+from agent_provider import Completion, Usage
+from stream_usage import validate_usage
 
 
 class FunctionDelta(BaseModel):
@@ -86,8 +87,8 @@ class StreamDecoder:
                     raise ValueError("provider_id_changed")
                 self.provider_id = frame.id
             if frame.usage is not None:
-                if self.usage is not None:
-                    raise ValueError("duplicate_usage")
+                validate_usage(frame.usage, self.usage)
+                Usage.model_validate(frame.usage)
                 self.usage = frame.usage
             for choice in frame.choices:
                 if self.reason is not None:

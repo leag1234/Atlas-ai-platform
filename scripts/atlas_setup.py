@@ -16,6 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from provider_settings import presets, request_options, validate_endpoint
+from setup_stream import read_completion
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,6 +40,14 @@ def check_connection(base: str, key: str, model: str, provider: str = "") -> Non
         )
         try:
             with opener.open(request, timeout=60) as response:
+                if body is not None:
+                    try:
+                        return read_completion(response)
+                    except (ValueError, UnicodeError):
+                        raise ValueError(
+                            "Provider streaming check failed: invalid or incomplete stream; "
+                            "check streaming support, response IDs and cumulative token usage."
+                        ) from None
                 return json.loads(response.read(2_000_001))
         except HTTPError as exc:
             raise ValueError(
@@ -46,7 +55,7 @@ def check_connection(base: str, key: str, model: str, provider: str = "") -> Non
             ) from None
         except (URLError, TimeoutError, json.JSONDecodeError):
             raise ValueError(
-                "Provider connection failed: transport timeout or invalid JSON."
+                "Provider connection failed: transport timeout or invalid JSON during model-list/streaming check."
             ) from None
 
     data = call("/models")
@@ -55,7 +64,7 @@ def check_connection(base: str, key: str, model: str, provider: str = "") -> Non
         raise ValueError(
             "Selected model is absent from the provider model list; use --model with a current model ID."
         )
-    answer = call(
+    message = call(
         "/chat/completions",
         request_options(
             {
@@ -67,16 +76,13 @@ def check_connection(base: str, key: str, model: str, provider: str = "") -> Non
                     if provider in ("scaleway", "local")
                     else {}
                 ),
-                "stream": False,
+                "stream": True,
+                "stream_options": {"include_usage": True},
             },
             provider,
         ),
     )
-    try:
-        message = answer["choices"][0]["message"]
-        content = message.get("content")
-    except (KeyError, IndexError, TypeError, AttributeError):
-        raise ValueError("Provider returned no completion.") from None
+    content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         if any(
             isinstance(message.get(field), str) and message[field].strip()
@@ -89,7 +95,7 @@ def check_connection(base: str, key: str, model: str, provider: str = "") -> Non
         raise ValueError(
             "Provider returned an empty completion; choose an instruction model."
         )
-    print("Model list and tiny completion verified.")
+    print("Model list and tiny streaming completion verified.")
 
 
 def env_value(value: str) -> str:

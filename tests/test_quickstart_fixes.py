@@ -31,7 +31,23 @@ class SetupRegressionTests(unittest.TestCase):
             data: dict[str, Any]
             if request.data:
                 bodies.append(json.loads(request.data))
-                data = {"choices": [{"message": message}]}
+                frames = [
+                    {
+                        "id": "probe",
+                        "choices": [
+                            {"index": 0, "delta": message, "finish_reason": "stop"}
+                        ],
+                        "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+                    },
+                ]
+                return io.BytesIO(
+                    (
+                        "".join(
+                            "data: " + json.dumps(frame) + "\n\n" for frame in frames
+                        )
+                        + "data: [DONE]\n\n"
+                    ).encode()
+                )
             else:
                 data = {"data": [{"id": "test-model"}]}
             return io.BytesIO(json.dumps(data).encode())
