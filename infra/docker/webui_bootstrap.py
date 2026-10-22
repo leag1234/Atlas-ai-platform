@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 async def main() -> None:
-    from open_webui.models.functions import Functions, FunctionForm, FunctionMeta
+    from open_webui.models.functions import Functions, FunctionForm, FunctionMeta  # type: ignore[import-not-found]  # runs inside the Open WebUI image
 
     identifier = "atlas_image_references"
     source = Path("/opt/atlas/filter.py").read_text()
