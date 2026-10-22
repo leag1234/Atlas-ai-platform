@@ -1,0 +1,25 @@
+{
+  "metadata": {
+    "session_id": "10000000-0000-4000-8000-000000000004",
+    "request_id": "10000000-0000-4000-8000-000000000005",
+    "generation": 1,
+    "turn_id": "10000000-0000-4000-8000-000000000005",
+    "path": "reports/summary.docx",
+    "expected_parent_revision": 0,
+    "source_version_ids": [],
+    "strategy": "created",
+    "validation": {
+      "status": "passed",
+      "checks": [
+        "package_readable",
+        "requested_content",
+        "source_coverage"
+      ],
+      "warnings": [],
+      "verifier_exit": 0,
+      "artifact_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "file": "bytes",
+  "org_id": "10000000-0000-4000-8000-000000000004"
+}

@@ -1,0 +1,9 @@
+{
+  "mode": "live",
+  "request_id": "chatcmpl-2cc44b940b3b47298f3375ff96a97f99",
+  "filename": "m24-progress.pdf",
+  "sha256": "f04f7ec7ccf54f8e3f54ab12154a5eef02a8fed2169bcd5258a1f3c959678457",
+  "bytes": 208915,
+  "original_bytes_preserved": true,
+  "answer_excerpt": "Je vais lire le document PDF fourni.\n\nLe document est très répétitif. Je vais extraire les en-têtes de section et les éléments non répétitifs pour identifier les décisions.\n\nJ'ai identifié les trois décisions clés. Voici la synthèse.\n\nSynthèse du document m24-progress.pdf\n\nLe document (60 pages, 60 sections) est un rapport de progression qualité. Son contenu est extrêmement répétitif : chaque section énumère des procédures numérotées (« record inspection results and retain signed evidence »). Seules trois sections portent une décision réelle :\n\nDécision du début — Section 1 :\nBudget initial fixé à 730 euros. Point de départ financier du projet.\n\nDécision du milieu — Section 30 :\nLa revue à mi-parcours exige 19 échantillons (« Midpoint review requires 19 samples »). C'est le seul seuil opérationnel intermédiaire, au cœur du document.\n\nDécision de la fin — Section 60 :\nRecommandation finale de reporter le lancement (« Final recommendation is to postpone launch »).\n\nTrame intermédiaire (S"
+}

@@ -1,0 +1,10 @@
+{
+  "image_safety_level": "standard",
+  "content_level": "extended",
+  "adult_audience_attested": true,
+  "extended_request_patterns": {
+    "en": ["<instance-specific pattern>"]
+  },
+  "extended_instruction": "<instance-specific instruction>",
+  "extended_profiles": ["<instance-specific profile>"]
+}

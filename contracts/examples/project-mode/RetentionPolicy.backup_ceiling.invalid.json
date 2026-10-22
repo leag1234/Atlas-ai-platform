@@ -1,0 +1,9 @@
+{
+  "content_expiry_days": null,
+  "deletion_grace_days": 30,
+  "temporary_after_terminal_hours": 24,
+  "audit_days": 90,
+  "backup_expiry_days": 31,
+  "superseded_versions_days": null,
+  "legal_hold": false
+}

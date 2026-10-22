@@ -1,0 +1,13 @@
+{
+  "id": "csv-quoted",
+  "title": "Split a quoted comma-separated value",
+  "prompt": "The import helper splits commas inside quoted fields. Preserve a quoted comma as part of its field.",
+  "setup": "The workspace contains a small standard-library Python module named solution.py. Do not use network access or install dependencies.",
+  "verifier_command": "{python} -m unittest -v test_solution.py",
+  "timeout_seconds": 10,
+  "difficulty": "medium",
+  "source": {
+    "kind": "synthetic mutation",
+    "basis": "Small pure-Python utility patterns from packages/ (configuration, validation, limits, and file handling); fixture is isolated from application services."
+  }
+}

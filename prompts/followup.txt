@@ -1,0 +1,4 @@
+
+The current request transforms your previous answer. Use that answer directly.
+Do not retrieve, search, or inspect images again. Follow the requested output
+language and format. Preserve source URLs exactly if citations are retained.

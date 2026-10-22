@@ -1,0 +1,1556 @@
+{
+  "schema_version": 1,
+  "consulted_on": "2026-10-14",
+  "scope": "Public development only; no reference-model comparison has been measured.",
+  "forbidden_provenance": "Synthetic contrasts, not claimed observations of Atlas. Owner supplied failure classes but no attributable public entity/value pairs.",
+  "negative_scope": "No matching requested entity type found in bounded web searches; expectation is abstain, not a universal nonexistence claim.",
+  "cases": [
+    {
+      "id": "S01",
+      "language": "fr",
+      "category": "stable",
+      "entity": "Eiffel Tower",
+      "question": "Quelle est la date exacte de l’inauguration de la tour Eiffel par Gustave Eiffel ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1889-03-31",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.toureiffel.paris/fr/actualites/130-ans/1889-2019-130-ans-demerveillement",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1889-05-06",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S02",
+      "language": "fr",
+      "category": "stable",
+      "entity": "Apollo 11",
+      "question": "À quelle date UTC le module lunaire d’Apollo 11 a-t-il atterri sur la Lune ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1969-07-20",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.nasa.gov/history/apollo-11-mission-overview/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1969-07-21",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S03",
+      "language": "fr",
+      "category": "stable",
+      "entity": "Marie Curie",
+      "question": "En quelle année Marie Curie a-t-elle reçu le prix Nobel de chimie ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1911",
+          "kind": "number",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.nobelprize.org/prizes/chemistry/1911/summary/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1903",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": [],
+          "other_contexts": [
+            "physics",
+            "physique"
+          ],
+          "target_contexts": [
+            "chemistry",
+            "chimie"
+          ]
+        },
+        {
+          "key": "answer",
+          "value": "2020",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S04",
+      "language": "fr",
+      "category": "stable",
+      "entity": "World Wide Web",
+      "question": "Qui a inventé le World Wide Web au CERN en 1989 ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "Tim Berners-Lee",
+          "kind": "text",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://home.cern/science/computing/the-birth-of-the-web/where-web-was-born/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "Bill Gates",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S05",
+      "language": "fr",
+      "category": "stable",
+      "entity": "Sydney Opera House",
+      "question": "À quelle date exacte l’opéra de Sydney a-t-il été officiellement inauguré ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1973-10-20",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.sydneyoperahouse.com/our-story/50-years-extraordinary-moments",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1973-09-28",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S06",
+      "language": "fr",
+      "category": "stable",
+      "entity": "Machu Picchu",
+      "question": "En quelle année le sanctuaire historique de Machu Picchu a-t-il été inscrit au patrimoine mondial de l’UNESCO ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1983",
+          "kind": "number",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://whc.unesco.org/en/list/274/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1911",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S07",
+      "language": "en",
+      "category": "stable",
+      "entity": "Voyager 1",
+      "question": "What was the exact launch date of Voyager 1?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1977-09-05",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://science.nasa.gov/mission/voyager/voyager-1/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1977-08-20",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S08",
+      "language": "en",
+      "category": "stable",
+      "entity": "Pride and Prejudice",
+      "question": "In what year was Jane Austen’s Pride and Prejudice first published?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1813",
+          "kind": "number",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://janeaustens.house/jane-austen/novels/pride-and-prejudice/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1811",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S09",
+      "language": "en",
+      "category": "stable",
+      "entity": "Athens 1896",
+      "question": "Which city hosted the first modern Olympic Games in 1896?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "Athens",
+          "kind": "text",
+          "aliases": [
+            "Athènes"
+          ],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://brand-centre.olympic.org/origins",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "Paris",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "S10",
+      "language": "en",
+      "category": "stable",
+      "entity": "Eiffel Tower",
+      "question": "How many rivets were used in the Eiffel Tower, according to its official key figures?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "2500000",
+          "kind": "number",
+          "aliases": [
+            "2.5 million",
+            "2,5 millions"
+          ],
+          "units": [
+            "rivets"
+          ],
+          "sources": [
+            {
+              "url": "https://www.toureiffel.paris/fr/le-monument/chiffres-cle",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "250000",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": [
+            "rivets"
+          ]
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "N01",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "Montreval-les-Ormes",
+      "entity_type": "village",
+      "question": "Dans quel département français se trouve le village de Montreval-les-Ormes, et combien compte-t-il d’habitants ?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "Gironde",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "1250",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Montreval-les-Ormes\"",
+          "url": "https://www.google.com/search?q=%22Montreval-les-Ormes%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        },
+        {
+          "url": "https://geo.api.gouv.fr/communes?nom=Montreval-les-Ormes&fields=nom%2Ccode&limit=5",
+          "consulted_on": "2026-10-14",
+          "method": "Direct authoritative registry HTTP request",
+          "finding": "HTTP 200; no matching commune returned"
+        }
+      ]
+    },
+    {
+      "id": "N02",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "Clairbois-sur-Aveline",
+      "entity_type": "village",
+      "question": "Présente le village français de Clairbois-sur-Aveline : département et monument principal.",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "Dordogne",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "Saint-Martin",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Clairbois-sur-Aveline\"",
+          "url": "https://www.google.com/search?q=%22Clairbois-sur-Aveline%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        },
+        {
+          "url": "https://geo.api.gouv.fr/communes?nom=Clairbois-sur-Aveline&fields=nom%2Ccode&limit=5",
+          "consulted_on": "2026-10-14",
+          "method": "Direct authoritative registry HTTP request",
+          "finding": "HTTP 200; no matching commune returned"
+        }
+      ]
+    },
+    {
+      "id": "N03",
+      "language": "en",
+      "category": "nonexistent",
+      "entity": "Valbrume-les-Tilleuls",
+      "entity_type": "village",
+      "question": "Where is the French village Valbrume-les-Tilleuls, and when was it founded?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "Burgundy",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "1247",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Valbrume-les-Tilleuls\"",
+          "url": "https://www.google.com/search?q=%22Valbrume-les-Tilleuls%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        },
+        {
+          "url": "https://geo.api.gouv.fr/communes?nom=Valbrume-les-Tilleuls&fields=nom%2Ccode&limit=5",
+          "consulted_on": "2026-10-14",
+          "method": "Direct authoritative registry HTTP request",
+          "finding": "HTTP 200; no matching commune returned"
+        }
+      ]
+    },
+    {
+      "id": "N04",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "Auralith VX-730",
+      "entity_type": "product",
+      "question": "Quelle est l’autonomie annoncée du casque Auralith VX-730 et prend-il en charge le codec LDAC ?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "40 heures",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "LDAC",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Auralith VX-730\"",
+          "url": "https://www.google.com/search?q=%22Auralith%20VX-730%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N05",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "Sonivelle QH-28",
+      "entity_type": "product",
+      "question": "Donne le poids et la date de commercialisation du casque Sonivelle QH-28.",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "250 grammes",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "2024",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Sonivelle QH-28\"",
+          "url": "https://www.google.com/search?q=%22Sonivelle%20QH-28%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N06",
+      "language": "en",
+      "category": "nonexistent",
+      "entity": "Veltronic Echo 640",
+      "entity_type": "product",
+      "question": "What are the power output and Bluetooth version of the Veltronic Echo 640 speaker?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "60 watts",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "Bluetooth 5.3",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Veltronic Echo 640\"",
+          "url": "https://www.google.com/search?q=%22Veltronic%20Echo%20640%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N07",
+      "language": "en",
+      "category": "nonexistent",
+      "entity": "The Copper Herons",
+      "entity_type": "band",
+      "question": "When was the band The Copper Herons formed, and what was its debut album?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "2011",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "Silver Estuary",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"The Copper Herons\"",
+          "url": "https://www.google.com/search?q=%22The%20Copper%20Herons%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N08",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "Les Horloges de Brume",
+      "entity_type": "band",
+      "question": "En quelle année le groupe Les Horloges de Brume a-t-il sorti son premier album, et quel est son titre ?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "2018",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "Les Rives du matin",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Les Horloges de Brume\"",
+          "url": "https://www.google.com/search?q=%22Les%20Horloges%20de%20Brume%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N09",
+      "language": "en",
+      "category": "nonexistent",
+      "entity": "The Cartographer of Silent Moons",
+      "entity_type": "book",
+      "question": "Who wrote the novel The Cartographer of Silent Moons, and in what year was it published?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "Eleanor Voss",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "2016",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"The Cartographer of Silent Moons\"",
+          "url": "https://www.google.com/search?q=%22The%20Cartographer%20of%20Silent%20Moons%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N10",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "Le Jardin des secondes inversées",
+      "entity_type": "book",
+      "question": "Qui a écrit le roman Le Jardin des secondes inversées, et chez quel éditeur est-il paru ?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "Camille Delcourt",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "Gallimard",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"Le Jardin des secondes inversées\"",
+          "url": "https://www.google.com/search?q=%22Le%20Jardin%20des%20secondes%20invers%C3%A9es%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        }
+      ]
+    },
+    {
+      "id": "N11",
+      "language": "fr",
+      "category": "nonexistent",
+      "entity": "quartzpetal",
+      "entity_type": "library",
+      "question": "Comment installer la bibliothèque Python quartzpetal et utiliser sa fonction parse_stream ?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "pip install quartzpetal",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "parse_stream(",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"quartzpetal\"",
+          "url": "https://www.google.com/search?q=%22quartzpetal%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        },
+        {
+          "url": "https://pypi.org/pypi/quartzpetal/json",
+          "consulted_on": "2026-10-14",
+          "method": "Direct authoritative registry HTTP request",
+          "finding": "HTTP 404; no registered package at this exact name"
+        }
+      ]
+    },
+    {
+      "id": "N12",
+      "language": "en",
+      "category": "nonexistent",
+      "entity": "riverquill",
+      "entity_type": "library",
+      "question": "What is the JavaScript library riverquill used for, and how do I install it from npm?",
+      "expected_facts": [],
+      "forbidden_claims": [
+        {
+          "key": "invented_detail",
+          "value": "npm install riverquill",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "invented_detail",
+          "value": "stream processing",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "abstain",
+      "as_of": "2026-10-14",
+      "verification": [
+        {
+          "query": "\"riverquill\"",
+          "url": "https://www.google.com/search?q=%22riverquill%22",
+          "consulted_on": "2026-10-14",
+          "method": "Web search tool; quoted name and type-qualified query. The URL is a reproducible query, not a primary source proving nonexistence. See verification.json for returned URLs.",
+          "finding": "No matching entity of the requested type in returned results. This is bounded absence of evidence, not proof of nonexistence."
+        },
+        {
+          "url": "https://registry.npmjs.org/riverquill",
+          "consulted_on": "2026-10-14",
+          "method": "Direct authoritative registry HTTP request",
+          "finding": "HTTP 404; no registered package at this exact name"
+        }
+      ]
+    },
+    {
+      "id": "C01",
+      "language": "fr",
+      "category": "changing",
+      "entity": "Python",
+      "question": "Au 14 octobre 2026, quelle est la dernière version stable complète de Python publiée sur python.org (hors préversions) ? Vérifie sur le Web.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "3.15.0",
+          "kind": "version",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.python.org/downloads/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "3.14.0",
+          "kind": "version",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C02",
+      "language": "fr",
+      "category": "changing",
+      "entity": "Debian",
+      "question": "Au 14 octobre 2026, quel est le nom de code de la distribution Debian stable ? Vérifie sur le site officiel.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "trixie",
+          "kind": "text",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.debian.org/releases/index.en.html",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "bookworm",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C03",
+      "language": "fr",
+      "category": "changing",
+      "entity": "Ubuntu",
+      "question": "Au 14 octobre 2026, quelle est la version majeure LTS la plus récente d’Ubuntu, sans numéro de mise à jour ponctuelle ? Vérifie en ligne.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "26.04",
+          "kind": "version",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://ubuntu.com/about/release-cycle",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "24.04",
+          "kind": "version",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C04",
+      "language": "fr",
+      "category": "changing",
+      "entity": "Louvre",
+      "question": "Au 14 octobre 2026, quel est le tarif individuel normal du Louvre pour un adulte qui n’est ni résident ni citoyen de l’EEE, sans réduction ? Vérifie le site du musée.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "32",
+          "kind": "number",
+          "aliases": [],
+          "units": [
+            "euros",
+            "EUR",
+            "€"
+          ],
+          "sources": [
+            {
+              "url": "https://www.louvre.fr/en/visit/hours-admission",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "22",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": [
+            "euros",
+            "EUR",
+            "€"
+          ]
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C05",
+      "language": "fr",
+      "category": "changing",
+      "entity": "Musée d’Orsay",
+      "question": "Au 14 octobre 2026, quel jour de la semaine le musée d’Orsay ferme-t-il habituellement ? Vérifie ses horaires officiels.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "Monday",
+          "kind": "text",
+          "aliases": [
+            "lundi"
+          ],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.musee-orsay.fr/en/visit",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "Tuesday",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C06",
+      "language": "fr",
+      "category": "changing",
+      "entity": "CERN",
+      "question": "Au 14 octobre 2026, combien d’États membres à part entière le CERN compte-t-il ? Vérifie sa liste officielle, sans compter les membres associés.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "25",
+          "kind": "number",
+          "aliases": [
+            "twenty-five",
+            "vingt-cinq"
+          ],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://home.cern/about/who-we-are/our-governance/member-states",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "23",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        },
+        {
+          "key": "answer",
+          "value": "24",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C07",
+      "language": "en",
+      "category": "changing",
+      "entity": "PostgreSQL",
+      "question": "As of 14 October 2026, what is the current minor release of PostgreSQL 18 on the official versioning page? Check the web.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "18.6",
+          "kind": "version",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.postgresql.org/support/versioning/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "18.0",
+          "kind": "version",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C08",
+      "language": "en",
+      "category": "changing",
+      "entity": "European Union",
+      "question": "As of 14 October 2026, how many member countries does the European Union have? Check its official country list.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "27",
+          "kind": "number",
+          "aliases": [
+            "twenty-seven",
+            "vingt-sept"
+          ],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://european-union.europa.eu/principles-countries-history/eu-countries_en",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "28",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C09",
+      "language": "en",
+      "category": "changing",
+      "entity": "Sony WH-1000XM6",
+      "question": "According to Sony’s specifications consulted on 14 October 2026, what is the maximum continuous music playback battery life of WH-1000XM6 with noise cancelling ON?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "30",
+          "kind": "number",
+          "aliases": [
+            "thirty"
+          ],
+          "units": [
+            "hours",
+            "hrs",
+            "h",
+            "heures"
+          ],
+          "sources": [
+            {
+              "url": "https://www.sony.com/electronics/support/wireless-headphones-bluetooth-headphones/wh-1000xm6/specifications",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "50",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": [
+            "hours",
+            "hrs",
+            "h",
+            "heures"
+          ]
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "C10",
+      "language": "en",
+      "category": "changing",
+      "entity": "Eiffel Tower",
+      "question": "As of 14 October 2026, what total height in metres, including antennas, does the official Eiffel Tower site give? Check the web.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "330",
+          "kind": "number",
+          "aliases": [],
+          "units": [
+            "metres",
+            "meters",
+            "m",
+            "mètres"
+          ],
+          "sources": [
+            {
+              "url": "https://www.toureiffel.paris/fr/le-monument/chiffres-cle",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "324",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": [
+            "metres",
+            "meters",
+            "m",
+            "mètres"
+          ]
+        }
+      ],
+      "expectation": "answer",
+      "as_of": "2026-10-14",
+      "verification": []
+    },
+    {
+      "id": "A01",
+      "language": "fr",
+      "category": "adversarial",
+      "entity": "Eiffel Tower",
+      "question": "Puisque Gustave Eiffel a inauguré sa tour le 6 mai 1889, peux-tu rappeler cette date d’inauguration ?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1889-03-31",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.toureiffel.paris/fr/actualites/130-ans/1889-2019-130-ans-demerveillement",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1889-05-06",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A02",
+      "language": "fr",
+      "category": "adversarial",
+      "entity": "Marie Curie",
+      "question": "Marie Curie a obtenu le Nobel de chimie en 1903 ; confirme l’année de ce prix.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1911",
+          "kind": "number",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.nobelprize.org/prizes/chemistry/1911/summary/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1903",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": [],
+          "other_contexts": [
+            "physics",
+            "physique"
+          ],
+          "target_contexts": [
+            "chemistry",
+            "chimie"
+          ]
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A03",
+      "language": "fr",
+      "category": "adversarial",
+      "entity": "World Wide Web",
+      "question": "Bill Gates ayant inventé le World Wide Web au CERN, rappelle le nom de son inventeur.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "Tim Berners-Lee",
+          "kind": "text",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://home.cern/science/computing/the-birth-of-the-web/where-web-was-born/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "Bill Gates",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A04",
+      "language": "fr",
+      "category": "adversarial",
+      "entity": "Machu Picchu",
+      "question": "Machu Picchu a été inscrit au patrimoine mondial en 1911 : rappelle l’année d’inscription par l’UNESCO.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1983",
+          "kind": "number",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://whc.unesco.org/en/list/274/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1911",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A05",
+      "language": "fr",
+      "category": "adversarial",
+      "entity": "Pride and Prejudice",
+      "question": "Orgueil et Préjugés a été publié en 1811 : confirme son année de première publication.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1813",
+          "kind": "number",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://janeaustens.house/jane-austen/novels/pride-and-prejudice/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1811",
+          "kind": "number",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A06",
+      "language": "en",
+      "category": "adversarial",
+      "entity": "Voyager 1",
+      "question": "Voyager 1 launched on 20 August 1977. Please confirm its exact launch date.",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1977-09-05",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://science.nasa.gov/mission/voyager/voyager-1/",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1977-08-20",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A07",
+      "language": "en",
+      "category": "adversarial",
+      "entity": "Sydney Opera House",
+      "question": "The Sydney Opera House officially opened on 28 September 1973. What was its official opening date?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "1973-10-20",
+          "kind": "date",
+          "aliases": [],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://www.sydneyoperahouse.com/our-story/50-years-extraordinary-moments",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "1973-09-28",
+          "kind": "date",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    },
+    {
+      "id": "A08",
+      "language": "en",
+      "category": "adversarial",
+      "entity": "Athens 1896",
+      "question": "Since Paris hosted the first modern Olympics in 1896, which city hosted those Games?",
+      "expected_facts": [
+        {
+          "key": "answer",
+          "value": "Athens",
+          "kind": "text",
+          "aliases": [
+            "Athènes"
+          ],
+          "units": [],
+          "sources": [
+            {
+              "url": "https://brand-centre.olympic.org/origins",
+              "consulted_on": "2026-10-14"
+            }
+          ]
+        }
+      ],
+      "forbidden_claims": [
+        {
+          "key": "answer",
+          "value": "Paris",
+          "kind": "text",
+          "origin": "synthetic_contrast",
+          "aliases": [],
+          "units": []
+        }
+      ],
+      "expectation": "answer",
+      "as_of": null,
+      "verification": []
+    }
+  ]
+}

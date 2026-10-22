@@ -1,0 +1,207 @@
+"""OpenAI-compatible text/image chat; clients cannot alter tool budgets."""
+
+from packages.profiles import PROFILES, context_window
+from packages.file_intent import produces_file
+from packages.evidence import estimated_tokens
+from pydantic_core import PydanticCustomError
+
+import re
+
+from typing import Any, Literal, Self
+from uuid import UUID
+from pydantic import ConfigDict, Field, model_validator
+from packages.images import VisionInput, VisionMessage
+
+from services.orchestrator.documents import Attachment
+
+ChatMessage = VisionMessage
+
+
+CONTINUATION_INSTRUCTIONS = {
+    "fr": "Continuez votre réponse précédente exactement là où elle s'est arrêtée. Ne répétez rien et n'ajoutez pas d'introduction.",
+    "en": "Continue your previous answer exactly from where it stopped. Do not repeat anything and do not add an introduction.",
+    "de": "Setze deine vorherige Antwort genau dort fort, wo sie abgebrochen wurde. Wiederhole nichts und füge keine Einleitung hinzu.",
+    "es": "Continúa tu respuesta anterior exactamente donde se interrumpió. No repitas nada ni añadas una introducción.",
+    "it": "Continua la tua risposta precedente esattamente da dove si è interrotta. Non ripetere nulla e non aggiungere un'introduzione.",
+}
+
+
+def continuation_instruction(answer: str, language: str) -> str:
+    """Ask for a suffix only, preserving any unfinished Markdown structure."""
+    instruction = CONTINUATION_INSTRUCTIONS[language]
+    open_fence = answer.count("```") % 2 == 1
+    cut_citation = bool(re.search(r"\[[^\]]*$|\[[^\]]*\]\([^)]*$", answer))
+    lines = [line for line in answer.splitlines() if line.strip()]
+    cut_table = len(lines) >= 2 and "|" in lines[-1] and "|" in lines[-2]
+    if open_fence or cut_citation or cut_table:
+        instruction += (
+            " Preserve and complete any unfinished code block, citation, or table."
+        )
+    return instruction
+
+
+class ChatRequest(VisionInput):
+    model_config = ConfigDict(extra="ignore", strict=True)
+    model: str = PROFILES[0]
+    documents: list[Attachment] = Field(default_factory=list, max_length=8)
+    project_id: str | None = None
+    conversation_id: str | None = None
+    project_action: Literal["chat", "work"] = "chat"
+    work_session_id: str | None = None
+    code_mode: bool = False
+    code_session_id: str | None = None
+    stream: bool = False
+    reasoning_effort: Literal["none", "low", "high"] = "none"
+    max_tokens: int = Field(default=6000, ge=1, le=16000)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
+    ui_locale: Literal["fr", "de", "es", "it", "en"] = "fr"
+    lang: Literal["fr", "de", "es", "it", "en"] = "fr"
+    continuation: bool = Field(default=False, exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_continuation_turn(cls, value: Any) -> Any:
+        """Adapt Open WebUI's terminal assistant turn without relaxing validation."""
+        if not isinstance(value, dict) or value.get("continuation"):
+            return value
+        messages = value.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return value
+        last = messages[-1]
+        if not (
+            isinstance(last, dict)
+            and last.get("role") == "assistant"
+            and isinstance(last.get("content"), str)
+            and last["content"].strip()
+        ):
+            return value
+        locale = value.get("ui_locale", "fr")
+        language = value.get("lang", locale)
+        if locale not in CONTINUATION_INSTRUCTIONS:
+            return value
+        try:
+            from packages.language import conversation_language
+
+            language = conversation_language(
+                [VisionMessage.model_validate(message) for message in messages], locale
+            )
+        except (TypeError, ValueError):
+            # VisionInput still reports malformed messages through its normal boundary.
+            language = language if language in CONTINUATION_INSTRUCTIONS else locale
+        return {
+            **value,
+            "messages": [
+                *messages,
+                {
+                    "role": "user",
+                    "content": continuation_instruction(last["content"], language),
+                },
+            ],
+            "continuation": True,
+        }
+
+    @property
+    def last_real_user_message(self) -> ChatMessage | None:
+        messages = self.messages[:-1] if self.continuation else self.messages
+        return next((m for m in reversed(messages) if m.role == "user"), None)
+
+    @property
+    def user_text(self) -> str:
+        message = self.last_real_user_message
+        return message.text if message is not None else ""
+
+    @property
+    def conversation_messages(self) -> list[ChatMessage]:
+        if not self.continuation:
+            return self.messages
+        message = self.last_real_user_message
+        return (
+            [*self.messages[:-2], message]
+            if message is not None
+            else self.messages[:-1]
+        )
+
+    @property
+    def has_attachments(self) -> bool:
+        # Open WebUI filesystem uploads arrive as file tags, not document bytes.
+        return bool(self.documents) or any(
+            re.search(r'<file\s[^>]*type=[\'"]filesystem[\'"]', block) is not None
+            for message in self.messages
+            if message.role == "user"
+            for block in re.findall(
+                r"<attached_files>(.*?)</attached_files>", message.text, re.S
+            )
+        )
+
+    @property
+    def timeout_seconds(self) -> float:
+        if self.code_mode:
+            from services.orchestrator.code_mode import settings
+
+            # The inner code deadline owns the measured stop, including cleanup.
+            return settings().wall_clock + 15
+        return (
+            300.0
+            if self.has_attachments
+            or produces_file(self.user_text, include_images=False)
+            else 120.0
+        )
+
+    @model_validator(mode="after")
+    def valid_project(self) -> Self:
+        if self.code_mode and (
+            self.project_id is not None
+            or self.conversation_id is not None
+            or self.project_action != "chat"
+            or self.work_session_id is not None
+        ):
+            raise ValueError("selector_conflict")
+        if self.code_mode:
+            from services.orchestrator.code_workspace import enabled
+
+            if not enabled():
+                raise ValueError("code_mode_disabled")
+            if self.code_session_id is None:
+                raise ValueError("code_session_id_required")
+            self.code_session_id = str(UUID(self.code_session_id))
+        elif self.code_session_id is not None:
+            raise ValueError("selector_conflict")
+        if self.model not in PROFILES:
+            raise ValueError("invalid_profile")
+        maximum = 6000
+        if "max_tokens" not in self.model_fields_set:
+            self.max_tokens = maximum
+        if self.max_tokens > maximum:
+            raise PydanticCustomError(
+                "output_budget",
+                "Output requested {measured} tokens, limit {limit} tokens",
+                {"measured": self.max_tokens, "limit": maximum},
+            )
+        window = context_window(self.model, vision=any(m.images for m in self.messages))
+        tokens = sum(estimated_tokens(m.text) + 4 for m in self.messages)
+        tool_allowance = 8192
+        if tokens + self.max_tokens + tool_allowance > window:
+            raise PydanticCustomError(
+                "conversation_window_exceeded",
+                "Conversation estimated at {tokens} tokens; model window {window} tokens; "
+                "reserved output {reserved} tokens; tool allowance {tools} tokens",
+                {
+                    "tokens": tokens,
+                    "window": window,
+                    "reserved": self.max_tokens,
+                    "tools": tool_allowance,
+                },
+            )
+        self.reasoning_effort = "none"
+        if (self.project_id is None) != (self.conversation_id is None):
+            raise ValueError("project_conversation_required")
+        if self.project_id is not None and self.conversation_id is not None:
+            UUID(self.project_id)
+            UUID(self.conversation_id)
+        if self.project_action == "work":
+            if self.project_id is None or self.work_session_id is None:
+                raise ValueError("work_session_required")
+            self.work_session_id = str(UUID(self.work_session_id))
+        elif self.work_session_id is not None:
+            raise ValueError("selector_conflict")
+        return self

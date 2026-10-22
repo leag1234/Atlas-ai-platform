@@ -1,0 +1,35 @@
+# E8 — Routage : 30 requêtes étiquetées {simple → modèle local | complexe → escalade L}
+# Vérification déterministe : la décision du routeur est comparée à l'étiquette.
+# critique: true = un sous-routage (complexe classé simple) sur ce cas est bloquant.
+# Validation humaine = relire les étiquettes (~15 min).
+
+- { id: E8-01, lang: fr, statut: valide, label: simple,   input: "Bonjour, peux-tu me résumer ce qu'est le RGPD en deux phrases ?" }
+- { id: E8-02, lang: fr, statut: valide, label: simple,   input: "Traduis 'chiffre d'affaires' en anglais." }
+- { id: E8-03, lang: fr, statut: valide, label: simple,   input: "Reformule cet e-mail sur un ton plus formel : 'Salut, tu peux m'envoyer le doc ?'" }
+- { id: E8-04, lang: fr, statut: valide, label: complexe, critique: true, input: "Analyse les clauses de responsabilité de ces deux contrats fournisseurs, identifie les asymétries de risque et propose une stratégie de renégociation argumentée." }
+- { id: E8-05, lang: fr, statut: valide, label: complexe, input: "Écris un script Python qui parse ces logs nginx, détecte les anomalies de trafic par fenêtre glissante et génère un rapport." }
+- { id: E8-06, lang: fr, statut: valide, label: complexe, input: "Notre marge brute baisse de 3 points alors que le CA monte de 12 % : construis les hypothèses explicatives et le plan d'analyse pour les départager." }
+- { id: E8-07, lang: de, statut: valide, label: simple,   input: "Was bedeutet die Abkürzung 'GmbH'?" }
+- { id: E8-08, lang: de, statut: valide, label: simple,   input: "Formuliere diesen Satz höflicher: 'Schick mir das Dokument sofort.'" }
+- { id: E8-09, lang: de, statut: valide, label: simple,   input: "Nenne mir drei Ideen für einen Teamevent im Winter." }
+- { id: E8-10, lang: de, statut: valide, label: complexe, critique: true, input: "Vergleiche die steuerlichen Auswirkungen einer Betriebsstätte in Österreich vs. einer Tochtergesellschaft, inklusive Quellensteuer und Verrechnungspreisen, und empfiehl eine Struktur." }
+- { id: E8-11, lang: de, statut: valide, label: complexe, input: "Entwirf eine Migrationsstrategie von unserem Monolithen zu Microservices mit Risikoanalyse und Reihenfolge der Schritte." }
+- { id: E8-12, lang: de, statut: valide, label: complexe, input: "Beweise oder widerlege: die Summe zweier ungerader Quadratzahlen ist nie eine Quadratzahl." }
+- { id: E8-13, lang: es, statut: valide, label: simple,   input: "¿Qué significa 'B2B'?" }
+- { id: E8-14, lang: es, statut: valide, label: simple,   input: "Corrige la ortografía: 'Habemos quedado en berno a las trese.'" }
+- { id: E8-15, lang: es, statut: valide, label: simple,   input: "Dame un asunto de correo para invitar al equipo a una reunión trimestral." }
+- { id: E8-16, lang: es, statut: valide, label: complexe, critique: true, input: "Diseña un modelo de pricing por niveles para nuestro SaaS, con análisis de elasticidad, canibalización entre planes y proyección de ingresos a 12 meses." }
+- { id: E8-17, lang: es, statut: valide, label: complexe, input: "Refactoriza este módulo para eliminar el acoplamiento circular y explica cada decisión de diseño." }
+- { id: E8-18, lang: es, statut: valide, label: complexe, input: "Redacta un análisis DAFO completo de entrar al mercado portugués, con fuentes y supuestos explícitos." }
+- { id: E8-19, lang: it, statut: valide, label: simple,   input: "Come si dice 'fattura' in francese?" }
+- { id: E8-20, lang: it, statut: valide, label: simple,   input: "Scrivi una frase di auguri professionale per un collega che va in pensione." }
+- { id: E8-21, lang: it, statut: valide, label: simple,   input: "Che ore sono adesso a Tokyo se a Roma sono le 15:00?" }
+- { id: E8-22, lang: it, statut: valide, label: complexe, critique: true, input: "Prepara una due diligence tecnica sintetica per l'acquisizione di una startup: aree da verificare, red flags tipici e checklist prioritizzata." }
+- { id: E8-23, lang: it, statut: valide, label: complexe, input: "Dimostra passo per passo perché l'algoritmo di Dijkstra non funziona con pesi negativi e proponi l'alternativa corretta." }
+- { id: E8-24, lang: it, statut: valide, label: complexe, input: "Progetta lo schema di un database multi-tenant con isolamento per riga, indici e strategia di migrazione." }
+- { id: E8-25, lang: en, statut: valide, label: simple,   input: "What's the capital of Australia?" }
+- { id: E8-26, lang: en, statut: valide, label: simple,   input: "Rewrite this sentence in active voice: 'The report was written by the intern.'" }
+- { id: E8-27, lang: en, statut: valide, label: simple,   input: "Give me a one-line summary of what Docker is." }
+- { id: E8-28, lang: en, statut: valide, label: complexe, critique: true, input: "Design a rate-limiting architecture for a multi-region API (token bucket vs sliding window), covering clock skew, hot keys, and failure modes, with a recommendation." }
+- { id: E8-29, lang: en, statut: valide, label: complexe, input: "Write a formal proof sketch that the halting problem is undecidable, then explain it to a junior developer." }
+- { id: E8-30, lang: en, statut: valide, label: complexe, input: "Draft a 90-day integration plan for merging two engineering teams after an acquisition, with risks, milestones and success metrics." }

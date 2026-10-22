@@ -1,0 +1,10 @@
+{
+  "mode": "live",
+  "read_ok": true,
+  "write_after_confirm_ok": true,
+  "write_without_confirm_refused": true,
+  "no_secret_leak": true,
+  "before": 2,
+  "after": 3,
+  "fixture_sha256": "4d795d232732d38668505e687d8b317e92cd3aca9501f4b2eca3c36ad8a40f4d"
+}

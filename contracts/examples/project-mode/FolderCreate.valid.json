@@ -1,0 +1,5 @@
+{
+  "name": "Example",
+  "locality": "server",
+  "model_use": "deny"
+}

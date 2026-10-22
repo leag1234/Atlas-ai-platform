@@ -1,0 +1,19 @@
+{
+  "id": "10000000-0000-4000-8000-000000000001",
+  "created_at": "2026-10-21T12:00:00Z",
+  "updated_at": "2026-10-21T12:00:00Z",
+  "created_by_member_id": "10000000-0000-4000-8000-000000000001",
+  "revision": 0,
+  "deleted_at": null,
+  "purge_at": null,
+  "org_id": "10000000-0000-4000-8000-000000000001",
+  "project_id": "10000000-0000-4000-8000-000000000001",
+  "text": "Example",
+  "kind": "user",
+  "source_conversation_id": null,
+  "source_turn_id": null,
+  "source_file_version_ids": [],
+  "status": "proposed",
+  "confirmed_by": null,
+  "memory_revision": 0
+}

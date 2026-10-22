@@ -1,0 +1,229 @@
+{
+ "note": "Supervisor labels of the V0 baseline, run 20261014T082235907571Z. Independent of the implementing agent. Calibration subset only; six cases are held out by the supervisor.",
+ "labels": {
+  "N01": {
+   "atlas-qwen": {
+    "outcome": "abstain_neighbor",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "no_answer",
+    "flags": [
+     "leaked_tool_json"
+    ]
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N02": {
+   "atlas-qwen": {
+    "outcome": "abstain_neighbor",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N03": {
+   "atlas-qwen": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "abstain",
+    "flags": [
+     "leaked_scope"
+    ]
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N04": {
+   "atlas-qwen": {
+    "outcome": "abstain_neighbor",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain_neighbor",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N05": {
+   "atlas-qwen": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "fabricated",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N06": {
+   "atlas-qwen": {
+    "outcome": "abstain_neighbor",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N07": {
+   "atlas-qwen": {
+    "outcome": "fabricated",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N08": {
+   "atlas-qwen": {
+    "outcome": "abstain_neighbor",
+    "flags": [
+     "narration"
+    ]
+   },
+   "atlas-glm": {
+    "outcome": "abstain",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "N09": {
+   "atlas-qwen": {
+    "outcome": "abstain_neighbor",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "no_answer",
+    "flags": [
+     "leaked_tool_json"
+    ]
+   },
+   "atlas-deepseek": {
+    "outcome": "abstain_neighbor",
+    "flags": [
+     "narration"
+    ]
+   }
+  },
+  "A01": {
+   "atlas-qwen": {
+    "outcome": "accepted",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "accepted",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "accepted",
+    "flags": []
+   }
+  },
+  "A02": {
+   "atlas-qwen": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "corrected",
+    "flags": []
+   }
+  },
+  "A03": {
+   "atlas-qwen": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "corrected",
+    "flags": []
+   }
+  },
+  "A04": {
+   "atlas-qwen": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-deepseek": {
+    "outcome": "corrected",
+    "flags": []
+   }
+  },
+  "A05": {
+   "atlas-qwen": {
+    "outcome": "corrected",
+    "flags": []
+   },
+   "atlas-glm": {
+    "outcome": "no_answer",
+    "flags": [
+     "unfinished"
+    ]
+   },
+   "atlas-deepseek": {
+    "outcome": "corrected",
+    "flags": []
+   }
+  }
+ }
+}

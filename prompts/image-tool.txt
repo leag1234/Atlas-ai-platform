@@ -1,0 +1,5 @@
+Generate an image when the user asks to draw, depict, create a portrait or see an
+imagined scene. Copy the entire user request verbatim into prompt, preserving its
+language and every constraint; rewriting happens downstream. Use conversation context
+for iterations on generated images. Do not call for capability questions, image
+analysis, descriptions of uploads, or unsupported pixel editing. Returns a stored image.

@@ -1,0 +1,53 @@
+{
+  "id": "10000000-0000-4000-8000-000000000001",
+  "created_at": "2026-10-21T12:00:00Z",
+  "updated_at": "2026-10-21T12:00:00Z",
+  "created_by_member_id": "10000000-0000-4000-8000-000000000001",
+  "revision": 0,
+  "deleted_at": null,
+  "purge_at": null,
+  "org_id": "10000000-0000-4000-8000-000000000001",
+  "project_id": "10000000-0000-4000-8000-000000000001",
+  "conversation_id": "10000000-0000-4000-8000-000000000001",
+  "initiator_member_id": "10000000-0000-4000-8000-000000000001",
+  "workspace_id": "10000000-0000-4000-8000-000000000001",
+  "base_file_versions": [],
+  "repository_id": null,
+  "state": "ready",
+  "plan": [],
+  "effective_limits": {
+    "tool_calls": 1,
+    "model_calls": 1,
+    "wall_seconds": 1,
+    "cost_eur": 0,
+    "per_call_eur": 0,
+    "expanded_bytes": 1,
+    "archive_entries": 1,
+    "text_tool_bytes": 1,
+    "command_output_bytes": 1,
+    "command_seconds": 1,
+    "command_memory_bytes": 1
+  },
+  "usage": {
+    "tool_calls": 0,
+    "model_calls": 0,
+    "elapsed_seconds": 0,
+    "cost_eur": 0,
+    "reserved_eur": 0,
+    "unknown_eur": 0,
+    "stored_bytes": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tokens_estimated": false
+  },
+  "lease": null,
+  "last_event_seq": 0,
+  "legacy_session_id": null,
+  "pending_approvals": [],
+  "environment": {
+    "location": "server",
+    "workspace_id": "10000000-0000-4000-8000-000000000001",
+    "network": false,
+    "device_available": false
+  }
+}

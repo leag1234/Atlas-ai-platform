@@ -1,0 +1,12 @@
+{
+  "sources": [],
+  "policy_revision": 0,
+  "excluded_versions": [],
+  "coverage": {
+    "complete": false,
+    "selected_units": 0,
+    "total_units": null,
+    "unit": "pages",
+    "warnings": []
+  }
+}

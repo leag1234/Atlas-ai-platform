@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:atlas:contracts:m2-report",
+  "title": "Rapport retrieval M2",
+  "type": "object",
+  "required": [
+    "recall_at_8",
+    "mrr",
+    "citations_resolues",
+    "cases",
+    "par_langue",
+    "statut"
+  ],
+  "properties": {
+    "recall_at_8": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "mrr": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "citations_resolues": {
+      "type": "boolean"
+    },
+    "cases": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "par_langue": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "cases",
+          "recall_at_8",
+          "mrr"
+        ],
+        "properties": {
+          "cases": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recall_at_8": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "mrr": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "statut": {
+      "enum": [
+        "indicatif",
+        "valide"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

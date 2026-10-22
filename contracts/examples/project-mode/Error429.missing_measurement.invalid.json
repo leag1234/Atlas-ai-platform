@@ -1,0 +1,13 @@
+{
+  "error": "budget_exceeded",
+  "status": 429,
+  "message": "Reserved cost 3.1 EUR exceeds the 3 EUR turn ceiling.",
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "measurements": [],
+  "provider_status": null,
+  "provider_ref": null,
+  "provider_outcome": "not_called",
+  "retryable": false,
+  "current_revision": null,
+  "operation_id": null
+}

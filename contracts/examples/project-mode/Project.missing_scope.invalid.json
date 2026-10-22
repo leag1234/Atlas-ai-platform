@@ -1,0 +1,18 @@
+{
+  "id": "10000000-0000-4000-8000-000000000001",
+  "created_at": "2026-10-21T12:00:00Z",
+  "updated_at": "2026-10-21T12:00:00Z",
+  "created_by_member_id": "10000000-0000-4000-8000-000000000001",
+  "revision": 0,
+  "deleted_at": null,
+  "purge_at": null,
+  "name": "Example",
+  "owner_member_id": "10000000-0000-4000-8000-000000000001",
+  "state": "active",
+  "default_action": "chat",
+  "instructions_file_id": "10000000-0000-4000-8000-000000000001",
+  "memory_revision": 0,
+  "deliverables_folder_id": "10000000-0000-4000-8000-000000000001",
+  "retention_override": null,
+  "policy_revision": 0
+}

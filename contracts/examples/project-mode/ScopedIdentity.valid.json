@@ -1,0 +1,10 @@
+{
+  "subject": "example-member",
+  "member": "10000000-0000-4000-8000-000000000001",
+  "org": "10000000-0000-4000-8000-000000000001",
+  "project": null,
+  "membership_revision": 0,
+  "policy_revision": 0,
+  "expires": 1800000000,
+  "audience": "atlas-retrieval-projects"
+}

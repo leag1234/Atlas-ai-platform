@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "M1 bench (PoC minimal)",
+  "type": "object",
+  "required": ["ip", "total_s", "output_tokens", "tokens_per_s", "ts"],
+  "properties": {
+    "ip":            { "type": "string" },
+    "total_s":       { "type": "number" },
+    "output_tokens": { "type": "integer" },
+    "tokens_per_s":  { "type": "number" },
+    "ts":            { "type": "string" }
+  }
+}

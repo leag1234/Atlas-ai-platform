@@ -1,0 +1,1 @@
+Call save_value with value 7. After the tool confirms the saved value, reply briefly that it was saved.

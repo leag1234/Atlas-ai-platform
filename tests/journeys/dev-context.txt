@@ -1,0 +1,1 @@
+Read this complete Python module. Return only a JSON object mapping the three requested function names to the integer returned when called with zero. Do not execute tools, summarize, or omit a requested name.

@@ -1,0 +1,20 @@
+{
+  "instructions_version": "10000000-0000-4000-8000-000000000001",
+  "instructions_text": "Example",
+  "memory_revision": 0,
+  "facts": [],
+  "passages": [],
+  "history": [],
+  "context_manifest": {
+    "sources": [],
+    "policy_revision": 0,
+    "excluded_versions": [],
+    "coverage": {
+      "complete": false,
+      "selected_units": 0,
+      "total_units": null,
+      "unit": "pages",
+      "warnings": []
+    }
+  }
+}

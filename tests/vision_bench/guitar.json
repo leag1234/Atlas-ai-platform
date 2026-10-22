@@ -1,0 +1,9 @@
+{
+  "source": "Owner MISSION M22, 2026-09-17; original tests/journeys/m21-guitar.jpg",
+  "photo": "guitar.jpg",
+  "positions": [5, 5, 7, 5, 5, 7],
+  "order": "low E, A, D, G, B, high e",
+  "full_barre_fret": 5,
+  "compatible_families": ["A minor", "D dominant (third omitted)"],
+  "family_basis": "Standard tuning gives A D A C E B: Am11, also D9(no3)/A. Family is derived from owner frets; not an additional owner annotation."
+}

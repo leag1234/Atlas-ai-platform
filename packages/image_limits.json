@@ -1,0 +1,59 @@
+[
+  {
+    "category": "minors",
+    "all_of": [
+      "(?i)\\b(?:child(?:ren)?|minor[es]*|underage|teen(?:ager)?s?|enfants?|mineur[es]*|adolescent\\w*|bebe[s]?|baby|babies|kind(?:es|er|ern)?|minderjahrig\\w*|jugendlich\\w*|nino[s]?|nina[s]?|menor[es]*|bambin[oi]|minorenne|minorenni|neonat\\w*)\\b|(?i:\\b(?:[0-9]|1[0-7])[- ](?:year[- ]old|years old|ans|anos|jahre|anni)\\b)",
+      "(?i)\\b(?:sexual\\w*|sexuel\\w*|sexuell\\w*|sessual\\w*|sex\\w*|porn\\w*|eroti\\w*|naked|nude|nudi|nuda|nu|nue|nus|nues|desnud\\w*|nackt\\w*|masturb\\w*|intercourse|penetration|fellatio|fellation)\\b"
+    ],
+    "messages": {
+      "en": "I do not generate this kind of image: sexual content involving minors.",
+      "fr": "Je ne génère pas ce type d’image : contenu sexuel impliquant des mineurs.",
+      "de": "Ich erzeuge diese Art von Bild nicht: sexuelle Inhalte mit Minderjährigen.",
+      "es": "No genero este tipo de imagen: contenido sexual con menores.",
+      "it": "Non genero questo tipo di immagine: contenuti sessuali con minori."
+    }
+  },
+  {
+    "category": "real_people",
+    "all_of": [
+      "\\b[A-Z][a-z]+(?:[- ][A-Z][a-z]+)+\\b|(?i:\\b(?:named|nomme[e]?|namens|chiamat[oa]|real person|personne reelle|persona real|echte person|persona reale|celebrity|celebrite|prominent\\w*)\\b)",
+      "(?i)\\b(?:sexual\\w*|sexuel\\w*|sexuell\\w*|sessual\\w*|sex\\w*|porn\\w*|masturb\\w*|intercourse|penetration|fellatio|fellation)\\b"
+    ],
+    "messages": {
+      "en": "I do not generate this kind of image: sexually explicit depictions of real named people.",
+      "fr": "Je ne génère pas ce type d’image : représentation sexuellement explicite de personnes réelles nommées.",
+      "de": "Ich erzeuge diese Art von Bild nicht: sexuell explizite Darstellungen realer, namentlich genannter Personen.",
+      "es": "No genero este tipo de imagen: representaciones sexualmente explícitas de personas reales identificadas por su nombre.",
+      "it": "Non genero questo tipo di immagine: rappresentazioni sessualmente esplicite di persone reali nominate."
+    }
+  },
+  {
+    "category": "incitement",
+    "all_of": [
+      "(?i)\\b(?:kill|murder|attack|beat|shoot|lynch|tue|tuez|tuer|assassinez|assassiner|attaque|attaquez|attaquer|frappez|frapper|battre|battez|bats|tote[t]?|toten|ermorde[t]?|ermorden|angreifen|greift|greif|schlagt|schlage|schlagen|mata[d]?|matar|asesina[d]?|asesinar|ataca[d]?|atacar|golpea[d]?|golpear|uccidete|uccidi|uccidere|ammazzate|attaccate|attacca|attaccare|picchia|picchiate|picchiare)\\b",
+      "(?i)\\b(?:urging|incit\\w*|call(?:ing)? (?:on|for)|encourag\\w*|exhort\\w*|appel\\w* (?:a|au)|auf(?:ruf|fordert)\\w*|anima\\w* a|invit\\w* a|esort\\w*|kill all|tuez tous|tuez toutes|tote alle|matad a todos|uccidete tutti)\\b|(?i:\\b(?:kill|murder|attack|beat|shoot|lynch|tue|tuez|tuer|assassinez|assassiner|attaque|attaquez|attaquer|frappez|frapper|battre|battez|bats|tote[t]?|toten|ermorde[t]?|ermorden|angreifen|greift|greif|schlagt|schlage|schlagen|mata[d]?|matar|asesina[d]?|asesinar|ataca[d]?|atacar|golpea[d]?|golpear|uccidete|uccidi|uccidere|ammazzate|attaccate|attacca|attaccare|picchia|picchiate|picchiare)\\s+(?:a\\s+)?(?:(?:all|tous|toutes|alle|todos|todas|tutti|tutte)\\s+)?(?:the|les|le|la|l[\\x27]|die|den|das|los|las|el|gli|i|il)(?:\\s+|(?<=\\x27))\\w+)|(?i:\\b(?:greift|greif|schlagt|schlage)\\s+(?:die|den)\\s+.+?\\s+(?:an|nieder)\\b|\\b(?:die|den)\\s+.+?\\s+(?:angreifen|toten|schlagen)\\b)",
+      "\\b[A-Z][a-z]+(?:[- ][A-Z][a-z]+)+\\b|(?i:\\b(?:all|tous|toutes|alle|todos|todas|tutti|tutte|named|nomme\\w*|namens|chiamat[oa]|neighbors?|neighbours?|voisins?|nachbarn|vecinos?|vicini|immigr\\w*|refugee\\w*|refugie\\w*|fluchtling\\w*|rifugiat\\w*|muslim\\w*|musulman\\w*|jew\\w*|juif\\w*|juiv\\w*|juden|ebrei|judios|christian\\w*|chretien\\w*|cristian\\w*)\\b)|(?i:\\b(?:(?:all|tous|toutes|alle|todos|todas|tutti|tutte)\\s+)?(?:the|les|le|la|l[\\x27]|die|den|das|los|las|el|gli|i|il)(?:\\s+|(?<=\\x27))\\w+)|(?i:\\b(?:supporters?|fans?|inhabitants?|residents?|habitants?|bewohner\\w*|einwohner\\w*|hinchas?|aficionados?|habitantes?|tifosi|abitanti|profession\\w*|nationalit\\w*|ethni\\w*|religio\\w*|party|parti\\w*|partei\\w*|organization\\w*|organisation\\w*|organizacion\\w*|organizzazione\\w*)\\b)"
+    ],
+    "messages": {
+      "en": "I do not generate this kind of image: direct incitement to violence against identifiable people or groups.",
+      "fr": "Je ne génère pas ce type d’image : incitation directe à la violence contre des personnes ou groupes identifiables.",
+      "de": "Ich erzeuge diese Art von Bild nicht: direkte Gewaltaufrufe gegen identifizierbare Personen oder Gruppen.",
+      "es": "No genero este tipo de imagen: incitación directa a la violencia contra personas o grupos identificables.",
+      "it": "Non genero questo tipo di immagine: incitamento diretto alla violenza contro persone o gruppi identificabili."
+    }
+  },
+  {
+    "category": "non_consent",
+    "all_of": [
+      "(?i)\\b(?:rape\\w*|raped|non[- ]?consensual\\w*|without (?:her|his|their) consent|against (?:her|his|their) will|forced|viol(?:e|er|ee|ees|s)?|sans (?:son|leur) consentement|contre (?:son|leur) gre|force[es]?|vergewaltig\\w*|gegen ihren willen|ohne einwilligung|erzwungen\\w*|violaci\\w*|violad[oa]s?|sin (?:su )?consentimiento|forzad[oa]s?|stupr\\w*|violentat[oa]|senza consenso|costrett[oa])\\b",
+      "(?i)\\b(?:sexual\\w*|sexuel\\w*|sexuell\\w*|sessual\\w*|sex\\w*|porn\\w*|eroti\\w*|naked|nude|nudi|nuda|nu|nue|nus|nues|desnud\\w*|nackt\\w*|masturb\\w*|intercourse|penetration|fellatio|fellation)\\b"
+    ],
+    "messages": {
+      "en": "I do not generate this kind of content: sexual content without consent.",
+      "fr": "Je ne génère pas ce type de contenu : contenu sexuel sans consentement.",
+      "de": "Ich erzeuge diese Art von Inhalt nicht: sexuelle Inhalte ohne Einwilligung.",
+      "es": "No genero este tipo de contenido: contenido sexual sin consentimiento.",
+      "it": "Non genero questo tipo di contenuto: contenuti sessuali senza consenso."
+    }
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "C03-expert-derivation",
+    "profile": "atlas-qwen",
+    "attempt": 2,
+    "result": {
+      "text": "",
+      "seconds": 18.1,
+      "usage": {},
+      "error": "HTTP Error 504: Gateway Timeout",
+      "attachments": []
+    }
+  },
+  {
+    "id": "C03-expert-derivation",
+    "profile": "atlas-qwen",
+    "attempt": 3,
+    "result": {
+      "text": "",
+      "seconds": 17.4,
+      "usage": {},
+      "error": "HTTP Error 504: Gateway Timeout",
+      "attachments": []
+    }
+  }
+]

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:atlas:contracts:m2-gateway",
+  "title": "M2 gateway — proposition à revoir avant implémentation",
+  "description": "Contrats JSON des opérations HTTP POST /embeddings, /rerank et /answer. Le client utilise une seule URL de gateway et ne choisit aucun modèle.",
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 32000},
+    "chunk_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "passage": {
+      "type": "object",
+      "required": ["chunk_id", "text"],
+      "properties": {
+        "chunk_id": {"$ref": "#/$defs/chunk_id"},
+        "text": {"$ref": "#/$defs/text"}
+      },
+      "additionalProperties": false
+    },
+    "embedding_request": {
+      "type": "object",
+      "required": ["texts", "kind"],
+      "properties": {
+        "texts": {
+          "type": "array", "minItems": 1, "maxItems": 32,
+          "items": {"$ref": "#/$defs/text"}
+        },
+        "kind": {"enum": ["query", "document"]}
+      },
+      "additionalProperties": false
+    },
+    "embedding_response": {
+      "type": "object",
+      "required": ["vectors", "revision"],
+      "properties": {
+        "revision": {"type": "string", "minLength": 1},
+        "vectors": {
+          "type": "array", "minItems": 1, "maxItems": 32,
+          "items": {
+            "type": "array", "minItems": 1, "maxItems": 1024,
+            "items": {"type": "number"}
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rerank_request": {
+      "type": "object",
+      "required": ["question", "passages"],
+      "properties": {
+        "question": {"$ref": "#/$defs/text"},
+        "passages": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {"$ref": "#/$defs/passage"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "rerank_response": {
+      "type": "object",
+      "required": ["scores"],
+      "properties": {
+        "scores": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {
+            "type": "object",
+            "required": ["chunk_id", "score"],
+            "properties": {
+              "chunk_id": {"$ref": "#/$defs/chunk_id"},
+              "score": {"type": "number"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "answer_request": {
+      "type": "object",
+      "required": ["question", "passages"],
+      "properties": {
+        "question": {"$ref": "#/$defs/text"},
+        "passages": {
+          "type": "array", "maxItems": 8,
+          "items": {"$ref": "#/$defs/passage"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "answer_response": {
+      "type": "object",
+      "required": ["text", "citations", "refused"],
+      "properties": {
+        "text": {"$ref": "#/$defs/text"},
+        "citations": {
+          "type": "array", "maxItems": 8, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/chunk_id"}
+        },
+        "refused": {"type": "boolean"}
+      },
+      "if": {"properties": {"refused": {"const": false}}},
+      "then": {"properties": {"citations": {"minItems": 1}}},
+      "else": {"properties": {"citations": {"maxItems": 0}}},
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": {"enum": ["invalid_input", "context_exceeded", "provider_error", "timeout", "invalid_citation"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}

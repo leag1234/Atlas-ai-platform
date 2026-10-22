@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>ATLAS — Projects and memory</title>
+<body><h1>Projects and memory</h1>
+<p>Saved facts are shared across conversations in the selected project.</p>
+<label>Project <select id="projects"></select></label><button id="create-project">Create a project</button>
+<p><label>Permanent instructions<br><textarea id="instructions" rows="4" cols="70" maxlength="4000"></textarea></label><button id="save-project">Save</button></p>
+<label>Conversation <select id="conversations"></select></label><button id="create-conversation">New conversation</button>
+<h2>Project documents and notes</h2><ul id="documents"></ul>
+<label>Title <input id="document-name" maxlength="120"></label><br>
+<label>Text or note<br><textarea id="document-text" rows="5" cols="70" maxlength="32000"></textarea></label>
+<button id="add-document">Add to project</button>
+<h2>Memory</h2><ul id="facts"></ul><button id="erase">Erase all memory</button>
+<h2>Conversation</h2><div id="history"></div>
+<label>Message<br><textarea id="question" rows="4" cols="70" maxlength="32000"></textarea></label><button id="send">Send</button>
+<p id="status" role="status"></p><script src="/project-ui.js" defer></script></body></html>

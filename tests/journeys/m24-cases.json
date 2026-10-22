@@ -1,0 +1,69 @@
+{
+  "date": "2026-09-18",
+  "owner_validation_verbatim": "### Validation journeys (the owner's own cases, verbatim)\nJ42 \"Fais-moi une présentation de /e/OS et Murena, et tu mets dans un pptx téléchargeable,\n    et aussi l'équivalent pdf — ceci seulement à partir des infos connues dans ton modèle\n    et ce que tu peux télécharger publiquement, tu ne fais pas appel à la mémoire présente\n    dans notre environnement\" → a .pptx AND a .pdf are returned as downloadable files; the\n    corpus RAG is not queried; the deck has a title slide and several content slides.\nJ43 \"Prends ce fichier word et corrige les fautes d'orthographe et nettoie la structure\n    avec des paragraphes bien clairs, des titres structurés et une table des matières\"\n    [attach a .docx] → a corrected .docx is returned; the answer states whether the file\n    was regenerated or edited in place.\nJ44 \"Dans cette feuille de calcul, extrais les achats du mois de mars, compare-les avec\n    ceux du mois de mars de l'année précédente, et crée un nouvel onglet avec les chiffres\n    comparés et un graphique d'évolution\" [attach a .xlsx] → a .xlsx is returned with the\n    new sheet and an embedded chart; the figures are correct.\nJ45 attach a 20+ page PDF and ask for a one-page synthesis → the answer covers the\n    beginning, middle and end of the document (the M23/D8 case, now served by the terminal).\nJ46 attach a password-protected or scanned PDF → an explicit failure message naming the\n    cause, not a partial answer built on fragments.\nJ47 attach a PDF around 180 000 tokens → the synthesis is produced (0.30 EUR ceiling), or\n    the M10 hierarchical synthesis is applied; never a flat refusal.          [2026-09-18]\nJ48 \"Sur un Amstrad CPC, quels sont les timings de OUTI et OTIR en microsecondes ?\" →\n    a web search is performed through Tavily and the answer cites a CPC-specific source;\n    if the quota is exhausted, the answer SAYS so instead of answering from memory.\nJ49 any answer rendered in the browser → a code block shows no line numbers and no\n    toolbar; body text is serif; a screenshot proves it.                      [2026-09-18]\n\n",
+  "natural_phrasings": [
+    "Lis ces deux pièces jointes et résume leurs différences.",
+    "Corrige ce document.",
+    "COMPARE MARS AUX CHIFFRES DE L'ANNEE PRECEDENTE.",
+    "Turn these notes into slides I can download, with a printable copy.",
+    "Ergänze die Tabelle um ein Diagramm und behalte die Formeln.",
+    "Reorganise ce texte avec des titres et une table des matieres."
+  ],
+  "capability_phrasings": {
+    "reading": {
+      "positive": [
+        "Que disent ces deux pièces jointes ?",
+        "Compare ces deux documents.",
+        "Quels chiffres figurent dans ce tableau ?",
+        "EXPLIQUE MOI CES DONNEES",
+        "Summarize both attachments.",
+        "Was steht in diesen Unterlagen?"
+      ],
+      "negative": "Explique les formats bureautiques sans ouvrir de document."
+    },
+    "producing": {
+      "positive": [
+        "Prépare des diapositives sur ce sujet avec une version imprimable.",
+        "Rends-le téléchargeable.",
+        "Je veux emporter ce travail et le présenter demain.",
+        "TRANSFORME CES NOTES EN SUPPORT DE PRESENTATION",
+        "Create a slide deck and a printable PDF from these notes.",
+        "Erstelle eine Präsentation und eine druckbare Fassung."
+      ],
+      "negative": "Explique comment préparer un support, ne génère aucun fichier."
+    },
+    "transforming": {
+      "positive": [
+        "Corrige ce document.",
+        "Ajoute les comparaisons dans un nouvel onglet avec un graphique.",
+        "Remets ces paragraphes en ordre avec des titres et un sommaire.",
+        "COMPARE MARS A MARS DE LANNEE PRECEDENTE",
+        "Fix the spelling while preserving styles, images and formulas.",
+        "Ergänze die Tabelle um ein Diagramm und behalte die Formeln."
+      ],
+      "negative": "Décris les erreurs sans modifier les pièces jointes."
+    },
+    "search": {
+      "positive": [
+        "Sur un Amstrad CPC, quels sont les timings de OUTI et OTIR en microsecondes ?",
+        "Vérifie ces durées.",
+        "Quelles sources spécifiques à cette machine confirment ces chiffres ?",
+        "VERIFIE SUR LE WEB LES DUREES DE CES INSTRUCTIONS",
+        "Find CPC-specific evidence for these instruction timings.",
+        "Prüfe diese Zeitangaben anhand gerätespezifischer Quellen."
+      ],
+      "negative": "Explique seulement comment une recherche fonctionne, sans la lancer."
+    },
+    "activity": {
+      "positive": [
+        "Explique longuement comment structurer un document technique, sans outil.",
+        "Développe cette explication.",
+        "Donne une analyse complète de ces paragraphes avec tes connaissances générales.",
+        "DETAILLE CES PRINCIPES SANS RECHERCHE",
+        "Explain the structure of this long document without using web tools.",
+        "Erkläre diesen langen Text ohne Internetsuche."
+      ],
+      "negative": "Réponds uniquement oui."
+    }
+  }
+}

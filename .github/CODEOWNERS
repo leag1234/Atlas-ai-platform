@@ -1,0 +1,8 @@
+# Fichiers non délégables : seul l'humain pilote peut les modifier.
+# (Remplace OWNER par ton login GitHub avant le premier push, ou laisse le
+#  bootstrap le substituer.)
+/.github/workflows/   @leag1234
+/.github/CODEOWNERS    @leag1234
+/scripts/verify-*.sh   @leag1234
+/evals/holdout/        @leag1234
+/docs/                 @leag1234

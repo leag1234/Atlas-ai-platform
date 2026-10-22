@@ -1,0 +1,12 @@
+{
+  "j14_prompt": "Crée une image d'un chat dansant avec un chien, tous deux portant des patins à roulettes et des lunettes roses.",
+  "j14_rewritten_prompt": "Subjects: A cat and a dog dancing together.\nAttributes: Both subjects are wearing roller skates and pink glasses.\nScene: A dynamic setting suitable for dancing.\nStyle: Vibrant and playful illustration.",
+  "j14_seed": 1079227799,
+  "j14_image": "http://localhost:8020/images/000000000000000000000000000003e9",
+  "j14_constraints_detail": {
+    "animals_dancing": true,
+    "roller_skates": true,
+    "pink_glasses": true
+  },
+  "j14_constraints_met": 3
+}

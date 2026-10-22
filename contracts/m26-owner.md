@@ -1,0 +1,173 @@
+# M26 — owner contract: live acceptance, daily probe, attachment path, source truthfulness
+
+The [original owner contract](m26-owner.txt) is binding and keeps the owner's exact
+requests verbatim for the journeys (rule R4). This English overview is equivalent. Written
+on 2026-09-22 from the mandate of 2026-09-21, corrected by what the M25 certification
+session revealed. MISSION.md carries only the summary.
+
+## Why this milestone exists
+
+On 2026-09-21 the owner tested two capabilities M24 had declared delivered. A presentation
+request (make a presentation of /e/OS and Murena as a downloadable pptx and a pdf)
+produced no file: "The provider did not complete a valid answer. Elapsed 50.174s (limit
+120s); reserved cost 0.051282 EUR (limit 0.10 EUR)". A 174-page PDF with a request for a structured
+summary produced no summary: "Elapsed 117.232s (limit 120s); reserved cost 0.144316 EUR
+(limit 0.10 EUR)". The M24 report stated for the same case that J42 "delivered downloadable
+PPTX/PDF in 33.307s". The journey passed, CI was green, the capability did not work.
+
+On 2026-09-22 the M25 certification found the same class of defect three more times: the
+M25 gate hard-codes `M25_REPLAY=1` and writes `mode="replay"` itself, so no gate could
+demand live execution; a local cost-budget refusal reached the caller as "HTTP 504 Gateway
+Timeout"; and live answers cited sources and product features that do not exist, with zero
+search calls. **The defect to fix first is one of method.**
+
+## D1 — Live acceptance is the only acceptance, and it is proved, not declared
+
+A milestone is complete only if its journeys pass live, against the real providers, on the
+day of the merge. Replay stays valuable in CI to catch code regressions; it never accepts a
+delivery.
+
+A report's `mode` field is written by the code under test, so it proves nothing. M25 showed
+a gate writing its own mode. `scripts/verify-m26.sh` (owner-protected) therefore proves live
+execution from evidence the code under test does not control:
+
+- the gate records its own start time, then runs `make m26-live` with every replay
+  variable unset and `JOURNEYS_LIVE=1`;
+- every capture archive it reads must have been written after that start time;
+- every provider completion recorded in a capture carries the provider's own completion id,
+  and no such id may already appear in any file tracked by git. A replayed cassette reuses
+  ids that are in the repository; a live call cannot.
+
+This guards against accidental replay, the failure seen in M24 and M25. It is not a defence
+against deliberate forgery, which is outside the threat model.
+
+Report NOT RUN for a journey that could not run live (quota, provider down). NOT RUN is
+never counted as passed.
+
+A gate that cannot run says why: if port 8020 is already taken (a running stack), the gate
+stops with that reason instead of failing inside a journey with `Address already in use`.
+
+## D2 — Daily probe on the owner's real cases
+
+`scripts/daily-probe.sh`, installed in cron on weekday mornings, runs six real requests live
+through the public HTTP path on atlas-qwen:
+
+1. a presentation producing a downloadable .pptx and .pdf;
+2. the owner's 174-page PDF with a structured-summary request;
+3. a .docx correction request;
+4. a .xlsx analysis producing a new sheet with a chart;
+5. a web question whose answer changes over time;
+6. a plain question with no tool.
+
+It writes `BRAIN/probe/YYYY-MM-DD.json` with pass/fail, seconds, cost and error code per
+case, and on any failure `BRAIN/PROBE_FAILED.txt` naming the case and the measured values.
+`docs/probe.md` explains how it is installed and read.
+
+**The owner's PDF never enters the repository.** It lives at
+`/opt/atlas-src/private/fixtures/owner-174p.pdf` and is read by that exact path only. The
+agent must still never list or inspect `/opt/atlas-src/private/heldout/`.
+
+## D3 — The attachment path: flag, deadline, strategy
+
+Flag: `services/orchestrator/chat_pipeline.py` sets `has_attachments=bool(request.documents)`
+(lines 445 and 490 on 2026-09-22). A file routed to Open Terminal in filesystem mode never
+appears in `request.documents`, so the flag stays false and the 0.30 EUR attachment ceiling,
+correctly implemented in `agent_provider.py`, is never applied. Set the flag from the actual
+presence of an attachment on any path, terminal included.
+
+Deadline: `contracts/m21-profiles.json` has a single `max_seconds: 120`. The 174-page PDF
+used 117 s before synthesis began. A request carrying a large attachment gets 300 s;
+ordinary requests keep 120 s. The activity indicator states the deadline that applies.
+
+Strategy: above a bounded size, the M10 hierarchical synthesis runs (section by section,
+then aggregate) instead of loading the whole document into one context. The answer states
+that hierarchical synthesis was used.
+
+## D4 — Never answer with neither the artefact nor the content
+
+Corpus case C07 (2026-09-20): asked for a Python script, glm and deepseek scored 0 because
+they described a file instead of showing the code; one hit `terminal_operation_failed`.
+
+- A code request that does not ask for a file returns the code in the answer.
+- If a terminal operation fails, fall back to the content in the answer and say the file
+  could not be produced. Never describe a result the user cannot see.
+
+## D5 — Failures say what actually failed (R6 is already binding)
+
+Permanent rule R6 requires rejections to give measured values and thresholds to the user.
+On 2026-09-22 corpus case C03 was refused locally by the cost budget
+(`cost_budget: measured 129453 microEUR; limit 21273 microEUR` in BRAIN/serve.log) and the
+caller received "HTTP 504 Gateway Timeout". Four attempts went looking for a provider fault.
+This is a violation of R6, not a new requirement.
+
+- A local budget refusal is never reported as a gateway or timeout error. Its status and
+  message name the budget, the measured value and the limit.
+- A provider-side failure (5xx, empty completion, invalid JSON) is retried once, the retry
+  is counted in the interaction log, and the provider `finish_reason` reaches the message.
+
+## D6 — Housekeeping the agent does itself
+
+43 git worktrees and about 140 branches had accumulated by 2026-09-20 and the disk reached
+99%. At the end of the milestone the agent removes its own worktrees and merged branches and
+reports free disk space.
+
+## D7 — A source is cited only if it was retrieved
+
+On 2026-09-22 J51 ran live on atlas-qwen (design a local currency for a town of
+50 000 inhabitants). The disposition held in form, not in substance: the Sol Violette dated
+to 2020 (real launch 6 May 2011), a currency presented as launched in 2019 in a village of
+1 000 inhabitants with no trace of existing, URLs with a consultation date of 2024-05-23, a Basque currency on a .bzh domain.
+The capture recorded 2 stream calls and 0 search calls. The held-out case H10 showed the same
+defect on audio hardware: an invented LINE button and an invented 300 Hz filter on a named
+preamp, across all three profiles.
+
+- An answer contains a URL only if that URL appears in a search or fetch result of the same
+  conversation. Mechanically checked by the gate.
+- No consultation date, "Source:" label or quoted extract without a matching retrieval.
+- A request whose answer depends on facts about existing things that may have changed
+  (dispositifs, products, versions, current state) triggers a search. Open-endedness alone
+  is not the criterion.
+- A precise fact recalled without retrieval is stated as recalled, not dressed as sourced.
+
+## Journeys, all live
+
+J54 presentation → a .pptx and a .pdf are downloadable; records seconds, cost, terminal
+    commands and failures.                                                     [2026-09-21]
+J55 the owner's 174-page PDF → a structured summary; the 0.30 EUR ceiling and the 300 s
+    deadline apply; the report states `deadline_seconds`, `attachment_ceiling_eur` and
+    whether hierarchical synthesis was used.                                  [2026-09-21]
+J56 a request to write a Python script, with no mention of a file, → the code is in the answer.
+                                                                               [2026-09-20]
+J57 a forced terminal failure → the answer still carries the content and says the file
+    could not be produced.
+J58 the daily probe runs end to end; a deliberate failure writes BRAIN/PROBE_FAILED.txt.
+J59 J51's question, live → search calls > 0, and every URL in the answer appears in a
+    search or fetch result of the same capture.                               [2026-09-22]
+J60 a request over the cost ceiling → the status is not 504 and the message contains the
+    measured value and the limit.                                             [2026-09-22]
+
+## Evidence format (the gate reads these, not the report's claims)
+
+`make m26-live` writes `BRAIN/m26/report.json`:
+
+    {"J54": {"status": true, "mode": "live", "seconds": 33.3, "cost_eur": 0.057,
+             "capture": "BRAIN/m26/J54.capture.json.gz", ...journey fields...}, ...}
+
+`status` is `true`, `false` or `"NOT_RUN"`. Each capture is gzip JSON:
+
+    {"rows": [{"kind": "stream", "provider_id": "chatcmpl-…", ...},
+              {"kind": "search", "request": {...}, "response": {...}}, ...],
+     "answer": "<final text shown to the user>"}
+
+Journey fields: J54 `files` (list of names); J55 `deadline_seconds`, `attachment_ceiling_eur`,
+`hierarchical`; J60 `http_status`, `measured_microeur`, `limit_microeur`, `message`.
+J60 is refused before any provider call, so it carries no capture and no cost.
+
+## Definition of done
+
+`make verify-m26` passes locally with live evidence; J54–J60 pass live; the daily probe is
+installed in cron; the CI is green.
+
+What this does not cover, stated so no one reads more into it: J59 catches invented URLs
+mechanically. No gate catches an invented feature on a named product with no URL attached
+(H10). That remains measured by the owner's held-out evaluation.

@@ -1,0 +1,6 @@
+
+Exact pixel measurements for solid-color attached images (one-based image index,
+RGB components in 0..255): {measurements}.
+These values were measured from the actual decoded pixels. Use them when naming
+the colors of otherwise featureless images; do not invent shapes or texture.
+Continue to follow the explicitly resolved answer language.

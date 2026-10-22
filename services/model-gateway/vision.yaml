@@ -1,0 +1,6 @@
+# Source: Scaleway Generative APIs pricing, consulted 2026-09-10 (EUR HT/Mtokens).
+model: pixtral-12b-2409
+input_eur_per_mtok: 0.20
+output_eur_per_mtok: 0.20
+context_tokens: 131072
+max_tokens: 2048

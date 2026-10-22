@@ -1,0 +1,7 @@
+{
+  "de": {"engine": "piper", "voice": "de_DE-thorsten-medium"},
+  "en": {"engine": "piper", "voice": "en_US-ljspeech-medium"},
+  "es": {"engine": "piper", "voice": "es_ES-sharvard-medium"},
+  "fr": {"engine": "piper", "voice": "fr_FR-siwis-medium"},
+  "it": {"engine": "piper", "voice": "it_IT-serena-medium"}
+}

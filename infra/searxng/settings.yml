@@ -1,0 +1,32 @@
+# SearXNG settings owned by ATLAS.  server.secret_key is overridden by
+# SEARXNG_SECRET at runtime; no credential is committed here.
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+      - brave.news
+      - wikipedia
+      - qwant
+      - qwant news
+      - bing
+      - bing news
+      - google
+      - google news
+
+general:
+  enable_metrics: false
+
+search:
+  safe_search: 1
+  default_lang: auto
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: ultrasecretkey
+  limiter: false
+  image_proxy: false
+  public_instance: false

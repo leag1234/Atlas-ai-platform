@@ -1,0 +1,3 @@
+-r requirements.txt
+types-openpyxl==3.1.5.20260827
+types-reportlab==5.0.0.20261008

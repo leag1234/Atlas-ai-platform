@@ -1,0 +1,7 @@
+{
+  "en": {"created": "Created document", "regenerated": "Regenerated document; original formatting may differ", "edited_in_place": "Edited in place; original formatting retained"},
+  "fr": {"created": "Document créé", "regenerated": "Document régénéré ; la mise en forme d’origine peut différer", "edited_in_place": "Modifié en place ; mise en forme d’origine conservée"},
+  "de": {"created": "Dokument erstellt", "regenerated": "Dokument neu erstellt; ursprüngliche Formatierung kann abweichen", "edited_in_place": "Bestehendes Dokument bearbeitet; ursprüngliche Formatierung beibehalten"},
+  "es": {"created": "Documento creado", "regenerated": "Documento regenerado; el formato original puede variar", "edited_in_place": "Editado en el archivo; formato original conservado"},
+  "it": {"created": "Documento creato", "regenerated": "Documento rigenerato; la formattazione originale può variare", "edited_in_place": "Modificato sul posto; formattazione originale conservata"}
+}

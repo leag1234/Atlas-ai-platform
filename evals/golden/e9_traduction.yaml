@@ -1,0 +1,72 @@
+# E9 — Traduction : 5 cas d'amorce (métier) + 15 paires FLORES-200 à échantillonner
+# via tools/fetch_flores.py (traductions professionnelles = référence de qualité).
+# Les amorces ci-dessous testent des pièges métier que FLORES ne couvre pas :
+# faux amis, terminologie juridique/financière, instruction cross-lingue.
+# Jugé par COMET (automatique) OU juge bilingue calibré ; fail dur si sens inversé.
+
+- id: E9-001
+  direction: fr->de
+  source: genere-a-valider
+  statut: valide
+  input_text: "Le contrat est résiliable moyennant un préavis de trois mois, sauf
+               manquement grave, auquel cas la résiliation prend effet immédiatement."
+  points_de_controle:
+    - "résiliable → kündbar (pas 'annullierbar')"
+    - "préavis → Kündigungsfrist"
+    - "manquement grave → schwerwiegender Verstoß / grobe Pflichtverletzung"
+    - "la structure sauf/auquel cas est préservée sans inversion de sens"
+
+- id: E9-002
+  direction: de->fr
+  source: genere-a-valider
+  statut: valide
+  input_text: "Die Rückstellungen für drohende Verluste wurden im Jahresabschluss
+               erfolgswirksam aufgelöst."
+  points_de_controle:
+    - "Rückstellungen → provisions (comptable), pas 'réserves'"
+    - "erfolgswirksam → avec impact sur le résultat / en compte de résultat"
+    - "aufgelöst → reprises (reprise de provision), pas 'dissoutes'"
+  note: "piège classique : une traduction mot à mot inverse le sens comptable"
+
+- id: E9-003
+  direction: es->it
+  source: genere-a-valider
+  statut: valide
+  input_text: "La empresa está constipada de deudas y pretende renegociar el plazo
+               con sus acreedores antes del vencimiento."
+  points_de_controle:
+    - "faux amis : 'pretende' → intende (pas 'pretende' it = exiger)"
+    - "vencimiento → scadenza"
+    - "acreedores → creditori"
+  note: "phrase volontairement piégeuse (registre familier + faux amis)"
+
+- id: E9-004
+  direction: it->en
+  source: genere-a-valider
+  statut: valide
+  input_text: "Il fornitore non è tenuto a rispondere dei danni indiretti, salvo dolo
+               o colpa grave."
+  points_de_controle:
+    - "danni indiretti → indirect/consequential damages"
+    - "dolo → willful misconduct (pas 'fraud' seul)"
+    - "colpa grave → gross negligence"
+
+- id: E9-005
+  direction: en->es
+  source: genere-a-valider
+  statut: valide
+  type: instruction_cross_lingue
+  input_text: "Réponds en espagnol : summarize in two sentences the following English
+               paragraph. 'The board approved the merger subject to regulatory clearance.
+               Closing is expected in Q4, after which the brands will operate separately
+               for eighteen months.'"
+  points_de_controle:
+    - "la réponse est intégralement en espagnol"
+    - "subject to regulatory clearance → sujeto a la aprobación regulatoria"
+    - "les deux faits (closing Q4, marques séparées 18 mois) sont présents"
+  note: "teste le suivi d'instruction multilingue, pas seulement la traduction"
+
+# Les 15 paires restantes : exécuter tools/fetch_flores.py qui échantillonne
+# FLORES-200 (dev set) sur les directions fr<->de, fr<->es, fr<->it, de<->en, es<->en,
+# 3 paires par direction, et les ajoute ici avec source: flores, statut: valide
+# (traductions professionnelles — pas de validation humaine supplémentaire requise).

@@ -1,0 +1,108 @@
+{
+  "mode": "live",
+  "date": "2026-09-18",
+  "diagnostic_comparison_complete": true,
+  "milestone_complete": false,
+  "note": "All nine journey/profile pairs were measured. Attempts span implementation revisions and some requests overlapped; this is diagnostic evidence, not a controlled model ranking. Failed attempts remain failures.",
+  "observations": [
+    {
+      "journey": "J42",
+      "requested_profile": "atlas-qwen",
+      "actual_final_provider_model": "qwen3.5-397b-a17b",
+      "commands": 5,
+      "failed_commands": 1,
+      "seconds": 61.37715205003042,
+      "cost_eur": 0.0652914,
+      "accepted": true,
+      "failure": null
+    },
+    {
+      "journey": "J42",
+      "requested_profile": "atlas-glm",
+      "actual_final_provider_model": "qwen3.5-397b-a17b",
+      "commands": 4,
+      "failed_commands": 0,
+      "seconds": 91.26178619102575,
+      "cost_eur": 0.0698571,
+      "accepted": true,
+      "failure": null
+    },
+    {
+      "journey": "J42",
+      "requested_profile": "atlas-deepseek",
+      "actual_final_provider_model": "deepseek-v4-flash-0731",
+      "commands": 5,
+      "failed_commands": 0,
+      "seconds": 52.96795935591217,
+      "cost_eur": 0.0357504,
+      "accepted": false,
+      "failure": "Queried excluded corpus; response rewrote download host (before canonical-link fix)."
+    },
+    {
+      "journey": "J43",
+      "requested_profile": "atlas-qwen",
+      "actual_final_provider_model": "qwen3.5-397b-a17b",
+      "commands": 5,
+      "failed_commands": 1,
+      "seconds": 64.61710454290733,
+      "cost_eur": 0.028971,
+      "accepted": false,
+      "failure": "Corrected document but omitted strategy (before required publication strategy)."
+    },
+    {
+      "journey": "J43",
+      "requested_profile": "atlas-glm",
+      "actual_final_provider_model": "glm-5.2",
+      "commands": 3,
+      "failed_commands": 0,
+      "seconds": 23.52717225800734,
+      "cost_eur": 0.038077,
+      "accepted": true,
+      "failure": null
+    },
+    {
+      "journey": "J43",
+      "requested_profile": "atlas-deepseek",
+      "actual_final_provider_model": "deepseek-v4-flash-0731",
+      "commands": 5,
+      "failed_commands": 0,
+      "seconds": 22.00506245996803,
+      "cost_eur": 0.0138576,
+      "accepted": true,
+      "failure": null
+    },
+    {
+      "journey": "J44",
+      "requested_profile": "atlas-qwen",
+      "actual_final_provider_model": "qwen3.5-397b-a17b",
+      "commands": 4,
+      "failed_commands": 0,
+      "seconds": 42.49424456991255,
+      "cost_eur": 0.0249198,
+      "accepted": false,
+      "failure": "Workbook totals included the year:2225/2286/2.7%, expected200/260/30%."
+    },
+    {
+      "journey": "J44",
+      "requested_profile": "atlas-glm",
+      "actual_final_provider_model": "glm-5.2",
+      "commands": 3,
+      "failed_commands": 0,
+      "seconds": 24.868124142987654,
+      "cost_eur": 0.0443116,
+      "accepted": true,
+      "failure": null
+    },
+    {
+      "journey": "J44",
+      "requested_profile": "atlas-deepseek",
+      "actual_final_provider_model": "deepseek-v4-flash-0731",
+      "commands": 5,
+      "failed_commands": 1,
+      "seconds": 12.572487519937567,
+      "cost_eur": 0.015812,
+      "accepted": true,
+      "failure": null
+    }
+  ]
+}

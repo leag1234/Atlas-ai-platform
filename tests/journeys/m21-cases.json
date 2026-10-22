@@ -1,0 +1,16 @@
+{
+  "source": "Owner conversations, 2026-09-17; verbatim multilingual acceptance inputs and UI labels.",
+  "J29": "C'est quoi cet accord (a priori un Ré quelque chose)",
+  "J30": "lis ça https://www.nationalgeographic.com/premium/article/longest-known-exposure-pinhole-uk et dis moi comment fabriquer ce type de \"camera\"",
+  "activity_labels": [
+    "Réflexion…",
+    "Recherche web…",
+    "Lecture de la page…",
+    "Génération de l’image…"
+  ],
+  "tool_label_to_replace": "Étape intermédiaire terminée : appel d’outil",
+  "J27": [
+    "Je crois que sur les Amstrad CPC 464 et 6128, on pouvait brancher derrière des interfaces, des extensions. Notamment, il me semble qu'il y avait une interface RS-232, donc une interface série. Donc ça, je suis sûr à 99%, et je voudrais savoir à combien est plafonné en termes de débit. Si c'était de l'ordre de 128 000 bits par seconde, ou plutôt des valeurs plus d'époque comme 2 400 ou 1 200 bits par seconde. Voilà.",
+    "Et par rapport à la CPU justement de ces machines-là, qui étaient équivalentes, on est sur les deux modèles. Je crois que la seule différence c'était la RAM. Quel était le débit théorique, enfin le débit de génération maximum ? Ah, je sais pas encore comment expliquer ça. Quel était le débit maximum d'envoi d'informations qui pouvait être généré depuis un logiciel sur cette machine-là ? Typiquement, on remplit la mémoire d'infos random et on veut la... on suppose qu'on a un débit infini en sortie, et c'est quoi la limite théorique ? Justement, à un moment on va arriver à un débit qui va être lié en fait à la vitesse de la CPU et peut-être d'autres facteurs limitants. C'était quoi ce max ?"
+  ]
+}

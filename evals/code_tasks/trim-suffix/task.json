@@ -1,0 +1,13 @@
+{
+  "id": "trim-suffix",
+  "title": "Trim only a matching suffix",
+  "prompt": "Removing a configured suffix currently removes matching characters from the end even when the full suffix is absent.",
+  "setup": "The workspace contains a small standard-library Python module named solution.py. Do not use network access or install dependencies.",
+  "verifier_command": "{python} -m unittest -v test_solution.py",
+  "timeout_seconds": 10,
+  "difficulty": "easy",
+  "source": {
+    "kind": "synthetic mutation",
+    "basis": "Small pure-Python utility patterns from packages/ (configuration, validation, limits, and file handling); fixture is isolated from application services."
+  }
+}

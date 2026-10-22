@@ -1,0 +1,36 @@
+{
+  "source_date": "2026-09-15",
+  "J21": "intègre ces deux images",
+  "J22": "compare ces deux images",
+  "J23": "tu saurais modifier cette image ?",
+  "J24": "genere une image d'un mouton à 5 pattes, qui danse avec une vache bleue - les deux portent des lunettes roses et des patins à roulette jaune fluo",
+  "editing": [
+    "intègre ces deux images",
+    "tu saurais modifier cette image ?",
+    "mets les ensemble",
+    "FAIS UN MONTAGE",
+    "fusionne les deux",
+    "combine these pictures"
+  ],
+  "comparison": [
+    "compare ces deux images",
+    "quelles differences vois tu",
+    "QU’EST-CE QUI CHANGE",
+    "sont elles identiques",
+    "laquelle est plus sombre",
+    "compare these pictures"
+  ],
+  "generation": [
+    "dessine-moi un mouton",
+    "fais-moi un portrait",
+    "je voudrais voir un dragon",
+    "DESSINE UN CHAT",
+    "un dessin stp",
+    "draw me a sheep"
+  ],
+  "negative": [
+    "analyse cette image",
+    "décris l'image ci-jointe",
+    "decris cette image"
+  ]
+}

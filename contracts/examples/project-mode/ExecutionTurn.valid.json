@@ -1,0 +1,9 @@
+{
+  "session_id": "10000000-0000-4000-8000-000000000001",
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "generation": 1,
+  "operation": "renew",
+  "usage": null,
+  "terminal_state": null,
+  "cleanup_confirmed": false
+}

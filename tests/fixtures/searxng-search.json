@@ -1,0 +1,11 @@
+{
+  "results": [
+    {
+      "title": "Official release notes",
+      "url": "https://example.org/releases",
+      "content": "The current stable release was published today.",
+      "publishedDate": "2026-10-17"
+    }
+  ],
+  "unresponsive_engines": []
+}

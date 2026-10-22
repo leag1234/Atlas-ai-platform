@@ -1,0 +1,13 @@
+{
+  "image_produced": true,
+  "served_locally": true,
+  "metadata": {
+    "format": "PNG",
+    "width": 512,
+    "height": 512,
+    "bytes": 92102
+  },
+  "sha256": "271310b7eeb5c750343b79810f33c5a197dfd032b01ddf344656f4905dc9f5a7",
+  "cost_eur": 0.0005567836192259216,
+  "latency_ms": 1371.646076993784
+}

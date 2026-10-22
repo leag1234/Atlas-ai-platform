@@ -1,0 +1,110 @@
+# E6 — Web Q/R : jeu ALLÉGÉ pour le PoC (8 cas), aligné sur le quota SerpApi gratuit.
+# 5 faits "stables mais vérifiables" (clé durable, vérifiée par Claude le 2026-09-09) :
+#   le modèle DOIT chercher pour sourcer, mais la clé ne périme pas vite.
+# 3 emplacements "actualité fraîche" à COMPLÉTER par l'humain (marqués TODO-HUMAIN) :
+#   l'humain vérifie la réponse le jour où il l'écrit et met à jour date_cle.
+# Gate M3 : E6 est exécuté sur les cas 'valide' seulement. Les cas TODO-HUMAIN restent
+# 'draft' et ne comptent pas tant qu'ils ne sont pas remplis + validés (POC-R3).
+
+# ===== FAITS STABLES — vérifiés par Claude via web le 2026-09-09 =====
+
+- id: E6-001
+  lang: en
+  source: verifie-web
+  statut: valide
+  valide_par: "Claude via python.org, 2026-09-09"
+  date_cle: 2026-09-09
+  input: "What is the latest stable release of Python?"
+  cle_de_correction:
+    doit_contenir: ["3.14.7"]
+    contexte: "Python 3.14.7, publié le 5 août 2026 (source python.org/downloads)."
+  doit_citer_domaine_parmi: ["python.org"]
+
+- id: E6-002
+  lang: en
+  source: verifie-web
+  statut: valide
+  valide_par: "Claude via postgresql.org, 2026-09-09"
+  date_cle: 2026-09-09
+  input: "What is the latest stable release of PostgreSQL?"
+  cle_de_correction:
+    doit_contenir: ["18.6"]
+    contexte: "PostgreSQL 18.6, publié le 13 août 2026 (source postgresql.org)."
+  doit_citer_domaine_parmi: ["postgresql.org"]
+
+- id: E6-003
+  lang: fr
+  source: verifie-web
+  statut: valide
+  valide_par: "Claude via nodejs.org, 2026-09-09"
+  date_cle: 2026-09-09
+  input: "Quelle est la version LTS active de Node.js actuellement ?"
+  cle_de_correction:
+    doit_contenir: ["24"]
+    contexte: "Node.js 24 est la LTS active en septembre 2026 (26 est en Current depuis
+               mai 2026, passera LTS en octobre 2026). Source nodejs.org."
+  doit_citer_domaine_parmi: ["nodejs.org"]
+
+- id: E6-004
+  lang: es
+  source: verifie-web
+  statut: valide
+  valide_par: "Claude via python.org, 2026-09-09"
+  date_cle: 2026-09-09
+  input: "¿Cuál es la última versión estable de Python y cuándo se publicó?"
+  cle_de_correction:
+    doit_contenir: ["3.14.7"]
+    contexte: "Python 3.14.7, 5 de agosto de 2026 (fuente python.org). Cas cross-lingue :
+               question ES, source EN."
+  doit_citer_domaine_parmi: ["python.org"]
+
+- id: E6-005
+  lang: de
+  source: verifie-web
+  statut: valide
+  valide_par: "Claude via postgresql.org, 2026-09-09"
+  date_cle: 2026-09-09
+  input: "Welche ist die neueste stabile PostgreSQL-Version?"
+  cle_de_correction:
+    doit_contenir: ["18.6"]
+    contexte: "PostgreSQL 18.6, 13. August 2026 (Quelle postgresql.org). Cross-lingue :
+               Frage DE, Quelle EN."
+  doit_citer_domaine_parmi: ["postgresql.org"]
+
+# ===== ACTUALITÉ FRAÎCHE — À COMPLÉTER PAR L'HUMAIN =====
+# Pour chaque cas ci-dessous : (1) pose la question à une source fiable aujourd'hui,
+# (2) écris la réponse dans doit_contenir, (3) mets statut: valide et la date du jour.
+# Tant que statut reste 'draft', le cas ne compte pas dans le gate.
+
+- id: E6-101
+  lang: fr
+  source: genere-a-valider
+  statut: draft
+  input: "Quels sont les taux directeurs actuels de la BCE ?"
+  cle_de_correction:
+    doit_contenir: []          # TODO-HUMAIN : ex. ["2,15"] — vérifier sur ecb.europa.eu
+    contexte: "TODO-HUMAIN : vérifier les 3 taux (dépôt/refi/marginal) le jour de l'écriture."
+  date_cle: null               # TODO-HUMAIN : date du jour
+  doit_citer_domaine_parmi: ["ecb.europa.eu", "banque-france.fr"]
+
+- id: E6-102
+  lang: fr
+  source: genere-a-valider
+  statut: draft
+  input: "Quel est le montant du SMIC horaire brut en France actuellement ?"
+  cle_de_correction:
+    doit_contenir: []          # TODO-HUMAIN : ex. ["11,88"] — vérifier sur service-public.fr
+    contexte: "TODO-HUMAIN : vérifier le SMIC horaire en vigueur."
+  date_cle: null
+  doit_citer_domaine_parmi: ["service-public.fr", "insee.fr", "legifrance.gouv.fr"]
+
+- id: E6-103
+  lang: de
+  source: genere-a-valider
+  statut: draft
+  input: "Wie hoch ist der gesetzliche Mindestlohn in Deutschland aktuell?"
+  cle_de_correction:
+    doit_contenir: []          # TODO-HUMAIN : ex. ["13,90"] — vérifier sur bmas.de
+    contexte: "TODO-HUMAIN : Mindestlohn prüfen."
+  date_cle: null
+  doit_citer_domaine_parmi: ["bmas.de", "bundesregierung.de"]

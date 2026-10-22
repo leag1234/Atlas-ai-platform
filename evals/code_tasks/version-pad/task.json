@@ -1,0 +1,13 @@
+{
+  "id": "version-pad",
+  "title": "Compare versions with missing segments",
+  "prompt": "Version ordering treats a trailing zero segment as a newer release. Missing segments should compare as zero.",
+  "setup": "The workspace contains a small standard-library Python module named solution.py. Do not use network access or install dependencies.",
+  "verifier_command": "{python} -m unittest -v test_solution.py",
+  "timeout_seconds": 10,
+  "difficulty": "medium",
+  "source": {
+    "kind": "synthetic mutation",
+    "basis": "Small pure-Python utility patterns from packages/ (configuration, validation, limits, and file handling); fixture is isolated from application services."
+  }
+}

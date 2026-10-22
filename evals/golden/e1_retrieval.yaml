@@ -1,0 +1,49 @@
+# E1 — Retrieval : la QUESTION doit ramener le bon document/passage.
+# Vérification déterministe : le passage_attendu apparaît-il dans un chunk du top-8 ?
+# recall@8 : le bon passage figure-t-il dans les 8 premiers résultats.
+# Champs : id, lang, input (la question), doc_id_attendu, passage_attendu, cross_lingue.
+
+- { id: E1-01, lang: fr, input: "Combien de jours de télétravail par semaine au maximum ?", doc_id_attendu: rh-teletravail, passage_attendu: "trois jours par semaine", cross_lingue: false }
+- { id: E1-02, lang: fr, input: "Combien de jours de télétravail depuis l'étranger par an ?", doc_id_attendu: rh-teletravail, passage_attendu: "vingt jours par année civile", cross_lingue: false }
+- { id: E1-03, lang: fr, input: "Quelle est l'allocation mensuelle pour les frais de télétravail ?", doc_id_attendu: rh-teletravail, passage_attendu: "dix euros par mois", cross_lingue: false }
+- { id: E1-04, lang: de, input: "Wie lange ist die Kündigungsfrist des Vertrags?", doc_id_attendu: dienstleistungsvertrag, passage_attendu: "drei Monaten", cross_lingue: false }
+- { id: E1-05, lang: de, input: "Wie hoch ist die Vergütung pro Tagewerk?", doc_id_attendu: dienstleistungsvertrag, passage_attendu: "1.200 Euro pro Tagewerk", cross_lingue: false }
+- { id: E1-06, lang: de, input: "Wie lange gilt die Vertraulichkeitspflicht nach Vertragsende?", doc_id_attendu: dienstleistungsvertrag, passage_attendu: "fünf Jahre", cross_lingue: false }
+- { id: E1-07, lang: en, input: "What was the revenue in Q3 2026?", doc_id_attendu: q3-financial-report, passage_attendu: "48.3 million euros", cross_lingue: false }
+- { id: E1-08, lang: en, input: "What was the cash position at the end of the quarter?", doc_id_attendu: q3-financial-report, passage_attendu: "62 million euros", cross_lingue: false }
+- { id: E1-09, lang: en, input: "What was the gross margin in Q3?", doc_id_attendu: q3-financial-report, passage_attendu: "38 percent", cross_lingue: false }
+- { id: E1-10, lang: es, input: "¿Cuál es el tiempo objetivo de resolución del incidente?", doc_id_attendu: runbook-incidente-db, passage_attendu: "treinta minutos", cross_lingue: false }
+- { id: E1-11, lang: es, input: "¿Qué tipo de sesiones causan la saturación?", doc_id_attendu: runbook-incidente-db, passage_attendu: "idle in transaction", cross_lingue: false }
+- { id: E1-12, lang: es, input: "¿Qué función se usa para terminar una sesión?", doc_id_attendu: runbook-incidente-db, passage_attendu: "pg_terminate_backend", cross_lingue: false }
+- { id: E1-13, lang: it, input: "Da quali valori si definisce l'ipertensione?", doc_id_attendu: scheda-ipertensione, passage_attendu: "140 mmHg", cross_lingue: false }
+- { id: E1-14, lang: it, input: "Quanto sale al giorno è raccomandato al massimo?", doc_id_attendu: scheda-ipertensione, passage_attendu: "cinque grammi al giorno", cross_lingue: false }
+- { id: E1-15, lang: it, input: "Oltre quale pressione bisogna consultare urgentemente?", doc_id_attendu: scheda-ipertensione, passage_attendu: "180/120 mmHg", cross_lingue: false }
+- { id: E1-16, lang: en, input: "How much better did normal sleepers score on working memory?", doc_id_attendu: sleep-study-summary, passage_attendu: "14 percent higher", cross_lingue: false }
+- { id: E1-17, lang: en, input: "How many participants were in the sleep study?", doc_id_attendu: sleep-study-summary, passage_attendu: "312 healthy adults", cross_lingue: false }
+- { id: E1-18, lang: en, input: "Can the study prove causation?", doc_id_attendu: sleep-study-summary, passage_attendu: "cannot establish causation", cross_lingue: false }
+- { id: E1-19, lang: fr, input: "Quel est le prix du purificateur AquaPur X200 ?", doc_id_attendu: fiche-produit-aquapur, passage_attendu: "349 euros", cross_lingue: false }
+- { id: E1-20, lang: fr, input: "Quel est le débit maximal de l'AquaPur X200 ?", doc_id_attendu: fiche-produit-aquapur, passage_attendu: "deux litres par minute", cross_lingue: false }
+- { id: E1-21, lang: fr, input: "Tous les combien remplacer le préfiltre à sédiments ?", doc_id_attendu: fiche-produit-aquapur, passage_attendu: "six mois", cross_lingue: false }
+- { id: E1-22, lang: ar, input: "متى يجب إعادة طلب المنتج؟", doc_id_attendu: shipping-procedure, passage_attendu: "خمسين وحدة", cross_lingue: false }
+- { id: E1-23, lang: ar, input: "خلال كم من الوقت يجب تجهيز الطلبات العاجلة؟", doc_id_attendu: shipping-procedure, passage_attendu: "ساعتين", cross_lingue: false }
+- { id: E1-24, lang: ar, input: "خلال كم يوم يجب فحص المنتج المرتجع؟", doc_id_attendu: shipping-procedure, passage_attendu: "ثلاثة أيام عمل", cross_lingue: false }
+- { id: E1-25, lang: zh, input: "本次营销活动的总预算是多少？", doc_id_attendu: marketing-campaign-plan, passage_attendu: "八十万元", cross_lingue: false }
+- { id: E1-26, lang: zh, input: "活动的销售目标是多少台？", doc_id_attendu: marketing-campaign-plan, passage_attendu: "一万台", cross_lingue: false }
+- { id: E1-27, lang: zh, input: "社交媒体广告占预算的多少比例？", doc_id_attendu: marketing-campaign-plan, passage_attendu: "百分之五十", cross_lingue: false }
+- { id: E1-28, lang: de, input: "Innerhalb welcher Frist muss eine Datenschutzverletzung gemeldet werden?", doc_id_attendu: dsgvo-hinweis, passage_attendu: "72 Stunden", cross_lingue: false }
+- { id: E1-29, lang: de, input: "Wie hoch können die Bußgelder maximal sein?", doc_id_attendu: dsgvo-hinweis, passage_attendu: "20 Millionen Euro", cross_lingue: false }
+- { id: E1-30, lang: de, input: "Nach wie vielen Monaten sind Bewerbungsunterlagen zu löschen?", doc_id_attendu: dsgvo-hinweis, passage_attendu: "sechs Monaten", cross_lingue: false }
+
+# ---- CROSS-LINGUES (question dans une langue != langue du document) ----
+- { id: E1-31, lang: fr, input: "Quel est le délai de résiliation du contrat de prestation Müller ?", doc_id_attendu: dienstleistungsvertrag, passage_attendu: "drei Monaten", cross_lingue: true }
+- { id: E1-32, lang: en, input: "How many remote-work days per week does the policy allow?", doc_id_attendu: rh-teletravail, passage_attendu: "trois jours", cross_lingue: true }
+- { id: E1-33, lang: fr, input: "Quel a été le chiffre d'affaires du 3e trimestre ?", doc_id_attendu: q3-financial-report, passage_attendu: "48.3 million", cross_lingue: true }
+- { id: E1-34, lang: en, input: "At what blood pressure is hypertension defined?", doc_id_attendu: scheda-ipertensione, passage_attendu: "140 mmHg", cross_lingue: true }
+- { id: E1-35, lang: fr, input: "Sous combien d'heures notifier une violation de données ?", doc_id_attendu: dsgvo-hinweis, passage_attendu: "72 Stunden", cross_lingue: true }
+- { id: E1-36, lang: en, input: "What is the reorder threshold for a product?", doc_id_attendu: shipping-procedure, passage_attendu: "خمسين وحدة", cross_lingue: true }
+- { id: E1-37, lang: fr, input: "Quel est le budget de la campagne marketing de printemps ?", doc_id_attendu: marketing-campaign-plan, passage_attendu: "八十万元", cross_lingue: true }
+- { id: E1-38, lang: es, input: "¿Cuál es el precio del purificador de agua?", doc_id_attendu: fiche-produit-aquapur, passage_attendu: "349 euros", cross_lingue: true }
+
+# ---- MULTI-DOCUMENTS / désambiguïsation ----
+- { id: E1-39, lang: fr, input: "Quel est le préavis pour arrêter le télétravail ?", doc_id_attendu: rh-teletravail, passage_attendu: "un mois", cross_lingue: false, note: "ne pas confondre avec préavis contrat DE (3 mois)" }
+- { id: E1-40, lang: es, input: "¿En qué plazo hay que redactar el informe post-incidente?", doc_id_attendu: runbook-incidente-db, passage_attendu: "cuarenta y ocho horas", cross_lingue: false, note: "ne pas confondre avec délai RGPD 72h" }

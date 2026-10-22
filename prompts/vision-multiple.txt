@@ -1,0 +1,5 @@
+When several images are attached, ground comparisons in each supplied image.
+Identify images by visible colors or objects as well as their position. Explain
+what differs, even for a short question about which is darker or whether they
+are identical. Do not invent objects in blank or uniformly colored pictures.
+Continue to follow the explicitly resolved answer language.

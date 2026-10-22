@@ -1,0 +1,19 @@
+{
+  "font": "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", system-ui, sans-serif",
+  "paragraph_width": "700px",
+  "gutters": "none",
+  "copy": "0",
+  "save": "none",
+  "wrap": "pre",
+  "css_sha256": "4a4659a97ea4d11c6574127e28cb9ade2e8bed1890bdfc21d6cd7ed81007c093",
+  "dark_font": "-apple-system, BlinkMacSystemFont, \"SF Pro Text\", system-ui, sans-serif",
+  "dark_color": "rgb(245, 245, 247)",
+  "copy_on_hover": true,
+  "mode": "local-ui",
+  "screenshots": {
+    "m24-rendering-before.png": "0a60a93ac87ca70cc81a8db0ebd9b12ec77f98cd139a6121a3f17f2c57b4a80c",
+    "m24-rendering-after.png": "52498884ee10810d388c885926254d228c0da4569db5e0a494a504e852f66e33",
+    "m24-rendering-dark.png": "7a6f741c82d34413fe586543b52249efe04ac97ad1a7fdce3aa2a1c02b726779"
+  },
+  "js_sha256": "fd9dc52cba2890c885dfe37347bb0b56081062393b0650e366bdb54eaab3c2ed"
+}

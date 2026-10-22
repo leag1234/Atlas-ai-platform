@@ -1,0 +1,217 @@
+# E2 — RAG bout-en-bout : la réponse doit être exacte ET citer le bon document.
+# Vérification : juge LLM (rubrique exactitude) + présence d'une citation vers doc_id_attendu.
+# Champs : id, lang, input (question), doit_contenir (éléments factuels attendus),
+#          doc_id_attendu (la citation doit pointer là), cross_lingue.
+
+- id: E2-01
+  lang: fr
+  input: "Combien de jours de télétravail par semaine sont autorisés au maximum ?"
+  doit_contenir: ["trois", "3"]
+  doc_id_attendu: rh-teletravail
+  cross_lingue: false
+
+- id: E2-02
+  lang: fr
+  input: "Peut-on télétravailler depuis un pays hors Union européenne ?"
+  doit_contenir: ["non", "interdit"]
+  doc_id_attendu: rh-teletravail
+  cross_lingue: false
+
+- id: E2-03
+  lang: de
+  input: "Wie hoch ist die Vertragsstrafe bei Verstoß gegen das Wettbewerbsverbot?"
+  doit_contenir: ["25.000", "25000"]
+  doc_id_attendu: dienstleistungsvertrag
+  cross_lingue: false
+
+- id: E2-04
+  lang: de
+  input: "Wie lange gilt die Vertraulichkeitspflicht nach Vertragsende?"
+  doit_contenir: ["fünf Jahre", "5 Jahre"]
+  doc_id_attendu: dienstleistungsvertrag
+  cross_lingue: false
+
+- id: E2-05
+  lang: en
+  input: "Why did the gross margin decline in Q3?"
+  doit_contenir: ["semiconductor", "component", "euro", "currency"]
+  doc_id_attendu: q3-financial-report
+  cross_lingue: false
+
+- id: E2-06
+  lang: en
+  input: "What was the cash position at the end of Q3?"
+  doit_contenir: ["62 million"]
+  doc_id_attendu: q3-financial-report
+  cross_lingue: false
+
+- id: E2-07
+  lang: es
+  input: "¿Qué sesiones se deben terminar durante una saturación de la base de datos?"
+  doit_contenir: ["idle in transaction"]
+  doc_id_attendu: runbook-incidente-db
+  cross_lingue: false
+
+- id: E2-08
+  lang: es
+  input: "¿Cuál es el tiempo objetivo de resolución de este incidente?"
+  doit_contenir: ["treinta minutos", "30 minutos"]
+  doc_id_attendu: runbook-incidente-db
+  cross_lingue: false
+
+- id: E2-09
+  lang: it
+  input: "A partire da quali valori si definisce l'ipertensione arteriosa?"
+  doit_contenir: ["140", "90"]
+  doc_id_attendu: scheda-ipertensione
+  cross_lingue: false
+
+- id: E2-10
+  lang: it
+  input: "Quanto sale al giorno è raccomandato al massimo?"
+  doit_contenir: ["cinque grammi", "5 grammi"]
+  doc_id_attendu: scheda-ipertensione
+  cross_lingue: false
+
+- id: E2-11
+  lang: en
+  input: "Did long sleepers perform better than normal sleepers?"
+  doit_contenir: ["no", "indistinguishable", "did not"]
+  doc_id_attendu: sleep-study-summary
+  cross_lingue: false
+
+- id: E2-12
+  lang: en
+  input: "Can this study establish that short sleep causes lower performance?"
+  doit_contenir: ["no", "association", "cannot", "causation"]
+  doc_id_attendu: sleep-study-summary
+  cross_lingue: false
+
+- id: E2-13
+  lang: fr
+  input: "Tous les combien faut-il remplacer le préfiltre à sédiments de l'AquaPur X200 ?"
+  doit_contenir: ["six mois", "6 mois"]
+  doc_id_attendu: fiche-produit-aquapur
+  cross_lingue: false
+
+- id: E2-14
+  lang: fr
+  input: "L'AquaPur X200 convient-il pour traiter l'eau de mer ?"
+  doit_contenir: ["non", "pas adapté"]
+  doc_id_attendu: fiche-produit-aquapur
+  cross_lingue: false
+
+- id: E2-15
+  lang: ar
+  input: "متى يجب إعادة طلب أحد المنتجات؟"
+  doit_contenir: ["خمسين", "50"]
+  doc_id_attendu: shipping-procedure
+  cross_lingue: false
+
+- id: E2-16
+  lang: ar
+  input: "هل يُعاد المنتج الغذائي المرتجع إلى المخزون؟"
+  doit_contenir: ["لا", "لا يعاد"]
+  doc_id_attendu: shipping-procedure
+  cross_lingue: false
+
+- id: E2-17
+  lang: zh
+  input: "本次营销活动的总预算是多少？"
+  doit_contenir: ["八十万", "800000", "80万"]
+  doc_id_attendu: marketing-campaign-plan
+  cross_lingue: false
+
+- id: E2-18
+  lang: zh
+  input: "为什么本次活动不采用电视广告？"
+  doit_contenir: ["成本", "精准"]
+  doc_id_attendu: marketing-campaign-plan
+  cross_lingue: false
+
+- id: E2-19
+  lang: de
+  input: "Innerhalb welcher Frist muss eine Datenschutzverletzung gemeldet werden?"
+  doit_contenir: ["72 Stunden"]
+  doc_id_attendu: dsgvo-hinweis
+  cross_lingue: false
+
+- id: E2-20
+  lang: de
+  input: "Wie hoch können die Bußgelder bei DSGVO-Verstößen maximal sein?"
+  doit_contenir: ["20 Millionen", "vier Prozent", "4 Prozent"]
+  doc_id_attendu: dsgvo-hinweis
+  cross_lingue: false
+
+# ---- cross-lingues ----
+- id: E2-21
+  lang: fr
+  input: "Quel est le délai de résiliation du contrat de prestation avec Müller ?"
+  doit_contenir: ["trois mois", "3 mois"]
+  doc_id_attendu: dienstleistungsvertrag
+  cross_lingue: true
+
+- id: E2-22
+  lang: en
+  input: "What is the maximum number of remote work days per week in the policy?"
+  doit_contenir: ["three", "3"]
+  doc_id_attendu: rh-teletravail
+  cross_lingue: true
+
+- id: E2-23
+  lang: fr
+  input: "Quel est le seuil de tension qui définit l'hypertension selon la fiche médicale ?"
+  doit_contenir: ["140", "90"]
+  doc_id_attendu: scheda-ipertensione
+  cross_lingue: true
+
+- id: E2-24
+  lang: en
+  input: "According to the GDPR note, how long to answer an access request?"
+  doit_contenir: ["one month", "1 month", "einem Monat"]
+  doc_id_attendu: dsgvo-hinweis
+  cross_lingue: true
+
+- id: E2-25
+  lang: fr
+  input: "Quel est le budget de la campagne marketing de printemps ?"
+  doit_contenir: ["800", "huit cent mille", "80"]
+  doc_id_attendu: marketing-campaign-plan
+  cross_lingue: true
+
+# ---- multi-documents / désambiguïsation ----
+- id: E2-26
+  lang: fr
+  input: "Quel est le préavis pour arrêter le télétravail ?"
+  doit_contenir: ["un mois", "1 mois"]
+  doc_id_attendu: rh-teletravail
+  cross_lingue: false
+  note: "ne pas répondre 3 mois (préavis du contrat DE)"
+
+- id: E2-27
+  lang: en
+  input: "What revenue did the Software segment generate in Q3?"
+  doit_contenir: ["14.2 million"]
+  doc_id_attendu: q3-financial-report
+  cross_lingue: false
+
+- id: E2-28
+  lang: es
+  input: "¿En qué plazo hay que redactar el informe post-incidente?"
+  doit_contenir: ["cuarenta y ocho horas", "48 horas"]
+  doc_id_attendu: runbook-incidente-db
+  cross_lingue: false
+
+- id: E2-29
+  lang: fr
+  input: "Combien coûte la membrane à osmose inverse de rechange de l'AquaPur ?"
+  doit_contenir: ["89 euros", "89"]
+  doc_id_attendu: fiche-produit-aquapur
+  cross_lingue: false
+
+- id: E2-30
+  lang: de
+  input: "Nach wie vielen Monaten sind Bewerbungsunterlagen abgelehnter Kandidaten zu löschen?"
+  doit_contenir: ["sechs Monaten", "6 Monaten"]
+  doc_id_attendu: dsgvo-hinweis
+  cross_lingue: false

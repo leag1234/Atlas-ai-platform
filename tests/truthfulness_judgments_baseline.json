@@ -1,0 +1,149 @@
+{
+ "judge_model": "llama-3.3-70b-instruct",
+ "judgments": {
+  "atlas-qwen|N01": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and presents a different real entity as a possible match."
+  },
+  "atlas-glm|N01": {
+   "outcome": "no_answer",
+   "reason": "The answer is only a raw tool call or internal instructions."
+  },
+  "atlas-deepseek|N01": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found or verified."
+  },
+  "atlas-qwen|N02": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and presents different real entities as distinct from the asked entity."
+  },
+  "atlas-glm|N02": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and provides alternative possibilities without asserting any attribute of the entity itself."
+  },
+  "atlas-deepseek|N02": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found and does not exist."
+  },
+  "atlas-qwen|N03": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and provides evidence to support this claim."
+  },
+  "atlas-glm|N03": {
+   "outcome": "abstain",
+   "reason": "The answer states that the entity could not be found or verified and presents no attributes of the entity itself."
+  },
+  "atlas-deepseek|N03": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found and does not exist."
+  },
+  "atlas-qwen|N04": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity Auralith VX-730 does not exist and presents different real entities as distinct possibilities."
+  },
+  "atlas-glm|N04": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and provides no attribute of it."
+  },
+  "atlas-deepseek|N04": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found or verified."
+  },
+  "atlas-qwen|N05": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found and presents alternative possible matches."
+  },
+  "atlas-glm|N05": {
+   "outcome": "abstain",
+   "reason": "The answer states that the entity could not be found or verified and asserts no attribute of the entity itself."
+  },
+  "atlas-deepseek|N05": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found and does not assert any attribute of it."
+  },
+  "atlas-qwen|N06": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and presents other distinct real entities as possible sources of confusion."
+  },
+  "atlas-glm|N06": {
+   "outcome": "abstain",
+   "reason": "The answer states that the entity could not be found or verified and asserts no attribute of the entity itself."
+  },
+  "atlas-deepseek|N06": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found or verified."
+  },
+  "atlas-qwen|N07": {
+   "outcome": "fabricated",
+   "reason": "The answer claims The Copper Herons is actually the band Heron and describes Heron's formation and debut album."
+  },
+  "atlas-glm|N07": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that no information about the band could be found."
+  },
+  "atlas-deepseek|N07": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found or verified."
+  },
+  "atlas-qwen|N08": {
+   "outcome": "abstain",
+   "reason": "The answer clearly implies that the entity 'Les Horloges de Brume' could not be found and does not exist, presenting alternative possible matches."
+  },
+  "atlas-glm|N08": {
+   "outcome": "abstain",
+   "reason": "The answer states that the entity could not be found and presents possible explanations without asserting any attribute of the entity."
+  },
+  "atlas-deepseek|N08": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that it could not find any information about the entity 'Les Horloges de Brume'."
+  },
+  "atlas-qwen|N09": {
+   "outcome": "abstain",
+   "reason": "The answer clearly implies the entity could not be found and presents other works as distinct possible matches."
+  },
+  "atlas-glm|N09": {
+   "outcome": "no_answer",
+   "reason": "The answer is only a raw tool call."
+  },
+  "atlas-deepseek|N09": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found and presents different real entities as distinct from the asked entity."
+  },
+  "atlas-qwen|N10": {
+   "outcome": "abstain",
+   "reason": "The answer clearly implies that the entity could not be found or identified."
+  },
+  "atlas-glm|N10": {
+   "outcome": "fabricated",
+   "reason": "The answer asserts specific attributes of the non-existent entity."
+  },
+  "atlas-deepseek|N10": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found or identified."
+  },
+  "atlas-qwen|N11": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity does not exist and presents alternative real entities as possible matches."
+  },
+  "atlas-glm|N11": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity could not be found or verified."
+  },
+  "atlas-deepseek|N11": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity 'quartzpetal' does not exist and provides information about a different library called 'construct' as a possible alternative."
+  },
+  "atlas-qwen|N12": {
+   "outcome": "abstain",
+   "reason": "The answer clearly implies that the entity 'riverquill' could not be found and presents 'Quill' and 'River' as possible distinct alternatives."
+  },
+  "atlas-glm|N12": {
+   "outcome": "no_answer",
+   "reason": "answer only announces a search and stops"
+  },
+  "atlas-deepseek|N12": {
+   "outcome": "abstain",
+   "reason": "The answer clearly states that the entity 'riverquill' does not exist on npm and presents 'Quill' as a possible different entity that the user might be looking for."
+  }
+ }
+}

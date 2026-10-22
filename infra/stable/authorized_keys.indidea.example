@@ -1,0 +1,2 @@
+# VM authorized_keys entry. Replace the placeholder with the indidea.org tunnel public key.
+restrict,port-forwarding,permitopen="127.0.0.1:3100" ssh-ed25519 <INIDEA_TUNNEL_PUBLIC_KEY> atlas-indidea-tunnel

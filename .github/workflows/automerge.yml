@@ -1,0 +1,41 @@
+name: automerge
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge ready pull requests whose CI is green
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          PRS: ${{ toJson(github.event.workflow_run.pull_requests) }}
+        run: |
+          set -euo pipefail
+          for n in $(echo "$PRS" | jq -r '.[].number'); do
+            pr=$(gh api "repos/$REPO/pulls/$n")
+            if [ "$(echo "$pr" | jq -r .state)" != "open" ]; then echo "#$n: not open, skip"; continue; fi
+            if [ "$(echo "$pr" | jq -r .head.sha)" != "$SHA" ]; then echo "#$n: head moved, skip"; continue; fi
+            if [ "$(echo "$pr" | jq -r .head.repo.full_name)" != "$REPO" ]; then echo "#$n: fork, skip"; continue; fi
+            if [ "$(echo "$pr" | jq -r .user.login)" != "$OWNER" ]; then echo "#$n: not opened by the owner, skip"; continue; fi
+            if [ "$(echo "$pr" | jq -r .draft)" = "true" ]; then echo "#$n: draft, skip"; continue; fi
+            protected=$(gh api --paginate "repos/$REPO/pulls/$n/files" --jq '.[].filename' | grep -E '^(\.github/|scripts/verify-[^/]*\.sh$|evals/holdout/|docs/)' || true)
+            if [ -n "$protected" ]; then
+              echo "#$n: touches owner-only paths, skip"
+              gh pr comment "$n" --repo "$REPO" --body "automerge skipped: this PR touches owner-only paths, so the owner merges it by hand."
+              continue
+            fi
+            gh pr merge "$n" --repo "$REPO" --squash --match-head-commit "$SHA"
+            echo "#$n: merged"
+          done

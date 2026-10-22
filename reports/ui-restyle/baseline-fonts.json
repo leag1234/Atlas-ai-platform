@@ -1,0 +1,10 @@
+{
+  "requested_size": 16,
+  "computed": {
+    ".user-message p": "13.125px",
+    ".chat-assistant p": "13.125px",
+    ".chat-assistant td": "10.5px",
+    ".cm-line": "12.25px"
+  },
+  "source": "Original staged UI CSS before fidelity fixes"
+}

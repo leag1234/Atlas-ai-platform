@@ -1,0 +1,79 @@
+# CI — fait autorité sur l'état des jalons. NE PAS éditer par l'agent (CODEOWNERS).
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache
+          key: deps-${{ hashFiles('**/requirements*.txt','**/package-lock.json') }}
+
+      - name: Install
+        run: |
+          python -m pip install -q --upgrade pip
+          [[ -f requirements-dev.txt ]] && pip install -q -r requirements-dev.txt || true
+
+      - name: Lint
+        run: make lint
+
+      - name: Typecheck
+        run: make typecheck
+
+      - name: Tests (no live LLM)
+        run: make test
+
+      - name: Secret scan
+        run: make scan-secrets
+
+      - name: No hardcoded model names outside model-gateway
+        run: |
+          if grep -rniE 'qwen|glm|deepseek|llama|mistral|kimi' \
+               --include='*.py' --include='*.ts' --include='*.js' --include='*.go' \
+               --exclude-dir=services/model-gateway --exclude-dir=node_modules \
+               services/ 2>/dev/null; then
+            echo "::error::nom de modèle en dur hors model-gateway (docs/02 AC-ARC-4)"
+            exit 1
+          fi
+
+      - name: No OpenAI/Anthropic as a runtime dependency of the PoC
+        run: |
+          # Codex (OpenAI) construit le PoC mais ne doit JAMAIS être appelé par le
+          # produit : l'inférence reste 100% Scaleway/open-weight. On interdit donc
+          # tout import/usage d'un SDK de fournisseur US dans le code des services.
+          if grep -rniE "import openai|from openai|require\(.openai|openai\.|anthropic" \
+               --include='*.py' --include='*.ts' --include='*.js' --include='*.go' \
+               --exclude-dir=node_modules services/ 2>/dev/null; then
+            echo "::error::dépendance d'exécution vers OpenAI/Anthropic détectée — interdit (docs/07, docs/14)"
+            exit 1
+          fi
+          # Et pas dans les manifests de dépendances runtime non plus.
+          if grep -rniE '^\s*"?(openai|anthropic)"?\s*[:=]' \
+               requirements*.txt package.json pyproject.toml 2>/dev/null \
+               | grep -viE 'dev|test'; then
+            echo "::error::openai/anthropic listé comme dépendance runtime — déplacer en dev ou retirer"
+            exit 1
+          fi
+
+      - name: Eval smoke
+        env:
+          SCW_GENERATIVE_API_KEY: ${{ secrets.SCW_GENERATIVE_API_KEY }}
+          JUDGE_MODEL: ${{ secrets.JUDGE_MODEL }}
+        run: make eval-smoke

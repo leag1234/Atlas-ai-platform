@@ -1,0 +1,866 @@
+"""Task-B contract routes and fail-closed authorization for later project operations."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import replace
+import hashlib
+import logging
+import json
+import os
+import time
+from functools import lru_cache
+from typing import Any
+from uuid import UUID
+from urllib.parse import parse_qs, urlsplit, urlencode
+
+import psycopg
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse, Response
+from starlette.background import BackgroundTask
+
+from services.orchestrator.project_forge import ForgeError, ForgeUnknown
+from services.retrieval.project_forge import RepositoryActions, run_operation
+from psycopg.types.json import Jsonb
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from services.retrieval.project_identity import (
+    Identity,
+    ProjectError,
+    authenticate_broker,
+    sign,
+    verify,
+)
+from services.retrieval.project_policy import (
+    GrantPut,
+    MemberCreate,
+    MemberPatch,
+    PolicyPatch,
+    ProjectCreate,
+    ProjectPatch,
+    intersect,
+)
+from services.retrieval.project_store import (
+    ProjectPool,
+    Scope,
+    ScopedProjects,
+    entity,
+    public,
+)
+from services.retrieval.project_pages import page
+from services.retrieval.project_file_api import (
+    execute_files,
+    preflight,
+    authorize_replay,
+    publication_parts,
+)
+from services.retrieval.project_files import ProjectFiles
+from services.retrieval.project_work import Work
+from services.retrieval.project_work_contract import validate
+from services.retrieval.project_ledger import summary
+from services.retrieval.project_locality import (
+    p0_capabilities,
+    p0_skill_references,
+    policy_only_tightens,
+)
+
+router = APIRouter()
+
+
+@lru_cache(maxsize=4)
+def store(dsn: str) -> ScopedProjects:
+    return ScopedProjects(ProjectPool(dsn))
+
+
+def parse_path(path: str) -> tuple[str, str | None, list[str]]:
+    parts = path.strip("/").split("/")
+    if len(parts) < 2 or parts[0] != "orgs":
+        raise ProjectError(404, "not_found")
+    try:
+        org = str(UUID(parts[1]))
+        project = (
+            str(UUID(parts[3])) if len(parts) >= 4 and parts[2] == "projects" else None
+        )
+        for item in parts[3:] if project is None else parts[4:]:
+            if len(item) == 36:
+                UUID(item)
+    except ValueError:
+        raise ProjectError(404, "not_found") from None
+    return org, project, parts[4:] if project is not None else parts[2:]
+
+
+def guard(scope: Scope, method: str, tail: list[str]) -> None:
+    if scope.project is not None:
+        scope.authorize(method, tail)
+        if scope.member["role"] == "admin":
+            scope.event("administrative_access", str(scope.project["id"]))
+    elif tail and tail[0] in ("members", "policy"):
+        scope.admin()
+
+
+def execute(
+    scope: Scope, method: str, tail: list[str], body: bytes, expected: str | None
+) -> tuple[int, Any]:
+    org, member = scope.identity.org, scope.identity.member
+    if scope.project is None:
+        if tail == ["members"] and method == "POST":
+            return 201, scope.member_write(
+                None, MemberCreate.model_validate_json(body).model_dump(), expected
+            )
+        if len(tail) == 2 and tail[0] == "members" and method == "PATCH":
+            data = MemberPatch.model_validate_json(body).model_dump(exclude_unset=True)
+            require_patch(data)
+            return 200, scope.member_write(tail[1], data, expected)
+        if tail == ["policy"]:
+            if method == "PATCH":
+                scope.match(scope.org, expected)
+                data = PolicyPatch.model_validate_json(body).model_dump(
+                    exclude_unset=True
+                )
+                require_patch(data)
+                candidate = {**scope.org["policy"], **data}
+                ceiling = scope.db.execute(
+                    "SELECT ceilings FROM atlas_projects.installation"
+                ).fetchone()
+                if ceiling is None:
+                    raise ProjectError(503, "dependency_unavailable")
+                if not policy_only_tightens(candidate, ceiling["ceilings"], intersect):
+                    raise ProjectError(
+                        403,
+                        "policy_denied",
+                        "Organization policy cannot weaken installation ceilings",
+                    )
+                scope.db.execute(
+                    "UPDATE atlas_projects.organizations SET policy=%s,revision=revision+1 WHERE org_id=%s",
+                    (Jsonb(candidate), org),
+                )
+                scope.policy = candidate
+                scope.org["revision"] += 1
+                scope.event("policy_changed")
+            elif method != "GET":
+                raise ProjectError(404, "not_found")
+            usage = dict(
+                tool_calls=0,
+                model_calls=0,
+                elapsed_seconds=0,
+                cost_eur=scope.usage("monthly_model_eur"),
+                reserved_eur=0,
+                unknown_eur=0,
+                stored_bytes=int(scope.usage("stored_bytes")),
+                input_tokens=0,
+                output_tokens=0,
+                tokens_estimated=False,
+            )
+            for state, target in (
+                ("reserved", "reserved_eur"),
+                ("unknown", "unknown_eur"),
+            ):
+                row = scope.db.execute(
+                    "SELECT coalesce(sum(amount),0) AS value FROM atlas_projects.reservations WHERE org_id=%s AND resource='monthly_model_eur' AND state=%s",
+                    (org, state),
+                ).fetchone()
+                usage[target] = float(row["value"]) if row else 0
+            return 200, dict(
+                org_id=org,
+                revision=scope.org["revision"],
+                effective_policy=scope.policy,
+                usage=usage,
+            )
+        if tail == ["projects"]:
+            if method == "POST":
+                return 201, scope.create(
+                    ProjectCreate.model_validate_json(body).model_dump()
+                )
+            if method == "GET":
+                rows = scope.db.execute(
+                    "SELECT * FROM atlas_projects.projects WHERE org_id=%s ORDER BY data->>'created_at',id",
+                    (org,),
+                ).fetchall()
+                return 200, {
+                    "items": [public(row) for row in rows],
+                    "next_cursor": None,
+                }
+    else:
+        project = str(scope.project["id"])
+        if not tail:
+            if method == "GET":
+                return 200, public(scope.project)
+            if method == "PATCH":
+                scope.match(scope.project, expected)
+                data = ProjectPatch.model_validate_json(body).model_dump(
+                    exclude_unset=True
+                )
+                require_patch(data)
+                if data.get("state") == "active" and scope.project["state"] != "active":
+                    scope.check_quota("active_projects", 1)
+                value = public(scope.project)
+                value.update(data)
+                value["revision"] += 1
+                value["updated_at"] = entity(member, org)["updated_at"]
+                scope.db.execute(
+                    "UPDATE atlas_projects.projects SET data=%s,state=%s,revision=revision+1 WHERE org_id=%s AND id=%s",
+                    (Jsonb(value), value["state"], org, project),
+                )
+                scope.event("project_changed", project)
+                return 200, value
+        if tail == ["grants"] and method == "GET":
+            rows = scope.db.execute(
+                "SELECT * FROM atlas_projects.grants WHERE org_id=%s AND project_id=%s ORDER BY data->>'created_at',member_id",
+                (org, project),
+            ).fetchall()
+            return 200, {"items": [public(row) for row in rows], "next_cursor": None}
+        if tail == ["skill-references"] and method == "GET":
+            return 200, p0_skill_references()
+        if len(tail) == 2 and tail[0] == "grants":
+            if method == "PUT":
+                return 200, scope.grant_write(
+                    tail[1], GrantPut.model_validate_json(body).role, expected
+                )
+            if method == "DELETE":
+                scope.grant_write(tail[1], None, expected)
+                return 204, None
+    if scope.project is not None and tail:
+        work = Work(scope)
+        if (
+            len(tail) == 3
+            and tail[0] == "repositories"
+            and tail[2] == "actions"
+            and method == "POST"
+        ):
+            try:
+                return RepositoryActions(scope).submit(tail[1], json.loads(body))
+            except ForgeUnknown:
+                raise ProjectError(503, "dependency_unavailable") from None
+            except ForgeError:
+                raise ProjectError(409, "revision_conflict") from None
+        if tail == ["work-sessions"] and method == "POST":
+            return 201, work.create(json.loads(body))
+        if tail[0] == "work-sessions" and len(tail) == 2 and method == "GET":
+            return 200, work.get(tail[1])
+        if (
+            tail[0] == "work-sessions"
+            and len(tail) == 3
+            and tail[2] == "cancel"
+            and method == "POST"
+        ):
+            return 202, work.cancel(tail[1], json.loads(body))
+        if (
+            tail[0] == "approvals"
+            and len(tail) == 3
+            and tail[2] == "decision"
+            and method == "POST"
+        ):
+            return work.decide(tail[1], json.loads(body))
+    raise ProjectError(409, "feature_not_available")
+
+
+def ledger_events(
+    scope: Scope, session_id: str | None, after: int | None
+) -> list[dict[str, Any]]:
+    clauses = ["org_id=%s", "project_id=%s"]
+    values: list[Any] = [scope.identity.org, scope.project_id]
+    if session_id is not None:
+        clauses.append("data->>'session_id'=%s")
+        values.append(session_id)
+    if after is not None:
+        clauses.append("seq>%s")
+        values.append(after)
+    rows = scope.db.execute(
+        "SELECT data FROM atlas_projects.ledger_events WHERE "
+        + " AND ".join(clauses)
+        + " ORDER BY seq",
+        values,
+    ).fetchall()
+    return [dict(row["data"]) for row in rows]
+
+
+def require_patch(data: dict[str, Any]) -> None:
+    if not data or any(value is None for value in data.values()):
+        raise ProjectError(422, "invalid_request")
+
+
+def dispatch(
+    identity: Identity, method: str, path: str, body: bytes, headers: dict[str, str]
+) -> tuple[int, Any]:
+    dsn = os.environ.get("ATLAS_PROJECT_DSN", "")
+    if not dsn:
+        raise ProjectError(
+            503, "dependency_unavailable", "Project installation is not configured"
+        )
+    if path == "me" and method == "GET":
+        with store(dsn).scope(identity, identity.org, identity.project) as scope:
+            return 200, {
+                "memberships": [{"org_id": identity.org, "role": scope.member["role"]}],
+                "capabilities": p0_capabilities(work=True),
+            }
+    parsed = urlsplit(path)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    org, project, tail = parse_path(parsed.path)
+    # Canonical selectors prevent alternate spelling from escaping idempotency.
+    segments = parsed.path.strip("/").split("/")
+    for index, segment in enumerate(segments):
+        if len(segment) == 36:
+            try:
+                segments[index] = str(UUID(segment))
+            except ValueError:
+                raise ProjectError(404, "not_found") from None
+    path = "/".join(segments)
+    with store(dsn).scope(identity, org, project) as scope:
+        guard(scope, method, tail)
+        checked = check_query(method, tail, query)
+        if checked:
+            path += "?" + urlencode(sorted(checked.items()))
+        preflight(scope, method, tail, checked) if project else None
+        key = headers.get("idempotency-key", "")
+        if method != "GET":
+            if not key or len(key) > 200:
+                raise ProjectError(
+                    422, "invalid_request", "Idempotency-Key is required"
+                )
+            if tail and tail[0] == "approvals":
+                return execute(scope, method, tail, body, headers.get("if-match"))
+            if (
+                len(tail) == 3
+                and tail[0] == "repositories"
+                and tail[2] == "actions"
+                and "approval_id" in json.loads(body)
+            ):
+                return execute(scope, method, tail, body, headers.get("if-match"))
+            replay = scope.replay(method, path, key, body)
+            if replay is not None:
+                authorize_replay(scope, method, tail, replay[1])
+                return replay
+        result: tuple[int, Any]
+        if project and tail == ["events"] and method == "GET":
+            after = checked.get("after", headers.get("last-event-id", "0"))
+            if not after.isdigit() or (
+                "after" in checked
+                and "last-event-id" in headers
+                and checked["after"] != headers["last-event-id"]
+            ):
+                raise ProjectError(422, "invalid_request")
+            session_id = checked.get("session_id")
+            if session_id:
+                Work(scope).get(session_id)
+            rows = scope.db.execute(
+                "SELECT data FROM (SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s) e WHERE seq>%s AND (%s::text IS NULL OR data->>'session_id'=%s) ORDER BY seq LIMIT 100",
+                (org, project, org, project, int(after), session_id, session_id),
+            ).fetchall()
+            content = "".join(
+                "event: atlas.project\nid: "
+                + str(row["data"]["seq"])
+                + "\ndata: "
+                + json.dumps(row["data"], separators=(",", ":"))
+                + "\n\n"
+                for row in rows
+            ).encode()
+            result = (200, (200, content, {"Content-Type": "text/event-stream"}))
+        elif project and tail == ["ledger"] and method == "GET":
+            result = (
+                200,
+                {
+                    "items": ledger_events(
+                        scope,
+                        checked.get("session_id"),
+                        int(checked["after"]) if "after" in checked else None,
+                    ),
+                    "next_cursor": None,
+                },
+            )
+        elif project and tail == ["ledger", "summary"] and method == "GET":
+            events = ledger_events(scope, checked.get("session_id"), None)
+            files = ProjectFiles(scope)
+            versions = files.listing("version")
+            server_versions = {item["id"]: item["size_bytes"] for item in versions}
+            produced_versions = {
+                item["file_version_id"]: server_versions[item["file_version_id"]]
+                for item in files.listing("deliverable")
+                if item["file_version_id"] in server_versions
+            }
+            totals = summary(events, server_versions, produced_versions)
+            latest = scope.db.execute(
+                "SELECT coalesce(max(seq),0) AS seq FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s",
+                (scope.identity.org, scope.project_id),
+            ).fetchone()
+            assert latest is not None
+            totals["as_of_seq"] = latest["seq"]
+            result = (200, totals)
+        else:
+            result = (
+                execute_files(scope, method, tail, body, headers, checked)
+                if project
+                and tail
+                and tail[0]
+                in {
+                    "folders",
+                    "files",
+                    "instructions",
+                    "memory",
+                    "deliverables",
+                    "jobs",
+                    "sources",
+                }
+                else execute(scope, method, tail, body, headers.get("if-match"))
+            )
+        if (
+            method == "GET"
+            and tail != ["skill-references"]
+            and isinstance(result[1], dict)
+            and "items" in result[1]
+        ):
+            result = (
+                result[0],
+                page(
+                    scope,
+                    parsed.path
+                    + (
+                        "?"
+                        + urlencode(
+                            sorted(
+                                (k, v)
+                                for k, v in checked.items()
+                                if k not in {"limit", "cursor"}
+                            )
+                        )
+                        if set(checked) - {"limit", "cursor"}
+                        else ""
+                    ),
+                    result[1]["items"],
+                    int(query.get("limit", ["50"])[0]),
+                    query.get("cursor", [None])[0],
+                    os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode(),
+                ),
+            )
+        if method != "GET":
+            scope.remember(method, path, key, body, result)
+        return result
+
+
+def check_query(
+    method: str, tail: list[str], raw: dict[str, list[str]]
+) -> dict[str, str]:
+    allowed = {"limit", "cursor"} if method == "GET" else set()
+    if tail == ["files"] and method in {"GET", "POST"}:
+        allowed.add("folder_id")
+    if (
+        len(tail) == 3
+        and tail[0] == "files"
+        and tail[2] == "content"
+        and method == "GET"
+    ):
+        allowed.add("version")
+    if method == "DELETE" and tail and tail[0] in {"files", "memory"}:
+        allowed.add("approval_id")
+    if tail == ["ledger"] and method == "GET":
+        allowed.update({"session_id", "after"})
+    if tail == ["events"] and method == "GET":
+        allowed.add("after")
+    if tail == ["ledger", "summary"] and method == "GET":
+        allowed.add("session_id")
+    if set(raw) - allowed or any(len(v) != 1 for v in raw.values()):
+        raise ProjectError(422, "invalid_request")
+    query = {k: v[0] for k, v in raw.items()}
+    for key in {"folder_id", "version", "approval_id"} & set(query):
+        query[key] = str(UUID(query[key]))
+    if "session_id" in query:
+        query["session_id"] = str(UUID(query["session_id"]))
+    if "after" in query and (not query["after"].isdigit() or int(query["after"]) < 0):
+        raise ProjectError(422, "invalid_request")
+    return query
+
+
+def ingress(identity: Identity, method: str, path: str) -> int:
+    parsed = urlsplit(path)
+    if parsed.path == "me":
+        return 160000
+    org, project, tail = parse_path(parsed.path)
+    dsn = os.environ.get("ATLAS_PROJECT_DSN", "")
+    if not dsn:
+        raise ProjectError(503, "dependency_unavailable")
+    with store(dsn).scope(identity, org, project) as scope:
+        guard(scope, method, tail)
+        query = check_query(
+            method, tail, parse_qs(parsed.query, keep_blank_values=True)
+        )
+        return preflight(scope, method, tail, query) if project else 160000
+
+
+@router.api_route(
+    "/api/atlas/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"]
+)
+async def projects(request: Request, path: str) -> Response:
+    status = 500
+    try:
+        # This is a private service credential. Public cookies/proxy credentials
+        # are deliberately not accepted by retrieval (the task-F BFF verifies them).
+        identity = verify(
+            request.headers.get("x-atlas-project-identity", ""),
+            os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode(),
+        )
+        if (
+            request.headers.get("origin") is not None
+            or request.headers.get("sec-fetch-site") == "cross-site"
+        ):
+            raise ProjectError(403, "origin_rejected")
+        addressed = path + ("?" + request.url.query if request.url.query else "")
+        limit = await asyncio.to_thread(ingress, identity, request.method, addressed)
+        body = bytearray()
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                measured = len(body) + len(chunk)
+                if measured > limit:
+                    raise ProjectError(
+                        413,
+                        "size_limit",
+                        f"request body: measured {measured} bytes; limit {limit} bytes",
+                        measurements=[
+                            dict(measured=measured, limit=limit, unit="bytes")
+                        ],
+                    )
+                body.extend(chunk)
+        status, result = await asyncio.to_thread(
+            dispatch,
+            identity,
+            request.method,
+            addressed,
+            bytes(body),
+            dict(request.headers),
+        )
+        headers = {"Cache-Control": "private, no-store"}
+        if (
+            isinstance(result, tuple)
+            and len(result) == 3
+            and isinstance(result[1], bytes)
+        ):
+            status, content, content_headers = result
+            return Response(
+                content, status_code=status, headers={**headers, **content_headers}
+            )
+        if isinstance(result, dict) and "revision" in result:
+            headers["ETag"] = f'"{result["revision"]}"'
+        return (
+            Response(status_code=204, headers=headers)
+            if status == 204
+            else JSONResponse(
+                result,
+                status_code=status,
+                headers=headers,
+                background=(
+                    BackgroundTask(
+                        run_operation,
+                        store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+                        replace(identity, project=parse_path(path)[1]),
+                        result["operation_id"],
+                    )
+                    if isinstance(result, dict)
+                    and result.get("state") == "running"
+                    and "operation_id" in result
+                    else None
+                ),
+            )
+        )
+    except ProjectError as exc:
+        status = exc.status
+        return JSONResponse(exc.body, status_code=status)
+    except (ValidationError, ValueError, psycopg.IntegrityError):
+        status = 422
+        return JSONResponse(
+            ProjectError(status, "invalid_request").body, status_code=status
+        )
+    except (psycopg.Error, OSError, TimeoutError):
+        status = 503
+        return JSONResponse(
+            ProjectError(status, "dependency_unavailable").body, status_code=status
+        )
+    finally:
+        logging.getLogger(__name__).info(
+            "project_scoped_operation method=%s status=%s", request.method, status
+        )
+
+
+class IdentityResolutionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    subject: str = Field(min_length=1, max_length=320)
+    org: UUID | None
+    project: UUID | None
+
+
+def resolve_identity(data: IdentityResolutionRequest) -> dict[str, Any]:
+    if data.project is not None and data.org is None:
+        raise ProjectError(422, "invalid_request")
+    dsn = os.environ.get("ATLAS_PROJECT_DSN", "")
+    if not dsn:
+        raise ProjectError(503, "dependency_unavailable")
+    repository = store(dsn)
+    with repository.pool.connection() as db:
+        rows = db.execute(
+            "SELECT * FROM atlas_projects.identity_memberships(%s)", (data.subject,)
+        ).fetchall()
+    result: dict[str, Any] = {
+        "memberships": [
+            dict(org_id=str(row["org_id"]), role=row["role"]) for row in rows
+        ],
+        "identity": None,
+        "expires": None,
+    }
+    if data.org is None:
+        return result
+    row = next((row for row in rows if str(row["org_id"]) == str(data.org)), None)
+    if row is None:
+        raise ProjectError(404, "not_found")
+    identity = Identity(
+        data.subject,
+        str(row["member_id"]),
+        str(data.org),
+        str(data.project) if data.project else None,
+        row["membership_revision"],
+        row["policy_revision"],
+        int(time.time()) + 60,
+    )
+    # A lookup race can only fail closed: scope checks current revisions and grant.
+    with repository.scope(identity, identity.org, identity.project):
+        result["identity"] = sign(
+            identity, os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode()
+        )
+        result["expires"] = identity.expires
+    return result
+
+
+@router.post("/internal/atlas/identity")
+async def identity_resolution(request: Request) -> Response:
+    status = 500
+    headers = {"Cache-Control": "private, no-store"}
+    try:
+        # A scoped resource credential cannot discover the broker interface.
+        scoped = request.headers.get("x-atlas-project-identity")
+        if scoped is not None:
+            verify(scoped, os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode())
+            raise ProjectError(404, "not_found")
+        if not request.headers.get("x-atlas-identity-secret"):
+            raise ProjectError(401, "unauthenticated")
+        authenticate_broker(
+            request.headers.get("x-atlas-identity-secret", ""),
+            os.environ.get("ATLAS_PROJECT_IDENTITY_SECRET", ""),
+        )
+        if "origin" in request.headers or any(
+            k.startswith("sec-fetch-") for k in request.headers
+        ):
+            raise ProjectError(403, "origin_rejected")
+        key = request.headers.get("idempotency-key", "")
+        if not key or len(key) > 200:
+            raise ProjectError(422, "invalid_request")
+        body = bytearray()
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > 4096:
+                    raise ProjectError(422, "invalid_request")
+                body.extend(chunk)
+        data = IdentityResolutionRequest.model_validate_json(bytes(body))
+        result = await asyncio.to_thread(resolve_identity, data)
+        status = 200
+        return JSONResponse(result, headers=headers)
+    except ProjectError as exc:
+        status = exc.status
+        return JSONResponse(exc.body, status_code=status, headers=headers)
+    except (ValidationError, ValueError):
+        status = 422
+    except (psycopg.Error, OSError, TimeoutError):
+        status = 503
+    finally:
+        logging.getLogger(__name__).info(
+            "project_identity_resolution status=%s", status
+        )
+    return JSONResponse(
+        ProjectError(
+            status, "invalid_request" if status == 422 else "dependency_unavailable"
+        ).body,
+        status_code=status,
+        headers=headers,
+    )
+
+
+EXECUTION_SCHEMAS = {
+    "acquire": "ExecutionAcquire",
+    "turn": "ExecutionTurn",
+    "approvals": "ExecutionApprovalIssue",
+    "decisions": "ExecutionApprovalDecision",
+    "events": "ExecutionEvents",
+    "organize": "ExecutionOrganize",
+    "publish": "ExecutionPublish",
+}
+
+
+def execution_dispatch(
+    identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
+) -> tuple[int, Any]:
+    if operation not in EXECUTION_SCHEMAS:
+        raise ProjectError(404, "not_found")
+    package = publication_parts(body, content_type) if operation == "publish" else None
+    raw = package[0] if package else json.loads(body)
+    if operation == "organize" and isinstance(raw, dict):
+        items = raw.get("operations")
+        if isinstance(items, list) and len(items) > 100:
+            raise ProjectError(
+                413,
+                "size_limit",
+                f"Organization operations: measured {len(items)}; limit 100",
+                measurements=[dict(measured=len(items), limit=100, unit="entries")],
+            )
+    data = validate(EXECUTION_SCHEMAS[operation], raw)
+    if package is not None:
+        # Multipart boundaries are transport framing, not the idempotent effect.
+        body = json.dumps(
+            dict(
+                metadata=data,
+                artifact_sha256=hashlib.sha256(package[1]).hexdigest(),
+                preview_sha256=None
+                if package[2] is None
+                else hashlib.sha256(package[2]).hexdigest(),
+                preview_mime=package[3],
+            ),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    if identity.project is None:
+        raise ProjectError(404, "not_found")
+    with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+        identity, identity.org, identity.project
+    ) as scope:
+        work = Work(scope)
+        cleanup = operation == "turn" and data["operation"] in {
+            "recover",
+            "release",
+            "check",
+        }
+        if cleanup:
+            work.grant_stamp(identity.member)
+        else:
+            scope.authorize("POST", ["work-sessions"])
+        if operation == "decisions":
+            return work.decide(data["approval_id"], data["decision"])
+        if package is not None:
+            work.fence(data)
+        path = "/internal/atlas/execution/" + operation
+        replay = scope.replay("POST", path, key, body)
+        if replay is not None:
+            if operation == "acquire":
+                lease = replay[1]["session"]["lease"]
+                work.fence(dict(data, generation=lease["generation"]))
+            elif not (operation == "turn" and data["operation"] == "release"):
+                work.fence(data, cleanup=cleanup)
+            else:
+                row = work.lease(data["session_id"])
+                if (
+                    row is None
+                    or row["generation"] != data["generation"]
+                    or str(row["request_id"]) != data["request_id"]
+                    or str(row["holder_member_id"]) != identity.member
+                ):
+                    raise ProjectError(409, "session_busy")
+            if operation == "publish":
+                work.files.deliverable(replay[1]["id"])
+            return replay
+        if package is not None:
+            result = (201, work.files.publish_deliverable(*package))
+            scope.remember("POST", path, key, body, result)
+            return result
+        result = (
+            200,
+            {
+                "acquire": work.acquire,
+                "turn": work.turn,
+                "approvals": work.issue,
+                "events": work.events,
+                "organize": work.organize,
+            }[operation](data),
+        )
+        scope.remember("POST", path, key, body, result)
+        return result
+
+
+@router.post("/internal/atlas/execution/{operation}")
+async def execution_broker(request: Request, operation: str) -> Response:
+    headers = {"Cache-Control": "private, no-store"}
+    try:
+        credential = request.headers.get("x-atlas-project-identity", "")
+        secret = request.headers.get("x-atlas-execution-secret", "")
+        if not secret:
+            if credential:
+                verify(
+                    credential, os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode()
+                )
+                raise ProjectError(404, "not_found")
+            raise ProjectError(401, "unauthenticated")
+        authenticate_broker(
+            secret, os.environ.get("ATLAS_PROJECT_EXECUTION_SECRET", "")
+        )
+        if (
+            request.headers.get("x-atlas-execution-audience")
+            != "atlas-retrieval-execution"
+        ):
+            raise ProjectError(401, "unauthenticated")
+        identity = verify(
+            credential, os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode()
+        )
+        if "origin" in request.headers or any(
+            k.startswith("sec-fetch-") for k in request.headers
+        ):
+            raise ProjectError(403, "origin_rejected")
+        if identity.project is None:
+            raise ProjectError(404, "not_found")
+        key = request.headers.get("idempotency-key", "")
+        if not key or len(key) > 200:
+            raise ProjectError(422, "invalid_request")
+        limit = await asyncio.to_thread(execution_ingress, identity, operation)
+        body = bytearray()
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                measured = len(body) + len(chunk)
+                if measured > limit:
+                    raise ProjectError(
+                        413,
+                        "size_limit",
+                        f"execution body: measured {measured} bytes; limit {limit} bytes",
+                        measurements=[
+                            dict(measured=measured, limit=limit, unit="bytes")
+                        ],
+                    )
+                body.extend(chunk)
+        status, result = await asyncio.to_thread(
+            execution_dispatch,
+            identity,
+            operation,
+            bytes(body),
+            key,
+            request.headers.get("content-type", ""),
+        )
+        return JSONResponse(result, status_code=status, headers=headers)
+    except ProjectError as exc:
+        return JSONResponse(exc.body, status_code=exc.status, headers=headers)
+    except (ValueError, TypeError, psycopg.IntegrityError):
+        return JSONResponse(
+            ProjectError(422, "invalid_request").body, status_code=422, headers=headers
+        )
+    except (psycopg.Error, OSError, TimeoutError):
+        return JSONResponse(
+            ProjectError(503, "dependency_unavailable").body,
+            status_code=503,
+            headers=headers,
+        )
+
+
+def execution_ingress(identity: Identity, operation: str = "") -> int:
+    dsn = os.environ.get("ATLAS_PROJECT_DSN", "")
+    if not dsn:
+        raise ProjectError(503, "dependency_unavailable")
+    with store(dsn).scope(identity, identity.org, identity.project) as scope:
+        if operation == "publish":
+            scope.authorize("POST", ["work-sessions"])
+            folder = scope.project_data["deliverables_folder_id"]
+            ProjectFiles(scope).upload_folder(folder)
+            Work(scope).folder(folder)
+            return (
+                int(scope.policy["quotas"]["upload_bytes"]) + 160000 + 1048576 + 65536
+            )
+        Work(scope).grant_stamp(identity.member)
+        return 160000

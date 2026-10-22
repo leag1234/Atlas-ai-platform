@@ -1,0 +1,6 @@
+{
+  "model_id": "atlas-stt",
+  "model_repository": "Systran/faster-whisper-small",
+  "cpu_threads": 2,
+  "allowed_languages": ["fr", "en", "de", "es", "it"]
+}

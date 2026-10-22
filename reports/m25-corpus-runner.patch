@@ -1,0 +1,46 @@
+--- a/run_corpus.py
++++ b/run_corpus.py
+@@ -20 +20 @@
+-import argparse, base64, datetime, json, os, pathlib, re, sys, time, urllib.request
++import argparse, base64, datetime, hashlib, json, os, pathlib, re, sys, time, urllib.request
+@@ -33 +33 @@
+-def ask_atlas(profile, question, image_path=None):
++def ask_atlas(profile, question, image_path=None, file_paths=None):
+@@ -39,0 +40,11 @@
++    attachments = []
++    if file_paths:
++        if isinstance(content, str):
++            content = [{"type": "text", "text": content}]
++        for file_path in file_paths:
++            path = pathlib.Path(file_path)
++            raw = path.read_bytes()
++            content.append({"type": "file", "file": {
++                "filename": path.name, "file_data": base64.b64encode(raw).decode()}})
++            attachments.append({"filename": path.name, "bytes": len(raw),
++                                "sha256": hashlib.sha256(raw).hexdigest()})
+@@ -47 +58 @@
+-        return {"text": text, "seconds": round(time.time() - t0, 1), "usage": usage, "error": None}
++        return {"text": text, "seconds": round(time.time() - t0, 1), "usage": usage, "error": None, "attachments": attachments}
+@@ -49 +60 @@
+-        return {"text": "", "seconds": round(time.time() - t0, 1), "usage": {}, "error": str(e)[:200]}
++        return {"text": "", "seconds": round(time.time() - t0, 1), "usage": {}, "error": str(e)[:200], "attachments": attachments}
+@@ -101,0 +113 @@
++    global ROOT
+@@ -103,0 +116,2 @@
++    ap.add_argument("--cases", type=pathlib.Path, default=ROOT / "cases.json")
++    ap.add_argument("--attachment", action="append", default=[], metavar="CASE_ID=PATH")
+@@ -105 +119,8 @@
+-    cases = json.load(open(ROOT / "cases.json"))["cases"]
++    attachments = {}
++    for binding in args.attachment:
++        case_id, separator, filename = binding.partition("=")
++        if not separator or not case_id or not filename:
++            ap.error("--attachment requires CASE_ID=PATH")
++        attachments.setdefault(case_id, []).append(pathlib.Path(filename))
++    ROOT = args.cases.resolve().parent
++    cases = json.loads(args.cases.read_text())["cases"]
+@@ -117 +138,3 @@
+-            r = ask_atlas(p, case["question"])
++            r = ask_atlas(p, case["question"], file_paths=(
++                [ROOT / path for path in case.get("attachments", [])]
++                + attachments.get(case["id"], [])))

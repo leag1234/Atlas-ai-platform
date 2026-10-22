@@ -1,0 +1,1 @@
+English: identifiers, filenames, comments, docstrings, developer logs/errors, commits. Prose: user language. UI strings: intended audience.

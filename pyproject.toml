@@ -1,0 +1,3 @@
+[tool.mypy]
+mypy_path = "services/edge-bff:services/model-gateway"
+strict = true

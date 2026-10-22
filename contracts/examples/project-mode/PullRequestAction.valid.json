@@ -1,0 +1,11 @@
+{
+  "kind": "pull_request",
+  "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "change_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parameters": {
+    "title": "Example",
+    "body": "Example",
+    "head": "Example",
+    "target": "Example"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "gitlab": {
+    "command": "/usr/bin/node",
+    "args": [
+      "/opt/atlas-mcp/node_modules/@zereight/mcp-gitlab/build/index.js"
+    ],
+    "env": {
+      "PATH": "/usr/bin:/bin",
+      "GITLAB_API_URL": "https://gitlab.example.com/api/v4",
+      "GITLAB_DISABLE_VERSION_CHECK": "true",
+      "GITLAB_PERMISSION_MODE": "modify",
+      "GITLAB_DENIED_TOOLS_REGEX": "^(?!(get_issue|create_issue)$).*"
+    },
+    "secret_env": {
+      "GITLAB_PERSONAL_ACCESS_TOKEN": "ATLAS_GITLAB_TOKEN"
+    },
+    "tools": {
+      "get_issue": {
+        "effect": "read",
+        "fields": [
+          "issue_iid"
+        ],
+        "fixed": {
+          "project_id": "REPLACE_PROJECT_ID"
+        }
+      },
+      "create_issue": {
+        "effect": "write",
+        "fields": [
+          "title",
+          "description"
+        ],
+        "fixed": {
+          "project_id": "REPLACE_PROJECT_ID"
+        }
+      }
+    }
+  }
+}

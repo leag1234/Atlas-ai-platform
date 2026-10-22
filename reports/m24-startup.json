@@ -1,0 +1,7 @@
+{
+  "command": "make serve",
+  "terminal_running": true,
+  "user_volume_only": true,
+  "read_only_root": true,
+  "platform_credentials_absent": true
+}

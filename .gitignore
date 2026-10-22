@@ -1,0 +1,11 @@
+.env
+secrets.env
+*.log
+BRAIN/*.json
+BRAIN/bench/
+__pycache__/
+node_modules/
+.venv/
+reports/*.html
+BRAIN/
+private/

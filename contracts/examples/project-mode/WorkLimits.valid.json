@@ -1,0 +1,13 @@
+{
+  "tool_calls": 40,
+  "model_calls": 41,
+  "wall_seconds": 1200,
+  "cost_eur": 3,
+  "per_call_eur": 0.1,
+  "expanded_bytes": 209715200,
+  "archive_entries": 20000,
+  "text_tool_bytes": 262144,
+  "command_output_bytes": 32768,
+  "command_seconds": 120,
+  "command_memory_bytes": 536870912
+}

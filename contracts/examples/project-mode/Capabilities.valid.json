@@ -1,0 +1,8 @@
+{
+  "chat": true,
+  "work": false,
+  "scheduled_tasks": false,
+  "skills_execute": false,
+  "local_reads": false,
+  "sync": false
+}

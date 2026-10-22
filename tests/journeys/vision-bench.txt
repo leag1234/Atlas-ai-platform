@@ -1,0 +1,6 @@
+Read this guitar photograph without guessing hidden positions. Respond only as JSON:
+{"positions": [null,null,null,null,null,null], "full_barre_fret": null, "chord_family": "unknown"}.
+Replace null with the fret you can identify on each string, ordered low E, A, D, G,
+B, high e. Use null when uncertain. full_barre_fret is the fret of a full barre or
+null. Give the root and family (such as "C major") only if supported by the photo.
+Do not use fret markers as fingers. Do not include explanatory text outside JSON.

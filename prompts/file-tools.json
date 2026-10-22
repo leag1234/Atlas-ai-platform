@@ -1,0 +1,50 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "terminal_command",
+      "description": "Run a Python or shell command in the isolated user-file container. Read, create or edit complete documents. No network access. At most 30 seconds per command.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "publish_document",
+      "description": "Verify an output file and return its authenticated downloadable link. Supports DOCX/XLSX/PPTX/PDF/CSV/MD/PNG in the current request directory.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "created",
+              "regenerated",
+              "edited_in_place"
+            ],
+            "description": "The actual operation used: new file, reconstruction from content, or modification preserving unrequested formatting."
+          }
+        },
+        "required": [
+          "path",
+          "strategy"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+]

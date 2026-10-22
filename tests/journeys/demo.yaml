@@ -1,0 +1,9 @@
+- id: DEMO-RAG
+  lang: fr
+  input: "Dans la politique de télétravail NORDIA, quel est l'objet du document et à quels salariés s'applique-t-il ? Cite le document interne."
+- id: DEMO-WEB
+  lang: en
+  input: "Search for the current releases of Node.js and PostgreSQL. Read BOTH https://nodejs.org/en and https://www.postgresql.org/ and report each version separately with its source and consultation date."
+- id: DEMO-FALLBACK
+  lang: fr
+  input: "Traduis hello en français."

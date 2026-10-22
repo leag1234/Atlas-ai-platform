@@ -1,0 +1,19 @@
+[Unit]
+Description=Restricted local tunnel from indidea.org to ATLAS stable UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atlas-tunnel
+EnvironmentFile=/etc/atlas/indidea-tunnel.env
+ExecStart=/usr/bin/ssh -N -i ${ATLAS_TUNNEL_KEY} -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -L 127.0.0.1:3100:127.0.0.1:3100 ${ATLAS_TUNNEL_USER}@${ATLAS_TUNNEL_HOST}
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

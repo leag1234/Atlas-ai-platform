@@ -1,0 +1,39 @@
+{
+  "org_id": "10000000-0000-4000-8000-000000000001",
+  "project_id": "10000000-0000-4000-8000-000000000001",
+  "seq": 1,
+  "event_id": "10000000-0000-4000-8000-000000000001",
+  "timestamp": "2026-10-21T12:00:00Z",
+  "actor": {
+    "kind": "member",
+    "member_id": null,
+    "service": null
+  },
+  "conversation_id": null,
+  "session_id": null,
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "kind": "model_unknown",
+  "resource_refs": [],
+  "source": {
+    "kind": "server",
+    "ref": null
+  },
+  "destination": {
+    "kind": "server",
+    "ref": null
+  },
+  "byte_counts": {
+    "source_bytes": 4096,
+    "selected_utf8_bytes": 300,
+    "image_bytes": 0,
+    "serialized_payload_bytes": 900,
+    "response_bytes": 0
+  },
+  "outcome": "unknown",
+  "approval_id": null,
+  "policy_revision": 0,
+  "previous_digest": null,
+  "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "model_dispatch": null,
+  "audit_record": null
+}

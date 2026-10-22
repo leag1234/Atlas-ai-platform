@@ -1,0 +1,80 @@
+[
+  {
+    "id": "C03-expert-derivation",
+    "profile": "atlas-qwen",
+    "attempt": 2,
+    "result": {
+      "text": "",
+      "seconds": 26.1,
+      "usage": {},
+      "error": "HTTP Error 504: Gateway Timeout"
+    }
+  },
+  {
+    "id": "C03-expert-derivation",
+    "profile": "atlas-qwen",
+    "attempt": 3,
+    "result": {
+      "text": "Je dispose de suffisamment d'éléments pour répondre. Voici la synthèse.\n\n---\n\n## Débit maximal réel d'un flux RAM → port de sortie sur Amstrad CPC\n\n### Réponse courte\n\n| Instruction | T-states par octet | Débit à 4 MHz | Débit effectif sur CPC |\n|---|---|---|---|\n| **OTIR** | 21 (ou 23 selon les sources) | ~190 ko/s | ~190 ko/s |\n| **OUTI** (déroulé) | 16 (ou 18) | ~250 ko/s | ~250 ko/s |\n\nLe débit maximal réel est donc **d'environ 250 ko/s avec OUTI déroulé**, et **d'environ 190 ko/s avec OTIR**. Ce n'est **pas 4 Mo/s** pour plusieurs raisons fondamentales.\n\n---\n\n### Pourquoi ce n'est pas 4 Mo/s\n\n**1. Un octet par instruction, pas un octet par cycle d'horloge**\n\nLe Z80 à 4 MHz exécute chaque instruction en un nombre entier de T-states (cycles d'horloge). Une instruction `OUTI` ou `OTIR` transfère **un seul octet** et prend plusieurs T-states :\n\n- **OUTI** : 16 T-states (selon le timing officiel Zilog) ou 18 T-states (selon certaines implémentations et le timing MSX documenté par Grauw sur MSX Assembly Page, consulté le 2026-09-21). La différence vient des variantes de timing entre fabricants (Zilog vs. Mostek, etc.).\n- **OTIR** : 21 T-states (Zilog officiel) ou 23 T-states (selon Grauw, MSX Assembly Page, consulté le 2026-09-21). OTIR est plus lent car il inclut le décrément de B et le test de boucle dans l'instruction elle-même.\n\nÀ 4 MHz, cela donne :\n\n- **OUTI** : 4 000 000 / 16 = **250 000 octets/s** (ou 4 000 000 / 18 ≈ 222 000 octets/s)\n- **OTIR** : 4 000 000 / 21 ≈ **190 476 octets/s** (ou 4 000 000 / 23 ≈ 173 913 octets/s)\n\n**2. Le Z80 ne peut pas transférer un octet par cycle d'horloge**\n\nMême dans le cas idéal, le Z80 a besoin de plusieurs cycles pour :\n- Lire l'octet depuis la RAM (accès mémoire)\n- Écrire l'octet sur le port d'E/S (cycle d'E/S)\n- Décrémenter le compteur et tester la fin de boucle (pour OTIR)\n\nChaque opération d'E/S sur le Z80 prend au minimum un cycle machine (M-cycle) de 3 à 4 T-states, et l'instruction complète en nécessite plusieurs.\n\n**3. Le partage de la mémoire avec le Gate Array (contention mémoire)**\n\nSur l'Amstrad CPC, le Gate Array (ASIC vidéo) et le CPU partagent le même bus mémoire. Pour éviter les conflits d'accès, le Gate Array impose des **wait states** au CPU via le signal READY connecté à /WAIT du Z80. Comme le documente la page Wikipedia Amstrad CPC (consultée le 2026-09-21) :\n\n> « CPU memory access is constrained to occur on microsecond boundaries. This effectively pads every machine cycle to four clock cycles, causing a minor loss of processing power and resulting in what Amstrad estimated to be an \"effective clock rate\" of \"approximately 3.3 MHz\". »\n\nCela signifie que chaque cycle machine du Z80 est effectivement allongé à 4 T-states au lieu de 3, réduisant la performance effective d'environ 17 %. Le débit réel est donc encore réduit par rapport au calcul théorique à 4 MHz.\n\n**4. Le débit effectif sur CPC**\n\nEn tenant compte des wait states du Gate Array, le débit réel est :\n\n- **OTIR** : environ **160-190 ko/s** (selon la version de timing et les wait states)\n- **OUTI déroulé** : environ **210-250 ko/s**\n\nLa valeur de **~250 ko/s** pour OUTI déroulé est le maximum pratique atteignable sur un CPC réel.\n\n---\n\n### Distinction OUTI vs OTIR\n\n| Caractéristique | **OUTI** | **OTIR** |\n|---|---|---|\n| Fonction | Transfère 1 octet de (HL) vers port (C), décrémente B, incrémente HL | Boucle automatique : transfère, décrémente B, incrémente HL, répète tant que B ≠ 0 |\n| T-states par octet | 16 (Zilog) / 18 (variantes) | 21 (Zilog) / 23 (variantes) |\n| Overhead de boucle | Aucun (l'instruction ne boucle pas) | Inclus dans l'instruction (décrément + test + branchement) |\n| Utilisation typique | Déroulé (unrolled) pour maximiser le débit | Boucle compacte pour les transferts de longueur variable |\n| Débit à 4 MHz | ~250 ko/s (déroulé) | ~190 ko/s |\n\n**Pourquoi OUTI est plus rapide que OTIR :** OTIR inclut dans ses 21-23 T-states le décrément de B, le test de B=0 et le branchement de boucle. OUTI ne fait que le transfert (16-18 T-states) ; si on le déroule, on économise 5 T-states par octet par rapport à OTIR, soit environ 21 % de gain (comme le documente Grauw sur MSX Assembly Page, consulté le 2026-09-21).\n\n---\n\n### Conclusion\n\nLe débit maximal réel d'un flux RAM vers un port de sortie sur Amstrad CPC est d'environ **250 ko/s** avec OUTI déroulé, et d'environ **190 ko/s** avec OTIR. Ce n'est pas 4 Mo/s car :\n\n1. Le Z80 transfère un octet par instruction, et chaque instruction prend 16 à 23 cycles d'horloge ;\n2. Le partage du bus mémoire avec le Gate Array impose des wait states qui réduisent la performance effective à environ 3,3 MHz ;\n3. OTIR est intrinsèquement plus lent que OUTI déroulé à cause de l'overhead de boucle intégré.\n\n**Ce qui reste ouvert :** la valeur exacte des T-states varie selon les fabricants du Z80 (Zilog vs. Mostek) et les implémentations ; les chiffres de 16/18 pour OUTI et 21/23 pour OTIR reflètent ces variations documentées. Sur un CPC réel, les wait states du Gate Array peuvent réduire davantage le débit selon l'état de l'affichage (mode vidéo actif ou non).",
+      "seconds": 41.7,
+      "usage": {
+        "prompt_tokens": 114121,
+        "completion_tokens": 1810,
+        "total_tokens": 115931
+      },
+      "error": null
+    }
+  },
+  {
+    "id": "C03-expert-derivation",
+    "profile": "atlas-glm",
+    "attempt": 2,
+    "result": {
+      "text": "Je dispose déjà de l'essentiel des sources nécessaires. Je vais synthétiser la réponse.\n\n---\n\n## Débit maximal d'un flux RAM → port de sortie sur Amstrad CPC\n\n### Réponse courte\n\nSur un Amstrad CPC (Z80A à 4 MHz), le débit maximal réel d'un flux RAM vers un port de sortie est :\n\n- **Avec `OTIR`** : environ **174 Ko/s** (≈ 178 000 octets/s)\n- **Avec `OUTI` en boucle déroulée** : environ **222 Ko/s** (≈ 227 000 octets/s)\n\nCe n'est **pas 4 Mo/s** pour trois raisons cumulées : chaque octet transféré coûte bien plus qu'un cycle d'horloge, le Z80 du CPC subit des *wait states* imposés par le Gate Array, et les instructions de transfert ont un surcoût de boucle.\n\n---\n\n### 1. Pourquoi pas 4 Mo/s ?\n\n**4 Mo/s serait le débit si chaque octet sortait en un cycle d'horloge** (4 MHz × 1 octet = 4 Mo/s). Or :\n\n1. **Chaque instruction Z80 prend plusieurs T-states** (cycles d'horloge). Un T-state = 1 cycle à 4 MHz = 250 ns.\n2. **Le CPC insère des wait states** : le Gate Array partage la RAM entre le CPU et le CRTC (contrôleur vidéo). Pour éviter les conflits d'accès mémoire, le CPU est ralenti — Amstrad estimait la fréquence effective à environ **3,3 MHz** (source : [Wikipedia Amstrad CPC](https://en.wikipedia.org/wiki/Amstrad_CPC), consulté le 2026-09-21). Chaque accès mémoire du CPU est contraint à des frontières de microsecondes, ce qui allonge les cycles machine.\n3. **Le transfert RAM→port nécessite deux accès** : une lecture mémoire (RAM) et une écriture port (I/O), chacune prenant plusieurs T-states.\n\n---\n\n### 2. Timing des instructions\n\nD'après les tables de timing Z80 (source : [MSX Assembly Page – Z80 instruction set](https://map.grauw.nl/resources/z80instr.php), consulté le 2026-09-21) :\n\n| Instruction | T-states | Cycles d'horloge à 4 MHz | Octets transférés |\n|---|---|---|---|\n| `OUTI` | 16 | 16 × 250 ns = 4 µs | 1 |\n| `OTIR` (par itération) | 21 | 21 × 250 ns = 5,25 µs | 1 |\n\n**`OUTI`** : transfère 1 octet de `(HL)` vers le port `(C)`, décrémente `B`, incrémente `HL`. Prend **16 T-states**.\n\n**`OTIR`** : répète `OUTI` jusqu'à ce que `B` = 0. Chaque itération coûte **21 T-states** (16 pour le transfert + 5 pour la vérification de boucle et le décrément). La dernière itération ne coûte que 16 T-states (pas de re-boucle).\n\n---\n\n### 3. Calcul du débit\n\n#### Avec `OTIR` (boucle automatique)\n\nPour un bloc de N octets (N > 1) :\n\n- (N−1) itérations à 21 T-states\n- 1 itération finale à 16 T-states\n\nDébit = N octets / [(N−1)×21 + 16] T-states\n\nPour N grand (par exemple 256 octets) :\n\n- Temps = 255×21 + 16 = 5 371 T-states\n- À 4 MHz : 5 371 × 250 ns = 1,343 ms\n- Débit = 256 / 0,001343 ≈ **190 Ko/s**\n\nMais il faut tenir compte des **wait states du CPC**. Le Gate Array insère des cycles d'attente sur les accès mémoire. L'effet est un ralentissement d'environ 20 % (4 MHz → 3,3 MHz effectif). En pratique, le débit réel est d'environ **150–175 Ko/s** avec `OTIR`.\n\n#### Avec `OUTI` déroulé (boucle manuelle)\n\nEn déroulant la boucle (15× `OUTI` consécutifs, comme le recommande la [MSX Assembly Page](https://map.grauw.nl/articles/fast_loops.php), consulté le 2026-09-21), chaque octet coûte **16 T-states** au lieu de 21 :\n\n- Débit théorique = 1 octet / (16 × 250 ns) = **250 Ko/s**\n- Avec les wait states du CPC : environ **200–225 Ko/s** en pratique\n\n---\n\n### 4. Tableau récapitulatif\n\n| Méthode | T-states/octet | Débit théorique (4 MHz) | Débit réel CPC (avec wait states) |\n|---|---|---|---|\n| `OTIR` | 21 | 190 Ko/s | ≈ 150–175 Ko/s |\n| `OUTI` déroulé | 16 | 250 Ko/s | ≈ 200–225 Ko/s |\n| *Idéal (1 octet/cycle)* | 1 | 4 Mo/s | — |\n\n---\n\n### 5. Pourquoi `OUTI` est plus rapide que `OTIR`\n\n`OTIR` inclut dans ses 21 T-states le test de fin de boucle (`B` ≠ 0) et le branchement. `OUTI` ne fait que le transfert (16 T-states) ; la gestion de la boucle est soit déroulée (zéro surcoût), soit confiée à une instruction externe (`DJNZ`, 13 T-states si le saut est pris — soit un total de 29 T-states par octet, pire que `OTIR`). C'est pourquoi le déroulement est la seule façon de battre `OTIR`.\n\n---\n\n### Conclusion\n\nLe débit maximal réel d'un flux RAM → port sur Amstrad CPC est d'environ **150–175 Ko/s avec `OTIR`** et **200–225 Ko/s avec `OUTI` déroulé**. Ce n'est pas 4 Mo/s car chaque octet nécessite 16 à 21 cycles d'horloge (lecture RAM + écriture port + surcoût de boucle), et le Gate Array du CPC ralentit encore le CPU à environ 3,3 MHz effectif via des wait states. Le débit de 4 Mo/s ne serait atteignable que si le Z80 pouvait transférer un octet par cycle d'horloge, ce qui est physiquement impossible avec son architecture (accès mémoire et I/O séparés, cycles machine de 3 à 6 T-states minimum).\n\n*Sources consultées le 2026-09-21 : [Wikipedia Amstrad CPC](https://en.wikipedia.org/wiki/Amstrad_CPC), [MSX Assembly Page – Z80 instruction set](https://map.grauw.nl/resources/z80instr.php), [MSX Assembly Page – Fast loops](https://map.grauw.nl/articles/fast_loops.php), [Flooh's Z80 instruction timing](https://floooh.github.io/2021/12/06/z80-instruction-timing.html).*",
+      "seconds": 35.3,
+      "usage": {
+        "prompt_tokens": 96707,
+        "completion_tokens": 1850,
+        "total_tokens": 98557
+      },
+      "error": null
+    }
+  },
+  {
+    "id": "C08-analysis-tradeoff",
+    "profile": "atlas-qwen",
+    "attempt": 2,
+    "result": {
+      "text": "### Analyse des coûts et recommandation\n\nVoici la comparaison détaillée des coûts mensuels pour votre consommation de **1,4 milliard de tokens** (dont 85 % en entrée et 15 % en sortie), basée sur les tarifs fournis.\n\n#### 1. Détail des volumes\n*   **Tokens d'entrée (Input)** : $1\\,400\\,000\\,000 \\times 0,85 = 1\\,190\\,000\\,000$ tokens (1 190 M).\n*   **Tokens de sortie (Output)** : $1\\,400\\,000\\,000 \\times 0,15 = 210\\,000\\,000$ tokens (210 M).\n\n#### 2. Comparaison des coûts mensuels\n\n| Option | Détail du calcul | Coût Mensuel Estimé | Économie vs Actuel |\n| :--- | :--- | :--- | :--- |\n| **Actuel (OpenAI)** | Facture fournie | **3 500,00 €** | - |\n| **(a) GLM-5.2 (Serverless)** | $(1\\,190 \\times 1,80\\,€) + (210 \\times 5,50\\,€)$ | **3 297,00 €** | -203 € (-5,8 %) |\n| **(b) DeepSeek-V4-Flash** | $(1\\,190 \\times 0,40\\,€) + (210 \\times 0,80\\,€)$ | **644,00 €** | **-2 856 € (-81,6 %)** |\n| **(c) H100 Loué (70B)** | $2,87\\,€/h \\times 24h \\times 30j$ | **2 066,40 €** | -1 433,60 € (-41 %) |\n\n*Note de calcul pour l'option (c) : Le coût est fixe pour une utilisation continue (24/7). Il ne dépend pas du volume de tokens tant que la capacité du GPU n'est pas dépassée. Un H100 peut généralement gérer plusieurs milliers de tokens par seconde, ce qui est largement suffisant pour 1,4 milliard de tokens répartis sur un mois (moyenne de ~540 tokens/seconde en continu), à condition que l'architecture logicielle permette de saturer la carte.*\n\n#### 3. Analyse et Recommandation\n\n**La tension principale** réside ici entre la **simplicité opérationnelle** (Serverless/API) et le **coût marginal le plus bas** (Cloud GPU dédié), avec un risque de complexité technique.\n\n*   **Option (a) GLM-5.2** : Bien que moins chère que votre solution actuelle, l'économie est marginale (environ 200 €). Le coût de sortie élevé (5,50 €/M) pénalise cette option si votre ratio de sortie augmente à l'avenir. Ce n'est pas un changement stratégique pertinent.\n*   **Option (c) H100 Loué** : Cette option divise votre facture par près de deux. Cependant, elle introduit une **dette technique importante**. Vous devez gérer le déploiement du modèle 70B, l'optimisation de l'inférence (vLLM, TGI), la mise à l'échelle (scaling) si les 20 développeurs travaillent en même temps, et la maintenance de la sécurité. De plus, le coût est fixe : si l'activité baisse, vous payez quand même 2 066 €. C'est une option viable uniquement si vous avez déjà une équipe DevOps dédiée à l'IA.\n*   **Option (b) DeepSeek-V4-Flash** : C'est l'option la plus disruptive. Avec un coût de **644 €**, elle représente une économie de **81 %** par rapport à votre facture actuelle. Le modèle \"Flash\" suggère une latence faible, adaptée à une équipe de 20 développeurs. L'architecture serverless vous évite toute gestion d'infrastructure.\n\n**Recommandation :**\n\nJe recommande vivement l'adoption de l'option **(b) DeepSeek-V4-Flash**.\n\n**Justification :**\n1.  **Impact financier immédiat** : L'économie de 2 856 € par mois (soit 34 272 € par an) est substantielle pour une équipe de 20 personnes.\n2.  **Rapport Performance/Prix** : Les modèles de la famille \"Flash\" sont conçus pour offrir une latence compétitive à un coût réduit, ce qui correspond au besoin d'une équipe de développement active.\n3.  **Risque technique nul** : Contrairement à la location d'un H100, vous ne changez pas votre architecture (reste en mode API). La migration se fait simplement en changeant la clé API et le nom du modèle dans le code.\n4.  **Flexibilité** : Vous payez à l'usage. Si la consommation baisse, la facture baisse, contrairement au serveur dédié (option c) qui reste facturé 2 066 € même à vide.\n\n**Condition de réussite** : Assurez-vous simplement que la qualité des réponses de DeepSeek-V4-Flash est suffisante pour vos cas d'usage spécifiques (ce qui est généralement le cas pour les tâches de codage et de raisonnement standard) avant de migrer 100 % du trafic. Faites un test A/B sur une semaine avec 2 développeurs.",
+      "seconds": 82.2,
+      "usage": {
+        "prompt_tokens": 57983,
+        "completion_tokens": 1683,
+        "total_tokens": 59666
+      },
+      "error": null
+    }
+  },
+  {
+    "id": "C08-analysis-tradeoff",
+    "profile": "atlas-glm",
+    "attempt": 2,
+    "result": {
+      "text": "",
+      "seconds": 41.8,
+      "usage": {},
+      "error": "HTTP Error 504: Gateway Timeout"
+    }
+  },
+  {
+    "id": "C08-analysis-tradeoff",
+    "profile": "atlas-glm",
+    "attempt": 3,
+    "result": {
+      "text": "",
+      "seconds": 35.4,
+      "usage": {},
+      "error": "HTTP Error 504: Gateway Timeout"
+    }
+  }
+]

@@ -1,0 +1,6 @@
+{"photo": "guitar-barre-fret5.jpg",
+ "strings_low_to_high": ["E","A","D","G","B","e"],
+ "frets": [5, 5, 7, 5, 5, 7],
+ "structure": "full barre on fret 5, two fingers on fret 7",
+ "chord_family": "A minor (Am7-type voicing)",
+ "source": "owner ground truth, 2026-09-17"}

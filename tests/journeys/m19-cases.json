@@ -1,0 +1,35 @@
+{
+  "J15": [
+    "dessine-moi un mouton à 5 pattes qui danse avec une vache bleue"
+  ],
+  "J16": [
+    "fais-moi un portrait d'un chat",
+    "je voudrais voir un dragon"
+  ],
+  "J17": [
+    "analyse cette image",
+    "décris l'image"
+  ],
+  "J18": [
+    "peux-tu générer des images ?"
+  ],
+  "J19": [
+    "décris cette image",
+    "decris cette image"
+  ],
+  "generation_examples": [
+    "dessine-moi un mouton",
+    "fais-moi un portrait de X",
+    "je voudrais voir un dragon",
+    "génère une image de X",
+    "peux-tu représenter…"
+  ],
+  "analysis_examples": [
+    "analyse cette image",
+    "décris l'image ci-jointe",
+    "modifie cette image"
+  ],
+  "observed_denial": [
+    "Je ne peux pas dessiner d'images. Je suis un assistant textuel…"
+  ]
+}

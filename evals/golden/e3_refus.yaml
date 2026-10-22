@@ -1,0 +1,64 @@
+# E3 — Refus honnête : questions PLAUSIBLES mais dont la réponse N'EST PAS dans le corpus.
+# Le système doit dire qu'il ne trouve pas l'information, PAS inventer.
+# Vérification : déterministe (le système signale l'absence) + juge (zéro invention de fait).
+# Chaque question est crédible dans le domaine, mais l'info n'existe dans aucun document.
+
+- id: E3-01
+  lang: fr
+  input: "Quel est le nombre de jours de congés payés annuels chez NORDIA ?"
+  attendu: "Signale que la politique de télétravail ne traite pas des congés payés. Aucun chiffre inventé."
+  note: "le doc RH parle de télétravail, pas de congés"
+
+- id: E3-02
+  lang: de
+  input: "Wie hoch ist der Stundensatz für Wochenendarbeit im Dienstleistungsvertrag?"
+  attendu: "Indique que le contrat ne mentionne pas de tarif week-end (seulement 1200€/jour). Pas d'invention."
+  note: "le contrat DE n'a pas de tarif week-end"
+
+- id: E3-03
+  lang: en
+  input: "What was HELIOS's net profit in Q3 2026?"
+  attendu: "Dit que le rapport donne le CA, la marge et la trésorerie, mais pas le bénéfice net. N'invente aucun chiffre."
+  note: "le rapport ne donne pas le net profit"
+
+- id: E3-04
+  lang: es
+  input: "¿Qué versión de PostgreSQL se usa en producción?"
+  attendu: "Indica que el runbook no especifica la versión de PostgreSQL. No inventa un número de versión."
+  note: "le runbook ne donne pas la version"
+
+- id: E3-05
+  lang: it
+  input: "Qual è il dosaggio raccomandato del ramipril per l'ipertensione?"
+  attendu: "Segnala che la scheda cita le classi di farmaci ma non dosaggi specifici. Nessun dosaggio inventato."
+  note: "la fiche IT ne donne pas de posologie précise"
+
+- id: E3-06
+  lang: en
+  input: "How many women versus men were in the sleep study?"
+  attendu: "Says the summary does not break down participants by sex. Does not fabricate numbers."
+  note: "l'étude ne donne pas la répartition H/F"
+
+- id: E3-07
+  lang: fr
+  input: "L'AquaPur X200 est-il disponible en couleur noire ?"
+  attendu: "Indique que la fiche produit ne mentionne aucune information de couleur. N'invente pas."
+  note: "la fiche produit ne parle pas de couleur"
+
+- id: E3-08
+  lang: ar
+  input: "ما هو رقم هاتف شركة النقل السريع الافتراضية؟"
+  attendu: "يوضح أن الإجراء لا يذكر رقم هاتف شركة النقل. لا يخترع رقمًا."
+  note: "le doc AR ne donne pas de numéro de téléphone"
+
+- id: E3-09
+  lang: zh
+  input: "本次营销活动的负责人是谁？"
+  attendu: "说明方案中没有提及活动负责人的姓名。不编造人名。"
+  note: "le plan ZH ne nomme pas de responsable"
+
+- id: E3-10
+  lang: de
+  input: "Welche konkrete Verschlüsselungssoftware schreibt die DSGVO-Notiz vor?"
+  attendu: "Weist darauf hin, dass die Notiz keine bestimmte Software vorschreibt. Erfindet keinen Produktnamen."
+  note: "la note RGPD ne prescrit aucun logiciel précis"

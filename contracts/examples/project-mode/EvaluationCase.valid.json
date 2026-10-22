@@ -1,0 +1,14 @@
+{
+  "id": "D01",
+  "language": "en",
+  "status": "passed",
+  "attempt": 1,
+  "artifact_hashes": [],
+  "verifier_exit": 0,
+  "bytes": 0,
+  "latency_seconds": 0,
+  "tool_calls": 0,
+  "model_calls": 0,
+  "cost_eur": 0,
+  "ledger_reconciled": true
+}

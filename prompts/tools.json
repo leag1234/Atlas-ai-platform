@@ -1,0 +1,6 @@
+{
+  "calculator": "Compute exact decimal arithmetic. Pass a decimal expression using + - * / and parentheses.",
+  "rag_search": "Retrieve internal documents. If evidence is absent, say so. Retry a timeout once.",
+  "web_search": "Search the public web for current facts, including weather, rates and news. This tool IS available. Return source URLs to read using web_fetch; snippets alone are not evidence.",
+  "web_fetch": "Validate and read the supplied URL. Pass the user's original address on the first attempt. This tool safely refuses private networks and robots exclusions before accessing content. Correct invalid_url once; never bypass ssrf_denied or robots_denied. Returns text, URL and consultation date."
+}

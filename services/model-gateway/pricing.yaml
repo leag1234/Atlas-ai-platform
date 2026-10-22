@@ -1,0 +1,35 @@
+# Model rates for hard budget calculation (max_cost_eur).
+# Source : Scaleway Generative APIs catalog, consulted on 2026-09-09.
+# The /models API does not expose prices; values come from the Scaleway pricing page.
+# Prices in euros per million tokens (excluding tax).
+models:
+  lightonocr-3-0.8b:
+    input_eur_per_mtok: 2.20
+    output_eur_per_mtok: 0.00
+  qwen3.5-397b-a17b:      # ESCALATION_MODEL
+    input_eur_per_mtok: 0.60
+    output_eur_per_mtok: 3.60
+  glm-5.2:                # JUDGE_MODEL
+    input_eur_per_mtok: 1.80
+    output_eur_per_mtok: 5.50
+  gpt-oss-120b:           # cross-calibration reference, MISSION M5
+    input_eur_per_mtok: 0.15
+    output_eur_per_mtok: 0.60
+  # Source: https://www.scaleway.com/en/pricing/model-as-a-service/ 2026-09-17
+  gemma-4-26b-a4b-it:
+    input_eur_per_mtok: 0.25
+    output_eur_per_mtok: 0.50
+  pixtral-12b-2409:
+    input_eur_per_mtok: 0.20
+    output_eur_per_mtok: 0.20
+  qwen3-embedding-8b:
+    input_eur_per_mtok: 0.10
+    output_eur_per_mtok: 0.0
+  deepseek-v4-flash-0731:
+    input_eur_per_mtok: 0.40
+    output_eur_per_mtok: 0.80
+  local:                  # Qwen3-30B served on a rented L40S GPU
+    input_eur_per_mtok: 0.0
+    output_eur_per_mtok: 0.0
+    note: "zero per-token cost; GPU billed hourly, outside the per-request budget"
+source: "Scaleway Generative APIs pricing, consulted 2026-09-09"

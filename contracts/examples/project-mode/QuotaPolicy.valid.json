@@ -1,0 +1,26 @@
+{
+  "active_members": 1,
+  "active_projects": 1,
+  "stored_bytes": 1,
+  "versioned_bytes": 1,
+  "derived_bytes": 1,
+  "temporary_bytes": 1,
+  "upload_count": 1,
+  "concurrent_jobs": 1,
+  "upload_bytes": 1,
+  "daily_model_eur": 0,
+  "monthly_model_eur": 0,
+  "per_turn": {
+    "tool_calls": 1,
+    "model_calls": 1,
+    "wall_seconds": 1,
+    "cost_eur": 0,
+    "per_call_eur": 0,
+    "expanded_bytes": 1,
+    "archive_entries": 1,
+    "text_tool_bytes": 1,
+    "command_output_bytes": 1,
+    "command_seconds": 1,
+    "command_memory_bytes": 1
+  }
+}

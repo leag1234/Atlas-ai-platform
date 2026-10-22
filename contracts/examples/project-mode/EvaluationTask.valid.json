@@ -1,0 +1,29 @@
+{
+  "id": "D01",
+  "language": "en",
+  "input_manifest": [
+    {
+      "path": "Example",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size_bytes": 0
+    }
+  ],
+  "expected_artifacts": [],
+  "allowed_effects": [],
+  "limits": {
+    "tool_calls": 1,
+    "model_calls": 1,
+    "wall_seconds": 1,
+    "cost_eur": 0,
+    "per_call_eur": 0,
+    "expanded_bytes": 1,
+    "archive_entries": 1,
+    "text_tool_bytes": 1,
+    "command_output_bytes": 1,
+    "command_seconds": 1,
+    "command_memory_bytes": 1
+  },
+  "verifier_timeout_seconds": 1,
+  "base_archive_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verifier_ref": "Example"
+}

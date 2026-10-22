@@ -1,0 +1,296 @@
+{
+  "consulted_on": "2026-10-14",
+  "negative_entity_checks": [
+    {
+      "id": "N01",
+      "entity": "Montreval-les-Ormes",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Montreval-les-Ormes\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.skigaarden.com/files/contentproperty/412/skigaardenvinkart2023-24.pdf",
+        "https://bibebook.com/michel_zevaco-le_capitan/index.html",
+        "https://terroirium.com/en/winery/",
+        "https://terroirium.com/wijnbedrijf/",
+        "https://www.archives-de-france.fr/ville.php?insee=14251",
+        "https://www.archives-de-france.fr/ville.php?insee=14527",
+        "https://www.komoot.com/it-it/guide/1528203/fantastici-percorsi-per-bici-da-corsa-nei-dintorni-di-macon",
+        "https://archives-genealogiques.com/ville.php?insee=14174"
+      ],
+      "finding": "Returned wine/fiction/partial place names; no exact village.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N02",
+      "entity": "Clairbois-sur-Aveline",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Clairbois-sur-Aveline\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.bibliorare.com/wp-content/uploads/catalogue/pdf/ALDE%204%20MARS%2016%20Partie%201.pdf",
+        "https://www.essentiel-autonomie.com/tous-les-etablissements",
+        "https://fr.scribd.com/document/884630933/Dictionnaire-Herbet",
+        "https://www.archives-de-france.fr/ville.php?insee=28012",
+        "https://www.journaldesfemmes.fr/maman/ecole/index/toutes-les-primaires?page=35",
+        "https://www.eterritoire.fr/territoires/bretagne/cotes-d-armor/saint-cast-le-guildo/22282/8277?annuaire=tous&n1=L",
+        "https://www.societe.com/entreprises/28220_VALD%20YERRE.html",
+        "https://www.thebullvine.com/tag/holstein-canada/"
+      ],
+      "finding": "Returned partial surnames and establishment names; no exact village.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N03",
+      "entity": "Valbrume-les-Tilleuls",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Valbrume-les-Tilleuls\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.meshistoiresdusoir.fr/h/la-ronde-des-runes-contre-la-brume-noire/"
+      ],
+      "finding": "A fantasy story uses Valbrume, not the requested French village.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N04",
+      "entity": "Auralith VX-730",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Auralith VX-730\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.scribd.com/document/724420827/MP-Lista-de-Socios-de-Negocios-2024-02-MP-1-Xlsx-04-04-2024"
+      ],
+      "finding": "Only an unrelated business document returned; no matching audio model.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N05",
+      "entity": "Sonivelle QH-28",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Sonivelle QH-28\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [],
+      "finding": "Empty results.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N06",
+      "entity": "Veltronic Echo 640",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Veltronic Echo 640\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [],
+      "finding": "Empty results.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N07",
+      "entity": "The Copper Herons",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"The Copper Herons\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://pesaromusei.it/casa-museo-giovanni-gentiletti/",
+        "https://www.mkheritage.org.uk/wdahs/Thornton/docs/fountain.html",
+        "https://zanvos.com/products/herons-monogram",
+        "https://www.heronsailing.com.au/Newsletters/11-2_1973_Sept.pdf",
+        "https://www.thatravenmagic.com/herflight.html",
+        "https://findwords.info/term/hallowed",
+        "https://foliumbiosciences.com/best-copper-garden-statues-for-landscape-decor/",
+        "https://coppercoastgeopark.com/biodiversity/",
+        "https://www.eater.com/drinks/2015/10/5/9453689/american-brandy-cooper-kings",
+        "https://www.arvindguptatoys.com/arvindgupta/stefan-1.pdf",
+        "https://hermitagenevis.com/copper-pots/",
+        "https://www.visitkeweenaw.com/outdoors/birding/",
+        "https://medina.osu.edu/sites/medina/files/imce/AGNR/Handouts/Duckweed_A_14_04.pdf",
+        "https://www.saveur.com/copper-and-kings-louisville/",
+        "https://sora.unm.edu/sites/default/files/journals/nab/v043n01/p00055-p00175.pdf",
+        "https://www.tripadvisor.com/Attraction_Review-g3181238-d5984089-Reviews-Lago_de_las_Garzas-Guachochi_Northern_Mexico.html",
+        "https://youthecology.ca/wp-content/uploads/2021/09/Youth-and-Ecological-Restoration-Program-Annual-Report-2021.pdf",
+        "https://www.usmodernist.org/HG/HG-1984-11.pdf"
+      ],
+      "finding": "Returned copper heron sculptures and unrelated pages; no matching band.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N08",
+      "entity": "Les Horloges de Brume",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Les Horloges de Brume\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.ordine-brevetti.it/it/comunicazioni-agli-iscritti/download/791",
+        "https://expo.paris/exposition/monet-peindre-le-temps-musee-de-l-orangerie-2026",
+        "https://www.golf-centre.fr/models/gallerymedia/assets/b//b2f18bec9bb56_vademecum-ligue-2024-v3.pdf",
+        "https://archive.horlogerie-suisse.com/journal-suisse-horlogerie/histoire/Horloges-Marines-de-Berthoud-le-voyage-de-l_isis-6eme-partie-09012204.html",
+        "https://www.the-ternier-paint-art-gallery.com/a-voir/le-parapluie-de-l-exode",
+        "https://cdn.unilim.fr/files/theses-doctorat/2012LIMO4026.pdf",
+        "https://nclpub.wipo.int/enfr/?class_number=9&gors=&lang=enfr&menulang=en&mode=flat&notion=modifications&version=20190101",
+        "https://nclpub.wipo.int/enfr/?class_number=9&lang=fr&menulang=en&mode=flat&notion=modifications&pagination=no&version=20190101",
+        "https://lata2ef.blog/wp-content/uploads/2024/03/pa00j1v9.pdf",
+        "https://www.histoiressingulieres.fr/horloges-murales-335",
+        "https://booknode.com/lautre_voyage_de_phileas_fogg_0262292",
+        "https://labellehorloge.com/collections/horloge-coucou",
+        "https://le-capital-des-mots.fr/dictionnaire/P/pendule",
+        "https://www.ompic.ma/sites/default/files/publicationsVF2.pdf",
+        "https://www.chasse-aux-livres.fr/prix/284362245X/l-autre-voyage-de-phileas-fogg-philip-jose-farmer-9782843622458",
+        "https://www.wipo.int/edocs/mdocs/classifications/en/clim_ce_28/clim_ce_28_2_ann_techn_3.pdf",
+        "https://www.researchgate.net/publication/319022348_Traces_de_brumes_Cheminements_a_travers_L%27evaporation_de_l%27oncle_de_Christine_Montalbetti",
+        "https://cnum.cnam.fr/pgi/redir.php?ident=BSPI.149&onglet=c"
+      ],
+      "finding": "Returned clocks, mist and unrelated titles; no matching band.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N09",
+      "entity": "The Cartographer of Silent Moons",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"The Cartographer of Silent Moons\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.gatlinburgstore.com/p/1003.html",
+        "https://djbartel.com/michael-shepler/",
+        "https://pdfcoffee.com/scarred-lands-playerx27s-guide-5e-5-pdf-free.html",
+        "https://www.gatlinburgstore.com/p/588.html",
+        "https://m.rpol.net/display.cgi?date=1765502322&gi=79040&msgpage=&show=all&ti=2",
+        "https://www.hellenicaworld.com/History/MBSynge/en/ABookOfDiscovery.html",
+        "https://www.fanfiction.net/s/12115800/50/The-Weaver-Option",
+        "https://www.scribd.com/document/127479428/Mage-Factions-Select-able",
+        "https://zanotowane.pl/1203/7846/",
+        "https://www.gatlinburgstore.com/p/501.html",
+        "https://www.gatlinburgstore.com/p/1004.html",
+        "https://file770.com/tag/gencon/"
+      ],
+      "finding": "Returned fiction containing separate title words; no exact published novel.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N10",
+      "entity": "Le Jardin des secondes inversées",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"Le Jardin des secondes inversées\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.dejavu.org/cgi-bin/get.cgi?url=https%3A%2F%2Ffr.wikipedia.org%2Fwiki%2FSaison_11_de_Top_Chef&ver=95",
+        "https://cnum.cnam.fr/pgi/redir.php?ident=4KY28.84&onglet=c",
+        "https://pt.scribd.com/document/930789491/Physique-Tout-en-Un-Pour-La-Licence-Cours-Applications-Et-Exercices-Corriges",
+        "https://www.scribd.com/document/764773353/Guide-Pe-da-CE2-franc-ais",
+        "https://www.scribd.com/document/761516293/A-petits-pas",
+        "https://cnum.cnam.fr/pgi/redir.php?ident=4KY28.109&onglet=c",
+        "https://dokumen.pub/french-as-language-of-intimacy-in-the-modern-age-le-franais-langue-de-lintime-a-lepoque-moderne-et-contemporaine-9789048529988.html",
+        "https://elibrary.narr.digital/xibrary/10.24053-9783823378792",
+        "https://cnum.cnam.fr/pgi/redir.php?ident=P348.5&onglet=c",
+        "https://fliphtml5.com/wxbnn/mwod/INDIGO_N%C2%B02/",
+        "https://danco.org/these/these_integrale.html"
+      ],
+      "finding": "Returned unrelated text containing title words; no exact novel.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N11",
+      "entity": "quartzpetal",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"quartzpetal\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://www.tumgik.com/tag/bird%20lady%20weather%20druid",
+        "https://poshmark.com/listing/Eberjey-Gisele-Long-Sleeve-PJ-top-Rose-QuartzPetal-Pink-large-6aa2e5bd3cc11769166b5727",
+        "https://poshmark.com/listing/Eberjey-Gisele-Long-Sleeve-PJ-top-Rose-QuartzPetal-Pink-large-6a9b28ff4765b096c29534a2",
+        "https://www.tumgik.com/tag/like%20gale%20holy%20shit.%20please%20just%20say%20fuck.",
+        "https://www.tumgik.com/tag/dearest%20dweeb"
+      ],
+      "finding": "Returned fantasy names and clothing color text; no Python library.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    },
+    {
+      "id": "N12",
+      "entity": "riverquill",
+      "consulted_on": "2026-10-14",
+      "queries": [
+        "\"riverquill\""
+      ],
+      "method": "web search tool; results inspected independently before Atlas baseline",
+      "returned_urls": [
+        "https://en.netkeiba.com/db/horse/ped/000a00a785/",
+        "https://db.sp.netkeiba.com/horse/ped/000a006805/",
+        "https://db.netkeiba.com/horse/ped/000a007dd8/",
+        "https://en.netkeiba.com/db/horse/ped/000a02e235/",
+        "https://db.sp.netkeiba.com/horse/ped/2008102914/",
+        "https://en.netkeiba.com/db/horse/ped/000a011baf/",
+        "https://en.netkeiba.com/db/horse/ped/000a01f0e3/",
+        "https://en.netkeiba.com/db/horse/ped/2009100559/",
+        "https://gridinsoft.com/online-virus-scanner/url/riverquill-online",
+        "https://www.otbo.com/wp-content/uploads/2015/10/midwestfall_02_1catalog.pdf",
+        "https://en.netkeiba.com/db/horse/ped/2011105868/",
+        "https://mintybug.ai/",
+        "https://www.fasigtipton.com/catalogs/2020/0713/web.pdf",
+        "https://db.netkeiba.com/horse/ped/000a006544/",
+        "https://fasig-tipton.com/sites/default/files/2018-07/FTKFEB2003cat.PDF",
+        "https://secure.keeneland.com/sales/k425/pdfs/Book1.pdf",
+        "https://www.jra.go.jp/datafile/seiseki/report/2004/2-fuku.pdf"
+      ],
+      "finding": "Riverquill is a real horse name; no JavaScript library found. The negative applies only to the requested software entity.",
+      "limitation": "Search result absence is not universal proof. Recheck exact spelling, entity type and provenance before any private acceptance use."
+    }
+  ],
+  "registry_checks": [
+    {
+      "entity": "Montreval-les-Ormes",
+      "url": "https://geo.api.gouv.fr/communes?nom=Montreval-les-Ormes&fields=nom%2Ccode&limit=5",
+      "consulted_on": "2026-10-14",
+      "status": 200,
+      "returned_names": [],
+      "exact_match": false
+    },
+    {
+      "entity": "Clairbois-sur-Aveline",
+      "url": "https://geo.api.gouv.fr/communes?nom=Clairbois-sur-Aveline&fields=nom%2Ccode&limit=5",
+      "consulted_on": "2026-10-14",
+      "status": 200,
+      "returned_names": [],
+      "exact_match": false
+    },
+    {
+      "entity": "Valbrume-les-Tilleuls",
+      "url": "https://geo.api.gouv.fr/communes?nom=Valbrume-les-Tilleuls&fields=nom%2Ccode&limit=5",
+      "consulted_on": "2026-10-14",
+      "status": 200,
+      "returned_names": [],
+      "exact_match": false
+    },
+    {
+      "entity": "quartzpetal",
+      "url": "https://pypi.org/pypi/quartzpetal/json",
+      "consulted_on": "2026-10-14",
+      "status": 404
+    },
+    {
+      "entity": "riverquill",
+      "url": "https://registry.npmjs.org/riverquill",
+      "consulted_on": "2026-10-14",
+      "status": 404
+    }
+  ]
+}

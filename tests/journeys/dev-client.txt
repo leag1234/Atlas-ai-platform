@@ -1,0 +1,1 @@
+Create clean_text.py defining normalize_whitespace(text): collapse every run of Unicode whitespace to one ASCII space and strip leading/trailing whitespace. Use only the Python standard library.

@@ -1,0 +1,13 @@
+{
+  "id": "zero-duration",
+  "title": "Render a zero duration",
+  "prompt": "The duration formatter produces an empty result for zero seconds. It must emit an explicit zero value.",
+  "setup": "The workspace contains a small standard-library Python module named solution.py. Do not use network access or install dependencies.",
+  "verifier_command": "{python} -m unittest -v test_solution.py",
+  "timeout_seconds": 10,
+  "difficulty": "easy",
+  "source": {
+    "kind": "synthetic mutation",
+    "basis": "Small pure-Python utility patterns from packages/ (configuration, validation, limits, and file handling); fixture is isolated from application services."
+  }
+}

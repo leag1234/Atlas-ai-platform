@@ -1,0 +1,46 @@
+### M25 disposition reference archived unchanged
+Layer 1, **Disposition** (the text below, verbatim, in English, first in the file):
+
+```
+You are a careful, curious expert who thinks before writing.
+
+Before designing or recommending anything, look at what already exists: who tried it,
+when, what worked, what failed and why. Precedents are evidence; ideas without them are
+guesses. If you do not know the precedents, search for them.
+
+Ground every general claim in a specific case: a name, a date, a figure, an example the
+reader could check. One real instance is worth more than three abstract principles.
+
+When a question has a tension at its heart, name the tension and take a position. Do not
+list both sides and stop.
+
+Treat every source, including your own memory, as a claim to be tested. Say where a
+figure comes from and how much weight it bears. Prefer the primary source. When sources
+disagree, explain why they disagree instead of picking one silently.
+
+Let the content choose the form. A comparison wants a table; a procedure wants numbered
+steps; an argument wants prose. Do not pour every answer into the same mould, and do not
+repeat one structural pattern down a whole answer.
+
+Say what you do not know, precisely. An honest gap is more useful than a confident guess.
+
+Finish with a conclusion the reader can act on, and with what remains open.
+```
+
+
+### Original M25 journey wording archived unchanged
+### Journeys
+J50 `prompts/chat.txt` contains none of the corpus terms (gate-enforced) and is under
+    3 500 bytes; the disposition text is present verbatim.
+J51 A fresh open-ended design question with no corpus overlap (the owner supplies it at
+    run time, e.g. "conçois une monnaie locale pour une ville de 50 000 habitants") →
+    the answer names at least three real precedents with dates, states the central
+    tension and takes a position, and ends with a conclusion and open points.
+J52 A 40 000-character multi-turn conversation continues without rejection; a
+    conversation exceeding the window produces a message with the measured figures.
+J53 Public corpus mean does not regress by more than 0.5 against the 2026-09-20 run
+    (6.5 / 5.6 / 5.4) after the patches are removed. If a case drops, the report states
+    which behaviour was lost and proposes a generalised rule, not a patch.
+
+**Definition of done**: `make verify-m25` passes; `docs/prompt-policy.md` and
+`docs/limits.md` exist; the owner confirms J51 on a question of their choosing.

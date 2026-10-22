@@ -1,0 +1,57 @@
+# Routing source of truth. Identifiers come from the environment (.env),
+# never hard-coded elsewhere (docs/02 AC-ARC-4).
+task_classes:
+  chat_simple:
+    primary:  { provider: local,    model: "${LOCAL_MODEL}" }
+    fallback: { provider: scaleway, model: "${ESCALATION_MODEL}" }
+    max_cost_eur_per_call: 0.01
+  reasoning:
+    primary:  { provider: scaleway, model: "${ESCALATION_MODEL}" }
+    fallback: { provider: scaleway, model: "${ESCALATION_MODEL}" }
+    max_cost_eur_per_call: 0.05
+providers:
+  local:    { base_url: "${LOCAL_API_BASE}" }
+  scaleway: { base_url: "${SCW_GENERATIVE_BASE_URL}", api_key_env: "SCW_GENERATIVE_API_KEY" }
+# Source: Scaleway supported-models and pricing, consulted 2026-09-10.
+serverless:
+  text:
+    env: ESCALATION_MODEL
+    model: qwen3.5-397b-a17b
+    fallback: code
+    capabilities:
+      qwen3.5-397b-a17b: {context: 262144, tools: true, vision: true}
+  code:
+    env: CODE_MODEL
+    model: glm-5.2
+    fallback: text
+    capabilities:
+      glm-5.2: {context: 262144, tools: true, vision: false}
+  vision:
+    env: VISION_MODEL
+    model: gemma-4-26b-a4b-it
+    fallback: visionprevious
+    capabilities:
+      gemma-4-26b-a4b-it: {context: 262144, tools: true, vision: true, reasoning: false}
+      pixtral-12b-2409: {context: 131072, tools: true, vision: true, reasoning: false}
+  visionprevious:
+    env: VISION_PREVIOUS_MODEL
+    model: pixtral-12b-2409
+    fallback: vision
+    capabilities:
+      pixtral-12b-2409: {context: 131072, tools: true, vision: true, reasoning: false}
+  fast:
+    env: FAST_MODEL
+    model: deepseek-v4-flash-0731
+    fallback: text
+    capabilities:
+      deepseek-v4-flash-0731: {context: 256000, tools: true, vision: false}
+  embedding:
+    env: EMBEDDING_SERVERLESS_MODEL
+    model: qwen3-embedding-8b
+    capabilities:
+      qwen3-embedding-8b: {context: 32768, dimensions: 1024}
+
+public_profiles:
+  atlas-qwen: text
+  atlas-glm: code
+  atlas-deepseek: fast

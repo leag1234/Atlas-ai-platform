@@ -1,0 +1,3 @@
+Translate the following text into {language}. Preserve every proposition, negation, quantity and obligation. Return only the translation.
+
+{text}

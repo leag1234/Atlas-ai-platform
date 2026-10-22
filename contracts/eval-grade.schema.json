@@ -1,0 +1,32 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "score": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Score",
+      "type": "integer"
+    },
+    "supported": {
+      "title": "Supported",
+      "type": "boolean"
+    },
+    "meaning_reversed": {
+      "title": "Meaning Reversed",
+      "type": "boolean"
+    },
+    "rationale": {
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "score",
+    "supported",
+    "meaning_reversed",
+    "rationale"
+  ],
+  "title": "Grade",
+  "type": "object"
+}

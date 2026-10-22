@@ -1,0 +1,23 @@
+{
+  "local": {
+    "files": null,
+    "bytes": null,
+    "known": false,
+    "as_of": null
+  },
+  "server": {
+    "files": 0,
+    "bytes": 0
+  },
+  "model": {
+    "payload_bytes": 0,
+    "unique_source_bytes": 0,
+    "calls": 0,
+    "possibly_sent_calls": 0
+  },
+  "produced": {
+    "files": 0,
+    "bytes": 0
+  },
+  "as_of_seq": 0
+}

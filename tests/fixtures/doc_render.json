@@ -1,0 +1,13 @@
+{
+  "title": "Éléments de décision — été 2026",
+  "sections": [
+    {
+      "heading": "Synthèse française",
+      "paragraphs": ["À Noël, François étudie l'œuvre et compare les coûts. Élève, cœur, façade, où, ça : vérification des accents."],
+      "bullets": ["Préparer une réunion", "Vérifier les données"],
+      "tables": [{"headers": ["Désignation", "Coût"], "rows": [["Étude", "42 €"], ["=1+1", "Valeur littérale"]]}],
+      "images": ["figure.png"]
+    },
+    {"heading": "Prochaines étapes", "bullets": ["Relire le résultat", "Publier après validation"]}
+  ]
+}

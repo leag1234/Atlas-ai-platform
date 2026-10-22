@@ -1,0 +1,8 @@
+[
+  {"id":"qr_fr","date":"2026-10-21","prompt":"cherche des qr code variés sur le web et affiche les ici, je veux tester un truc","language":"fr","minimum_images":3,"qr":true},
+  {"id":"qr_en","prompt":"Find varied QR codes on the web and display them here, I want to test something","language":"en","minimum_images":3,"qr":true},
+  {"id":"cats_fr","prompt":"montre-moi cinq photos de chats trouvées sur le web","language":"fr","minimum_images":5,"qr":false},
+  {"id":"posters_en","prompt":"show me three examples of Art Deco posters from the web","language":"en","minimum_images":3,"qr":false},
+  {"id":"qr_blue_fr","prompt":"génère un QR code pour https://example.org en bleu","language":"fr","minimum_images":1,"qr":true,"payload":"https://example.org"},
+  {"id":"eiffel_fr","prompt":"affiche une image de la tour Eiffel trouvée sur le web","language":"fr","minimum_images":1,"qr":false}
+]

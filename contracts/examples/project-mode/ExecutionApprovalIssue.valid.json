@@ -1,0 +1,17 @@
+{
+  "session_id": "10000000-0000-4000-8000-000000000001",
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "generation": 1,
+  "approver_member_id": "10000000-0000-4000-8000-000000000001",
+  "action_kind": "delete",
+  "effects": {
+    "file_id": "10000000-0000-4000-8000-000000000001",
+    "base_version": "10000000-0000-4000-8000-000000000001",
+    "revision": 0
+  },
+  "destination": {
+    "kind": "server",
+    "ref": null
+  },
+  "maximum_bytes": 0
+}

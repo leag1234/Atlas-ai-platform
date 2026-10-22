@@ -1,0 +1,32 @@
+{
+  "mode": "synthetic saved chat; rendering only, no model call",
+  "title": "European compass summary",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize these documents and prepare a presentation with sources.",
+      "files": [
+        {
+          "type": "file",
+          "id": "fidelity-brief",
+          "name": "brief.pdf",
+          "size": 24576,
+          "url": "#brief",
+          "status": "uploaded"
+        },
+        {
+          "type": "file",
+          "id": "fidelity-facts",
+          "name": "facts.xlsx",
+          "size": 8192,
+          "url": "#facts",
+          "status": "uploaded"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": "## Three priorities\n\nInvest in research, lower energy costs and reduce dependencies.\n\n- Support research and growing businesses.\n- Make energy affordable.\n\n| Document | Priority |\n| --- | --- |\n| Brief | Research |\n| Facts | Energy |\n\n```python\npriorities = [\"research\", \"energy\"]\n```\n\n[Download presentation.pptx](/api/v1/files/fidelity-pptx/content) · [Download presentation.pdf](/api/v1/files/fidelity-pdf/content)\n\nSources: [1 · brief.pdf](https://example.org/reference) · [2 · facts.xlsx](https://example.org/facts)\n\n✓ Read 2 attachments · Files prepared · 12 s / 300 s"
+    }
+  ]
+}
