@@ -14,6 +14,8 @@ from typing import Literal
 
 import yaml
 
+from provider_settings import configure
+
 Task = Literal["text", "code", "vision"]
 
 
@@ -81,9 +83,12 @@ class ServerlessPolicy:
         ):
             raise ValueError("invalid_public_profiles")
         self.prices = yaml.safe_load((root / "pricing.yaml").read_text())["models"]
+        self.config, self.prices = configure(self.config, self.prices)
         self.models: dict[str, str] = {}
         for role, entry in self.config.items():
             model = os.environ.get(entry["env"], entry["model"])
+            if os.environ.get("ATLAS_PROVIDER") and not model:
+                model = entry["model"]
             if model not in self.prices:
                 raise ValueError("missing_price")
             if model not in entry["capabilities"]:

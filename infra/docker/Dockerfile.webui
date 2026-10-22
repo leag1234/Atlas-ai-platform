@@ -1,0 +1,9 @@
+FROM ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933
+COPY infra/openwebui_images.py /opt/atlas/filter.py
+COPY infra/docker/webui_bootstrap.py /opt/atlas/webui_bootstrap.py
+COPY infra/docker/webui-start.sh /opt/atlas/start.sh
+COPY services/orchestrator/chat-ui.css /app/backend/open_webui/static/atlas/chat-ui.css
+COPY services/orchestrator/chat-ui.js /app/backend/open_webui/static/atlas/chat-ui.js
+COPY services/orchestrator/static/ /app/backend/open_webui/static/atlas/
+RUN python -c 'from pathlib import Path; p=Path("/app/build/index.html"); p.write_text(p.read_text().replace("</head>", "<link rel=\"stylesheet\" href=\"/static/atlas/chat-ui.css\"><script src=\"/static/atlas/chat-ui.js\"></script></head>", 1))'
+ENTRYPOINT ["bash", "/opt/atlas/start.sh"]

@@ -1,3 +1,4 @@
+# ATLAS_PROVIDER opts into providers.yaml through provider_settings.py; unset preserves these routes.
 # Routing source of truth. Identifiers come from the environment (.env),
 # never hard-coded elsewhere (docs/02 AC-ARC-4).
 task_classes:

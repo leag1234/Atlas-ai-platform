@@ -1,3 +1,4 @@
+# Selected provider presets supply their own rates; unverified EUR rates disable monetary ceilings with a warning.
 # Model rates for hard budget calculation (max_cost_eur).
 # Source : Scaleway Generative APIs catalog, consulted on 2026-09-09.
 # The /models API does not expose prices; values come from the Scaleway pricing page.

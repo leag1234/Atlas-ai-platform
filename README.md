@@ -81,7 +81,7 @@ tax, not current quotes. Environment settings and availability can change the mo
 | Whisper small (`Systran/faster-whisper-small`) | Dictation | Application host, CPU | Host cost |
 | Piper voices for English, French, German, Spanish and Italian | Read aloud | Application host, CPU | Host cost |
 
-Support for other inference providers will be added if there is interest. Feedback from people running their own inference servers is very welcome.
+Provider presets and a custom OpenAI-compatible endpoint are available through `./atlas setup`; see the [quickstart](docs/quickstart.md).
 
 The full inventory, with the dedicated GPU and the alternatives considered, is in [docs/16-models-and-inference-inventory.md](docs/16-models-and-inference-inventory.md).
 
@@ -122,24 +122,11 @@ family with one Atlas profile. These small, single-run results do not establish
 general parity. Evaluation needs independent judges, repeated measurements and
 better reproducibility; see the [methodology and gaps](reports/M26.md).
 
-## Install and run
+## Quick start
 
-Follow [installation.md](docs/installation.md) for prerequisites, private environment
-configuration, startup and shutdown, optional images/speech and guest deployment.
-Use the [MCP guide](docs/mcp.md) for connectors and the
-[API guide](docs/api-compatibility.md) for client integration.
-
-Documentation checks:
-
-```bash
-bash scripts/verify-m16.sh
-make scan-secrets
-make lint
-```
-
-Milestone completion requires green GitHub CI; see [MISSION.md](MISSION.md) and
-the [PoC specification](docs/13-poc-spec.md). The [documentation index](docs/README.md)
-and [reports](reports/) provide further detail. Third-party notices are in [NOTICE](NOTICE).
+[Try Atlas with Docker in under 10 minutes](docs/quickstart.md), or follow the
+[full stack installation](docs/installation.md) for image generation, Code mode,
+speech, HTTPS and administration.
 
 ## License
 

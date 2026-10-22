@@ -1,0 +1,160 @@
+name: atlas
+services:
+  gateway:
+    image: atlas-runtime:local
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    command: [gateway]
+    environment:
+      ATLAS_PROVIDER: ${ATLAS_PROVIDER:-scaleway}
+      ATLAS_PROVIDER_BASE_URL: ${ATLAS_PROVIDER_BASE_URL:-}
+      ATLAS_PROVIDER_API_KEY: ${ATLAS_PROVIDER_API_KEY:-}
+      ATLAS_TEXT_MODEL: ${ATLAS_TEXT_MODEL:-}
+      ATLAS_USD_TO_EUR: ${ATLAS_USD_TO_EUR:-}
+      ATLAS_TRIAL: '1'
+    volumes: [models:/models]
+    mem_limit: 2g
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:13710/health',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 120
+  postgres:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.postgres
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_DB: atlas
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run ./atlas setup first}
+    volumes: [postgres:/var/lib/postgresql/data]
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, pg_isready, -U, atlas, -d, atlas, -p, '13740']
+      interval: 3s
+      timeout: 2s
+      retries: 30
+  retrieval:
+    image: atlas-runtime:local
+    command: [retrieval]
+    environment:
+      ATLAS_RETRIEVAL_DSN: postgresql://atlas:${POSTGRES_PASSWORD}@postgres:13740/atlas
+      ATLAS_GATEWAY_URL: http://gateway:13710
+    depends_on:
+      postgres: {condition: service_healthy}
+      gateway: {condition: service_healthy}
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:13711/openapi.json',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  searxng:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.searxng
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Run ./atlas setup first}
+      GRANIAN_LOG_LEVEL: warning
+      GRANIAN_LOG_ACCESS_ENABLED: 'false'
+    mem_limit: 512m
+  orchestrator:
+    image: atlas-runtime:local
+    command: [orchestrator]
+    environment:
+      ATLAS_TRIAL: '1'
+      ATLAS_GATEWAY_URL: http://gateway:13710
+      ATLAS_RETRIEVAL_URL: http://retrieval:13711
+      ATLAS_SEARCH_PROVIDER: searxng
+      ATLAS_SEARXNG_URL: http://searxng:8080
+      ATLAS_PUBLIC_URL: ${ATLAS_PUBLIC_URL:-http://localhost:13700}
+      ATLAS_INTERACTION_DIR: /app/BRAIN/trial-logs
+      ATLAS_CODE_MODE: '0'
+      ATLAS_TTS: '0'
+      ATLAS_STT: '0'
+      ATLAS_DEV_GPU: '0'
+      ATLAS_TERMINAL_ENABLED: '0'
+    volumes: [state:/app/BRAIN]
+    depends_on:
+      retrieval: {condition: service_healthy}
+      searxng: {condition: service_started}
+    mem_limit: 1g
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:13720/v1/models',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  webui:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.webui
+    environment:
+      HOST: 0.0.0.0
+      PORT: '13730'
+      WEBUI_AUTH: 'True'
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Run ./atlas setup first}
+      ENABLE_SIGNUP: 'True'
+      DEFAULT_USER_ROLE: pending
+      ENABLE_VOICE_INTERACTION: 'False'
+      AUDIO_TTS_ENGINE: openai
+      AUDIO_TTS_OPENAI_API_BASE_URL: http://orchestrator:13720/v1
+      AUDIO_STT_ENGINE: openai
+      AUDIO_STT_OPENAI_API_BASE_URL: http://orchestrator:13720/v1
+      ENABLE_PERSISTENT_CONFIG: 'False'
+      ENABLE_FORWARD_USER_INFO_HEADERS: 'True'
+      ENABLE_OLLAMA_API: 'False'
+      OPENAI_API_BASE_URL: http://orchestrator:13720/v1
+      OPENAI_API_KEY: atlas-local
+      ATLAS_ADAPTER_URL: http://orchestrator:13720
+      ENABLE_CODE_EXECUTION: 'False'
+      ENABLE_CODE_INTERPRETER: 'False'
+      ENABLE_TITLE_GENERATION: 'False'
+      ENABLE_TAGS_GENERATION: 'False'
+      ENABLE_FOLLOW_UP_GENERATION: 'False'
+      ENABLE_DIRECT_CONNECTIONS: 'False'
+      ENABLE_COMMUNITY_SHARING: 'False'
+      BYPASS_EMBEDDING_AND_RETRIEVAL: 'True'
+      HF_HUB_OFFLINE: '1'
+      RAG_EMBEDDING_MODEL_AUTO_UPDATE: 'False'
+      DO_NOT_TRACK: 'true'
+      SCARF_NO_ANALYTICS: 'true'
+    volumes: [webui:/app/backend/data]
+    depends_on:
+      orchestrator: {condition: service_healthy}
+    mem_limit: 2g
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:13730/health',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.frontend
+    ports: ['${ATLAS_BIND:-127.0.0.1}:${ATLAS_HTTP_PORT:-13700}:8080']
+    depends_on:
+      webui: {condition: service_healthy}
+    mem_limit: 64m
+  ollama:
+    profiles: [local]
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.ollama
+    environment:
+      ATLAS_LOCAL_MODEL: ${ATLAS_LOCAL_MODEL:-}
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_CONTEXT_LENGTH: '32768'
+    ports: ['127.0.0.1:${ATLAS_OLLAMA_PORT:-13702}:11434']
+    volumes: [ollama:/root/.ollama]
+    healthcheck:
+      test: [CMD, test, -f, /tmp/model-ready]
+      interval: 5s
+      timeout: 2s
+      retries: 120
+volumes:
+  postgres:
+  models:
+  state:
+  webui:
+  ollama:

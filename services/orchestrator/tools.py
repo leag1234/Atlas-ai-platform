@@ -291,7 +291,10 @@ class Runtime:
                         timeout=http_timeout(min(timeout, 8), 8), trust_env=False
                     ) as session:
                         async with session.get(
-                            f"http://127.0.0.1:{port}/search",
+                            os.environ.get(
+                                "ATLAS_SEARXNG_URL", f"http://127.0.0.1:{port}"
+                            ).rstrip("/")
+                            + "/search",
                             params=params,
                             allow_redirects=False,
                         ) as response:
