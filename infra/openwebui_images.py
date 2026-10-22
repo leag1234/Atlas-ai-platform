@@ -6,6 +6,9 @@ import asyncio
 import base64
 from pathlib import Path
 import hashlib
+import json
+from types import SimpleNamespace
+from packages.language import conversation_language
 from importlib import import_module
 import re
 import os
@@ -49,12 +52,31 @@ class Filter:
     ) -> dict[str, Any]:
         if body.get("model") not in {"atlas-qwen", "atlas-glm", "atlas-deepseek"}:
             return body
+        messages = []
+        for message in body.get("messages", []):
+            content = message.get("content", "")
+            text = (
+                content
+                if isinstance(content, str)
+                else "\n".join(
+                    part.get("text", "")
+                    for part in content
+                    if part.get("type") == "text"
+                )
+            )
+            messages.append(SimpleNamespace(role=message.get("role", ""), text=text))
+        locale = body.get("ui_locale", "en")
+        if locale not in {"en", "fr", "de", "es", "it", "nl"}:
+            locale = "en"
+        language = conversation_language(messages, locale) if messages else locale
+        labels = json.loads(Path("prompts/activity-labels.json").read_text())
+        labels = labels.get(language, labels["en"])
         if __event_emitter__:
             await __event_emitter__(
                 {
                     "type": "status",
                     "data": {
-                        "description": "Réflexion… (0.0s)",
+                        "description": labels["thinking"] + " (0.0s)",
                         "done": False,
                         "action": "atlas_activity",
                     },
@@ -119,7 +141,7 @@ class Filter:
                             {
                                 "type": "status",
                                 "data": {
-                                    "description": "Preparing image references…",
+                                    "description": labels["thinking"],
                                     "done": False,
                                 },
                             }

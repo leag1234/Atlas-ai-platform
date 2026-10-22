@@ -1,31 +1,22 @@
-"""Install the owned attachment inlet after the first administrator signs up.
+"""Install the managed image/document inlet before accepting any accounts.
 
-Source: open-webui v0.11.3 backend/open_webui/models/{users,functions}.py,
+Source: open-webui v0.11.3 backend/open_webui/{config,models/functions}.py,
 read 2026-10-22. Runs inside that pinned image with its own dependencies.
 """
 
 import asyncio
+from importlib import import_module
 from pathlib import Path
-import urllib.request
 
 
 async def main() -> None:
-    while True:
-        try:
-            with urllib.request.urlopen("http://127.0.0.1:13730/health", timeout=2):
-                break
-        except (OSError, TimeoutError):
-            await asyncio.sleep(2)
     from open_webui.models.functions import Functions, FunctionForm, FunctionMeta
-    from open_webui.models.users import Users
 
-    while (user := await Users.get_first_user()) is None:
-        await asyncio.sleep(2)
     identifier = "atlas_image_references"
     source = Path("/opt/atlas/filter.py").read_text()
     if await Functions.get_function_by_id(identifier) is None:
         result = await Functions.insert_new_function(
-            user.id,
+            "atlas-managed",
             "filter",
             FunctionForm(
                 id=identifier,
@@ -45,4 +36,9 @@ async def main() -> None:
     print("Atlas attachment inlet ready.", flush=True)
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    # The pinned WebUI configuration runs its own Alembic migrations on import.
+    # Do this before opening an event loop or importing the async table models.
+    import_module("open_webui.config")
+
+    asyncio.run(main())

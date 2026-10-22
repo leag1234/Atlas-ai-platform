@@ -20,11 +20,14 @@ storage for weights. Restrict the worker port to the application host. Set budge
 alerts and a shutdown schedule with the cloud provider before enabling it. A domain
 pointing at the application host and inbound TCP 80/443 are required for HTTPS.
 
+For Ubuntu/Debian Docker Engine and Compose installation commands, including the
+docker group and Python/Git checks, see [prepare the host](quickstart.md#prepare-ubuntu-or-debian).
+
 Run on the application host:
 
 ```bash
-git clone https://github.com/leag1234/atlas.git
-cd atlas
+git clone https://github.com/leag1234/atlas-ai-platform.git
+cd atlas-ai-platform
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements-dev.txt
@@ -296,7 +299,7 @@ printf '\nATLAS_PUBLIC_URL=https://%s\n' "$ATLAS_DOMAIN" >> "$ATLAS_SECRETS_FILE
 ```
 
 For the Docker
-trial with HTTPS, use the same proxy with upstream port 13700 and keep normal
+trial with HTTPS, use the same proxy with upstream port 3000 and keep normal
 Open WebUI accounts enabled. Do not publish the gateway, retrieval, database or
 terminal ports.
 
@@ -343,7 +346,7 @@ read -r -p 'Reviewed release tag: ' ATLAS_RELEASE
 git checkout --detach "$ATLAS_RELEASE"
 docker compose build
 docker compose up -d --wait
-curl --fail --silent --output /dev/null http://127.0.0.1:13700/
+curl --fail --silent --output /dev/null http://127.0.0.1:3000/
 ```
 
 For the host launcher, stop it, update the reviewed release, reinstall that release's

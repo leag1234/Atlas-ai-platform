@@ -7,12 +7,54 @@ The CPU-only local profile starts without a GPU, but its small demonstration mod
 is substantially weaker. First downloads depend on your connection; ten minutes
 is a target, not a guarantee.
 
+## Prepare Ubuntu or Debian
+
+On a fresh Ubuntu 24.04 or supported Debian host, install Python 3, Git and curl,
+then Docker Engine and its Compose plugin with Docker's official convenience
+script (intended for development and trials):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 git curl ca-certificates
+python3 --version
+python3 -c 'import sys; assert sys.version_info >= (3, 10), "Python 3.10+ required"'
+git --version
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo groupadd -f docker
+sudo usermod -aG docker "$USER"
+rm get-docker.sh
+```
+
+Log out and back in to activate group membership, then check access:
+
+```bash
+docker version
+docker compose version
+docker run --rm hello-world
+```
+
+The `docker` group grants root-level access. For an existing Docker installation,
+use Docker's upgrade instructions instead of rerunning the installer. Official
+sources, checked 2026-10-22: [Ubuntu](https://docs.docker.com/engine/install/ubuntu/),
+[Debian](https://docs.docker.com/engine/install/debian/) and
+[Linux post-installation](https://docs.docker.com/engine/install/linux-postinstall/).
+
+An owner test on a fresh Ubuntu 24.04 **BASIC3-X4C-8G** VM measured **5 min 18 s**
+from VM ready to a healthy stack: Docker installation took **17 s**, and setup,
+build and startup took **4 min 24 s**. Total disk use was **22 GB**. Chat, cited
+web search and diagrams were checked in a browser. Download speeds and provider
+latency vary; these measurements are an example, not a timing guarantee.
+
 ## Choose an inference provider
 
 The numbered setup menu follows this order. Presets, exact model IDs, endpoint
 URLs and source dates live in [providers.yaml](../services/model-gateway/providers.yaml).
 The sources below were checked on **2026-10-22**. Availability can change; setup
-checks your account's model list and performs one small billed completion.
+checks your account's model list and performs one small completion (billed where
+applicable). Hetzner's preset disables reasoning for visible answers. If a provider
+returns reasoning only during setup, it is reported as reachable with a warning;
+setup does not claim a visible answer was verified.
 
 | Provider | Indicative input / output per million tokens | Notes and official sources |
 | --- | --- | --- |
@@ -41,8 +83,8 @@ from free inference. Set spending limits in your provider account.
 ## Start
 
 ```bash
-git clone https://github.com/leag1234/atlas.git
-cd atlas
+git clone https://github.com/leag1234/atlas-ai-platform.git
+cd atlas-ai-platform
 ./atlas setup
 ```
 
@@ -51,16 +93,16 @@ text model, and accept startup. Setup requires only Python's standard library an
 Docker; it writes `.env` atomically with mode 600 and never displays the key. It
 refuses to overwrite an existing `.env`. Keep that file private.
 
-Open **http://localhost:13700**. For a remote server, run this on your workstation
+Open **http://localhost:3000**. For a remote server, run this on your workstation
 (replace the login and host), then open the same URL:
 
 ```bash
-ssh -N -L 13700:127.0.0.1:13700 user@your-server
+ssh -N -L 3000:127.0.0.1:3000 user@your-server
 ```
 
-Create the first administrator account in Open WebUI. The attachment inlet is
-installed automatically within a few seconds after signup; refresh the page before
-uploading your first document. Subsequent accounts require administrator approval.
+Create the first administrator account in Open WebUI. The managed image and
+document inlet is installed before the web server starts, so you can immediately
+upload your first document. Subsequent accounts require administrator approval.
 Use the administration panel to manage users and disable signups when finished.
 The trial listener binds only to loopback; public hosting is covered in the
 [full stack installation](installation.md).
@@ -70,6 +112,13 @@ Automation reads the key from a private file, not a command-line argument:
 ```bash
 ./atlas setup --provider scaleway --api-key-file "$HOME/.config/atlas/provider-key" --yes
 ```
+
+The published port defaults to **3000**. Choose another at setup with
+`--http-port 3100`, or set `ATLAS_HTTP_PORT=3100` in `.env` and run
+`docker compose up -d` again. Update both ports in the SSH tunnel and the browser
+URL to match. `ATLAS_HTTP_PORT=3100 ./atlas setup` also sets the initial port;
+the flag takes precedence over the environment. Set `ATLAS_PUBLIC_URL` in `.env`
+if users access Atlas through a different public origin.
 
 Add `--no-start` to validate and save remote settings without starting the stack.
 For a custom endpoint, add `--base-url https://your-provider.example/v1 --model

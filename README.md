@@ -124,6 +124,15 @@ better reproducibility; see the [methodology and gaps](reports/M26.md).
 
 ## Quick start
 
+```bash
+git clone https://github.com/leag1234/atlas-ai-platform.git
+cd atlas-ai-platform
+./atlas setup
+```
+
+Open http://localhost:3000 and create the first administrator account. Use
+`./atlas setup --http-port 3100` to choose another port.
+
 [Try Atlas with Docker in under 10 minutes](docs/quickstart.md), or follow the
 [full stack installation](docs/installation.md) for image generation, Code mode,
 speech, HTTPS and administration.

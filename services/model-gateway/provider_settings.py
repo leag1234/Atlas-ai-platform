@@ -62,11 +62,17 @@ def api_key() -> str:
     return os.environ.get("ATLAS_PROVIDER_API_KEY", "")
 
 
-def request_options(body: dict[str, Any]) -> dict[str, Any]:
-    if os.environ.get("ATLAS_PROVIDER") not in (None, "", "scaleway"):
+def request_options(
+    body: dict[str, Any], provider: str | None = None
+) -> dict[str, Any]:
+    name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
+    body = dict(body)
+    if name not in ("", "scaleway"):
         body.pop("reasoning_effort", None)
         if not body.get("tools"):
             body.pop("tools", None)
+    if name:
+        body.update(presets()[name].get("request_options", {}))
     return body
 
 

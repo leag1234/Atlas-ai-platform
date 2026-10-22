@@ -74,7 +74,7 @@ services:
       ATLAS_SEARXNG_ENGINE_SECONDS: ${ATLAS_SEARXNG_ENGINE_SECONDS:-6}
       ATLAS_SEARXNG_FALLBACK_SECONDS: ${ATLAS_SEARXNG_FALLBACK_SECONDS:-30}
       ATLAS_SEARXNG_MIN_RESULTS: ${ATLAS_SEARXNG_MIN_RESULTS:-0}
-      ATLAS_PUBLIC_URL: ${ATLAS_PUBLIC_URL:-http://localhost:13700}
+      ATLAS_PUBLIC_URL: ${ATLAS_PUBLIC_URL:-http://localhost:${ATLAS_HTTP_PORT:-3000}}
       ATLAS_INTERACTION_DIR: /app/BRAIN/trial-logs
       ATLAS_CODE_MODE: '0'
       ATLAS_TTS: '0'
@@ -138,7 +138,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.frontend
-    ports: ['${ATLAS_BIND:-127.0.0.1}:${ATLAS_HTTP_PORT:-13700}:8080']
+    ports: ['${ATLAS_BIND:-127.0.0.1}:${ATLAS_HTTP_PORT:-3000}:8080']
     depends_on:
       webui: {condition: service_healthy}
     mem_limit: 64m

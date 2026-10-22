@@ -15,7 +15,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from provider_settings import presets, validate_endpoint
+from provider_settings import presets, request_options, validate_endpoint
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,23 +57,35 @@ def check_connection(base: str, key: str, model: str, provider: str = "") -> Non
         )
     answer = call(
         "/chat/completions",
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": "Reply with OK."}],
-            "max_tokens": 64,
-            **(
-                {"reasoning_effort": "none"}
-                if provider in ("scaleway", "local")
-                else {}
-            ),
-            "stream": False,
-        },
+        request_options(
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": "Reply with OK."}],
+                "max_tokens": 1024,
+                **(
+                    {"reasoning_effort": "none"}
+                    if provider in ("scaleway", "local")
+                    else {}
+                ),
+                "stream": False,
+            },
+            provider,
+        ),
     )
     try:
-        content = answer["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
+        message = answer["choices"][0]["message"]
+        content = message.get("content")
+    except (KeyError, IndexError, TypeError, AttributeError):
         raise ValueError("Provider returned no completion.") from None
     if not isinstance(content, str) or not content.strip():
+        if any(
+            isinstance(message.get(field), str) and message[field].strip()
+            for field in ("reasoning_content", "reasoning")
+        ):
+            print(
+                "WARNING: provider reachable but returned reasoning only; no visible answer was verified."
+            )
+            return
         raise ValueError(
             "Provider returned an empty completion; choose an instruction model."
         )
@@ -103,6 +115,14 @@ def write_private(path: Path, settings: dict[str, str]) -> None:
         Path(temporary).unlink(missing_ok=True)
 
 
+def http_port(value: str) -> str:
+    if not value.isascii() or not value.isdecimal() or not 1 <= int(value) <= 65535:
+        raise argparse.ArgumentTypeError(
+            "HTTP port must be an integer from 1 to 65535."
+        )
+    return str(int(value))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="./atlas")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -110,6 +130,12 @@ def main() -> int:
     setup.add_argument("--provider", choices=list(presets()))
     setup.add_argument("--api-key-file", type=Path)
     setup.add_argument("--model")
+    setup.add_argument(
+        "--http-port",
+        type=http_port,
+        default=os.environ.get("ATLAS_HTTP_PORT", "3000"),
+        help="published HTTP port (ATLAS_HTTP_PORT; default: 3000)",
+    )
     setup.add_argument("--base-url")
     setup.add_argument("--yes", action="store_true")
     setup.add_argument("--no-start", action="store_true")
@@ -177,7 +203,7 @@ def main() -> int:
             "WEBUI_SECRET_KEY": secrets.token_urlsafe(32),
             "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
             "SEARXNG_SECRET": secrets.token_urlsafe(32),
-            "ATLAS_HTTP_PORT": os.environ.get("ATLAS_HTTP_PORT", "13700"),
+            "ATLAS_HTTP_PORT": args.http_port,
             "ATLAS_OLLAMA_PORT": os.environ.get("ATLAS_OLLAMA_PORT", "13702"),
         }
         temporary = ROOT / ".atlas-setup.env"

@@ -1540,7 +1540,7 @@ async def _process(
         if tools.source_truncated:
             labels = json.loads(Path("prompts/activity-labels.json").read_text())
             item.reponse += (
-                "\n\n" + labels.get(request.ui_locale, labels["en"])["source_truncated"]
+                "\n\n" + labels.get(request.lang, labels["en"])["source_truncated"]
             )
         if (
             (technical_diagram or image_discussion)
