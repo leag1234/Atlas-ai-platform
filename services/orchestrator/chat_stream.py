@@ -48,9 +48,7 @@ def response(
 
         ceiling = str(settings().cost)
         display_deadline = settings().wall_clock
-    from packages.language import conversation_language
-
-    language = conversation_language(payload.conversation_messages, payload.ui_locale)
+    language = payload.status_language
     labels = json.loads(Path("prompts/progress.json").read_text())
     progress = str(labels.get(language, labels["en"])).split(":", 1)[0].strip()
     activity_labels = json.loads(Path("prompts/activity-labels.json").read_text())

@@ -3,6 +3,7 @@
 from packages.profiles import PROFILES, context_window
 from packages.file_intent import produces_file
 from packages.evidence import estimated_tokens
+from packages.language import LANGUAGES, status_language
 from pydantic_core import PydanticCustomError
 
 import re
@@ -101,6 +102,19 @@ class ChatRequest(VisionInput):
             ],
             "continuation": True,
         }
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_unsupported_interface_language(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("ui_locale") in (*LANGUAGES, "nl"):
+            return value
+        return {key: item for key, item in value.items() if key != "ui_locale"}
+
+    @property
+    def status_language(self) -> str:
+        # The legacy answer-language hint is not evidence of a known UI locale.
+        locale = self.ui_locale if "ui_locale" in self.model_fields_set else None
+        return status_language(self.conversation_messages, locale)
 
     @property
     def last_real_user_message(self) -> ChatMessage | None:

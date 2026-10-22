@@ -23,6 +23,15 @@ class LanguageMessage(Protocol):
 LANGUAGES = ("fr", "de", "es", "it", "en")
 
 
+def status_language(messages: Sequence[LanguageMessage], locale: object) -> str:
+    """Interface text follows a supported UI locale, then conversation prose."""
+    if locale == "nl":
+        return "en"
+    if isinstance(locale, str) and locale in LANGUAGES:
+        return locale
+    return conversation_language(messages, "en") if messages else "en"
+
+
 def user_prose(text: str) -> str:
     text = re.sub(r"<attached_files>.*?</attached_files>", "", text, flags=re.S)
     return re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M).strip()

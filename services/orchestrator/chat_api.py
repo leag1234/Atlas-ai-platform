@@ -367,7 +367,7 @@ async def chat(request: Request) -> Response:
                 "provider_model": item.provider_model,
                 "reasoning_retried": item.reasoning_retried,
                 "status": json.loads(Path("prompts/activity-labels.json").read_text())[
-                    payload.ui_locale
+                    payload.status_language
                 ]["reasoning_fallback"]
                 if item.reasoning_retried
                 else "",

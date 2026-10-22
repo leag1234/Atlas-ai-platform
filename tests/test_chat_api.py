@@ -243,6 +243,7 @@ class ChatAPITests(unittest.TestCase):
                     json={
                         "model": "atlas-glm",
                         "stream": streaming,
+                        "ui_locale": "fr",
                         "messages": [{"role": "user", "content": "Explain this limit"}],
                     },
                 )

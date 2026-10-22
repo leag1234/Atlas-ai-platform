@@ -8,7 +8,7 @@ from pathlib import Path
 import hashlib
 import json
 from types import SimpleNamespace
-from packages.language import conversation_language
+from packages.language import status_language
 from importlib import import_module
 import re
 import os
@@ -65,10 +65,7 @@ class Filter:
                 )
             )
             messages.append(SimpleNamespace(role=message.get("role", ""), text=text))
-        locale = body.get("ui_locale", "en")
-        if locale not in {"en", "fr", "de", "es", "it", "nl"}:
-            locale = "en"
-        language = conversation_language(messages, locale) if messages else locale
+        language = status_language(messages, body.get("ui_locale"))
         labels = json.loads(Path("prompts/activity-labels.json").read_text())
         labels = labels.get(language, labels["en"])
         if __event_emitter__:

@@ -202,7 +202,7 @@ class StatusLanguageTests(unittest.IsolatedAsyncioTestCase):
         ]
         events = AsyncMock()
         await Filter().inlet(
-            {"model": "atlas-qwen", "ui_locale": "fr", "messages": messages},
+            {"model": "atlas-qwen", "messages": messages},
             __event_emitter__=events,
         )
         self.assertIn(
@@ -227,9 +227,7 @@ class StatusLanguageTests(unittest.IsolatedAsyncioTestCase):
             )
             await sink({"delta": {"content": item.reponse}})
 
-        payload = ChatRequest.model_validate(
-            {"stream": True, "ui_locale": "fr", "messages": messages}
-        )
+        payload = ChatRequest.model_validate({"stream": True, "messages": messages})
         with (
             tempfile.TemporaryDirectory() as root,
             patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
