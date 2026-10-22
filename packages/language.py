@@ -50,6 +50,9 @@ def question_language(text: str, fallback: str) -> str:
 
 
 def conversation_language(messages: Sequence[VisionMessage], locale: str) -> str:
+    # Dutch is supported by search; text UI/prompt translations remain unchanged.
+    if locale == "nl":
+        locale = "en"
     if locale not in LANGUAGES:
         raise ValueError("unsupported_language")
     history: str | None = None

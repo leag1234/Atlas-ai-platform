@@ -5,22 +5,29 @@ use_default_settings:
     keep_only:
       - duckduckgo
       - brave
-      - brave.news
       - wikipedia
       - qwant
-      - qwant news
+      - startpage
       - bing
-      - bing news
       - google
-      - google news
 
 general:
   enable_metrics: false
 
 search:
   safe_search: 1
-  default_lang: auto
+  default_lang: en
   autocomplete: ""
+  ban_time_on_fail: 60
+  max_ban_time_on_fail: 3600
+  # Short sidecar cooldowns; the client owns the three-block quarantine.
+  suspended_times:
+    SearxEngineAccessDenied: 60
+    SearxEngineCaptcha: 60
+    SearxEngineTooManyRequests: 60
+    cf_SearxEngineCaptcha: 60
+    cf_SearxEngineAccessDenied: 60
+    recaptcha_SearxEngineCaptcha: 60
   formats:
     - html
     - json
@@ -30,3 +37,18 @@ server:
   limiter: false
   image_proxy: false
   public_instance: false
+
+# The client queries one web engine at a time; Wikipedia runs in parallel.
+# Ecosia is absent from the pinned 2026.10.17 engine registry.
+engines:
+  - name: wikipedia
+    display_type: [list]
+  - name: bing
+    disabled: false
+  - name: startpage
+    disabled: false
+
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 4.0
+  retries: 0

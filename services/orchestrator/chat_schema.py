@@ -54,7 +54,7 @@ class ChatRequest(VisionInput):
     reasoning_effort: Literal["none", "low", "high"] = "none"
     max_tokens: int = Field(default=6000, ge=1, le=16000)
     seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
-    ui_locale: Literal["fr", "de", "es", "it", "en"] = "fr"
+    ui_locale: Literal["fr", "de", "es", "it", "en", "nl"] = "fr"
     lang: Literal["fr", "de", "es", "it", "en"] = "fr"
     continuation: bool = Field(default=False, exclude=True)
 
@@ -76,6 +76,8 @@ class ChatRequest(VisionInput):
         ):
             return value
         locale = value.get("ui_locale", "fr")
+        if locale == "nl":
+            locale = "en"
         language = value.get("lang", locale)
         if locale not in CONTINUATION_INSTRUCTIONS:
             return value

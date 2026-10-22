@@ -19,6 +19,7 @@ import aiohttp
 from pydantic import BaseModel, Field
 
 from services.orchestrator.cache import Cache
+from services.orchestrator.searxng import NOTICES, OUTCOMES, search_language
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call, Limits, Message, Query, run
@@ -299,6 +300,19 @@ class ChatTools(Runtime):
             if call.name == "web_search" and isinstance(data, dict):
                 data = self.search_evidence(data)
                 output = {**output, "data": data}
+            if call.name == "web_search" and str(output.get("error")) in OUTCOMES:
+                outcome = str(output["error"])
+                self.item.erreurs.append(outcome)
+                raise GatewayError(outcome, 503, NOTICES[outcome])
+            if (
+                call.name == "web_search"
+                and isinstance(data, dict)
+                and str(data.get("outcome")) in OUTCOMES
+            ):
+                outcome = str(data["outcome"])
+                self.item.erreurs.append(outcome)
+                if not data.get("results"):
+                    raise GatewayError(outcome, 503, NOTICES[outcome])
             if isinstance(data, dict):
                 self.source_truncated |= data.get("truncated") is True
                 if isinstance(data.get("url"), str):
@@ -322,6 +336,12 @@ class ChatTools(Runtime):
                         "tool": call.name,
                         "urls": urls,
                         "ok": "error" not in output,
+                        "outcome": data.get("outcome")
+                        if isinstance(data, dict)
+                        else None,
+                        "message": data.get("message")
+                        if isinstance(data, dict)
+                        else None,
                     }
                 )
             if sink and isinstance(data, dict):
@@ -671,6 +691,11 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             await _process(request, item)
     else:
         await _process(request, item)
+    if item.state == "done" and "partial_results" in item.erreurs:
+        notice = "\n\n" + NOTICES["partial_results"]
+        item.reponse += notice
+        if sink := sink_context.get():
+            await sink({"delta": {"content": notice}})
     if item.state == "done" and any(
         d.get("hierarchical_synthesis") for d in item.documents
     ):
@@ -1053,6 +1078,9 @@ async def _process(
     tools.daily_ledger = getattr(request, "daily_ledger", None)
     tools.daily_user = getattr(request, "daily_user", "unknown")
     tools.daily_lang = request.lang
+    tools.search_language = search_language(
+        request.conversation_messages, request.ui_locale
+    )
     tools.model = model
     tools.terminal_code_disabled = structured_presentation
     file_context = ""

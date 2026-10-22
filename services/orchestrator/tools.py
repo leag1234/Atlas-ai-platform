@@ -8,7 +8,6 @@ import json
 import os
 import re
 import sys
-import time
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -114,16 +113,13 @@ def declarations() -> list[Message]:
 
 
 class Runtime:
-    _searxng_queries = asyncio.Semaphore(2)
-    _searxng_delay_lock = asyncio.Lock()
-    _searxng_last_query = 0.0
-
     def __init__(self, cache: Cache, search_cost: Decimal, question: str = "") -> None:
         self.cache, self.search_cost = cache, search_cost
         Reservation(0, search_cost)
         self.web = Web()
         self.question = question
         self.daily_lang = "en"
+        self.search_language: str | None = None
 
     def estimate(self, call: Call) -> Reservation:
         provider = next(
@@ -259,88 +255,24 @@ class Runtime:
         return output
 
     async def searxng(self, request: Search, timeout: float) -> Message:
-        """Query local SearXNG, retrying an independent engine group once."""
-        groups = (
-            ("duckduckgo", "brave", "wikipedia"),
-            ("qwant", "bing", "google"),
+        from packages.images import VisionMessage
+        from services.orchestrator import searxng
+
+        language = self.search_language or searxng.search_language(
+            [VisionMessage(role="user", content=self.question)]
+            if self.question.strip()
+            else [],
+            request.lang,
         )
-        cached_key = self.cache.key(["searxng-json-v1", request.model_dump(), groups])
-        cached = self.cache.get(cached_key)
-        if cached is not None:
-            return cached
-        params_base = {
-            "q": request.query,
-            "format": "json",
-            "language": request.lang,
-            "categories": "news" if request.news else "general",
-            "safesearch": "1",
-        }
-        if request.news:
-            params_base["time_range"] = "month"
-        port = atlas_ports().port("searxng")
-        async with self._searxng_queries:
-            for engines in groups:
-                async with self._searxng_delay_lock:
-                    wait = 0.1 - (time.monotonic() - self._searxng_last_query)
-                    if wait > 0:
-                        await asyncio.sleep(wait)
-                    self.__class__._searxng_last_query = time.monotonic()
-                params = {**params_base, "engines": ",".join(engines)}
-                try:
-                    async with aiohttp.ClientSession(
-                        timeout=http_timeout(min(timeout, 8), 8), trust_env=False
-                    ) as session:
-                        async with session.get(
-                            os.environ.get(
-                                "ATLAS_SEARXNG_URL", f"http://127.0.0.1:{port}"
-                            ).rstrip("/")
-                            + "/search",
-                            params=params,
-                            allow_redirects=False,
-                        ) as response:
-                            if response.status != 200:
-                                continue
-                            body = bytearray()
-                            async for piece in response.content.iter_chunked(16384):
-                                body.extend(piece)
-                                if len(body) > MAX_BYTES:
-                                    raise LimitError(
-                                        "response_too_large",
-                                        len(body),
-                                        MAX_BYTES,
-                                        "bytes",
-                                    )
-                            data = json.loads(body)
-                except (aiohttp.ClientError, TimeoutError, ValueError):
-                    continue
-                results = data.get("results") if isinstance(data, dict) else None
-                if not isinstance(results, list) or not results:
-                    continue
-                items: list[Message] = []
-                for item in results[: request.n]:
-                    if not isinstance(item, dict):
-                        continue
-                    url = item.get("url")
-                    if not isinstance(url, str):
-                        continue
-                    items.append(
-                        {
-                            "title": str(item.get("title", ""))[:300],
-                            "link": url[:4096],
-                            "snippet": str(item.get("content", ""))[:300],
-                            "date": str(item.get("publishedDate", ""))[:100],
-                        }
-                    )
-                if not items:
-                    continue
-                output: Message = {
-                    "provider": "searxng",
-                    "results": items,
-                    "consulted_at": datetime.now(timezone.utc).isoformat(),
-                }
-                self.cache.put(cached_key, output, 3600)
-                return output
-        raise ValueError("search_unavailable")
+        return await searxng.search(
+            self.cache,
+            os.environ.get("ATLAS_SEARXNG_URL", atlas_ports().url("searxng")),
+            request.query,
+            language,
+            request.n,
+            request.news,
+            timeout,
+        )
 
     async def tavily(self, request: Search, timeout: float) -> Message:
         key = self.cache.key(
@@ -587,7 +519,11 @@ class Runtime:
                 ).model_json_schema(),
             }
         except TimeoutError:
-            return {"error": "timeout"}
+            return {
+                "error": "upstream_timeout"
+                if call.name == "web_search" and "searxng" in search_providers()
+                else "timeout"
+            }
         except (aiohttp.ClientError, KeyError):
             return {"error": "provider_unavailable"}
         except ValueError as exc:

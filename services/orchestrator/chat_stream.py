@@ -311,6 +311,8 @@ def response(
                     )
                 if phase == "tool_finished" and activity != "generate_image":
                     links = "<br>".join(html.escape(url) for url in activity_urls)
+                    if event.get("message"):
+                        links = html.escape(str(event["message"])) + "<br>" + links
                     await queue.put(
                         {
                             "delta": {
