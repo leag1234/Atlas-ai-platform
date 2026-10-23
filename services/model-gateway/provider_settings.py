@@ -94,7 +94,7 @@ def configure(
     if preset is None:
         return config, prices
     text = os.environ.get("ATLAS_TEXT_MODEL") or preset.get("text_model")
-    vision = os.environ.get("ATLAS_VISION_MODEL", preset.get("vision_model"))
+    vision = os.environ.get("ATLAS_VISION_MODEL") or preset.get("vision_model")
     if not text:
         raise ValueError("provider_text_model_required")
     # A default Scaleway preset keeps distinct code, fast and vision fallback roles.
