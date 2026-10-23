@@ -38,6 +38,17 @@ Availability depends on configuration; Code mode is an owner preview.
 
 Comparison as of October 2026.
 
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Chat with a comparison table](assets/screenshots/1-chat.png) | ![Web answer with cited sources](assets/screenshots/2-web-search.png) |
+| **Chat**: structured answers with tables. | **Web search**: answers built from fetched pages, with clickable sources. |
+| ![Photo described in detail](assets/screenshots/3-image-understanding.png) | ![PDF summary next to the document](assets/screenshots/4-pdf-side-view.png) |
+| **Image understanding**: describe and analyse a photo. | **Documents**: summarise a PDF and read it in the side view. |
+| ![Diagram rendered in the answer](assets/screenshots/5-diagram.png) | ![QR codes generated locally](assets/screenshots/6-qr-codes.png) |
+| **Diagrams**: explanations with rendered flowcharts. | **Tools**: QR codes and other outputs generated locally. |
+
 ## Next
 
 - Unified Project mode in the spirit of Claude Cowork, including the Code mode.
