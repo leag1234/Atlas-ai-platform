@@ -229,7 +229,11 @@ async def finish_appearance(
 
 
 async def finish_mechanical_drawing(
-    request: ChatRequest, item: Interaction, result: Result
+    request: ChatRequest,
+    item: Interaction,
+    result: Result,
+    *,
+    fallback_only: bool = False,
 ) -> None:
     """Deliver a model SVG and optional retrieved Commons drawing without imagegen."""
     drawing = await find_drawing(
@@ -239,9 +243,10 @@ async def finish_mechanical_drawing(
             {"url": url, "response": response}
         ),
     )
+    # Quick start prefers retrieved imagery and uses a model SVG only as fallback.
+    # Preserve the stable guest's explicit opt-in to a supplemental model drawing.
     # A drawing without a matching, useful legend is less honest than no drawing.
-    # Commons provenance remains independent and is shown first when available.
-    show_svg = mechanical_svg_enabled()
+    show_svg = mechanical_svg_enabled() and (drawing is None or not fallback_only)
     svg = extract_svg(result.text, require_legend=True) if show_svg else None
     fallback_intro, alt, failure, note, source = mechanical_copy(request.lang)
     intro, _ = mechanical_prose(result.text)
