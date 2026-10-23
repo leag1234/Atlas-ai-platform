@@ -7,8 +7,10 @@ platform close to their performance while enabling digital sovereignty.
 I am building Atlas as an open-source, open and transparent, extensible platform,
 designed for open-weight models and frugal routing. It offers an OpenAI-compatible
 API and an MCP client. I want people to run it on their own infrastructure or
-use on-demand services. This version is designed for Scaleway's on-demand models,
-with image generation on a GPU rented by the hour.
+use on-demand services. Atlas was first built on Scaleway's on-demand models, with
+image generation on a GPU rented by the hour, and it plugs easily into other
+OpenAI-compatible providers. The Docker quick start includes ready-made presets
+for Hetzner, Mistral, OVHcloud and Scaleway, and an experimental local Ollama option.
 
 Gaël Duval
 
