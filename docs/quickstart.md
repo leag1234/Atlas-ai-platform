@@ -61,14 +61,14 @@ setup does not claim a visible answer was verified.
 | Hetzner | Verified 2026-10-23 | Free during the experiment | **Experimental; not for production.** [API, models and terms](https://docs.hetzner.com/general/company-and-policy/experiments/inference/) |
 | Scaleway | Verified 2026-10-23 | EUR 0.60 / 3.60 text; EUR 0.25 / 0.50 vision | Current Atlas defaults; [quickstart](https://www.scaleway.com/en/docs/generative-apis/quickstart/), [pricing](https://www.scaleway.com/en/pricing/model-as-a-service/), [FAQ](https://www.scaleway.com/en/docs/generative-apis/faq/) |
 | Mistral | Verified 2026-10-23 | USD 0.15 / 0.60 | [Model](https://docs.mistral.ai/models/mistral-small-4-0-26-03), [API](https://docs.mistral.ai/api/endpoint/chat), [pricing](https://docs.mistral.ai/inference/pricing) |
-| IONOS AI Model Hub | In progress | **Unverified price** | [API](https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation), [model](https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b) |
+| IONOS AI Model Hub | **Not yet tested** (no test access so far) | Preset untested; price unverified | [API](https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation), [model](https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b) |
 | OVHcloud AI Endpoints | Verified 2026-10-23 | **Unverified price** | [Catalog](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/), [API example](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output) |
 | Local Ollama | In progress | No token charge; hardware and electricity remain | [API](https://docs.ollama.com/api/openai-compatibility), [model sizes](https://ollama.com/library/qwen3), [Docker](https://docs.ollama.com/docker) |
 | Hugging Face Inference Providers | In progress | **Unverified, route-dependent price** | Outside the EU; router destination depends on the selected provider. [API](https://huggingface.co/docs/inference-providers/tasks/chat-completion), [billing](https://huggingface.co/docs/inference-providers/pricing) |
 | DeepSeek | In progress | **Unverified price** | Outside the EU. [API](https://api-docs.deepseek.com/); the [pricing URL](https://api-docs.deepseek.com/quick_start/pricing) redirected to the quickstart during verification. |
 | Other | In progress | **Unverified** until configured | Supply a base URL and model ID from your provider's documentation. |
 
-Verification records the owner's fresh Ubuntu browser acceptance tests for PDF,
+Verified means an end-to-end browser test on a fresh Ubuntu host: PDF,
 chat, cited web answers and diagrams. IONOS has not been tested with an account key.
 OVHcloud now uses `Qwen3.5-397B-A17B` for text and
 `Qwen2.5-VL-72B-Instruct` for vision. See [provider details](providers.md).

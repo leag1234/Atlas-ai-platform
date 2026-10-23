@@ -770,6 +770,16 @@ class Scene(BaseModel):
             return self.action
         return "the requested detail"
 
+    @staticmethod
+    def failure_note_eligible(key: str) -> bool:
+        """Keep subjective verification misses out of the user-facing outcome."""
+        return key in {
+            "adult_man",
+            "adult_women_count",
+            "action",
+            "birth_delivery",
+        } or key.startswith(("character_", "action_binding_"))
+
 
 def retain_anchors(scene: Scene, anchors: Scene) -> None:
     """A formatter may enrich source fields, but cannot silently delete them."""
