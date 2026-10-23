@@ -118,6 +118,7 @@ class Runtime:
         Reservation(0, search_cost)
         self.web = Web()
         self.question = question
+        self._last_search_attempts: list[Message] = []
         self.daily_lang = "en"
         self.search_language: str | None = None
 
@@ -156,25 +157,77 @@ class Runtime:
                 raise KeyError("SERPAPI_KEY")
             raise ValueError("search_unavailable")
         last_quota: SearchQuotaError | None = None
+        attempts: list[Message] = []
+        last_searxng_result: Message | None = None
+        deadline = asyncio.get_running_loop().time() + timeout
         for provider in available:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
             try:
+                provider_timeout = remaining
+                # Leave room for the one SearXNG retry and a later provider.
+                if provider == "searxng" and len(available) > 1:
+                    provider_timeout = max(0.001, remaining - 2.05)
                 result = await {
                     "serpapi": self.serpapi,
                     "tavily": self.tavily,
                     "searxng": self.searxng,
-                }[provider](request, timeout)
+                }[provider](request, provider_timeout)
+                outcome = str(result.get("outcome", "ok"))
+                attempts.append({"provider": provider, "outcome": outcome})
+                if provider == "searxng":
+                    last_searxng_result = result
+                if provider == "searxng" and outcome in {
+                    "upstream_blocked",
+                    "upstream_timeout",
+                }:
+                    remaining = deadline - asyncio.get_running_loop().time()
+                    if remaining > 2.05:
+                        await asyncio.sleep(2)
+                        result = await self.searxng(
+                            request, deadline - asyncio.get_running_loop().time()
+                        )
+                        outcome = str(result.get("outcome", "ok"))
+                        attempts.append(
+                            {"provider": provider, "outcome": outcome, "retry": True}
+                        )
+                        last_searxng_result = result
+                if provider == "searxng" and outcome in {
+                    "upstream_blocked",
+                    "upstream_timeout",
+                    "empty_results",
+                }:
+                    continue
                 self._last_search_provider = provider
-                return result
+                return {**result, "attempts": attempts}
             except SearchQuotaError as exc:
                 last_quota = exc
+                attempts.append({"provider": provider, "outcome": str(exc)})
             except (TimeoutError, aiohttp.ClientError):
                 last_quota = None
+                attempts.append({"provider": provider, "outcome": "upstream_timeout"})
+            except LimitError as exc:
+                attempts.append({"provider": provider, "outcome": exc.code})
+                self._last_search_attempts = attempts
+                raise
             except ValueError as exc:
                 if str(exc) != "search_unavailable":
+                    attempts.append({"provider": provider, "outcome": str(exc)})
+                    self._last_search_attempts = attempts
                     raise
                 last_quota = None
+                attempts.append({"provider": provider, "outcome": "search_unavailable"})
+        if last_searxng_result is not None and all(
+            str(attempt.get("provider")) == "searxng" for attempt in attempts
+        ):
+            outcome = str(attempts[-1]["outcome"])
+            if outcome in {"upstream_blocked", "upstream_timeout", "empty_results"}:
+                return {**last_searxng_result, "attempts": attempts}
         if last_quota is not None:
+            self._last_search_attempts = attempts
             raise last_quota
+        self._last_search_attempts = attempts
         raise ValueError("search_unavailable")
 
     def _reserve_search(self, provider: str) -> None:
@@ -507,9 +560,25 @@ class Runtime:
                 "provider_status": exc.status,
             }
         except SearchQuotaError as exc:
-            return {"error": str(exc), "provider_status": exc.status}
+            return {
+                "error": str(exc),
+                "provider_status": exc.status,
+                **(
+                    {"attempts": self._last_search_attempts}
+                    if call.name == "web_search"
+                    else {}
+                ),
+            }
         except LimitError as exc:
-            return {"error": exc.code, "message": exc.detail}
+            return {
+                "error": exc.code,
+                "message": exc.detail,
+                **(
+                    {"attempts": self._last_search_attempts}
+                    if call.name == "web_search"
+                    else {}
+                ),
+            }
         except ValidationError as exc:
             return {
                 "error": "invalid_arguments",
@@ -522,11 +591,30 @@ class Runtime:
             return {
                 "error": "upstream_timeout"
                 if call.name == "web_search" and "searxng" in search_providers()
-                else "timeout"
+                else "timeout",
+                **(
+                    {"attempts": self._last_search_attempts}
+                    if call.name == "web_search"
+                    else {}
+                ),
             }
         except (aiohttp.ClientError, KeyError):
-            return {"error": "provider_unavailable"}
+            return {
+                "error": "provider_unavailable",
+                **(
+                    {"attempts": self._last_search_attempts}
+                    if call.name == "web_search"
+                    else {}
+                ),
+            }
         except ValueError as exc:
             return {
-                "error": str(exc) if len(str(exc)) < 80 else "invalid_provider_response"
+                "error": str(exc)
+                if len(str(exc)) < 80
+                else "invalid_provider_response",
+                **(
+                    {"attempts": self._last_search_attempts}
+                    if call.name == "web_search"
+                    else {}
+                ),
             }

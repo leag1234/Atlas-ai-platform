@@ -42,7 +42,14 @@ class TavilyTests(unittest.IsolatedAsyncioTestCase):
                     Call("1", "web_search", '{"query":"public news","lang":"en"}'), 1
                 )
                 self.assertEqual(
-                    result, {"error": "quota_exceeded", "provider_status": status}
+                    result,
+                    {
+                        "error": "quota_exceeded",
+                        "provider_status": status,
+                        "attempts": [
+                            {"provider": "tavily", "outcome": "quota_exceeded"}
+                        ],
+                    },
                 )
                 self.assertEqual(session.post.call_count, 1)
 
@@ -404,6 +411,7 @@ class TavilyTests(unittest.IsolatedAsyncioTestCase):
                             if expected == "response_too_large"
                             else {}
                         ),
+                        "attempts": [{"provider": "tavily", "outcome": expected}],
                     },
                 )
 

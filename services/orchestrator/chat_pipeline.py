@@ -77,6 +77,38 @@ from services.orchestrator.appearance import (
 )
 
 
+def search_failure_notice(outcome: str, language: str) -> str:
+    """Keep application-generated search caveats in the conversation language."""
+    notices = {
+        "en": NOTICES,
+        "fr": {
+            "upstream_blocked": "La recherche web a été bloquée par les moteurs en amont ; aucun résultat vérifié n’a été obtenu.",
+            "upstream_timeout": "La recherche web a expiré ; aucun résultat vérifié n’a été obtenu.",
+            "empty_results": "Les moteurs de recherche n’ont renvoyé aucun résultat correspondant. Cela ne prouve pas qu’aucune information n’existe.",
+            "partial_results": "La recherche a renvoyé des résultats partiels ; certaines sources étaient indisponibles ou trop peu de résultats web ont été trouvés.",
+        },
+        "de": {
+            "upstream_blocked": "Die Websuche wurde von vorgeschalteten Suchmaschinen blockiert; es wurden keine verifizierten Ergebnisse abgerufen.",
+            "upstream_timeout": "Bei der Websuche ist eine Zeitüberschreitung aufgetreten; es wurden keine verifizierten Ergebnisse abgerufen.",
+            "empty_results": "Die Suchmaschinen lieferten keine passenden Ergebnisse. Das beweist nicht, dass keine Informationen existieren.",
+            "partial_results": "Die Suche lieferte unvollständige Ergebnisse; einige Quellen waren nicht verfügbar oder es wurden zu wenige Webergebnisse gefunden.",
+        },
+        "es": {
+            "upstream_blocked": "Los motores de búsqueda ascendentes bloquearon la búsqueda web; no se obtuvieron resultados verificados.",
+            "upstream_timeout": "La búsqueda web agotó el tiempo de espera; no se obtuvieron resultados verificados.",
+            "empty_results": "Los motores de búsqueda no devolvieron resultados coincidentes. Esto no demuestra que no exista información.",
+            "partial_results": "La búsqueda devolvió resultados parciales; algunas fuentes no estaban disponibles o se encontraron muy pocos resultados web.",
+        },
+        "it": {
+            "upstream_blocked": "La ricerca web è stata bloccata dai motori a monte; non sono stati ottenuti risultati verificati.",
+            "upstream_timeout": "La ricerca web è scaduta; non sono stati ottenuti risultati verificati.",
+            "empty_results": "I motori di ricerca non hanno restituito risultati corrispondenti. Questo non dimostra che non esistano informazioni.",
+            "partial_results": "La ricerca ha restituito risultati parziali; alcune fonti non erano disponibili oppure sono stati trovati troppo pochi risultati web.",
+        },
+    }
+    return notices.get(language, NOTICES).get(outcome, NOTICES[outcome])
+
+
 class Source(BaseModel):
     chunk_id: str = Field(pattern=r"^[a-f0-9]{64}$")
     doc_id: str = Field(min_length=1)
@@ -303,7 +335,8 @@ class ChatTools(Runtime):
             if call.name == "web_search" and str(output.get("error")) in OUTCOMES:
                 outcome = str(output["error"])
                 self.item.erreurs.append(outcome)
-                raise GatewayError(outcome, 503, NOTICES[outcome])
+                if not self.item.retrieved_urls:
+                    raise GatewayError(outcome, 503, NOTICES[outcome])
             if (
                 call.name == "web_search"
                 and isinstance(data, dict)
@@ -311,7 +344,7 @@ class ChatTools(Runtime):
             ):
                 outcome = str(data["outcome"])
                 self.item.erreurs.append(outcome)
-                if not data.get("results"):
+                if not data.get("results") and not self.item.retrieved_urls:
                     raise GatewayError(outcome, 503, NOTICES[outcome])
             if isinstance(data, dict):
                 self.source_truncated |= data.get("truncated") is True
@@ -367,6 +400,10 @@ class ChatTools(Runtime):
                     "error" in output
                     or not isinstance(data, dict)
                     or not data.get("results")
+                )
+                and (
+                    not self.item.retrieved_urls
+                    or output.get("error") in {"quota_exceeded", "search_rate_limited"}
                 )
             ):
                 # Stop before another inference can silently replace failed research
@@ -691,8 +728,13 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             await _process(request, item)
     else:
         await _process(request, item)
-    if item.state == "done" and "partial_results" in item.erreurs:
-        notice = "\n\n" + NOTICES["partial_results"]
+    failed_searches = tuple(
+        dict.fromkeys(outcome for outcome in item.erreurs if outcome in OUTCOMES)
+    )
+    if item.state == "done" and failed_searches:
+        notice = "\n\n" + "\n".join(
+            search_failure_notice(outcome, request.lang) for outcome in failed_searches
+        )
         item.reponse += notice
         if sink := sink_context.get():
             await sink({"delta": {"content": notice}})

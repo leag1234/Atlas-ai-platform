@@ -402,6 +402,91 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(raised.exception.detail, sx.NOTICES[outcome])
                 self.assertIn(outcome, item.erreurs)
 
+    async def test_pipeline_keeps_earlier_sources_and_adds_localized_caveat(
+        self,
+    ) -> None:
+        from services.orchestrator import chat_pipeline
+        from services.orchestrator.chat_schema import ChatRequest
+
+        item = Interaction(retrieved_urls=["https://example.test/earlier"])
+        tools = ChatTools(item)
+        data = {
+            "provider": "searxng",
+            "outcome": "upstream_timeout",
+            "results": [],
+            "message": sx.NOTICES["upstream_timeout"],
+        }
+        with patch.object(
+            Runtime,
+            "execute",
+            AsyncMock(return_value={"trust": "untrusted", "data": data}),
+        ):
+            output = await tools.execute(
+                Call("s", "web_search", json.dumps({"query": "CERN", "lang": "en"})),
+                2,
+            )
+        self.assertEqual(output["data"], data)
+        self.assertIn("upstream_timeout", item.erreurs)
+
+        async def complete(request: ChatRequest, interaction: Interaction) -> None:
+            interaction.state = "done"
+            interaction.reponse = "CERN is a physics laboratory."
+
+        request = ChatRequest(
+            ui_locale="fr",
+            messages=[VisionMessage(role="user", content="Actualites du CERN")],
+        )
+        with patch.object(chat_pipeline, "_process", side_effect=complete):
+            await chat_pipeline.process(request, item)
+        self.assertIn("CERN is a physics laboratory.", item.reponse)
+        self.assertIn(
+            "La recherche web a expiré ; aucun résultat vérifié n’a été obtenu.",
+            item.reponse,
+        )
+
+    async def test_pipeline_returns_503_when_no_result_exists(self) -> None:
+        item = Interaction()
+        data = {
+            "provider": "searxng",
+            "outcome": "empty_results",
+            "results": [],
+        }
+        with patch.object(
+            Runtime,
+            "execute",
+            AsyncMock(return_value={"trust": "untrusted", "data": data}),
+        ):
+            with self.assertRaisesRegex(GatewayError, "empty_results"):
+                await ChatTools(item).execute(
+                    Call(
+                        "s", "web_search", json.dumps({"query": "CERN", "lang": "en"})
+                    ),
+                    2,
+                )
+
+    async def test_pipeline_keeps_quota_refusal_terminal_with_earlier_sources(
+        self,
+    ) -> None:
+        item = Interaction(retrieved_urls=["https://example.test/earlier"])
+        with patch.object(
+            Runtime,
+            "execute",
+            AsyncMock(
+                return_value={
+                    "error": "quota_exceeded",
+                    "provider_status": 429,
+                    "attempts": [{"provider": "tavily", "outcome": "quota_exceeded"}],
+                }
+            ),
+        ):
+            with self.assertRaisesRegex(GatewayError, "quota_exceeded"):
+                await ChatTools(item).execute(
+                    Call(
+                        "s", "web_search", json.dumps({"query": "CERN", "lang": "en"})
+                    ),
+                    2,
+                )
+
 
 class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_ten_uncached_searches_per_rolling_minute(self) -> None:

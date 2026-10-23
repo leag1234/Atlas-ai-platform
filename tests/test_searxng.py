@@ -105,9 +105,9 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "provider": "searxng",
                     "language": "en",
-                    "outcome": "upstream_timeout",
+                    "outcome": "upstream_blocked",
                     "results": [],
-                    "message": "Web search timed out; no verified results were obtained.",
+                    "message": "Web search was blocked by upstream engines; no verified results were obtained.",
                 },
                 None,
             ),
