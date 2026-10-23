@@ -28,6 +28,8 @@ def gpu_name() -> str:
 
 
 def gpu_allowed() -> bool:
+    if os.environ.get("ATLAS_TRIAL") == "1":
+        return False
     return (
         os.environ.get("ATLAS_STABLE") == "1" or os.environ.get("ATLAS_DEV_GPU") == "1"
     )
@@ -35,6 +37,8 @@ def gpu_allowed() -> bool:
 
 def image_worker_address() -> str:
     """Configured workers are usable without permission to manage infrastructure."""
+    if os.environ.get("ATLAS_TRIAL") == "1":
+        return ""
     if address := os.environ.get("ATLAS_IMAGE_GPU_IP"):
         return address
     try:

@@ -1,5 +1,7 @@
 """Validated tool-calling transport and human-confirmed pricing, POC-P6."""
 
+import provider_settings
+
 from packages.limits import LimitError, ProviderLimitError, MalformedToolCall
 
 from packages.profiles import PROFILES
@@ -160,7 +162,13 @@ class AgentRequest(BaseModel):
 
 class AgentProvider:
     def __init__(self) -> None:
-        self.model = os.environ["ESCALATION_MODEL"]
+        if os.environ.get("ATLAS_PROVIDER"):
+            from serverless import ServerlessPolicy
+
+            policy = ServerlessPolicy()
+            self.model = policy.models["text"]
+        else:
+            self.model = os.environ["ESCALATION_MODEL"]
         routing = yaml.safe_load(Path(__file__).with_name("routing.yaml").read_text())
         self.local_endpoint = os.path.expandvars(
             routing["providers"]["local"]["base_url"]
@@ -169,6 +177,8 @@ class AgentProvider:
             routing["task_classes"]["chat_simple"]["primary"]["model"]
         )
         catalogue = yaml.safe_load(Path(__file__).with_name("pricing.yaml").read_text())
+        if os.environ.get("ATLAS_PROVIDER"):
+            catalogue["models"] = policy.prices
         if self.model not in catalogue["models"]:
             raise ValueError("missing_price")
         self.price = catalogue["models"][self.model]
@@ -204,9 +214,7 @@ class AgentProvider:
             return await complete(self, request)
         if not request.local_enabled:
             return await self.serverless_complete(request)
-        endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
-        if not endpoint.startswith("https://"):
-            raise ValueError("provider_configuration")
+        endpoint = provider_settings.endpoint()
         started = monotonic()
         route = classify(request.messages)
         fallback = False
@@ -265,7 +273,7 @@ class AgentProvider:
                 request,
                 endpoint,
                 self.model,
-                os.environ["SCW_GENERATIVE_API_KEY"],
+                provider_settings.api_key(),
                 remaining,
             )
             return observed(answer, "escalade")
@@ -277,9 +285,7 @@ class AgentProvider:
 
         policy = ServerlessPolicy()
         plan = policy.reserve(request.messages, request.tools)
-        endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
-        if not endpoint.startswith("https://"):
-            raise ValueError("provider_configuration")
+        endpoint = provider_settings.endpoint()
         started = monotonic()
         unknown = Decimal(0)
         malformed_name: MalformedToolCall | None = None
@@ -301,7 +307,7 @@ class AgentProvider:
                         current,
                         endpoint,
                         selected,
-                        os.environ["SCW_GENERATIVE_API_KEY"],
+                        provider_settings.api_key(),
                         seconds,
                     )
                 }
@@ -406,7 +412,7 @@ class AgentProvider:
             ) as session:
                 async with session.post(
                     endpoint + "/chat/completions",
-                    json=body,
+                    json=provider_settings.request_options(body),
                     headers={"Authorization": "Bearer " + key} if key else {},
                     allow_redirects=False,
                 ) as response:

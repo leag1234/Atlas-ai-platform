@@ -1,0 +1,77 @@
+# Provider catalog, fetched from official sources on 2026-10-22.
+# JSON-compatible YAML keeps ./atlas setup dependency-free. Source URLs are per entry.
+# Prices are indicative per million tokens, excluding tax; null means unverified.
+# No EUR conversion is inferred: USD prices need ATLAS_USD_TO_EUR for EUR ceilings.
+{
+  # Source: https://docs.hetzner.com/general/company-and-policy/experiments/inference/; fetched 2026-10-22.
+  "hetzner": {
+    "name": "Hetzner (experimental, free; not for production)",
+    "base_url": "https://inference.hetzner.com/api/v1",
+    "text_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "vision_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "context": 262144, "experimental": true,
+    "request_options": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": false}},
+    "price": {"currency": "EUR", "input": 0, "output": 0},
+    "sources": ["https://docs.hetzner.com/general/company-and-policy/experiments/inference/"]
+  },
+  # Source: https://www.scaleway.com/en/docs/generative-apis/quickstart/; https://www.scaleway.com/en/docs/generative-apis/faq/; https://www.scaleway.com/en/pricing/model-as-a-service/; fetched 2026-10-22.
+  "scaleway": {
+    "name": "Scaleway", "base_url": "https://api.scaleway.ai/v1",
+    "text_model": "qwen3.5-397b-a17b", "vision_model": "gemma-4-26b-a4b-it",
+    "context": 262144,
+    "price": {"currency": "EUR", "input": 0.60, "output": 3.60},
+    "vision_price": {"currency": "EUR", "input": 0.25, "output": 0.50},
+    "sources": ["https://www.scaleway.com/en/docs/generative-apis/quickstart/", "https://www.scaleway.com/en/docs/generative-apis/faq/", "https://www.scaleway.com/en/pricing/model-as-a-service/"]
+  },
+  # Source: https://docs.mistral.ai/api/endpoint/chat; https://docs.mistral.ai/models/mistral-small-4-0-26-03; https://docs.mistral.ai/inference/pricing; fetched 2026-10-22.
+  "mistral": {
+    "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
+    "text_model": "mistral-small-2603", "vision_model": null,
+    "context": 262144,
+    "price": {"currency": "USD", "input": 0.15, "output": 0.60},
+    "note": "Vision not enabled by this preset; verify capabilities before overriding.",
+    "sources": ["https://docs.mistral.ai/api/endpoint/chat", "https://docs.mistral.ai/models/mistral-small-4-0-26-03", "https://docs.mistral.ai/inference/pricing"]
+  },
+  # Source: https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation; https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b; fetched 2026-10-22.
+  "ionos": {
+    "name": "IONOS AI Model Hub", "base_url": "https://openai.inference.de-txl.ionos.com/v1",
+    "text_model": "Qwen/Qwen3.5-9B", "vision_model": "Qwen/Qwen3.5-9B",
+    "context": 262144, "price": null, "unverified": ["price"],
+    "sources": ["https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation", "https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b"]
+  },
+  # Source: https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/; https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output; fetched 2026-10-22.
+  "ovhcloud": {
+    "name": "OVHcloud AI Endpoints", "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    "text_model": "Meta-Llama-3_3-70B-Instruct", "vision_model": null,
+    "context": 32768, "price": null, "unverified": ["price", "context (conservative Atlas limit)"],
+    "sources": ["https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/", "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output"]
+  },
+  # Source: https://docs.ollama.com/api/openai-compatibility; https://ollama.com/library/qwen3; fetched 2026-10-22.
+  "local": {
+    "name": "Local Ollama (CPU supported, GPU recommended)", "base_url": "http://ollama:11434/v1",
+    "text_model": "qwen3:0.6b", "vision_model": null,
+    "context": 32768, "price": {"currency": "EUR", "input": 0, "output": 0},
+    "note": "No token billing; hardware and electricity are excluded. Small default is for a startup demonstration, with substantially weaker answers.",
+    "sources": ["https://docs.ollama.com/api/openai-compatibility", "https://ollama.com/library/qwen3"]
+  },
+  # Source: https://huggingface.co/docs/inference-providers/tasks/chat-completion; https://huggingface.co/docs/inference-providers/pricing; fetched 2026-10-22.
+  "huggingface": {
+    "name": "Hugging Face Inference Providers (outside EU)", "base_url": "https://router.huggingface.co/v1",
+    "text_model": "openai/gpt-oss-120b", "vision_model": null,
+    "context": 32768, "price": null, "unverified": ["route-dependent price", "context (conservative Atlas limit)"],
+    "sources": ["https://huggingface.co/docs/inference-providers/tasks/chat-completion", "https://huggingface.co/docs/inference-providers/pricing"]
+  },
+  # Source: https://api-docs.deepseek.com/; https://api-docs.deepseek.com/quick_start/pricing; fetched 2026-10-22.
+  "deepseek": {
+    "name": "DeepSeek (outside EU)", "base_url": "https://api.deepseek.com",
+    "text_model": "deepseek-flash", "vision_model": null,
+    "context": 32768, "price": null, "unverified": ["price (pricing page redirected to quickstart)", "context (conservative Atlas limit)"],
+    "sources": ["https://api-docs.deepseek.com/", "https://api-docs.deepseek.com/quick_start/pricing"]
+  },
+  # Source: operator-supplied; unverified; fetched 2026-10-22.
+  "other": {
+    "name": "Other OpenAI-compatible endpoint (enter settings)", "base_url": null,
+    "text_model": null, "vision_model": null, "context": 32768, "price": null,
+    "unverified": ["operator-supplied URL, model, capabilities and prices"], "sources": []
+  }
+}

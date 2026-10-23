@@ -64,6 +64,17 @@ app.include_router(code_router)
 app.include_router(project_router)
 
 
+@app.post("/v1/audio/{operation}")
+async def trial_audio(operation: str) -> JSONResponse:
+    return JSONResponse(
+        {
+            "error": "speech_unavailable",
+            "message": "Speech is unavailable on this endpoint. See the full stack installation guide.",
+        },
+        status_code=503,
+    )
+
+
 @app.get("/v1/models")
 def models() -> dict[str, object]:
     return {
@@ -132,6 +143,18 @@ async def chat(request: Request) -> Response:
         if not code:
             try:
                 raw = json.loads(body)
+                if (
+                    os.environ.get("ATLAS_TRIAL") == "1"
+                    and isinstance(raw, dict)
+                    and raw.get("code_mode") is True
+                ):
+                    return JSONResponse(
+                        {
+                            "error": "code_mode_unavailable",
+                            "message": "Code mode is unavailable in the Docker trial. See the full stack installation guide.",
+                        },
+                        status_code=503,
+                    )
                 if (
                     isinstance(raw, dict)
                     and isinstance(raw.get("messages"), list)
@@ -344,7 +367,7 @@ async def chat(request: Request) -> Response:
                 "provider_model": item.provider_model,
                 "reasoning_retried": item.reasoning_retried,
                 "status": json.loads(Path("prompts/activity-labels.json").read_text())[
-                    payload.ui_locale
+                    payload.status_language
                 ]["reasoning_fallback"]
                 if item.reasoning_retried
                 else "",

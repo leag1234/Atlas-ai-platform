@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Atlas installation entrypoint (Python standard library only)."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "services/model-gateway"))
+from scripts.atlas_setup import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

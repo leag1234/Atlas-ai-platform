@@ -1,5 +1,7 @@
 """Cancellable upstream streaming transport; no retry after emitted deltas."""
 
+import provider_settings
+
 from collections.abc import AsyncGenerator
 from contextlib import aclosing, asynccontextmanager
 from contextvars import ContextVar
@@ -7,7 +9,6 @@ import asyncio
 import json
 import logging
 from time import monotonic
-import os
 from typing import Literal
 
 import aiohttp
@@ -148,9 +149,7 @@ async def stream(
 async def attempt(
     request: AgentRequest, model: str, timeout: float
 ) -> AsyncGenerator[dict[str, object], None]:
-    endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
-    if not endpoint.startswith("https://"):
-        raise ValueError("provider_configuration")
+    endpoint = provider_settings.endpoint()
     answer_only = request.profile is not None and request.tool_choice == "none"
     body = {
         "model": model,
@@ -197,10 +196,8 @@ async def attempt(
         ) as session:
             async with session.post(
                 endpoint + "/chat/completions",
-                json=body,
-                headers={
-                    "Authorization": "Bearer " + os.environ["SCW_GENERATIVE_API_KEY"]
-                },
+                json=provider_settings.request_options(body),
+                headers={"Authorization": "Bearer " + provider_settings.api_key()},
                 allow_redirects=False,
             ) as response:
                 if response.status != 200:
@@ -239,7 +236,9 @@ async def attempt(
             "stream_limit_or_trailing_data",
             "invalid_sse_field",
             "trailing_frame",
-            "duplicate_usage",
+            "invalid_usage",
+            "decreasing_usage",
+            "provider_id_changed",
             "delta_after_finish",
             "tool_limit",
             "output_budget",

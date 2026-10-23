@@ -42,10 +42,17 @@ async def query(request: Query) -> dict[str, object]:
         )
     except (ValueError, RuntimeError, OSError):
         raise HTTPException(503, "gateway_unavailable") from None
+    from packages.images import VisionMessage
+    from services.orchestrator.searxng import search_language
+
+    runtime = Runtime(cache(), Decimal(0), request.question)
+    runtime.search_language = search_language(
+        [VisionMessage(role="user", content=request.question)], request.lang
+    )
     result = await run(
         request,
         model,
-        Runtime(cache(), Decimal(0), request.question),
+        runtime,
         Path("prompts/agent.txt").read_text(),
         Limits(wall_clock=max(0, 120 - (time.monotonic() - started))),
     )

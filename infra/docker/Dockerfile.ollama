@@ -1,0 +1,9 @@
+FROM python:3.12-slim AS cpu
+COPY infra/docker/install_ollama_cpu.py /tmp/install_ollama_cpu.py
+RUN python /tmp/install_ollama_cpu.py
+COPY infra/docker/ollama-start.sh /usr/local/bin/atlas-ollama
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/atlas-ollama"]
+
+FROM ollama/ollama:0.13.5 AS full
+COPY infra/docker/ollama-start.sh /usr/local/bin/atlas-ollama
+ENTRYPOINT ["/bin/sh", "/usr/local/bin/atlas-ollama"]

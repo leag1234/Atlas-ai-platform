@@ -1,5 +1,7 @@
 """Resolve conversation language independently of model output and UI labels."""
 
+from __future__ import annotations
+
 import importlib
 import json
 from pathlib import Path
@@ -7,9 +9,27 @@ import re
 from collections.abc import Sequence
 import unicodedata
 
-from packages.images import VisionMessage
+from typing import Protocol
+
+
+class LanguageMessage(Protocol):
+    @property
+    def role(self) -> str: ...
+
+    @property
+    def text(self) -> str: ...
+
 
 LANGUAGES = ("fr", "de", "es", "it", "en")
+
+
+def status_language(messages: Sequence[LanguageMessage], locale: object) -> str:
+    """Interface text follows a supported UI locale, then conversation prose."""
+    if locale == "nl":
+        return "en"
+    if isinstance(locale, str) and locale in LANGUAGES:
+        return locale
+    return conversation_language(messages, "en") if messages else "en"
 
 
 def user_prose(text: str) -> str:
@@ -49,7 +69,10 @@ def question_language(text: str, fallback: str) -> str:
     return detected_language(text) or fallback
 
 
-def conversation_language(messages: Sequence[VisionMessage], locale: str) -> str:
+def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> str:
+    # Dutch is supported by search; text UI/prompt translations remain unchanged.
+    if locale == "nl":
+        locale = "en"
     if locale not in LANGUAGES:
         raise ValueError("unsupported_language")
     history: str | None = None

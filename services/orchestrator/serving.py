@@ -316,6 +316,14 @@ def webui(name: str, persistent: bool) -> None:
             + ":/app/backend/open_webui/static/atlas/vendor:ro",
         ]
     )
+    for resource in (
+        "packages/__init__.py",
+        "packages/language.py",
+        "prompts/activity-labels.json",
+    ):
+        options.extend(
+            ["-v", str(Path(resource).resolve()) + ":/app/backend/" + resource + ":ro"]
+        )
     if persistent:
         options.extend(["-v", ports.name("atlas-chat-ui") + ":/app/backend/data"])
     docker_run(name, WEBUI_IMAGE, options)

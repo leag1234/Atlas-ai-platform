@@ -52,11 +52,29 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
         results = first["results"]
         assert isinstance(results, list)
         self.assertEqual(results[0]["link"], "https://example.org/releases")
-        params = client.__aenter__.return_value.get.call_args.kwargs["params"]
+        calls = client.__aenter__.return_value.get.call_args_list
+        params = calls[0].kwargs["params"]
         self.assertEqual(params["language"], "fr")
-        self.assertEqual(params["categories"], "news")
+        self.assertEqual(
+            [
+                (
+                    call.kwargs["params"]["language"],
+                    "categories" in call.kwargs["params"],
+                )
+                for call in calls
+            ],
+            [("fr", False)] * 4,
+        )
         self.assertEqual(params["time_range"], "month")
-        self.assertEqual(client.__aenter__.return_value.get.call_count, 1)
+        engines = [call.kwargs["params"]["engines"] for call in calls]
+        self.assertEqual(
+            (
+                [engine for engine in engines if engine != "wikipedia"],
+                engines.count("wikipedia"),
+                client.__aenter__.return_value.get.call_count,
+            ),
+            (["duckduckgo", "brave", "qwant"], 1, 4),
+        )
 
     async def test_empty_or_error_retries_once_then_is_not_disguised(self) -> None:
         empty = self.client(b'{"results": [], "unresponsive_engines": ["brave"]}')
@@ -71,8 +89,41 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 Call("search", "web_search", '{"query":"current event","lang":"en"}'),
                 30,
             )
-        self.assertEqual(result, {"error": "search_unavailable"})
-        self.assertEqual(empty.__aenter__.return_value.get.call_count, 2)
+        data = result.get("data")
+        detail = data if isinstance(data, dict) else {}
+        self.assertEqual(
+            (
+                result.get("trust"),
+                {
+                    key: detail.get(key)
+                    for key in ("provider", "language", "outcome", "results", "message")
+                },
+                result.get("error"),
+            ),
+            (
+                "untrusted",
+                {
+                    "provider": "searxng",
+                    "language": "en",
+                    "outcome": "upstream_timeout",
+                    "results": [],
+                    "message": "Web search timed out; no verified results were obtained.",
+                },
+                None,
+            ),
+        )
+        engines = [
+            call.kwargs["params"]["engines"]
+            for call in empty.__aenter__.return_value.get.call_args_list
+        ]
+        self.assertEqual(
+            (
+                [engine for engine in engines if engine != "wikipedia"],
+                engines.count("wikipedia"),
+                empty.__aenter__.return_value.get.call_count,
+            ),
+            (["duckduckgo", "brave", "qwant", "startpage", "bing", "google"], 1, 7),
+        )
         calls = empty.__aenter__.return_value.get.call_args_list
         self.assertNotEqual(
             calls[0].kwargs["params"]["engines"], calls[1].kwargs["params"]["engines"]

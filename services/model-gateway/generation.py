@@ -1,5 +1,7 @@
 """Bounded Scaleway generation with validated source references."""
 
+import provider_settings
+
 from packages.limits import LimitError, ProviderLimitError
 
 import re
@@ -82,8 +84,14 @@ class Generator:
         sources = [
             {"reference": i, "text": p.text} for i, p in enumerate(request.passages, 1)
         ]
+        from serverless import ServerlessPolicy
+
         data = {
-            "model": os.environ["ESCALATION_MODEL"],
+            "model": (
+                ServerlessPolicy().models["text"]
+                if provider_settings.selected()
+                else os.environ["ESCALATION_MODEL"]
+            ),
             "temperature": 0,
             "max_tokens": 1024,
             "reasoning_effort": "none",
@@ -98,15 +106,13 @@ class Generator:
                 },
             ],
         }
-        endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
-        if not endpoint.startswith("https://"):
-            raise RuntimeError("provider_configuration")
+        endpoint = provider_settings.endpoint()
         http = Request(
             endpoint + "/chat/completions",
-            data=json.dumps(data).encode(),
+            data=json.dumps(provider_settings.request_options(data)).encode(),
             headers={
                 "Content-Type": "application/json",
-                "Authorization": "Bearer " + os.environ["SCW_GENERATIVE_API_KEY"],
+                "Authorization": "Bearer " + provider_settings.api_key(),
             },
         )
         started = monotonic()

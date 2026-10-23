@@ -1,5 +1,7 @@
 """M12 sovereign vision with a conservative reservation before any paid call."""
 
+import provider_settings
+
 from packages.limits import LimitError, ProviderLimitError
 
 from packages.profiles import PROFILES
@@ -48,6 +50,21 @@ class VisionProvider:
         self.config = yaml.safe_load(
             Path(__file__).with_name("vision.yaml").read_text()
         )
+        if os.environ.get("ATLAS_PROVIDER"):
+            from serverless import ServerlessPolicy
+
+            policy = ServerlessPolicy()
+            model = policy.models["vision"]
+            caps = policy.config["vision"]["capabilities"][model]
+            if not caps.get("vision"):
+                raise ValueError("vision_unavailable_for_provider")
+            self.config.update(
+                {
+                    "model": model,
+                    "context_tokens": caps["context"],
+                    **policy.prices[model],
+                }
+            )
         self.input_price = Decimal(str(self.config["input_eur_per_mtok"]))
         self.output_price = Decimal(str(self.config["output_eur_per_mtok"]))
         if any(
@@ -186,20 +203,15 @@ class VisionProvider:
         }
 
     async def post(self, body: dict[str, object], timeout: float) -> object:
-        endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
-        if not endpoint.startswith("https://"):
-            raise ValueError("provider_configuration")
+        endpoint = provider_settings.endpoint()
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
             ) as client:
                 async with client.post(
                     endpoint + "/chat/completions",
-                    json=body,
-                    headers={
-                        "Authorization": "Bearer "
-                        + os.environ["SCW_GENERATIVE_API_KEY"]
-                    },
+                    json=provider_settings.request_options(body),
+                    headers={"Authorization": "Bearer " + provider_settings.api_key()},
                     allow_redirects=False,
                 ) as response:
                     if response.status != 200:

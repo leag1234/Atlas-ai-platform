@@ -1,0 +1,2 @@
+FROM pgvector/pgvector:pg16
+CMD ["postgres", "-p", "13740"]

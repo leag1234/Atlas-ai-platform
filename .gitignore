@@ -9,3 +9,7 @@ node_modules/
 reports/*.html
 BRAIN/
 private/
+
+# Private setup staging files; successful setup atomically replaces .env.
+.atlas-setup.env
+.atlas-env-*

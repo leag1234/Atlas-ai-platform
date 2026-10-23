@@ -1,5 +1,19 @@
 (() => {
   "use strict";
+  // Open WebUI stores its selected interface language in "locale" (v0.11.3).
+  // Keep this in the shared overlay so the trial and host launcher agree.
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, options) => {
+    const url = new URL(input instanceof Request ? input.url : input, location.href);
+    if (url.origin === location.origin && /^\/api\/(?:v1\/)?chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
+      const locale = (localStorage.getItem("locale") || document.documentElement.lang || "").toLowerCase().split("-")[0];
+      if (["en", "fr", "de", "es", "it", "nl"].includes(locale)) {
+        const body = JSON.parse(options.body);
+        options = { ...options, body: JSON.stringify({ ...body, ui_locale: locale }) };
+      }
+    }
+    return nativeFetch(input, options);
+  };
   const key = "atlas-ui";
   const defaults = { style: "arrondi", mode: "system", accent: "green", size: "16" };
   const choices = { style: ["dense", "arrondi", "document"], mode: ["system", "light", "dark"], accent: ["green", "blue", "orange", "violet", "graphite"], size: ["14", "16", "18", "20"] };
