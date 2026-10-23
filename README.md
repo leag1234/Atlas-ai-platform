@@ -62,8 +62,8 @@ http://localhost:3000 and create the first administrator account. Use
 - **No HTTPS.** It serves plain HTTP; put your own reverse proxy in front before
   exposing it beyond your machine.
 - **Image understanding depends on the provider.** Photos and scanned PDFs need a
-  vision model: included with the Hetzner and Scaleway presets, not with Mistral
-  or OVHcloud.
+  vision model: included with the Hetzner, Scaleway and OVHcloud presets, not
+  with Mistral.
 - **Web search can be throttled.** The bundled SearXNG relays queries to public
   search engines, which may rate limit it, especially from cloud servers.
 - **Not hardened** for multi-organization hosting.
