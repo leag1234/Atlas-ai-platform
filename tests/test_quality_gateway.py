@@ -550,6 +550,60 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                     _ = [e async for e in stream_quality(AgentProvider(), req)]
                 self.assertEqual(seen[0].tools, [tool])
 
+    async def test_research_page_is_marked_and_trimmed_before_ovh_transport(
+        self,
+    ) -> None:
+        from quality import CONTEXT_TRUNCATION_MARKER
+
+        seen: list[AgentRequest] = []
+
+        async def transport(
+            current: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            seen.append(current)
+            yield result("Answer based on the retained source.", 20)
+
+        fetch_id = "fetch-1"
+        source = "Synthetic fetched source sentence. " * 10000
+        original = request(
+            tools=[{"type": "function", "function": {"name": "web_fetch"}}],
+            messages=[
+                {"role": "user", "content": "Research this source."},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": fetch_id,
+                            "type": "function",
+                            "function": {"name": "web_fetch", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_call_id": fetch_id,
+                    "content": json.dumps(
+                        {"trust": "untrusted", "data": {"text": source}}
+                    ),
+                },
+            ],
+        )
+        with (
+            patch.dict(os.environ, {"ATLAS_PROVIDER": "ovhcloud"}, clear=True),
+            patch("stream_transport.attempt", transport),
+        ):
+            events = [e async for e in stream_quality(AgentProvider(), original)]
+        answer = events[-1]["result"]
+        assert isinstance(answer, dict)
+        self.assertEqual(answer["text"], "Answer based on the retained source.")
+        self.assertEqual(len(seen), 1)
+        tool_content = json.loads(str(seen[0].messages[2]["content"]))
+        page = tool_content["data"]
+        self.assertTrue(page["truncated"])
+        self.assertTrue(page["context_truncated"])
+        self.assertIn(CONTEXT_TRUNCATION_MARKER, page["text"])
+
     async def test_text_only_model_uses_vision_capable_alternate(self) -> None:
         from test_vision_schema import payload, picture
 

@@ -2,6 +2,7 @@
 
 import json
 import unittest
+from pathlib import Path
 
 from streaming import StreamDecoder
 
@@ -29,6 +30,25 @@ def end(finish: str = "stop", output: int = 8) -> bytes:
 
 
 class StreamDecoderTests(unittest.TestCase):
+    def test_typed_content_parts_concatenate_text_and_ignore_non_text(self) -> None:
+        decoder = StreamDecoder()
+        events = decoder.feed(
+            frame(
+                json.loads(
+                    (
+                        Path(__file__).parent / "fixtures/mistral-typed-stream.json"
+                    ).read_text()
+                )
+            )
+            + end()
+        )
+        decoder.finish()
+        self.assertEqual(
+            events[0], {"delta": {"content": "Synthetic research sentence."}}
+        )
+        assert decoder.result is not None
+        self.assertEqual(decoder.result["text"], "Synthetic research sentence.")
+
     def test_error_body_cannot_be_accepted_alongside_valid_choices(self) -> None:
         payload = {
             "error": {"message": "private provider diagnostic"},

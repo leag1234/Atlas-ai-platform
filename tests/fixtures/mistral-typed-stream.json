@@ -1,0 +1,8 @@
+{
+  "content": [
+    {"type": "text", "text": "Synthetic research "},
+    {"type": "reference", "id": "source-1"},
+    {"type": "thinking", "text": "internal"},
+    {"type": "text", "text": "sentence."}
+  ]
+}

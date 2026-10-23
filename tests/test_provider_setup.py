@@ -65,6 +65,18 @@ class ProviderSetupTests(unittest.TestCase):
             policy = ServerlessPolicy()
             self.assertGreater(policy.cost(policy.models["text"], 1000, 10), 0)
 
+    def test_ovh_context_is_selected_per_role(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_PROVIDER": "ovhcloud"}, clear=True):
+            policy = ServerlessPolicy()
+        self.assertEqual(
+            policy.config["text"]["capabilities"][policy.models["text"]]["context"],
+            262144,
+        )
+        self.assertEqual(
+            policy.config["vision"]["capabilities"][policy.models["vision"]]["context"],
+            32768,
+        )
+
     def test_mistral_fallback_is_configured_unpriced_and_can_be_disabled(self) -> None:
         with patch.dict(
             os.environ,
