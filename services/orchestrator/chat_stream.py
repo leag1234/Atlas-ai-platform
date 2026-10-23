@@ -125,6 +125,7 @@ def response(
             temporary = Interaction()
             from services.orchestrator.source_truth import (
                 drawing_references,
+                provider_reference_markers,
                 without_unretrieved,
             )
 
@@ -146,6 +147,11 @@ def response(
                     set(item.retrieved_urls)
                     | drawing_references(item)
                     | {
+                        str(chunk["source"])
+                        for chunk in item.chunks_recuperes
+                        if chunk.get("source")
+                    }
+                    | {
                         u
                         for m in payload.messages[:-1]
                         if m.role == "assistant"
@@ -160,6 +166,9 @@ def response(
                             m.text,
                         )
                     },
+                )
+                temporary.reponse = provider_reference_markers(
+                    temporary.reponse, item.retrieved_urls
                 )
             temporary.chunks_recuperes = item.chunks_recuperes
             if payload.project_id:

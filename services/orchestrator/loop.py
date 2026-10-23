@@ -163,6 +163,7 @@ async def run(
     clock: Callable[[], float] = time.monotonic,
     history: list[Message] | None = None,
     retry_web: bool = False,
+    retry_protocol: bool = True,
     terminal_tools: frozenset[str] = frozenset(),
     initial_calls: tuple[Call, ...] = (),
 ) -> Result:
@@ -318,7 +319,7 @@ async def run(
                 elif protocol_material(complete_text) or unfinished_announcement(
                     complete_text
                 ):
-                    if protocol_recovered:
+                    if protocol_recovered or not retry_protocol:
                         raise Stop("protocol_completion_limit")
                     protocol_recovered = True
                     messages.append(

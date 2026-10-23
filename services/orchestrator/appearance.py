@@ -316,9 +316,13 @@ def _translate_callout(element: ElementTree.Element, dx: float, dy: float) -> No
 
 def _callout_numbers(root: ElementTree.Element) -> set[str]:
     return {
-        (element.text or "").strip()
+        match.group(1)
         for element in root.iter("text")
-        if re.fullmatch(r"\d+", (element.text or "").strip())
+        if (
+            match := re.match(
+                r"^\s*(\d+)(?:\s*$|[.)]\s+|\s+[—–-]\s+)", "".join(element.itertext())
+            )
+        )
     }
 
 
@@ -327,7 +331,11 @@ def _legend_numbers(model_text: str) -> set[str]:
     return {
         match.group(1)
         for line in body.splitlines()
-        if (match := re.match(r"^\s*(\d+)[.)]\s+", line))
+        if (
+            match := re.match(
+                r"^\s*(?:\*\*)?(\d+)(?:[.)](?:\*\*)?\s+|\s*[—–-]\s+)", line
+            )
+        )
     }
 
 
@@ -466,12 +474,15 @@ def extract_svg(
     *,
     require_legend: bool = False,
     canvas: tuple[float, float, float, float] = _FIXED_VIEWBOX,
+    reasons: list[str] | None = None,
 ) -> str | None:
     """Validate primitives; normalize only the standard SVG namespace."""
 
     def reject(reason: str) -> None:
         # Reasons are fixed codes, never user/model content or parser exceptions.
         _LOGGER.warning("mechanical_svg_rejected reason=%s", reason)
+        if reasons is not None:
+            reasons.append(reason)
 
     match = _SVG.search(model_text)
     if not match:
@@ -481,6 +492,8 @@ def extract_svg(
     if len(raw.encode()) > 96_000:
         reject("byte_limit")
         return None
+    # A bare ampersand in model text is a common XML typo, not active content.
+    raw = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)", "&amp;", raw)
     try:
         root = ElementTree.fromstring(raw)
     except ElementTree.ParseError:
@@ -525,6 +538,13 @@ def extract_svg(
         if element.tag not in _ALLOWED_TAGS:
             reject("forbidden_element")
             return None
+    if root.tag == "svg" and "viewBox" not in root.attrib:
+        dimensions = [
+            root.get(name, "").removesuffix("px") for name in ("width", "height")
+        ]
+        if all(re.fullmatch(r"\d+(?:\.\d+)?", value) for value in dimensions):
+            root.set("viewBox", "0 0 " + " ".join(dimensions))
+            _LOGGER.info("mechanical_svg_normalized reason=dimensions_to_viewbox")
     if root.tag != "svg" or "viewBox" not in root.attrib:
         reject("missing_viewbox")
         return None
@@ -546,6 +566,13 @@ def extract_svg(
         return None
     for element in elements:
         for name, value in list(element.attrib.items()):
+            if name in {"marker-start", "marker-mid", "marker-end"} and re.fullmatch(
+                r"url\(#[A-Za-z_][\w-]*\)", value
+            ):
+                # Drop inert local arrow styling; never admit a reference in output.
+                del element.attrib[name]
+                _LOGGER.info("mechanical_svg_normalized reason=local_marker_removed")
+                continue
             if re.search(r"url\s*\(|https?:|\\", value, re.I):
                 reject("external_reference")
                 return None

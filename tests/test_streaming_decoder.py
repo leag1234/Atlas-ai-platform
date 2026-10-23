@@ -30,7 +30,7 @@ def end(finish: str = "stop", output: int = 8) -> bytes:
 
 
 class StreamDecoderTests(unittest.TestCase):
-    def test_typed_content_parts_concatenate_text_and_ignore_non_text(self) -> None:
+    def test_typed_content_parts_keep_reference_identity_for_renderer(self) -> None:
         decoder = StreamDecoder()
         events = decoder.feed(
             frame(
@@ -44,10 +44,34 @@ class StreamDecoderTests(unittest.TestCase):
         )
         decoder.finish()
         self.assertEqual(
-            events[0], {"delta": {"content": "Synthetic research sentence."}}
+            events[0],
+            {"delta": {"content": "[[atlas-reference:0]]"}},
         )
         assert decoder.result is not None
-        self.assertEqual(decoder.result["text"], "Synthetic research sentence.")
+        self.assertEqual(
+            decoder.result["text"],
+            "[[atlas-reference:0]]",
+        )
+
+    def test_typed_reference_requires_bounded_string_ids(self) -> None:
+        for reference_ids in (None, [], [0], ["x" * 201], ["0"] * 11):
+            with self.subTest(reference_ids=reference_ids):
+                decoder = StreamDecoder()
+                with self.assertRaisesRegex(
+                    ValueError, "invalid_reference_content_part"
+                ):
+                    decoder.feed(
+                        frame(
+                            {
+                                "content": [
+                                    {
+                                        "type": "reference",
+                                        "reference_ids": reference_ids,
+                                    }
+                                ]
+                            }
+                        )
+                    )
 
     def test_error_body_cannot_be_accepted_alongside_valid_choices(self) -> None:
         payload = {
