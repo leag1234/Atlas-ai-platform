@@ -49,7 +49,9 @@ def main() -> None:
             elif kind == "ip":
                 record.update({"family": "inet", "address": "192.0.2.10"})
             rows.append(record)
-            result = {"security_group": record} if kind == "security-group" else record
+            # Mirror the real CLI: some created objects come back wrapped.
+            wrappers = {"security-group": "security_group", "ip": "ip"}
+            result = {wrappers[kind]: record} if kind in wrappers else record
         elif action == "update":
             record = next(r for r in rows if r["id"] == args[3])
             record["tags"] = tags

@@ -157,7 +157,11 @@ def create(service: str, resource: str, *args: str) -> Any:
         "tags.1=" + owner_tag(),
         *args,
     )
-    return result["security_group"] if resource == "security-group" else result
+    # The CLI wraps some created objects: {"security_group": {...}}, {"ip": {...}}.
+    wrapper = {"security-group": "security_group", "ip": "ip"}.get(resource)
+    if wrapper and isinstance(result, dict) and isinstance(result.get(wrapper), dict):
+        return result[wrapper]
+    return result
 
 
 def bootstrap(volume: str, model: str, fresh: bool) -> str:
