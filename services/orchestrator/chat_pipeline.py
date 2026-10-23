@@ -692,7 +692,9 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         item.state, item.task_type, item.cout_eur = "done", "title", 0.0
         return
     language = conversation_language(request.conversation_messages, request.ui_locale)
-    if not request.continuation and is_appearance_request(request.user_text):
+    if not request.continuation and is_appearance_request(
+        request.user_text, history=request.messages[:-1]
+    ):
         language = requested_language(request.user_text) or language
     request = request.model_copy(update={"lang": language})
     if (
@@ -972,7 +974,8 @@ async def _process(
     appearance = (
         not request.continuation
         and not technical_diagram
-        and is_appearance_request(request.user_text)
+        and not request.has_attachments
+        and is_appearance_request(request.user_text, history=request.messages[:-1])
     )
     if followup:
         item.task_type = "followup"
@@ -989,7 +992,7 @@ async def _process(
     )
     # The original question still drives policy classification, but a UI retry is
     # only completing already-started prose: it must not begin another route.
-    if request.continuation:
+    if request.continuation or appearance:
         discovery = ()
     image_context: str | None = None
     image_cost = Decimal(0)
@@ -1134,6 +1137,10 @@ async def _process(
     if structured_presentation:
         # The terminal remains the delivery boundary, but model-authored tool use
         # cannot replace the validated outline path.
+        model.tools = []
+    if appearance:
+        # Commons retrieval is service-owned. General research tools let the model
+        # repeatedly announce a drawing between searches instead of delivering it.
         model.tools = []
     model.configure_quality(
         request.model,
@@ -1293,7 +1300,7 @@ async def _process(
             ),
             Limits(
                 profile=request.model,
-                tool_calls=max(0, 10 - len(attachment_sources)),
+                tool_calls=0 if appearance else max(0, 10 - len(attachment_sources)),
                 tokens=None,
                 cost=cost_limit
                 if cost_limit is not None
@@ -1603,7 +1610,12 @@ async def _process(
             if images_enabled():
                 await finish_appearance(request, item, result, started)
             else:
-                await finish_mechanical_drawing(request, item, result)
+                await finish_mechanical_drawing(
+                    request,
+                    item,
+                    result,
+                    fallback_only=os.environ.get("ATLAS_STABLE") != "1",
+                )
                 logging.getLogger(__name__).warning(
                     "mechanical_result model_calls=%d retries=%d cost_eur=%s",
                     len(model.observations),

@@ -4,8 +4,10 @@ import logging
 import math
 import re
 import unicodedata
+from collections.abc import Sequence
 from xml.etree import ElementTree
 from packages.imagegen import positive_image_prompt
+from packages.language import LanguageMessage
 
 
 _PROCESS_OR_COMPARISON = re.compile(
@@ -16,10 +18,27 @@ _PROCESS_OR_COMPARISON = re.compile(
 )
 _APPEARANCE = re.compile(
     r"\b(?:what does .+ look like|how is .+ (?:physically )?built|exploded view|"
-    r"cutaway view|parts of|a quoi ca ressemble|les pieces|ce qui tourne|"
+    r"cutaway view|parts of|a quoi ca ressemble|a quoi ressemble(?:nt)?|les pieces|ce qui tourne|"
     r"vue eclatee|wie sieht .+ aus|teile von|was dreht sich|teile.*drehen|explosions(?:ansicht|zeichnung)|"
     r"como es por dentro|piezas de|que gira|vista explosionada|com[' ]e fatto|"
     r"pezzi di|cosa gira|pezzi.*girano|vista esplosa)\b",
+    re.IGNORECASE,
+)
+_VISUAL_FOLLOWUP = re.compile(
+    r"\b(?:visuellement|en image|montre(?:[ -]moi)?|(?:le|la|les) voir|"
+    r"show me|show (?:it|that)|see (?:it|that)|zeigen|mostrar\w*|mostra\w*)\b",
+    re.IGNORECASE,
+)
+_PHYSICAL_CONTEXT = re.compile(
+    r"\b(?:moteur|engine|motor\w*|pompe|pump\w*|bomba|biciclet\w*|bicycle|"
+    r"velo|fahrrad|derailleur|piston\w*|cylind\w*|zylinder|gear\w*|engrenage|"
+    r"turbine|turbina|machine|wheel|roue|volant|valve|soupape)\b",
+    re.IGNORECASE,
+)
+_NO_VISUAL = re.compile(
+    r"\b(?:ne\b.*\bpas|sans image|not\b.*\b(?:show|image|draw)|"
+    r"don't\b.*\b(?:show|draw)|no image|nicht|kein\w*|no\s+\w*mostr\w*|"
+    r"non\s+\w*mostr\w*)\b",
     re.IGNORECASE,
 )
 _DRAWING_REQUEST = re.compile(
@@ -42,11 +61,25 @@ def _normalized(value: str) -> str:
     )
 
 
-def is_appearance_request(question: str) -> bool:
+def is_appearance_request(
+    question: str, *, history: Sequence[LanguageMessage] = ()
+) -> bool:
     """Return true only for a request to see a physical object or its mechanics."""
     normalized = _normalized(question)
-    return not bool(_PROCESS_OR_COMPARISON.search(normalized)) and bool(
-        _APPEARANCE.search(normalized)
+    if _NO_VISUAL.search(normalized) or _PROCESS_OR_COMPARISON.search(normalized):
+        return False
+    if _APPEARANCE.search(normalized):
+        return True
+    # A deictic visual request needs a nearby physical referent. Do not carry a
+    # stale object across a topic change, or turn an abstract process into a machine.
+    context = " ".join(message.text for message in history[-2:])
+    return bool(
+        _VISUAL_FOLLOWUP.search(normalized)
+        and context
+        and (
+            _APPEARANCE.search(_normalized(context))
+            or _PHYSICAL_CONTEXT.search(_normalized(context))
+        )
     )
 
 
@@ -87,8 +120,16 @@ def legend_instruction() -> str:
 
 def mechanical_svg_instruction(*, include_svg: bool = True) -> str:
     """Ask the text model for a bounded drawing; prompts are intentionally untouched."""
+    delivery = (
+        "\n\nResolve the physical object from the current request and recent "
+        "conversation when the user refers to it implicitly. Keep the requested "
+        "answer language; only the Commons search metadata is in English. "
+        "The service retrieves the image from Wikimedia Commons and renders the "
+        "drawing. Return the finished content directly, without announcing plans, "
+        "refusing image generation, web research, or tool calls. "
+    )
     if not include_svg:
-        return (
+        return delivery + (
             "\n\nMechanical view route: provide a concise explanation, followed by "
             "a numbered legend: part — role — rotates, oscillates, or fixed. "
             "Write the explanation, headings, part names and roles in the requested "
@@ -97,7 +138,7 @@ def mechanical_svg_instruction(*, include_svg: bool = True) -> str:
             "of the physical object for an image search. The service retrieves the "
             "drawing; do not generate SVG, Mermaid, ASCII art, or code blocks."
         )
-    return (
+    return delivery + (
         "\n\nMechanical drawing route: begin with one or two short explanatory "
         "sentences, then provide exactly one SVG technical side or cutaway drawing. "
         "Draw one side or cutaway view only: use recognisable simple part shapes in "
@@ -111,7 +152,8 @@ def mechanical_svg_instruction(*, include_svg: bool = True) -> str:
         "Use only these attributes: " + ", ".join(sorted(_COMMON_ATTRS)) + ". "
         "The root may also have xmlns, viewBox, role and aria-label. No style, "
         "markers, defs, references, events or other attributes. Use simple paths "
-        "for arrows. Use numbered callouts in the drawing. After the SVG provide "
+        "for arrows. Use at least three numbered callouts in the drawing, with "
+        "exactly the same numbers in the legend. After the SVG provide "
         "a numbered legend: part — role — rotates, oscillates, or fixed. "
         "Write all visible text in the requested answer language. Before the SVG include "
         "one invisible metadata comment <!-- commons-query: object name --> with "
