@@ -868,6 +868,17 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
         retry_web=False,
         initial_calls=(),
     )
+    if result.state == "done":
+        await diagram.complete_svg(
+            request,
+            result,
+            model,
+            tools,
+            started,
+            Decimal("0.10"),
+            request.timeout_seconds,
+            require_legend=False,
+        )
     item.cout_eur = float(result.cost)
     if result.state == "done":
         await finish_simple_drawing(request, item, result)
@@ -1106,6 +1117,9 @@ async def _process(
         if appearance or image_discussion or technical_diagram
         else sink_context.get()
     )
+    delivery_buffer = diagram.DeliveryBuffer(model.sink) if model.sink else None
+    if delivery_buffer is not None:
+        model.sink = delivery_buffer
     from packages.file_intent import produces_file, requests_file_delivery
 
     produces_files = produces_file(request.user_text)
@@ -1326,7 +1340,27 @@ async def _process(
             if not followup
             else frozenset(),
         )
-        if technical_diagram and result.state == "done":
+        if (
+            appearance
+            and not images_enabled()
+            and mechanical_svg_enabled()
+            and result.state == "done"
+        ):
+            await diagram.complete_svg(
+                request,
+                result,
+                model,
+                tools,
+                started,
+                cost_limit if cost_limit is not None else Decimal("0.10"),
+                request.timeout_seconds
+                if wall_clock_limit is None
+                else wall_clock_limit,
+                require_legend=True,
+            )
+        if (
+            technical_diagram or diagram.has_diagram(result.text)
+        ) and result.state == "done":
             await diagram.complete_diagram(
                 request,
                 item,
@@ -1628,6 +1662,9 @@ async def _process(
             return
         if result.reason:
             item.erreurs.append(result.reason)
+        if delivery_buffer is not None:
+            # SSE resolves raw citation identifiers itself, after provenance filtering.
+            await delivery_buffer.finish(item.reponse)
         if result.state == "done" and not followup:
             await render_citations(item)
         if tools.source_truncated:
