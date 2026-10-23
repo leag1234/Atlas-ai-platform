@@ -67,6 +67,30 @@ def request_options(
 ) -> dict[str, Any]:
     name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     body = dict(body)
+    if name == "hetzner" and isinstance(messages := body.get("messages"), list):
+        # Hetzner's chat template accepts system instructions only at the start.
+        # Quality finalization/recovery adds instructions after tool evidence.
+        # Merge only system messages; never promote untrusted history or mutate it.
+        systems = [message for message in messages if message.get("role") == "system"]
+        if systems:
+            contents = [message["content"] for message in systems]
+            body["messages"] = [
+                {
+                    "role": "system",
+                    "content": "\n\n".join(contents)
+                    if all(isinstance(content, str) for content in contents)
+                    else [
+                        part
+                        for content in contents
+                        for part in (
+                            content
+                            if isinstance(content, list)
+                            else [{"type": "text", "text": content}]
+                        )
+                    ],
+                },
+                *[message for message in messages if message.get("role") != "system"],
+            ]
     if name not in ("", "scaleway"):
         body.pop("reasoning_effort", None)
         if not body.get("tools"):
