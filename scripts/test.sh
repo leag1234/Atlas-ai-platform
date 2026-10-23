@@ -5,10 +5,6 @@ set -Eeuo pipefail
 if [[ "$(command -v python3)" == /usr/bin/python3 && -x "$PWD/.venv/bin/python3" ]]; then
   export PATH="$PWD/.venv/bin:$PATH"
 fi
-# The server validates diagrams with the same parser family as Open WebUI.
-if [[ -f package-lock.json && ! -d node_modules ]]; then
-  npm ci --ignore-scripts --omit=dev --no-audit --no-fund
-fi
 # Tests never start or manage a GPU: give the suite a placeholder image worker
 # address (nothing listens there) so image routes run against fakes and recordings.
 # Tests of the unconfigured case clear these variables themselves.

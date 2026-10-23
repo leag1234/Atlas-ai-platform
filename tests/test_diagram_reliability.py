@@ -11,7 +11,7 @@ DIAGRAM, EXPLANATION = delivery.DIAGRAM, delivery.EXPLANATION
 
 class DiagramReliabilityTests(unittest.TestCase):
     def test_observed_flowchart_and_valid_sequence_survive_json_and_sse(self) -> None:
-        broken = "```mermaid\nflowchart LR\nHeat[🔥 Chaleur] --> Piston[Piston Moteur\\n(Transmet la force)]\n```"
+        broken = "```mermaid\nflowchart LR\nHeat[🔥 Chaleur] --> PowerPiston[Piston Moteur\\n(Transmet la force)]\n```"
         sequence = "```mermaid\nsequenceDiagram\nA->>B: Heat\n```"
         for stream in (False, True):
             answer, calls = delivery.DiagramDeliveryTests().request(
@@ -19,7 +19,9 @@ class DiagramReliabilityTests(unittest.TestCase):
                 "Explain a Stirling engine with a diagram",
                 [(EXPLANATION + broken + "\n" + sequence, False)],
             )
-            self.assertIn('Piston["Piston Moteur<br/>(Transmet la force)"]', answer)
+            self.assertIn(
+                'PowerPiston["Piston Moteur<br/>(Transmet la force)"]', answer
+            )
             self.assertIn(sequence, answer)
             self.assertEqual(len(calls), 1)
 
@@ -188,6 +190,44 @@ class ParserAndBudgetTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("🔥", repair("flowchart LR\nA[🔥 Heat (input)]", True))
 
+    async def test_subgraph_titles_and_each_label_repair_rule(self) -> None:
+        from services.orchestrator.mermaid_check import checked, repair
+
+        source = (
+            "flowchart LR\n"
+            "subgraph Source [Source de chaleur]\n"
+            "subgraph Gaz [Gaz de travail\\n(Hélium)]\n"
+            'A[bracket [ brace { quote " pipe |] --> B[Done]\n'
+            "end\nend"
+        )
+        fixed, failures = await checked("```mermaid\n" + source + "\n```")
+        self.assertEqual(failures, [])
+        self.assertIn("subgraph Source [Source de chaleur]", fixed)
+        self.assertIn('subgraph Gaz ["Gaz de travail<br/>(Hélium)"]', fixed)
+        self.assertIn("#91; brace #123; quote #quot; pipe #124;", fixed)
+        self.assertEqual(
+            repair("sequenceDiagram\nA->>B: unchanged"),
+            "sequenceDiagram\nA->>B: unchanged",
+        )
+
+    async def test_known_headers_and_unknown_header_policy(self) -> None:
+        from services.orchestrator.mermaid_check import valid
+
+        known = [
+            "sequenceDiagram\nA->>B: hi",
+            "classDiagram\nA <|-- B",
+            "stateDiagram-v2\n[*] --> Ready",
+            "erDiagram\nA { string name }",
+            'pie\n"A" : 1',
+            "gantt\ntitle Roadmap",
+            "mindmap\n  root",
+            "timeline\n  2026 : Launch",
+        ]
+        self.assertEqual(await valid(known), [True] * len(known))
+        self.assertEqual(
+            await valid(["gitGraph\ncommit", "invalid grammar"]), [True, False]
+        )
+
     async def test_unclosed_tilde_block_is_validated_and_closed(self) -> None:
         from services.orchestrator.mermaid_check import checked
 
@@ -198,17 +238,10 @@ class ParserAndBudgetTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(failures)
         self.assertNotIn("mermaid", fixed)
 
-    async def test_parser_unavailable_fails_closed_without_content_logs(self) -> None:
-        from unittest.mock import patch
+    async def test_checker_has_no_runtime_parser_dependency(self) -> None:
         from services.orchestrator.mermaid_check import valid
 
-        with patch(
-            "asyncio.create_subprocess_exec",
-            side_effect=FileNotFoundError("private source"),
-        ):
-            with self.assertLogs("services.orchestrator.mermaid_check") as captured:
-                self.assertEqual(await valid(["private source"]), [False])
-        self.assertNotIn("private source", str(captured.output))
+        self.assertEqual(await valid(["sequenceDiagram\nA->>B: Heat"]), [True])
 
     async def test_svg_retry_is_once_and_uses_remaining_budget(self) -> None:
         from decimal import Decimal

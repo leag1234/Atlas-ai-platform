@@ -1,7 +1,5 @@
 **
 !requirements-dev.txt
-!package.json
-!package-lock.json
 !packages/
 !packages/**
 !services/
@@ -20,5 +18,3 @@
 !infra/openwebui_images.py
 **/__pycache__
 **/*.pyc
-
-**/node_modules
