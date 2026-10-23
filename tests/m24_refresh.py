@@ -1,7 +1,8 @@
 """Refresh M24 recordings through real public HTTP, tools and downloaded files."""
 
-from contextlib import aclosing
+from contextlib import aclosing, nullcontext
 from dataclasses import asdict
+from decimal import Decimal
 import copy
 import gzip
 import hashlib
@@ -19,6 +20,7 @@ from gateway_cpu import CPUModels
 from http_gateway import serve
 from m24_artifacts import validate
 from m24_capture import capture
+from m24_dependencies import FILE_CASES, file_dependencies
 from provider_recording import capture_stream
 from services.orchestrator.chat_api import app
 from services.orchestrator.chat_pipeline import ChatTools
@@ -28,9 +30,49 @@ from services.orchestrator.terminal_client import TerminalClient
 import stream_transport
 
 
+def promote(
+    archive: Path,
+    attempt: Path,
+    name: str,
+    request_path: Path,
+    response_path: Path,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Keep failed captures reviewable without damaging the last good recording."""
+    candidate = attempt / (name + ".json.gz")
+    candidate.write_bytes(archive.read_bytes())
+    capture(name, request_path, response_path, rows, archive=candidate)
+    updated = json.loads(gzip.decompress(candidate.read_bytes()))[name]
+    answer = updated["response"]
+    if name in FILE_CASES:
+        assert Decimal(str(answer["atlas"]["cost_eur"])) <= Decimal("0.30"), (
+            "file_cost_limit"
+        )
+        assert answer["seconds"] <= 300, "file_deadline_limit"
+        assert updated["artifacts"], "missing_download"
+    if name == "J44":
+        assert any(
+            a["url"].endswith(".xlsx") and a["bytes"] for a in updated["artifacts"]
+        ), "missing_xlsx"
+    validate(name, updated, answer)
+    # Same-filesystem rename: readers see either complete archive, never a partial write.
+    replacement = attempt / "validated.json.gz"
+    replacement.write_bytes(candidate.read_bytes())
+    replacement.replace(archive)
+
+
 def main() -> None:
     archive = Path("tests/cassettes/m24.json.gz")
     cases = json.loads(gzip.decompress(archive.read_bytes()))
+    selected = os.environ.get("M24_CASE", "").split(",")
+    if selected != [""]:
+        if any(name not in cases for name in selected):
+            raise ValueError("unknown_m24_case")
+        cases = {name: case for name, case in cases.items() if name in selected}
+    attempts = Path("BRAIN/m24-refresh")
+    attempts.mkdir(parents=True, exist_ok=True)
+    attempt = Path(tempfile.mkdtemp(prefix="attempt-", dir=attempts)).resolve()
+    print("M24 attempt:", attempt.relative_to(Path.cwd()), flush=True)
     rows: list[dict[str, Any]] = []
     original_stream = stream_transport.attempt
     original_post = GatewayModel.post
@@ -47,9 +89,7 @@ def main() -> None:
             if len(value) >= 8
             and any(word in key for word in ("KEY", "SECRET", "TOKEN", "PASSWORD"))
         ), "secret_in_recording"
-        Path("/tmp/m24-session-streams.json.gz").write_bytes(
-            gzip.compress(encoded, mtime=0)
-        )
+        (attempt / "streams.json.gz").write_bytes(gzip.compress(encoded, mtime=0))
 
     async def stream(request: Any, model: str, timeout: float) -> Any:
         value = {
@@ -134,7 +174,7 @@ def main() -> None:
         return output
 
     with (
-        tempfile.TemporaryDirectory() as root,
+        tempfile.TemporaryDirectory(dir=attempt) as root,
         patch.dict(
             os.environ,
             {
@@ -146,6 +186,7 @@ def main() -> None:
                 "ATLAS_WEB_CACHE": root + "/cache.sqlite",
             },
         ),
+        file_dependencies(attempt) if FILE_CASES.intersection(cases) else nullcontext(),
     ):
         gateway = serve(CPUModels(), 0)
         worker = threading.Thread(target=gateway.serve_forever, daemon=True)
@@ -164,26 +205,29 @@ def main() -> None:
                 TestClient(app) as client,
             ):
                 for name, case in cases.items():
-                    if os.environ.get("M24_CASE") and name not in os.environ[
-                        "M24_CASE"
-                    ].split(","):
-                        continue
                     rows.clear()
                     started = time.monotonic()
                     response = client.post("/v1/chat/completions", json=case["request"])
                     print(name, response.status_code, flush=True)
-                    assert response.status_code == 200, (name, response.json())
+                    seconds = time.monotonic() - started
+                    (attempt / (name + "-http.json")).write_text(
+                        json.dumps(
+                            {
+                                "status": response.status_code,
+                                "seconds": seconds,
+                            }
+                        )
+                    )
+                    assert response.status_code == 200, (name, response.status_code)
                     answer = response.json()
-                    answer["seconds"] = time.monotonic() - started
+                    answer["seconds"] = seconds
                     request_path, response_path = (
-                        Path(root) / "request.json",
-                        Path(root) / "response.json",
+                        attempt / (name + "-request.json"),
+                        attempt / (name + "-response.json"),
                     )
                     request_path.write_text(json.dumps(case["request"]))
                     response_path.write_text(json.dumps(answer))
-                    capture(name, request_path, response_path, rows)
-                    updated = json.loads(gzip.decompress(archive.read_bytes()))[name]
-                    validate(name, updated, answer)
+                    promote(archive, attempt, name, request_path, response_path, rows)
                     print(name, "useful artifacts validated", flush=True)
         finally:
             gateway.shutdown()
