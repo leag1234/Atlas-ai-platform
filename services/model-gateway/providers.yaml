@@ -29,7 +29,7 @@
   "mistral": {
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
-    "text_model": "mistral-small-2603", "vision_model": null,
+    "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
     "context": 262144,
     "price": {"currency": "USD", "input": 0.15, "output": 0.60},
     "note": "Vision not enabled by this preset; verify capabilities before overriding.",
