@@ -51,6 +51,19 @@ class SourceMarkerTests(unittest.TestCase):
             f"Selon [1]({url}), oui.",
         )
 
+    def test_mistral_reference_id_becomes_a_retrieved_source_marker(self) -> None:
+        url = "https://example.org/a"
+        self.assertEqual(
+            inline_source_markers("Selon [[atlas-reference:0]], oui.", [url]),
+            f"Selon [1]({url}), oui.",
+        )
+
+    def test_mistral_reference_id_outside_retrieval_is_removed(self) -> None:
+        self.assertEqual(
+            inline_source_markers("Selon [[atlas-reference:unknown]], oui.", []),
+            "Selon , oui.",
+        )
+
     def test_uncited_answer_gets_no_invented_marker(self) -> None:
         text = "Réponse sans citation."
         self.assertEqual(inline_source_markers(text, ["https://example.org/a"]), text)

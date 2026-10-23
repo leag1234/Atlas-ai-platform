@@ -32,10 +32,11 @@ class Delta(BaseModel):
     @field_validator("content", mode="before")
     @classmethod
     def text_content(cls, value: object) -> object:
-        """Normalize provider typed content parts to the text SSE contract."""
+        """Normalize typed content while retaining provider citation identities."""
         if not isinstance(value, list):
             return value
         text: list[str] = []
+        references: list[str] = []
         for part in value:
             if not isinstance(part, dict) or not isinstance(part.get("type"), str):
                 raise ValueError("invalid_content_part")
@@ -44,7 +45,29 @@ class Delta(BaseModel):
                 if not isinstance(chunk, str):
                     raise ValueError("invalid_text_content_part")
                 text.append(chunk)
-        return "".join(text)
+            elif part["type"] == "reference":
+                reference_ids = part.get("reference_ids")
+                if (
+                    not isinstance(reference_ids, list)
+                    or not reference_ids
+                    or len(reference_ids) > 10
+                    or not all(
+                        isinstance(reference_id, str) and 0 < len(reference_id) <= 200
+                        for reference_id in reference_ids
+                    )
+                ):
+                    raise ValueError("invalid_reference_content_part")
+                references.extend(reference_ids)
+        # Some providers stream citation annotations as a typed list.  Its adjacent text
+        # is display metadata (for example a hostname/date), not answer prose.
+        return (
+            "".join(
+                "[[atlas-reference:" + reference_id + "]]"
+                for reference_id in references
+            )
+            if references
+            else "".join(text)
+        )
 
 
 class StreamChoice(BaseModel):

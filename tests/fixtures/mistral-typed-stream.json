@@ -1,8 +1,7 @@
 {
   "content": [
-    {"type": "text", "text": "Synthetic research "},
-    {"type": "reference", "id": "source-1"},
-    {"type": "thinking", "text": "internal"},
-    {"type": "text", "text": "sentence."}
+    {"type": "text", "text": ".fr,2026-10-23"},
+    {"type": "reference", "reference_ids": ["0"]},
+    {"type": "thinking", "text": "internal"}
   ]
 }

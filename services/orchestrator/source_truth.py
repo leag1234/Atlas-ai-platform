@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from services.orchestrator.interactions import Interaction
 
 URL = re.compile(r"https?://[^\s<>\"'()\]]+")
+REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
 
 
 def drawing_references(item: Interaction) -> set[str]:
@@ -91,6 +92,7 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
 def inline_source_markers(text: str, retrieved: list[str]) -> str:
     """Turn retrieved web URLs into compact Markdown links Open WebUI renders."""
     numbers = {url: index for index, url in enumerate(dict.fromkeys(retrieved), 1)}
+    text = provider_reference_markers(text, retrieved)
 
     def markdown(match: re.Match[str]) -> str:
         url = match.group(1).rstrip(".,;:)]}>'\"")
@@ -105,6 +107,25 @@ def inline_source_markers(text: str, retrieved: list[str]) -> str:
 
     rendered = re.sub(r"(?<!\]\()https?://[^\s<>\"'()\]]+", bare, text)
     return rendered
+
+
+def provider_reference_markers(text: str, retrieved: list[str]) -> str:
+    """Resolve only typed provider citation chunks, never service-owned links."""
+    numbers = {url: index for index, url in enumerate(dict.fromkeys(retrieved), 1)}
+
+    def reference(match: re.Match[str]) -> str:
+        identifier = match.group(1)
+        if identifier in numbers:
+            url = identifier
+        elif identifier.isdecimal() and int(identifier) < len(retrieved):
+            url = retrieved[int(identifier)]
+        else:
+            # A reference ID is meaningful only in the provider's tool result.
+            # Never render it unless it resolves to this conversation's retrieval.
+            return ""
+        return f"[{numbers[url]}]({url})"
+
+    return REFERENCE.sub(reference, text)
 
 
 def source_footer(retrieved: list[str], language: str) -> str:
