@@ -44,18 +44,47 @@ def urls(text: str) -> set[str]:
 
 
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
+    from services.orchestrator.mermaid_check import FENCE
+
+    diagram_ranges: list[tuple[int, int]] = []
+
     def replace(match: re.Match[str]) -> str:
         value = match[0].rstrip(".,;:)]}>'\"")
-        return match[0] if value in retrieved else "[unverified source]"
+        if value in retrieved:
+            return match[0]
+        if any(start <= match.start() < end for start, end in diagram_ranges):
+            return "unverified source"
+        return "[unverified source]"
 
+    # Remove fabricated Markdown citations as a whole, including placeholder URLs.
+    # Bare unknown URLs retain the existing explicit provenance notice.
+    text = re.sub(
+        r"(?<!!)\[[^\]\n]+\]\((?:\[unverified source\]|https?://[^\s]+?)\)",
+        lambda m: m[0] if urls(m[0]) and urls(m[0]) <= retrieved else "",
+        text,
+        flags=re.I,
+    )
+    definitions = re.compile(r"(?m)^\s{0,3}\[([^\]\n]+)\]:[ \t]*(\S+)[^\n]*$")
+    for definition in list(definitions.finditer(text)):
+        if definition[2].strip("<>") not in retrieved:
+            label = re.escape(definition[1])
+            text = re.sub(r"(?<!!)\[[^\]\n]+\]\[" + label + r"\]", "", text, flags=re.I)
+            text = text.replace(definition[0], "")
+    text = text.replace("[unverified source]", "")
+    diagram_ranges = [(m.start(), m.end()) for m in FENCE.finditer(text)]
     text = URL.sub(replace, text)
+    # Retrieval provenance contains URLs, not model-authored visit dates. Never
+    # preserve an invented date merely because some other URL was retrieved.
+    text = re.sub(
+        r"(?i)[ \t]*\(?\b(?:consult[eé]\w* le|consulted (?:on|at)|accessed on)"
+        r"[ \t]+(?:\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{4}|"
+        r"\d{1,2} [^\s()]+ \d{4}|[A-Za-z]+ \d{1,2},? \d{4})\)?",
+        "",
+        text,
+    )
     if not retrieved:
-        # Do not let a remembered reference impersonate a consulted document.
-        text = re.sub(
-            r"(?im)^.*(?:consult[eé]\w* le|consulted (?:on|at)|accessed on|^sources?\s*:).*(?:\n|$)",
-            "",
-            text,
-        )
+        text = re.sub(r"(?im)^sources?\s*:.*(?:\n|$)", "", text)
+
     return text
 
 
@@ -87,8 +116,17 @@ def source_footer(retrieved: list[str], language: str) -> str:
         return ""
     labels = json.loads(Path("prompts/activity-labels.json").read_text())
     labels = labels.get(language, labels["en"])
+    consulted = {
+        "en": "Sources consulted in this conversation",
+        "fr": "Sources consultées dans cette conversation",
+        "de": "In diesem Gespräch konsultierte Quellen",
+        "es": "Fuentes consultadas en esta conversación",
+        "it": "Fonti consultate in questa conversazione",
+    }
     return (
         "\n\n<details>\n<summary>"
+        + consulted.get(language, consulted["en"])
+        + " — "
         + str(labels["web_search"])
         + " / "
         + str(labels["web_fetch"])

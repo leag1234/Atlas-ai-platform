@@ -146,6 +146,11 @@ def response(
                     set(item.retrieved_urls)
                     | drawing_references(item)
                     | {
+                        str(chunk["source"])
+                        for chunk in item.chunks_recuperes
+                        if chunk.get("source")
+                    }
+                    | {
                         u
                         for m in payload.messages[:-1]
                         if m.role == "assistant"
