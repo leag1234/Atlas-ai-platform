@@ -130,6 +130,11 @@ def configure(
     rates: dict[str, Any] = {}
     for role in config:
         model = vision if role in ("vision", "visionprevious") and vision else text
+        context = preset["context"]
+        if isinstance(context, dict):
+            context = context[
+                "vision" if role in ("vision", "visionprevious") and vision else "text"
+            ]
         price = (
             preset.get("vision_price", preset.get("price"))
             if model == vision
@@ -169,9 +174,7 @@ def configure(
             else "text",
             "capabilities": {
                 model: {
-                    "context": int(
-                        os.environ.get("ATLAS_MODEL_CONTEXT", preset["context"])
-                    ),
+                    "context": int(os.environ.get("ATLAS_MODEL_CONTEXT", context)),
                     "tools": True,
                     "vision": bool(vision and model == vision),
                 }

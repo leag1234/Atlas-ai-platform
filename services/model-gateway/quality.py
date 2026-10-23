@@ -39,6 +39,68 @@ from packages.images import image_info
 from serverless import ServerlessPolicy, classify_task
 
 
+CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model context]\n"
+
+
+def trim_fetched_pages(
+    messages: list[dict[str, object]],
+    tools: list[dict[str, object]],
+    maximum: int,
+) -> list[dict[str, object]]:
+    """Retain a marked prefix of the largest fetched pages within the model limit."""
+    trimmed = copy.deepcopy(messages)
+    fetches: set[str] = set()
+    for message in trimmed:
+        calls = message.get("tool_calls")
+        if not isinstance(calls, list):
+            continue
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function")
+            if (
+                isinstance(function, dict)
+                and function.get("name") == "web_fetch"
+                and isinstance(call.get("id"), str)
+            ):
+                fetches.add(call["id"])
+    pages: list[tuple[int, str]] = []
+    for index, message in enumerate(trimmed):
+        if message.get("role") != "tool" or message.get("tool_call_id") not in fetches:
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        try:
+            output = json.loads(content)
+        except json.JSONDecodeError:
+            continue
+        data = output.get("data") if isinstance(output, dict) else None
+        if isinstance(data, dict) and isinstance(data.get("text"), str):
+            pages.append((index, data["text"]))
+    for index, text in sorted(pages, key=lambda page: len(page[1]), reverse=True):
+        while input_bound(trimmed, tools) > maximum:
+            content = trimmed[index]["content"]
+            assert isinstance(content, str)
+            output = json.loads(content)
+            assert isinstance(output, dict)
+            data = output["data"]
+            assert isinstance(data, dict)
+            current = str(data["text"])
+            retained_text = current.removesuffix(CONTEXT_TRUNCATION_MARKER)
+            if not retained_text:
+                break
+            excess = input_bound(trimmed, tools) - maximum
+            retained = max(0, len(retained_text) - excess)
+            data["text"] = retained_text[:retained] + CONTEXT_TRUNCATION_MARKER
+            data["truncated"] = True
+            data["context_truncated"] = True
+            trimmed[index]["content"] = json.dumps(output, ensure_ascii=False)
+        if input_bound(trimmed, tools) <= maximum:
+            break
+    return trimmed
+
+
 def input_bound(
     messages: list[dict[str, object]], tools: list[dict[str, object]]
 ) -> int:
@@ -304,9 +366,28 @@ async def stream_quality(
             )
         capabilities = policy.config[role]["capabilities"][model]
         if incoming + current.max_tokens > capabilities["context"]:
-            raise ContextExceeded(
-                incoming + current.max_tokens, capabilities["context"]
+            messages = trim_fetched_pages(
+                request.messages,
+                request.tools,
+                capabilities["context"] - current.max_tokens,
             )
+            if messages != request.messages:
+                request = request.model_copy(update={"messages": messages})
+                current = current.model_copy(update={"messages": messages})
+                incoming = input_bound(request.messages, request.tools)
+                logging.getLogger(__name__).info(
+                    json.dumps(
+                        {
+                            "event": "research_context_trimmed",
+                            "incoming": incoming,
+                            "context": capabilities["context"],
+                        }
+                    )
+                )
+            if incoming + current.max_tokens > capabilities["context"]:
+                raise ContextExceeded(
+                    incoming + current.max_tokens, capabilities["context"]
+                )
         # Track the pre-validation streaming decision separately from withholding
         # tool-enabled text. Only malformed names may undo that decision.
         answer_started = False

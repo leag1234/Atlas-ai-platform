@@ -5,7 +5,7 @@ from packages.limits import LimitError, MalformedToolCall
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agent_provider import Completion, Usage
 from stream_usage import validate_usage
@@ -28,6 +28,23 @@ class Delta(BaseModel):
     reasoning: str | None = None
     reasoning_content: str | None = None
     tool_calls: list[CallDelta] = Field(default_factory=list, max_length=10)
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def text_content(cls, value: object) -> object:
+        """Normalize Mistral's typed content parts to the text SSE contract."""
+        if not isinstance(value, list):
+            return value
+        text: list[str] = []
+        for part in value:
+            if not isinstance(part, dict) or not isinstance(part.get("type"), str):
+                raise ValueError("invalid_content_part")
+            if part["type"] == "text":
+                chunk = part.get("text")
+                if not isinstance(chunk, str):
+                    raise ValueError("invalid_text_content_part")
+                text.append(chunk)
+        return "".join(text)
 
 
 class StreamChoice(BaseModel):
