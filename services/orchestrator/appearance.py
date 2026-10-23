@@ -85,8 +85,18 @@ def legend_instruction() -> str:
     )
 
 
-def mechanical_svg_instruction() -> str:
+def mechanical_svg_instruction(*, include_svg: bool = True) -> str:
     """Ask the text model for a bounded drawing; prompts are intentionally untouched."""
+    if not include_svg:
+        return (
+            "\n\nMechanical view route: provide a concise explanation, followed by "
+            "a numbered legend: part — role — rotates, oscillates, or fixed. "
+            "Write the explanation, headings, part names and roles in the requested "
+            "answer language. Include one invisible metadata comment "
+            "<!-- commons-query: object name --> with only the short English name "
+            "of the physical object for an image search. The service retrieves the "
+            "drawing; do not generate SVG, Mermaid, ASCII art, or code blocks."
+        )
     return (
         "\n\nMechanical drawing route: begin with one or two short explanatory "
         "sentences, then provide exactly one SVG technical side or cutaway drawing. "
@@ -103,7 +113,7 @@ def mechanical_svg_instruction() -> str:
         "markers, defs, references, events or other attributes. Use simple paths "
         "for arrows. Use numbered callouts in the drawing. After the SVG provide "
         "a numbered legend: part — role — rotates, oscillates, or fixed. "
-        "Write all visible text in the user's language. Before the SVG include "
+        "Write all visible text in the requested answer language. Before the SVG include "
         "one invisible metadata comment <!-- commons-query: object name --> with "
         "only the short English name of the physical object, for an image search. "
         "Never use Mermaid, ASCII art, or a fenced code block."
@@ -539,12 +549,15 @@ def extract_svg(
 
 
 def without_svg_or_code(model_text: str) -> str:
-    return re.sub(
-        r"`{3,}.*?`{3,}|<svg\b[^>]*>.*?</svg\s*>|<!--.*?-->",
+    clean = re.sub(
+        r"`{3,}.*?`{3,}|~{3,}.*?~{3,}|<svg\b[^>]*>.*?</svg\s*>|<!--.*?-->",
         "",
         model_text,
         flags=re.I | re.S,
-    ).strip()
+    )
+    # Splitting around an SVG can leave one half of its fence in each section.
+    # Never let those delimiters fence the service-owned image and source line.
+    return re.sub(r"(?m)^[ \t]*(?:`{3,}|~{3,})[^\n]*$", "", clean).strip()
 
 
 def mechanical_prose(model_text: str) -> tuple[str, str]:

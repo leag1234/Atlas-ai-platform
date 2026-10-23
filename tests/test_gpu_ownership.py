@@ -45,6 +45,7 @@ class OwnershipTests(unittest.TestCase):
             "PATH": str(self.bin) + ":" + os.environ["PATH"],
             "PYTHONPATH": str(ROOT),
             "HOME": str(self.root),
+            "TMPDIR": str(self.root),
             "ATLAS_PORT_BASE": "12500",
             "ATLAS_GPU_OWNER": "dev-test",
             "ATLAS_DEV_GPU": "1",

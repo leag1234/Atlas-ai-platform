@@ -5,6 +5,7 @@ import getpass
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import subprocess
 import sys
@@ -19,6 +20,48 @@ from provider_settings import presets, request_options, validate_endpoint
 from setup_stream import read_completion
 
 ROOT = Path(__file__).resolve().parents[1]
+PROVIDER_SETTINGS = {
+    "ATLAS_PROVIDER",
+    "ATLAS_PROVIDER_BASE_URL",
+    "ATLAS_PROVIDER_API_KEY",
+    "ATLAS_TEXT_MODEL",
+    "ATLAS_VISION_MODEL",
+    "ATLAS_LOCAL_MODEL",
+    "ATLAS_MODEL_CONTEXT",
+    "ATLAS_USD_TO_EUR",
+}
+
+
+def read_existing(path: Path) -> tuple[str, dict[str, str]]:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("--reconfigure requires an existing regular .env file.")
+    source = path.read_text()
+    records = re.compile(
+        r"(?:[ \t]*(?:#[^\n]*)?(?:\n|$))|"
+        r"[ \t]*(?:export[ \t]+)?(?P<name>[A-Za-z_][A-Za-z_0-9]*)[ \t]*=[ \t]*"
+        r"(?P<value>'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|(?!['\"])[^\n]*)"
+        r"[ \t]*(?:#[^\n]*)?(?:\n|$)",
+        re.DOTALL,
+    )
+    kept = []
+    values = {}
+    offset = 0
+    while offset < len(source):
+        match = records.match(source, offset)
+        if match is None or match.end() == offset:
+            raise ValueError("Cannot safely parse .env; configuration was not changed.")
+        name = match.group("name")
+        if name:
+            raw = match.group("value").strip()
+            values[name] = (
+                raw[1:-1]
+                if raw.startswith(("'", '"'))
+                else re.split(r"\s+#", raw, maxsplit=1)[0].rstrip()
+            )
+        if name not in PROVIDER_SETTINGS:
+            kept.append(match.group())
+        offset = match.end()
+    return "".join(kept), values
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -104,14 +147,17 @@ def env_value(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def write_private(path: Path, settings: dict[str, str]) -> None:
+def write_private(path: Path, settings: dict[str, str], preserved: str = "") -> None:
     if path.is_symlink():
         raise ValueError("Refusing a symlink configuration file.")
     fd, temporary = tempfile.mkstemp(prefix=".atlas-env-", dir=path.parent)
     try:
         with os.fdopen(fd, "w") as output:
             os.fchmod(output.fileno(), 0o600)
-            output.write("# Atlas setup; keep private.\n")
+            if preserved:
+                output.write(preserved + ("" if preserved.endswith("\n") else "\n"))
+            else:
+                output.write("# Atlas setup; keep private.\n")
             for name, value in settings.items():
                 output.write(name + "=" + env_value(value) + "\n")
             output.flush()
@@ -137,6 +183,11 @@ def main() -> int:
     setup.add_argument("--api-key-file", type=Path)
     setup.add_argument("--model")
     setup.add_argument(
+        "--reconfigure",
+        action="store_true",
+        help="change provider while preserving secrets and saved data",
+    )
+    setup.add_argument(
         "--http-port",
         type=http_port,
         default=os.environ.get("ATLAS_HTTP_PORT", "3000"),
@@ -152,9 +203,13 @@ def main() -> int:
             ["docker", "compose", "version"], check=True, stdout=subprocess.DEVNULL
         )
         destination = ROOT / ".env"
-        if destination.exists() or destination.is_symlink():
+        preserved = ""
+        existing: dict[str, str] = {}
+        if args.reconfigure:
+            preserved, existing = read_existing(destination)
+        elif destination.exists() or destination.is_symlink():
             raise ValueError(
-                ".env already exists. Back it up and move it before running setup again."
+                ".env already exists. Use ./atlas setup --reconfigure to change provider safely."
             )
         provider = args.provider
         if not provider:
@@ -200,17 +255,29 @@ def main() -> int:
             "ATLAS_PROVIDER": provider,
             "ATLAS_PROVIDER_BASE_URL": base,
             "ATLAS_PROVIDER_API_KEY": key,
+            "ATLAS_VISION_MODEL": preset.get("vision_model") or "",
             "ATLAS_TEXT_MODEL": model
             if model != preset.get("text_model") or provider != "scaleway"
             else "",
             "ATLAS_LOCAL_MODEL": model
             if provider == "local"
             else presets()["local"]["text_model"],
-            "WEBUI_SECRET_KEY": secrets.token_urlsafe(32),
-            "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
-            "SEARXNG_SECRET": secrets.token_urlsafe(32),
-            "ATLAS_HTTP_PORT": args.http_port,
-            "ATLAS_OLLAMA_PORT": os.environ.get("ATLAS_OLLAMA_PORT", "13702"),
+        }
+        if not args.reconfigure:
+            settings.update(
+                {
+                    "WEBUI_SECRET_KEY": secrets.token_urlsafe(32),
+                    "POSTGRES_PASSWORD": secrets.token_urlsafe(32),
+                    "SEARXNG_SECRET": secrets.token_urlsafe(32),
+                    "ATLAS_HTTP_PORT": args.http_port,
+                    "ATLAS_OLLAMA_PORT": os.environ.get("ATLAS_OLLAMA_PORT", "13702"),
+                }
+            )
+        # An exported old credential must not override the retained .env value.
+        compose_env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in existing and k not in settings and k not in PROVIDER_SETTINGS
         }
         temporary = ROOT / ".atlas-setup.env"
         compose = ["docker", "compose"]
@@ -218,8 +285,9 @@ def main() -> int:
             print(
                 "Starting Ollama without GPU; pulling the preset on first start. CPU answers are slower and weaker."
             )
-            settings["COMPOSE_PROFILES"] = "local"
-            write_private(temporary, settings)
+            if not args.reconfigure:
+                settings["COMPOSE_PROFILES"] = "local"
+            write_private(temporary, settings, preserved)
             local_verified = False
             try:
                 subprocess.run(
@@ -235,8 +303,15 @@ def main() -> int:
                         "ollama",
                     ],
                     check=True,
+                    env=compose_env,
                 )
-                local_base = "http://127.0.0.1:" + settings["ATLAS_OLLAMA_PORT"] + "/v1"
+                local_base = (
+                    "http://127.0.0.1:"
+                    + existing.get(
+                        "ATLAS_OLLAMA_PORT", settings.get("ATLAS_OLLAMA_PORT", "13702")
+                    )
+                    + "/v1"
+                )
                 for _ in range(120):
                     ready = subprocess.run(
                         compose
@@ -251,6 +326,7 @@ def main() -> int:
                             "/tmp/model-ready",
                         ],
                         capture_output=True,
+                        env=compose_env,
                     )
                     if ready.returncode == 0:
                         break
@@ -267,16 +343,17 @@ def main() -> int:
                         compose + ["--env-file", str(temporary), "stop", "ollama"],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
+                        env=compose_env,
                     )
                 temporary.unlink(missing_ok=True)
         else:
             check_connection(base, key, model, provider)
-        write_private(destination, settings)
+        write_private(destination, settings, preserved)
         print("Saved .env with mode 600. Provider credentials were not displayed.")
         if (
             not preset.get("price")
             or preset["price"]["currency"] != "EUR"
-            or args.model
+            or model != preset.get("text_model")
         ):
             print(
                 "WARNING: no verified EUR price for this configuration; monetary budget ceiling disabled. Provider billing still applies."
@@ -285,16 +362,26 @@ def main() -> int:
             args.yes or input("Start Atlas now? [Y/n]: ").strip().lower() != "n"
         )
         if start:
+            services = (
+                ["--no-deps", "--force-recreate", "gateway"] if args.reconfigure else []
+            )
             subprocess.run(
-                compose + ["up", "-d", "--build", "--wait", "--wait-timeout", "600"],
+                compose
+                + ["up", "-d", "--build", "--wait", "--wait-timeout", "600"]
+                + services,
                 check=True,
+                env=compose_env,
             )
         if not start and provider == "local":
-            subprocess.run(compose + ["stop", "ollama"], check=True)
+            subprocess.run(compose + ["stop", "ollama"], check=True, env=compose_env)
         print(
             "Open http://localhost:"
-            + settings["ATLAS_HTTP_PORT"]
-            + " and create the first administrator account."
+            + existing.get("ATLAS_HTTP_PORT", settings.get("ATLAS_HTTP_PORT", "3000"))
+            + (
+                "; existing accounts and conversations are retained."
+                if args.reconfigure
+                else " and create the first administrator account."
+            )
         )
         return 0
     except (

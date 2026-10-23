@@ -56,17 +56,22 @@ applicable). Hetzner's preset disables reasoning for visible answers. If a provi
 returns reasoning only during setup, it is reported as reachable with a warning;
 setup does not claim a visible answer was verified.
 
-| Provider | Indicative input / output per million tokens | Notes and official sources |
-| --- | --- | --- |
-| Hetzner | Free during the experiment | **Experimental; not for production.** [API, models and terms](https://docs.hetzner.com/general/company-and-policy/experiments/inference/) |
-| Scaleway | EUR 0.60 / 3.60 text; EUR 0.25 / 0.50 vision | Current Atlas defaults; [quickstart](https://www.scaleway.com/en/docs/generative-apis/quickstart/), [pricing](https://www.scaleway.com/en/pricing/model-as-a-service/), [FAQ](https://www.scaleway.com/en/docs/generative-apis/faq/) |
-| Mistral | USD 0.15 / 0.60 | [Model](https://docs.mistral.ai/models/mistral-small-4-0-26-03), [API](https://docs.mistral.ai/api/endpoint/chat), [pricing](https://docs.mistral.ai/inference/pricing) |
-| IONOS AI Model Hub | **Unverified price** | [API](https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation), [model](https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b) |
-| OVHcloud AI Endpoints | **Unverified price** | [Catalog](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/), [API example](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output) |
-| Local Ollama | No token charge; hardware and electricity remain | [API](https://docs.ollama.com/api/openai-compatibility), [model sizes](https://ollama.com/library/qwen3), [Docker](https://docs.ollama.com/docker) |
-| Hugging Face Inference Providers | **Unverified, route-dependent price** | Outside the EU; router destination depends on the selected provider. [API](https://huggingface.co/docs/inference-providers/tasks/chat-completion), [billing](https://huggingface.co/docs/inference-providers/pricing) |
-| DeepSeek | **Unverified price** | Outside the EU. [API](https://api-docs.deepseek.com/); the [pricing URL](https://api-docs.deepseek.com/quick_start/pricing) redirected to the quickstart during verification. |
-| Other | **Unverified** until configured | Supply a base URL and model ID from your provider's documentation. |
+| Provider | Status | Indicative input / output per million tokens | Notes and official sources |
+| --- | --- | --- | --- |
+| Hetzner | Verified 2026-10-23 | Free during the experiment | **Experimental; not for production.** [API, models and terms](https://docs.hetzner.com/general/company-and-policy/experiments/inference/) |
+| Scaleway | Verified 2026-10-23 | EUR 0.60 / 3.60 text; EUR 0.25 / 0.50 vision | Current Atlas defaults; [quickstart](https://www.scaleway.com/en/docs/generative-apis/quickstart/), [pricing](https://www.scaleway.com/en/pricing/model-as-a-service/), [FAQ](https://www.scaleway.com/en/docs/generative-apis/faq/) |
+| Mistral | Verified 2026-10-23 | USD 0.15 / 0.60 | [Model](https://docs.mistral.ai/models/mistral-small-4-0-26-03), [API](https://docs.mistral.ai/api/endpoint/chat), [pricing](https://docs.mistral.ai/inference/pricing) |
+| IONOS AI Model Hub | **Not yet tested** (no test access so far) | Preset untested; price unverified | [API](https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation), [model](https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b) |
+| OVHcloud AI Endpoints | Verified 2026-10-23 | **Unverified price** | [Catalog](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/), [API example](https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output) |
+| Local Ollama | In progress | No token charge; hardware and electricity remain | [API](https://docs.ollama.com/api/openai-compatibility), [model sizes](https://ollama.com/library/qwen3), [Docker](https://docs.ollama.com/docker) |
+| Hugging Face Inference Providers | In progress | **Unverified, route-dependent price** | Outside the EU; router destination depends on the selected provider. [API](https://huggingface.co/docs/inference-providers/tasks/chat-completion), [billing](https://huggingface.co/docs/inference-providers/pricing) |
+| DeepSeek | In progress | **Unverified price** | Outside the EU. [API](https://api-docs.deepseek.com/); the [pricing URL](https://api-docs.deepseek.com/quick_start/pricing) redirected to the quickstart during verification. |
+| Other | In progress | **Unverified** until configured | Supply a base URL and model ID from your provider's documentation. |
+
+Verified means an end-to-end browser test on a fresh Ubuntu host: PDF,
+chat, cited web answers and diagrams. IONOS has not been tested with an account key.
+OVHcloud now uses `Qwen3.5-397B-A17B` for text and
+`Qwen2.5-VL-72B-Instruct` for vision. See [provider details](providers.md).
 
 The first five providers are European companies; check the selected service's
 hosting region and terms. A provider's location alone does not establish the
@@ -125,6 +130,34 @@ For a custom endpoint, add `--base-url https://your-provider.example/v1 --model
 YOUR_MODEL_ID`. Choosing `local` enables the Compose `local` profile and downloads
 the preset model on first start. CPU-only startup is supported; a larger model and
 GPU need more RAM and disk than the remote-inference target.
+
+## Change provider
+
+Keep the existing `.env` in place and run:
+
+```bash
+./atlas setup --reconfigure
+```
+
+Choose the new provider and enter its key at the hidden prompt. Setup checks the
+new account's model list and a streaming completion before replacing `.env`
+atomically with mode 600. It preserves generated secrets, storage settings,
+ports, accounts and conversations, and recreates only the gateway. Do not move
+`.env` away or rerun fresh setup against existing volumes: a newly generated
+database password would no longer match the stored database.
+
+For automation:
+
+```bash
+./atlas setup --reconfigure --provider ovhcloud --api-key-file "$HOME/.config/atlas/provider-key" --yes
+```
+
+Provider model and currency overrides are reset to the selected preset. Supply
+`--model` to override its text model. For a USD preset, set an operator-verified
+`ATLAS_USD_TO_EUR` in `.env` after switching, as described in the pricing notes.
+Add `--no-start` to save verified settings without restarting; then apply them with
+`docker compose up -d --no-deps --force-recreate --wait gateway`.
+For local Ollama, setup also starts the CPU model service for verification.
 
 ## What you get
 

@@ -53,7 +53,11 @@ from services.orchestrator.image_truth import (
     unsupported_image_block,
     wants_generation,
 )
-from packages.language import conversation_language, language_instruction
+from packages.language import (
+    conversation_language,
+    language_instruction,
+    requested_language,
+)
 from services.orchestrator.image_tool import (
     GenerateImage,
     declaration,
@@ -61,6 +65,7 @@ from services.orchestrator.image_tool import (
     finish,
     finish_appearance,
     finish_mechanical_drawing,
+    mechanical_svg_enabled,
     finish_simple_drawing,
     guest_capability_instruction,
     images_enabled,
@@ -686,13 +691,10 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         item.reponse = title_response(request.user_text, request.lang)
         item.state, item.task_type, item.cout_eur = "done", "title", 0.0
         return
-    request = request.model_copy(
-        update={
-            "lang": conversation_language(
-                request.conversation_messages, request.ui_locale
-            )
-        }
-    )
+    language = conversation_language(request.conversation_messages, request.ui_locale)
+    if not request.continuation and is_appearance_request(request.user_text):
+        language = requested_language(request.user_text) or language
+    request = request.model_copy(update={"lang": language})
     if (
         extended_enabled()
         and not request.has_attachments
@@ -1285,7 +1287,7 @@ async def _process(
             + (
                 legend_instruction()
                 if appearance and images_enabled()
-                else mechanical_svg_instruction()
+                else mechanical_svg_instruction(include_svg=mechanical_svg_enabled())
                 if appearance
                 else ""
             ),
