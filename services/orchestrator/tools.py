@@ -221,7 +221,9 @@ class Runtime:
                 }:
                     continue
                 self._last_search_provider = provider
-                return {**result, "attempts": attempts}
+                # Record attempts only when a fallback happened; a first-provider
+                # success keeps the model-visible tool output unchanged.
+                return {**result, "attempts": attempts} if len(attempts) > 1 else result
             except SearchQuotaError as exc:
                 last_quota = exc
                 attempts.append({"provider": provider, "outcome": str(exc)})
@@ -586,7 +588,7 @@ class Runtime:
                 "provider_status": exc.status,
                 **(
                     {"attempts": self._last_search_attempts}
-                    if call.name == "web_search"
+                    if call.name == "web_search" and len(self._last_search_attempts) > 1
                     else {}
                 ),
             }
@@ -596,7 +598,7 @@ class Runtime:
                 "message": exc.detail,
                 **(
                     {"attempts": self._last_search_attempts}
-                    if call.name == "web_search"
+                    if call.name == "web_search" and len(self._last_search_attempts) > 1
                     else {}
                 ),
             }
@@ -615,7 +617,7 @@ class Runtime:
                 else "timeout",
                 **(
                     {"attempts": self._last_search_attempts}
-                    if call.name == "web_search"
+                    if call.name == "web_search" and len(self._last_search_attempts) > 1
                     else {}
                 ),
             }
@@ -624,7 +626,7 @@ class Runtime:
                 "error": "provider_unavailable",
                 **(
                     {"attempts": self._last_search_attempts}
-                    if call.name == "web_search"
+                    if call.name == "web_search" and len(self._last_search_attempts) > 1
                     else {}
                 ),
             }
@@ -635,7 +637,7 @@ class Runtime:
                 else "invalid_provider_response",
                 **(
                     {"attempts": self._last_search_attempts}
-                    if call.name == "web_search"
+                    if call.name == "web_search" and len(self._last_search_attempts) > 1
                     else {}
                 ),
             }

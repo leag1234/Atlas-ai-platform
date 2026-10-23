@@ -169,9 +169,7 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
             result = await self.runtime.search(self.request, 5)
         self.assertEqual(result["results"], partial["results"])
         self.assertEqual(result["outcome"], "partial_results")
-        self.assertEqual(
-            result["attempts"], [{"provider": "searxng", "outcome": "partial_results"}]
-        )
+        self.assertNotIn("attempts", result)
         tavily.assert_not_awaited()
 
     async def test_invalid_query_does_not_fall_back(self) -> None:
@@ -216,10 +214,7 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertEqual(
                 await self.runtime.search(self.request, 1),
-                {
-                    **result,
-                    "attempts": [{"provider": "tavily", "outcome": "ok"}],
-                },
+                result,
             )
             self.assertEqual(
                 self.runtime.estimate(Call("1", "web_search", "{}")),
@@ -279,10 +274,7 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertEqual(
                 await self.runtime.search(self.request, 1),
-                {
-                    **result,
-                    "attempts": [{"provider": "serpapi", "outcome": "ok"}],
-                },
+                result,
             )
         serpapi.assert_awaited_once()
         serpapi_call = serpapi.await_args
