@@ -43,6 +43,7 @@ class SearchQuotaError(ValueError):
 
 
 SEARCH_PROVIDERS = frozenset({"serpapi", "tavily", "searxng"})
+SHORT_COOLDOWN_SECONDS = 5
 
 
 def search_providers(value: str | None = None) -> tuple[str, ...]:
@@ -56,6 +57,28 @@ def search_providers(value: str | None = None) -> tuple[str, ...]:
     if not providers or any(provider not in SEARCH_PROVIDERS for provider in providers):
         raise ValueError("invalid_search_provider")
     return providers
+
+
+def searxng_cooldown_wait(result: Message) -> float:
+    """Return a safe local cooldown for the highest-priority blocked engine."""
+    if result.get("outcome") != "upstream_blocked":
+        return 0
+    engines = result.get("engines")
+    if not isinstance(engines, list):
+        return 0
+    for engine in engines:
+        if not isinstance(engine, dict) or engine.get("outcome") != "upstream_blocked":
+            continue
+        if engine.get("reason") != "cooldown":
+            return 0
+        retry_after = engine.get("retry_after")
+        if (
+            isinstance(retry_after, (int, float))
+            and 0 < retry_after <= SHORT_COOLDOWN_SECONDS
+        ):
+            return float(retry_after)
+        return 0
+    return 0
 
 
 class Arguments(BaseModel):
@@ -166,7 +189,7 @@ class Runtime:
                 break
             try:
                 provider_timeout = remaining
-                # Leave room for the one SearXNG retry and a later provider.
+                # Leave room for a short local cooldown and a later provider.
                 if provider == "searxng" and len(available) > 1:
                     provider_timeout = max(0.001, remaining - 2.05)
                 result = await {
@@ -178,13 +201,11 @@ class Runtime:
                 attempts.append({"provider": provider, "outcome": outcome})
                 if provider == "searxng":
                     last_searxng_result = result
-                if provider == "searxng" and outcome in {
-                    "upstream_blocked",
-                    "upstream_timeout",
-                }:
+                cooldown = searxng_cooldown_wait(result) if provider == "searxng" else 0
+                if cooldown:
                     remaining = deadline - asyncio.get_running_loop().time()
-                    if remaining > 2.05:
-                        await asyncio.sleep(2)
+                    if remaining > cooldown + 0.05:
+                        await asyncio.sleep(cooldown)
                         result = await self.searxng(
                             request, deadline - asyncio.get_running_loop().time()
                         )

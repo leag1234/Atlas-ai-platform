@@ -109,6 +109,18 @@ def search_failure_notice(outcome: str, language: str) -> str:
     return notices.get(language, NOTICES).get(outcome, NOTICES[outcome])
 
 
+def partial_search_failure_notice(outcome: str, language: str) -> str:
+    """Disclose a later search failure without denying already cited evidence."""
+    notices = {
+        "en": "Part of the web search failed ({reason}); this answer relies only on the sources retrieved before it.",
+        "fr": "Une partie de la recherche web a échoué ({reason}) ; cette réponse repose uniquement sur les sources récupérées avant cet échec.",
+        "de": "Ein Teil der Websuche ist fehlgeschlagen ({reason}); diese Antwort stützt sich nur auf die zuvor abgerufenen Quellen.",
+        "es": "Parte de la búsqueda web falló ({reason}); esta respuesta se basa únicamente en las fuentes recuperadas antes del fallo.",
+        "it": "Una parte della ricerca web non è riuscita ({reason}); questa risposta si basa solo sulle fonti recuperate prima dell'errore.",
+    }
+    return notices.get(language, notices["en"]).format(reason=outcome)
+
+
 class Source(BaseModel):
     chunk_id: str = Field(pattern=r"^[a-f0-9]{64}$")
     doc_id: str = Field(min_length=1)
@@ -301,6 +313,7 @@ class ChatTools(Runtime):
             except ValueError:
                 return {"error": "invalid_image_arguments"}
         if call.name != "rag_search":
+            had_verified_results = bool(self.item.retrieved_urls)
             try:
                 output = await super().execute(call, timeout)
             except BudgetRefusal as exc:
@@ -335,7 +348,9 @@ class ChatTools(Runtime):
             if call.name == "web_search" and str(output.get("error")) in OUTCOMES:
                 outcome = str(output["error"])
                 self.item.erreurs.append(outcome)
-                if not self.item.retrieved_urls:
+                if had_verified_results:
+                    self.item.erreurs.append(f"partial_search_failure:{outcome}")
+                if not had_verified_results:
                     raise GatewayError(outcome, 503, NOTICES[outcome])
             if (
                 call.name == "web_search"
@@ -344,7 +359,9 @@ class ChatTools(Runtime):
             ):
                 outcome = str(data["outcome"])
                 self.item.erreurs.append(outcome)
-                if not data.get("results") and not self.item.retrieved_urls:
+                if had_verified_results and not data.get("results"):
+                    self.item.erreurs.append(f"partial_search_failure:{outcome}")
+                if not data.get("results") and not had_verified_results:
                     raise GatewayError(outcome, 503, NOTICES[outcome])
             if isinstance(data, dict):
                 self.source_truncated |= data.get("truncated") is True
@@ -728,12 +745,32 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             await _process(request, item)
     else:
         await _process(request, item)
-    failed_searches = tuple(
-        dict.fromkeys(outcome for outcome in item.erreurs if outcome in OUTCOMES)
+    partial_searches = tuple(
+        dict.fromkeys(
+            error.removeprefix("partial_search_failure:")
+            for error in item.erreurs
+            if error.startswith("partial_search_failure:")
+        )
     )
-    if item.state == "done" and failed_searches:
+    failed_searches = tuple(
+        dict.fromkeys(
+            outcome
+            for outcome in item.erreurs
+            if outcome in OUTCOMES and outcome not in partial_searches
+        )
+    )
+    if item.state == "done" and (failed_searches or partial_searches):
         notice = "\n\n" + "\n".join(
-            search_failure_notice(outcome, request.lang) for outcome in failed_searches
+            [
+                *(
+                    search_failure_notice(outcome, request.lang)
+                    for outcome in failed_searches
+                ),
+                *(
+                    partial_search_failure_notice(outcome, request.lang)
+                    for outcome in partial_searches
+                ),
+            ]
         )
         item.reponse += notice
         if sink := sink_context.get():

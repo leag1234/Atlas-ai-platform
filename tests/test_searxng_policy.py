@@ -440,7 +440,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             await chat_pipeline.process(request, item)
         self.assertIn("CERN is a physics laboratory.", item.reponse)
         self.assertIn(
-            "La recherche web a expiré ; aucun résultat vérifié n’a été obtenu.",
+            "Une partie de la recherche web a échoué (upstream_timeout) ; cette réponse repose uniquement sur les sources récupérées avant cet échec.",
             item.reponse,
         )
 
@@ -456,13 +456,17 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             "execute",
             AsyncMock(return_value={"trust": "untrusted", "data": data}),
         ):
-            with self.assertRaisesRegex(GatewayError, "empty_results"):
+            with self.assertRaisesRegex(GatewayError, "empty_results") as raised:
                 await ChatTools(item).execute(
                     Call(
                         "s", "web_search", json.dumps({"query": "CERN", "lang": "en"})
                     ),
                     2,
                 )
+        self.assertEqual(
+            raised.exception.detail,
+            "The search engines returned no matching results. This does not establish that no information exists.",
+        )
 
     async def test_pipeline_keeps_quota_refusal_terminal_with_earlier_sources(
         self,

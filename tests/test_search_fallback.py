@@ -63,7 +63,9 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(call.args[1], 0)
             self.assertLessEqual(call.args[1], 1)
 
-    async def test_searxng_outcomes_fall_through_with_honest_attempts(self) -> None:
+    async def test_non_cooldown_searxng_outcomes_fall_through_without_retry(
+        self,
+    ) -> None:
         for outcome in (
             "upstream_blocked",
             "upstream_timeout",
@@ -98,23 +100,58 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                     patch.object(
                         self.runtime, "tavily", new=AsyncMock(return_value=fallback)
                     ) as tavily,
-                    patch("services.orchestrator.tools.asyncio.sleep", new=AsyncMock()),
                 ):
                     result = await self.runtime.search(self.request, 5)
                 self.assertEqual(result["provider"], "tavily")
                 attempts = cast(list[dict[str, object]], result["attempts"])
                 self.assertEqual(
                     [str(attempt["outcome"]) for attempt in attempts],
-                    (
-                        [outcome, outcome, "ok"]
-                        if outcome != "empty_results"
-                        else [outcome, "ok"]
-                    ),
+                    [outcome, "ok"],
                 )
-                self.assertEqual(
-                    searxng.await_count, 2 if outcome != "empty_results" else 1
-                )
+                self.assertEqual(searxng.await_count, 1)
                 tavily.assert_awaited_once()
+
+    async def test_short_local_cooldown_waits_then_retries(self) -> None:
+        cooldown = {
+            "provider": "searxng",
+            "outcome": "upstream_blocked",
+            "results": [],
+            "engines": [
+                {
+                    "engine": "duckduckgo",
+                    "outcome": "upstream_blocked",
+                    "reason": "cooldown",
+                    "retry_after": 2.47,
+                }
+            ],
+        }
+        recovered = {
+            "provider": "searxng",
+            "outcome": "ok",
+            "results": [{"link": "https://example.test/recovered"}],
+        }
+        with (
+            patch.dict(os.environ, {"ATLAS_SEARCH_PROVIDER": "searxng"}, clear=True),
+            patch.object(
+                self.runtime,
+                "searxng",
+                new=AsyncMock(side_effect=[cooldown, recovered]),
+            ) as searxng,
+            patch(
+                "services.orchestrator.tools.asyncio.sleep", new=AsyncMock()
+            ) as sleep,
+        ):
+            result = await self.runtime.search(self.request, 5)
+        self.assertEqual(result["results"], recovered["results"])
+        self.assertEqual(
+            result["attempts"],
+            [
+                {"provider": "searxng", "outcome": "upstream_blocked"},
+                {"provider": "searxng", "outcome": "ok", "retry": True},
+            ],
+        )
+        self.assertEqual(searxng.await_count, 2)
+        sleep.assert_awaited_once_with(2.47)
 
     async def test_partial_searxng_results_are_successful(self) -> None:
         partial = {
