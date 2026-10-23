@@ -12,6 +12,7 @@ services:
       ATLAS_PROVIDER_API_KEY: ${ATLAS_PROVIDER_API_KEY:-}
       ATLAS_TEXT_MODEL: ${ATLAS_TEXT_MODEL:-}
       ATLAS_TEXT_FALLBACK_MODEL: ${ATLAS_TEXT_FALLBACK_MODEL:-}
+      ATLAS_VISION_MODEL: ${ATLAS_VISION_MODEL:-}
       ATLAS_USD_TO_EUR: ${ATLAS_USD_TO_EUR:-}
       ATLAS_TRIAL: '1'
     volumes: [models:/models]
@@ -101,6 +102,8 @@ services:
       PORT: '13730'
       WEBUI_AUTH: 'True'
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?Run ./atlas setup first}
+      WEBUI_NAME: Atlas
+      ENABLE_VERSION_UPDATE_CHECK: 'False'
       ENABLE_SIGNUP: 'True'
       DEFAULT_USER_ROLE: pending
       ENABLE_VOICE_INTERACTION: 'False'

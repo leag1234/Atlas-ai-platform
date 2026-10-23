@@ -305,6 +305,13 @@ terminal ports.
 
 ## 8. Administration, backups and upgrades
 
+For a Docker installation, change inference providers with
+`./atlas setup --reconfigure` in the same checkout and Compose project. Keep `.env`
+in place: reconfiguration retains generated secrets and data settings, verifies
+the replacement provider, and recreates only the gateway. Accounts and histories
+remain in their existing volumes. See [Change provider](quickstart.md#change-provider)
+for the exact interactive and automated commands.
+
 In the Docker UI, the first signup is administrator; manage subsequent accounts
 through Admin Panel, approve only intended users and disable signup when done.
 Keep the provider account's spending limits active. Stable guest deployments also

@@ -1,9 +1,11 @@
 /* Keep HTTP Basic authentication at nginx and use the UI's HttpOnly session cookie. */
 (() => {
+  const instanceNotice = document.currentScript?.dataset.instanceNotice || '';
   document.addEventListener('DOMContentLoaded', () => {
+    if (!instanceNotice) return;
     const notice = document.createElement('div');
     notice.id = 'atlas-stable-notice';
-    notice.textContent = 'Conversations are recorded to improve Atlas. Do not share sensitive information.';
+    notice.textContent = instanceNotice;
     notice.style.cssText = 'position:fixed;bottom:0;left:0;right:0;text-align:center;font:11px sans-serif;padding:3px;background:#eef2f6;color:#334155;z-index:100;pointer-events:none';
     document.body.appendChild(notice);
   });
