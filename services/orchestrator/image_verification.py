@@ -9,6 +9,8 @@ def verification_note(verification: object, language: str) -> str:
     failed = verification.get("failed", [])
     failed_details = verification.get("failed_details", [])
     unknown = verification.get("unknown", False)
+    if verification.get("failure_note_suppressed") is True:
+        return ""
     if not failed and not unknown:
         return ""
     details = []

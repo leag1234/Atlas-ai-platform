@@ -448,6 +448,75 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
             checked = await verify(png(), scene, 5)
         self.assertTrue(checked.unknown)
 
+    def test_style_or_setting_miss_does_not_add_a_failure_note(self) -> None:
+        for verification in (
+            {
+                "failed": ["style", "setting"],
+                "failed_details": ["the requested detail", "the requested detail"],
+                "failure_note_suppressed": True,
+                "unknown": False,
+            },
+            {
+                "failed": [],
+                "failed_details": [],
+                "failure_note_suppressed": True,
+                "unknown": True,
+            },
+        ):
+            for language in ("en", "fr", "de", "es", "it"):
+                with self.subTest(verification=verification, language=language):
+                    self.assertEqual(verification_note(verification, language), "")
+
+    async def test_scripted_style_and_dawn_misses_retry_without_failure_note(
+        self,
+    ) -> None:
+        scene = Scene(
+            setting="a Venice market at dawn",
+            style="impressionist painting",
+        )
+        answers = dict.fromkeys(dict(scene.checks()), False)
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "ATLAS_IMAGE_GPU_IP": "127.0.0.2",
+                    "ATLAS_IMAGE_GPU_EUR_H": "1",
+                    "ATLAS_IMAGE_VERIFY_RETRIES": "1",
+                },
+            ),
+            patch.object(imagegen, "rewrite_scene", AsyncMock(return_value=scene)),
+            patch.object(imagegen, "scene_reservation", return_value=Decimal("0.001")),
+            patch.object(
+                imagegen,
+                "pixels",
+                AsyncMock(
+                    side_effect=[
+                        {"image": png(), "seed": 4, "cost_eur": "0.001"},
+                        {"image": png(), "seed": 5, "cost_eur": "0.001"},
+                    ]
+                ),
+            ) as worker,
+            patch.object(
+                VisionProvider,
+                "post",
+                AsyncMock(side_effect=[vision_reply(answers), vision_reply(answers)]),
+            ),
+        ):
+            result = await imagegen.generate(
+                {
+                    "prompt": "Genera un dipinto impressionista di un mercato di Venezia all'alba",
+                    "dialogue": [
+                        "Genera un dipinto impressionista di un mercato di Venezia all'alba"
+                    ],
+                    "seed": 4,
+                }
+            )
+        verification = cast(dict[str, object], result["verification"])
+        self.assertEqual(worker.await_count, 2)
+        self.assertEqual(verification["failed"], ["setting", "style"])
+        self.assertTrue(verification["failure_note_suppressed"])
+        self.assertEqual(verification_note(verification, "it"), "")
+
     async def test_retry_configuration_and_remaining_budget_bound_calls(self) -> None:
         scene = anchored_scene(ORIGINAL)
         answers = {key: False for key, _ in scene.checks()}

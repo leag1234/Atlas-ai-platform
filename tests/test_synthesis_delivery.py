@@ -141,6 +141,21 @@ class DeliveryIntentTests(unittest.TestCase):
                 with self.subTest(question=question, text=text):
                     self.assertFalse(requests_file_delivery(text))
 
+    def test_chat_table_answers_do_not_request_file_delivery(self) -> None:
+        from packages.file_intent import requests_file_delivery
+
+        for question in (
+            "Answer in the chat with a table based on this spreadsheet.",
+            "Réponds dans le chat avec un tableau à partir de ce tableur.",
+            "Responde en el chat con una tabla a partir de esta hoja de cálculo.",
+        ):
+            with self.subTest(question=question):
+                self.assertFalse(
+                    requests_file_delivery(
+                        synthesis_request(question).messages[-1].text
+                    )
+                )
+
     def test_explicit_downloads_survive_attachment_metadata_removal(self) -> None:
         from packages.file_intent import requests_file_delivery
 
