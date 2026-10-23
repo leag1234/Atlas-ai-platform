@@ -203,6 +203,7 @@ def main() -> int:
             "ATLAS_TEXT_MODEL": model
             if model != preset.get("text_model") or provider != "scaleway"
             else "",
+            "ATLAS_TEXT_FALLBACK_MODEL": preset.get("text_fallback_model", ""),
             "ATLAS_LOCAL_MODEL": model
             if provider == "local"
             else presets()["local"]["text_model"],
