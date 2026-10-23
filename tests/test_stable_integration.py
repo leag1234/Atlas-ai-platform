@@ -97,6 +97,33 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ENABLE_CODE_INTERPRETER=False", options)
         self.assertIn("ENABLE_INITIAL_ADMIN_SIGNUP=False", options)
 
+    def test_instance_notice_is_absent_by_default_and_escaped_when_set(self) -> None:
+        shell = b"<html><head></head></html>"
+        with patch.dict(os.environ, {}, clear=True):
+            injected = inject_atlas_ui(shell, stable=True)
+        self.assertNotIn(b"data-instance-notice", injected)
+
+        notice = 'Use <trusted> & "quoted" text'
+        with patch.dict(os.environ, {"ATLAS_INSTANCE_NOTICE": notice}, clear=True):
+            injected = inject_atlas_ui(shell, stable=True)
+        self.assertIn(
+            b'data-instance-notice="Use &lt;trusted&gt; &amp; &quot;quoted&quot; text"',
+            injected,
+        )
+        self.assertNotIn(notice.encode(), injected)
+
+    def test_instance_notice_rejects_values_over_200_characters(self) -> None:
+        shell = b"<html><head></head></html>"
+        with patch.dict(os.environ, {"ATLAS_INSTANCE_NOTICE": "x" * 201}, clear=True):
+            injected = inject_atlas_ui(shell, stable=True)
+        self.assertNotIn(b"data-instance-notice", injected)
+
+    def test_stable_auth_keeps_cookie_fetch_bridge(self) -> None:
+        script = Path("services/orchestrator/stable-auth.js").read_text()
+        self.assertNotIn("Conversations are recorded to improve Atlas.", script)
+        self.assertIn("headers.delete('Authorization')", script)
+        self.assertIn("credentials: 'same-origin'", script)
+
     def test_stable_terminal_only_serves_generated_downloads(self) -> None:
         download = (
             "/api/v1/terminals/atlas-files/files/serve/home/user/requests/chatcmpl-"
