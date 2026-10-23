@@ -69,6 +69,43 @@ def question_language(text: str, fallback: str) -> str:
     return detected_language(text) or fallback
 
 
+def requested_language(text: str) -> str | None:
+    """Resolve explicit output-language instructions, independently of prose locale."""
+    normalized = "".join(
+        c
+        for c in unicodedata.normalize("NFKD", user_prose(text).lower())
+        if not unicodedata.combining(c)
+    )
+    normalized = re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", normalized)
+    names = {
+        "en": "english|anglais|englisch|ingles|inglese",
+        "fr": "french|francais|franzosisch|frances|francese",
+        "de": "german|allemand|deutsch(?:e[nmrs]?)?|aleman|tedesco",
+        "es": "spanish|espagnol|spanisch|espanol|spagnolo",
+        "it": "italian|italien|italienisch|italiano",
+    }
+    directive = r"\b(?:translat\w*|tradui\w*|tradu[cz]\w*|traduc\w*|tradurr\w*|uberset\w*|answer|reply|respond\w*|repond\w*|antworte\w*|rispondi)\b"
+    chosen: str | None = None
+    for clause in re.split(r"[.!?;\n]", normalized):
+        if re.search(r"\b(?:not|don't|never|pas|ne|nicht|no|non)\b", clause):
+            continue
+        if not re.search(directive, clause) and not re.match(
+            r"^\s*(?:(?:please|bitte)\s+)?(?:in|en|auf)\b", clause
+        ):
+            continue
+        matches = [
+            (match.start(), language)
+            for language, aliases in names.items()
+            for match in re.finditer(
+                r"\b(?:into|to|in|en|al|auf|ins|vers le)\s+(?:" + aliases + r")\b",
+                clause,
+            )
+        ]
+        if matches:
+            chosen = max(matches)[1]
+    return chosen
+
+
 def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> str:
     # Dutch is supported by search; text UI/prompt translations remain unchanged.
     if locale == "nl":

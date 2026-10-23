@@ -8,6 +8,7 @@ from contextvars import ContextVar
 import asyncio
 import json
 import logging
+import re
 from time import monotonic
 from typing import Literal
 
@@ -18,7 +19,7 @@ from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
 from provider_retry import TransientProviderError, RetryLedger, retry_stream
 from decimal import Decimal
-from packages.limits import LimitError
+from packages.limits import LimitError, ProviderLimitError
 from packages.validation import numeric_limit, malformed_tool_name
 from packages.tool_history import final_messages
 from serverless import ServerlessPolicy
@@ -146,9 +147,50 @@ async def stream(
                 raise
 
 
+async def provider_error_message(
+    response: aiohttp.ClientResponse, request: AgentRequest
+) -> str | None:
+    # Error bodies are untrusted and may be HTML or oversized. Read a bounded
+    # JSON envelope, and retain only its message, never the body or exception.
+    body = bytearray()
+    try:
+        async for piece in response.content.iter_chunked(4096):
+            if len(body) + len(piece) > 16384:
+                return None
+            body.extend(piece)
+        value = json.loads(body)
+    except (ValueError, aiohttp.ClientError, TimeoutError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    error = value.get("error", value)
+    message = error.get("message") if isinstance(error, dict) else None
+    if not isinstance(message, str):
+        return None
+    # Providers can echo credentials, URLs or rejected input in their message.
+    sensitive = [provider_settings.api_key()]
+    for entry in request.messages:
+        content = entry.get("content")
+        if isinstance(content, str):
+            sensitive.append(content)
+        elif isinstance(content, list):
+            sensitive.extend(
+                str(part.get("text", "")) for part in content if isinstance(part, dict)
+            )
+    if re.search(r"https?://|www\.", message, re.I) or any(
+        text and text in message for text in sensitive
+    ):
+        return "[redacted]"
+    return message[:300]
+
+
 async def attempt(
     request: AgentRequest, model: str, timeout: float
 ) -> AsyncGenerator[dict[str, object], None]:
+    # Internal model_copy updates bypass Pydantic validation. No provider call
+    # may turn an exhausted output allowance into an HTTP failure/retry (D5).
+    if request.max_tokens < 1:
+        raise ProviderLimitError("output_budget", 1, request.max_tokens, "tokens")
     endpoint = provider_settings.endpoint()
     answer_only = request.profile is not None and request.tool_choice == "none"
     body = {
@@ -171,6 +213,7 @@ async def attempt(
     started = monotonic()
 
     def diagnostic(category: str, **details: object) -> None:
+        # Only the bounded, filtered error message may accompany HTTP metadata.
         # Never log provider bodies, exception text, URLs or request content.
         logging.getLogger(__name__).warning(
             json.dumps(
@@ -201,7 +244,14 @@ async def attempt(
                 allow_redirects=False,
             ) as response:
                 if response.status != 200:
-                    diagnostic("http", status=response.status)
+                    message = await provider_error_message(response, request)
+                    diagnostic(
+                        "http",
+                        status=response.status,
+                        **(
+                            {"provider_message": message} if message is not None else {}
+                        ),
+                    )
                     if response.status in (502, 503, 504):
                         raise TransientProviderError("provider_error")
                     raise RuntimeError("provider_error")
