@@ -43,10 +43,13 @@ server:
 engines:
   - name: wikipedia
     display_type: [list]
+  - name: qwant
+    disabled: false
   - name: bing
     disabled: false
   - name: startpage
     disabled: false
+    inactive: false
 
 outgoing:
   request_timeout: 3.0

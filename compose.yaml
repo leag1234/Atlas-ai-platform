@@ -68,6 +68,8 @@ services:
       ATLAS_TRIAL: '1'
       ATLAS_GATEWAY_URL: http://gateway:13710
       ATLAS_RETRIEVAL_URL: http://retrieval:13711
+      # Default trial provider. With the matching API key, append a fallback,
+      # for example: searxng,tavily or searxng,serpapi.
       ATLAS_SEARCH_PROVIDER: searxng
       ATLAS_SEARXNG_URL: ${ATLAS_SEARXNG_URL:-http://searxng:8080}
       ATLAS_SEARXNG_ENGINES: ${ATLAS_SEARXNG_ENGINES:-duckduckgo,brave,qwant,startpage,bing,google}
