@@ -118,6 +118,9 @@ def configure(
     if preset is None:
         return config, prices
     text = os.environ.get("ATLAS_TEXT_MODEL") or preset.get("text_model")
+    fallback_text = os.environ.get(
+        "ATLAS_TEXT_FALLBACK_MODEL", preset.get("text_fallback_model", "")
+    )
     vision = os.environ.get("ATLAS_VISION_MODEL") or preset.get("vision_model")
     if not text:
         raise ValueError("provider_text_model_required")
@@ -180,4 +183,47 @@ def configure(
                 }
             },
         }
+    if fallback_text and fallback_text != text:
+        fallback_price = preset.get("fallback_price")
+        fallback_factor = Decimal(1)
+        if fallback_price and fallback_price["currency"] != "EUR":
+            conversion = os.environ.get("ATLAS_USD_TO_EUR")
+            if conversion:
+                fallback_factor = Decimal(conversion)
+                if not fallback_factor.is_finite() or fallback_factor <= 0:
+                    raise ValueError("invalid_currency_conversion")
+            else:
+                fallback_price = None
+        if fallback_price is None:
+            warn_unpriced(os.environ["ATLAS_PROVIDER"], fallback_text)
+        rates[fallback_text] = {
+            "input_eur_per_mtok": str(
+                Decimal(str(fallback_price["input"])) * fallback_factor
+            )
+            if fallback_price
+            else "0",
+            "output_eur_per_mtok": str(
+                Decimal(str(fallback_price["output"])) * fallback_factor
+            )
+            if fallback_price
+            else "0",
+            "unpriced": fallback_price is None,
+        }
+        roles["text_fallback"] = {
+            "env": "ATLAS_TEXT_FALLBACK_MODEL",
+            "model": fallback_text,
+            "fallback": "text",
+            "capabilities": {
+                fallback_text: {
+                    "context": int(
+                        os.environ.get("ATLAS_MODEL_CONTEXT", preset["context"])
+                    ),
+                    "tools": True,
+                    "vision": False,
+                }
+            },
+        }
+        for role in ("text", "code", "fast"):
+            if role in roles:
+                roles[role]["fallback"] = "text_fallback"
     return roles, rates

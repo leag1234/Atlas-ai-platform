@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from gateway_cpu import CPUModels, EMBEDDING_REVISION
 from generation import Generator
 from packages.limits import LimitError, ProviderFailure
+from provider_retry import ProviderResponseError
 from packages.validation import describe_validation
 from pydantic import ValidationError
 from agent_provider import AgentProvider
@@ -317,6 +318,12 @@ def serve(
                         "elapsed_seconds": round(monotonic() - started, 3),
                         "limit_seconds": limit,
                     },
+                )
+            except ProviderResponseError as exc:
+                status, response = (
+                    (429, {"code": "provider_quota"})
+                    if exc.status == 429
+                    else (502, {"code": "provider_error"})
                 )
             except ProviderFailure as exc:
                 status, response = (

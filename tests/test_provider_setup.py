@@ -77,6 +77,27 @@ class ProviderSetupTests(unittest.TestCase):
             32768,
         )
 
+    def test_mistral_fallback_is_configured_unpriced_and_can_be_disabled(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ATLAS_PROVIDER": "mistral", "ATLAS_USD_TO_EUR": "0.9"},
+            clear=True,
+        ):
+            policy = ServerlessPolicy()
+            self.assertEqual(policy.models["text_fallback"], "mistral-medium-latest")
+            self.assertTrue(policy.prices[policy.models["text_fallback"]]["unpriced"])
+        with patch.dict(
+            os.environ,
+            {
+                "ATLAS_PROVIDER": "mistral",
+                "ATLAS_TEXT_FALLBACK_MODEL": "",
+                "ATLAS_USD_TO_EUR": "0.9",
+            },
+            clear=True,
+        ):
+            policy = ServerlessPolicy()
+            self.assertNotIn("text_fallback", policy.models)
+
     def test_remote_http_and_embedded_credentials_rejected(self) -> None:
         for url in (
             "http://provider.example/v1",

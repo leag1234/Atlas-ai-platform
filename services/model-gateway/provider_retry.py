@@ -23,6 +23,14 @@ class TransientProviderError(RuntimeError):
         self.finish_reason = finish_reason
 
 
+class ProviderResponseError(RuntimeError):
+    """A provider HTTP response that must not enter transient recovery."""
+
+    def __init__(self, status: int) -> None:
+        super().__init__("provider_error")
+        self.status = status
+
+
 @dataclass
 class RetryLedger:
     spent: Decimal = Decimal(0)

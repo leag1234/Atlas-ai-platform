@@ -7,6 +7,7 @@ import json
 import asyncio
 import copy
 import logging
+import os
 from time import monotonic
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from answer_content import (
     strip_file_promises,
 )
 from packages.context_limit import ContextExceeded
-from provider_retry import TransientProviderError
+from provider_retry import ProviderResponseError, TransientProviderError
 from packages.limits import (
     ProviderFailure,
     LimitError,
@@ -468,6 +469,8 @@ async def stream_quality(
             for event in held_content:
                 yield event
             raise
+        except ProviderResponseError:
+            raise
         except (RuntimeError, TimeoutError, LimitError) as exc:
             if isinstance(exc, MalformedToolCall):
                 malformed_name = exc
@@ -526,7 +529,14 @@ async def stream_quality(
                     }
                 )
             )
-            if index or answer_started:
+            if (
+                index
+                or answer_started
+                or (
+                    bool(os.environ.get("ATLAS_PROVIDER"))
+                    and model == policy.models[fallback_role]
+                )
+            ):
                 if malformed_name is not None and not isinstance(exc, LimitError):
                     raise MalformedToolCall(malformed_name.measured, index) from None
                 if isinstance(exc, (TimeoutError, LimitError)):

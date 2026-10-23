@@ -17,7 +17,12 @@ from pydantic import ValidationError
 
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
-from provider_retry import TransientProviderError, RetryLedger, retry_stream
+from provider_retry import (
+    ProviderResponseError,
+    TransientProviderError,
+    RetryLedger,
+    retry_stream,
+)
 from decimal import Decimal
 from packages.limits import LimitError, ProviderLimitError
 from packages.validation import numeric_limit, malformed_tool_name
@@ -254,7 +259,7 @@ async def attempt(
                     )
                     if response.status in (502, 503, 504):
                         raise TransientProviderError("provider_error")
-                    raise RuntimeError("provider_error")
+                    raise ProviderResponseError(response.status)
                 async for piece in response.content.iter_chunked(16384):
                     for event in decoder.feed(piece):
                         yield event
