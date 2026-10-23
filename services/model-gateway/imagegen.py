@@ -187,6 +187,18 @@ async def generate(request: object) -> dict[str, object]:
                 "failed_details": [
                     scene.failure_detail(key) for key in best_check.failed
                 ],
+                **(
+                    {"failure_note_suppressed": True}
+                    if best_check.unknown
+                    or (
+                        bool(best_check.failed)
+                        and not any(
+                            scene.failure_note_eligible(key)
+                            for key in best_check.failed
+                        )
+                    )
+                    else {}
+                ),
                 "unknown": best_check.unknown,
             },
         }

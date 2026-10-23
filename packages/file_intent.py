@@ -10,15 +10,38 @@ def requests_file_delivery(text: str, *, include_images: bool = True) -> bool:
     # extensions must not turn "write a summary" into a request for a PDF.
     text = re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M)
     text = re.sub(r"<attached_files>.*?</attached_files>", "", text, flags=re.S)
+    if _requests_inline_chat_answer(text) and not _requests_download(text):
+        return False
     return produces_file(text, include_images=include_images)
 
 
-def produces_file(text: str, *, include_images: bool = True) -> bool:
-    text = "".join(
+def _requests_inline_chat_answer(text: str) -> bool:
+    normalized = _normalized(text)
+    return bool(
+        re.search(
+            r"\b(?:answer|respond\w*|reply|repond\w*|respuesta|responde\w*|contesta\w*)"
+            r"\b.{0,80}\b(?:in|dans|en)\s+(?:the\s+|le\s+|el\s+)?chat\b",
+            normalized,
+        )
+    )
+
+
+def _requests_download(text: str) -> bool:
+    return bool(
+        re.search(r"\b(?:download\w*|telecharge\w*|descarg\w*)\b", _normalized(text))
+    )
+
+
+def _normalized(text: str) -> str:
+    return "".join(
         c
         for c in unicodedata.normalize("NFKD", text.casefold())
         if not unicodedata.combining(c)
     )
+
+
+def produces_file(text: str, *, include_images: bool = True) -> bool:
+    text = _normalized(text)
     if include_images and re.search(r"\b(dessine\w*|zeichne\w*|dibuja\w*)\b", text):
         return True
     artifact = re.search(
