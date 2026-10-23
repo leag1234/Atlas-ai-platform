@@ -32,7 +32,7 @@ class Delta(BaseModel):
     @field_validator("content", mode="before")
     @classmethod
     def text_content(cls, value: object) -> object:
-        """Normalize Mistral's typed content parts to the text SSE contract."""
+        """Normalize provider typed content parts to the text SSE contract."""
         if not isinstance(value, list):
             return value
         text: list[str] = []
