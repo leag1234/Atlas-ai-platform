@@ -58,7 +58,7 @@ class Delta(BaseModel):
                 ):
                     raise ValueError("invalid_reference_content_part")
                 references.extend(reference_ids)
-        # Mistral streams citation annotations as a typed list.  Its adjacent text
+        # Some providers stream citation annotations as a typed list.  Its adjacent text
         # is display metadata (for example a hostname/date), not answer prose.
         return (
             "".join(
