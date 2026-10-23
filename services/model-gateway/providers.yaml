@@ -1,10 +1,11 @@
-# Provider catalog, fetched from official sources on 2026-10-22.
+# Provider catalog: official sources checked 2026-10-22; acceptance status 2026-10-23.
 # JSON-compatible YAML keeps ./atlas setup dependency-free. Source URLs are per entry.
 # Prices are indicative per million tokens, excluding tax; null means unverified.
 # No EUR conversion is inferred: USD prices need ATLAS_USD_TO_EUR for EUR ceilings.
 {
   # Source: https://docs.hetzner.com/general/company-and-policy/experiments/inference/; fetched 2026-10-22.
   "hetzner": {
+    "verification": "verified 2026-10-23 by acceptance test",
     "name": "Hetzner (experimental, free; not for production)",
     "base_url": "https://inference.hetzner.com/api/v1",
     "text_model": "Qwen/Qwen3.6-35B-A3B-FP8",
@@ -16,6 +17,7 @@
   },
   # Source: https://www.scaleway.com/en/docs/generative-apis/quickstart/; https://www.scaleway.com/en/docs/generative-apis/faq/; https://www.scaleway.com/en/pricing/model-as-a-service/; fetched 2026-10-22.
   "scaleway": {
+    "verification": "verified 2026-10-23 by acceptance test",
     "name": "Scaleway", "base_url": "https://api.scaleway.ai/v1",
     "text_model": "qwen3.5-397b-a17b", "vision_model": "gemma-4-26b-a4b-it",
     "context": 262144,
@@ -25,6 +27,7 @@
   },
   # Source: https://docs.mistral.ai/api/endpoint/chat; https://docs.mistral.ai/models/mistral-small-4-0-26-03; https://docs.mistral.ai/inference/pricing; fetched 2026-10-22.
   "mistral": {
+    "verification": "verified 2026-10-23 by acceptance test",
     "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
     "text_model": "mistral-small-2603", "vision_model": null,
     "context": 262144,
@@ -34,15 +37,18 @@
   },
   # Source: https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation; https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b; fetched 2026-10-22.
   "ionos": {
+    "verification": "in progress",
     "name": "IONOS AI Model Hub", "base_url": "https://openai.inference.de-txl.ionos.com/v1",
     "text_model": "Qwen/Qwen3.5-9B", "vision_model": "Qwen/Qwen3.5-9B",
     "context": 262144, "price": null, "unverified": ["price"],
     "sources": ["https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation", "https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b"]
   },
   # Source: https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/; https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output; fetched 2026-10-22.
+  # Text and vision IDs also checked against the account model list on 2026-10-23.
   "ovhcloud": {
+    "verification": "verified 2026-10-23 by acceptance test",
     "name": "OVHcloud AI Endpoints", "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
-    "text_model": "Meta-Llama-3_3-70B-Instruct", "vision_model": null,
+    "text_model": "Qwen3.5-397B-A17B", "vision_model": "Qwen2.5-VL-72B-Instruct",
     "context": 32768, "price": null, "unverified": ["price", "context (conservative Atlas limit)"],
     "sources": ["https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/", "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output"]
   },
