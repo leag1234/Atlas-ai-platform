@@ -38,6 +38,46 @@ Availability depends on configuration; Code mode is an owner preview.
 
 Comparison as of October 2026.
 
+## Try it and use it: how to start
+
+### ⏱️ Only have 10 minutes? Try the Docker install
+
+```bash
+git clone https://github.com/leag1234/atlas-ai-platform.git
+cd atlas-ai-platform
+./atlas setup
+```
+
+Setup asks you to pick an inference provider and paste its API key (Hetzner is free
+during its experiment), then builds and starts the containers. Open
+http://localhost:3000 and create the first administrator account. Use
+`./atlas setup --http-port 3100` to choose another port. Step by step:
+[Docker quickstart](docs/quickstart.md).
+
+**Limitations of the Docker install.** It is meant for evaluation:
+
+- **No image generation.** Generating images needs a GPU host (full installation).
+- **No Code mode, no speech** (voice input and read-aloud), and **no document
+  terminal**, so Atlas cannot produce Word, Excel or PowerPoint files.
+- **No HTTPS.** It serves plain HTTP; put your own reverse proxy in front before
+  exposing it beyond your machine.
+- **Image understanding depends on the provider.** Photos and scanned PDFs need a
+  vision model: included with the Hetzner and Scaleway presets, not with Mistral
+  or OVHcloud.
+- **Web search can be throttled.** The bundled SearXNG relays queries to public
+  search engines, which may rate limit it, especially from cloud servers.
+- **Not hardened** for multi-organization hosting.
+
+Requests for a missing feature get a clear "not enabled on this installation"
+answer.
+
+### 🚀 Get the full benefits: full installation
+
+Image generation on your own GPU, Code mode, speech, generated office documents,
+HTTPS and administration. Allow about 20 to 30 minutes for the setup itself, plus
+model downloads and GPU provisioning:
+[full stack installation](docs/installation.md).
+
 ## Screenshots
 
 | | |
@@ -132,21 +172,6 @@ versions and reference-answer dates are missing, and the judge shares a model
 family with one Atlas profile. These small, single-run results do not establish
 general parity. Evaluation needs independent judges, repeated measurements and
 better reproducibility; see the [methodology and gaps](reports/M26.md).
-
-## Quick start
-
-```bash
-git clone https://github.com/leag1234/atlas-ai-platform.git
-cd atlas-ai-platform
-./atlas setup
-```
-
-Open http://localhost:3000 and create the first administrator account. Use
-`./atlas setup --http-port 3100` to choose another port.
-
-[Try Atlas with Docker in under 10 minutes](docs/quickstart.md), or follow the
-[full stack installation](docs/installation.md) for image generation, Code mode,
-speech, HTTPS and administration.
 
 ## License
 
