@@ -1,4 +1,4 @@
-"""M15 single-attempt code transport with a frozen, conservatively priced request."""
+"""M15 code transport with a frozen, conservatively priced request."""
 
 from packages.limits import LimitError
 
@@ -35,7 +35,9 @@ class Plan:
 def prepare(request: Request) -> Plan:
     policy = ServerlessPolicy()
     model = policy.models["code"]
-    body = request.model_dump(exclude_none=True)
+    body = request.model_dump(exclude_none=True, by_alias=True)
+    if "response_format" not in request.model_fields_set:
+        body.pop("response_format", None)
     for message in body["messages"]:
         if not message["tool_calls"]:
             message.pop("tool_calls")
@@ -50,14 +52,18 @@ def prepare(request: Request) -> Plan:
         stream=True,
         stream_options={"include_usage": True},
     )
-    if not request.tools:
+    if not request.tools or request.tool_choice == "none":
         for key in ("tools", "tool_choice", "parallel_tool_calls"):
             body.pop(key, None)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
     context = policy.config["code"]["capabilities"][model]["context"]
-    if incoming + request.max_tokens > context:
+    retry_margin = 512 if request.validate_output else 0
+    if incoming + retry_margin + request.max_tokens > context:
         raise LimitError(
-            "context_exceeded", incoming + request.max_tokens, context, "tokens"
+            "context_exceeded",
+            incoming + retry_margin + request.max_tokens,
+            context,
+            "tokens",
         )
     price = policy.prices[model]
     endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
@@ -71,9 +77,34 @@ def prepare(request: Request) -> Plan:
         Decimal(str(price["output_eur_per_mtok"])),
     )
     reserved = plan.charge(incoming, request.max_tokens)
+    if request.validate_output:
+        reserved += plan.charge(incoming + retry_margin, request.max_tokens)
     if not 0 < reserved <= 50000:
         raise LimitError("cost_budget", reserved, 50000, "microEUR")
     return Plan(plan.body, plan.endpoint, reserved, plan.input_rate, plan.output_rate)
+
+
+def retry(plan: Plan, error: str, remaining: int) -> Plan:
+    body = json.loads(plan.body)
+    body["messages"].append(
+        {
+            "role": "user",
+            "content": "Previous output failed validation: "
+            + error[:80]
+            + ". Produce a nonempty answer in the requested response format; JSON must satisfy the supplied schema.",
+        }
+    )
+    incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
+    reserved = plan.charge(incoming, body["max_tokens"])
+    if reserved > remaining:
+        raise LimitError("cost_budget", reserved, remaining, "microEUR")
+    return Plan(
+        json.dumps(body, ensure_ascii=False),
+        plan.endpoint,
+        reserved,
+        plan.input_rate,
+        plan.output_rate,
+    )
 
 
 class Usage(BaseModel):

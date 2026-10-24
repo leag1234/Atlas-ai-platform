@@ -1,0 +1,73 @@
+{
+  "source": "Legacy Scaleway code route; recorded 2026-10-24",
+  "request": {
+    "model": "atlas-code",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Return JSON with value equal to 7."
+      }
+    ],
+    "max_tokens": 64,
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "value",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  },
+  "provider_request": {
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "value",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    "messages": [
+      {
+        "role": "system",
+        "content": "English: identifiers, filenames, comments, docstrings, developer logs/errors, commits. Prose: user language. UI strings: intended audience.\n"
+      },
+      {
+        "role": "user",
+        "content": "Return JSON with value equal to 7."
+      }
+    ],
+    "max_tokens": 64,
+    "temperature": 0,
+    "reasoning_effort": "none",
+    "model": "glm-5.2",
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    }
+  },
+  "sse": "data: {\"id\":\"chatcmpl-37caf1fd-6c02-4345-a3f6-e6925fe618d0\",\"object\":\"chat.completion.chunk\",\"created\":1792856863,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"logprobs\":null,\"finish_reason\":null}],\"usage\":null}\n\ndata: {\"id\":\"chatcmpl-37caf1fd-6c02-4345-a3f6-e6925fe618d0\",\"object\":\"chat.completion.chunk\",\"created\":1792856863,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"\"},\"logprobs\":null,\"finish_reason\":null,\"token_ids\":null}],\"usage\":null}\n\ndata: {\"id\":\"chatcmpl-37caf1fd-6c02-4345-a3f6-e6925fe618d0\",\"object\":\"chat.completion.chunk\",\"created\":1792856863,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"value\\\":\"},\"logprobs\":null,\"finish_reason\":null,\"token_ids\":null}],\"usage\":null}\n\ndata: {\"id\":\"chatcmpl-37caf1fd-6c02-4345-a3f6-e6925fe618d0\",\"object\":\"chat.completion.chunk\",\"created\":1792856863,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" 7\"},\"logprobs\":null,\"finish_reason\":null,\"token_ids\":null}],\"usage\":null}\n\ndata: {\"id\":\"chatcmpl-37caf1fd-6c02-4345-a3f6-e6925fe618d0\",\"object\":\"chat.completion.chunk\",\"created\":1792856863,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"}\"},\"logprobs\":null,\"finish_reason\":\"stop\",\"stop_reason\":154827,\"token_ids\":null}],\"usage\":null}\n\ndata: {\"id\":\"chatcmpl-37caf1fd-6c02-4345-a3f6-e6925fe618d0\",\"object\":\"chat.completion.chunk\",\"created\":1792856863,\"model\":\"glm-5.2\",\"choices\":[],\"usage\":{\"prompt_tokens\":45,\"total_tokens\":52,\"completion_tokens\":7,\"completion_tokens_details\":{\"reasoning_tokens\":0}},\"system_fingerprint\":null}\n\ndata: [DONE]\n\n",
+  "cost_micro_eur": 120
+}

@@ -15,7 +15,7 @@ def fields(value: dict[str, Any], allowed: str) -> None:
 def responses(value: dict[str, Any]) -> ChatInput:
     fields(
         value,
-        "model input instructions tools tool_choice parallel_tool_calls max_output_tokens temperature stream store reasoning include prompt_cache_key metadata client_metadata",
+        "model input instructions tools tool_choice parallel_tool_calls max_output_tokens temperature stream store reasoning include prompt_cache_key metadata client_metadata text",
     )
     if value.get("store", False) is not False or value.get("include", []) not in (
         [],
@@ -120,8 +120,20 @@ def responses(value: dict[str, Any]) -> ChatInput:
         if choice["type"] != "function":
             raise ValueError("unsupported_tool_choice")
         choice = {"type": "function", "function": {"name": choice["name"]}}
+    text = value.get("text", {})
+    if not isinstance(text, dict):
+        raise ValueError("invalid_text_format")
+    fields(text, "format")
+    fmt = text.get("format", {"type": "text"})
+    if isinstance(fmt, dict) and fmt.get("type") == "json_schema":
+        fields(fmt, "type name schema strict description")
+        fmt = {
+            "type": "json_schema",
+            "json_schema": {k: v for k, v in fmt.items() if k != "type"},
+        }
     return ChatInput.model_validate(
         {
+            "response_format": fmt,
             "model": value["model"],
             "messages": messages,
             "tools": tools,

@@ -3,10 +3,36 @@
 import json
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from packages.dev_format import check_schema
 
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class JsonSchema(Strict):
+    name: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
+    schema_: dict[str, Any] = Field(alias="schema")
+    strict: bool = False
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def supported(self) -> "JsonSchema":
+        check_schema(self.schema_)
+        return self
+
+
+class ResponseFormat(Strict):
+    type: Literal["text", "json_object", "json_schema"]
+    json_schema: JsonSchema | None = None
+
+    @model_validator(mode="after")
+    def shape(self) -> "ResponseFormat":
+        if (self.type == "json_schema") != (self.json_schema is not None):
+            raise ValueError("invalid_response_format")
+        if self.type != "json_schema" and "json_schema" in self.model_fields_set:
+            raise ValueError("invalid_response_format")
+        return self
 
 
 class Function(Strict):
@@ -41,6 +67,14 @@ class Message(Strict):
 
 
 class Request(Strict):
+    response_format: ResponseFormat = Field(
+        default_factory=lambda: ResponseFormat(type="text")
+    )
+
+    @property
+    def validate_output(self) -> bool:
+        return self.response_format.type != "text" or self.tool_choice == "none"
+
     messages: list[Message] = Field(min_length=1, max_length=1024)
     tools: list[Tool] = Field(default_factory=list, max_length=64)
     max_tokens: int = Field(default=512, ge=1, le=8192)
@@ -51,6 +85,10 @@ class Request(Strict):
 
     @model_validator(mode="after")
     def validate_conversation(self) -> "Request":
+        if self.response_format.type == "json_object" and not any(
+            "json" in (message.content or "").lower() for message in self.messages
+        ):
+            raise ValueError("json_object_requires_json_in_messages")
         names = [t.function.name for t in self.tools]
         if len(set(names)) != len(names):
             raise ValueError("duplicate_tool")
