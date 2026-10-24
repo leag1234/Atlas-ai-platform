@@ -122,13 +122,21 @@ def extract(path: Path) -> str:
     return text.strip()
 
 
+def split_located_text(text: str) -> list[tuple[int, int, str]]:
+    """The existing overlapping windows, with offsets before whitespace trimming."""
+    result = []
+    for offset in range(0, len(text), 2200):
+        window = text[offset : offset + 2400]
+        part = window.strip()
+        if part:
+            start = offset + len(window) - len(window.lstrip())
+            result.append((start, start + len(part), part))
+    return result
+
+
 def split_text(text: str) -> list[str]:
     """Version 1: fixed character windows with overlap, preserving exact passages."""
-    return [
-        text[start : start + 2400].strip()
-        for start in range(0, len(text), 2200)
-        if text[start : start + 2400].strip()
-    ]
+    return [part for _, _, part in split_located_text(text)]
 
 
 def main() -> None:

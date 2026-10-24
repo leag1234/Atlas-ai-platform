@@ -317,6 +317,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     project_instructions=context["instructions_text"],
                     memory=context["facts"],
                     passages=context["passages"],
+                    coverage=context["context_manifest"]["coverage"],
                 )
             ),
         )
@@ -395,6 +396,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     chunk,
                     f"[Source](/api/atlas/orgs/{request.org_id}/projects/{request.project_id}/sources/{chunk})",
                 )
+            coverage = context["context_manifest"]["coverage"]
+            if not coverage["complete"]:
+                answer += "\n\nSource coverage: " + "; ".join(coverage["warnings"][:8])
             item.reponse = answer
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
         terminal = "completed" if item.state == "done" else "failed"

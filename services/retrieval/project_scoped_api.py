@@ -528,7 +528,7 @@ def check_query(
     if (
         len(tail) == 3
         and tail[0] == "files"
-        and tail[2] == "content"
+        and tail[2] in {"content", "extraction"}
         and method == "GET"
     ):
         allowed.add("version")
@@ -566,6 +566,22 @@ def ingress(identity: Identity, method: str, path: str) -> int:
             method, tail, parse_qs(parsed.query, keep_blank_values=True)
         )
         return preflight(scope, method, tail, query) if project else 160000
+
+
+def index_created_upload(identity: Identity, file_id: str, version_id: str) -> None:
+    from services.retrieval.project_index import index_upload
+
+    try:
+        index_upload(
+            store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+            identity,
+            file_id,
+            version_id,
+        )
+    except (ProjectError, psycopg.Error, OSError, ValueError):
+        # The upload is already durable. Restrictions/revocation prevent further
+        # processing; never turn a committed upload into an ambiguous retry.
+        logging.getLogger(__name__).warning("project_index_unavailable")
 
 
 @router.api_route(
@@ -609,6 +625,23 @@ async def projects(request: Request, path: str) -> Response:
             bytes(body),
             dict(request.headers),
         )
+        upload_task = None
+        if request.method == "POST" and status == 201 and isinstance(result, dict):
+            value = result.get("file")
+            if isinstance(value, dict) and "job_id" in result:
+                upload_task = BackgroundTask(
+                    index_created_upload,
+                    replace(identity, project=parse_path(path)[1]),
+                    value["id"],
+                    value["version_id"],
+                )
+            elif path.endswith("/versions") and "file_id" in result:
+                upload_task = BackgroundTask(
+                    index_created_upload,
+                    replace(identity, project=parse_path(path)[1]),
+                    result["file_id"],
+                    result["id"],
+                )
         headers = {"Cache-Control": "private, no-store"}
         if (
             isinstance(result, tuple)
@@ -638,7 +671,7 @@ async def projects(request: Request, path: str) -> Response:
                     if isinstance(result, dict)
                     and result.get("state") == "running"
                     and "operation_id" in result
-                    else None
+                    else upload_task
                 ),
             )
         )
