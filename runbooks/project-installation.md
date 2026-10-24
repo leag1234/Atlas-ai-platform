@@ -5,6 +5,19 @@ This installs the PostgreSQL identity, scope and quota foundation defined by
 and full migration manifests belong to subsequent tasks. This is not an
 instruction to expose the legacy browser relay to multiple organizations.
 
+Host installations require the system `file` package (libmagic and its MIME
+database), in addition to the Python requirements. Install it before starting
+retrieval or running project installation:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends file
+python3 -m unittest tests.test_project_runtime
+```
+
+The Docker runtime includes this package. Other quick-start images do not run
+the retrieval-owned project file service and do not need a second installation.
+
 1. Stop legacy project writers and back up their SQLite database. Select an
    organization name and the administrator's existing identity subject. There
    is no default organization, signup route or first-login administrator.
