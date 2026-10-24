@@ -22,6 +22,11 @@ from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.model import GatewayError
 from services.retrieval.project_identity import ProjectError
+from services.orchestrator.cancellation import (
+    cancelled_by_user,
+    register as register_cancellation,
+    unregister as unregister_cancellation,
+)
 from packages.configuration import (
     configuration_names,
     guest_configuration_failure,
@@ -463,7 +468,17 @@ def response(
                 await queue.put({"finish": True})
             except asyncio.CancelledError:
                 item.state = "cancelled"
-                item.erreurs.append("cancelled")
+                if cancelled_by_user(
+                    str(payload.cancel_id) if payload.cancel_id is not None else None
+                ):
+                    item.state = "cancelled_by_user"
+                    item.erreurs.append("cancelled_by_user")
+                    item.rejection = {
+                        "code": "cancelled_by_user",
+                        "message": "Stopped by user.",
+                    }
+                else:
+                    item.erreurs.append("cancelled")
                 raise
             except ProjectError as exc:
                 item.state = "error"
@@ -559,12 +574,20 @@ def response(
             await queue.put(None)
 
         task = asyncio.create_task(produce())
+        cancel_id = str(payload.cancel_id) if payload.cancel_id is not None else None
+        if cancel_id is not None:
+            register_cancellation(cancel_id, task)
         try:
             yield heartbeat()
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=1)
                 except TimeoutError:
+                    # A direct user cancellation can interrupt the producer while
+                    # it is finalizing, before it can enqueue the sentinel.
+                    # Never leave the SSE response (and its budget finally) orphaned.
+                    if task.done():
+                        break
                     last_activity = time.monotonic()
                     if not answer_started:
                         yield heartbeat()
@@ -664,6 +687,8 @@ def response(
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+            if cancel_id is not None:
+                unregister_cancellation(cancel_id)
             item.latence_ms["total"] = (time.monotonic() - started) * 1000
             write_interaction(
                 item,

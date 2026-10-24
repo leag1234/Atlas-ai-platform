@@ -56,12 +56,45 @@ class ChatRequest(VisionInput):
     code_mode: bool = False
     code_session_id: str | None = None
     stream: bool = False
+    cancel_id: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        exclude=True,
+    )
     reasoning_effort: Literal["none", "low", "high"] = "none"
     max_tokens: int = Field(default=6000, ge=1, le=16000)
     seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
     ui_locale: Literal["fr", "de", "es", "it", "en", "nl"] = "fr"
     lang: Literal["fr", "de", "es", "it", "en"] = "fr"
     continuation: bool = Field(default=False, exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_empty_assistant_placeholders(cls, value: Any) -> Any:
+        """Keep a cancelled Open WebUI turn from blocking the next user message."""
+        if not isinstance(value, dict) or not isinstance(value.get("messages"), list):
+            return value
+        return {
+            **value,
+            "messages": [
+                message
+                for index, message in enumerate(value["messages"])
+                if not (
+                    isinstance(message, dict)
+                    and message.get("role") == "assistant"
+                    and (
+                        message.get("content") is None
+                        or (
+                            isinstance(message.get("content"), str)
+                            and not message["content"].strip()
+                        )
+                    )
+                    and index + 1 < len(value["messages"])
+                    and isinstance(value["messages"][index + 1], dict)
+                    and value["messages"][index + 1].get("role") == "user"
+                )
+            ],
+        }
 
     @model_validator(mode="before")
     @classmethod
