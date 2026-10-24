@@ -25,6 +25,14 @@ from services.orchestrator.web import MAX_BYTES
 
 ENGINES = ("duckduckgo", "brave", "qwant", "startpage", "bing", "google")
 LANGUAGES = {"en", "de", "es", "fr", "it", "nl"}
+SEARCH_REGIONS = {
+    "fr": "fr-FR",
+    "en": "en-US",
+    "de": "de-DE",
+    "es": "es-ES",
+    "it": "it-IT",
+    "nl": "nl-NL",
+}
 OUTCOMES = {"upstream_blocked", "upstream_timeout", "empty_results", "partial_results"}
 NOTICES = {
     "upstream_blocked": "Web search was blocked by upstream engines; no verified results were obtained.",
@@ -57,12 +65,17 @@ def search_language(messages: Sequence[VisionMessage], locale: str) -> str:
     return language
 
 
+def search_region(language: str) -> str:
+    """Map Atlas's language contract to a SearXNG engine locale."""
+    return SEARCH_REGIONS[search_language([], language)]
+
+
 @dataclass(frozen=True)
 class Policy:
     engines: tuple[str, ...] = ENGINES
     quarantine: float = 900
     probe_interval: float = 60
-    engine_interval: float = 6
+    engine_interval: float = 3
     fallback_interval: float = 30
     minimum: int = 0  # Zero means the requested result count.
 
@@ -76,7 +89,7 @@ class Policy:
             engines=engines,
             quarantine=float(os.getenv("ATLAS_SEARXNG_QUARANTINE_SECONDS", "900")),
             probe_interval=float(os.getenv("ATLAS_SEARXNG_PROBE_SECONDS", "60")),
-            engine_interval=float(os.getenv("ATLAS_SEARXNG_ENGINE_SECONDS", "6")),
+            engine_interval=float(os.getenv("ATLAS_SEARXNG_ENGINE_SECONDS", "3")),
             fallback_interval=float(os.getenv("ATLAS_SEARXNG_FALLBACK_SECONDS", "30")),
             minimum=int(os.getenv("ATLAS_SEARXNG_MIN_RESULTS", "0")),
         )
@@ -86,7 +99,7 @@ class Policy:
             or any(engine not in ENGINES for engine in engines)
             or not 900 <= policy.quarantine <= 3600
             or policy.probe_interval < 60
-            or policy.engine_interval < 6
+            or policy.engine_interval < 3
             or policy.fallback_interval < max(30, policy.engine_interval)
             or not 0 <= policy.minimum <= 5
         ):
@@ -222,7 +235,7 @@ async def engine_search(
                     try:
                         async with aiohttp.ClientSession(
                             timeout=aiohttp.ClientTimeout(
-                                total=min(4, max(0.001, deadline - time.monotonic()))
+                                total=min(8, max(0.001, deadline - time.monotonic()))
                             ),
                             trust_env=False,
                         ) as session:
@@ -323,7 +336,7 @@ async def search(
     )
     endpoint = endpoint.rstrip("/")
     key = cache.key(
-        ["searxng-individual", endpoint, query, language, n, news, policy.__dict__]
+        ["searxng-individual-v2", endpoint, query, language, n, news, policy.__dict__]
     )
     cached = cache.get(key)
     if cached is not None:
@@ -371,7 +384,8 @@ async def run_search(
     params = {
         "q": query,
         "format": "json",
-        "language": language,
+        "language": search_region(language),
+        "categories": "general",
         "safesearch": "1",
     }
     if news:

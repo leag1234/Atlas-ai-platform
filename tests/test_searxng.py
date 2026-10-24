@@ -54,16 +54,16 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0]["link"], "https://example.org/releases")
         calls = client.__aenter__.return_value.get.call_args_list
         params = calls[0].kwargs["params"]
-        self.assertEqual(params["language"], "fr")
+        self.assertEqual(params["language"], "fr-FR")
         self.assertEqual(
             [
                 (
                     call.kwargs["params"]["language"],
-                    "categories" in call.kwargs["params"],
+                    call.kwargs["params"].get("categories"),
                 )
                 for call in calls
             ],
-            [("fr", False)] * 4,
+            [("fr-FR", "general")] * 4,
         )
         self.assertEqual(params["time_range"], "month")
         engines = [call.kwargs["params"]["engines"] for call in calls]
@@ -133,7 +133,7 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
         request = Search(query="same query", lang="en")
         searx_key = self.cache.key(
             [
-                "searxng-json-v1",
+                "searxng-individual-v2",
                 request.model_dump(),
                 (("duckduckgo", "brave", "wikipedia"), ("qwant", "bing", "google")),
             ]

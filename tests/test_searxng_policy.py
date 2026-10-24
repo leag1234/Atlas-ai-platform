@@ -180,7 +180,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         results = result["results"]
         assert isinstance(results, list)
         self.assertEqual(results[0]["engine"], "wikipedia")
-        self.assertTrue(all(request["language"] == "fr" for request in self.seen))
+        self.assertTrue(all(request["language"] == "fr-FR" for request in self.seen))
 
     async def test_distinct_empty_timeout_and_invalid_outcomes(self) -> None:
         for action, expected, timeout in (
@@ -303,7 +303,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await runtime.search(Search(query="CERN", lang="en"), 2)
         self.assertEqual(result["language"], "nl")
-        self.assertTrue(all(request["language"] == "nl" for request in self.seen))
+        self.assertTrue(all(request["language"] == "nl-NL" for request in self.seen))
 
     async def test_explicit_locale_without_conversation_and_query_operators(
         self,
@@ -314,13 +314,15 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["language"], "de")
         self.assertEqual(set(self.started), {"duckduckgo", "wikipedia"})
-        self.assertTrue(all(request["language"] == "de" for request in self.seen))
+        self.assertTrue(all(request["language"] == "de-DE" for request in self.seen))
         self.assertTrue(
             all(
                 request["q"] == '"!google" CERN ":auto" "<999"' for request in self.seen
             )
         )
-        self.assertTrue(all("categories" not in request for request in self.seen))
+        self.assertTrue(
+            all(request["categories"] == "general" for request in self.seen)
+        )
 
     async def test_independent_cooldowns_and_health_probes_over_http(self) -> None:
         params = {"q": "CERN", "language": "en", "format": "json"}
@@ -364,10 +366,12 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         wiki = next(
             request for request in self.seen if request["engines"] == "wikipedia"
         )
-        self.assertNotIn("categories", wiki)
-        self.assertTrue(all("categories" not in request for request in self.seen))
+        self.assertEqual(wiki["categories"], "general")
+        self.assertTrue(
+            all(request["categories"] == "general" for request in self.seen)
+        )
         self.assertNotIn("time_range", wiki)
-        self.assertEqual(wiki["language"], "de")
+        self.assertEqual(wiki["language"], "de-DE")
 
     async def test_pipeline_preserves_outcomes_and_partial_sources(self) -> None:
         for outcome in sx.OUTCOMES:
@@ -564,6 +568,19 @@ class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sx.search_language([], "auto"), "en")
         self.assertEqual(sx.search_language([], "all"), "en")
 
+    def test_language_regions_cover_supported_search_languages(self) -> None:
+        self.assertEqual(
+            {language: sx.search_region(language) for language in sx.LANGUAGES},
+            {
+                "fr": "fr-FR",
+                "en": "en-US",
+                "de": "de-DE",
+                "es": "es-ES",
+                "it": "it-IT",
+                "nl": "nl-NL",
+            },
+        )
+
     def test_dutch_ui_locale_is_available_to_search(self) -> None:
         from services.orchestrator.chat_schema import ChatRequest
         from packages.language import conversation_language
@@ -603,10 +620,12 @@ class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
 
     def test_policy_limits_and_circuit_independence(self) -> None:
         self.assertEqual(sx.Policy.environment().fallback_interval, 30)
+        self.assertEqual(sx.Policy.environment().engine_interval, 3)
         for setting, value in (
             ("QUARANTINE_SECONDS", "899"),
             ("QUARANTINE_SECONDS", "3601"),
             ("PROBE_SECONDS", "0"),
+            ("ENGINE_SECONDS", "2"),
             ("ENGINES", "ecosia"),
         ):
             with patch.dict(os.environ, {"ATLAS_SEARXNG_" + setting: value}):
