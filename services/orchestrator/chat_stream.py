@@ -122,10 +122,13 @@ def response(
 
             if not text and not final:
                 return
+            pre_rendered = final and text == item.reponse
             temporary = Interaction()
             from services.orchestrator.source_truth import (
                 drawing_references,
+                inline_source_markers,
                 provider_reference_markers,
+                visible_sources,
                 without_unretrieved,
             )
 
@@ -167,8 +170,15 @@ def response(
                         )
                     },
                 )
-                temporary.reponse = provider_reference_markers(
-                    temporary.reponse, item.retrieved_urls
+                # JSON finalization already numbers links before appending the
+                # server's source details. Do not rewrite that footer as inline links.
+                render_sources = (
+                    provider_reference_markers
+                    if pre_rendered
+                    else inline_source_markers
+                )
+                temporary.reponse = render_sources(
+                    temporary.reponse, visible_sources(item)
                 )
             temporary.chunks_recuperes = item.chunks_recuperes
             if payload.project_id:
@@ -396,6 +406,11 @@ def response(
                 )
                 if image_link:
                     end = min(end, image_link.start())
+                # Web citations can start without a scheme and continue after a
+                # typed reference frame. Validate complete lines before emitting
+                # irreversible SSE text, using the same renderer as JSON.
+                if item.retrieved_urls:
+                    end = min(end, pending.rfind("\n") + 1)
                 await content(pending[:end])
                 pending = pending[end:]
 

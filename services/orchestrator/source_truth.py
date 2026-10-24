@@ -45,8 +45,10 @@ def urls(text: str) -> set[str]:
 
 
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
+    from services.orchestrator.citation_fragments import tool_citations
     from services.orchestrator.mermaid_check import FENCE
 
+    text = tool_citations(text, retrieved)
     diagram_ranges: list[tuple[int, int]] = []
 
     def replace(match: re.Match[str]) -> str:
