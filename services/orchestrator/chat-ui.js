@@ -3,17 +3,57 @@
   // Open WebUI stores its selected interface language in "locale" (v0.11.3).
   // Keep this in the shared overlay so the trial and host launcher agree.
   const nativeFetch = window.fetch.bind(window);
+  let activeCancellation = null;
+  const stopMark = () => {
+    const messages = document.querySelectorAll(".chat-assistant");
+    const message = messages[messages.length - 1];
+    if (!message || message.querySelector(".atlas-stop-mark")) return;
+    const mark = document.createElement("p");
+    mark.className = "atlas-stop-mark";
+    mark.setAttribute("role", "status");
+    mark.style.margin = "8px 0 0";
+    mark.style.color = "var(--atlas-muted)";
+    mark.style.fontSize = ".875em";
+    mark.style.fontStyle = "italic";
+    mark.textContent = "Stopped.";
+    message.append(mark);
+  };
+  const cancelActive = () => {
+    if (!activeCancellation) return;
+    const token = activeCancellation;
+    activeCancellation = null;
+    stopMark();
+    nativeFetch(`/atlas/cancel/${token}`, { method: "POST", headers: { Origin: location.origin } }).catch(() => {});
+  };
   window.fetch = (input, options) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
     if (url.origin === location.origin && /^\/api\/(?:v1\/)?chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
       const locale = (localStorage.getItem("locale") || document.documentElement.lang || "").toLowerCase().split("-")[0];
       if (["en", "fr", "de", "es", "it", "nl"].includes(locale)) {
         const body = JSON.parse(options.body);
-        options = { ...options, body: JSON.stringify({ ...body, ui_locale: locale }) };
+        const cancel_id = crypto.randomUUID();
+        activeCancellation = cancel_id;
+        options = { ...options, body: JSON.stringify({ ...body, ui_locale: locale, cancel_id }) };
       }
     }
     return nativeFetch(input, options);
   };
+  const prepareStop = () => {
+    const button = document.querySelector('#stop-response-button,[aria-label="Stop"]');
+    if (!button || button.dataset.atlasStopReady) return;
+    button.dataset.atlasStopReady = "true";
+    button.id = "stop-response-button";
+    button.setAttribute("aria-label", "Stop generating");
+    button.title = "Stop generating";
+    button.addEventListener("click", cancelActive, { capture: true });
+  };
+  new MutationObserver(prepareStop).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && activeCancellation && document.querySelector('#stop-response-button,[aria-label="Stop"]')) {
+      event.preventDefault();
+      document.querySelector('#stop-response-button,[aria-label="Stop"]').click();
+    }
+  }, true);
   const key = "atlas-ui";
   const defaults = { style: "arrondi", mode: "system", accent: "green", size: "16" };
   const choices = { style: ["dense", "arrondi", "document"], mode: ["system", "light", "dark"], accent: ["green", "blue", "orange", "violet", "graphite"], size: ["14", "16", "18", "20"] };

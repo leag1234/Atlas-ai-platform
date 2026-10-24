@@ -16,6 +16,7 @@ import time
 from collections.abc import AsyncIterator
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -37,6 +38,7 @@ from services.orchestrator.daily_budget import (
     maintenance_message,
     user_from_headers,
 )
+from services.orchestrator.cancellation import cancel
 
 from services.orchestrator.project_ui import (
     ProjectGate,
@@ -62,6 +64,14 @@ app.include_router(mcp_router)
 
 app.include_router(code_router)
 app.include_router(project_router)
+
+
+@app.post("/atlas/cancel/{token}")
+async def cancel_chat(token: UUID, request: Request) -> Response:
+    """Cancel one browser-owned stream without relying on proxy disconnects."""
+    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+        return JSONResponse({"error": "origin_rejected"}, status_code=403)
+    return Response(status_code=202 if cancel(str(token)) else 404)
 
 
 @app.post("/v1/audio/{operation}")
