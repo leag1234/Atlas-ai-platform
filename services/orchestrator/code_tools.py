@@ -98,9 +98,17 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
             "type": "function",
             "function": {
                 "name": name,
-                "description": DESCRIPTIONS[name],
+                "description": (
+                    DESCRIPTIONS[name]
+                    + " For delete_file supply file_id, base_version, revision."
+                    " For overwrite also supply folder_id, path, sha256, size_bytes."
+                    " For delete_memory supply only memory_ids, memory_revision."
+                    " Always supply effect_kind and maximum_bytes; omit all irrelevant fields."
+                    if scoped and name == "request_approval"
+                    else DESCRIPTIONS[name]
+                ),
                 "parameters": (
-                    ScopedApproval if scoped and name == "request_approval" else schema
+                    ModelApproval if scoped and name == "request_approval" else schema
                 ).model_json_schema(),
             },
         }
@@ -303,6 +311,48 @@ class ScopedApproval(Arguments):
     maximum_bytes: int = Field(ge=0)
 
 
+class ModelApproval(Arguments):
+    effect_kind: Literal["overwrite", "delete_file", "delete_memory"]
+    maximum_bytes: int = Field(ge=0)
+    file_id: str | None = None
+    folder_id: str | None = None
+    path: str | None = None
+    base_version: str | None = None
+    revision: int | None = Field(default=None, ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    size_bytes: int | None = Field(default=None, ge=0)
+    memory_ids: list[str] | None = Field(default=None, max_length=100)
+    memory_revision: int | None = Field(default=None, ge=0)
+
+    def canonical(self) -> dict[str, Any]:
+        variants: dict[
+            str, type[OverwriteEffect] | type[DeleteEffect] | type[MemoryEffect]
+        ] = {
+            "overwrite": OverwriteEffect,
+            "delete_file": DeleteEffect,
+            "delete_memory": MemoryEffect,
+        }
+        schema = variants[self.effect_kind]
+        fields = self.model_fields_set - {"effect_kind", "maximum_bytes"}
+        if fields != schema.model_fields.keys():
+            raise ValueError("Provide exactly the fields required by effect_kind")
+        effects = schema.model_validate(self.model_dump(include=fields))
+        return ScopedApproval(
+            action_kind="overwrite" if self.effect_kind == "overwrite" else "delete",
+            effects=effects,
+            maximum_bytes=self.maximum_bytes,
+        ).model_dump()
+
+
+def approval_arguments(arguments: str) -> dict[str, Any]:
+    # Preserve the strict internal interface while exposing only the flat form
+    # to the model. Both routes still cross the same strict broker boundary.
+    value = json.loads(arguments)
+    if isinstance(value, dict) and "effect_kind" in value:
+        return ModelApproval.model_validate_json(arguments).canonical()
+    return ScopedApproval.model_validate_json(arguments).model_dump()
+
+
 class WorkTools(CodeTools):
     """Adapt existing tool events once, before retrieval allocates durable sequences."""
 
@@ -314,9 +364,16 @@ class WorkTools(CodeTools):
         self.test_evidence = []
         self.deliverables: list[dict[str, Any]] = []
         self.selection: WorkToolSelection | None = None
+        self.validation_failures: dict[str, str] = {}
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
+        if kind == "tool" and data.get("status") in {"completed", "failed"}:
+            tool = str(data.get("tool", ""))
+            if data["status"] == "failed":
+                self.validation_failures[tool] = str(output.get("error", "tool_failed"))
+            else:
+                self.validation_failures.pop(tool, None)
         mapped: dict[str, Any] = {}
         for name in ("items", "approval", "file_version_ids", "steps", "cost_eur"):
             if name in output:
@@ -406,7 +463,7 @@ class WorkTools(CodeTools):
             return dict(trust="untrusted", **result)
         if call.name == "request_approval":
             try:
-                args = ScopedApproval.model_validate_json(call.arguments).model_dump()
+                args = approval_arguments(call.arguments)
             except ValidationError as exc:
                 # Validation is a recoverable tool result, as for CodeTools and
                 # document tools. Never approve, coerce, or echo invalid inputs.
@@ -422,6 +479,20 @@ class WorkTools(CodeTools):
                     output=result,
                 )
                 return result
+            except ValueError:
+                result = {
+                    "error": "invalid_tool_arguments",
+                    "details": "Provide exactly the fields required by effect_kind",
+                }
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed",
+                    output=result,
+                )
+                return result
+            self.validation_failures.pop(call.name, None)
             approval = await self.execution.broker.call(
                 "approvals",
                 dict(

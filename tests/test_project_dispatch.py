@@ -316,6 +316,66 @@ class ScopedProjectDispatchTests(unittest.IsolatedAsyncioTestCase):
             "Reports compared; the second increases revenue.",
         )
 
+    async def test_browser_disconnect_cannot_interrupt_terminal_persistence(
+        self,
+    ) -> None:
+        import asyncio
+        import anyio
+        from services.orchestrator.project_transcript import process_scoped_project
+
+        state = self.state("work")
+        finished: list[dict[str, Any]] = []
+
+        async def call(operation: str, data: dict[str, Any], key: str) -> Any:
+            if operation == "finish":
+                await asyncio.sleep(0)
+                finished.append(data)
+                return state["turn"]
+            return state
+
+        with anyio.CancelScope() as cancellation:
+
+            async def work(
+                request: ChatRequest, item: Interaction, **kwargs: Any
+            ) -> None:
+                cancellation.cancel()
+                await asyncio.sleep(0)
+
+            with (
+                patch(
+                    "services.orchestrator.project_transcript.TranscriptBroker.call",
+                    side_effect=call,
+                ),
+                patch("services.orchestrator.code_mode.process_work", side_effect=work),
+            ):
+                await process_scoped_project(self.request("work"), Interaction())
+        self.assertEqual(len(finished), 1)
+        self.assertEqual(finished[0]["state"], "cancelled")
+        self.assertIn("cancelled", finished[0]["error"]["message"])
+
+    async def test_failed_work_persists_reason_in_terminal_api(self) -> None:
+        from services.orchestrator.project_transcript import process_scoped_project
+
+        state = self.state("work")
+        calls = AsyncMock(side_effect=[state, state["turn"], dict(state, replay=True)])
+
+        async def work(request: ChatRequest, item: Interaction, **kwargs: Any) -> None:
+            item.state = "failed"
+            item.reponse = "Work failed: loop_detected"
+            item.erreurs.append("loop_detected")
+
+        with (
+            patch(
+                "services.orchestrator.project_transcript.TranscriptBroker.call", calls
+            ),
+            patch("services.orchestrator.code_mode.process_work", side_effect=work),
+        ):
+            await process_scoped_project(self.request("work"), Interaction())
+        finish = calls.await_args_list[1].args[1]
+        self.assertEqual(finish["state"], "failed")
+        self.assertEqual(finish["error"]["message"], "loop_detected")
+        self.assertIn("loop_detected", finish["content_refs"][0]["text"])
+
     async def test_work_without_organization_never_reaches_legacy_engine(self) -> None:
         from services.orchestrator.project_chat import process_project
         from services.retrieval.project_identity import ProjectError

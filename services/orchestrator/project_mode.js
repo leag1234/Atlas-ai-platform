@@ -78,7 +78,7 @@
   }
   function picker(key, values, selectedID, change) {
     const select = node('select'); select.append(new Option('—', ''));
-    values.forEach(value => select.append(new Option(value.name || value.title || value.org_id, value.id || value.org_id)));
+    values.forEach(value => { const option = new Option(value.name || value.title || value.org_id, value.id || value.org_id); option.title = value.id || value.org_id; select.append(option); });
     select.value = selectedID || ''; select.addEventListener('change', guarded(() => change(select.value)));
     return field(key, select);
   }
@@ -308,7 +308,10 @@
   }
   async function cancel() {
     const current = generation;
-    if (action === 'work' && session) await api(base() + '/work-sessions/' + session.id + '/cancel', 'POST', { request_id: crypto.randomUUID() });
+    if (action === 'work' && session) {
+      const active = await api(base() + '/work-sessions/' + session.id);
+      if (active.lease?.request_id) await api(base() + '/work-sessions/' + active.id + '/cancel', 'POST', { request_id: active.lease.request_id });
+    }
     checkScope(current); stream?.abort(); say(t('stopped'));
   }
   async function submit(event) {

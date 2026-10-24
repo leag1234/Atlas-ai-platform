@@ -32,6 +32,22 @@ class ScopedCitationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("]([", result)
         self.assertEqual(render(result, PASSAGES, ORG, PROJECT), result)
 
+    def test_placeholder_urls_are_consumed_with_authorized_labels(self) -> None:
+        for raw in (
+            f"[{A}](https://rag.example.com/doc/1)",
+            f"({A})(https://rag.example.com/doc/1)",
+        ):
+            with self.subTest(raw=raw):
+                answer = render(raw, PASSAGES, ORG, PROJECT)
+                self.assertEqual(
+                    answer, f"[1](/api/atlas/orgs/{ORG}/projects/{PROJECT}/sources/{A})"
+                )
+                self.assertNotIn("https://", answer)
+        with self.assertRaises(ProjectError):
+            render(
+                f"[{'c' * 64}](https://rag.example.com/doc/1)", PASSAGES, ORG, PROJECT
+            )
+
     def test_foreign_reference_fails_closed(self) -> None:
         for raw in ("c" * 64, f"[{'c' * 64}]({A})"):
             with self.assertRaises(ProjectError):

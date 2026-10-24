@@ -602,10 +602,21 @@ async def process_work(
                     item.reponse += "\n\n" + links
             item.cout_eur = float(model.spent)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
+            reason = result.reason or next(iter(tools.validation_failures.values()), "")
+            terminal = (
+                "completed" if result.state == "done" and not reason else "failed"
+            )
+            item.state = "done" if terminal == "completed" else "failed"
+            if terminal == "failed":
+                reason = reason or result.state
+                item.erreurs.append(reason)
+                item.reponse += "\n\nWork failed: " + reason
             await tools.emit(
                 "recap",
-                label="Work turn complete",
-                status="completed",
+                label="Work turn complete"
+                if terminal == "completed"
+                else "Work failed: " + reason,
+                status=terminal,
                 output=dict(
                     text=item.reponse,
                     steps=result.tool_calls,
@@ -613,8 +624,6 @@ async def process_work(
                     file_version_ids=[r["file_version_id"] for r in tools.deliverables],
                 ),
             )
-            terminal = "completed"
-            item.state = "done"
     except asyncio.CancelledError:
         terminal = "cancelled"
         raise

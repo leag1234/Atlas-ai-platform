@@ -9,7 +9,9 @@ HASH = r"[a-f0-9]{64}"
 # Providers emit hashes, [hash], or [hash](hash). Consume the whole citation
 # before substituting, so neither labels nor destinations are rewritten twice.
 REFERENCE = re.compile(
-    rf"\[[^\]\n]*\]\((?:/api/atlas/orgs/[^\s)]+/sources/)?({HASH})\)"
+    rf"\[({HASH})\]\(https?://[^\s)]+\)"
+    rf"|\(({HASH})\)\(https?://[^\s)]+\)"
+    rf"|\[[^\]\n]*\]\((?:/api/atlas/orgs/[^\s)]+/sources/)?({HASH})\)"
     rf"|\(({HASH})\)\(({HASH})\)|\[({HASH})\]|\b({HASH})\b"
 )
 

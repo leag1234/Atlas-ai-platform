@@ -5485,6 +5485,17 @@ components:
         - kind
         - start
         - end
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            const: slide
+          slide:
+            type: integer
+            minimum: 1
+        required:
+        - kind
+        - slide
     SourceRef:
       type: object
       additionalProperties: false
@@ -8320,6 +8331,12 @@ components:
         org_id:
           type: string
           format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: \S
+          description: Read-only organization display name; never an authority selector.
         role:
           type: string
           enum:
@@ -8328,6 +8345,7 @@ components:
       required:
       - org_id
       - role
+      - name
     Me:
       type: object
       additionalProperties: false
@@ -8736,6 +8754,7 @@ components:
           - paragraphs
           - cells
           - characters
+          - slides
         warnings:
           type: array
           items:

@@ -238,6 +238,27 @@ class ProjectContractTests(unittest.TestCase):
         cls.validator = SchemaValidator(cls.document)
         cls.schemas = cls.document["components"]["schemas"]
 
+    def test_approved_slide_locators_and_coverage_remain_closed(self) -> None:
+        self.validator.validate(
+            dict(kind="slide", slide=1), self.schemas["SourceLocator"]
+        )
+        for invalid in (
+            dict(kind="slide", slide=0),
+            dict(kind="slide", slide=True),
+            dict(kind="slide", slide=1, page=1),
+            dict(kind="unknown", slide=1),
+        ):
+            with self.assertRaises(Invalid):
+                self.validator.validate(invalid, self.schemas["SourceLocator"])
+        coverage = dict(
+            complete=True, selected_units=1, total_units=1, unit="slides", warnings=[]
+        )
+        self.validator.validate(coverage, self.schemas["Coverage"])
+        with self.assertRaises(Invalid):
+            self.validator.validate(
+                dict(coverage, unit="unknown"), self.schemas["Coverage"]
+            )
+
     def test_commit_snapshot_and_target_are_required_and_closed(self) -> None:
         value = json.loads((EXAMPLES / "CommitAction.valid.json").read_text())
         self.validator.validate(value, self.schemas["RepositoryAction"])

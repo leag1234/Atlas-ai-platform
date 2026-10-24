@@ -313,7 +313,13 @@ def dispatch(
     if path == "me" and method == "GET":
         with store(dsn).scope(identity, identity.org, identity.project) as scope:
             return 200, {
-                "memberships": [{"org_id": identity.org, "role": scope.member["role"]}],
+                "memberships": [
+                    {
+                        "org_id": identity.org,
+                        "role": scope.member["role"],
+                        "name": scope.org["data"]["name"],
+                    }
+                ],
                 "capabilities": p0_capabilities(work=True),
             }
     parsed = urlsplit(path)
@@ -528,7 +534,7 @@ def check_query(
     if (
         len(tail) == 3
         and tail[0] == "files"
-        and tail[2] == "content"
+        and tail[2] in {"content", "extraction"}
         and method == "GET"
     ):
         allowed.add("version")
@@ -566,6 +572,22 @@ def ingress(identity: Identity, method: str, path: str) -> int:
             method, tail, parse_qs(parsed.query, keep_blank_values=True)
         )
         return preflight(scope, method, tail, query) if project else 160000
+
+
+def index_created_upload(identity: Identity, file_id: str, version_id: str) -> None:
+    from services.retrieval.project_index import index_upload
+
+    try:
+        index_upload(
+            store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+            identity,
+            file_id,
+            version_id,
+        )
+    except (ProjectError, psycopg.Error, OSError, ValueError):
+        # The upload is already durable. Restrictions/revocation prevent further
+        # processing; never turn a committed upload into an ambiguous retry.
+        logging.getLogger(__name__).warning("project_index_unavailable")
 
 
 @router.api_route(
@@ -609,6 +631,23 @@ async def projects(request: Request, path: str) -> Response:
             bytes(body),
             dict(request.headers),
         )
+        upload_task = None
+        if request.method == "POST" and status == 201 and isinstance(result, dict):
+            value = result.get("file")
+            if isinstance(value, dict) and "job_id" in result:
+                upload_task = BackgroundTask(
+                    index_created_upload,
+                    replace(identity, project=parse_path(path)[1]),
+                    value["id"],
+                    value["version_id"],
+                )
+            elif path.endswith("/versions") and "file_id" in result:
+                upload_task = BackgroundTask(
+                    index_created_upload,
+                    replace(identity, project=parse_path(path)[1]),
+                    result["file_id"],
+                    result["id"],
+                )
         headers = {"Cache-Control": "private, no-store"}
         if (
             isinstance(result, tuple)
@@ -638,7 +677,7 @@ async def projects(request: Request, path: str) -> Response:
                     if isinstance(result, dict)
                     and result.get("state") == "running"
                     and "operation_id" in result
-                    else None
+                    else upload_task
                 ),
             )
         )
@@ -679,10 +718,29 @@ def resolve_identity(data: IdentityResolutionRequest) -> dict[str, Any]:
         rows = db.execute(
             "SELECT * FROM atlas_projects.identity_memberships(%s)", (data.subject,)
         ).fetchall()
+    memberships = []
+    for member in rows:
+        discovery = Identity(
+            data.subject,
+            str(member["member_id"]),
+            str(member["org_id"]),
+            None,
+            member["membership_revision"],
+            member["policy_revision"],
+            int(time.time()) + 60,
+        )
+        # Display names use the existing RLS-authorized organization read. No
+        # bootstrap privilege, storage migration or caller authority is added.
+        with repository.scope(discovery, discovery.org, None) as scope:
+            memberships.append(
+                dict(
+                    org_id=discovery.org,
+                    role=scope.member["role"],
+                    name=scope.org["data"]["name"],
+                )
+            )
     result: dict[str, Any] = {
-        "memberships": [
-            dict(org_id=str(row["org_id"]), role=row["role"]) for row in rows
-        ],
+        "memberships": memberships,
         "identity": None,
         "expires": None,
     }

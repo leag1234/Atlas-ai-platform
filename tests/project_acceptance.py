@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import time
 from typing import Any
@@ -77,6 +78,9 @@ def check_chat(page: Page, receipt: dict[str, Any]) -> None:
             project_base(page) + "/sources/"
         )
     assert "[Source]" not in answer and "]([" not in answer
+    assert not re.search(
+        r"https?://|rag\.example|\d+\]?(?:\([^)]*\))?\(https?", answer
+    ), answer
     links.first.click()
     expect(page.locator(".atlas-side-pane")).to_be_visible()
     expect(page.locator(".atlas-side-content")).to_contain_text("Orion", timeout=30000)
@@ -103,12 +107,10 @@ def work(page: Page, receipt: dict[str, Any]) -> None:
         "First ask me through request_approval whether to delete Budget.txt: "
         + json.dumps(
             {
-                "action_kind": "delete",
-                "effects": {
-                    "file_id": budget["id"],
-                    "base_version": budget["version_id"],
-                    "revision": budget["revision"],
-                },
+                "effect_kind": "delete_file",
+                "file_id": budget["id"],
+                "base_version": budget["version_id"],
+                "revision": budget["revision"],
                 "maximum_bytes": budget["size_bytes"],
             }
         )
@@ -130,6 +132,7 @@ def work(page: Page, receipt: dict[str, Any]) -> None:
     expect(page.locator("[data-send]")).to_be_enabled(timeout=300000)
     session_id = parse_qs(urlsplit(page.url).query)["session"][0]
     session = api(page, base + "/work-sessions/" + session_id)
+    assert session["state"] == "completed", session["state"]
     assert any(
         value["id"] == approval_id and value["decision"] == "denied"
         for value in session["pending_approvals"]
@@ -191,12 +194,10 @@ def cancellation(page: Page, receipt: dict[str, Any]) -> None:
         "Ask through request_approval whether to delete Budget.txt, then wait for my decision. Do not change any file: "
         + json.dumps(
             {
-                "action_kind": "delete",
-                "effects": {
-                    "file_id": budget["id"],
-                    "base_version": budget["version_id"],
-                    "revision": budget["revision"],
-                },
+                "effect_kind": "delete_file",
+                "file_id": budget["id"],
+                "base_version": budget["version_id"],
+                "revision": budget["revision"],
                 "maximum_bytes": budget["size_bytes"],
             }
         )

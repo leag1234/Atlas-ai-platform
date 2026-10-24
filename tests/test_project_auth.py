@@ -126,12 +126,34 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
             json=dict(subject=subject, org=org, project=project, **extra),
         )
 
+    def test_organization_names_are_scoped_read_only_metadata(self) -> None:
+        with psycopg.connect(self.admin_dsn) as db:
+            db.execute(
+                "UPDATE atlas_projects.organizations SET data=jsonb_set(data,'{name}',%s) WHERE org_id=%s",
+                (Jsonb("Named organization"), self.org),
+            )
+        for result in (
+            self.resolve(),
+            self.browser.get("/api/atlas/me", headers=self.front()),
+            self.request("GET", "/api/atlas/me", "editor"),
+        ):
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(
+                result.json()["memberships"],
+                [dict(org_id=self.org, role="member", name="Named organization")],
+            )
+        self.assertEqual(self.resolve(name="spoofed").status_code, 422)
+        self.assertEqual(self.resolve("revoked").json()["memberships"], [])
+        self.assertEqual(self.resolve(org=self.other_org).status_code, 404)
+
     def test_broker_discovery_claims_and_reauthorization(self) -> None:
         discovery = self.resolve().json()
         self.assertEqual(
             discovery,
             dict(
-                memberships=[dict(org_id=self.org, role="member")],
+                memberships=[
+                    dict(org_id=self.org, role="member", name="Research collective")
+                ],
                 identity=None,
                 expires=None,
             ),
@@ -222,7 +244,8 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
             result.json(), self.contract["components"]["schemas"]["Me"]
         )
         self.assertEqual(
-            result.json()["memberships"], [{"org_id": self.org, "role": "member"}]
+            result.json()["memberships"],
+            [{"org_id": self.org, "role": "member", "name": "Research collective"}],
         )
         self.assertNotIn("identity", result.json())
         self.assertEqual(
@@ -406,7 +429,13 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
                 self.assertEqual(result.status_code, 200, result.text)
                 self.assertEqual(
                     result.json()["memberships"],
-                    [{"org_id": self.org, "role": "member"}],
+                    [
+                        {
+                            "org_id": self.org,
+                            "role": "member",
+                            "name": "Research collective",
+                        }
+                    ],
                 )
                 self.assertNotIn(self.service_secret, result.text)
                 self.assertNotIn(self.front_secret, result.text)

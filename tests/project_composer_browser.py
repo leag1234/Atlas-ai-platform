@@ -72,7 +72,11 @@ class ProjectComposerTests(unittest.TestCase):
             return
         value: Any = {"items": [], "next_cursor": None}
         if path == "/api/atlas/me":
-            value = {"memberships": [{"org_id": ORG, "role": "member"}]}
+            value = {
+                "memberships": [
+                    {"org_id": ORG, "role": "member", "name": "Orion organization"}
+                ]
+            }
         elif path == "/api/v1/auths/":
             value = {"id": "synthetic-browser-user"}
         elif path == f"/api/atlas/orgs/{ORG}/projects":
@@ -188,6 +192,102 @@ class ProjectComposerTests(unittest.TestCase):
             + extra
         )
         self.page.locator("[data-send]:not([disabled])").wait_for()
+
+    def test_organization_name_is_display_only(self) -> None:
+        self.mount()
+        organization = self.page.get_by_role(
+            "combobox", name="Organization", exact=True
+        )
+        self.assertEqual(organization.input_value(), ORG)
+        self.assertEqual(
+            organization.locator("option:checked").inner_text(), "Orion organization"
+        )
+        self.assertEqual(
+            organization.locator("option:checked").get_attribute("title"), ORG
+        )
+        self.assertIn("org=" + ORG, self.page.url)
+
+    def test_live_citation_check_rejects_residual_url_text(self) -> None:
+        from project_acceptance import check_chat
+
+        text = f"42 northern and 17 southern sites; 59 sites, EUR59000; 15 December 2026. [1]({BASE}/sources/{'a' * 64})(https://rag.example.com/doc/1), [2]({BASE}/sources/{'b' * 64})."
+        self.turns = [
+            dict(
+                id="citation-turn",
+                action="chat",
+                state="completed",
+                content_refs=[dict(kind="answer", text=text)],
+            )
+        ]
+        self.mount()
+        with self.assertRaisesRegex(AssertionError, "https://rag.example.com"):
+            check_chat(self.page, {})
+
+    def test_cancel_uses_current_execution_request_on_first_post(self) -> None:
+        active = "60000000-0000-4000-8000-000000000001"
+        self.mount("&session=" + SESSION)
+
+        def session_response(route: Route) -> None:
+            route.fulfill(
+                json=dict(
+                    id=SESSION,
+                    conversation_id=CONVERSATION,
+                    state="running",
+                    lease=dict(request_id=active),
+                    pending_approvals=[],
+                    base_file_versions=[],
+                )
+            )
+
+        self.context.route("**/work-sessions/" + SESSION, session_response)
+        self.page.locator("[data-stop]:not([disabled])").wait_for(timeout=10000)
+        self.page.locator("[data-stop]").click()
+        self.page.wait_for_timeout(200)
+        calls = [
+            body
+            for path, method, body in self.calls
+            if path.endswith("/cancel") and method == "POST"
+        ]
+        self.assertEqual(calls, [dict(request_id=active)])
+
+    def test_cancelled_turn_reason_and_unknown_usage_survive_reload(self) -> None:
+        self.turns = [
+            dict(
+                id="cancelled-turn",
+                action="work",
+                state="cancelled",
+                content_refs=[dict(kind="answer", text="Work cancelled by request")],
+                usage=dict(cost_eur=0.02, unknown_eur=0.3, reserved_eur=0),
+            )
+        ]
+        self.mount()
+        self.page.reload()
+        self.page.locator("[data-send]:not([disabled])").wait_for()
+        text = self.page.locator("[data-turn=cancelled-turn]").inner_text()
+        self.assertIn("Work cancelled by request", text)
+        self.assertIn("Cost EUR: 0.02", text)
+        self.assertIn("Unknown usage reservation EUR: 0.3", text)
+
+    def test_failed_work_reason_survives_reload(self) -> None:
+        self.turns = [
+            {
+                "id": "failed-work",
+                "action": "work",
+                "state": "failed",
+                "content_refs": [
+                    {"kind": "answer", "text": "Work failed: loop_detected"}
+                ],
+            }
+        ]
+        self.mount()
+        for reload in (False, True):
+            if reload:
+                self.page.reload()
+                self.page.locator("[data-send]:not([disabled])").wait_for()
+            turn = self.page.locator('[data-turn="failed-work"]')
+            self.assertIn("Failed", turn.inner_text())
+            self.assertIn("loop_detected", turn.inner_text())
+            self.assertNotIn("Completed", turn.inner_text())
 
     def test_explicit_scope_selection_and_enter_submit(self) -> None:
         self.mount()

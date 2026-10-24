@@ -207,6 +207,95 @@ class ProjectWorkTests(ProjectIsolationTests):
             self.session["effective_limits"]["cost_eur"],
         )
 
+    def test_cancelled_transcript_keeps_recovery_usage_and_reason(self) -> None:
+        self.cancelled_transcript(reload=False)
+
+    def test_disconnected_cancelled_turn_is_reconciled_on_reload(self) -> None:
+        self.cancelled_transcript(reload=True)
+
+    def cancelled_transcript(self, *, reload: bool) -> None:
+        from services.retrieval.project_transcript import Transcript
+        from services.retrieval.project_work import Work, empty_usage
+        from services.retrieval.project_identity import ProjectError
+
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            transcript = Transcript(scope)
+            conversation = transcript.create(dict(title="Cancellation evidence"))
+            session = Work(scope).create(
+                dict(
+                    conversation_id=conversation["id"], folder_ids=[], base_versions=[]
+                )
+            )
+            request = dict(
+                model="atlas",
+                org_id=self.org,
+                project_id=self.project,
+                conversation_id=conversation["id"],
+                project_action="work",
+                work_session_id=session["id"],
+                messages=[dict(role="user", content="Prepare report")],
+                stream=True,
+            )
+            _, begun = transcript.begin(
+                dict(request_id=self.turn_id, request=request), "cancellation-evidence"
+            )
+            self.assertEqual(begun["turn"]["state"], "running")
+            work = Work(scope)
+            work.acquire(
+                dict(
+                    session_id=session["id"],
+                    request_id=self.turn_id,
+                    expected_revision=session["revision"],
+                    storage_bytes=0,
+                )
+            )
+            work.cancel(session["id"], dict(request_id=self.turn_id))
+            recovery = dict(
+                session_id=session["id"],
+                request_id=str(uuid4()),
+                generation=1,
+                operation="recover",
+                usage=None,
+                terminal_state=None,
+                cleanup_confirmed=False,
+            )
+            work.turn(recovery)
+            work.turn(
+                dict(
+                    recovery,
+                    generation=2,
+                    operation="release",
+                    terminal_state="cancelled",
+                    cleanup_confirmed=True,
+                )
+            )
+            if reload:
+                finished = transcript.turns(conversation["id"])[0]
+            else:
+                finished = transcript.finish(
+                    dict(
+                        request_id=self.turn_id,
+                        conversation_id=conversation["id"],
+                        state="failed",
+                        content_refs=[],
+                        usage=empty_usage(),
+                        error=ProjectError(
+                            409, "session_busy", "Work cancellation requested"
+                        ).body,
+                    )
+                )
+            self.assertEqual(finished["state"], "cancelled")
+            self.assertEqual(
+                finished["usage"]["unknown_eur"],
+                session["effective_limits"]["cost_eur"],
+            )
+            self.assertEqual(finished["usage"]["reserved_eur"], 0)
+            reloaded = transcript.turns(conversation["id"])[0]
+            self.assertEqual(reloaded["usage"], finished["usage"])
+            self.assertIn("cancelled", reloaded["content_refs"][-1]["text"])
+
     def test_legacy_alias_resolves_only_the_current_scoped_session(self) -> None:
         alias = str(uuid4())
         with store(self.app_dsn).scope(
