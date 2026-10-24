@@ -21,6 +21,7 @@ from services.orchestrator.deadline import request_deadline
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.model import GatewayError
+from services.retrieval.project_identity import ProjectError
 from services.orchestrator.cancellation import (
     cancelled_by_user,
     register as register_cancellation,
@@ -48,7 +49,7 @@ def response(
         else "0.10"
     )
     display_deadline = payload.timeout_seconds
-    if payload.code_mode:
+    if payload.code_mode or payload.project_action == "work":
         from services.orchestrator.code_mode import settings
 
         ceiling = str(settings().cost)
@@ -216,6 +217,9 @@ def response(
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
             nonlocal received_content
+            if isinstance(event.get("project"), dict):
+                await queue.put(event)
+                return
             if payload.code_mode and isinstance(event.get("code"), dict):
                 code = event["code"]
                 assert isinstance(code, dict)
@@ -476,6 +480,10 @@ def response(
                 else:
                     item.erreurs.append("cancelled")
                 raise
+            except ProjectError as exc:
+                item.state = "error"
+                item.erreurs.append(str(exc.body["error"]))
+                await queue.put({"error": exc.body})
             except TimeoutError:
                 item.state = "error"
                 item.erreurs.append("stream_error")
@@ -588,6 +596,17 @@ def response(
                     continue
                 if event is None:
                     break
+                if isinstance(event.get("project"), dict):
+                    project_event = event["project"]
+                    assert isinstance(project_event, dict)
+                    yield (
+                        "event: atlas.project\nid: "
+                        + str(project_event["seq"])
+                        + "\ndata: "
+                        + json.dumps(project_event)
+                        + "\n\n"
+                    )
+                    continue
                 if "error" in event:
                     output = event
                 else:

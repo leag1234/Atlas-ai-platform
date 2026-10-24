@@ -3929,6 +3929,156 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ProjectChatRequest'
+  /internal/atlas/transcript/begin:
+    post:
+      operationId: transcriptBegin
+      summary: 'Private transcript interface: begin'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptBegin'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptState'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '201':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptState'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by
+        the supervisor. See contracts/project-mode.md for authorization, idempotency,
+        quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/finish:
+    post:
+      operationId: transcriptFinish
+      summary: 'Private transcript interface: finish'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptFinish'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Turn'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by
+        the supervisor. See contracts/project-mode.md for authorization, idempotency,
+        quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/events:
+    post:
+      operationId: transcriptEvents
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptEvents'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by
+        the supervisor. See contracts/project-mode.md for authorization, idempotency,
+        quota and RLS rules. Bounded JSON body: 160000 bytes.'
 components:
   securitySchemes:
     ExecutionBroker:
@@ -4013,6 +4163,99 @@ components:
         format: uuid
       description: Single-use broker approval bound to exact deletion/version scope.
   schemas:
+    TranscriptBegin:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id: &transcript_id001
+          type: string
+          format: uuid
+        request:
+          $ref: '#/components/schemas/ProjectChatRequest'
+      required:
+      - request_id
+      - request
+    TranscriptState:
+      type: object
+      additionalProperties: false
+      properties:
+        turn:
+          $ref: '#/components/schemas/Turn'
+        context:
+          $ref: '#/components/schemas/Context'
+        replay:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+          maxItems: 100
+        last_event_seq:
+          type: integer
+          minimum: 0
+      required:
+      - turn
+      - context
+      - replay
+      - events
+      - last_event_seq
+    TranscriptFinish:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id: *transcript_id001
+        conversation_id: *transcript_id001
+        state:
+          type: string
+          enum:
+          - completed
+          - failed
+          - cancelled
+        content_refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentRef'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/Error'
+          - type: 'null'
+      required:
+      - request_id
+      - conversation_id
+      - state
+      - content_refs
+      - usage
+      - error
+    TranscriptEvents:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id: *transcript_id001
+        request_id: *transcript_id001
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+          minItems: 1
+          maxItems: 40
+      required:
+      - conversation_id
+      - request_id
+      - events
+    TranscriptEventsResult:
+      type: object
+      additionalProperties: false
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+          minItems: 1
+          maxItems: 40
+      required:
+      - events
     OrganizationOperation:
       type: object
       additionalProperties: false

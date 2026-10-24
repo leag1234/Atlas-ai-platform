@@ -1,0 +1,25 @@
+{
+  "conversation_id": "10000000-0000-4000-8000-000000000001",
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "events": [
+    {
+      "org_id": "10000000-0000-4000-8000-000000000001",
+      "project_id": "10000000-0000-4000-8000-000000000001",
+      "version": 1,
+      "seq": 1,
+      "session_id": null,
+      "request_id": "10000000-0000-4000-8000-000000000001",
+      "turn_id": null,
+      "type": "workspace",
+      "status": "running",
+      "label": "Example",
+      "tool": null,
+      "plan": [],
+      "approval_id": null,
+      "job_id": null,
+      "text": null,
+      "error": null,
+      "output": {}
+    }
+  ]
+}

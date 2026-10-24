@@ -55,6 +55,7 @@ from services.retrieval.project_file_api import (
     publication_parts,
 )
 from services.retrieval.project_files import ProjectFiles
+from services.retrieval.project_transcript import Transcript, canonical
 from services.retrieval.project_work import Work
 from services.retrieval.project_work_contract import validate
 from services.retrieval.project_ledger import summary
@@ -220,6 +221,28 @@ def execute(
                 scope.grant_write(tail[1], None, expected)
                 return 204, None
     if scope.project is not None and tail:
+        transcript = Transcript(scope)
+        if tail == ["conversations"]:
+            if method == "POST":
+                return 201, transcript.create(json.loads(body))
+            if method == "GET":
+                return 200, dict(
+                    items=transcript.files.listing("conversation"), next_cursor=None
+                )
+        if (
+            len(tail) == 3
+            and tail[0] == "conversations"
+            and tail[2] == "turns"
+            and method == "GET"
+        ):
+            return 200, dict(items=transcript.turns(tail[1]), next_cursor=None)
+        if tail == ["context"] and method == "POST":
+            data = validate("ContextRequest", json.loads(body))
+            scope.authorize(
+                "POST",
+                ["conversations"] if data["action"] == "chat" else ["work-sessions"],
+            )
+            return 200, transcript.context(data["conversation_id"], data["query"], [])
         work = Work(scope)
         if (
             len(tail) == 3
@@ -326,9 +349,40 @@ def dispatch(
                 and "approval_id" in json.loads(body)
             ):
                 return execute(scope, method, tail, body, headers.get("if-match"))
+            if tail == ["context"]:
+                context_request = validate("ContextRequest", json.loads(body))
+                scope.authorize(
+                    "POST",
+                    ["conversations"]
+                    if context_request["action"] == "chat"
+                    else ["work-sessions"],
+                )
             replay = scope.replay(method, path, key, body)
             if replay is not None:
                 authorize_replay(scope, method, tail, replay[1])
+                if tail == ["conversations"]:
+                    ProjectFiles(scope).get("conversation", replay[1]["id"])
+                if tail == ["context"]:
+                    transcript = Transcript(scope)
+                    context = replay[1]
+                    versions = [context["instructions_version"]] + [
+                        p["version_id"] for p in context["passages"]
+                    ]
+                    for fact in context["facts"]:
+                        versions.extend(fact["source_file_version_ids"])
+                    transcript.check_sources(versions)
+                    for turn in context["history"]:
+                        current = transcript.files.get("turn", turn["id"])
+                        transcript.sources(current)
+                    if (
+                        context["memory_revision"]
+                        != scope.project_data["memory_revision"]
+                        or context["context_manifest"]["policy_revision"]
+                        != scope.org["revision"]
+                        or context["instructions_version"]
+                        != transcript.files.instructions()["version"]
+                    ):
+                        raise ProjectError(409, "revision_conflict")
                 return replay
         result: tuple[int, Any]
         if project and tail == ["events"] and method == "GET":
@@ -343,16 +397,45 @@ def dispatch(
             if session_id:
                 Work(scope).get(session_id)
             rows = scope.db.execute(
-                "SELECT data FROM (SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s) e WHERE seq>%s AND (%s::text IS NULL OR data->>'session_id'=%s) ORDER BY seq LIMIT 100",
-                (org, project, org, project, int(after), session_id, session_id),
+                "SELECT data FROM (SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.transcript_progress WHERE org_id=%s AND project_id=%s) e WHERE seq>%s AND (%s::text IS NULL OR data->>'session_id'=%s) ORDER BY seq LIMIT 100",
+                (
+                    org,
+                    project,
+                    org,
+                    project,
+                    org,
+                    project,
+                    int(after),
+                    session_id,
+                    session_id,
+                ),
             ).fetchall()
+            visible = []
+            for row in rows:
+                event = row["data"]
+                if event.get("version") == 1:
+                    try:
+                        row_turn = scope.db.execute(
+                            "SELECT data FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='turn' AND data->>'request_id'=%s",
+                            (org, project, event["request_id"]),
+                        ).fetchone()
+                        if row_turn is not None:
+                            turn = ProjectFiles(scope).get(
+                                "turn", row_turn["data"]["id"]
+                            )
+                            Transcript(scope).sources(turn)
+                    except ProjectError as exc:
+                        if exc.status in {403, 404, 409}:
+                            continue
+                        raise
+                visible.append(row)
             content = "".join(
                 "event: atlas.project\nid: "
                 + str(row["data"]["seq"])
                 + "\ndata: "
                 + json.dumps(row["data"], separators=(",", ":"))
                 + "\n\n"
-                for row in rows
+                for row in visible
             ).encode()
             result = (200, (200, content, {"Content-Type": "text/event-stream"}))
         elif project and tail == ["ledger"] and method == "GET":
@@ -778,9 +861,11 @@ def execution_dispatch(
         return result
 
 
+@router.post("/internal/atlas/transcript/{operation}")
 @router.post("/internal/atlas/execution/{operation}")
 async def execution_broker(request: Request, operation: str) -> Response:
     headers = {"Cache-Control": "private, no-store"}
+    transcript = request.url.path.startswith("/internal/atlas/transcript/")
     try:
         credential = request.headers.get("x-atlas-project-identity", "")
         secret = request.headers.get("x-atlas-execution-secret", "")
@@ -811,7 +896,9 @@ async def execution_broker(request: Request, operation: str) -> Response:
         key = request.headers.get("idempotency-key", "")
         if not key or len(key) > 200:
             raise ProjectError(422, "invalid_request")
-        limit = await asyncio.to_thread(execution_ingress, identity, operation)
+        limit = await asyncio.to_thread(
+            execution_ingress, identity, operation, transcript
+        )
         body = bytearray()
         async with asyncio.timeout(5):
             async for chunk in request.stream():
@@ -827,7 +914,7 @@ async def execution_broker(request: Request, operation: str) -> Response:
                     )
                 body.extend(chunk)
         status, result = await asyncio.to_thread(
-            execution_dispatch,
+            transcript_dispatch if transcript else execution_dispatch,
             identity,
             operation,
             bytes(body),
@@ -849,11 +936,16 @@ async def execution_broker(request: Request, operation: str) -> Response:
         )
 
 
-def execution_ingress(identity: Identity, operation: str = "") -> int:
+def execution_ingress(
+    identity: Identity, operation: str = "", transcript: bool = False
+) -> int:
     dsn = os.environ.get("ATLAS_PROJECT_DSN", "")
     if not dsn:
         raise ProjectError(503, "dependency_unavailable")
     with store(dsn).scope(identity, identity.org, identity.project) as scope:
+        if transcript:
+            scope.authorize("POST", ["conversations"])
+            return 160000
         if operation == "publish":
             scope.authorize("POST", ["work-sessions"])
             folder = scope.project_data["deliverables_folder_id"]
@@ -864,3 +956,36 @@ def execution_ingress(identity: Identity, operation: str = "") -> int:
             )
         Work(scope).grant_stamp(identity.member)
         return 160000
+
+
+def transcript_dispatch(
+    identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
+) -> tuple[int, Any]:
+    schemas = {
+        "begin": "TranscriptBegin",
+        "finish": "TranscriptFinish",
+        "events": "TranscriptEvents",
+    }
+    if operation not in schemas or identity.project is None:
+        raise ProjectError(404, "not_found")
+    data = validate(schemas[operation], json.loads(body))
+    with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+        identity, identity.org, identity.project
+    ) as scope:
+        transcript = Transcript(scope)
+        if operation == "begin":
+            return transcript.begin(data, key)
+        transcript.bound(data)
+        path = f"/internal/atlas/transcript/{operation}/{identity.project}"
+        body = canonical(data)
+        replay = scope.replay("POST", path, key, body)
+        if replay is not None:
+            return replay
+        result = (
+            200,
+            transcript.finish(data)
+            if operation == "finish"
+            else transcript.events(data),
+        )
+        scope.remember("POST", path, key, body, result)
+        return result

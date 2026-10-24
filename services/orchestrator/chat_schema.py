@@ -10,7 +10,7 @@ import re
 
 from typing import Any, Literal, Self
 from uuid import UUID
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from packages.images import VisionInput, VisionMessage
 
 from services.orchestrator.documents import Attachment
@@ -45,6 +45,10 @@ class ChatRequest(VisionInput):
     model_config = ConfigDict(extra="ignore", strict=True)
     model: str = PROFILES[0]
     documents: list[Attachment] = Field(default_factory=list, max_length=8)
+    org_id: str | None = None
+    file_version_ids: list[str] = Field(default_factory=list)
+    _project_subject: str | None = PrivateAttr(default=None)
+    _transcript_key: str | None = PrivateAttr(default=None)
     project_id: str | None = None
     conversation_id: str | None = None
     project_action: Literal["chat", "work"] = "chat"
@@ -184,7 +188,7 @@ class ChatRequest(VisionInput):
 
     @property
     def timeout_seconds(self) -> float:
-        if self.code_mode:
+        if self.code_mode or self.project_action == "work":
             from services.orchestrator.code_mode import settings
 
             # The inner code deadline owns the measured stop, including cleanup.
@@ -199,7 +203,9 @@ class ChatRequest(VisionInput):
     @model_validator(mode="after")
     def valid_project(self) -> Self:
         if self.code_mode and (
-            self.project_id is not None
+            self.org_id is not None
+            or bool(self.file_version_ids)
+            or self.project_id is not None
             or self.conversation_id is not None
             or self.project_action != "chat"
             or self.work_session_id is not None
@@ -214,6 +220,15 @@ class ChatRequest(VisionInput):
                 raise ValueError("code_session_id_required")
             self.code_session_id = str(UUID(self.code_session_id))
         elif self.code_session_id is not None:
+            raise ValueError("selector_conflict")
+        if self.org_id is not None:
+            self.org_id = str(UUID(self.org_id))
+            if self.project_id is None or self.conversation_id is None:
+                raise ValueError("selector_conflict")
+        elif self.file_version_ids:
+            raise ValueError("selector_conflict")
+        self.file_version_ids = [str(UUID(v)) for v in self.file_version_ids]
+        if len(set(self.file_version_ids)) != len(self.file_version_ids):
             raise ValueError("selector_conflict")
         if self.model not in PROFILES:
             raise ValueError("invalid_profile")

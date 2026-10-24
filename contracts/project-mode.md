@@ -794,3 +794,68 @@ another version, charge or event, after current authorization, live fencing and
 source restrictions. Different payload conflicts. Stale generation/lease is
 `409 session_busy`, stale version/folder revision is `409 revision_conflict`,
 occupied path is `409 path_conflict`; other errors retain existing Error semantics.
+
+## Amendment 2026-10-24 (private transcript interface), approved by the supervisor
+
+REQ-PROJ-03/04/07: three private POST routes; no existing public request or response schema changes.
+
+1. `/internal/atlas/transcript/begin`
+   - Closed request `TranscriptBegin`, all fields required:
+     `request_id: UUID`, `request: ProjectChatRequest` (existing schema).
+   - Closed response `TranscriptState`, all fields required:
+     `turn: Turn`, `context: Context`, `replay: boolean`,
+     `events: array<ProjectEvent>` (maximum 100), `last_event_seq: integer >= 0`.
+   - First use returns 201 and atomically creates a running canonical turn with
+     the question, exact selected versions, action and current context revision.
+     Resolve scope, conversation, selected files, source restrictions and policy
+     before context selection. Return canonical authorized history in Context.
+     Work additionally checks the selected session belongs to the conversation.
+   - Scope/member/key plus the canonical request hash identify a single request.
+     Same key/body returns 200 with the existing turn and replay=true, even if a
+     caller generated another request_id; the original server binding wins.
+     Different body returns 409 idempotency_conflict. Replays never dispatch.
+     Further replay uses existing project events with after/Last-Event-ID.
+
+2. `/internal/atlas/transcript/finish`
+   - Closed request `TranscriptFinish`, all fields required:
+     `request_id: UUID`, `conversation_id: UUID`,
+     `state: completed|failed|cancelled`, `content_refs: array<ContentRef>`,
+     `usage: Usage`, `error: Error|null` (all referenced schemas already exist).
+   - Response 200 `Turn` (existing schema).
+   - Resolve the running turn by authenticated scope, conversation and request;
+     derive IDs, action, creator, selected versions, persistability and context
+     revision from the stored begin operation. Only the initiating member's
+     authenticated service request may finish that turn. Enforce source
+     restrictions again and retain unknown cost reservations. Never permit an
+     arbitrary caller to replace question content or another member's turn.
+   - Persist checked answer, terminal state/usage and one terminal ProgressEvent
+     plus its audit/outbox atomically. Duplicate identical finish replays the
+     original result; conflicting finish fails with idempotency_conflict.
+     Stale context remains inspectable but is excluded from future context.
+
+3. `/internal/atlas/transcript/events`
+   - Closed request `TranscriptEvents`, all fields required:
+     `conversation_id: UUID`, `request_id: UUID`,
+     `events: array<ProjectEvent>` (minimum 1, maximum 40).
+   - Closed response `TranscriptEventsResult`, required
+     `events: array<ProjectEvent>` (minimum 1, maximum 40).
+   - Bind events to the running turn and current authority. Replace caller
+     sequence, scope and link fields with server authority; reject inconsistent
+     links. Allocate from the existing shared project sequence and persist
+     content-bearing progress separately from metadata-only audit/outbox.
+     Support actual Chat model-dispatch intent/outcome events, checked errors,
+     and recaps; never infer transmissions from narration. Work tool/approval
+     events remain on the existing fenced execution broker.
+
+All three routes reuse the existing execution service credential and audience
+plus a freshly resolved scoped identity, forbid browser Origin/Fetch Metadata,
+require Idempotency-Key and a 160000-byte bounded JSON body, and are excluded
+from the public BFF. Reauthorize before replay and before accepting content.
+Use existing typed Error semantics, including measured size/quota refusals.
+Chat permits current viewer/editor/owner, including archived read/Chat projects;
+Work requires editor/owner, active project and the existing execution lease for
+execution. No viewer acquires Work authority. Organization/project/member fields
+cannot be caller authority. Retention, FORCE RLS and source invalidation apply.
+Chat reserves its existing effective per-request cost against organization quotas
+at begin; Work keeps its existing lease reservations without double charging.
+An ambiguous/crashed dispatch retains its reservation and never auto-resumes.
