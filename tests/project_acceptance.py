@@ -21,7 +21,9 @@ from playwright.sync_api import Page, expect, sync_playwright
 
 from project_mode_browser import api, dialog
 
-OUTPUT = Path("BRAIN/project-mode-L4")
+OUTPUT = Path(
+    os.environ.get("ATLAS_PROJECT_BROWSER_OUTPUT", "BRAIN/project-acceptance")
+)
 
 
 def project_base(page: Page) -> str:
@@ -56,6 +58,10 @@ def chat(page: Page, receipt: dict[str, Any]) -> None:
     )
     page.locator("[data-send]").click()
     expect(page.locator("[data-send]")).to_be_enabled(timeout=180000)
+    check_chat(page, receipt)
+
+
+def check_chat(page: Page, receipt: dict[str, Any]) -> None:
     answers = page.locator(".atlas-project-transcript .answer")
     for term in ("42", "17", "59", "December"):
         expect(answers).to_contain_text(term, timeout=10000)
@@ -63,6 +69,19 @@ def chat(page: Page, receipt: dict[str, Any]) -> None:
     answer = answers.inner_text()
     assert "59,000" in answer or "59000" in answer or "59 000" in answer
     assert "2026" in answer
+    links = answers.locator('a[href*="/sources/"]')
+    assert links.count() >= 2
+    for index in range(links.count()):
+        assert links.nth(index).inner_text().isdigit()
+        assert urlsplit(links.nth(index).get_attribute("href") or "").path.startswith(
+            project_base(page) + "/sources/"
+        )
+    assert "[Source]" not in answer and "]([" not in answer
+    links.first.click()
+    expect(page.locator(".atlas-side-pane")).to_be_visible()
+    expect(page.locator(".atlas-side-content")).to_contain_text("Orion", timeout=30000)
+    page.screenshot(path=str(OUTPUT / "chat-source-preview.png"))
+    page.evaluate("window.atlasSideView.close()")
     page.screenshot(path=str(OUTPUT / "chat-and-context.png"))
     receipt.update(chat_useful=True, url=page.url)
     save(receipt)
@@ -161,6 +180,56 @@ def work(page: Page, receipt: dict[str, Any]) -> None:
     page.evaluate("window.atlasSideView.close()")
 
 
+def cancellation(page: Page, receipt: dict[str, Any]) -> None:
+    base = project_base(page)
+    budget = next(
+        file
+        for file in api(page, base + "/files")["items"]
+        if file["relative_path"] == "Budget.txt"
+    )
+    request = (
+        "Ask through request_approval whether to delete Budget.txt, then wait for my decision. Do not change any file: "
+        + json.dumps(
+            {
+                "action_kind": "delete",
+                "effects": {
+                    "file_id": budget["id"],
+                    "base_version": budget["version_id"],
+                    "revision": budget["revision"],
+                },
+                "maximum_bytes": budget["size_bytes"],
+            }
+        )
+    )
+    page.get_by_role("textbox", name="Message", exact=True).fill(request)
+    page.locator("[data-send]").click()
+    card = page.locator(".atlas-project-activity [data-approval]").last
+    expect(card.get_by_role("button", name="Deny", exact=True)).to_be_enabled(
+        timeout=180000
+    )
+    session = parse_qs(urlsplit(page.url).query)["session"][0]
+    page.locator("[data-stop]").click()
+    expect(page.locator("[data-send]")).to_be_enabled(timeout=60000)
+    deadline = time.monotonic() + 30
+    state = api(page, base + "/work-sessions/" + session)
+    while state["state"] == "cancelling" and time.monotonic() < deadline:
+        page.wait_for_timeout(500)
+        state = api(page, base + "/work-sessions/" + session)
+    assert state["state"] == "cancelled", state["state"]
+    assert (
+        next(
+            file
+            for file in api(page, base + "/files")["items"]
+            if file["id"] == budget["id"]
+        )["version_id"]
+        == budget["version_id"]
+    )
+    receipt["cancelled_session"] = session
+    receipt["url"] = page.url
+    save(receipt)
+    page.screenshot(path=str(OUTPUT / "cancelled-work.png"))
+
+
 def dismiss_release_notes(page: Page) -> None:
     release = page.get_by_role("button", name="Okay, Let's Go!", exact=True)
     if release.is_visible():
@@ -205,6 +274,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--navigation-only", action="store_true")
     parser.add_argument("--work-only", action="store_true")
+    parser.add_argument("--cancel-only", action="store_true")
+    parser.add_argument("--resume-chat", action="store_true")
     args = parser.parse_args()
     base = os.environ["ATLAS_PROJECT_BROWSER_URL"].rstrip("/")
     target = urlsplit(base)
@@ -213,7 +284,9 @@ def main() -> None:
     account = json.loads(Path(os.environ["ATLAS_PROJECT_BROWSER_ACCOUNT"]).read_text())
     OUTPUT.mkdir(parents=True, exist_ok=True)
     receipt = (
-        json.loads((OUTPUT / "receipt.json").read_text()) if args.work_only else {}
+        json.loads((OUTPUT / "receipt.json").read_text())
+        if args.work_only or args.cancel_only or args.resume_chat
+        else {}
     )
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(args=["--no-sandbox"])
@@ -236,7 +309,7 @@ def main() -> None:
                 token,
             )
             page.goto(receipt.get("url", base), wait_until="domcontentloaded")
-            if not args.work_only:
+            if not args.work_only and not args.cancel_only and not args.resume_chat:
                 page.locator("#chat-input").wait_for(timeout=60000)
                 dismiss_release_notes(page)
                 page.keyboard.press("Escape")
@@ -256,7 +329,11 @@ def main() -> None:
                 chat(page, receipt)
             else:
                 expect(page.locator("[data-send]")).to_be_enabled(timeout=30000)
-            work(page, receipt)
+            if args.resume_chat:
+                check_chat(page, receipt)
+            if not args.cancel_only:
+                work(page, receipt)
+            cancellation(page, receipt)
             robustness(page, receipt)
             receipt["browser_errors"] = errors
             assert not errors, errors

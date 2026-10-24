@@ -19,7 +19,25 @@
   };
   const storageKey = () => `atlas-project:${identity}`;
   const say = message => { if (notice) notice.textContent = message; };
-  function failure(error) { if (error.name !== 'AbortError') say(error.message || t('failure')); }
+  function errorNotice(target, error, key = 'failure') {
+    const message = [401,403,404].includes(error.status) ? 'accessFailure' : [413,429].includes(error.status) ? 'limitFailure' : error.status >= 500 ? 'serviceFailure' : key;
+    target.replaceChildren(node('span', t(message)));
+    const details = node('details'); details.append(node('summary', t('details')), node('pre', error.message || t('unknown'))); target.append(details);
+  }
+  function failure(error) { if (error.name !== 'AbortError' && notice) errorNotice(notice, error); }
+  function locator(value) {
+    if (!value) return t('unknown');
+    if (value.kind === 'text') return `${t('text')}, ${t('characters')} ${value.start}–${value.end}`;
+    if (value.kind === 'page') return `${t('page')} ${value.page}`;
+    if (value.kind === 'paragraph') return `${t('paragraph')} ${value.paragraph}`;
+    if (value.kind === 'sheet_range') return `${t('sheet')} ${value.sheet}, ${value.range}`;
+    if (value.kind === 'table_cell') return `${t('table')} ${value.table}, ${t('row')} ${value.row}, ${t('column')} ${value.column}`;
+    return t('unknown');
+  }
+  function versionLabel(key, value) {
+    const label = detail(key, value == null ? t('unknown') : uuid(String(value)) ? String(value).slice(0,8) : `v${value}`);
+    if (value != null) label.title = String(value); return label;
+  }
   const guarded = fn => async event => { const current = generation; try { await fn(event); } catch (error) { if (current === generation) failure(error); } };
   function checkScope(current) { if (current !== generation) throw new DOMException('Scope changed', 'AbortError'); }
   function button(key, fn, cls) { const b = node('button', t(key), cls); b.type = 'button'; b.addEventListener('click', guarded(fn)); return b; }
@@ -156,12 +174,12 @@
   function prose(text, cls) {
     const content = node('pre', null, cls);
     // Plain text plus authorized scoped links; source text never becomes HTML.
-    const pattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+    const pattern = /\[([^\[\]]+)\]\(([^)]+)\)/g;
     let offset = 0;
     for (const match of text.matchAll(pattern)) {
       content.append(document.createTextNode(text.slice(offset, match.index)));
       try { const link = node('a', match[1]); link.href = projectURL(match[2]);
-        if (new URL(link.href).pathname.includes('/sources/')) link.addEventListener('click', guarded(async event => { event.preventDefault(); const source = await api(link.href); await window.atlasSideView.open({ kind:'markdown', content:source.text, title:t('coverage') }); }));
+        if (new URL(link.href).pathname.includes('/sources/')) link.addEventListener('click', guarded(async event => { event.preventDefault(); const source = await api(link.href); await window.atlasSideView.open({ kind:'markdown', content:source.text, title:`${files.find(file => file.id === source.file_id)?.relative_path || t('files')} · ${locator(source.locator)}` }); }));
         content.append(link); }
       catch { content.append(document.createTextNode(match[0])); }
       offset = match.index + match[0].length;
@@ -313,7 +331,11 @@
       checkScope(current); input.value = '';
     } catch (error) { if (current === generation) failure(error); }
     finally {
-      if (current === generation) { sending = false; controls(); await refreshTurns(); await replay(); if (session) session = await api(base() + '/work-sessions/' + session.id); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); controls(); input.focus(); }
+      if (current === generation) {
+        sending = false; configuring = true; controls();
+        try { await refreshTurns(); await replay(); if (session) session = await api(base() + '/work-sessions/' + session.id); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); }
+        finally { if (current === generation) { configuring = false; controls(); input.focus(); } }
+      }
     }
   }
   let ledgerTab = 'server', ledgerSession = '', panelData, sideResize;
@@ -336,7 +358,7 @@
     right.replaceChildren(node('h2', t('environment')), detail('workspace', t('server')), detail('device', t('unavailable')));
     if (session) { const status = detail('status', t(session.state)); status.dataset.sessionState = ''; right.append(detail('workspace', session.environment.workspace_id), status); }
     for (const folder of folders) right.append(detail('files', `${folder.name} · ${folder.locality === 'local_only' ? t('local') + ' · ' + t('device') : t('server')} · ${t(folder.model_use)}`));
-    right.append(detail('repository', session?.repository_id || t('unavailable')), node('h2', t('context')), detail('instructions', instructions.version));
+    right.append(detail('repository', session?.repository_id || t('unavailable')), node('h2', t('context')), versionLabel('instructions', instructions.active_version_id || instructions.version));
     if (instructions.text) right.append(node('p', instructions.text));
     right.append(node('h3', t('memory')));
     for (const entry of memory) right.append(node('p', entry.text), detail('status', t(entry.status)));
@@ -346,12 +368,12 @@
       const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.dataset.version = file.version_id; checkbox.checked = selected.has(file.version_id); checkbox.disabled = sending || configuring || uploading || file.locality === 'local_only' || file.availability === 'not_retained';
       checkbox.addEventListener('change', guarded(async () => { if (sending || configuring || uploading) return; checkbox.checked ? selected.add(file.version_id) : selected.delete(file.version_id); session = null; delete scope.session; saveRoute(); await setAction(); if (panelData) renderPanels(); }));
       const label = node('label', null, 'atlas-project-file'); label.append(checkbox, node('span', file.relative_path));
-      right.append(label, detail('version', file.version_id), detail('coverage', t(file.index_status)), button('preview', () => previewFile(file)));
+      right.append(label, versionLabel('version', file.version_id), detail('coverage', t(file.index_status)), button('preview', () => previewFile(file)));
     }
     const coverage = context?.context_manifest?.coverage;
-    for (const passage of context?.passages || []) right.append(detail('version', passage.version_id), detail('coverage', JSON.stringify(passage.locator)));
+    for (const passage of context?.passages || []) right.append(versionLabel('version', passage.version_id), detail('coverage', locator(passage.locator)));
     if (coverage) {
-      right.append(detail('coverage', `${coverage.selected_units}/${coverage.total_units ?? t('unknown')} ${coverage.unit} · ${coverage.complete ? t('completed') : t('unknown')}`));
+      right.append(detail('coverage', `${coverage.selected_units} ${t('of')} ${coverage.total_units ?? t('unknown')} ${t(coverage.unit)}${coverage.complete ? '' : ' · ' + t('partial')}`));
       for (const warning of coverage.warnings) right.append(node('p', warning));
     }
     right.append(detail('connectors', policy ? (policy.effective_policy.connector_allowlist.join(', ') || t('empty')) : t('unavailable')), detail('imagePolicy', policy?.effective_policy.image_safety_floor || t('unavailable')));
@@ -382,7 +404,7 @@
       for (const event of ledger.filter(e => e.model_dispatch)) {
         const call = event.model_dispatch;
         panel.append(detail('status', `${event.kind} · ${event.outcome} · ${event.timestamp}`), detail('model', call.provider_ref), detail('sourceBytes', call.byte_counts?.source_bytes ?? event.byte_counts.source_bytes), detail('payloadBytes', event.byte_counts.serialized_payload_bytes), detail('extractBytes', event.byte_counts.selected_utf8_bytes), detail('imageBytes', event.byte_counts.image_bytes));
-        for (const source of call.sources) { const file = files.find(f => f.id === source.file_id); if (file) { panel.append(button('preview', () => previewFile({ ...file, version_id: source.version_id })), detail('coverage', JSON.stringify(source.locator))); } }
+        for (const source of call.sources) { const file = files.find(f => f.id === source.file_id); if (file) { panel.append(button('preview', () => previewFile({ ...file, version_id: source.version_id })), detail('coverage', locator(source.locator))); } }
       }
     } else {
       panel.append(detail('files', total.known === false ? t('unknown') : total.files), detail('bytes', total.known === false ? t('unknown') : total.bytes));
@@ -431,7 +453,7 @@
   }
   function showFailure(error) {
     cleanup(); root?.remove(); document.getElementById('atlas-project-failure')?.remove();
-    const warning = node('aside', `${t('shellFailure')}: ${error.message}`, 'atlas-project-failure'); warning.id = 'atlas-project-failure'; warning.setAttribute('role', 'alert');
+    const warning = node('aside', '', 'atlas-project-failure'); errorNotice(warning, error, 'shellFailure'); warning.id = 'atlas-project-failure'; warning.setAttribute('role', 'alert');
     const link = node('a', t('fallback')); link.href = '/project-mode' + location.search; warning.append(link); document.body.append(warning);
   }
   async function mount() {
@@ -448,7 +470,7 @@
     const header = node('header'), title = node('strong', 'Atlas · ' + t('projects'));
     left = node('nav', null, 'atlas-project-left'); left.setAttribute('aria-label', t('projects'));
     center = node('main', null, 'atlas-project-center'); right = node('aside', null, 'atlas-project-right'); right.setAttribute('aria-label', t('context'));
-    notice = node('p', '', 'atlas-project-notice'); notice.setAttribute('role', 'status');
+    notice = node('div', '', 'atlas-project-notice'); notice.setAttribute('role', 'status');
     function drawer(panel, key) { return button(key, event => { const opened = !panel.classList.contains('is-open'); left.classList.remove('is-open'); right.classList.remove('is-open'); panel.classList.toggle('is-open', opened); event.currentTarget.setAttribute('aria-expanded', String(opened)); if (opened) panel.querySelector('button,select')?.focus(); }, 'atlas-project-drawer'); }
     header.append(drawer(left, 'projects'), title, drawer(right, 'context'), button('close', () => { cleanup(); root.remove(); scope = null; sessionStorage.removeItem(storageKey()); saveRoute(); }));
     root.append(header, left, center, right, notice); document.body.append(root);

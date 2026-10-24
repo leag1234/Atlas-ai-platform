@@ -51,7 +51,7 @@ class ProjectComposerTests(unittest.TestCase):
         self.calls.append((path, method, body))
         if path == "/project-mode":
             route.fulfill(
-                content_type="text/html",
+                content_type="text/html; charset=utf-8",
                 body='<html><body><script src="/locale.js"></script>'
                 '<script src="/client.js"></script></body></html>',
             )
@@ -61,7 +61,7 @@ class ProjectComposerTests(unittest.TestCase):
                 "project_locale.js" if path == "/locale.js" else "project_mode.js"
             )
             route.fulfill(
-                content_type="text/javascript",
+                content_type="text/javascript; charset=utf-8",
                 body=(
                     "window.atlasProjectProfile = " + json.dumps(self.profile()) + ";\n"
                     if path == "/client.js"
@@ -214,6 +214,33 @@ class ProjectComposerTests(unittest.TestCase):
         parsed = ChatRequest.model_validate(request)
         self.assertEqual(parsed.project_id, PROJECT)
 
+    def test_send_waits_for_canonical_transcript_finalization(self) -> None:
+        self.mount()
+        self.page.evaluate("""() => {
+          const original = window.fetch; let submitted = false;
+          window.fetch = async (...args) => {
+            if (String(args[0]) === '/v1/chat/completions') submitted = true;
+            const response = await original(...args);
+            if (submitted && String(args[0]).endsWith('/turns')) {
+              const json = response.json.bind(response);
+              response.json = async () => { const value = await json(); await new Promise(resolve => window.releaseTranscript = resolve); return value; };
+            }
+            return response;
+          };
+        }""")
+        self.page.get_by_role("textbox", name="Message", exact=True).fill(
+            "Summarize both sources"
+        )
+        self.page.locator("[data-send]").click()
+        self.page.wait_for_function("Boolean(window.releaseTranscript)")
+        self.assertFalse(self.page.locator("[data-send]").is_enabled())
+        self.page.evaluate("window.releaseTranscript()")
+        self.page.locator("[data-send]:not([disabled])").wait_for()
+        self.assertIn(
+            "Useful 59-site answer",
+            self.page.locator(".atlas-project-transcript").inner_text(),
+        )
+
     def test_work_reload_restores_selected_versions(self) -> None:
         self.mount("&session=" + SESSION)
         self.assertTrue(self.page.locator(".atlas-project-file input").is_checked())
@@ -327,6 +354,91 @@ class ProjectComposerTests(unittest.TestCase):
         self.page.locator('[data-ledger-tab="local"]').click()
         self.assertIn("Unknown", self.page.get_by_role("tabpanel").inner_text())
         self.assertNotIn("Files: 0", self.page.get_by_role("tabpanel").inner_text())
+
+    def test_readable_coverage_and_version_tooltips(self) -> None:
+        self.page.route(
+            "**/context",
+            lambda route: route.fulfill(
+                json={
+                    "passages": [
+                        {
+                            "version_id": VERSION,
+                            "locator": {"kind": "text", "start": 0, "end": 117},
+                        }
+                    ],
+                    "context_manifest": {
+                        "coverage": {
+                            "selected_units": 3,
+                            "total_units": 3,
+                            "unit": "pages",
+                            "complete": True,
+                            "warnings": [],
+                        }
+                    },
+                }
+            ),
+        )
+        self.mount()
+        panel = self.page.locator(".atlas-project-right")
+        panel.get_by_text("Coverage: 3 of 3 pages", exact=True).wait_for()
+        self.assertIn("3 of 3 pages", panel.inner_text())
+        self.assertIn("text, characters 0–117", panel.inner_text())
+        self.assertNotIn(VERSION, panel.inner_text())
+        self.assertEqual(panel.locator(f'[title="{VERSION}"]').count(), 2)
+        self.assertIn("Instructions version: v1", panel.inner_text())
+
+    def test_source_preview_names_file_and_locator(self) -> None:
+        source = BASE + "/sources/" + "a" * 64
+        self.turns = [
+            dict(
+                id=VERSION,
+                request_id=SESSION,
+                action="chat",
+                content_refs=[
+                    dict(kind="answer", text=f"59 sites [[1]({source}), [2]({source})]")
+                ],
+            )
+        ]
+        self.page.route(
+            "**/sources/*",
+            lambda route: route.fulfill(
+                json={
+                    "file_id": VERSION,
+                    "version_id": VERSION,
+                    "text": "59 sites",
+                    "locator": {"kind": "text", "start": 0, "end": 117},
+                }
+            ),
+        )
+        self.mount()
+        self.page.get_by_role("link", name="1", exact=True).click()
+        self.page.wait_for_function("window.preview != null")
+        preview = self.page.evaluate("window.preview")
+        self.assertEqual(preview["title"], "Notes.md · text, characters 0–117")
+        self.assertEqual(preview["content"], "59 sites")
+
+    def test_error_banner_is_localized_with_details_on_demand(self) -> None:
+        self.context.add_init_script("localStorage.setItem('locale','fr')")
+        self.page.route(
+            "**/v1/chat/completions",
+            lambda route: route.fulfill(
+                status=503,
+                json={"error": "provider_error", "message": "Diagnostic detail"},
+            ),
+        )
+        self.mount()
+        self.page.get_by_role("textbox", name="Message", exact=True).fill(
+            "Résume les fichiers"
+        )
+        self.page.locator("[data-send]").click()
+        notice = self.page.locator(".atlas-project-notice")
+        notice.get_by_text(
+            "Le service est temporairement indisponible.", exact=True
+        ).wait_for()
+        self.assertFalse(notice.locator("pre").is_visible())
+        notice.get_by_text("Détails", exact=True).click()
+        self.assertTrue(notice.locator("pre").is_visible())
+        self.assertIn("Diagnostic detail", notice.locator("pre").inner_text())
 
     def test_all_locale_labels_are_complete(self) -> None:
         self.mount()

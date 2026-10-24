@@ -28,6 +28,15 @@
   keys.push('unknownCost', 'reservedCost');
   const costLabels = {en:['Unknown usage reservation EUR','Active reservation EUR'],fr:['Réserve pour usage inconnu EUR','Réserve active EUR'],de:['Reservierung für unbekannte Nutzung EUR','Aktive Reservierung EUR'],es:['Reserva por uso desconocido EUR','Reserva activa EUR'],it:['Riserva per utilizzo sconosciuto EUR','Riserva attiva EUR']};
   for (const language of Object.keys(rows)) rows[language].push(...costLabels[language]);
+  keys.push('details','characters','text','page','pages','paragraph','paragraphs','sheet','table','row','column','of','units','accessFailure','limitFailure','serviceFailure');
+  const displayLabels = {
+    en:['Details','characters','text','page','pages','paragraph','paragraphs','sheet','table','row','column','of','units','Access is unavailable. Sign in or select another project.','This request reached a limit.','The service is temporarily unavailable.'],
+    fr:['Détails','caractères','texte','page','pages','paragraphe','paragraphes','feuille','tableau','ligne','colonne','sur','unités','Accès indisponible. Connectez-vous ou sélectionnez un autre projet.','Cette demande a atteint une limite.','Le service est temporairement indisponible.'],
+    de:['Details','Zeichen','Text','Seite','Seiten','Absatz','Absätze','Blatt','Tabelle','Zeile','Spalte','von','Einheiten','Zugriff nicht verfügbar. Anmelden oder anderes Projekt wählen.','Diese Anfrage hat ein Limit erreicht.','Der Dienst ist vorübergehend nicht verfügbar.'],
+    es:['Detalles','caracteres','texto','página','páginas','párrafo','párrafos','hoja','tabla','fila','columna','de','unidades','Acceso no disponible. Inicie sesión o seleccione otro proyecto.','Esta solicitud alcanzó un límite.','El servicio no está disponible temporalmente.'],
+    it:['Dettagli','caratteri','testo','pagina','pagine','paragrafo','paragrafi','foglio','tabella','riga','colonna','di','unità','Accesso non disponibile. Accedi o seleziona un altro progetto.','Questa richiesta ha raggiunto un limite.','Il servizio è temporaneamente non disponibile.']
+  };
+  for (const language of Object.keys(rows)) rows[language].push(...displayLabels[language]);
   window.atlasProjectLocale = { keys, rows, language() {
     return (localStorage.getItem('locale') || localStorage.getItem('atlas-ui-language') || document.documentElement.lang || navigator.language || 'en').replaceAll('"', '').split('-')[0];
   }, text(key) {
