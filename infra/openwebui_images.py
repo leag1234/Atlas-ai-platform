@@ -12,6 +12,7 @@ from packages.language import status_language
 from importlib import import_module
 import re
 import os
+from uuid import UUID
 from typing import Any
 
 import aiohttp
@@ -50,6 +51,15 @@ class Filter:
         __user__: dict[str, Any] | None = None,
         __event_emitter__: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
+        # The injected composer sets this opaque browser-local token.  Rejecting
+        # malformed values here means an arbitrary extra field never becomes a
+        # server cancellation handle.
+        token = body.get("cancel_id")
+        if token is not None:
+            try:
+                UUID(str(token))
+            except ValueError:
+                body.pop("cancel_id", None)
         if body.get("model") not in {"atlas-qwen", "atlas-glm", "atlas-deepseek"}:
             return body
         messages = []

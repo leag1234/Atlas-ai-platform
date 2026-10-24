@@ -77,7 +77,8 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 block for block in text.split("location ") if "proxy_pass " in block
             ]
             # The production front door has one more proxy location: the image route.
-            self.assertEqual(len(blocks), 4 if name == "atlas.indidea.org.conf" else 3)
+            # Both have the Stop cancel route.
+            self.assertEqual(len(blocks), 5 if name == "atlas.indidea.org.conf" else 4)
             for block in blocks:
                 self.assertIn("include /etc/nginx/atlas-proxy-secret.conf;", block)
                 self.assertIn('proxy_set_header X-Atlas-User "$remote_user@', block)
