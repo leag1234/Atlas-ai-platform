@@ -239,6 +239,7 @@ def reader_archive() -> str:
             archive.writestr(package + "/__init__.py", "")
         for name in (
             "packages/attachment_reader.py",
+            "packages/table_arithmetic.py",
             "packages/evidence.py",
             "services/orchestrator/content.py",
         ):
@@ -330,6 +331,8 @@ async def read_announced(
                     ocr_pages=ocr_pages,
                     ocr_cost_eur=float(ocr_cost),
                 )
+                if document.computed_tables:
+                    source["computed_tables"] = document.computed_tables
                 item.cout_eur += float(ocr_cost)
             except DocumentError as exc:
                 source["errors"] = [str(exc)]
@@ -531,6 +534,17 @@ _PASSWORD = {
 
 def _reason(errors: list[str], lang: str) -> str:
     text = " ".join(errors)
+    if "Legacy XLS computation is unavailable" in text:
+        return (
+            ": "
+            + {
+                "en": "legacy XLS is unsupported; export to XLSX or CSV",
+                "fr": "le format XLS ancien n'est pas pris en charge ; exportez en XLSX ou CSV",
+                "de": "das alte XLS-Format wird nicht unterstützt; exportieren Sie als XLSX oder CSV",
+                "es": "el formato XLS antiguo no es compatible; exporte a XLSX o CSV",
+                "it": "il vecchio formato XLS non è supportato; esportare in XLSX o CSV",
+            }[lang]
+        )
     if re.search(r"password-protected|encrypted pdf", text, re.I):
         return (" : " if lang == "fr" else ": ") + _PASSWORD[lang]
     match = re.search(

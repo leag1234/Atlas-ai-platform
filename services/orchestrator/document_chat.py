@@ -105,6 +105,8 @@ async def process_documents(request: ChatRequest, item: Interaction) -> None:
                 "ocr_cost_eur": float(ocr_cost),
             }
         )
+        if document.computed_tables:
+            sources[-1]["computed_tables"] = document.computed_tables
         item.documents.append(
             {
                 "filename": document.filename,
@@ -170,11 +172,22 @@ async def process_documents(request: ChatRequest, item: Interaction) -> None:
         # readable attachments. Successful legacy requests retain their cassette bytes.
         + (language_instruction(request.lang) if notice else "")
     )
+    from packages.table_arithmetic import arithmetic_instruction
+
+    instructions += arithmetic_instruction(sources)
     history: list[dict[str, object]] = [
         {"role": m.role, "content": m.text} for m in request.messages
     ]
     model_sources: list[dict[str, object]] = [
-        {"filename": str(source["filename"]), "text": str(source["text"])}
+        {
+            "filename": str(source["filename"]),
+            "text": str(source["text"]),
+            **(
+                {"computed_tables": source["computed_tables"]}
+                if "computed_tables" in source
+                else {}
+            ),
+        }
         for source in sources
     ]
     image_messages: list[dict[str, object]] = []

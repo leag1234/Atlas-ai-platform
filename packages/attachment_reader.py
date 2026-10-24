@@ -186,6 +186,10 @@ def extract_bytes(
                 )
                 break
             parts.append(f"[Page {index}]\n{text}")
+    elif extension == ".xls":
+        errors.append("Legacy XLS computation is unavailable; export to XLSX or CSV")
+    elif extension == ".ods":
+        parts = odf_parts(raw, extension)
     elif extension in {".docx", ".xlsx", ".pptx", ".potx"}:
         parts = office_parts(raw, extension)
         if extension in {".pptx", ".potx"}:
@@ -222,6 +226,11 @@ def read_attachment(path: Path, question: str) -> dict[str, object]:
             raw = source.read(MAX_BYTES + 1)
         result["size"] = len(raw)
         text, pages, errors = extract_bytes(raw, path.suffix.lower())
+        from packages.table_arithmetic import computed_tables
+
+        tables = computed_tables(raw, path.suffix.lower())
+        if tables:
+            result["computed_tables"] = tables
         result.update(pages=pages, errors=errors, extracted_characters=len(text))
         if len(text.encode()) > INLINE_BYTES:
             from services.orchestrator.content import hierarchical_summary
