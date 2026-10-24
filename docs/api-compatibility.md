@@ -22,8 +22,8 @@ MCP tools or files. Speech services use separate local endpoints.
 
 | Theme | Status | Atlas behavior |
 | --- | --- | --- |
-| Chat completions | Partial | Both expose `POST /v1/chat/completions`. Developer requests accept text, system/developer/user/assistant/tool messages, one choice and selected generation options. Unknown developer fields are rejected; the chat adapter has a different schema. |
-| Streaming | Supported | Chat Completions uses SSE text/tool deltas and `[DONE]`. Developer clients can request usage with `stream_options.include_usage`. Handle error frames after streaming starts. |
+| Chat completions | Partial | Both expose `POST /v1/chat/completions`. Developer requests accept text, system/developer/user/assistant/tool messages, one choice (`n` omitted or `n=1`) and selected generation options. Unknown developer fields are rejected; the chat adapter has a different schema. |
+| Streaming | Supported | Chat Completions uses SSE text/tool deltas and `[DONE]`. Developer clients can request usage with `stream_options.include_usage`: ordinary chunks carry `usage: null`, followed by a chunk with empty `choices` and total usage. Handle error frames after streaming starts. |
 | Models list | Supported | `GET /v1/models`: developer API lists `atlas-code`; chat lists `atlas-qwen`, `atlas-glm`, `atlas-deepseek`. These are routing aliases, not a provider catalog. |
 | Tool calls | Partial | Developer API accepts function definitions, tool-call history, client tool results and `auto`/`none`/`required`/named selection; supports parallel-call control. Clients execute functions. Hosted OpenAI tools are absent; the chat assistant runs its own configured tools. |
 | Images | Partial | Chat accepts image content and provides Atlas-specific image upload/display/generation flows. Developer input is text only. No OpenAI `/v1/images/generations`, edits or variations endpoint. |
@@ -31,8 +31,9 @@ MCP tools or files. Speech services use separate local endpoints.
 | Embeddings | Not supported | No public OpenAI `/v1/embeddings` endpoint. Retrieval uses an internal CPU gateway with a different `/embeddings` contract. |
 | Audio | Partial | Optional services expose `/v1/audio/speech` (Piper, WAV/MP3) and `/v1/audio/transcriptions` (local Whisper, JSON/text). These are separate from the developer API. No Realtime API. |
 | Authentication and keys | Supported | Developer API accepts `Authorization: Bearer` or `x-api-key`; if both are present they must match. Keys can be revoked, are stored as hashes and have individual daily quotas. |
-| Limits and errors | Partial | Atlas enforces its own request, context, cost and time limits. Developer errors use `error.type` and `error.message`; error codes and headers are not a complete OpenAI match. |
-| Responses | Partial | `POST /v1/responses` supports text/functions, JSON and streaming. No stored responses, `previous_response_id`, hosted tools or multimodal input. |
+| Limits and errors | Partial | Atlas enforces its own request, context, cost and time limits. Developer errors, including unsupported routes, use `error.type` and `error.message`; error codes and headers are not a complete OpenAI match. Daily quota errors do not include `Retry-After`. |
+| Structured JSON output | Not supported | Chat `response_format` (`json_object` or `json_schema`) and Responses `text.format` are rejected with HTTP 400. A JSON response envelope does not imply JSON-mode or schema-constrained model output. |
+| Responses | Partial | `POST /v1/responses` supports text/functions, non-streamed JSON response envelopes and streaming. No stored responses, `previous_response_id`, hosted tools or multimodal input. |
 
 ## Start the developer API
 
@@ -54,7 +55,10 @@ make serve-devapi
 
 The key file must not already exist; it is created with mode 600. Deliver it
 privately and configure the client to read it without logging its contents.
-Tunnel port 8030 for remote clients and use model `atlas-code`. A minimal request
+Tunnel port 8030 for remote clients and use model `atlas-code`. To select a free
+loopback port, export the same provider settings and database path, then run
+`PYTHONPATH=.:services/model-gateway python -m uvicorn services.orchestrator.devapi:app --host 127.0.0.1 --port <free-port> --no-access-log`;
+`make serve-devapi` currently fixes the port at 8030. A minimal request
 body for `/v1/chat/completions` is:
 
 ```json
@@ -86,12 +90,17 @@ There is one provider attempt and a 120-second request deadline.
 | --- | --- |
 | 400 | Invalid/unsupported input, body/context limit or cost reservation too large. |
 | 401 | Missing, invalid, conflicting or revoked credentials. |
-| 429 | Developer daily quota exhausted. |
+| 404 | Unsupported endpoint; JSON `error.type` and `error.message`, including embeddings, files and image generation. |
+| 429 | Developer daily request or monetary quota exhausted; no `Retry-After` header. |
 | 502 | Provider failure in a non-streamed inference response. |
 | 503 | Request setup unavailable, including missing configuration or setup timeout. |
 
 For a streamed failure, inspect the error event even if HTTP headers already say
-200. A length-limited answer or tool call is incomplete; do not execute an
+200. The official Python and Node clients raise `APIError` for Chat Completions
+stream errors. In the tested clients (Python 2.54.0, Node 7.43.0), a Responses
+stream error is yielded as `ResponseErrorEvent` by Python and raised as `APIError`
+by Node. Applications must handle both their SDK exceptions and Responses error
+events; a stream ending without a completed response is not success. A length-limited answer or tool call is incomplete; do not execute an
 unfinished function. Quotas reset by UTC day and persist in SQLite. If usage is
 missing or a request is cancelled, the reservation remains charged rather than
 being silently refunded. Preserve the database across restarts.
