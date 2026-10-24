@@ -48,10 +48,11 @@ engines:
   - name: bing
     disabled: false
   - name: startpage
-    disabled: false
-    inactive: false
+    # The pinned engine declares Startpage inactive: it requires an Anubis
+    # proof-of-work CAPTCHA and returned no usable results in the local matrix.
+    disabled: true
 
 outgoing:
-  request_timeout: 3.0
-  max_request_timeout: 4.0
+  request_timeout: 7.0
+  max_request_timeout: 8.0
   retries: 0
