@@ -32,7 +32,7 @@ MCP tools or files. Speech services use separate local endpoints.
 | Audio | Partial | Optional services expose `/v1/audio/speech` (Piper, WAV/MP3) and `/v1/audio/transcriptions` (local Whisper, JSON/text). These are separate from the developer API. No Realtime API. |
 | Authentication and keys | Supported | Developer API accepts `Authorization: Bearer` or `x-api-key`; if both are present they must match. Keys can be revoked, are stored as hashes and have individual daily quotas. |
 | Limits and errors | Partial | Atlas enforces its own request, context, cost and time limits. Developer errors, including unsupported routes, use `error.type` and `error.message`; error codes and headers are not a complete OpenAI match. Daily quota errors do not include `Retry-After`. |
-| Structured JSON output | Not supported | Chat `response_format` (`json_object` or `json_schema`) and Responses `text.format` are rejected with HTTP 400. A JSON response envelope does not imply JSON-mode or schema-constrained model output. |
+| Structured JSON output | Partial | Developer Chat `response_format` and Responses `text.format` accept `text`, `json_object` and `json_schema`. JSON output is validated server-side; supported schema subset, retries and stream failure behavior are described below. |
 | Responses | Partial | `POST /v1/responses` supports text/functions, non-streamed JSON response envelopes and streaming. No stored responses, `previous_response_id`, hosted tools or multimodal input. |
 
 ## Start the developer API
@@ -77,6 +77,63 @@ The latter reports only the current key's daily counters. Revoke a key locally:
 python -m services.orchestrator.dev_auth revoke alice
 ```
 
+## Developer structured output
+
+Chat Completions accepts `response_format: {"type":"text"}` (ordinary text),
+`{"type":"json_object"}` (a JSON object), or a named schema:
+
+```json
+{"type":"json_schema","json_schema":{"name":"value","schema":{"type":"object","properties":{"value":{"type":"integer"}},"required":["value"],"additionalProperties":false},"strict":true}}
+```
+
+For Responses, use `text: {"format": ...}`. The `json_schema` format is flat:
+`{"type":"json_schema","name":"value","schema":{...},"strict":true}`;
+do not nest another `json_schema` object. Both APIs require a name (1–64 ASCII
+letters, digits, underscores or dashes) and an object-valued schema. `strict`
+accepts a Boolean and defaults to false. Both strict modes are independently
+validated against the supplied schema. Descriptions are optional.
+
+Atlas enforces the JSON-mode context rule: `json_object` requires `json`
+(case-insensitive substring) in at least one normalized message's text, including
+system/developer instructions. Tool definitions do not count. Explicit `text`
+does not require JSON or trigger schema validation. See the
+[OpenAI structured-output guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+The repository has no `jsonschema` dependency. Its supported subset is: primitive
+JSON types (including nullable type lists), `properties`, `required`, Boolean or
+schema-valued `additionalProperties`, `items`, `anyOf`, scalar `enum`/`const`,
+`minimum`/`maximum`, `minLength`/`maxLength`, `minItems`/`maxItems`, and nonrecursive
+local `#/$defs/<name>` references. `title`, `description` and `default` are
+annotations. Unsupported keywords (including `pattern`, `format`, `allOf`,
+`oneOf`, `multipleOf`, external and recursive references) return 400 before
+provider I/O. Schema checking is bounded to depth 16 and 512 visited schema nodes;
+output validation to depth 32 and 10,000 visited value/schema pairs. This is a
+subset, not full JSON Schema or every OpenAI structured-output restriction.
+
+The legacy Scaleway code route was live-probed on 2026-10-24 with a named schema;
+it returned the required object. The requested format is forwarded unchanged
+apart from defaults, and Atlas independently parses and validates the final text.
+Markdown fences, malformed/nonfinite JSON, and schema mismatches never count as
+successful output. A non-streamed failure gets one corrective attempt containing
+the bounded validation error, within the original deadline/reservation. If that
+also fails, HTTP 502 carries `error.type="invalid_response_format"` and a bounded
+validation diagnostic. Provider transport failures are not retried by this feature.
+
+Streams emit deltas as they arrive but defer terminal success and usage until
+validation. Once content has been emitted, it cannot be replaced: an invalid
+answer ends with an error frame, without retry or a successful finish/completed
+event. Chat emits `{"error":{"type":"invalid_response_format","message":...}}`
+and one `[DONE]`; Responses emits `type="error"`, `code="invalid_response_format"`
+and no `response.completed`. Clients must treat accumulated text as provisional.
+An empty stream can retry once before emitting content. `tool_choice="none"`
+omits tool definitions and selection options upstream, checks for nonempty text,
+and uses the same bounded recovery instead of returning a null successful answer.
+
+The developer transport still reads only `SCW_GENERATIVE_BASE_URL` and
+`SCW_GENERATIVE_API_KEY`. Quick-start Hetzner/Mistral/OVHcloud presets do not wire
+the developer endpoint/key; their native JSON behavior was not probed here and
+is not claimed. Keep preset variables unset for the verified legacy route.
+
 ## Developer limits and error handling
 
 Requests have a 1 MiB body limit, up to 1,024 messages and 64 function definitions.
@@ -84,7 +141,11 @@ Output defaults to 512 tokens, with a maximum of 8,192; `max_completion_tokens`
 is accepted as an alias for `max_tokens`. Only `none` and `low` reasoning effort
 are accepted. Input is conservatively budgeted from UTF-8 bytes; the EUR 0.05
 per-request ceiling can reject a request smaller than the model context window.
-There is one provider attempt and a 120-second request deadline.
+There is a 120-second request deadline. JSON formats and `tool_choice="none"`
+reserve up to two attempts within the same EUR 0.05 ceiling and daily reservation.
+Other requests retain one attempt. Both attempts count toward reported tokens and cost;
+an unknown attempt retains the full reservation. Larger JSON requests can therefore
+reach the cost limit sooner than ordinary text requests.
 
 | HTTP status | Meaning |
 | --- | --- |
@@ -92,7 +153,7 @@ There is one provider attempt and a 120-second request deadline.
 | 401 | Missing, invalid, conflicting or revoked credentials. |
 | 404 | Unsupported endpoint; JSON `error.type` and `error.message`, including embeddings, files and image generation. |
 | 429 | Developer daily request or monetary quota exhausted; no `Retry-After` header. |
-| 502 | Provider failure in a non-streamed inference response. |
+| 502 | Provider failure or invalid final JSON/schema output in a non-streamed inference response. |
 | 503 | Request setup unavailable, including missing configuration or setup timeout. |
 
 For a streamed failure, inspect the error event even if HTTP headers already say
