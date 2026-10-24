@@ -3,13 +3,25 @@
 from collections.abc import Awaitable, Callable
 import os
 from pathlib import Path
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.exceptions import HTTPException
 
 from services.orchestrator.dev_auth import Store
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+MODEL_CREATED = int(time.time())
+
+
+@app.exception_handler(HTTPException)
+async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(
+        {"error": {"type": "invalid_request_error", "message": str(exc.detail)}},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 @app.middleware("http")
@@ -45,7 +57,14 @@ async def authenticate(
 async def models() -> dict[str, object]:
     return {
         "object": "list",
-        "data": [{"id": "atlas-code", "object": "model", "owned_by": "atlas"}],
+        "data": [
+            {
+                "id": "atlas-code",
+                "object": "model",
+                "created": MODEL_CREATED,
+                "owned_by": "atlas",
+            }
+        ],
     }
 
 

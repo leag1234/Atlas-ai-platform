@@ -5,7 +5,7 @@ from packages.limits import LimitError
 import json
 import time
 from typing import Any, Literal
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from packages.dev_request import Request, Strict
 
 
@@ -15,6 +15,7 @@ class StreamOptions(Strict):
 
 class ChatInput(Request):
     model: Literal["atlas-code"]
+    n: int = Field(default=1, ge=1, le=1, exclude=True)
     stream: bool = False
     stream_options: StreamOptions = StreamOptions()
 

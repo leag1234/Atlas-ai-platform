@@ -92,13 +92,17 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
                 if len(body) > 1048576:
                     raise LimitError("body_limit", len(body), 1048576, "bytes")
         raw = json.loads(body)
-        parsed = (
-            responses(raw)
-            if protocol == "responses"
-            else messages(raw)
-            if protocol == "messages"
-            else ChatInput.model_validate(raw)
-        )
+        try:
+            parsed = (
+                responses(raw)
+                if protocol == "responses"
+                else messages(raw)
+                if protocol == "messages"
+                else ChatInput.model_validate(raw)
+            )
+        except KeyError:
+            # Missing client fields are not missing provider configuration.
+            return error("invalid_request", 400)
         plan = gateway.prepare(parsed)
         store, developer = request.state.store, request.state.developer
         request_id = store.reserve(developer, plan.reserved)
@@ -152,6 +156,8 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
                             + "\n\n"
                         )
                 elif chunk.get("choices") != [] or parsed.stream_options.include_usage:
+                    if parsed.stream_options.include_usage and "error" not in chunk:
+                        chunk.setdefault("usage", None)
                     yield "data: " + json.dumps(chunk) + "\n\n"
         if wire is None:
             yield "data: [DONE]\n\n"
