@@ -180,8 +180,11 @@ def loopback_html_injector(
                             + error
                         )
                         return
-                    if target_path.startswith("/api/atlas/") or target_path.startswith(
-                        "/internal/atlas/"
+                    if target_path.startswith(
+                        ("/api/atlas/", "/internal/atlas/", "/project-mode")
+                    ) or (
+                        project_mode()
+                        and target_path.split("?", 1)[0] == "/v1/chat/completions"
                     ):
                         # The BFF verifies credentials and Origin against the original
                         # browser Host. No private credential reaches retrieval's public routes.
