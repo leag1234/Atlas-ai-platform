@@ -39,6 +39,7 @@ class Wire:
             "tool_choice": self.request.get("tool_choice", "auto"),
             "parallel_tool_calls": self.output.request.parallel_tool_calls,
             "store": False,
+            "text": self.request.get("text", {"format": {"type": "text"}}),
             "usage": None
             if usage is None
             else {
@@ -64,7 +65,14 @@ class Wire:
         if "error" in chunk:
             return [
                 self.event(
-                    "error", code="server_error", message="provider_error", param=None
+                    "error",
+                    code=chunk["error"].get("type", "server_error")
+                    if chunk["error"].get("type") == "invalid_response_format"
+                    else "server_error",
+                    message=chunk["error"].get("message", "invalid_response_format")
+                    if chunk["error"].get("type") == "invalid_response_format"
+                    else "provider_error",
+                    param=None,
                 )
             ]
         for choice in chunk["choices"]:

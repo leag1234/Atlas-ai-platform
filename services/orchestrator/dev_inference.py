@@ -28,6 +28,116 @@ def error(code: str, status: int, detail: str = "") -> JSONResponse:
     )
 
 
+async def validated_drive(
+    store: Store,
+    developer: str,
+    request_id: str,
+    plan: gateway.Plan,
+    output: Output,
+    deadline: float,
+) -> AsyncGenerator[dict[str, Any], None]:
+    request = output.request
+    streaming = isinstance(request, ChatInput) and request.stream
+    current, charged, incoming, outgoing = plan, 0, 0, 0
+    settled, known = False, False
+    attempts, started = 0, monotonic()
+    try:
+        async with asyncio.timeout(max(0, deadline - monotonic())):
+            for attempt in range(2):
+                if deadline <= monotonic():
+                    raise TimeoutError("timeout")
+                attempts += 1
+                known = False
+                pending: list[dict[str, Any]] = []
+                candidate = Output(request_id, request)
+                emitted = False
+                async with aclosing(gateway.events(current)) as frames:
+                    async for frame in frames:
+                        chunk = candidate.feed(frame)
+                        if "usage" in frame:
+                            charged += frame["cost_micro_eur"]
+                            incoming += frame["usage"]["prompt_tokens"]
+                            outgoing += frame["usage"]["completion_tokens"]
+                            known = True
+                            if charged > plan.reserved:
+                                raise LimitError(
+                                    "budget_exceeded",
+                                    charged,
+                                    plan.reserved,
+                                    "microEUR",
+                                )
+                        if streaming and chunk.get("choices"):
+                            # Terminal success must wait for independent validation.
+                            choice = chunk["choices"][0]
+                            reason = choice["finish_reason"]
+                            if reason is not None:
+                                pending.append(
+                                    dict(chunk, choices=[dict(choice, delta={})])
+                                )
+                                choice["finish_reason"] = None
+                            if choice["delta"]:
+                                output.text, output.calls = (
+                                    candidate.text,
+                                    candidate.calls,
+                                )
+                                emitted |= bool(
+                                    choice["delta"].get("content")
+                                    or choice["delta"].get("tool_calls")
+                                )
+                                yield chunk
+                        else:
+                            pending.append(chunk)
+                problem = candidate.validation_error()
+                if problem is None:
+                    output.text, output.calls = candidate.text, candidate.calls
+                    output.reason = candidate.reason
+                    output.usage = {
+                        "prompt_tokens": incoming,
+                        "completion_tokens": outgoing,
+                        "total_tokens": incoming + outgoing,
+                    }
+                    for chunk in pending:
+                        if "usage" in chunk:
+                            chunk["usage"] = output.usage
+                    store.finish(request_id, charged, incoming, outgoing)
+                    settled = True
+                    for chunk in pending:
+                        yield chunk
+                    return
+                if attempt or emitted:
+                    store.finish(request_id, charged, incoming, outgoing)
+                    settled = True
+                    yield {
+                        "error": {
+                            "type": "invalid_response_format",
+                            "message": "Output validation failed: " + problem,
+                        }
+                    }
+                    return
+                current = gateway.retry(plan, problem, plan.reserved - charged)
+    except LimitError as exc:
+        yield {"error": {"type": exc.code, "message": exc.detail}}
+    except (ValueError, RuntimeError, TimeoutError, OSError, KeyError, TypeError):
+        yield {"error": {"type": "provider_error", "message": "provider_error"}}
+    finally:
+        if not settled:
+            store.finish(request_id, charged if known else None, incoming, outgoing)
+        logging.getLogger("uvicorn.error").info(
+            json.dumps(
+                {
+                    "event": "devapi_request",
+                    "request": request_id,
+                    "developer": developer,
+                    "duration_ms": round((monotonic() - started) * 1000),
+                    "attempts": attempts,
+                    "charged_micro_eur": charged if known else None,
+                    "reserved_micro_eur": plan.reserved,
+                    "usage": output.usage,
+                }
+            )
+        )
+
+
 async def drive(
     store: Store,
     developer: str,
@@ -36,6 +146,13 @@ async def drive(
     output: Output,
     deadline: float,
 ) -> AsyncGenerator[dict[str, Any], None]:
+    if output.request.validate_output:
+        async with aclosing(
+            validated_drive(store, developer, request_id, plan, output, deadline)
+        ) as frames:
+            async for chunk in frames:
+                yield chunk
+        return
     settled, charged, started = False, None, monotonic()
     try:
         if deadline <= monotonic():
@@ -114,7 +231,13 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
         return error("quota_exceeded", 429)
     except PermissionError:
         return error("unauthorized", 401)
-    except (ValueError, TypeError, AttributeError, ValidationError) as exc:
+    except (
+        ValueError,
+        TypeError,
+        AttributeError,
+        RecursionError,
+        ValidationError,
+    ) as exc:
         code = (
             str(exc)
             if str(exc) in {"cost_budget", "context_exceeded"}
@@ -173,7 +296,7 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
     ) as frames:
         async for frame in frames:
             if "error" in frame:
-                return error("provider_error", 502)
+                return error(frame["error"]["type"], 502, frame["error"]["message"])
             if wire:
                 try:
                     wire.feed(frame)

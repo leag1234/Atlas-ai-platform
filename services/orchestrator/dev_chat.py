@@ -7,6 +7,7 @@ import time
 from typing import Any, Literal
 from pydantic import Field, model_validator
 from packages.dev_request import Request, Strict
+from packages.dev_format import validate_json
 
 
 class StreamOptions(Strict):
@@ -178,6 +179,16 @@ class Output:
                 {"index": 0, "delta": clean, "finish_reason": self.reason}
             )
         return chunk
+
+    def validation_error(self) -> str | None:
+        fmt = self.request.response_format
+        if fmt.type != "text":
+            return validate_json(
+                self.text, fmt.json_schema.schema_ if fmt.json_schema else None
+            )
+        if self.request.tool_choice == "none" and not self.text.strip():
+            return "empty_text"
+        return None
 
     def result(self) -> dict[str, Any]:
         if self.reason is None or self.usage is None:
