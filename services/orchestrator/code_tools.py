@@ -6,10 +6,13 @@ import os
 import re
 import time
 import threading
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from services.orchestrator.work_tool_selection import WorkToolSelection
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from services.orchestrator.code_workspace import Audit, Workspace, redact
 from services.orchestrator.loop import Call, Message, Reservation
@@ -310,6 +313,7 @@ class WorkTools(CodeTools):
         self.workspace, self.execution, self.sink = workspace, execution, sink
         self.test_evidence = []
         self.deliverables: list[dict[str, Any]] = []
+        self.selection: WorkToolSelection | None = None
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
@@ -358,6 +362,25 @@ class WorkTools(CodeTools):
         await self.execution.check()
         from services.orchestrator import project_document_tools
 
+        if self.selection is not None and call.name not in self.selection.names:
+            return {
+                "error": "tool_not_selected",
+                "group": self.selection.group,
+                "next_step": "Use switch_tool_group to select the required tools",
+            }
+        if call.name == "switch_tool_group" and self.selection is not None:
+            try:
+                result = self.selection.switch(call.arguments)
+            except ValueError:
+                result = {"error": "invalid_tool_group"}
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return result
         if call.name in project_document_tools.SCHEMAS:
             from services.retrieval.project_identity import ProjectError
 
@@ -382,7 +405,23 @@ class WorkTools(CodeTools):
             )
             return dict(trust="untrusted", **result)
         if call.name == "request_approval":
-            args = ScopedApproval.model_validate_json(call.arguments).model_dump()
+            try:
+                args = ScopedApproval.model_validate_json(call.arguments).model_dump()
+            except ValidationError as exc:
+                # Validation is a recoverable tool result, as for CodeTools and
+                # document tools. Never approve, coerce, or echo invalid inputs.
+                result = {
+                    "error": "invalid_tool_arguments",
+                    "details": exc.errors(include_input=False, include_url=False),
+                }
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed",
+                    output=result,
+                )
+                return result
             approval = await self.execution.broker.call(
                 "approvals",
                 dict(

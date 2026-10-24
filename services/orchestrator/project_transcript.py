@@ -383,19 +383,11 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             if result.reason:
                 item.erreurs.append(result.reason)
             answer, _ = consolidated(result.text, request.user_text)
-            import re
+            from services.orchestrator.project_citations import render
 
-            citations = {p["chunk_id"]: p for p in context["passages"]}
-            for chunk in set(re.findall(r"\b[a-f0-9]{64}\b", answer)):
-                if chunk not in citations:
-                    raise ProjectError(
-                        422, "invalid_request", "Unverified project citation"
-                    )
-                answer = answer.replace(
-                    chunk,
-                    f"[Source](/api/atlas/orgs/{request.org_id}/projects/{request.project_id}/sources/{chunk})",
-                )
-            item.reponse = answer
+            item.reponse = render(
+                answer, context["passages"], request.org_id, request.project_id
+            )
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
         terminal = "completed" if item.state == "done" else "failed"
     except asyncio.CancelledError:

@@ -128,6 +128,17 @@ def response(
 
             if not text and not final:
                 return
+            # Scoped processing buffers and validates the canonical answer before
+            # persistence. Its source authority is unrelated to legacy project IDs.
+            if payload.org_id:
+                if final:
+                    await queue.put(
+                        {
+                            "delta": {"content": text},
+                            "atlas": {"turn": turn, "phase": "generating"},
+                        }
+                    )
+                return
             pre_rendered = final and text == item.reponse
             temporary = Interaction()
             from services.orchestrator.source_truth import (
