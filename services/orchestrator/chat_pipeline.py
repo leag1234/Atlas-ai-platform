@@ -1272,9 +1272,13 @@ async def _process(
             }
         )
     if attachment_sources:
-        file_context = (file_context if deliver_files else "") + Path(
-            "prompts/documents.txt"
-        ).read_text()
+        from packages.table_arithmetic import arithmetic_instruction
+
+        file_context = (
+            (file_context if deliver_files else "")
+            + Path("prompts/documents.txt").read_text()
+            + arithmetic_instruction(attachment_sources)
+        )
         attachment_history.append(
             {
                 "role": "user",

@@ -2,11 +2,12 @@
 
 import base64
 import binascii
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import io
 from pathlib import Path
 import zipfile
 from xml.etree.ElementTree import ParseError
+from typing import Any
 
 from docx import Document
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,6 +43,7 @@ class Extracted:
     pages: int
     text: str
     errors: tuple[str, ...] = ()
+    computed_tables: list[dict[str, Any]] = field(default_factory=list)
 
 
 def extract_document(attachment: Attachment) -> Extracted:
@@ -64,7 +66,11 @@ def extract_document(attachment: Attachment) -> Extracted:
     errors: list[str] = []
     pages = characters = 0
     try:
-        if extension == ".pdf":
+        if extension == ".xls":
+            raise DocumentError(
+                "Legacy XLS computation is unavailable; export to XLSX or CSV"
+            )
+        elif extension == ".pdf":
             from packages.attachment_reader import extract_bytes
 
             text, pages, errors = extract_bytes(raw, extension)
@@ -134,4 +140,13 @@ def extract_document(attachment: Attachment) -> Extracted:
         )
     if len(text) > MAX_TEXT:
         raise DocumentError(f"Extracted characters: {len(text)}; limit {MAX_TEXT}")
-    return Extracted(attachment.filename, len(raw), pages, text, tuple(errors))
+    from packages.table_arithmetic import computed_tables
+
+    return Extracted(
+        attachment.filename,
+        len(raw),
+        pages,
+        text,
+        tuple(errors),
+        computed_tables(raw, extension),
+    )

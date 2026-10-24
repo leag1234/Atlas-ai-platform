@@ -42,6 +42,7 @@ def main() -> None:
     }
     report: dict[str, Any] = {}
     original_post = GatewayModel.post
+    original_tool = ChatTools.execute
     with (
         tempfile.TemporaryDirectory() as root,
         patch.dict(
@@ -101,6 +102,14 @@ def main() -> None:
                         for first, second in zip(kinds, kinds[1:])
                         if first == "stream" and second == "complete"
                     )
+                    nested_publications = {
+                        second["request"]["call"]["id"]
+                        for first, second in zip(
+                            case["exchanges"], case["exchanges"][1:]
+                        )
+                        if first["request"].get("kind") == "terminal_publish"
+                        and second["request"].get("kind") == "tool"
+                    }
                     stream_position = tool_position = complete_position = (
                         terminal_position
                     ) = 0
@@ -234,6 +243,11 @@ def main() -> None:
                             row["request"]["call"], old_id, current_id
                         ), "unrecorded_m24_tool_call"
                         recorded = substitute(row["response"], old_id, current_id)
+                        output: Message = recorded["output"]
+                        if row["request"]["call"]["id"] in nested_publications:
+                            # Replay the nested I/O through publish's exact request
+                            # checks; the outer tool record alone cannot consume it.
+                            output = await original_tool(runtime, call, timeout)
                         assert runtime.terminal is not None
                         runtime.terminal.commands = recorded["commands"]
                         runtime.terminal.failed_commands = recorded["failed_commands"]
@@ -243,7 +257,6 @@ def main() -> None:
                         runtime.item.file_strategies = recorded["strategies"]
                         runtime.item.documents = recorded["documents"]
                         runtime.item.erreurs = recorded["errors"]
-                        output: Message = recorded["output"]
                         # This seam bypasses ChatTools.execute; restore provenance
                         # only from the actual, exactly matched recorded tool result.
                         data = output.get("data")
