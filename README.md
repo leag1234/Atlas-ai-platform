@@ -90,6 +90,8 @@ model downloads and GPU provisioning:
 | **Image understanding**: describe and analyse a photo. | **Documents**: summarise a PDF and read it in the side view. |
 | ![Diagram rendered in the answer](assets/screenshots/5-diagram.png) | ![QR codes generated locally](assets/screenshots/6-qr-codes.png) |
 | **Diagrams**: explanations with rendered flowcharts. | **Tools**: QR codes and other outputs generated locally. |
+| ![Spreadsheet totals by region](assets/screenshots/7-spreadsheet.png) | ![Generated watercolor image](assets/screenshots/8-image-generation.png) |
+| **Spreadsheets**: totals and trends computed from the file. | **Image generation**: on a GPU rented by the hour (full installation). |
 
 ## Next
 
