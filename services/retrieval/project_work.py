@@ -53,7 +53,19 @@ class Work:
         ).fetchone()
 
     def get(self, identifier: str) -> dict[str, Any]:
-        value = self.files.get("work_session", identifier)
+        try:
+            value = self.files.get("work_session", identifier)
+        except ProjectError as exc:
+            if exc.status != 404:
+                raise
+            aliases = self.db.execute(
+                "SELECT id FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='work_session' AND data->>'legacy_session_id'=%s",
+                (self.org, self.project, identifier),
+            ).fetchall()
+            if len(aliases) != 1:
+                raise ProjectError(404, "not_found") from None
+            value = self.files.get("work_session", str(aliases[0]["id"]))
+        identifier = value["id"]
         row = self.lease(identifier)
         value["lease"] = (
             None

@@ -173,10 +173,15 @@ async def chat(request: Request) -> Response:
                                 and p.get("type") == "text"
                                 and isinstance(p.get("text"), str)
                             )[:32000]
+                from services.orchestrator.project_transcript import authenticate_chat
+
+                scoped_subject, scoped_key = await authenticate_chat(request, raw)
                 raw, item.uploads, item.uploaded_images = await asyncio.to_thread(
                     prepare_uploads, raw
                 )
                 payload = ChatRequest.model_validate(raw)
+                payload._project_subject = scoped_subject
+                payload._transcript_key = scoped_key
             except UploadError as exc:
                 status, code, detail = 413, exc.code, str(exc)
             except ValidationError as exc:
@@ -207,7 +212,7 @@ async def chat(request: Request) -> Response:
             reserve = Decimal("0.30" if payload.has_attachments else "0.10")
             if payload.code_mode and project_mode():
                 return public_error(ProjectError(409, "feature_not_available"))
-            if payload.code_mode:
+            if payload.code_mode or payload.project_action == "work":
                 from services.orchestrator.code_mode import settings
 
                 reserve = settings().cost
@@ -244,6 +249,8 @@ async def chat(request: Request) -> Response:
                 )
                 code = "cost_budget" if status == 429 else "request_stopped"
                 detail = item.reponse
+    except ProjectError as exc:
+        return public_error(exc)
     except asyncio.CancelledError:
         status, code = 499, "cancelled"
     except GatewayError as exc:

@@ -6,6 +6,7 @@ from packages.limits import LimitError
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
 import json
+from collections.abc import Awaitable, Callable
 from packages.tool_history import final_messages
 import re
 from decimal import Decimal
@@ -119,6 +120,7 @@ class GatewayModel:
         self.token_split_estimated = False
         self.reasoning_retried = False
         self.cost_ceiling: Decimal | None = None
+        self.dispatch_hook: Callable[[str, Message], Awaitable[None]] | None = None
 
     def configure_quality(
         self,
@@ -476,6 +478,8 @@ class GatewayModel:
             payload.update(local_enabled=self.local_enabled, observe=True)
         reserved = self.estimate(messages)
         started = monotonic()
+        if self.dispatch_hook:
+            await self.dispatch_hook("intent", payload)
         try:
             if self.sink is None:
                 wire = await self.post(self.url + "/agent/complete", payload, timeout)
@@ -516,6 +520,8 @@ class GatewayModel:
                 if tail:
                     await sink({"delta": {"content": tail}})
             result = WireTurn.model_validate(wire)
+            if self.dispatch_hook:
+                await self.dispatch_hook("acknowledged", wire)
             self.provider_retries += result.provider_retries
             if result.text:
                 cleaned = clean_answer(result.text, allow_empty=True)
@@ -558,6 +564,10 @@ class GatewayModel:
                         "tools": [c.name for c in result.calls],
                     }
                 )
+        except BaseException:
+            if self.dispatch_hook:
+                await self.dispatch_hook("unknown", {})
+            raise
         finally:
             self.generation_ms += (monotonic() - started) * 1000
         if self.observing and result.observation is None:

@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import ANY, AsyncMock, patch
 
 from decimal import Decimal
@@ -224,3 +224,293 @@ class ProjectDocumentDispatchTests(unittest.TestCase):
         buffer = io.BytesIO()
         writer.write(buffer)
         return buffer.getvalue()
+
+
+class ScopedProjectDispatchTests(unittest.IsolatedAsyncioTestCase):
+    def state(self, action: str = "chat") -> dict[str, Any]:
+        from uuid import uuid4
+
+        root = Path("contracts/examples/project-mode")
+        value: dict[str, Any] = json.loads(
+            (root / "TranscriptState.valid.json").read_text()
+        )
+        value["turn"].update(
+            id=str(uuid4()),
+            request_id=str(uuid4()),
+            conversation_id=CONVERSATION,
+            action=action,
+            state="running",
+            content_refs=[],
+        )
+        value["turn"]["id"] = value["turn"]["request_id"]
+        value["turn"]["usage"]["reserved_eur"] = 0.1
+        value["context"].update(
+            instructions_text="Use the selected reports.", facts=[], history=[]
+        )
+        return value
+
+    def request(self, action: Literal["chat", "work"] = "chat") -> ChatRequest:
+        value = ChatRequest(
+            project_id=PROJECT,
+            org_id=PROJECT,
+            conversation_id=CONVERSATION,
+            project_action=action,
+            work_session_id=SESSION if action == "work" else None,
+            messages=[
+                ChatRequest.model_validate(
+                    {"messages": [{"role": "user", "content": "Compare reports"}]}
+                ).messages[0]
+            ],
+            stream=True,
+        )
+        value._project_subject, value._transcript_key = "editor", "request-key"
+        return value
+
+    def test_project_work_uses_work_deadline_including_cleanup(self) -> None:
+        with (
+            patch.dict(os.environ, {"ATLAS_CODE_WALL_SECONDS": "600"}),
+            patch("services.orchestrator.code_workspace.enabled", return_value=True),
+        ):
+            self.assertEqual(self.request("work").timeout_seconds, 615)
+            self.assertEqual(self.request("chat").timeout_seconds, 120)
+
+    async def test_work_uses_authenticated_entry_and_canonical_context(self) -> None:
+        from services.orchestrator.project_transcript import process_scoped_project
+
+        state = self.state("work")
+        calls = AsyncMock(side_effect=[state, state["turn"], dict(state, replay=True)])
+
+        async def work(request: ChatRequest, item: Interaction, **kwargs: Any) -> None:
+            self.assertEqual(
+                kwargs,
+                dict(
+                    subject="editor",
+                    org_id=PROJECT,
+                    project_id=PROJECT,
+                    session_id=SESSION,
+                ),
+            )
+            self.assertIn("Use the selected reports.", request.messages[-2].text)
+            item.state, item.reponse = (
+                "done",
+                "Reports compared; the second increases revenue.",
+            )
+
+        with (
+            patch(
+                "services.orchestrator.project_transcript.TranscriptBroker.call", calls
+            ),
+            patch(
+                "services.orchestrator.code_mode.process_work", side_effect=work
+            ) as authenticated,
+            patch(
+                "services.orchestrator.code_mode.process_code", AsyncMock()
+            ) as legacy,
+        ):
+            await process_scoped_project(self.request("work"), Interaction())
+        authenticated.assert_awaited_once()
+        legacy.assert_not_awaited()
+        self.assertEqual(calls.await_args_list[1].args[0], "finish")
+        self.assertEqual(
+            calls.await_args_list[1].args[1]["content_refs"][0]["text"],
+            "Reports compared; the second increases revenue.",
+        )
+
+    async def test_work_without_organization_never_reaches_legacy_engine(self) -> None:
+        from services.orchestrator.project_chat import process_project
+        from services.retrieval.project_identity import ProjectError
+
+        request = self.request("work")
+        request.org_id = None
+        with (
+            patch(
+                "services.orchestrator.code_mode.process_code", AsyncMock()
+            ) as legacy,
+            patch.object(GatewayModel, "post", AsyncMock()) as unscoped,
+        ):
+            with self.assertRaises(ProjectError) as failure:
+                await process_project(request, Interaction())
+        self.assertEqual(failure.exception.status, 401)
+        legacy.assert_not_awaited()
+        unscoped.assert_not_awaited()
+
+    async def test_reload_emits_persisted_events_without_dispatch(self) -> None:
+        from services.orchestrator.project_transcript import process_scoped_project
+        from services.orchestrator.stream_client import sink_context
+
+        state = self.state()
+        state.update(replay=True, events=[{"seq": 8, "type": "recap"}])
+        state["turn"]["content_refs"] = [
+            dict(
+                kind="answer",
+                text="The approved report is ready.",
+                file_version_id=None,
+            )
+        ]
+        sink = AsyncMock()
+        token = sink_context.set(sink)
+        try:
+            with (
+                patch(
+                    "services.orchestrator.project_transcript.TranscriptBroker.call",
+                    AsyncMock(return_value=state),
+                ) as broker,
+                patch.object(GatewayModel, "connect", AsyncMock()) as model,
+                patch(
+                    "services.orchestrator.code_mode.process_work", AsyncMock()
+                ) as work,
+            ):
+                item = Interaction()
+                await process_scoped_project(self.request(), item)
+            self.assertEqual(item.reponse, "The approved report is ready.")
+            self.assertEqual(broker.await_count, 1)
+            sink.assert_awaited_once_with({"project": {"seq": 8, "type": "recap"}})
+            model.assert_not_awaited()
+            work.assert_not_awaited()
+        finally:
+            sink_context.reset(token)
+
+    async def test_org_and_versions_survive_validation_and_no_unscoped_fallback(
+        self,
+    ) -> None:
+        from services.orchestrator.project_transcript import process_scoped_project
+
+        request = self.request()
+        request.file_version_ids = [SESSION]
+        request._project_subject = None
+        with patch.object(GatewayModel, "post", AsyncMock()) as old:
+            with self.assertRaisesRegex(Exception, "unauthenticated"):
+                await process_scoped_project(request, Interaction())
+        old.assert_not_awaited()
+        self.assertEqual(request.model_dump()["org_id"], PROJECT)
+        self.assertEqual(request.model_dump()["file_version_ids"], [SESSION])
+
+    async def test_legacy_alias_is_normalized_only_after_authentication(self) -> None:
+        from starlette.requests import Request
+        from services.orchestrator.project_transcript import authenticate_chat
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/v1/chat/completions",
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "headers": [
+                    (b"host", b"testserver"),
+                    (b"origin", b"http://testserver"),
+                    (b"idempotency-key", b"legacy"),
+                ],
+            }
+        )
+        raw = dict(
+            model=self.request().model,
+            code_mode=True,
+            code_session_id=SESSION,
+            messages=[dict(role="user", content="Compare reports")],
+            stream=True,
+        )
+        selection = dict(
+            org_id=PROJECT,
+            project_id=PROJECT,
+            conversation_id=CONVERSATION,
+            work_session_id=SESSION,
+        )
+        with (
+            patch(
+                "services.orchestrator.project_transcript.project_mode",
+                return_value=True,
+            ),
+            patch(
+                "services.orchestrator.project_transcript.verified_subject",
+                AsyncMock(return_value="editor"),
+            ),
+            patch(
+                "services.orchestrator.project_transcript.legacy_selection",
+                AsyncMock(return_value=selection),
+            ) as resolve,
+            patch(
+                "services.orchestrator.project_transcript.broker_identity",
+                AsyncMock(return_value={}),
+            ),
+        ):
+            subject, key = await authenticate_chat(request, raw)
+        self.assertEqual((subject, key), ("editor", "legacy"))
+        self.assertEqual(raw["project_action"], "work")
+        self.assertNotIn("code_session_id", raw)
+        assert resolve.await_args is not None
+        self.assertEqual(resolve.await_args.args[1:], ("editor", SESSION))
+
+    def test_scoped_conflicts_fail_before_upload_preparation(self) -> None:
+        base = dict(
+            model=self.request().model,
+            org_id=PROJECT,
+            project_id=PROJECT,
+            conversation_id=CONVERSATION,
+            messages=[dict(role="user", content="Review")],
+            stream=True,
+        )
+        from services.retrieval.project_identity import ProjectError
+        from services.orchestrator.project_transcript import authenticate_chat
+        from starlette.requests import Request
+        import asyncio
+
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/v1/chat/completions",
+                "headers": [],
+            }
+        )
+        for updates in (
+            dict(code_session_id=SESSION),
+            dict(work_session_id=SESSION),
+            dict(org_id=None, file_version_ids=[SESSION]),
+            dict(org_id=None, project_action="work", work_session_id=SESSION),
+        ):
+            with (
+                self.subTest(updates=updates),
+                self.assertRaises(ProjectError) as failure,
+            ):
+                asyncio.run(authenticate_chat(request, dict(base, **updates)))
+            self.assertEqual(failure.exception.status, 409)
+            self.assertEqual(failure.exception.body["error"], "selector_conflict")
+
+    async def test_scope_failure_precedes_upload_preparation(self) -> None:
+        payload = self.request().model_dump(
+            include={
+                "model",
+                "org_id",
+                "project_id",
+                "conversation_id",
+                "messages",
+                "stream",
+                "file_version_ids",
+            }
+        )
+        # Frozen project messages contain only role and text.
+        payload["messages"] = [{"role": "user", "content": "Compare reports"}]
+        from services.retrieval.project_identity import ProjectError
+
+        with (
+            tempfile.TemporaryDirectory(dir="BRAIN") as root,
+            patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
+            patch(
+                "services.orchestrator.project_transcript.verified_subject",
+                AsyncMock(return_value="viewer"),
+            ),
+            patch(
+                "services.orchestrator.project_transcript.broker_identity",
+                AsyncMock(side_effect=ProjectError(404, "not_found")),
+            ),
+            patch("services.orchestrator.chat_api.prepare_uploads") as uploads,
+            TestClient(app) as client,
+        ):
+            response = client.post(
+                "/v1/chat/completions",
+                json=payload,
+                headers={"Origin": "http://testserver", "Idempotency-Key": "scope"},
+            )
+        self.assertEqual(response.status_code, 404, response.text)
+        uploads.assert_not_called()

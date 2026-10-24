@@ -194,6 +194,7 @@ def append(
     event_id: str | None = None,
     timestamp: str | None = None,
     cleanup: bool = False,
+    transcript: bool = False,
 ) -> Json:
     """Append once and queue the exact payload in the caller's authorized transaction."""
     if scope.project is None:
@@ -206,7 +207,24 @@ def append(
         "unknown",
     }:
         raise ProjectError(422, "invalid_request")
-    if cleanup:
+    if transcript:
+        if kind not in MODEL_KINDS | {"context_selected"} or not conversation_id:
+            raise ProjectError(403, "permission_denied")
+        row = scope.db.execute(
+            "SELECT data FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='turn' AND data->>'request_id'=%s",
+            (scope.identity.org, scope.project_id, request_id),
+        ).fetchone()
+        if (
+            row is None
+            or row["data"]["created_by_member_id"] != scope.identity.member
+            or row["data"]["conversation_id"] != conversation_id
+        ):
+            raise ProjectError(404, "not_found")
+        scope.authorize(
+            "POST",
+            ["conversations"] if row["data"]["action"] == "chat" else ["work-sessions"],
+        )
+    elif cleanup:
         # Internal cleanup records survive archival; no public write permission
         # changes. Only the broker's terminal approval audit uses this path.
         if (

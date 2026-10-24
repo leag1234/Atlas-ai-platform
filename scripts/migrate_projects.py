@@ -1151,6 +1151,8 @@ def restore(
         schema = (schema_root / "project_schema.sql").read_text()
         if "work_leases" in exported:
             schema += "\n" + (schema_root / "project_work_schema.sql").read_text()
+        if "transcript_progress" in exported:
+            schema += "\n" + (schema_root / "project_transcript_schema.sql").read_text()
         (destination / "schema.sql").write_text(schema)
         evidence = dict(
             status="restored_offline",
@@ -1187,6 +1189,8 @@ def restore_database(dsn: str, bundle: Path) -> dict[str, Any]:
     )
     if {"work_leases", "work_progress"} <= set(exported):
         order += ("work_leases", "work_progress")
+    if "transcript_progress" in exported:
+        order += ("transcript_progress",)
     if "forge_operations" in exported:
         order += ("forge_operations",)
     if set(exported) != set(order):
@@ -1250,6 +1254,10 @@ def restore_database(dsn: str, bundle: Path) -> dict[str, Any]:
         sequence_rows = "SELECT seq FROM atlas_projects.ledger_events"
         if "work_progress" in exported:
             sequence_rows += " UNION ALL SELECT seq FROM atlas_projects.work_progress"
+        if "transcript_progress" in exported:
+            sequence_rows += (
+                " UNION ALL SELECT seq FROM atlas_projects.transcript_progress"
+            )
         db.execute(
             "SELECT setval(pg_get_serial_sequence('atlas_projects.ledger_events','seq'),coalesce(max(seq),1),count(*)>0) FROM ("
             + sequence_rows

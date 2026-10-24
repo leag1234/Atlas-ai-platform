@@ -76,6 +76,9 @@ async def audit(session: str) -> Response:
 class ExecutionBroker:
     """Service client: all authority and durable state remain in retrieval."""
 
+    private_prefix = "/internal/atlas/execution/"
+    success_statuses: tuple[int, ...] = (200,)
+
     def __init__(self, subject: str, org: str, project: str) -> None:
         self.subject, self.org, self.project = subject, org, project
 
@@ -100,7 +103,7 @@ class ExecutionBroker:
                     client, self.subject, self.org, self.project
                 )
                 async with client.post(
-                    retrieval_url() + "/internal/atlas/execution/" + operation,
+                    retrieval_url() + self.private_prefix + operation,
                     json=data,
                     headers={
                         "X-Atlas-Project-Identity": str(resolved["identity"]),
@@ -111,7 +114,7 @@ class ExecutionBroker:
                     allow_redirects=False,
                 ) as reply:
                     result = await bounded_json(reply)
-                    if reply.status != 200:
+                    if reply.status not in self.success_statuses:
                         error = ProjectError(
                             reply.status,
                             str(result.get("error", "dependency_unavailable")),

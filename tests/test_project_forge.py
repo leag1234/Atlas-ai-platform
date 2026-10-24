@@ -786,6 +786,8 @@ class ProjectForgeTests(unittest.TestCase):
             (schema_root / "project_schema.sql").read_text()
             + "\n"
             + (schema_root / "project_work_schema.sql").read_text()
+            + "\n"
+            + (schema_root / "project_transcript_schema.sql").read_text()
         )
         migration.write_json(
             bundle / "recovery.json", dict(files=migration.inventory(bundle))

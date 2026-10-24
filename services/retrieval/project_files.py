@@ -222,6 +222,8 @@ class ProjectFiles:
             "instructions",
             "memory",
             "deliverable",
+            "conversation",
+            "turn",
         }:
             folder = None
             if kind == "file":

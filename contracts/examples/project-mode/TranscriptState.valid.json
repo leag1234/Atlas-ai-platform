@@ -1,0 +1,56 @@
+{
+  "turn": {
+    "id": "10000000-0000-4000-8000-000000000001",
+    "created_at": "2026-10-21T12:00:00Z",
+    "updated_at": "2026-10-21T12:00:00Z",
+    "created_by_member_id": "10000000-0000-4000-8000-000000000001",
+    "revision": 0,
+    "deleted_at": null,
+    "purge_at": null,
+    "org_id": "10000000-0000-4000-8000-000000000001",
+    "project_id": "10000000-0000-4000-8000-000000000001",
+    "conversation_id": "10000000-0000-4000-8000-000000000001",
+    "action": "chat",
+    "request_id": "10000000-0000-4000-8000-000000000001",
+    "content_refs": [],
+    "file_version_ids": [],
+    "context_revision": -1,
+    "state": "running",
+    "usage": {
+      "tool_calls": 0,
+      "model_calls": 0,
+      "elapsed_seconds": 0,
+      "cost_eur": 0,
+      "reserved_eur": 0,
+      "unknown_eur": 0,
+      "stored_bytes": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "tokens_estimated": false
+    },
+    "persistability": "content"
+  },
+  "context": {
+    "instructions_version": "10000000-0000-4000-8000-000000000001",
+    "instructions_text": "Example",
+    "memory_revision": 0,
+    "facts": [],
+    "passages": [],
+    "history": [],
+    "context_manifest": {
+      "sources": [],
+      "policy_revision": 0,
+      "excluded_versions": [],
+      "coverage": {
+        "complete": false,
+        "selected_units": 0,
+        "total_units": null,
+        "unit": "pages",
+        "warnings": []
+      }
+    }
+  },
+  "replay": false,
+  "events": [],
+  "last_event_seq": 0
+}

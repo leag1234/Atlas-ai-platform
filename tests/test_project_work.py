@@ -121,6 +121,123 @@ class ProjectWorkTests(ProjectIsolationTests):
         data.update(changes)
         return self.broker("turn", data)
 
+    def test_canonical_conversation_work_uses_one_lease_reservation(self) -> None:
+        conversation = self.request(
+            "POST",
+            self.project_path() + "/conversations",
+            "editor",
+            dict(title="Work report"),
+        )
+        self.assertEqual(conversation.status_code, 201, conversation.text)
+        session = self.request(
+            "POST",
+            self.project_path() + "/work-sessions",
+            "editor",
+            dict(
+                conversation_id=conversation.json()["id"],
+                folder_ids=[],
+                base_versions=[],
+            ),
+        )
+        self.assertEqual(session.status_code, 201, session.text)
+        payload = dict(
+            request_id=self.turn_id,
+            request=dict(
+                model="atlas",
+                org_id=self.org,
+                project_id=self.project,
+                conversation_id=conversation.json()["id"],
+                project_action="work",
+                work_session_id=session.json()["id"],
+                messages=[dict(role="user", content="Compare reports")],
+                stream=True,
+            ),
+        )
+        headers = {
+            "X-Atlas-Execution-Secret": os.environ["ATLAS_PROJECT_EXECUTION_SECRET"],
+            "X-Atlas-Execution-Audience": "atlas-retrieval-execution",
+            "X-Atlas-Project-Identity": sign(
+                self.identity("editor", self.project), self.key.encode()
+            ),
+            "Idempotency-Key": "work-transcript",
+        }
+        begun = self.client.post(
+            "/internal/atlas/transcript/begin", json=payload, headers=headers
+        )
+        self.assertEqual(begun.status_code, 201, begun.text)
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            self.assertEqual(scope.usage("daily_model_eur"), 0)
+        self.session = session.json()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            self.assertEqual(
+                scope.usage("daily_model_eur"),
+                self.session["effective_limits"]["cost_eur"],
+            )
+        self.error(self.acquire(), 409, "session_busy")
+        self.assertEqual(
+            self.turn(
+                "release", terminal_state="completed", cleanup_confirmed=True
+            ).status_code,
+            200,
+        )
+
+        from services.retrieval.project_work import empty_usage
+
+        finished = self.client.post(
+            "/internal/atlas/transcript/finish",
+            headers=dict(headers, **{"Idempotency-Key": "work-finish"}),
+            json=dict(
+                request_id=self.turn_id,
+                conversation_id=conversation.json()["id"],
+                state="completed",
+                content_refs=[],
+                usage=empty_usage(),
+                error=None,
+            ),
+        )
+        self.assertEqual(finished.status_code, 200, finished.text)
+        self.assertEqual(
+            finished.json()["usage"]["unknown_eur"],
+            self.session["effective_limits"]["cost_eur"],
+        )
+
+    def test_legacy_alias_resolves_only_the_current_scoped_session(self) -> None:
+        alias = str(uuid4())
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            value = files.get("work_session", self.session["id"])
+            value["legacy_session_id"] = alias
+            files.save(value)
+        response = self.request(
+            "GET", self.project_path() + "/work-sessions/" + alias, "editor"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id"], self.session["id"])
+        self.error(
+            self.request(
+                "GET",
+                self.project_path(self.second_project) + "/work-sessions/" + alias,
+                "admin",
+            ),
+            404,
+            "not_found",
+        )
+        self.error(
+            self.request(
+                "GET", self.project_path() + "/work-sessions/" + alias, "other"
+            ),
+            404,
+            "not_found",
+        )
+
     def test_concurrent_turns_and_cleanup_boundary(self) -> None:
         with ThreadPoolExecutor(max_workers=2) as workers:
             replies = list(workers.map(lambda _: self.acquire(), range(2)))
@@ -456,6 +573,8 @@ class ProjectWorkTests(ProjectIsolationTests):
                 (schema_root / "project_schema.sql").read_text()
                 + "\n"
                 + (schema_root / "project_work_schema.sql").read_text()
+                + "\n"
+                + (schema_root / "project_transcript_schema.sql").read_text()
             )
             migration.write_json(
                 bundle / "recovery.json", dict(files=migration.inventory(bundle))

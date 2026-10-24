@@ -944,6 +944,34 @@ class ProjectIsolationTests(unittest.TestCase):
             "not_found",
         )
 
+    def test_viewer_transcript_rls_does_not_allow_work_or_foreign_rows(self) -> None:
+        from services.retrieval.project_files import ProjectFiles
+        from services.retrieval.project_transcript import Transcript
+
+        with store(self.app_dsn).scope(
+            self.identity("viewer"), self.org, self.project
+        ) as scope:
+            value = Transcript(scope).create(dict(title="Viewer notes"))
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                with scope.db.transaction():
+                    ProjectFiles(scope).put(
+                        "work_session", dict(value, id=str(uuid4()))
+                    )
+            with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                with scope.db.transaction():
+                    scope.db.execute(
+                        "INSERT INTO atlas_projects.resources(org_id,project_id,id,kind,data) VALUES(%s,%s,%s,'conversation',%s)",
+                        (
+                            self.other_org,
+                            self.foreign_project,
+                            str(uuid4()),
+                            Jsonb(value),
+                        ),
+                    )
+        response = self.request("GET", self.project_path() + "/conversations", "viewer")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn(value["id"], [v["id"] for v in response.json()["items"]])
+
     def test_me_never_grants_organization_from_caller_headers(self) -> None:
         self.error(
             self.client.get("/api/atlas/me", headers={"X-Atlas-User": "administrator"}),

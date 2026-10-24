@@ -390,6 +390,36 @@ class ProjectContractTests(unittest.TestCase):
                         if "content" in response:
                             self.assertTrue(response["content"])
 
+    def test_private_transcript_contract_is_closed(self) -> None:
+        for operation, name in (
+            ("begin", "TranscriptBegin"),
+            ("finish", "TranscriptFinish"),
+            ("events", "TranscriptEvents"),
+        ):
+            route = self.document["paths"]["/internal/atlas/transcript/" + operation][
+                "post"
+            ]
+            self.assertEqual(
+                route["security"],
+                [{"ExecutionBroker": [], "ScopedProjectIdentity": []}],
+            )
+            self.assertFalse(self.schemas[name]["additionalProperties"])
+            self.assertEqual(
+                set(self.schemas[name]["properties"]),
+                set(self.schemas[name]["required"]),
+            )
+            value = json.loads((EXAMPLES / (name + ".valid.json")).read_text())
+            self.validator.validate(value, self.schemas[name])
+            for field in self.schemas[name]["required"]:
+                invalid = dict(value)
+                del invalid[field]
+                with self.assertRaises(Invalid):
+                    self.validator.validate(invalid, self.schemas[name])
+            with self.assertRaises(Invalid):
+                self.validator.validate(
+                    dict(value, member_id="caller"), self.schemas[name]
+                )
+
     def test_private_identity_resolution_contract(self) -> None:
         operation = self.document["paths"]["/internal/atlas/identity"]["post"]
         self.assertEqual(operation["security"], [{"IdentityBroker": []}])
