@@ -1,0 +1,14 @@
+{
+  "corruptions": [
+    "clipped_layout",
+    "local_model_bytes",
+    "local_read_allowed",
+    "local_stored_bytes",
+    "local_uploaded_bytes",
+    "missing_result",
+    "mutated_original",
+    "wrong_content"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

@@ -1,0 +1,11 @@
+{
+  "corruptions": [
+    "clipped_layout",
+    "missing_result",
+    "mutated_original",
+    "unrelated_style_changed",
+    "wrong_content"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

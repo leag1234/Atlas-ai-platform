@@ -1,0 +1,22 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "destination": "archive/report.docx",
+        "error": "path_conflict",
+        "source": "incoming/report.docx"
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D22",
+  "input_hashes": {
+    "archive/report.docx": "abf27bee74df8c40282165fb77ea477e1fb466d0d439c620221a9c2251cd8bd5",
+    "incoming/report.docx": "58267b15e3c6e8e1f391647e1ab541f9627738a06178d679128edd17eb2208a5",
+    "request.txt": "e6513f846b78b28133c4306fb16720caf62c6dd93f31ce0d946b55930db22ff4",
+    "response-contract.json": "1057d10ecdbca890eed5a458d383f50fab29e1109c36caa1bce6dcbed4cbbe01"
+  },
+  "scenario": "collision"
+}

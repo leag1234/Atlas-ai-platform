@@ -1,0 +1,48 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "records": [
+          {
+            "amount": 711,
+            "code": "SCAN-A-1",
+            "due": "2032-02-01",
+            "file": "scan-a.pdf",
+            "page": 1
+          },
+          {
+            "amount": 712,
+            "code": "SCAN-A-2",
+            "due": "2032-02-02",
+            "file": "scan-a.pdf",
+            "page": 2
+          },
+          {
+            "amount": 721,
+            "code": "SCAN-B-1",
+            "due": "2032-02-01",
+            "file": "scan-b.pdf",
+            "page": 1
+          },
+          {
+            "amount": 722,
+            "code": "SCAN-B-2",
+            "due": "2032-02-02",
+            "file": "scan-b.pdf",
+            "page": 2
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D02",
+  "input_hashes": {
+    "response-contract.json": "f2bef24c96ae87e19fc54ecf09065313925f5f95acad75519ee51b6cb8a6f83a",
+    "scan-a.pdf": "efebaec3c2c73c8e12518417c4d47822f8b988ad4d18fd12e3399d0b3904f0f5",
+    "scan-b.pdf": "545a9fb59c3b84c58040c07b840f0347bf7632ab03606227a1575c05989dc505"
+  },
+  "scenario": "ocr"
+}

@@ -1,0 +1,63 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "blocks": [
+          {
+            "file": "body.docx",
+            "kind": "paragraph",
+            "locator": "paragraph=1",
+            "text": "Opening"
+          },
+          {
+            "file": "body.docx",
+            "kind": "paragraph",
+            "locator": "paragraph=2",
+            "text": "Decision: proceed."
+          },
+          {
+            "file": "body.docx",
+            "kind": "table",
+            "locator": "table=1",
+            "text": [
+              [
+                "ID",
+                "Owner"
+              ],
+              [
+                "R1",
+                "Ari"
+              ],
+              [
+                "R2",
+                "Bea"
+              ]
+            ]
+          },
+          {
+            "file": "annex.docx",
+            "kind": "paragraph",
+            "locator": "paragraph=1",
+            "text": "Annex"
+          },
+          {
+            "file": "annex.docx",
+            "kind": "paragraph",
+            "locator": "paragraph=2",
+            "text": "Review: 2031-07-04."
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D07",
+  "input_hashes": {
+    "annex.docx": "e80529ce62ef4179b63b8ccbb6905061ab975c3a17e5e1dc2ff283ba11f29145",
+    "body.docx": "03174424009950c540ced1712ff6fb067b1b54f75896e697d305a68f361eb96f",
+    "response-contract.json": "3c358a547c3e7f6d8be847246506dd5a044df7106a83aa5b45319279e5ac5c01"
+  },
+  "scenario": null
+}

@@ -1,0 +1,10 @@
+{
+  "corruptions": [
+    "missing_result",
+    "missing_row",
+    "mutated_original",
+    "wrong_quoting_or_record"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

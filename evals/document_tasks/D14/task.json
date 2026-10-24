@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "43bf1c44794776b2a9b53f51defb651a3b0f933a5313ef8b05c0d2e7b9ef0135",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "path": "clean.xlsx"
+    }
+  ],
+  "id": "D14",
+  "input_manifest": [
+    {
+      "path": "dirty.xlsx",
+      "sha256": "3c25f486cdd03ec6b2f9122156b3a88d9d4703dca20b04f0f8b4450e17d45b07",
+      "size_bytes": 5129
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "01cad1f3898d0ea370ade5de7ce03bf2460504b5f3587a5c4e8cfe8017717450",
+      "size_bytes": 666
+    },
+    {
+      "path": "rules.txt",
+      "sha256": "705189d4ea464b5e716afc8047bd4070f0c5e6d0785721389679832274f0b13e",
+      "size_bytes": 83
+    }
+  ],
+  "language": "es",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Limpia dirty.xlsx según rules.txt y entrega clean.xlsx, hoja Contacts. Elimina filas duplicadas por ID conservando la primera; conserva el orden y las celdas vacías. No confundas una celda vacía con cero.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Clean spreadsheet duplicates",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Keep the first row for each identifier."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Elimina filas duplicadas",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Limpia dirty.xlsx segun rules.txt y entrega clean.xlsx, hoja Contacts. Elimina filas duplicadas por ID conservando la primera; conserva el orden y las celdas vacias. No confundas una celda vacia con cero.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "LIMPIA DIRTY.XLSX SEGÚN RULES.TXT Y ENTREGA CLEAN.XLSX, HOJA CONTACTS. ELIMINA FILAS DUPLICADAS POR ID CONSERVANDO LA PRIMERA; CONSERVA EL ORDEN Y LAS CELDAS VACÍAS. NO CONFUNDAS UNA CELDA VACÍA CON CERO.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Keep the first row for each identifier."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Keep the first row for each identifier. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D14/verifier.py",
+  "verifier_timeout_seconds": 120
+}

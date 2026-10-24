@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "44249d67be026a9ac2a7bfab1d2b52737c3918db5a450b25dc12f66f1985cfe7",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "path": "schedule.docx"
+    }
+  ],
+  "id": "D24",
+  "input_manifest": [
+    {
+      "path": "correction.txt",
+      "sha256": "09f877a0e83f488ba7ab2a263311ebc6ef09f498455c5f2250f1648e69e75950",
+      "size_bytes": 99
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+      "size_bytes": 513
+    },
+    {
+      "path": "scenario.json",
+      "sha256": "eaaa5de2d77efdb8768b3e03c6c3cbb5a9dd9d20515f72e60f7fbff342bd5534",
+      "size_bytes": 234
+    }
+  ],
+  "language": "es",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Corrige la fecha de entrega según correction.txt y reanuda la conversación indicada en scenario.json. Crea schedule.docx con la fecha corregida y el responsable. No reutilices el dato antiguo ni el turno invalidado.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Correct memory then resume",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Use the corrected deadline when continuing."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Usa fecha corregida",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Corrige la fecha de entrega segun correction.txt y reanuda la conversacion indicada en scenario.json. Crea schedule.docx con la fecha corregida y el responsable. No reutilices el dato antiguo ni el turno invalidado.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "CORRIGE LA FECHA DE ENTREGA SEGÚN CORRECTION.TXT Y REANUDA LA CONVERSACIÓN INDICADA EN SCENARIO.JSON. CREA SCHEDULE.DOCX CON LA FECHA CORREGIDA Y EL RESPONSABLE. NO REUTILICES EL DATO ANTIGUO NI EL TURNO INVALIDADO.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Use the corrected deadline when continuing."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Use the corrected deadline when continuing. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D24/verifier.py",
+  "verifier_timeout_seconds": 120
+}

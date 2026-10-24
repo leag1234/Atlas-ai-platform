@@ -1,0 +1,45 @@
+{
+  "checks": [
+    {
+      "kind": "csv",
+      "path": "artifacts/register.csv",
+      "rows": [
+        [
+          "Code",
+          "Amount",
+          "Source"
+        ],
+        [
+          "R1",
+          "120",
+          "register.pdf#page=1"
+        ],
+        [
+          "R2",
+          "240",
+          "register.pdf#page=1"
+        ],
+        [
+          "R3",
+          "360",
+          "register.xlsx#Register!A2:B2"
+        ],
+        [
+          "R4",
+          "480",
+          "register.xlsx#Register!A3:B3"
+        ]
+      ]
+    }
+  ],
+  "expected_publications": [
+    "register.csv"
+  ],
+  "id": "D23",
+  "input_hashes": {
+    "register.pdf": "5571b5649e91572e77eca9ac81bfdc0d953918fca451bb3d2e59c61d3fe6f9e8",
+    "register.xlsx": "2f836a26e95b81625d4686e925a654e6c2ea90b1578e719496f2c4d4f882784a",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214"
+  },
+  "scenario": null
+}

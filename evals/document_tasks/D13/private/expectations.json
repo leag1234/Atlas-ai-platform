@@ -1,0 +1,144 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "sheets": [
+          {
+            "cells": [
+              {
+                "address": "A1",
+                "cached": null,
+                "type": "text",
+                "value": "Label"
+              },
+              {
+                "address": "B1",
+                "cached": null,
+                "type": "text",
+                "value": "Amount"
+              },
+              {
+                "address": "C1",
+                "cached": null,
+                "type": "text",
+                "value": "Status"
+              },
+              {
+                "address": "A2",
+                "cached": null,
+                "type": "text",
+                "value": "Alpha"
+              },
+              {
+                "address": "B2",
+                "cached": null,
+                "type": "number",
+                "value": 10
+              },
+              {
+                "address": "C2",
+                "cached": null,
+                "type": "text",
+                "value": "ok"
+              },
+              {
+                "address": "A3",
+                "cached": null,
+                "type": "text",
+                "value": "Beta"
+              },
+              {
+                "address": "B3",
+                "cached": null,
+                "type": "number",
+                "value": 15
+              },
+              {
+                "address": "C3",
+                "cached": null,
+                "type": "blank",
+                "value": null
+              },
+              {
+                "address": "A4",
+                "cached": null,
+                "type": "text",
+                "value": "Total"
+              },
+              {
+                "address": "B4",
+                "cached": 25,
+                "type": "formula",
+                "value": "=SUM(B2:B3)"
+              },
+              {
+                "address": "C4",
+                "cached": null,
+                "type": "text",
+                "value": "cached"
+              },
+              {
+                "address": "A5",
+                "cached": null,
+                "type": "text",
+                "value": "Double"
+              },
+              {
+                "address": "B5",
+                "cached": null,
+                "type": "formula",
+                "value": "=B4*2"
+              },
+              {
+                "address": "C5",
+                "cached": null,
+                "type": "text",
+                "value": "uncached"
+              }
+            ],
+            "name": "Values"
+          },
+          {
+            "cells": [
+              {
+                "address": "A1",
+                "cached": null,
+                "type": "text",
+                "value": "Owner"
+              },
+              {
+                "address": "B1",
+                "cached": null,
+                "type": "text",
+                "value": "Ari"
+              },
+              {
+                "address": "A2",
+                "cached": null,
+                "type": "text",
+                "value": "Mode"
+              },
+              {
+                "address": "B2",
+                "cached": null,
+                "type": "text",
+                "value": "stored only"
+              }
+            ],
+            "name": "Notes"
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D13",
+  "input_hashes": {
+    "ranges.xlsx": "a6ea7b155bff5335ab7a6790c3ee14b50b945b95fe9bcbcceb33bda45070e3e1",
+    "request.txt": "9165b66d6d43bba4d43bfb433a92db76606c03a9d38f476e9b3d3a1c6714daa6",
+    "response-contract.json": "bde2389560359f02f2cc7620396971b0903b25180216a8d6cc869201cd883eb3"
+  },
+  "scenario": null
+}
