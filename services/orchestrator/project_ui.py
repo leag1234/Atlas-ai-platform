@@ -2,6 +2,7 @@
 
 from packages.limits import LimitError
 from packages.ports import atlas_ports
+from packages.profiles import PROFILES
 from services.retrieval.project_identity import ProjectError
 
 import asyncio
@@ -46,8 +47,13 @@ def project_asset(asset: str) -> Response:
     if asset not in assets:
         return public_error(ProjectError(404, "not_found"))
     filename, media_type = assets[asset]
+    content = (ROOT / filename).read_text()
+    if asset == "client.js":
+        content = (
+            "window.atlasProjectProfile = " + json.dumps(PROFILES[0]) + ";\n" + content
+        )
     return Response(
-        (ROOT / filename).read_text(),
+        content,
         media_type=media_type,
         headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"},
     )
