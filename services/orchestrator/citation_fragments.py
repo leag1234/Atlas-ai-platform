@@ -10,6 +10,25 @@ _VISIT = re.compile(r"(?:,?[ \t]*)consulted_at[ \t]*=[ \t]*" + _DATE)
 _URL = r"https?://[^\s<>\"'()\],]+"
 _BARE = r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/[^\s<>\"'()\],]*"
 _REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
+# Provider reference IDs can stop at the hostname's first dot. Keep the suffix
+# attached to that identity before the legacy bare-URL safety net sees it.
+_HOST = r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?:\d{4}-?\d{2}-?\d{2})?"
+_CITATION_TAIL = r"(?:/[^\s<>\"'()\[\],;]*)?"
+_REFERENCE_TOKEN = (
+    _REFERENCE.pattern + r"(?:\.[A-Za-z][A-Za-z0-9.-]*" + _CITATION_TAIL + r")?"
+)
+_CITATION_RUN = re.compile(
+    _REFERENCE_TOKEN
+    + r"(?:[,;][ \t]*(?:"
+    + _REFERENCE_TOKEN
+    + r"|"
+    + _HOST
+    + _CITATION_TAIL
+    + r"))*(?P<date>[,;][ \t]*"
+    + _DATE
+    + r")?"
+)
+_CITATION_PART = re.compile(_REFERENCE_TOKEN + r"|" + _HOST + _CITATION_TAIL)
 
 
 def tool_citations(text: str, retrieved: set[str]) -> str:
@@ -45,12 +64,41 @@ def tool_citations(text: str, retrieved: set[str]) -> str:
     )
 
     def prose(value: str) -> str:
-        # Do this before URL filtering: otherwise an unknown URL inside the
-        # internal marker becomes nested brackets and no longer parses.
-        value = _REFERENCE.sub(
-            lambda m: m[0] if m[1].isdecimal() or m[1] in retrieved else "",
-            value,
-        )
+        def reference_run(match: re.Match[str]) -> str:
+            resolved: list[str] = []
+            punctuation = ""
+            citation_host = False
+            for part in _CITATION_PART.finditer(match[0]):
+                raw = part[0].rstrip(".,;:")
+                punctuation = part[0][len(raw) :]
+                reference = _REFERENCE.match(raw)
+                if reference:
+                    identifier = reference[1]
+                    suffix = raw[reference.end() :]
+                    if identifier.isdecimal() or identifier in retrieved:
+                        resolved.append(reference[0] + suffix)
+                        continue
+                    if not suffix:
+                        continue
+                    raw = identifier + suffix
+                citation_host = True
+                targets = aliases.get(raw, set())
+                if len(targets) == 1:
+                    resolved.append(next(iter(targets)))
+            # Separators belong to the reference list, not the surrounding prose.
+            result = ", ".join(resolved)
+            if (
+                result.startswith(("http://", "https://"))
+                and match.start()
+                and not value[match.start() - 1].isspace()
+            ):
+                result = " " + result
+            # A date after hostname annotations belongs to that citation list.
+            # Keep ordinary dates following a resolved reference in answer prose.
+            date = "" if citation_host else (match["date"] or "")
+            return result + punctuation + date
+
+        value = _CITATION_RUN.sub(reference_run, value)
         value = _VISIT.sub("", value)
 
         def replace(match: re.Match[str]) -> str:

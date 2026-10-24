@@ -45,12 +45,12 @@ class StreamDecoderTests(unittest.TestCase):
         decoder.finish()
         self.assertEqual(
             events[0],
-            {"delta": {"content": "[[atlas-reference:0]]"}},
+            {"delta": {"content": ".fr,2026-10-23[[atlas-reference:0]]"}},
         )
         assert decoder.result is not None
         self.assertEqual(
             decoder.result["text"],
-            "[[atlas-reference:0]]",
+            ".fr,2026-10-23[[atlas-reference:0]]",
         )
 
     def test_typed_reference_requires_bounded_string_ids(self) -> None:

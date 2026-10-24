@@ -36,7 +36,6 @@ class Delta(BaseModel):
         if not isinstance(value, list):
             return value
         text: list[str] = []
-        references: list[str] = []
         for part in value:
             if not isinstance(part, dict) or not isinstance(part.get("type"), str):
                 raise ValueError("invalid_content_part")
@@ -57,17 +56,13 @@ class Delta(BaseModel):
                     )
                 ):
                     raise ValueError("invalid_reference_content_part")
-                references.extend(reference_ids)
-        # Some providers stream citation annotations as a typed list.  Its adjacent text
-        # is display metadata (for example a hostname/date), not answer prose.
-        return (
-            "".join(
-                "[[atlas-reference:" + reference_id + "]]"
-                for reference_id in references
-            )
-            if references
-            else "".join(text)
-        )
+                text.extend(
+                    "[[atlas-reference:" + reference_id + "]]"
+                    for reference_id in reference_ids
+                )
+        # Text parts can finish an answer word or continue a reference hostname.
+        # Their meaning does not depend on sharing an SSE frame with a reference.
+        return "".join(text)
 
 
 class StreamChoice(BaseModel):
