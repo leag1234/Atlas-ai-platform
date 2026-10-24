@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "c03e3e099ab94bb9be792d1f13c0f6c446f29cacb38fc888af390b19b09c62b2",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "path": "briefing.pptx"
+    }
+  ],
+  "id": "D19",
+  "input_manifest": [
+    {
+      "path": "facts.docx",
+      "sha256": "1bcec242c5e85a37ddffa36f29d5706e8fee9f20011e965198a5987866697e36",
+      "size_bytes": 36597
+    },
+    {
+      "path": "figures.pdf",
+      "sha256": "d0141311e7849f089301ea35f6991033efb4ab7806f2863aa0ea1f125382b9c0",
+      "size_bytes": 1375
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+      "size_bytes": 513
+    }
+  ],
+  "language": "es",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Crea briefing.pptx a partir de facts.docx y figures.pdf. Usa tres diapositivas: Scope, Budget y Timing. Incluye los hechos solicitados y referencias de párrafo o página en cada diapositiva; todo debe caber dentro de sus límites.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Produce PPTX from two documents",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Turn the two sources into the requested presentation."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Tres diapositivas documentadas",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Crea briefing.pptx a partir de facts.docx y figures.pdf. Usa tres diapositivas: Scope, Budget y Timing. Incluye los hechos solicitados y referencias de parrafo o pagina en cada diapositiva; todo debe caber dentro de sus limites.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "CREA BRIEFING.PPTX A PARTIR DE FACTS.DOCX Y FIGURES.PDF. USA TRES DIAPOSITIVAS: SCOPE, BUDGET Y TIMING. INCLUYE LOS HECHOS SOLICITADOS Y REFERENCIAS DE PÁRRAFO O PÁGINA EN CADA DIAPOSITIVA; TODO DEBE CABER DENTRO DE SUS LÍMITES.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Turn the two sources into the requested presentation."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Turn the two sources into the requested presentation. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D19/verifier.py",
+  "verifier_timeout_seconds": 120
+}

@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "cbfe441c87fef6752dd8b71cf41ee8e3739a548bbe1cca1d3700294fb99aa18a",
+  "expected_artifacts": [],
+  "id": "D02",
+  "input_manifest": [
+    {
+      "path": "response-contract.json",
+      "sha256": "f2bef24c96ae87e19fc54ecf09065313925f5f95acad75519ee51b6cb8a6f83a",
+      "size_bytes": 818
+    },
+    {
+      "path": "scan-a.pdf",
+      "sha256": "efebaec3c2c73c8e12518417c4d47822f8b988ad4d18fd12e3399d0b3904f0f5",
+      "size_bytes": 23951
+    },
+    {
+      "path": "scan-b.pdf",
+      "sha256": "545a9fb59c3b84c58040c07b840f0347bf7632ab03606227a1575c05989dc505",
+      "size_bytes": 24655
+    }
+  ],
+  "language": "fr",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Lisez les deux PDF numérisés, scan-a.pdf et scan-b.pdf. Renvoyez un JSON records avec file, page, code, amount et due pour chaque page. Signalez toute page illisible.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Read a scanned PDF",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Transcribe the visible fields in both scans."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Lisez ces pages",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Lisez les deux PDF numerises, scan-a.pdf et scan-b.pdf. Renvoyez un JSON records avec file, page, code, amount et due pour chaque page. Signalez toute page illisible.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "LISEZ LES DEUX PDF NUMÉRISÉS, SCAN-A.PDF ET SCAN-B.PDF. RENVOYEZ UN JSON RECORDS AVEC FILE, PAGE, CODE, AMOUNT ET DUE POUR CHAQUE PAGE. SIGNALEZ TOUTE PAGE ILLISIBLE.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Transcribe the visible fields in both scans."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Transcribe the visible fields in both scans. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D02/verifier.py",
+  "verifier_timeout_seconds": 120
+}

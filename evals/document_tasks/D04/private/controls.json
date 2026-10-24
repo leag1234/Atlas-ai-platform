@@ -1,0 +1,12 @@
+{
+  "corruptions": [
+    "missing_content",
+    "missing_result",
+    "mutated_original",
+    "phantom_publication",
+    "unlisted_publication",
+    "wrong_value_or_locator"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

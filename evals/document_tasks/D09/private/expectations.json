@@ -1,0 +1,54 @@
+{
+  "checks": [
+    {
+      "body_order": [
+        "p:Alpha",
+        "p:Scope: 12 sites.",
+        "t:Phase|Count|Pilot|12",
+        "p:Beta",
+        "p:Owner: Ari.",
+        "t:Stage|Date|Review|2031-08-09"
+      ],
+      "kind": "docx",
+      "paragraphs": [
+        "Alpha",
+        "Scope: 12 sites.",
+        "Beta",
+        "Owner: Ari."
+      ],
+      "path": "artifacts/merged.docx",
+      "tables": [
+        [
+          [
+            "Phase",
+            "Count"
+          ],
+          [
+            "Pilot",
+            "12"
+          ]
+        ],
+        [
+          [
+            "Stage",
+            "Date"
+          ],
+          [
+            "Review",
+            "2031-08-09"
+          ]
+        ]
+      ]
+    }
+  ],
+  "expected_publications": [
+    "merged.docx"
+  ],
+  "id": "D09",
+  "input_hashes": {
+    "first.docx": "98d3e022ac0d89d86d5aaaafcb1080836130e41742410e190ded5a358e730025",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+    "second.docx": "72200e3cd558ae02554f7c3cb674b58edeeb9d0e8c851014e58debc152620182"
+  },
+  "scenario": null
+}

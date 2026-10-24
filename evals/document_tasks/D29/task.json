@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "f050966379224925e13f9338585dd944e1a080dd4bece4ab9c5ed4376ab14d51",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "path": "server-summary.docx"
+    }
+  ],
+  "id": "D29",
+  "input_manifest": [
+    {
+      "path": "response-contract.json",
+      "sha256": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+      "size_bytes": 513
+    },
+    {
+      "path": "scenario.json",
+      "sha256": "e79b5103ad56141a69ca06f93b97fb31bb6a069991252b7cb29fef2a60b7a08d",
+      "size_bytes": 234
+    },
+    {
+      "path": "server.pdf",
+      "sha256": "7b504fa2cc61bddeba6d25fafd15dd57adfa8c9b1c50e82602eeb7920bd51524",
+      "size_bytes": 1410
+    }
+  ],
+  "language": "es",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Procesa server.pdf y la carpeta local indicada en scenario.json desde la web. Crea server-summary.docx solo con los datos del servidor. Explica que no puedes leer la carpeta local; no la subas ni envíes sus bytes al modelo.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Mix server and local-only folders",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Complete the available server portion and explain the unavailable local portion."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Solo datos servidor",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Procesa server.pdf y la carpeta local indicada en scenario.json desde la web. Crea server-summary.docx solo con los datos del servidor. Explica que no puedes leer la carpeta local; no la subas ni envies sus bytes al modelo.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "PROCESA SERVER.PDF Y LA CARPETA LOCAL INDICADA EN SCENARIO.JSON DESDE LA WEB. CREA SERVER-SUMMARY.DOCX SOLO CON LOS DATOS DEL SERVIDOR. EXPLICA QUE NO PUEDES LEER LA CARPETA LOCAL; NO LA SUBAS NI ENVÍES SUS BYTES AL MODELO.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Complete the available server portion and explain the unavailable local portion."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Complete the available server portion and explain the unavailable local portion. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D29/verifier.py",
+  "verifier_timeout_seconds": 120
+}

@@ -1,0 +1,26 @@
+{
+  "checks": [
+    {
+      "contains": [
+        "18400",
+        "Ari",
+        "unavailable"
+      ],
+      "forbidden": [
+        "LOCAL-CEDAR-CANARY"
+      ],
+      "kind": "docx",
+      "path": "artifacts/server-summary.docx"
+    }
+  ],
+  "expected_publications": [
+    "server-summary.docx"
+  ],
+  "id": "D29",
+  "input_hashes": {
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+    "scenario.json": "e79b5103ad56141a69ca06f93b97fb31bb6a069991252b7cb29fef2a60b7a08d",
+    "server.pdf": "7b504fa2cc61bddeba6d25fafd15dd57adfa8c9b1c50e82602eeb7920bd51524"
+  },
+  "scenario": "local_only"
+}

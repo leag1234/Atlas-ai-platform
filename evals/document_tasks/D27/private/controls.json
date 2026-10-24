@@ -1,0 +1,19 @@
+{
+  "corruptions": [
+    "denial_body_leak",
+    "foreign_citation",
+    "foreign_download",
+    "foreign_file",
+    "foreign_ledger",
+    "foreign_session",
+    "missing_content",
+    "missing_result",
+    "mutated_original",
+    "nonexistent_target",
+    "phantom_publication",
+    "unlisted_publication",
+    "wrong_value_or_locator"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

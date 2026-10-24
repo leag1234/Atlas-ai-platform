@@ -1,0 +1,25 @@
+{
+  "checks": [
+    {
+      "contains": [
+        "2031-06-14",
+        "Ari"
+      ],
+      "forbidden": [
+        "2031-05-01"
+      ],
+      "kind": "docx",
+      "path": "artifacts/schedule.docx"
+    }
+  ],
+  "expected_publications": [
+    "schedule.docx"
+  ],
+  "id": "D24",
+  "input_hashes": {
+    "correction.txt": "09f877a0e83f488ba7ab2a263311ebc6ef09f498455c5f2250f1648e69e75950",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+    "scenario.json": "eaaa5de2d77efdb8768b3e03c6c3cbb5a9dd9d20515f72e60f7fbff342bd5534"
+  },
+  "scenario": "memory"
+}
