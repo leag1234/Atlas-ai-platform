@@ -25,6 +25,7 @@ PROVIDER_SETTINGS = {
     "ATLAS_PROVIDER_BASE_URL",
     "ATLAS_PROVIDER_API_KEY",
     "ATLAS_TEXT_MODEL",
+    "ATLAS_TEXT_FALLBACK_MODEL",
     "ATLAS_VISION_MODEL",
     "ATLAS_LOCAL_MODEL",
     "ATLAS_MODEL_CONTEXT",
@@ -175,10 +176,104 @@ def http_port(value: str) -> str:
     return str(int(value))
 
 
+def check_devapi(port: str) -> None:
+    # No key is created for readiness: test the authenticated endpoint's boundary.
+    try:
+        with build_opener(NoRedirect).open(
+            "http://127.0.0.1:" + port + "/v1/models", timeout=5
+        ):
+            raise ValueError(
+                "Developer API unexpectedly permits unauthenticated access."
+            )
+    except HTTPError as exc:
+        if (
+            exc.code == 401
+            and json.loads(exc.read(4096)).get("error", {}).get("type")
+            == "authentication_error"
+        ):
+            print(
+                "Developer API /v1/models verified (401; create a key to authenticate)."
+            )
+            return
+        raise ValueError(
+            "Developer API readiness failed: expected authentication response."
+        ) from None
+    except (URLError, TimeoutError):
+        raise ValueError("Developer API /v1/models is unavailable.") from None
+
+
+def api_key_command(args: argparse.Namespace) -> None:
+    if args.operation != "list" and not re.fullmatch(
+        r"[a-zA-Z0-9_-]{1,64}", args.name or ""
+    ):
+        raise ValueError(
+            "Key name must contain 1-64 ASCII letters, digits, underscores or dashes."
+        )
+    _, existing = read_existing(ROOT / ".env")
+    environment = {k: v for k, v in os.environ.items() if k not in existing}
+    command = [
+        "docker",
+        "compose",
+        "run",
+        "--rm",
+        "--no-deps",
+        "-T",
+        "--entrypoint",
+        "python",
+    ]
+    keyfile = None
+    if args.operation == "create":
+        if args.daily_requests <= 0:
+            raise ValueError("Daily requests must be positive.")
+        directory = ROOT / "BRAIN" / "api-keys"
+        if directory.is_symlink():
+            raise ValueError("Refusing a symlink key directory.")
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        keyfile = directory / (args.name + ".key")
+        if keyfile.exists() or keyfile.is_symlink():
+            raise ValueError("Key file already exists; choose another name.")
+        command += ["--volume", str(directory) + ":/keys"]
+    command += ["devapi", "-m", "services.orchestrator.dev_auth", args.operation]
+    if args.operation != "list":
+        command += [args.name]
+    if keyfile:
+        command += [
+            "--key-file",
+            "/keys/" + keyfile.name,
+            "--daily-requests",
+            str(args.daily_requests),
+            "--key-owner",
+            str(os.getuid()),
+            str(os.getgid()),
+        ]
+    result = subprocess.run(
+        command, check=True, capture_output=True, text=True, env=environment
+    )
+    if keyfile:
+        if keyfile.stat().st_mode & 0o777 != 0o600:
+            raise ValueError("Key file permissions must be 600.")
+        print("Key file written to " + str(keyfile) + " (mode 600).")
+        if args.show:
+            print(keyfile.read_text().strip())
+    elif args.operation == "list":
+        for row in json.loads(result.stdout):
+            print(
+                f"{row['id']}  {'enabled' if row['enabled'] else 'revoked'}  daily requests: {row['daily_requests']}"
+            )
+    else:
+        print("Key revoked: " + args.name)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="./atlas")
     commands = parser.add_subparsers(dest="command", required=True)
     setup = commands.add_parser("setup", help="configure and start the Docker trial")
+    setup.add_argument(
+        "--api", action="store_true", help="enable the authenticated developer API"
+    )
+    setup.add_argument(
+        "--api-port", type=http_port, default=os.environ.get("ATLAS_API_PORT", "3001")
+    )
     setup.add_argument("--provider", choices=list(presets()))
     setup.add_argument("--api-key-file", type=Path)
     setup.add_argument("--model")
@@ -196,12 +291,26 @@ def main() -> int:
     setup.add_argument("--base-url")
     setup.add_argument("--yes", action="store_true")
     setup.add_argument("--no-start", action="store_true")
+    keys = commands.add_parser(
+        "api-key", help="manage developer keys without displaying secrets"
+    )
+    operations = keys.add_subparsers(dest="operation", required=True)
+    create = operations.add_parser("create")
+    create.add_argument("name")
+    create.add_argument("--daily-requests", type=int, default=20)
+    create.add_argument("--show", action="store_true")
+    operations.add_parser("list")
+    revoke = operations.add_parser("revoke")
+    revoke.add_argument("name")
     args = parser.parse_args()
     os.chdir(ROOT)
     try:
         subprocess.run(
             ["docker", "compose", "version"], check=True, stdout=subprocess.DEVNULL
         )
+        if args.command == "api-key":
+            api_key_command(args)
+            return 0
         destination = ROOT / ".env"
         preserved = ""
         existing: dict[str, str] = {}
@@ -274,6 +383,15 @@ def main() -> int:
                     "ATLAS_OLLAMA_PORT": os.environ.get("ATLAS_OLLAMA_PORT", "13702"),
                 }
             )
+        profiles = set(filter(None, existing.get("COMPOSE_PROFILES", "").split(",")))
+        if args.api:
+            profiles.add("api")
+            settings["ATLAS_API_PORT"] = existing.get("ATLAS_API_PORT", args.api_port)
+        if provider == "local":
+            profiles.add("local")
+        if profiles:
+            settings["COMPOSE_PROFILES"] = ",".join(sorted(profiles))
+        api_enabled = "api" in profiles
         # An exported old credential must not override the retained .env value.
         compose_env = {
             k: v
@@ -286,8 +404,6 @@ def main() -> int:
             print(
                 "Starting Ollama without GPU; pulling the preset on first start. CPU answers are slower and weaker."
             )
-            if not args.reconfigure:
-                settings["COMPOSE_PROFILES"] = "local"
             write_private(temporary, settings, preserved)
             local_verified = False
             try:
@@ -364,7 +480,10 @@ def main() -> int:
         )
         if start:
             services = (
-                ["--no-deps", "--force-recreate", "gateway"] if args.reconfigure else []
+                ["--no-deps", "--force-recreate", "gateway"]
+                + (["devapi"] if api_enabled else [])
+                if args.reconfigure
+                else []
             )
             subprocess.run(
                 compose
@@ -373,6 +492,12 @@ def main() -> int:
                 check=True,
                 env=compose_env,
             )
+            if api_enabled:
+                check_devapi(
+                    existing.get(
+                        "ATLAS_API_PORT", settings.get("ATLAS_API_PORT", "3001")
+                    )
+                )
         if not start and provider == "local":
             subprocess.run(compose + ["stop", "ollama"], check=True, env=compose_env)
         print(

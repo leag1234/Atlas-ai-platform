@@ -177,7 +177,7 @@ def configure(
             else "text",
             "capabilities": {
                 model: {
-                    "context": int(os.environ.get("ATLAS_MODEL_CONTEXT", context)),
+                    "context": int((os.environ.get("ATLAS_MODEL_CONTEXT") or context)),
                     "tools": True,
                     "vision": bool(vision and model == vision),
                 }
@@ -216,7 +216,12 @@ def configure(
             "capabilities": {
                 fallback_text: {
                     "context": int(
-                        os.environ.get("ATLAS_MODEL_CONTEXT", preset["context"])
+                        os.environ.get("ATLAS_MODEL_CONTEXT")
+                        or (
+                            preset["context"]["text"]
+                            if isinstance(preset["context"], dict)
+                            else preset["context"]
+                        )
                     ),
                     "tools": True,
                     "vision": False,
