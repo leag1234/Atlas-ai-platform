@@ -231,6 +231,10 @@ def execute_files(
                     ScopedProjectDocuments(files).ingest(file, content, job)
                     version = files.get("version", version["id"])
                 return 201, version
+        if tail[2:] == ["extraction"] and method == "GET":
+            from services.retrieval.project_documents import ScopedProjectDocuments
+
+            return 200, ScopedProjectDocuments(files).extraction(identifier, query)
         if tail[2:] == ["content"] and method == "GET":
             return 200, files.content(
                 identifier, query.get("version"), headers.get("range")

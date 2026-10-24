@@ -125,7 +125,32 @@ class Transcript:
             )
         )
         count = len(passages)
+        all_characters = sum(len(p["text"]) for p in passages)
         passages = passages[:8]
+        warnings: list[str] = []
+        documents = ScopedProjectDocuments(self.files)
+        versions = selected or [
+            f["version_id"]
+            for f in self.files.listing("file")
+            if f["id"] != instructions["file_id"]
+        ]
+        for version_id in versions:
+            try:
+                self.check_sources([version_id])
+            except ProjectError as exc:
+                if exc.status not in {403, 404, 409}:
+                    raise
+                continue
+            derived = documents.derived(version_id)
+            if derived and "extraction" in derived:
+                warnings.extend(
+                    version_id + ": " + w
+                    for w in derived["extraction"]["coverage"]["warnings"]
+                )
+        if count > len(passages):
+            warnings.append(
+                f"Context contains {len(passages)} of {count} indexed passages"
+            )
         sources = [
             {k: p[k] for k in ("file_id", "version_id", "locator")} for p in passages
         ]
@@ -153,11 +178,11 @@ class Transcript:
                     v for v in selected if v not in {p["version_id"] for p in passages}
                 ],
                 coverage=dict(
-                    complete=count <= 8,
-                    selected_units=len(passages),
-                    total_units=count,
-                    unit="paragraphs",
-                    warnings=[],
+                    complete=count <= 8 and not warnings,
+                    selected_units=sum(len(p["text"]) for p in passages),
+                    total_units=all_characters,
+                    unit="characters",
+                    warnings=warnings,
                 ),
             ),
         )

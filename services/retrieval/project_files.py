@@ -262,7 +262,15 @@ class ProjectFiles:
                     raise
         return result
 
-    def emit(self, kind: str, refs: list[str], source_bytes: int = 0) -> None:
+    def emit(
+        self,
+        kind: str,
+        refs: list[str],
+        source_bytes: int = 0,
+        *,
+        located_sources: list[dict[str, Any]] | None = None,
+        selected_utf8_bytes: int = 0,
+    ) -> None:
         """Record the legacy resource outbox and the immutable data ledger together."""
         event = self.new()
         event.update(kind=kind, resource_ids=refs)
@@ -273,9 +281,23 @@ class ProjectFiles:
             expires=after(event["created_at"], self.retention()["audit_days"]),
         )
         self.scope.event(kind, self.project)
-        self.ledger(kind, refs, source_bytes)
+        self.ledger(
+            kind,
+            refs,
+            source_bytes,
+            located_sources=located_sources,
+            selected_utf8_bytes=selected_utf8_bytes,
+        )
 
-    def ledger(self, kind: str, refs: list[str], source_bytes: int = 0) -> None:
+    def ledger(
+        self,
+        kind: str,
+        refs: list[str],
+        source_bytes: int = 0,
+        *,
+        located_sources: list[dict[str, Any]] | None = None,
+        selected_utf8_bytes: int = 0,
+    ) -> None:
         """Append a boundary event without requiring a mutable resource outbox."""
         resource_refs: list[dict[str, str | None]] = []
         seen: set[tuple[str, str]] = set()
@@ -309,12 +331,14 @@ class ProjectFiles:
                 "member_id": self.scope.identity.member,
                 "service": None,
             },
-            resource_refs=resource_refs,
+            resource_refs=located_sources
+            if located_sources is not None
+            else resource_refs,
             source={"kind": "server", "ref": None},
             destination={"kind": "server", "ref": None},
             byte_counts={
                 "source_bytes": source_bytes,
-                "selected_utf8_bytes": 0,
+                "selected_utf8_bytes": selected_utf8_bytes,
                 "image_bytes": 0,
                 "serialized_payload_bytes": 0,
                 "response_bytes": 0,

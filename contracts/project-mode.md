@@ -859,3 +859,16 @@ cannot be caller authority. Retention, FORCE RLS and source invalidation apply.
 Chat reserves its existing effective per-request cost against organization quotas
 at begin; Work keeps its existing lease reservations without double charging.
 An ambiguous/crashed dispatch retains its reservation and never auto-resumes.
+
+## Amendment 2026-10-24 (slide locators), approved by the supervisor
+
+PPTX extraction uses SourceLocator {kind: slide, slide: N}, with N the
+one-based slide position in presentation order. Coverage.unit is slides;
+selected_units counts distinct indexed slides and total_units is the source
+slide count, or null when it cannot be determined safely. Speaker notes are
+associated with their slide. Coverage.complete is false for omitted or
+truncated content; warnings identify affected slides and reasons. The same
+slide locator is preserved in extraction segments, indexed sources, Chat
+citations and ledger source references. Retrieval retains ownership of
+canonical storage and the index; this amendment grants no database access,
+network access, OCR dispatch authority or worker storage access.

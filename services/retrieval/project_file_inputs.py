@@ -77,6 +77,11 @@ class PageLocator(Closed):
     page: int = Field(ge=1)
 
 
+class SlideLocator(Closed):
+    kind: Literal["slide"]
+    slide: int = Field(ge=1)
+
+
 class ParagraphLocator(Closed):
     kind: Literal["paragraph"]
     paragraph: int = Field(ge=0)
@@ -106,7 +111,12 @@ class SourceRef(Closed):
     version_id: UUID
     locator: (
         Annotated[
-            PageLocator | ParagraphLocator | TableLocator | SheetLocator | TextLocator,
+            PageLocator
+            | SlideLocator
+            | ParagraphLocator
+            | TableLocator
+            | SheetLocator
+            | TextLocator,
             Field(discriminator="kind"),
         ]
         | None
