@@ -409,7 +409,7 @@ def response(
                 # Web citations can start without a scheme and continue after a
                 # typed reference frame. Validate complete lines before emitting
                 # irreversible SSE text, using the same renderer as JSON.
-                if item.retrieved_urls:
+                if item.retrieved_urls or "[[atlas-reference:" in pending:
                     end = min(end, pending.rfind("\n") + 1)
                 await content(pending[:end])
                 pending = pending[end:]

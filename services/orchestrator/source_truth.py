@@ -127,7 +127,17 @@ def provider_reference_markers(text: str, retrieved: list[str]) -> str:
             return ""
         return f"[{numbers[url]}]({url})"
 
-    return REFERENCE.sub(reference, text)
+    # Resolve a reference list together so rejected numeric IDs cannot leave
+    # separators behind after provenance filtering.
+    run = re.compile(REFERENCE.pattern + r"(?:[,;][ \t]*" + REFERENCE.pattern + r")*")
+    return run.sub(
+        lambda match: ", ".join(
+            rendered
+            for part in REFERENCE.finditer(match[0])
+            if (rendered := reference(part))
+        ),
+        text,
+    )
 
 
 def source_footer(retrieved: list[str], language: str) -> str:
