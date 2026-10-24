@@ -14,6 +14,19 @@ def main() -> None:
 
         with serve(CPUModels(), port=13710, host="0.0.0.0") as server:
             server.serve_forever()
+    elif service == "devapi-health":
+        from services.orchestrator.dev_health import main as check_devapi
+
+        check_devapi()
+    elif service == "devapi":
+        import uvicorn
+
+        uvicorn.run(
+            "services.orchestrator.devapi:app",
+            host="0.0.0.0",
+            port=13731,
+            access_log=False,
+        )
     elif service == "retrieval":
         from services.retrieval.store import Store
         import uvicorn

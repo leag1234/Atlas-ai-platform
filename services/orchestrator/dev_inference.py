@@ -126,6 +126,7 @@ async def validated_drive(
             json.dumps(
                 {
                     "event": "devapi_request",
+                    "unpriced": plan.unpriced,
                     "request": request_id,
                     "developer": developer,
                     "duration_ms": round((monotonic() - started) * 1000),
@@ -188,6 +189,7 @@ async def drive(
             json.dumps(
                 {
                     "event": "devapi_request",
+                    "unpriced": plan.unpriced,
                     "request": request_id,
                     "developer": developer,
                     "duration_ms": round((monotonic() - started) * 1000),
@@ -222,7 +224,9 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
             return error("invalid_request", 400)
         plan = gateway.prepare(parsed)
         store, developer = request.state.store, request.state.developer
-        request_id = store.reserve(developer, plan.reserved)
+        request_id = store.reserve(
+            developer, plan.reserved, monetary=plan.reserved > 0 and not plan.unpriced
+        )
     except LimitError as exc:
         return error(exc.code, 400, exc.detail)
     except ValidationError as exc:

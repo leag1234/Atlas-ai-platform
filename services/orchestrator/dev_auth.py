@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import datetime, timezone
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -76,8 +77,8 @@ class Store:
             ).fetchone()
         return {"developer": developer, "day": day, **dict(row)}
 
-    def reserve(self, developer: str, amount: int) -> str:
-        if type(amount) is not int or not 1 <= amount <= 50000:
+    def reserve(self, developer: str, amount: int, *, monetary: bool = True) -> str:
+        if type(amount) is not int or not (1 if monetary else 0) <= amount <= 50000:
             raise ValueError("invalid_reservation")
         request_id, day = secrets.token_hex(16), utc_day()
         with self.connection() as db:
@@ -92,14 +93,13 @@ class Store:
                 "WHERE developer=? AND day=?",
                 (developer, day),
             ).fetchone()
-            if (
-                count >= owner["daily_requests"]
-                or charged + amount > owner["daily_micro_eur"]
+            if count >= owner["daily_requests"] or (
+                monetary and charged + amount > owner["daily_micro_eur"]
             ):
                 raise QuotaError("quota_exceeded")
             db.execute(
                 "INSERT INTO requests VALUES (?,?,?,?,?,NULL,NULL,'reserved')",
-                (request_id, developer, day, amount, amount),
+                (request_id, developer, day, max(1, amount), amount),
             )
         return request_id
 
@@ -152,18 +152,30 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Local developer key administration; no secret stdout"
     )
-    parser.add_argument("operation", choices=("create", "revoke"))
-    parser.add_argument("developer")
+    parser.add_argument("operation", choices=("create", "list", "revoke"))
+    parser.add_argument("developer", nargs="?")
     parser.add_argument("--key-file", type=Path)
+    parser.add_argument("--key-owner", type=int, nargs=2, metavar=("UID", "GID"))
     parser.add_argument("--daily-requests", type=int, default=20)
     parser.add_argument("--daily-micro-eur", type=int, default=50000)
     args = parser.parse_args()
     store = Store(Path(os.environ.get("ATLAS_DEVAPI_DB", "BRAIN/devapi/usage.sqlite")))
+    if args.operation == "list":
+        with store.connection() as db:
+            rows = db.execute(
+                "SELECT id, enabled, daily_requests FROM developers ORDER BY id"
+            )
+            print(json.dumps([dict(row) for row in rows]))
+        return
+    if args.developer is None:
+        parser.error("developer required")
     if args.operation == "revoke":
         store.revoke(args.developer)
     elif args.key_file is None:
         parser.error("--key-file required")
     else:
+        if args.key_owner is not None and any(value < 0 for value in args.key_owner):
+            parser.error("key owner must be nonnegative")
         provision(
             store,
             args.developer,
@@ -171,6 +183,8 @@ def main() -> None:
             args.daily_requests,
             args.daily_micro_eur,
         )
+        if args.key_owner is not None:
+            os.chown(args.key_file, *args.key_owner, follow_symlinks=False)
 
 
 if __name__ == "__main__":
