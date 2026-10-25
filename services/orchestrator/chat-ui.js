@@ -280,7 +280,7 @@
       const href = URL.createObjectURL(new Blob([value], { type })), link = element("a");
       link.href = href; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
     };
-    const app = [...document.body.children].find(node => node.tagName === "DIV" && node.style.display === "contents");
+    const app = [...document.body.children].find(node => node.tagName === "DIV" && node.style.display === "contents") || document.querySelector(".atlas-project-host");
     if (!app) return;
     app.classList.add("atlas-app-root");
     const pane = element("aside", "atlas-side-pane"); pane.id = "atlas-side-view"; pane.hidden = true; pane.setAttribute("aria-label", "Side view");

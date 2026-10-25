@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import asyncio
 import hashlib
+import json
 from pathlib import PurePosixPath
 import time
 from typing import Any, Literal
@@ -12,6 +13,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from packages.doc_render.schema import Content
+from services.orchestrator.project_document_input import DocumentInput, normalize
 
 
 class Arguments(BaseModel):
@@ -71,6 +73,12 @@ class Publish(Arguments):
     strategy: Literal["created", "regenerated", "edited_in_place"] = "created"
 
 
+class ModelPublish(DocumentInput):
+    path: str = Field(min_length=1, max_length=1024)
+    sources: list[Input] = Field(max_length=100)
+    strategy: Literal["created", "regenerated", "edited_in_place"] = "created"
+
+
 SCHEMAS: dict[str, type[Arguments]] = {
     "read_document": Read,
     "convert_document": Convert,
@@ -83,7 +91,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": "Create a durable DOCX, XLSX, PPTX or PDF in project deliverables from structured content, with a verified text preview. Declare immutable sources and selectors; every selected text segment must appear in the output. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
+    "publish_document": "Create a durable DOCX, XLSX, PPTX or PDF in project deliverables with a verified text preview. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors; every selected text segment must appear in the output. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
 }
 
 
@@ -94,7 +102,9 @@ def declarations() -> list[dict[str, object]]:
             function=dict(
                 name=name,
                 description=DESCRIPTIONS[name],
-                parameters=schema.model_json_schema(),
+                parameters=(
+                    ModelPublish if name == "publish_document" else schema
+                ).model_json_schema(),
             ),
         )
         for name, schema in SCHEMAS.items()
@@ -135,7 +145,10 @@ async def resolve(execution: Any, value: dict[str, Any]) -> dict[str, Any]:
 async def execute(
     tools: Any, name: str, arguments: str, timeout: float
 ) -> dict[str, Any]:
-    args = SCHEMAS[name].model_validate_json(arguments).model_dump(exclude_none=True)
+    value = json.loads(arguments)
+    if name == "publish_document":
+        value = normalize(value)
+    args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
     await tools.execution.check()
     if name == "publish_document":
         return await publish(tools, args, timeout)

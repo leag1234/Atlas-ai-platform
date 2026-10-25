@@ -75,11 +75,47 @@ class Transcript:
         for turn in self.files.listing("turn", conversation):
             try:
                 self.sources(turn)
+                turn = self.recover_cancelled(turn)
                 result.append(turn)
             except ProjectError as exc:
                 if exc.status not in {403, 404, 409}:
                     raise
         return result
+
+    def recover_cancelled(self, turn: dict[str, Any]) -> dict[str, Any]:
+        # A disconnected request can lose its final HTTP callback. Only its
+        # creator may reconcile it through the normal authorized finish boundary.
+        if (
+            turn["state"] != "running"
+            or turn["action"] != "work"
+            or turn["created_by_member_id"] != self.scope.identity.member
+        ):
+            return turn
+        private = self.files.row("turn", turn["id"])["private"]
+        session_id = private["request"]["work_session_id"]
+        work = Work(self.scope)
+        lease = work.lease(session_id)
+        if (
+            lease is None
+            or not lease["data"].get("released")
+            or lease["data"].get("reservation_id") != turn["request_id"]
+        ):
+            return turn
+        session = work.get(session_id)
+        if session["state"] != "cancelled":
+            return turn
+        return self.finish(
+            dict(
+                request_id=turn["request_id"],
+                conversation_id=turn["conversation_id"],
+                state="cancelled",
+                content_refs=[],
+                usage=session["usage"],
+                error=ProjectError(
+                    422, "invalid_request", "Work cancelled by request"
+                ).body,
+            )
+        )
 
     def context(
         self, conversation: str, query: str, selected: list[str]
@@ -363,6 +399,9 @@ class Transcript:
                 self.check_sources([ref["file_version_id"]])
                 private["sources"].append(ref["file_version_id"])
         usage = dict(data["usage"])
+        terminal = data["state"]
+        error = data["error"]
+        refs = list(data["content_refs"])
         if turn["action"] == "chat":
             unknown = (
                 data["state"] != "completed"
@@ -379,22 +418,38 @@ class Transcript:
             work = Work(self.scope)
             session_id = private["request"]["work_session_id"]
             lease = work.lease(session_id)
-            bound = lease is not None and str(lease["request_id"]) == turn["request_id"]
+            bound = lease is not None and (
+                str(lease["request_id"]) == turn["request_id"]
+                or lease["data"].get("reservation_id") == turn["request_id"]
+            )
             if data["state"] == "completed" and (
                 not bound or not lease or not lease["data"].get("released")
             ):
                 raise ProjectError(409, "session_busy")
             if bound:
-                usage = dict(work.get(session_id)["usage"])
+                session = work.get(session_id)
+                usage = dict(session["usage"])
+                if session["state"] == "cancelled":
+                    terminal = "cancelled"
+                    error = ProjectError(
+                        422, "invalid_request", "Work cancelled by request"
+                    ).body
         stale = (
             self.scope.project_data["memory_revision"] != turn["context_revision"]
             or self.files.instructions()["version"] != private["instructions_version"]
             or self.scope.org["revision"] != private["policy_revision"]
         )
+        if terminal in {"failed", "cancelled"}:
+            error = (
+                error or ProjectError(422, "invalid_request", "Turn " + terminal).body
+            )
+            reason = error["message"]
+            if not any(reason in (ref.get("text") or "") for ref in refs):
+                refs.append(dict(kind="answer", text=reason, file_version_id=None))
         turn.update(
-            state="stale" if stale else data["state"],
+            state="stale" if stale else terminal,
             usage=usage,
-            content_refs=turn["content_refs"] + data["content_refs"],
+            content_refs=turn["content_refs"] + refs,
         )
         self.files.save(turn)
         private["finish_digest"] = digest
@@ -407,23 +462,23 @@ class Transcript:
             dict(
                 version=1,
                 session_id=private["request"].get("work_session_id"),
-                type="recap" if data["state"] == "completed" else "error",
-                status="completed" if data["state"] == "completed" else "failed",
-                label="Turn " + data["state"],
+                type="recap" if terminal == "completed" else "error",
+                status="completed" if terminal == "completed" else "failed",
+                label="Turn " + terminal,
                 tool=None,
                 plan=[],
                 approval_id=None,
                 job_id=None,
                 text=None,
-                error=data["error"],
+                error=error,
                 output={},
             ),
         )
-        self.scope.event("transcript_" + data["state"], self.project)
+        self.scope.event("transcript_" + terminal, self.project)
         self.audit(
             turn,
             "context_selected",
-            "succeeded" if data["state"] == "completed" else "failed",
+            "succeeded" if terminal == "completed" else "failed",
             [],
         )
         return turn

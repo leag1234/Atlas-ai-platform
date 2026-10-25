@@ -8,4 +8,5 @@ COPY services/orchestrator/chat-ui.css /app/backend/open_webui/static/atlas/chat
 COPY services/orchestrator/chat-ui.js /app/backend/open_webui/static/atlas/chat-ui.js
 COPY services/orchestrator/static/ /app/backend/open_webui/static/atlas/
 RUN python -c 'from pathlib import Path; p=Path("/app/build/index.html"); p.write_text(p.read_text().replace("</head>", "<link rel=\"stylesheet\" href=\"/static/atlas/chat-ui.css\"><script src=\"/static/atlas/chat-ui.js\"></script></head>", 1))'
+RUN python -c 'from pathlib import Path; p=Path("/app/build/index.html"); p.write_text(p.read_text().replace("</head>", "<link rel=\"stylesheet\" href=\"/project-mode/style.css\"><script defer src=\"/project-mode/locale.js\"></script><script defer src=\"/project-mode/client.js\"></script></head>", 1))'
 ENTRYPOINT ["bash", "/opt/atlas/start.sh"]

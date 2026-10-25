@@ -8331,6 +8331,12 @@ components:
         org_id:
           type: string
           format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: \S
+          description: Read-only organization display name; never an authority selector.
         role:
           type: string
           enum:
@@ -8339,6 +8345,7 @@ components:
       required:
       - org_id
       - role
+      - name
     Me:
       type: object
       additionalProperties: false

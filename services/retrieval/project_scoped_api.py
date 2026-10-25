@@ -313,7 +313,13 @@ def dispatch(
     if path == "me" and method == "GET":
         with store(dsn).scope(identity, identity.org, identity.project) as scope:
             return 200, {
-                "memberships": [{"org_id": identity.org, "role": scope.member["role"]}],
+                "memberships": [
+                    {
+                        "org_id": identity.org,
+                        "role": scope.member["role"],
+                        "name": scope.org["data"]["name"],
+                    }
+                ],
                 "capabilities": p0_capabilities(work=True),
             }
     parsed = urlsplit(path)
@@ -712,10 +718,29 @@ def resolve_identity(data: IdentityResolutionRequest) -> dict[str, Any]:
         rows = db.execute(
             "SELECT * FROM atlas_projects.identity_memberships(%s)", (data.subject,)
         ).fetchall()
+    memberships = []
+    for member in rows:
+        discovery = Identity(
+            data.subject,
+            str(member["member_id"]),
+            str(member["org_id"]),
+            None,
+            member["membership_revision"],
+            member["policy_revision"],
+            int(time.time()) + 60,
+        )
+        # Display names use the existing RLS-authorized organization read. No
+        # bootstrap privilege, storage migration or caller authority is added.
+        with repository.scope(discovery, discovery.org, None) as scope:
+            memberships.append(
+                dict(
+                    org_id=discovery.org,
+                    role=scope.member["role"],
+                    name=scope.org["data"]["name"],
+                )
+            )
     result: dict[str, Any] = {
-        "memberships": [
-            dict(org_id=str(row["org_id"]), role=row["role"]) for row in rows
-        ],
+        "memberships": memberships,
         "identity": None,
         "expires": None,
     }

@@ -872,3 +872,41 @@ slide locator is preserved in extraction segments, indexed sources, Chat
 citations and ledger source references. Retrieval retains ownership of
 canonical storage and the index; this amendment grants no database access,
 network access, OCR dispatch authority or worker storage access.
+
+## Amendment 2026-10-25 (organization names), approved by the supervisor
+
+REQ-PROJ-04/08: organization and membership responses expose the stored organization
+`name` as read-only display metadata. It grants no authority and never replaces
+UUID scope selectors. Existing organization storage already contains this field.
+
+## Scoped model approval adapter
+
+REQ-PROJ-05: the model-facing approval tool accepts a flat `effect_kind` selector
+(overwrite, delete_file, delete_memory) and the exact fields for that effect.
+The orchestrator deterministically maps it to the unchanged strict ScopedApproval
+and execution broker effects. Unknown, irrelevant, missing or mistyped fields
+are rejected before broker calls; authority and exact-effect validation remain
+server-owned. Existing strict internal arguments remain compatible.
+A Work loop stop or unresolved tool validation failure produces a failed session,
+turn and recap with the reason; returning text alone never implies completion.
+
+## L7 owner ruling: model document input and terminal readback
+
+REQ-PROJ-05/08: `publish_document` offers Markdown `content` for DOCX/PDF/XLSX
+(headings, paragraphs, lists, simple pipe tables), or `title` and `slides`
+(title/bullets, optional notes/table) for PPTX. The server maps these inputs
+into the existing strict Content model; existing structured objects and JSON
+strings encoding that model remain accepted. Invalid, ambiguous and oversized
+inputs fail before publication. Format, source coverage, permissions, package
+verification and publication schemas are unchanged.
+
+Cancellation uses the current Work lease request_id. Recovery retains the
+original reservation_id as the turn's usage attribution. Failed/cancelled
+terminal transcripts retain their reason in answer content and authoritative
+usage, including unknown reservations, for reload.
+
+Final transcript persistence is shielded from browser disconnect. On reload,
+the original creator may reconcile a still-running Work turn through the
+existing authorized finish boundary only when its session is cancelled and
+the released lease retains the matching reservation_id. This never resumes
+inference or reconciles an unrelated execution.

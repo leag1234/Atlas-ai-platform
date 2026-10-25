@@ -384,26 +384,25 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             if result.reason:
                 item.erreurs.append(result.reason)
             answer, _ = consolidated(result.text, request.user_text)
-            import re
+            from services.orchestrator.project_citations import render
 
-            citations = {p["chunk_id"]: p for p in context["passages"]}
-            for chunk in set(re.findall(r"\b[a-f0-9]{64}\b", answer)):
-                if chunk not in citations:
-                    raise ProjectError(
-                        422, "invalid_request", "Unverified project citation"
-                    )
-                answer = answer.replace(
-                    chunk,
-                    f"[Source](/api/atlas/orgs/{request.org_id}/projects/{request.project_id}/sources/{chunk})",
-                )
+            item.reponse = render(
+                answer, context["passages"], request.org_id, request.project_id
+            )
             coverage = context["context_manifest"]["coverage"]
             if not coverage["complete"]:
-                answer += "\n\nSource coverage: " + "; ".join(coverage["warnings"][:8])
-            item.reponse = answer
+                item.reponse += "\n\nSource coverage: " + "; ".join(
+                    coverage["warnings"][:8]
+                )
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
         terminal = "completed" if item.state == "done" else "failed"
+        if terminal == "failed":
+            error = ProjectError(
+                422, "invalid_request", "; ".join(item.erreurs) or item.state
+            ).body
     except asyncio.CancelledError:
         terminal = "cancelled"
+        error = ProjectError(422, "invalid_request", "Turn cancelled by request").body
         raise
     except ProjectError as exc:
         error = exc.body
@@ -422,22 +421,36 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             output_tokens=item.tokens.get("out", 0),
             tokens_estimated=False,
         )
-        await broker.call(
-            "finish",
-            dict(
-                request_id=turn["request_id"],
-                conversation_id=turn["conversation_id"],
-                state=terminal,
-                content_refs=[
-                    dict(kind="answer", text=item.reponse, file_version_id=None)
-                ]
-                if item.reponse.strip()
-                else [],
-                usage=usage,
-                error=error,
-            ),
-            turn["request_id"] + ":finish",
-        )
+        import anyio
+
+        with anyio.CancelScope(shield=True):
+            try:
+                await broker.call(
+                    "finish",
+                    dict(
+                        request_id=turn["request_id"],
+                        conversation_id=turn["conversation_id"],
+                        state=terminal,
+                        content_refs=[
+                            dict(kind="answer", text=item.reponse, file_version_id=None)
+                        ]
+                        if item.reponse.strip()
+                        else [],
+                        usage=usage,
+                        error=error,
+                    ),
+                    turn["request_id"] + ":finish",
+                )
+            except ProjectError as exc:
+                if exc.status != 409:
+                    raise
+                stored = await broker.call(
+                    "begin",
+                    dict(request_id=turn["request_id"], request=body),
+                    request._transcript_key,
+                )
+                if stored["turn"]["state"] != "cancelled":
+                    raise
         # Begin replay is the contracted way to fetch the stored terminal event.
         completed = await broker.call(
             "begin",

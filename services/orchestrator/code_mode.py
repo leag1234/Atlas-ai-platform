@@ -55,6 +55,7 @@ def settings() -> Limits:
 class CodeModel(GatewayModel):
     """Keep gateway per-call ceilings, while the loop owns the larger turn budget."""
 
+    work_tools: Callable[[], list[dict[str, object]]] | None = None
     work_cost: Decimal | None = None
     work_per_call: Decimal = Decimal("0.10")
     work_unknown: bool = False
@@ -72,7 +73,7 @@ class CodeModel(GatewayModel):
         )
 
     def available_tools(self, messages: list[Message]) -> list[dict[str, object]]:
-        return self.tools
+        return self.work_tools() if self.work_tools is not None else self.tools
 
     async def complete(self, messages: list[Message], timeout: float) -> Turn:
         if self.work_check is not None:
@@ -565,7 +566,25 @@ async def process_work(
             model.work_check = execution.check
             model.work_cost = limits.cost
             model.work_per_call = Decimal(str(ceiling["per_call_eur"]))
-            model.tools = declarations(scoped=True)
+            from services.orchestrator.work_tool_selection import (
+                WorkToolSelection,
+                select_group,
+            )
+
+            selected_files = []
+            for version in execution.session["base_file_versions"]:
+                status, file = await broker.public("GET", "files/" + version["file_id"])
+                if status != 200:
+                    raise ProjectError(status, str(file.get("error", "not_found")))
+                selected_files.append(file)
+            tools.selection = WorkToolSelection(
+                select_group(
+                    request.user_text,
+                    selected_files,
+                    bool(execution.session.get("repository_id")),
+                )
+            )
+            model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(
                 request,
@@ -583,10 +602,21 @@ async def process_work(
                     item.reponse += "\n\n" + links
             item.cout_eur = float(model.spent)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
+            reason = result.reason or next(iter(tools.validation_failures.values()), "")
+            terminal = (
+                "completed" if result.state == "done" and not reason else "failed"
+            )
+            item.state = "done" if terminal == "completed" else "failed"
+            if terminal == "failed":
+                reason = reason or result.state
+                item.erreurs.append(reason)
+                item.reponse += "\n\nWork failed: " + reason
             await tools.emit(
                 "recap",
-                label="Work turn complete",
-                status="completed",
+                label="Work turn complete"
+                if terminal == "completed"
+                else "Work failed: " + reason,
+                status=terminal,
                 output=dict(
                     text=item.reponse,
                     steps=result.tool_calls,
@@ -594,8 +624,6 @@ async def process_work(
                     file_version_ids=[r["file_version_id"] for r in tools.deliverables],
                 ),
             )
-            terminal = "completed"
-            item.state = "done"
     except asyncio.CancelledError:
         terminal = "cancelled"
         raise
