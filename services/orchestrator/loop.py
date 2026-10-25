@@ -200,6 +200,8 @@ async def run(
     quota_recovered = False
     protocol_recovered = False
     answer_parts: list[str] = []
+    last_plan: tuple[str, Message] | None = None
+    previous_call: tuple[str, str] | None = None
 
     def record_limit(values: dict[str, object]) -> None:
         if isinstance(result, CodeResult):
@@ -384,6 +386,43 @@ async def run(
                     )
                 result.state = "tool"
                 remaining()
+                try:
+                    canonical = json.dumps(json.loads(call.arguments), sort_keys=True)
+                except json.JSONDecodeError:
+                    canonical = call.arguments
+                consecutive = previous_call == (call.name, canonical)
+                previous_call = call.name, canonical
+                if (
+                    call.name == "update_plan"
+                    and last_plan is not None
+                    and last_plan[0] == canonical
+                ):
+                    # Only reuse a successfully executed plan. Status/text changes
+                    # still cross validation and persist as a new execution step.
+                    acknowledgement: Message = dict(last_plan[1], unchanged=True)
+                    if consecutive:
+                        acknowledgement["next_step"] = (
+                            "Act on the plan. Execute the next pending step or provide the requested answer."
+                        )
+                    if references is not None:
+                        await references.retain(call, acknowledgement, messages)
+                    else:
+                        messages.append(
+                            dict(
+                                role="tool",
+                                tool_call_id=call.id,
+                                content=json.dumps(acknowledgement),
+                            )
+                        )
+                    result.trace.append(
+                        dict(
+                            tool=call.name,
+                            arguments=call.arguments,
+                            output=acknowledgement,
+                            reused=True,
+                        )
+                    )
+                    continue
                 quota = (
                     "tool_calls"
                     if result.tool_calls >= limits.tool_calls
@@ -454,10 +493,6 @@ async def run(
                     raise Stop("search_limit")
                 if call.name == "web_fetch" and counts[call.name] >= 8:
                     raise Stop("fetch_limit")
-                try:
-                    canonical = json.dumps(json.loads(call.arguments), sort_keys=True)
-                except json.JSONDecodeError:
-                    canonical = call.arguments
                 recent.append((call.name, canonical))
                 if len(recent) >= 3 and recent[-1] == recent[-2] == recent[-3]:
                     raise Stop("loop_detected")
@@ -473,6 +508,8 @@ async def run(
                 )
                 if not isinstance(output, dict):
                     raise ValueError("invalid_tool_response")
+                if call.name == "update_plan" and "error" not in output:
+                    last_plan = canonical, dict(output)
                 if (
                     retry_web
                     and not retried

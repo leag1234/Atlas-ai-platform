@@ -1039,6 +1039,13 @@ records are best effort on failure and remain visible through the Context ledger
 when persistence succeeds. Pinned content and the 95% overflow boundary remain
 unchanged.
 
+Supervisor Work-loop ruling (2026-10-25, P1b-3): within an answer step, identical
+successful update_plan arguments are acknowledged without another tool execution
+or execution-budget charge. A status or text change is a new plan execution.
+Consecutive identical plans receive an instruction to act on the plan. Model-call,
+wall-clock and monetary limits remain enforced, and invalid plans or other tool
+loops retain the existing loop detector.
+
 Live transport correction (P1b-3): internal TranscriptState applies the same recent
 window before sending history over the bounded broker response. Optional Context
 history_compaction carries omitted represented IDs and token counts for the
