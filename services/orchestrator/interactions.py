@@ -12,6 +12,8 @@ from uuid import uuid4
 
 @dataclass
 class Interaction:
+    location_used: str = ""
+    nearby_source: str = ""
     context_samples: list[dict[str, object]] = field(default_factory=list)
     provider_retries: int = 0
     commons_requests: list[dict[str, object]] = field(default_factory=list)

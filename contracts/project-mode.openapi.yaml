@@ -6944,6 +6944,7 @@ components:
           - file_purged
           - extraction_completed
           - context_selected
+          - location_used
           - model_dispatch_intent
           - model_sent
           - model_acknowledged

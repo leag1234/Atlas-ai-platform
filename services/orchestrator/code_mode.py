@@ -557,6 +557,7 @@ async def process_work(
     started = time.monotonic()
     model: CodeModel | None = None
     result: CodeResult | None = None
+    nearby_usage: dict[str, Any] | None = None
     terminal = "failed"
     owner = asyncio.current_task()
     assert owner is not None
@@ -573,6 +574,47 @@ async def process_work(
     try:
         async with asyncio.timeout(limits.wall_clock):
             await workspace.prepare()
+            from services.orchestrator.location import location_dependent
+
+            if location_dependent(request.user_text) and (
+                request.location is None
+                or (request.location.position is None and not request.location.place)
+            ):
+                from services.orchestrator.nearby_chat import process_nearby
+
+                await execution.check()
+                count = await process_nearby(
+                    request,
+                    item,
+                    max_calls=min(8, limits.tool_calls),
+                    cost_limit=limits.cost,
+                    check=execution.check,
+                )
+                terminal = "completed" if item.state == "done" else "failed"
+                nearby_usage = dict(
+                    tool_calls=count,
+                    model_calls=0,
+                    elapsed_seconds=time.monotonic() - started,
+                    cost_eur=item.cout_eur,
+                    reserved_eur=0,
+                    unknown_eur=0,
+                    stored_bytes=0,
+                    input_tokens=0,
+                    output_tokens=0,
+                    tokens_estimated=False,
+                )
+                await tools.emit(
+                    "recap",
+                    label="Nearby places",
+                    status=terminal,
+                    output=dict(
+                        text=item.reponse,
+                        steps=count,
+                        cost_eur=item.cout_eur,
+                        file_version_ids=[],
+                    ),
+                )
+                return
             await tools.emit(
                 "workspace", label="Server workspace", status="completed", output={}
             )
@@ -609,6 +651,18 @@ async def process_work(
                     bool(execution.session.get("repository_id")),
                 )
             )
+            if request.location and location_dependent(request.user_text):
+                from services.orchestrator.nearby_chat import NearbyTools
+                from services.orchestrator.chat_pipeline import ChatTools
+
+                tools.nearby = NearbyTools(
+                    request.location,
+                    ChatTools(item),
+                    language=request.lang,
+                    max_calls=min(8, limits.tool_calls),
+                    cost_limit=limits.cost,
+                    check=execution.check,
+                )
             references = None
             if dispatch is not None:
                 from services.orchestrator.result_references import (
@@ -637,6 +691,16 @@ async def process_work(
                 **({"references": references} if references is not None else {}),
             )
             item.reponse = result.text
+            if tools.nearby is not None and tools.nearby.result:
+                from services.orchestrator.nearby_chat import render
+                from services.orchestrator.location import LEDGER_LABEL
+
+                item.reponse = render(tools.nearby.result, request.lang)
+                item.location_used = LEDGER_LABEL
+                item.nearby_source = tools.nearby.result["source"]
+                item.retrieved_urls.extend(
+                    p["source"] for p in tools.nearby.result["places"]
+                )
             from services.orchestrator.file_results import project_deliverable_links
 
             for receipt in tools.deliverables:
@@ -697,10 +761,16 @@ async def process_work(
             else:
                 raise
         if cleanup_authorized:
+            if tools.nearby is not None:
+                tools.nearby.position = None
+            if request.location:
+                request.location.position = None
+                request.location.place = None
+                request.location = None
 
             async def finish() -> None:
                 await workspace.cleanup()
-                usage = None
+                usage = nearby_usage
                 if result is not None and model is not None and not model.work_unknown:
                     usage = dict(
                         tool_calls=result.tool_calls,

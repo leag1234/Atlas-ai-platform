@@ -14,6 +14,7 @@ from pydantic import ConfigDict, Field, PrivateAttr, model_validator
 from packages.images import VisionInput, VisionMessage
 
 from services.orchestrator.documents import Attachment
+from services.orchestrator.location import Location
 
 ChatMessage = VisionMessage
 
@@ -43,6 +44,7 @@ def continuation_instruction(answer: str, language: str) -> str:
 
 class ChatRequest(VisionInput):
     model_config = ConfigDict(extra="ignore", strict=True)
+    location: Location | None = Field(default=None, exclude=True, repr=False)
     model: str = PROFILES[0]
     documents: list[Attachment] = Field(default_factory=list, max_length=8)
     org_id: str | None = None
