@@ -1,0 +1,59 @@
+links-guard-4 local verification — 2026-10-25
+Scope: local only; no GitHub CI or milestone claim.
+
+LIVE: .venv/bin/python BRAIN/links-piano.py hetzner
+  One conversation, two exact turns, bundled owned SearXNG, offset 26502.
+  12.569 s / 17.138 s; 3 searches; EUR 0; ceiling EUR 0.10 / 6 searches.
+  Live 2-3-shop-per-model expectation NOT MET (Yamaha 1, Roland 1, Casio 0).
+  Casio upstream_blocked. No second live attempt. Harness fallback flag is not acceptance.
+  Evidence: BRAIN/links-live-4/hetzner.capture.json.gz, hetzner.report.json, budget.json, coverage.json.
+
+REGRESSION BASELINE: env -i ... .venv/bin/python BRAIN/links-4-regression-baseline.py
+  1 recorded-result test, expected failure with new renderer disabled.
+  Evidence: BRAIN/links-4-regression-baseline.log.
+
+FOCUSED: .venv/bin/python BRAIN/links-check.py unittest test_links_guard test_shopping_links test_budgets test_search_policy test_searxng_policy -v
+  Final combined focused command also includes test_m26_sources test_citation_fragments test_scoped_citations test_followup.
+  Ran 93 tests in 4.242 s; OK after J36 cleanup fix.
+  Evidence: BRAIN/links-4-focused.log.
+PROVENANCE: .venv/bin/python BRAIN/links-check.py unittest test_m26_sources test_citation_fragments test_scoped_citations test_followup -v
+  Ran 30 tests in 3.550 s; OK.
+  Evidence: BRAIN/links-4-provenance.log.
+LINT: .venv/bin/python BRAIN/links-check.py lint
+  Exit 0; All checks passed; 503 files already formatted.
+  Evidence: BRAIN/links-4-lint.log.
+TYPECHECK: .venv/bin/python BRAIN/links-check.py typecheck
+  Exit 0; no issues in 503 source files.
+  Evidence: BRAIN/links-4-typecheck.log.
+
+FULL KEYLESS: .venv/bin/python BRAIN/links-check.py test
+  Exit 0; final code after J36 fix: 1754 tests / 815.881 s / OK, offset 26501.
+  No SearXNG flake exception needed.
+  Earlier full run: 1752 tests / 907.577 s / OK, in links-4-keyless-before-j36.log.
+  Running child environment audited credential-free.
+  Evidence: BRAIN/links-4-keyless.log.
+  Earlier run deliberately interrupted for typing fixes: links-4-keyless-interrupted.log.
+JOURNEYS: .venv/bin/python BRAIN/links-check.py test-journeys
+  First run passed unchanged J34, then failed original J36 assertion (m22_gate.py:271).
+  Evidence: links-4-journeys-j36-regression.log. No assertion/cassette change.
+  Two J36 regressions fail before fix: links-4-j36-baseline.log.
+  Fresh complete run after fix: EXIT 0. J1-J53 replay report accepted by unchanged validator.
+  J36=true, J53=true; J34 retains existing accepted distinct-price-measures exception
+  (J34_spacex_search_first=false), with exact original cassette replay.
+  pgrep precheck found no actual make test-journeys process.
+  Offset 27500: fresh preflight found no matching ports/containers/volumes.
+  Initial candidate 26500 became occupied at ports 34500/34510 while waiting; not used.
+  Evidence: BRAIN/links-4-journeys.log and links-4-journey-precheck.txt.
+
+UNCHANGED J34: git diff --exit-code HEAD -- tests/m22_gate.py tests/cassettes/m22.json.gz
+  Exit 0. No acquisition changes or cassette refresh.
+WHITESPACE: git diff --check
+  Exit 0.
+OWNED LIVE CLEANUP: no offset-26502 containers; unattached owned atlas-searxng-data-26502 removed.
+No cloud/GPU resource creation; incremental infrastructure EUR 0/hour.
+
+FINAL CLEANUP: no owned containers at 26501/26502/27500; removed the three unattached
+session-created journey volumes. Unused occupied offset 26500 untouched.
+SOURCE INTEGRITY: checked SHA-256 snapshot unchanged; no protected-path modifications;
+m22 gate and J34 cassette byte-identical to HEAD. Scoped credential-value scan clean.
+Single local commit only; no push/PR/merge/new branch or CI/milestone execution.
