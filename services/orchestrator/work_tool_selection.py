@@ -15,10 +15,9 @@ from pydantic import BaseModel, ConfigDict
 
 from services.orchestrator.code_tools import declarations
 
-Group = Literal["documents", "spreadsheets", "presentations", "code", "files", "nearby"]
+Group = Literal["documents", "spreadsheets", "presentations", "code", "files"]
 CORE = ("update_plan", "request_approval", "switch_tool_group")
 GROUPS: dict[str, tuple[str, ...]] = {
-    "nearby": ("nearby_places", "geocode"),
     "documents": (
         "read_file",
         "read_document",
@@ -61,10 +60,6 @@ class Switch(BaseModel):
 def select_group(
     question: str, files: list[dict[str, Any]], repository: bool = False
 ) -> str:
-    from services.orchestrator.location import location_dependent
-
-    if location_dependent(question):
-        return "nearby"
     import unicodedata
 
     text = "".join(
@@ -122,14 +117,6 @@ class WorkToolSelection:
             for t in declarations(scoped=True)
             if isinstance(t["function"], dict)
         }
-        from services.orchestrator.nearby_chat import (
-            declarations as nearby_declarations,
-        )
-
-        for tool in nearby_declarations():
-            function = tool["function"]
-            if isinstance(function, dict):
-                self.catalog[str(function["name"])] = tool
         from packages.tool_results import declaration
 
         self.catalog["reopen_result"] = declaration()
@@ -137,7 +124,7 @@ class WorkToolSelection:
             type="function",
             function=dict(
                 name="switch_tool_group",
-                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize), nearby (consented local places and explicit-place geocoding). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
+                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
                 parameters=Switch.model_json_schema(),
             ),
         )

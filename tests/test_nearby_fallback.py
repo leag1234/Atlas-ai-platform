@@ -19,7 +19,6 @@ from services.orchestrator.loop import Call
 from services.orchestrator.nearby import NearbyError, OSM
 from services.orchestrator.nearby_chat import NearbyTools, process_nearby, render
 from services.orchestrator.tools import Runtime
-from services.orchestrator.work_tool_selection import WorkToolSelection, select_group
 
 FIXTURES = Path(__file__).parent / "fixtures/nearby"
 
@@ -167,34 +166,6 @@ class FallbackTests(unittest.IsolatedAsyncioTestCase):
                 await process_nearby(request, Interaction())
         self.assertIsNone(request.location)
         self.assertIsNone(location.position)
-
-    async def test_work_discovery_and_execution_authority(self) -> None:
-        from unittest.mock import MagicMock
-        from services.orchestrator.code_tools import WorkTools
-
-        self.assertEqual(select_group("Nearby bakery open?", []), "nearby")
-        selection = WorkToolSelection("nearby")
-        self.assertLessEqual(len(selection.declarations()), 8)
-        self.assertIn("nearby_places", selection.names)
-        execution = MagicMock()
-        execution.check = AsyncMock()
-        tools = WorkTools(MagicMock(), execution)
-        tools.selection = selection
-        absent = await tools.execute(Call("n", "nearby_places", "{}"), 10)
-        self.assertEqual(absent["error"], "location_required")
-        execution.check.assert_awaited_once()
-        tools.nearby = MagicMock()
-        tools.nearby.execute = AsyncMock(
-            return_value={"data": {"location": "approximate"}}
-        )
-        result: Any
-        with patch.object(tools, "emit", AsyncMock()) as emit:
-            result = await tools.execute(
-                Call("n", "nearby_places", '{"category":"bakery"}'), 10
-            )
-        self.assertEqual(result["data"]["location"], "approximate")
-        self.assertEqual(execution.check.await_count, 2)
-        emit.assert_awaited_once()
 
     async def test_project_retains_scoped_lifecycle(self) -> None:
         from services.orchestrator.project_chat import process_project
