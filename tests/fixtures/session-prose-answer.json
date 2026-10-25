@@ -1,0 +1,19 @@
+{
+  "source": "P1b-2-live-1 turn 3, Hetzner, 2026-10-25",
+  "response": {
+    "provider_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+    "text": "I acknowledge the approved unit cost of EUR 37.25 for 48 units. These figures have been retained.",
+    "calls": [],
+    "usage": {
+      "prompt_tokens": 6645,
+      "completion_tokens": 27
+    },
+    "cost_eur": "0",
+    "reasoning": "",
+    "trace_tokens": 0,
+    "answer_tokens": 27,
+    "token_split_estimated": false,
+    "reasoning_retried": false,
+    "provider_retries": 0
+  }
+}

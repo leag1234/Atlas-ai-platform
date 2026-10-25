@@ -16,7 +16,7 @@ from packages import context_usage
 from packages.ports import atlas_ports
 from pydantic import ValidationError
 
-from packages.model_json import aliases, object_content
+from packages.model_json import aliases, object_content, unique_object
 from packages.session_state import SessionState, StateUpdate
 from services.orchestrator.model import GatewayModel
 
@@ -31,7 +31,22 @@ def parse_update(result: Any) -> StateUpdate:
     text = result.get("text")
     calls = result.get("calls", [])
     if isinstance(text, str) and text.strip() and not calls:
-        value = object_content(text)
+        try:
+            value = object_content(text)
+        except json.JSONDecodeError:
+            # Providers can surround JSON with prose or fences. Skip malformed
+            # fragments, but keep duplicate-key/alias/schema rejection strict.
+            decoder = json.JSONDecoder(object_pairs_hook=unique_object)
+            for index, character in enumerate(text):
+                if character != "{":
+                    continue
+                try:
+                    value, _ = decoder.raw_decode(text, index)
+                    break
+                except json.JSONDecodeError:
+                    continue
+            else:
+                raise ValueError("json_object_required") from None
     elif (
         isinstance(calls, list)
         and len(calls) == 1
@@ -72,6 +87,22 @@ def schedule(broker: Any, completed: dict[str, Any]) -> None:
     task = asyncio.create_task(update(broker, completed), name="project-session-state")
     tasks.add(task)
     task.add_done_callback(tasks.discard)
+
+
+def schedule_compaction(broker: Any, payload: dict[str, Any]) -> None:
+    task = asyncio.create_task(compact(broker, payload), name="project-compaction")
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+
+async def compact(broker: Any, payload: dict[str, Any]) -> None:
+    try:
+        await broker.call("compact", payload)
+    except asyncio.CancelledError:
+        log.warning("session_compaction_cancelled")
+        raise
+    except Exception as exc:
+        log.warning("session_compaction_failed error_type=%s", type(exc).__name__)
 
 
 async def update(broker: Any, completed: dict[str, Any]) -> None:

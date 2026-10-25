@@ -23,7 +23,6 @@ from services.orchestrator.code_api import ExecutionBroker
 from services.orchestrator.code_ui import project_mode
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call, Limits, Message, Query, Reservation, run
-from services.orchestrator.memory import consolidated
 from services.orchestrator.model import GatewayModel
 from services.orchestrator.project_ui import (
     browser_origin,
@@ -39,6 +38,23 @@ from services.retrieval.project_work_contract import validate
 class TranscriptBroker(ExecutionBroker):
     private_prefix = "/internal/atlas/transcript/"
     success_statuses = (200, 201)
+
+
+def answer_content(text: str) -> str:
+    """Accept historical answer envelopes without requiring or trusting them."""
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return text
+    if (
+        isinstance(value, dict)
+        and set(value) == {"answer", "facts"}
+        and isinstance(value["answer"], str)
+        and value["answer"].strip()
+        and isinstance(value["facts"], list)
+    ):
+        return str(value["answer"])
+    return text
 
 
 async def authenticate_chat(
@@ -405,7 +421,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
                 ContextTools(context),
-                Path("prompts/project.txt").read_text()
+                Path("prompts/chat.txt").read_text()
                 + language_instruction(scoped.lang),
                 Limits(
                     profile=request.model,
@@ -422,11 +438,13 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             item.state, item.cout_eur = result.state, float(result.cost)
             if result.reason:
                 item.erreurs.append(result.reason)
-            answer, _ = consolidated(result.text, request.user_text)
             from services.orchestrator.project_citations import render
 
             item.reponse = render(
-                answer, context["passages"], request.org_id, request.project_id
+                answer_content(result.text),
+                context["passages"],
+                request.org_id,
+                request.project_id,
             )
             coverage = context["context_manifest"]["coverage"]
             if not coverage["complete"]:

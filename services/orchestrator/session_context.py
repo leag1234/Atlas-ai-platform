@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 from typing import Any
@@ -9,7 +10,6 @@ from typing import Any
 from packages import context_usage
 from packages.session_context import Calibration, recent, threshold
 from services.orchestrator.chat_schema import ChatMessage
-from services.orchestrator.stream_client import sink_context
 from services.retrieval.project_identity import ProjectError
 
 calibration = Calibration()
@@ -96,6 +96,7 @@ class SessionContext:
         self.status = "normal"
         self.warning = ""
         self.question: dict[str, object] | None = None
+        self.history_compaction = state["context"].get("history_compaction")
 
     async def prepare(
         self, messages: list[dict[str, object]], tools: object, profile: str | None
@@ -184,7 +185,7 @@ class SessionContext:
             context_status=self.status,
         )
         turn = self.state["turn"]
-        if self.dropped:
+        if self.dropped or self.history_compaction:
             value = dict(
                 turn_ids=[t["id"] for t in self.dropped],
                 tokens_removed=sum(
@@ -198,8 +199,16 @@ class SessionContext:
                 if threshold_compacted or self.status != "normal"
                 else "recent_window",
             )
-            result = await self.broker.call(
-                "compact",
+            if self.history_compaction:
+                value["turn_ids"] = (
+                    self.history_compaction["turn_ids"] + value["turn_ids"]
+                )
+                value["tokens_removed"] += self.history_compaction["tokens_removed"]
+                self.history_compaction = None
+            from services.orchestrator.session_updates import schedule_compaction
+
+            schedule_compaction(
+                self.broker,
                 dict(
                     conversation_id=turn["conversation_id"],
                     request_id=turn["request_id"],
@@ -207,9 +216,9 @@ class SessionContext:
                 ),
             )
             self.dropped = []
-            if sink := sink_context.get():
-                for event in result["events"]:
-                    await sink({"project": event})
+            # Start background persistence, without waiting for its I/O or
+            # attaching the answer stream's lifetime to the ledger write.
+            await asyncio.sleep(0)
         if self.status in {"warning", "refuse"}:
             self.warning = f"Context used: {count} / {sample['model_window']} tokens ({self.status} threshold: {'95' if self.status == 'refuse' else '80'}%). Start a new session from the session state."
             if self.status == "refuse":

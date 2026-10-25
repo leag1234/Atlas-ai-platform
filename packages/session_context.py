@@ -59,3 +59,22 @@ def recent(
             retained.append(turn)
             used += size
     return list(reversed(retained)), list(reversed(dropped))
+
+
+def transport_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Do not retransmit represented history that the answer would discard."""
+    if "session_state" not in context:
+        return context
+    kept, dropped = recent(context["history"], set(context["represented_turn_ids"]))
+    if not dropped:
+        return context
+    return dict(
+        context,
+        history=kept,
+        history_compaction=dict(
+            turn_ids=[t["id"] for t in dropped],
+            tokens_removed=sum(tokens(encoded(t["content_refs"])) for t in dropped),
+            tokens_added=tokens(encoded(context["session_state"])),
+            reason="recent_window",
+        ),
+    )

@@ -232,6 +232,8 @@ class Transcript:
     def state(
         self, turn: dict[str, Any], context: dict[str, Any], replay: bool
     ) -> dict[str, Any]:
+        from packages.session_context import transport_context
+
         rows = self.db.execute(
             "SELECT data FROM (SELECT seq,data FROM atlas_projects.transcript_progress WHERE org_id=%s AND project_id=%s AND turn_id=%s UNION ALL SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s) e ORDER BY seq LIMIT 100",
             (
@@ -249,7 +251,7 @@ class Transcript:
         events = [r["data"] for r in rows]
         return dict(
             turn=turn,
-            context=context,
+            context=transport_context(context),
             replay=replay,
             events=events,
             last_event_seq=max((e["seq"] for e in events), default=0),

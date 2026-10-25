@@ -1027,3 +1027,21 @@ entry aliases `src` to `source` and Chat fact `e` to `evidence`; collisions, dup
 JSON keys, unknown fields and invalid provenance still reject the payload. Failure
 retains the prior snapshot and logs a safe reason code. The next completed turn
 makes one fresh bounded update including uncovered turns; no immediate retry.
+
+Supervisor answer-isolation ruling (2026-10-25, P1b-3): scoped project Chat uses
+normal prose completion, without the consolidation-JSON answer contract. State
+updates and compaction-event persistence run independently in background tasks;
+neither failure can reject or delay the user's answer. State parsing accepts the
+first JSON object surrounded by prose, then enforces the unchanged closed schema,
+alias and provenance rules. Unusable output leaves the previous state intact;
+unrepresented verbatim history remains eligible on the next turn. Compaction
+records are best effort on failure and remain visible through the Context ledger
+when persistence succeeds. Pinned content and the 95% overflow boundary remain
+unchanged.
+
+Live transport correction (P1b-3): internal TranscriptState applies the same recent
+window before sending history over the bounded broker response. Optional Context
+history_compaction carries omitted represented IDs and token counts for the
+background ledger write. Canonical history and the public transcript are unchanged.
+MemoryEntry.kind includes constraint, the pinned kind already specified above.
+The transport response cap remains 160000 bytes.

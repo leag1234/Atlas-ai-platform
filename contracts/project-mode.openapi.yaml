@@ -6191,6 +6191,7 @@ components:
           - user
           - derived
           - legacy
+          - constraint
         source_conversation_id:
           anyOf:
           - type: string
@@ -9196,6 +9197,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        history_compaction:
+          $ref: '#/components/schemas/ContextCompaction'
         session_state:
           $ref: '#/components/schemas/SessionState'
         represented_turn_ids:
