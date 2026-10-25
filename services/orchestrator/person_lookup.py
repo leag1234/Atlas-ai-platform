@@ -3,6 +3,7 @@
 import json
 import re
 import time
+from dataclasses import dataclass
 from html import escape
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,81 @@ if TYPE_CHECKING:
 
 
 _NAME = r"([^\W\d_][\w'’.-]*(?:\s+[^\W\d_][\w'’.-]*){1,3})"
+_COMMON = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "as",
+        "at",
+        "born",
+        "by",
+        "for",
+        "from",
+        "he",
+        "her",
+        "his",
+        "in",
+        "is",
+        "of",
+        "on",
+        "she",
+        "the",
+        "to",
+        "was",
+        "with",
+    }
+)
+
+
+@dataclass(frozen=True)
+class Evidence:
+    url: str
+    passage: str
+
+
+def _keywords(text: str, name: str) -> set[str]:
+    name_words = set(re.findall(r"[^\W\d_]+", normalized(name)))
+    words = re.findall(r"[^\W\d_]{3,}", normalized(text))
+    return {
+        re.sub(r"(?:ers?|ed|s)$", "", word)
+        for word in words
+        if word not in _COMMON and word not in name_words
+    }
+
+
+def _dominant_evidence(evidence: list[Evidence], name: str) -> list[Evidence] | None:
+    """Return a dominant group only when matching snippets describe one subject."""
+    if len(evidence) < 2:
+        return evidence
+    keywords = [_keywords(item.passage, name) for item in evidence]
+    groups: list[list[int]] = []
+    pending = set(range(len(evidence)))
+    while pending:
+        group = {pending.pop()}
+        changed = True
+        while changed:
+            changed = False
+            for index in tuple(pending):
+                if any(keywords[index] & keywords[member] for member in group):
+                    pending.remove(index)
+                    group.add(index)
+                    changed = True
+        groups.append(sorted(group))
+    groups.sort(key=len, reverse=True)
+    if len(groups) > 1 and len(groups[0]) == len(groups[1]):
+        return None
+    return [evidence[index] for index in groups[0]]
+
+
+def _synthesis(evidence: list[Evidence], name: str) -> str:
+    """Keep only retrieved, exact-name facts and attach their source links."""
+    facts: list[str] = []
+    for number, item in enumerate(evidence[:3], 1):
+        sentence = escape(item.passage).replace("\n", " ").strip()
+        if sentence and sentence not in facts:
+            facts.append(f"{sentence} [Source {number}]({item.url})")
+    return " ".join(facts)
 
 
 def person_name(question: str) -> str | None:
@@ -69,6 +145,8 @@ async def lookup(
     evidence: dict[str, str] = {}
     searched = []
     failures = []
+    similar_name_found = False
+    surname = normalized(name).split()[-1]
     for call in queries(name, request.lang):
         searched.append(json.loads(call.arguments)["query"])
         try:
@@ -97,54 +175,66 @@ async def lookup(
                     r"(?<!\w)" + re.escape(normalized(name)) + r"(?!\w)", normalized(s)
                 )
             ]
+            if not matching and re.search(
+                r"(?<!\w)" + re.escape(surname) + r"(?!\w)", normalized(passage)
+            ):
+                similar_name_found = True
             if matching and isinstance(url, str) and re.match(r"https?://", url):
                 evidence[url] = " ".join(matching)[:1200]
+    selected = _dominant_evidence(
+        [Evidence(url, passage) for url, passage in evidence.items()], name
+    )
     labels = {
         "en": (
             "I could not find reliable information identifying",
-            "These retrieved excerpts mention the exact name",
-            "People with similar names are not the same person. What profession, location, or other context should I use?",
+            "I found retrieved sources that describe different people named",
+            "What profession, location, or other context should I use?",
+            "People with similar names are not the same person.",
             "Searched",
         ),
         "fr": (
             "Je n’ai pas trouvé d’information fiable permettant d’identifier",
-            "Ces extraits trouvés mentionnent le nom exact",
-            "Les personnes aux noms similaires ne sont pas la même personne. Quel métier, lieu ou autre contexte pouvez-vous préciser ?",
+            "Les sources trouvées décrivent différentes personnes nommées",
+            "Quel métier, lieu ou autre contexte pouvez-vous préciser ?",
+            "Les personnes aux noms similaires ne sont pas la même personne.",
             "Recherches",
         ),
         "de": (
             "Ich konnte keine verlässlichen Informationen zur Identität finden",
-            "Diese abgerufenen Auszüge nennen den genauen Namen",
-            "Personen mit ähnlichen Namen sind nicht dieselbe Person. Welchen Beruf, Ort oder Kontext meinen Sie?",
+            "Die abgerufenen Quellen beschreiben verschiedene Personen namens",
+            "Welchen Beruf, Ort oder Kontext meinen Sie?",
+            "Personen mit ähnlichen Namen sind nicht dieselbe Person.",
             "Gesucht",
         ),
         "es": (
             "No encontré información fiable que identifique a",
-            "Estos extractos recuperados mencionan el nombre exacto",
-            "Las personas con nombres similares no son la misma persona. ¿Qué profesión, lugar o contexto puede indicar?",
+            "Las fuentes recuperadas describen a distintas personas llamadas",
+            "¿Qué profesión, lugar o contexto puede indicar?",
+            "Las personas con nombres similares no son la misma persona.",
             "Búsquedas",
         ),
         "it": (
             "Non ho trovato informazioni affidabili per identificare",
-            "Questi estratti recuperati citano il nome esatto",
-            "Le persone con nomi simili non sono la stessa persona. Quale professione, luogo o contesto intende?",
+            "Le fonti recuperate descrivono persone diverse chiamate",
+            "Quale professione, luogo o contesto intende?",
+            "Le persone con nomi simili non sono la stessa persona.",
             "Ricerche",
         ),
     }
-    missing, found, context, heading = labels[request.lang]
-    text = f"{found if evidence else missing} **{escape(name)}**.\n\n"
-    for number, (url, passage) in enumerate(evidence.items(), 1):
-        # Escape active markup from untrusted snippets; the service owns links.
-        text += (
-            f"> {escape(passage).replace(chr(10), ' ')}\n\n[Source {number}]({url})\n\n"
+    missing, ambiguous, context, namesake, heading = labels[request.lang]
+    if selected:
+        text = f"**{escape(name)}**: {_synthesis(selected, name)}"
+    elif evidence:
+        citations = " ".join(
+            f"[Source {number}]({url})" for number, url in enumerate(evidence, 1)
         )
-    text += (
-        context
-        + "\n\n"
-        + heading
-        + ":\n"
-        + "\n".join(f"- `{query}`" for query in searched)
-    )
+        text = f"{ambiguous} **{escape(name)}**. {citations}\n\n{context}"
+    else:
+        text = f"{missing} **{escape(name)}**."
+        if similar_name_found:
+            text += " " + namesake
+        text += "\n\n" + context
+    text += "\n\n" + heading + ":\n" + "\n".join(f"- `{query}`" for query in searched)
     if failures:
         text += "\n\nSearch status: " + ", ".join(dict.fromkeys(failures)) + "."
     item.reponse, item.state, item.task_type = text, "done", "person_lookup"

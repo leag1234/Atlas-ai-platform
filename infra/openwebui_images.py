@@ -42,13 +42,19 @@ def fallback_documents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Select current or explicitly referenced document uploads by chat turn."""
     if not messages:
         return []
-    current = messages[-1].get("files") or []
+    current = [
+        file
+        for file in messages[-1].get("files") or []
+        if _is_document_upload(file)
+    ]
     if current:
         return [dict(file, reused=False) for file in current]
     previous = [message for message in messages[:-1] if message.get("role") == "user"]
     available: dict[str, dict[str, Any]] = {}
     for message in previous:
         for file in message.get("files") or []:
+            if not _is_document_upload(file):
+                continue
             name = str(file.get("filename") or file.get("name") or file.get("id"))
             available[name] = file
     content = messages[-1].get("content", "")
@@ -80,6 +86,24 @@ def fallback_documents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ):
         names = set(available)
     return [dict(file, reused=True) for name, file in available.items() if name in names]
+
+
+def _is_document_upload(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("type") == "image":
+        return False
+    content_type = str(entry.get("content_type") or entry.get("mime_type") or "")
+    if content_type.casefold().startswith("image/"):
+        return False
+    name = str(entry.get("filename") or entry.get("name") or "")
+    return Path(name).suffix.casefold() not in {
+        ".avif", ".bmp", ".gif", ".heic", ".jpeg", ".jpg", ".png", ".svg", ".tif", ".tiff", ".webp"
+    }
+
+
+def _is_image_upload(entry: object) -> bool:
+    return isinstance(entry, dict) and not _is_document_upload(entry)
 
 
 def select_documents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -187,7 +211,7 @@ class Filter:
                 }
             )
         files = body.get("files") or []
-        documents = [file for file in files if file.get("type") == "file"]
+        documents = [file for file in files if _is_document_upload(file)]
         original_documents = documents
         metadata = __metadata__ or {}
         current_images = []
@@ -213,7 +237,7 @@ class Filter:
                         "files": [
                             f
                             for f in message.get("files", [])
-                            if f.get("type") == "file"
+                        if isinstance(f, dict)
                         ],
                     }
                 )
@@ -226,9 +250,10 @@ class Filter:
             current_images = [
                 f
                 for f in original.get("files", [])
-                if f.get("type") == "image"
-                or str(f.get("content_type", "")).startswith("image/")
+                if _is_image_upload(f)
             ]
+        else:
+            current_images = [file for file in files if _is_image_upload(file)]
         if current_images:
             last = body["messages"][-1]
             content = last.get("content", "")
@@ -275,7 +300,11 @@ class Filter:
                 )
             # Consume originals before Open WebUI's fragment retrieval handler.
             body["files"] = [file for file in files if file not in original_documents]
-        body["files"] = [file for file in files if file not in original_documents]
+        body["files"] = [
+            file
+            for file in files
+            if file not in original_documents and file not in current_images
+        ]
         owner = str((__user__ or {}).get("id") or "unknown")
         for index, message in enumerate(body.get("messages", [])):
             if message.get("role") != "user" or not isinstance(
