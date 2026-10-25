@@ -177,6 +177,9 @@ def simple_drawing_instruction() -> str:
 
 
 _SVG = re.compile(r"<svg\b[^>]*>.*?</svg\s*>", re.I | re.S)
+_XML_PREAMBLE = re.compile(
+    r"<\?xml\b[^>]*\?>|<!DOCTYPE\b(?:[^>\[]|\[[\s\S]*?\])*>", re.I
+)
 _ALLOWED_TAGS = {
     "svg",
     "rect",
@@ -624,6 +627,9 @@ def without_svg_or_code(model_text: str) -> str:
         model_text,
         flags=re.I | re.S,
     )
+    # An SVG declaration is transport syntax, not answer prose. In particular,
+    # models sometimes put it immediately before a Commons-backed image.
+    clean = _XML_PREAMBLE.sub("", clean)
     # Splitting around an SVG can leave one half of its fence in each section.
     # Never let those delimiters fence the service-owned image and source line.
     return re.sub(r"(?m)^[ \t]*(?:`{3,}|~{3,})[^\n]*$", "", clean).strip()

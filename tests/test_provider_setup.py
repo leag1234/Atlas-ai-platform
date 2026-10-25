@@ -224,4 +224,7 @@ class TrialBoundaryTests(unittest.TestCase):
             self.assertIn("Code mode is unavailable", response.json()["message"])
             response = client.post("/v1/audio/transcriptions")
             self.assertEqual(response.status_code, 503)
-            self.assertIn("Speech is unavailable", response.json()["message"])
+            self.assertEqual(
+                response.json()["message"],
+                "Speech is not enabled on this installation.",
+            )

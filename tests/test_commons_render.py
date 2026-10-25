@@ -83,6 +83,21 @@ class CommonsRenderTests(unittest.TestCase):
                 self.assertEqual(intro, "The engine uses heated gas.")
                 self.assertEqual(legend, LEGEND)
 
+    def test_xml_preamble_before_commons_image_never_reaches_markdown(self) -> None:
+        observed = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<!DOCTYPE svg [<!ENTITY example 'example'>]>\n"
+            "A useful explanation.\n"
+            + SVG
+            + "\n\n"
+            + LEGEND
+        )
+        intro, legend = mechanical_prose(observed)
+        self.assertEqual(intro, "A useful explanation.")
+        self.assertEqual(legend, LEGEND)
+        self.assertNotIn("<?xml version", intro + legend)
+        self.assertNotIn("<!DOCTYPE", intro + legend)
+
     def test_two_turn_translation_renders_retrieved_image_and_english_labels(
         self,
     ) -> None:
