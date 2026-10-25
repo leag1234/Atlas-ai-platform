@@ -27,3 +27,6 @@ lameenc==1.8.5
 
 # Browser evidence for the real Open WebUI DOM (M24/D6-D7), development only.
 playwright==1.62.0
+
+# OSM syntax, holidays and local timezone evaluation (REQ-NEARBY-01).
+opening-hours-py==2.1.4

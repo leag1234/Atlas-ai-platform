@@ -614,6 +614,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     from services.orchestrator.image_truth import verified_images
 
     await _process_request(request, item)
+    from services.orchestrator.source_truth import clean_citation_residue
+
+    item.reponse = clean_citation_residue(item.reponse)
     item.reponse = verified_images(
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
@@ -697,6 +700,13 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
     ):
         language = requested_language(request.user_text) or language
     request = request.model_copy(update={"lang": language})
+    from services.orchestrator.location import location_dependent
+
+    if not request.continuation and location_dependent(request.user_text):
+        from services.orchestrator.nearby_chat import process_nearby
+
+        await process_nearby(request, item)
+        return
     if (
         extended_enabled()
         and not request.has_attachments

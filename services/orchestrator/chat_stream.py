@@ -143,6 +143,7 @@ def response(
             temporary = Interaction()
             from services.orchestrator.source_truth import (
                 drawing_references,
+                clean_citation_residue,
                 inline_source_markers,
                 provider_reference_markers,
                 visible_sources,
@@ -187,6 +188,7 @@ def response(
                         )
                     },
                 )
+                temporary.reponse = clean_citation_residue(temporary.reponse)
                 # JSON finalization already numbers links before appending the
                 # server's source details. Do not rewrite that footer as inline links.
                 render_sources = (

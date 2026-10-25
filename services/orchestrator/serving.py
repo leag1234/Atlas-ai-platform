@@ -313,6 +313,9 @@ def webui(name: str, persistent: bool) -> None:
             str(Path("services/orchestrator/chat-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/chat-ui.js:ro",
             "-v",
+            str(Path("services/orchestrator/static/nearby.css").resolve())
+            + ":/app/backend/open_webui/static/atlas/nearby.css:ro",
+            "-v",
             str(Path("services/orchestrator/static/fonts").resolve())
             + ":/app/backend/open_webui/static/atlas/fonts:ro",
             "-v",

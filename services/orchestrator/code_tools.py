@@ -365,6 +365,7 @@ class WorkTools(CodeTools):
         self.deliverables: list[dict[str, Any]] = []
         self.selection: WorkToolSelection | None = None
         self.validation_failures: dict[str, str] = {}
+        self.nearby: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
@@ -438,6 +439,18 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return result
+        if call.name in {"nearby_places", "geocode"}:
+            if self.nearby is None:
+                return {"error": "location_required"}
+            result = await self.nearby.execute(call, timeout)
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return dict(result)
         if call.name in project_document_tools.SCHEMAS:
             from services.retrieval.project_identity import ProjectError
 

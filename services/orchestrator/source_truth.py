@@ -91,6 +91,25 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     return text
 
 
+def clean_citation_residue(text: str) -> str:
+    """Remove citation-only connective phrases and punctuation gaps in prose."""
+    from services.orchestrator.citation_fragments import _CODE
+
+    def clean(value: str) -> str:
+        value = re.sub(
+            r"(?i)[ \t]+(?:issues? de sources?|according to sources?|from sources?)[ \t]*(?=[.,;]|$)",
+            "",
+            value,
+        )
+        value = re.sub(r",[ \t]*(?=\.)", "", value)
+        return re.sub(r"[ \t]+([.,])", r"\1", value)
+
+    return "".join(
+        part if index % 2 else clean(part)
+        for index, part in enumerate(_CODE.split(text))
+    )
+
+
 def inline_source_markers(text: str, retrieved: list[str]) -> str:
     """Turn retrieved web URLs into compact Markdown links Open WebUI renders."""
     numbers = {url: index for index, url in enumerate(dict.fromkeys(retrieved), 1)}
