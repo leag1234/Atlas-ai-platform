@@ -25,6 +25,7 @@ from services.orchestrator.project_forge import (
     ForgeError,
     ForgeUnknown,
     GitHubForge,
+    ForgejoForge,
     snapshot_files,
 )
 from services.retrieval.project_files import ProjectFiles, action_digest, timestamp
@@ -44,7 +45,8 @@ def configured_adapter(repository: Json) -> ForgeAdapter:
             repository["connector_id"]
         ]
         if (
-            repository["forge"] != "github"
+            repository["forge"] not in {"github", "forgejo", "gitea"}
+            or repository["forge"] != configured.get("forge", "github")
             or configured["remote_ref"] != repository["remote_ref"]
         ):
             raise ValueError
@@ -60,14 +62,26 @@ def configured_adapter(repository: Json) -> ForgeAdapter:
             addresses = socket.getaddrinfo(
                 parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM
             )
-            if not addresses or any(
-                not ipaddress.ip_address(item[4][0]).is_global for item in addresses
+            allowed = (
+                configured.get("allowed_addresses", [])
+                if repository["forge"] in {"forgejo", "gitea"}
+                else []
+            )
+            if (
+                not isinstance(allowed, list)
+                or not addresses
+                or any(
+                    not ipaddress.ip_address(item[4][0]).is_global
+                    and item[4][0] not in allowed
+                    for item in addresses
+                )
             ):
                 raise ValueError
         token = os.environ[configured["token_env"]]
         if not token:
             raise ValueError
-        return GitHubForge(
+        adapter = GitHubForge if repository["forge"] == "github" else ForgejoForge
+        return adapter(
             Connector(
                 remote_ref=configured["remote_ref"],
                 api_url=configured["api_url"],
@@ -75,6 +89,8 @@ def configured_adapter(repository: Json) -> ForgeAdapter:
                 author_name=configured["author_name"],
                 author_email=configured["author_email"],
                 token=token,
+                ca_file=configured.get("ca_file"),
+                username=configured.get("username", "x-access-token"),
             )
         )
     except (KeyError, TypeError, ValueError, OSError, ForgeError):
@@ -173,6 +189,8 @@ class RepositoryActions:
     def current(self, operation: Json) -> tuple[Json, bytes | None]:
         self.scope.authorize("POST", ["repositories"])
         approval = self.work.approval(operation["approval_id"])["data"]
+        if operation.get("fence"):
+            self.work.fence(operation["fence"])
         if (
             self.scope.identity.member != approval["requested_by_member_id"]
             or self.scope.org["revision"] != approval["policy_revision"]
@@ -184,7 +202,9 @@ class RepositoryActions:
         content, _, _ = self.snapshot(operation["action"])
         return approval, content
 
-    def submit(self, identifier: str, data: Json) -> tuple[int, Json]:
+    def submit(
+        self, identifier: str, data: Json, fence: Json | None = None
+    ) -> tuple[int, Json]:
         validate("RepositoryAction", data)
         action = {k: v for k, v in data.items() if k != "approval_id"}
         if "approval_id" in data:
@@ -224,7 +244,12 @@ class RepositoryActions:
             repository = self.repository(identifier)
             content, versions, paths = self.snapshot(action)
             binding = configured_adapter(repository).bind(action)
+            if fence is not None:
+                session, _ = self.work.fence(fence)
+                if session["repository_id"] != identifier:
+                    raise ProjectError(403, "permission_denied")
             operation = dict(
+                fence=fence,
                 id=str(uuid4()),
                 created_at=timestamp(),
                 action=action,
@@ -247,7 +272,7 @@ class RepositoryActions:
             )
             approval = dict(
                 self.files.new(),
-                session_id=None,
+                session_id=fence["session_id"] if fence else None,
                 requested_by_member_id=self.scope.identity.member,
                 approver_member_id=self.scope.identity.member,
                 actor=dict(

@@ -18,6 +18,9 @@ ENTRYPOINT ["python", "/app/entrypoint.py"]
 # Project Work uses the existing networkless terminal-image workers. Only the
 # explicitly selected project target contains the host Docker client.
 FROM runtime AS project
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
 
 FROM runtime AS default

@@ -39,7 +39,14 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "run_command",
         "publish_document",
     ),
-    "code": ("read_file", "search", "edit_file", "write_file", "run_command"),
+    "code": (
+        "read_file",
+        "edit_file",
+        "run_command",
+        "forge_action",
+        "write_file",
+        "search",
+    ),
     "files": ("list_dir", "read_file", "search", "write_file", "organize_files"),
 }
 PATTERNS = {
@@ -132,10 +139,10 @@ class WorkToolSelection:
     @property
     def names(self) -> tuple[str, ...]:
         group = GROUPS[self.group]
-        if not self.reopen_enabled:
-            return (*CORE, *group)
         if self.focus in group:
             group = (self.focus, *(name for name in group if name != self.focus))
+        if not self.reopen_enabled:
+            return (*CORE, *group[:5])
         return (*CORE, "reopen_result", *group[:4])
 
     def declarations(self) -> list[dict[str, object]]:

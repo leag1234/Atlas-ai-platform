@@ -90,6 +90,11 @@ class CodeModel(GatewayModel):
             raise
 
 
+def configure_work_model(model: CodeModel, request: ChatRequest) -> None:
+    """One request configuration for public Work and its measurement adapter."""
+    model.configure_quality(request.model, request.max_tokens)
+
+
 CLAIM = re.compile(
     r"(?:\btests?\b.{0,45}\b(?:pass(?:ed|es|ing)?|successful|green|passano|passati|r[eé]ussi\w*|passent|vert\w*|bestanden|erfolgreich|gr[uü]n\w*|superat\w*|riuscit\w*)\b"
     r"|\b(?:pruebas?|tests?)\b.{0,45}\b(?:pasan|pasaron|superad\w*|exitos\w*|correctamente)\b"
@@ -502,6 +507,7 @@ async def process_work(
     org_id: str,
     project_id: str,
     session_id: str,
+    collect_workspace: Callable[[Workspace], Awaitable[None]] | None = None,
 ) -> None:
     """Task-G handoff after verified identity and scoped conversation/context selection.
 
@@ -573,6 +579,7 @@ async def process_work(
     try:
         async with asyncio.timeout(limits.wall_clock):
             await workspace.prepare()
+            await execution.snapshot(workspace)
             await tools.emit(
                 "workspace", label="Server workspace", status="completed", output={}
             )
@@ -583,7 +590,7 @@ async def process_work(
             if not isinstance(connected, CodeModel):
                 raise RuntimeError("Invalid Work model client")
             model = connected
-            model.configure_quality(code_profile(), request.max_tokens)
+            configure_work_model(model, request)
             model.dispatch_hook = dispatch.publish if dispatch is not None else None
             model.session_context = (
                 dispatch.session_context if dispatch is not None else None
@@ -609,6 +616,19 @@ async def process_work(
                     bool(execution.session.get("repository_id")),
                 )
             )
+            repository = None
+            if execution.session.get("repository_id"):
+                status, repositories = await broker.public("GET", "repositories")
+                if status != 200:
+                    raise ProjectError(status, "dependency_unavailable")
+                repository = next(
+                    (
+                        r
+                        for r in repositories["items"]
+                        if r["id"] == execution.session["repository_id"]
+                    ),
+                    None,
+                )
             references = None
             if dispatch is not None:
                 from services.orchestrator.result_references import (
@@ -631,11 +651,15 @@ async def process_work(
                 limits,
                 dict(
                     root="/workspace",
+                    repository=repository,
+                    listing=await workspace.invoke("list_dir", {"path": "."}, 10),
                     environment=execution.session["environment"],
                     plan=execution.session.get("plan", []),
                 ),
                 **({"references": references} if references is not None else {}),
             )
+            if collect_workspace is not None:
+                await collect_workspace(workspace)
             item.reponse = result.text
             from services.orchestrator.file_results import project_deliverable_links
 

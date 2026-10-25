@@ -246,6 +246,23 @@ def execute(
                 data["conversation_id"], data["query"], [], data.get("work_session_id")
             )
         work = Work(scope)
+        if tail in (["repositories"], ["repositories", "import-approvals"]):
+            from services.retrieval.project_repository_import import RepositoryImports
+
+            imports = RepositoryImports(scope)
+            if method == "GET" and tail == ["repositories"]:
+                return 200, dict(
+                    items=imports.files.listing("repository"), next_cursor=None
+                )
+            if method == "POST":
+                try:
+                    return 201, imports.issue(json.loads(body)) if len(
+                        tail
+                    ) == 2 else imports.create(json.loads(body))
+                except ForgeUnknown:
+                    raise ProjectError(503, "dependency_unavailable") from None
+                except ForgeError:
+                    raise ProjectError(409, "revision_conflict") from None
         if (
             len(tail) == 3
             and tail[0] == "repositories"
@@ -349,6 +366,8 @@ def dispatch(
                     422, "invalid_request", "Idempotency-Key is required"
                 )
             if tail and tail[0] == "approvals":
+                return execute(scope, method, tail, body, headers.get("if-match"))
+            if tail == ["repositories"]:
                 return execute(scope, method, tail, body, headers.get("if-match"))
             if (
                 len(tail) == 3
@@ -830,6 +849,7 @@ EXECUTION_SCHEMAS = {
     "events": "ExecutionEvents",
     "organize": "ExecutionOrganize",
     "publish": "ExecutionPublish",
+    "forge": "ExecutionForge",
 }
 
 
@@ -879,6 +899,10 @@ def execution_dispatch(
             work.grant_stamp(identity.member)
         else:
             scope.authorize("POST", ["work-sessions"])
+        if operation == "forge":
+            from services.retrieval.project_work_forge import execute_forge
+
+            return 200, execute_forge(scope, data)
         if operation == "decisions":
             return work.decide(data["approval_id"], data["decision"])
         if package is not None:
@@ -981,7 +1005,23 @@ async def execution_broker(request: Request, operation: str) -> Response:
             key,
             request.headers.get("content-type", ""),
         )
-        return JSONResponse(result, status_code=status, headers=headers)
+        return JSONResponse(
+            result,
+            status_code=status,
+            headers=headers,
+            background=(
+                BackgroundTask(
+                    run_operation,
+                    store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+                    identity,
+                    result["operation_id"],
+                )
+                if operation == "forge"
+                and isinstance(result, dict)
+                and result.get("state") == "running"
+                else None
+            ),
+        )
     except ProjectError as exc:
         return JSONResponse(exc.body, status_code=exc.status, headers=headers)
     except (ValueError, TypeError, psycopg.IntegrityError):
@@ -1006,6 +1046,9 @@ def execution_ingress(
         if transcript:
             scope.authorize("POST", ["conversations"])
             return 8388608 if operation == "result-put" else 160000
+        if operation == "forge":
+            scope.authorize("POST", ["work-sessions"])
+            return int(scope.policy["quotas"]["upload_bytes"]) * 2 + 160000
         if operation == "publish":
             scope.authorize("POST", ["work-sessions"])
             folder = scope.project_data["deliverables_folder_id"]

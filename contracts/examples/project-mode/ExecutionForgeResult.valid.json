@@ -1,0 +1,37 @@
+{
+  "operation_id": "10000000-0000-4000-8000-000000000001",
+  "state": "pending",
+  "approval_id": "10000000-0000-4000-8000-000000000001",
+  "approval": {
+    "id": "10000000-0000-4000-8000-000000000001",
+    "created_at": "2026-10-21T12:00:00Z",
+    "updated_at": "2026-10-21T12:00:00Z",
+    "created_by_member_id": "10000000-0000-4000-8000-000000000001",
+    "revision": 0,
+    "deleted_at": null,
+    "purge_at": null,
+    "org_id": "10000000-0000-4000-8000-000000000001",
+    "project_id": "10000000-0000-4000-8000-000000000001",
+    "session_id": null,
+    "requested_by_member_id": "10000000-0000-4000-8000-000000000001",
+    "actor": {
+      "kind": "member",
+      "member_id": null,
+      "service": null
+    },
+    "action_kind": "delete",
+    "action_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "paths": [],
+    "version_refs": [],
+    "destination": {
+      "kind": "server",
+      "ref": null
+    },
+    "maximum_bytes": 0,
+    "expires_at": "2026-10-21T12:00:00Z",
+    "decision": "pending",
+    "consumed_at": null,
+    "policy_revision": 0,
+    "approver_member_id": "10000000-0000-4000-8000-000000000001"
+  }
+}

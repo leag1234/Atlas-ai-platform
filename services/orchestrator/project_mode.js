@@ -355,6 +355,39 @@
     checkScope(current); panelData = { instructions, memory, deliverables, jobs, summary, ledger, context, policy };
     renderPanels();
   }
+  function repositoryImport() {
+    const form = node('form'); form.dataset.repositoryImport = '';
+    const folder = node('select');
+    for (const item of folders.filter(f => f.locality === 'server' && f.model_use === 'allow')) { const option = node('option', item.name); option.value = item.id; folder.append(option); }
+    const connector = node('input'); connector.required = true;
+    const remote = node('input'); remote.type = 'url'; remote.required = true;
+    const submit = button('repository', async () => {
+      if (!form.reportValidity()) return;
+      submit.disabled = true;
+      try {
+        const data = {folder_id: folder.value, connector_id: connector.value.trim(), remote_ref: remote.value.trim()};
+        const value = await api(base() + '/repositories/import-approvals', 'POST', data);
+        const card = node('section', null, 'atlas-project-approval'); card.dataset.importApproval = value.id;
+        card.append(node('strong', 'Approve repository import'), node('p', remote.value), node('p', value.paths.join(', ')), node('p', `${value.maximum_bytes} ${t('bytes')} · ${t('expires')}: ${value.expires_at}`));
+        for (const allow of [true, false]) card.append(button(allow ? 'accept' : 'deny', async () => {
+          card.querySelectorAll('button').forEach(b => b.disabled = true);
+          await api(base() + '/approvals/' + value.id + '/decision', 'POST', {allow, action_digest: value.action_digest});
+          if (allow) {
+            await api(base() + '/repositories', 'POST', {...data, approval_id: value.id});
+            [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]);
+            files.filter(f => f.folder_id === data.folder_id).forEach(f => selected.add(f.version_id));
+            session = null; delete scope.session; saveRoute();
+            if (scope.conversation) await setAction();
+            await panels();
+          } else card.append(node('p', 'Import denied'));
+        }));
+        form.append(card);
+      } finally { submit.disabled = false; }
+    });
+    form.append(field('files', folder), field('Connector ID', connector), field('Repository HTTPS URL', remote), submit);
+    form.addEventListener('submit', event => event.preventDefault());
+    return form;
+  }
   function renderPanels() {
     if (!panelData) return;
     const { instructions, memory, deliverables, jobs, summary, ledger, context, policy } = panelData;
@@ -362,6 +395,7 @@
     if (session) { const status = detail('status', t(session.state)); status.dataset.sessionState = ''; right.append(detail('workspace', session.environment.workspace_id), status); }
     for (const folder of folders) right.append(detail('files', `${folder.name} · ${folder.locality === 'local_only' ? t('local') + ' · ' + t('device') : t('server')} · ${t(folder.model_use)}`));
     right.append(detail('repository', session?.repository_id || t('unavailable')), node('h2', t('context')), versionLabel('instructions', instructions.active_version_id || instructions.version));
+    const importPanel = node('details'); importPanel.append(node('summary', 'Attach repository'), repositoryImport()); right.append(importPanel);
     const lastContext = ledger.filter(e => e.model_dispatch?.context && e.model_dispatch.purpose !== 'session_state' && (!scope.conversation || e.conversation_id === scope.conversation)).sort((a, b) => b.seq - a.seq)[0]?.model_dispatch.context;
     const used = node('section'); used.dataset.contextUsed = '';
     used.append(node('h3', t('contextUsed')));

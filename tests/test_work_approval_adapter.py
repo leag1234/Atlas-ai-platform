@@ -91,6 +91,7 @@ class ApprovalAdapterTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(value=value):
                 execution = MagicMock()
                 execution.check = AsyncMock()
+                execution.snapshot = AsyncMock()
                 execution.broker.call = AsyncMock(return_value={"events": []})
                 tools = WorkTools(MagicMock(), execution)
                 result = await tools.execute(
@@ -136,9 +137,11 @@ class ApprovalAdapterTests(unittest.IsolatedAsyncioTestCase):
                 execution = MagicMock(session=session)
                 execution.turn = AsyncMock()
                 execution.check = AsyncMock()
+                execution.snapshot = AsyncMock()
                 execution.broker = broker
                 workspace = MagicMock()
                 workspace.prepare = AsyncMock()
+                workspace.invoke = AsyncMock(return_value={"entries": []})
                 workspace.cleanup = AsyncMock()
                 execution.workspace.return_value = workspace
                 model = MagicMock(spec=CodeModel)
@@ -202,3 +205,35 @@ class ApprovalAdapterTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(stop or "invalid_tool_arguments", item.reponse)
                     self.assertIn(stop or "invalid_tool_arguments", item.erreurs)
                 workspace.cleanup.assert_awaited_once()
+
+    async def test_tool_limit_progress_uses_contract_calls_unit(self) -> None:
+        from services.retrieval.project_work_contract import validate
+
+        execution = MagicMock()
+        execution.session = dict(id=str(uuid4()))
+        execution.request_id = str(uuid4())
+        execution.broker.org = str(uuid4())
+        execution.broker.project = str(uuid4())
+        execution.fence.return_value = dict(
+            session_id=execution.session["id"],
+            request_id=execution.request_id,
+            generation=1,
+        )
+
+        async def persist(operation: str, data: dict[str, Any]) -> dict[str, Any]:
+            validate("ExecutionEvents", data)
+            return dict(events=data["progress"])
+
+        execution.broker.call = AsyncMock(side_effect=persist)
+        tools = WorkTools(MagicMock(), execution)
+        await tools.emit(
+            "limit",
+            label="Turn stopped",
+            output=dict(measured=11, limit=10, unit="steps"),
+        )
+        self.assertEqual(
+            execution.broker.call.call_args.args[1]["progress"][0]["output"][
+                "measurement"
+            ],
+            dict(measured=11, limit=10, unit="calls"),
+        )
