@@ -65,12 +65,9 @@ def api_key() -> str:
 def json_options(response_format: object) -> dict[str, Any]:
     # Internal state requests fall back to instructions on unverified providers.
     # Explicit developer-API response_format continues to pass through unchanged.
-    if response_format and os.environ.get("ATLAS_PROVIDER", "") in (
-        "",
-        "scaleway",
-        "mistral",
-        "ovhcloud",
-        "local",
+    name = os.environ.get("ATLAS_PROVIDER", "")
+    if response_format and (
+        not name or presets().get(name, {}).get("json_response_format") is True
     ):
         return {"response_format": response_format}
     return {}
