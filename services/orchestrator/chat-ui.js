@@ -245,8 +245,12 @@
     const option = (group, value) => `<button type="button" data-atlas-option="${group}" data-value="${value}" aria-label="${group === "size" ? `${value} px` : words[value]}" title="${group === "size" ? `${value} px` : words[value]}" aria-pressed="${saved[group] === value}" class="atlas-option">${group === "size" ? `${value} px` : words[value]}</button>`;
     const root = document.createElement("div"); root.id = "atlas-ui-selector";
     root.innerHTML = `<button id="atlas-ui-toggle" type="button" aria-label="${words.title}" aria-expanded="false">Aa</button><section id="atlas-ui-popover" aria-label="${words.title}" hidden><h2>${words.title}</h2>${Object.keys(choices).map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options" data-atlas-group="${group}">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}</section>`;
+    // Keep the control clear of the composer's Send/Stop button on phones and left of
+    // Open WebUI's top-right header buttons. Inline so the recorded M24 stylesheet is unchanged.
+    Object.assign(root.style, { top: "max(12px, env(safe-area-inset-top))", bottom: "auto", right: "132px" });
     document.body.append(root);
     const toggle = root.querySelector("#atlas-ui-toggle"), popover = root.querySelector("#atlas-ui-popover");
+    Object.assign(popover.style, { top: "52px", bottom: "auto" });
     const close = () => { popover.hidden = true; toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
     toggle.addEventListener("click", () => { popover.hidden = !popover.hidden; toggle.setAttribute("aria-expanded", String(!popover.hidden)); if (!popover.hidden) popover.querySelector("button").focus(); });
     root.addEventListener("click", event => { const button = event.target.closest("[data-atlas-option]"); if (!button) return; const group = button.dataset.atlasOption; persist({ [group]: button.dataset.value }); root.querySelectorAll(`[data-atlas-option="${group}"]`).forEach(item => item.setAttribute("aria-pressed", String(item === button))); if (group === "mode") { localStorage.setItem("theme", button.dataset.value); location.reload(); } });
