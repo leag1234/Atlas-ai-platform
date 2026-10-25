@@ -6,7 +6,7 @@ import tempfile
 from types import SimpleNamespace
 from typing import Any
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 from infra.openwebui_images import Filter
@@ -271,6 +271,149 @@ class RoutingTests(unittest.TestCase):
 
 
 class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def model() -> SimpleNamespace:
+        return SimpleNamespace(
+            tools=[],
+            observing=False,
+            sink=None,
+            local_enabled=False,
+            configure_quality=Mock(),
+            provider_retries=0,
+            input_tokens=40,
+            output_tokens=20,
+            provider_model="recorded-person-model",
+            reasoning="",
+            trace_tokens=0,
+            answer_tokens=20,
+            token_split_estimated=False,
+            reasoning_retried=False,
+            generation_ms=1.0,
+            observations=[],
+        )
+
+    async def test_consistent_exact_sources_are_written_by_model_with_citations(
+        self,
+    ) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Gaël Duval?"}],
+                "lang": "en",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        response = {
+            "data": {
+                "results": [
+                    {
+                        "snippet": "Gaël Duval founded Mandrake Linux and /e/OS.",
+                        "link": "https://example.test/profile",
+                    },
+                    {
+                        "snippet": "Gaël Duval is the founder of /e/OS and Murena.",
+                        "link": "https://example.test/company",
+                    },
+                ]
+            }
+        }
+        model = self.model()
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=model),
+            ),
+            patch(
+                "services.orchestrator.person_lookup.run",
+                new=AsyncMock(
+                    return_value=Result(
+                        "Gaël Duval is a French entrepreneur who founded Mandrake Linux, "
+                        "/e/OS, and Murena [1](https://example.test/profile) "
+                        "[2](https://example.test/company)."
+                    )
+                ),
+            ) as answer,
+        ):
+            await lookup(request, item, tools, "Gaël Duval")
+        self.assertIn("founded Mandrake Linux", item.reponse)
+        self.assertIn("[1](https://example.test/profile)", item.reponse)
+        self.assertEqual(
+            item.retrieved_urls,
+            ["https://example.test/profile", "https://example.test/company"],
+        )
+        assert answer.await_args is not None
+        evidence = json.loads(answer.await_args.kwargs["history"][0]["content"])
+        self.assertEqual(
+            evidence["untrusted_exact_name_evidence"],
+            [
+                {
+                    "url": "https://example.test/profile",
+                    "passage": "Gaël Duval founded Mandrake Linux and /e/OS.",
+                },
+                {
+                    "url": "https://example.test/company",
+                    "passage": "Gaël Duval is the founder of /e/OS and Murena.",
+                },
+            ],
+        )
+        self.assertNotIn("What profession", item.reponse)
+
+    async def test_mixed_exact_namesakes_are_judged_by_model(self) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Mira Alderwick?"}],
+                "lang": "en",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        response = {
+            "data": {
+                "results": [
+                    {
+                        "snippet": "Mira Alderwick is a botanist in Glasgow.",
+                        "link": "https://example.test/botanist",
+                    },
+                    {
+                        "snippet": "Mira Alderwick is a novelist in Lisbon.",
+                        "link": "https://example.test/novelist",
+                    },
+                ]
+            }
+        }
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=self.model()),
+            ),
+            patch(
+                "services.orchestrator.person_lookup.run",
+                new=AsyncMock(
+                    return_value=Result(
+                        "The sources describe different people named Mira Alderwick. "
+                        "What profession, location, or date do you mean? "
+                        "[1](https://example.test/botanist) "
+                        "[2](https://example.test/novelist)"
+                    )
+                ),
+            ),
+        ):
+            await lookup(request, item, tools, "Mira Alderwick")
+        self.assertIn("different people", item.reponse)
+        self.assertIn("What profession", item.reponse)
+
     async def test_namesake_does_not_become_the_answer(self) -> None:
         from services.orchestrator.chat_pipeline import ChatTools
         from services.orchestrator.interactions import Interaction
@@ -312,6 +455,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_match_quotes_only_retrieved_facts(self) -> None:
         from services.orchestrator.chat_pipeline import ChatTools
         from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
         from services.orchestrator.person_lookup import lookup
 
         item = Interaction()
@@ -332,14 +476,98 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
                 ]
             }
         }
-        with patch.object(tools, "execute", AsyncMock(return_value=response)):
+        answer = AsyncMock(
+            return_value=Result(
+                "Mira Alderwick designs fictional gardens. [1](https://example.test/mira)"
+            )
+        )
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=self.model()),
+            ),
+            patch("services.orchestrator.person_lookup.run", new=answer),
+        ):
             await lookup(request, item, tools, "Mira Alderwick")
         self.assertIn("Mira Alderwick designs fictional gardens.", item.reponse)
         self.assertNotIn("plays football", item.reponse)
         self.assertNotIn("height", item.reponse)
+        assert answer.await_args is not None
+        payload = json.loads(answer.await_args.kwargs["history"][0]["content"])
+        self.assertNotIn("Theo Alderwick", json.dumps(payload))
 
 
 class VisionDeliveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_jpeg_file_is_sent_to_vision_not_document_reading(self) -> None:
+        photo = {
+            "type": "file",
+            "id": "photo",
+            "name": "dog-swimming.jpg",
+            "content_type": "image/jpeg",
+        }
+        chat = SimpleNamespace(
+            chat={
+                "history": {
+                    "messages": {
+                        "current": {
+                            "role": "user",
+                            "content": "What is in this photo?",
+                            "files": [photo],
+                        }
+                    }
+                }
+            }
+        )
+        file = SimpleNamespace(
+            user_id="owner",
+            path="unused",
+            meta={"name": "dog-swimming.jpg", "content_type": "image/jpeg"},
+            filename="dog-swimming.jpg",
+        )
+        modules = {
+            "open_webui.models.chats": SimpleNamespace(
+                Chats=SimpleNamespace(
+                    get_chat_by_id_and_user_id=AsyncMock(return_value=chat)
+                )
+            ),
+            "open_webui.models.files": SimpleNamespace(
+                Files=SimpleNamespace(get_file_by_id=AsyncMock(return_value=file))
+            ),
+            "open_webui.storage.provider": SimpleNamespace(
+                Storage=SimpleNamespace(get_file=lambda _: "unused")
+            ),
+        }
+        filter_ = Filter()
+        with (
+            patch(
+                "infra.openwebui_images.import_module", side_effect=modules.__getitem__
+            ),
+            patch.object(
+                filter_, "owned_file", AsyncMock(return_value=(file, b"synthetic-jpeg"))
+            ),
+            patch.object(
+                filter_,
+                "upload",
+                AsyncMock(
+                    return_value="https://images.test/images/0123456789abcdef0123456789abcdef"
+                ),
+            ),
+        ):
+            body = await filter_.inlet(
+                {
+                    "model": "atlas-qwen",
+                    "messages": [{"role": "user", "content": "What is in this photo?"}],
+                    "files": [photo],
+                },
+                __user__={"id": "owner"},
+                __metadata__={"chat_id": "chat", "user_message_id": "current"},
+            )
+        content = body["messages"][-1]["content"]
+        self.assertEqual(body["files"], [])
+        self.assertTrue(any(part["type"] == "image_url" for part in content))
+        self.assertFalse(any(part["type"] == "file" for part in content))
+
     async def test_current_pixels_survive_document_history(self) -> None:
         from services.orchestrator.interactions import Interaction
         from services.orchestrator.vision import process_vision

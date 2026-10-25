@@ -16,7 +16,7 @@ from fastapi.responses import Response, JSONResponse
 from packages.images import image_info
 from packages.image_upload import normalize_uploads, UploadError
 from typing import Any
-from packages.turn_attachments import select_documents
+from packages.turn_attachments import is_document_upload, select_documents
 from services.orchestrator.documents import Attachment
 from services.orchestrator.daily_budget import user_from_headers
 
@@ -218,7 +218,9 @@ def prepare_uploads(
             [
                 Attachment.model_validate(p.get("file")).model_dump()
                 for p in content
-                if isinstance(p, dict) and p.get("type") == "file"
+                if isinstance(p, dict)
+                and p.get("type") == "file"
+                and is_document_upload(dict(p.get("file") or {}))
             ]
             if isinstance(content, list) and message.get("role") == "user"
             else []
