@@ -83,6 +83,8 @@ and creates no key automatically. Set `ATLAS_API_PORT` for another port or
 Requests for a missing feature get a clear "not enabled on this installation"
 answer.
 
+Set `ATLAS_REMOVE_OPEN_WEBUI_SUFFIX=1` only for a deployment with at most 50 users in any rolling 30-day period, written permission from Open WebUI, or an enterprise license.
+
 ### 🚀 Get the full benefits: full installation
 
 Image generation on your own GPU, Code mode, speech, generated office documents,
