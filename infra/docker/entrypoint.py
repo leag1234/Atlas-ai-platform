@@ -28,10 +28,14 @@ def main() -> None:
             access_log=False,
         )
     elif service == "retrieval":
-        from services.retrieval.store import Store
         import uvicorn
 
-        Store(os.environ["ATLAS_RETRIEVAL_DSN"]).initialize()
+        from services.retrieval.store import Store
+
+        # Project schemas are installed explicitly by an operator. Runtime uses
+        # atlas_project_app, which must never attempt schema creation.
+        if not os.environ.get("ATLAS_PROJECT_DSN"):
+            Store(os.environ["ATLAS_RETRIEVAL_DSN"]).initialize()
         uvicorn.run(
             "services.retrieval.api:app", host="0.0.0.0", port=13711, access_log=False
         )
