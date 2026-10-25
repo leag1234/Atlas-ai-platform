@@ -146,6 +146,13 @@ class Tools(Protocol):
     async def execute(self, call: Call, timeout: float) -> Message: ...
 
 
+class ResultReferences(Protocol):
+    async def retain(
+        self, call: Call, output: Message, messages: list[Message]
+    ) -> None: ...
+    async def reopen(self, call: Call) -> Message: ...
+
+
 class Stop(Exception):
     pass
 
@@ -166,6 +173,7 @@ async def run(
     retry_protocol: bool = True,
     terminal_tools: frozenset[str] = frozenset(),
     initial_calls: tuple[Call, ...] = (),
+    references: ResultReferences | None = None,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -191,6 +199,8 @@ async def run(
     recent: list[tuple[str, str]] = []
     quota_recovered = False
     protocol_recovered = False
+    links_recovered = False
+    retrieved: set[str] = set()
     answer_parts: list[str] = []
 
     def record_limit(values: dict[str, object]) -> None:
@@ -330,6 +340,48 @@ async def run(
                     )
                     continue
                 else:
+                    from services.orchestrator.citation_cleanup import cleanup, hollow
+                    from services.orchestrator.source_truth import (
+                        without_unretrieved,
+                        urls,
+                    )
+                    from services.orchestrator.link_requests import (
+                        link_query,
+                        unavailable,
+                        instruction,
+                        page_request,
+                    )
+
+                    cleaned = cleanup(without_unretrieved(complete_text, retrieved))
+                    if page_request(
+                        query.question,
+                        tuple(str(m.get("content", "")) for m in (history or [])),
+                    ) and (
+                        hollow(complete_text, cleaned)
+                        or not urls(cleaned).intersection(retrieved)
+                    ):
+                        terms = link_query(
+                            query.question,
+                            tuple(str(m.get("content", "")) for m in (history or [])),
+                        )
+                        if not links_recovered and not counts["web_search"]:
+                            links_recovered = True
+                            logging.getLogger(__name__).info(
+                                "citation_guard_recovery search_attempt=1"
+                            )
+                            initial_calls = (
+                                Call(
+                                    "recover-links",
+                                    "web_search",
+                                    json.dumps({"query": terms, "lang": query.lang}),
+                                ),
+                            )
+                            answer_parts.clear()
+                            messages.append(
+                                {"role": "system", "content": instruction()}
+                            )
+                            continue
+                        complete_text = unavailable(terms, query.lang)
                     result.text, result.state = complete_text, "done"
                     return result
             # Streaming already exposes this content; retain it in the final
@@ -391,24 +443,26 @@ async def run(
                 ):
                     quota_recovered = True
                     for denied in pending_calls[pending_calls.index(call) :]:
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": denied.id,
-                                "content": json.dumps(
-                                    {
-                                        "error": "tool_quota_exhausted",
-                                        "reason": quota,
-                                        "tools_executed": result.tool_calls,
-                                        "tool_limit": limits.tool_calls,
-                                        "searches_executed": counts["web_search"],
-                                        "search_limit": 3,
-                                        "fetches_executed": counts["web_fetch"],
-                                        "fetch_limit": 8,
-                                    }
-                                ),
-                            }
-                        )
+                        denial: Message = {
+                            "error": "tool_quota_exhausted",
+                            "reason": quota,
+                            "tools_executed": result.tool_calls,
+                            "tool_limit": limits.tool_calls,
+                            "searches_executed": counts["web_search"],
+                            "search_limit": 3,
+                            "fetches_executed": counts["web_fetch"],
+                            "fetch_limit": 8,
+                        }
+                        if references is not None:
+                            await references.retain(denied, denial, messages)
+                        else:
+                            messages.append(
+                                dict(
+                                    role="tool",
+                                    tool_call_id=denied.id,
+                                    content=json.dumps(denial),
+                                )
+                            )
                     logging.getLogger(__name__).info(
                         json.dumps(
                             {
@@ -452,7 +506,9 @@ async def run(
                 result.tool_calls += 1
                 counts["web_search" if call.name == "web_images" else call.name] += 1
                 output = await invoke(
-                    tools.execute(
+                    references.reopen(call)
+                    if references is not None and call.name == "reopen_result"
+                    else tools.execute(
                         call, min(125 if limits.code_mode else 15, remaining())
                     )
                 )
@@ -473,6 +529,19 @@ async def run(
                     )
                     pending_calls.append(retry)
                     retried = True
+                if call.name in {"web_search", "web_fetch"} and "error" not in output:
+                    data = output.get("data", output)
+                    if isinstance(data, dict):
+                        if isinstance(data.get("url"), str):
+                            retrieved.add(str(data["url"]))
+                        rows = data.get("results")
+                        if isinstance(rows, list):
+                            retrieved.update(
+                                str(row["link"])
+                                for row in rows
+                                if isinstance(row, dict)
+                                and isinstance(row.get("link"), str)
+                            )
                 if (
                     call.name == "web_search"
                     and not counts["web_fetch"]
@@ -482,14 +551,24 @@ async def run(
 
                     data = output.get("data", output)
                     rows = data.get("results") if isinstance(data, dict) else None
-                    if requested_page_read(query.question) and isinstance(rows, list):
+                    if requested_page_read(
+                        query.question,
+                        tuple(str(m.get("content", "")) for m in (history or [])),
+                    ) and isinstance(rows, list):
+                        from services.orchestrator.link_requests import page_request
+
+                        reads: list[Call] = list(initial_calls)
                         for row in rows:
+                            if len(reads) >= 3:
+                                break
                             if isinstance(row, dict) and isinstance(
                                 row.get("link"), str
                             ):
-                                initial_calls = (
+                                reads.append(
                                     Call(
-                                        call.id + "-read",
+                                        call.id
+                                        + "-read"
+                                        + (str(len(reads)) if reads else ""),
                                         "web_fetch",
                                         json.dumps(
                                             {
@@ -497,9 +576,21 @@ async def run(
                                                 "query": query.question,
                                             }
                                         ),
-                                    ),
+                                    )
                                 )
-                                break
+                                if len(reads) >= (
+                                    3
+                                    if page_request(
+                                        query.question,
+                                        tuple(
+                                            str(m.get("content", ""))
+                                            for m in (history or [])
+                                        ),
+                                    )
+                                    else 1
+                                ):
+                                    break
+                        initial_calls = tuple(reads)
                 event: Message = {
                     "tool": call.name,
                     "arguments": call.arguments,
@@ -515,17 +606,20 @@ async def run(
                         }
                     )
                 )
+                if references is not None:
+                    await references.retain(call, output, messages)
+                else:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": json.dumps(output, ensure_ascii=False),
+                        }
+                    )
                 if call.name in terminal_tools and "error" not in output:
                     result.text = "".join(answer_parts)
                     result.state = "done"
                     return result
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": json.dumps(output, ensure_ascii=False),
-                    }
-                )
     except Stop as exc:
         result.reason = str(exc)
     except ValidationError as exc:
@@ -551,6 +645,20 @@ async def run(
         f"limit {limits.wall_clock:.3f} seconds. "
         f"Searches: {counts['web_search']}; limit 3. Fetches: {counts['web_fetch']}; limit 8."
     )
+    if links_recovered:
+        from services.orchestrator.link_requests import unavailable, link_query
+
+        result.text = (
+            unavailable(
+                link_query(
+                    query.question,
+                    tuple(str(m.get("content", "")) for m in (history or [])),
+                ),
+                query.lang,
+            )
+            + "\n\n"
+            + result.text
+        )
     if isinstance(result, CodeResult) and result.limit_stop:
         result.text += (
             " Required/measured "

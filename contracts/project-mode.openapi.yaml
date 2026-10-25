@@ -4079,6 +4079,144 @@ paths:
       description: 'Amendment 2026-10-24 (private transcript interface), approved by
         the supervisor. See contracts/project-mode.md for authorization, idempotency,
         quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/work-events:
+    post:
+      operationId: context_work_events
+      summary: P1a scoped context work-events
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkTranscriptEvents'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/result-put:
+    post:
+      operationId: context_result_put
+      summary: P1a scoped context result-put
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptResultPut'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPutReceipt'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/result-open:
+    post:
+      operationId: context_result_open
+      summary: P1a scoped context result-open
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptResultOpen'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReopenedResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
 components:
   securitySchemes:
     ExecutionBroker:
@@ -4944,6 +5082,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context:
+          $ref: '#/components/schemas/ContextUsage'
         tool_calls:
           type: integer
           minimum: 0
@@ -6498,6 +6638,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context:
+          $ref: '#/components/schemas/ContextUsage'
         call_id:
           type: string
           format: uuid
@@ -6560,6 +6702,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context_clearing:
+          $ref: '#/components/schemas/ContextClearing'
         org_id:
           type: string
           format: uuid
@@ -9333,7 +9477,7 @@ components:
       properties:
         id:
           type: string
-          pattern: ^D(?:0[1-9]|[12][0-9]|30)$
+          pattern: ^D(?:0[1-9]|[12][0-9]|3[0-3])$
         language:
           type: string
           enum:
@@ -9595,7 +9739,7 @@ components:
       properties:
         id:
           type: string
-          pattern: ^D(?:0[1-9]|[12][0-9]|30)$
+          pattern: ^D(?:0[1-9]|[12][0-9]|3[0-3])$
         language:
           type: string
           enum:
@@ -9824,6 +9968,215 @@ components:
       required:
       - items
       - next_cursor
+    # Amendment 2026-10-25 (context telemetry / tool-result references), approved by the supervisor
+    ContextUsage:
+      type: object
+      additionalProperties: false
+      required: [method, estimated, layers, stable_prefix_tokens, total_tokens, model_window, provider_input_tokens]
+      properties:
+        method:
+          const: utf8_bytes_div_4_ceil_per_component
+        estimated:
+          const: true
+        layers:
+          type: object
+          additionalProperties: false
+          required: [system, project_instructions, pinned_memory, tool_declarations, session_state, recent_turns, tool_results, document_passages]
+          properties:
+            system:
+              type: integer
+              minimum: 0
+            project_instructions:
+              type: integer
+              minimum: 0
+            pinned_memory:
+              type: integer
+              minimum: 0
+            tool_declarations:
+              type: integer
+              minimum: 0
+            session_state:
+              type: integer
+              minimum: 0
+            recent_turns:
+              type: integer
+              minimum: 0
+            tool_results:
+              type: integer
+              minimum: 0
+            document_passages:
+              type: integer
+              minimum: 0
+        stable_prefix_tokens:
+          type: integer
+          minimum: 0
+        total_tokens:
+          type: integer
+          minimum: 0
+        model_window:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        provider_input_tokens:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+
+    WorkTranscriptEvents:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, request_id, generation, events]
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        events:
+          type: array
+          minItems: 1
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+    ContextClearing:
+      type: object
+      additionalProperties: false
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: &context_id003
+            type: string
+            pattern: ^[a-f0-9-]{36}:[a-f0-9-]{36}$
+        tokens_removed: &context_id001
+          type: integer
+          minimum: 0
+        tokens_added: *context_id001
+        method:
+          const: utf8_bytes_div_4_ceil_per_component
+      required:
+      - ids
+      - tokens_removed
+      - tokens_added
+      - method
+    ResultRange:
+      type: object
+      additionalProperties: false
+      properties:
+        start: *context_id001
+        end: *context_id001
+      required:
+      - start
+      - end
+    TranscriptResultPut:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id: &context_id002
+          type: string
+          format: uuid
+        request_id: *context_id002
+        generation: &context_id004
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        id: *context_id003
+        tool:
+          type: string
+          pattern: ^[a-zA-Z0-9_]{1,80}$
+        content:
+          type: string
+          maxLength: 1048576
+      required:
+      - conversation_id
+      - request_id
+      - generation
+      - id
+      - tool
+      - content
+    TranscriptResultOpen:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id: *context_id002
+        request_id: *context_id002
+        generation: *context_id004
+        id: *context_id003
+        range:
+          anyOf:
+          - $ref: '#/components/schemas/ResultRange'
+          - type: 'null'
+      required:
+      - conversation_id
+      - request_id
+      - generation
+      - id
+      - range
+    ClearedResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *context_id003
+        summary:
+          type: string
+          maxLength: 512
+        tokens_removed: *context_id001
+        tokens_added: *context_id001
+      required:
+      - id
+      - summary
+      - tokens_removed
+      - tokens_added
+    ResultPutReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *context_id003
+        cleared:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClearedResult'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEvent'
+      required:
+      - id
+      - cleared
+      - events
+    ReopenedResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *context_id003
+        tool:
+          type: string
+        content:
+          type: string
+          maxLength: 8192
+        start: *context_id001
+        end: *context_id001
+        total_characters: *context_id001
+        has_more:
+          type: boolean
+        trust:
+          const: untrusted
+      required:
+      - id
+      - tool
+      - content
+      - start
+      - end
+      - total_characters
+      - has_more
+      - trust
   responses:
     Error401:
       description: Typed failure

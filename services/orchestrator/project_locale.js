@@ -37,6 +37,17 @@
     it:['Dettagli','caratteri','testo','pagina','pagine','paragrafo','paragrafi','foglio','tabella','riga','colonna','di','unità','Accesso non disponibile. Accedi o seleziona un altro progetto.','Questa richiesta ha raggiunto un limite.','Il servizio è temporaneamente non disponibile.']
   };
   for (const language of Object.keys(rows)) rows[language].push(...displayLabels[language]);
+  keys.push('contextUsed','contextTokens','contextEstimate','system','project_instructions','pinned_memory','tool_declarations','session_state','recent_turns','tool_results','document_passages');
+  const contextLabels = {
+    en: ['Context used','tokens','Estimated using','System','Project instructions','Pinned memory','Tool declarations','Session state','Recent turns','Tool results','Document passages'],
+    fr: ['Contexte utilisé','tokens','Estimation','Système','Instructions du projet','Mémoire épinglée','Déclarations des outils','État de session','Tours récents','Résultats des outils','Passages documentaires'],
+    de: ['Verwendeter Kontext','Tokens','Schätzmethode','System','Projektanweisungen','Angehefteter Speicher','Werkzeugdefinitionen','Sitzungszustand','Letzte Beiträge','Werkzeugergebnisse','Dokumentpassagen'],
+    es: ['Contexto usado','tokens','Estimación','Sistema','Instrucciones del proyecto','Memoria fijada','Declaraciones de herramientas','Estado de sesión','Turnos recientes','Resultados de herramientas','Pasajes de documentos'],
+    it: ['Contesto utilizzato','token','Stima','Sistema','Istruzioni del progetto','Memoria fissata','Dichiarazioni degli strumenti','Stato della sessione','Turni recenti','Risultati degli strumenti','Passaggi dei documenti']
+  };
+  for (const language of Object.keys(rows)) rows[language].push(...contextLabels[language]);
+  keys.push('contextCleared');
+  for (const language of Object.keys(rows)) rows[language].push({en:'Tool results cleared',fr:'Résultats des outils allégés',de:'Werkzeugergebnisse gekürzt',es:'Resultados de herramientas reducidos',it:'Risultati degli strumenti ridotti'}[language]);
   window.atlasProjectLocale = { keys, rows, language() {
     return (localStorage.getItem('locale') || localStorage.getItem('atlas-ui-language') || document.documentElement.lang || navigator.language || 'en').replaceAll('"', '').split('-')[0];
   }, text(key) {

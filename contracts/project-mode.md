@@ -910,3 +910,58 @@ the original creator may reconcile a still-running Work turn through the
 existing authorized finish boundary only when its session is cancelled and
 the released lease retains the matching reservation_id. This never resumes
 inference or reconciles an unrelated execution.
+
+## Amendment 2026-10-25 (context telemetry / tool-result references), approved by the supervisor
+
+REQ-PROJ-04/05/06/08/09: additive P1a context measurement. Usage and ModelDispatch
+may include `context` (ContextUsage). Public Chat response metadata exposes
+`context` and `context_samples`, including failed dispatch attempts. Each sample
+reports the active gateway-declared model window, estimated input tokens split
+into system, project_instructions, pinned_memory, tool_declarations, session_state,
+recent_turns, tool_results and document_passages. stable_prefix_tokens is the sum
+of the first four layers; total_tokens is the sum of all layers. The estimation
+method is `utf8_bytes_div_4_ceil_per_component`; provider_input_tokens is separate
+and nullable, never an attributed provider breakdown. No thresholds, routing,
+content order or budgets change in measurement. Context-only estimates exclude
+image bytes and are not a billing or exact provider-token claim. The right panel
+shows Context used, the split, window and estimation method for the latest call.
+Work model events use the same private transcript event authorization and additionally
+require the active Work session/request lease. Existing clients may omit the new
+optional fields. D31-D33 are separate recorded-only long-session tasks; D01-D30
+and their gates remain unchanged. Synthetic verifier controls are not recordings.
+
+The additive `/internal/atlas/transcript/work-events` route accepts closed
+WorkTranscriptEvents (conversation_id, request_id, generation, events), uses the
+existing transcript broker authentication and response, and requires the current
+Work fence. The original TranscriptEvents envelope is unchanged.
+
+Two additional private routes, `result-put` and `result-open`, use the same
+authentication, scope, origin denial and Idempotency-Key. All fields in their
+closed schemas are required; generation is null for Chat and the current lease
+generation for Work. A result ID is `origin_turn_uuid:result_uuid`. Bodies are
+canonical turn-private content, retained and revoked with that turn and its
+source versions; they never enter metadata-only ledger events. Storage charges
+actual UTF-8 bytes to the existing stored_bytes quota. Put accepts at most
+1048576 UTF-8 content bytes (8388608-byte JSON ingress cap for escaped content);
+open retains the 160000-byte ingress cap and returns at most 8192 Unicode
+characters, using zero-based half-open ranges. No filesystem path is accepted.
+Reopen rechecks the requesting turn, original turn's sources, conversation,
+project, membership and identical Work session (or Chat conversation); it never
+replays cached content before authorization. Store replay is idempotent after
+authorization and the current Work fence. Unknown/inaccessible references are
+404; invalid ranges 422; stale leases 409; quota 429 and sizes 413 with values.
+
+Every executed tool result is stored before entering context. Continuously keep
+the last ATLAS_CONTEXT_KEEP_RESULTS complete eligible bodies (default 4, 0-100)
+in the active loop. Older bodies become a two-line deterministic description
+and reopen_result reference. Original content is unchanged in storage. Approval,
+plan and group-selection results, user messages, assistant decisions and stable
+prefix are excluded from clearing. Each clearing emits context_selected with
+optional ContextClearing metadata (ids, estimated tokens_removed/tokens_added,
+method), atomically with storage, and is displayed in the right panel.
+No structured state summarization or history compaction is added in P1a.
+
+Work offers reopen_result as a core tool alongside the existing three core tools,
+with four group slots. The additive optional switch_tool_group.focus field selects
+a group's tool into those slots when needed; every existing group capability
+remains reachable and the gateway's eight-tool capacity is unchanged.

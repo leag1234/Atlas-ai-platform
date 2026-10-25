@@ -6,6 +6,7 @@ import unicodedata
 from urllib.parse import urlsplit
 
 from services.orchestrator.loop import Call
+from services.orchestrator.link_requests import page_request, product_queries
 
 
 def corpus_allowed(question: str) -> bool:
@@ -29,7 +30,11 @@ def corpus_allowed(question: str) -> bool:
 
 
 def required_research(
-    question: str, language: str, *, device_timings: bool = False
+    question: str,
+    language: str,
+    *,
+    device_timings: bool = False,
+    history: tuple[str, ...] = (),
 ) -> tuple[Call, ...]:
     normalized = "".join(
         c
@@ -43,6 +48,15 @@ def required_research(
         normalized,
     ):
         return ()
+    if page_request(question, history):
+        return tuple(
+            Call(
+                "required-links" + (str(index) if index else ""),
+                "web_search",
+                json.dumps({"query": query, "lang": language}),
+            )
+            for index, query in enumerate(product_queries(question, history))
+        )
     urls = re.findall(r'https?://[^\s<>"\']+', question)
     practical = re.search(
         r"\b(comment|how|wie|como|come)\b.{0,80}\b(fabriqu\w*|constru\w*|build|make|bau\w*|camera|appareil)\b|\b(compar\w*|recommend\w*|recommand\w*|empfehl\w*|consigli\w*)\b",
@@ -105,10 +119,10 @@ def required_research(
     return ()
 
 
-def requested_page_read(question: str) -> bool:
+def requested_page_read(question: str, history: tuple[str, ...] = ()) -> bool:
     """An explicit source-reading request must survive snippet-only discovery."""
     text = question.casefold()
-    return bool(
+    return page_request(question, history) or bool(
         re.search(
             r"\b(read|lis|lire|lisez|lese\w*|lies|lee|leer|leggi|leggere)\b"
             r".{0,50}\b(source|sources|page|article|quelle|seite|fuente|pagina|fonte)\b",

@@ -43,6 +43,7 @@ from services.orchestrator.cancellation import cancel
 
 from services.orchestrator.project_ui import (
     ProjectGate,
+    browser_origin,
     public_error,
     router as project_router,
 )
@@ -144,7 +145,12 @@ async def execute(
 
 @app.post("/v1/chat/completions")
 async def chat(request: Request) -> Response:
-    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+    if project_mode():
+        try:
+            browser_origin(request)
+        except ProjectError as exc:
+            return public_error(exc)
+    elif request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
         return JSONResponse({"error": "origin_rejected"}, status_code=403)
     item, started = Interaction(), time.monotonic()
     status, code, payload = 200, "", None
@@ -353,6 +359,10 @@ async def chat(request: Request) -> Response:
             {
                 "error": {"message": detail or code, "type": code, "code": code},
                 "atlas": {
+                    "context": item.context_samples[-1]
+                    if item.context_samples
+                    else None,
+                    "context_samples": item.context_samples,
                     "cost_eur": item.cout_eur,
                     "cost_kind": "reserved_upper_bound",
                     "provider_retries": item.provider_retries,
@@ -382,6 +392,8 @@ async def chat(request: Request) -> Response:
                 "hierarchical": any(
                     d.get("hierarchical_synthesis") for d in item.documents
                 ),
+                "context": item.context_samples[-1] if item.context_samples else None,
+                "context_samples": item.context_samples,
                 "images": item.images,
                 "files": item.files,
                 "terminal_commands": item.terminal_commands,
