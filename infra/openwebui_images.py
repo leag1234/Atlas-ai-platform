@@ -8,15 +8,89 @@ from pathlib import Path
 import hashlib
 import json
 from types import SimpleNamespace
-from packages.language import status_language
-from packages.turn_attachments import select_documents
 from importlib import import_module
 import re
 import os
+import unicodedata
 from uuid import UUID
 from typing import Any
 
 import aiohttp
+
+def status_language(messages: list[SimpleNamespace], locale: object) -> str:
+    """Use ATLAS localization when mounted, with a native Open WebUI fallback."""
+    try:
+        from packages.language import status_language as atlas_status_language
+    except ModuleNotFoundError as exc:
+        if exc.name != "packages":
+            raise
+        if isinstance(locale, str) and locale in {"fr", "de", "es", "it", "en"}:
+            return locale
+        return "en"
+    return atlas_status_language(messages, locale)
+
+
+def normalized(value: str) -> str:
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", value.casefold())
+        if not unicodedata.combining(character)
+    )
+
+
+def fallback_documents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Select current or explicitly referenced document uploads by chat turn."""
+    if not messages:
+        return []
+    current = messages[-1].get("files") or []
+    if current:
+        return [dict(file, reused=False) for file in current]
+    previous = [message for message in messages[:-1] if message.get("role") == "user"]
+    available: dict[str, dict[str, Any]] = {}
+    for message in previous:
+        for file in message.get("files") or []:
+            name = str(file.get("filename") or file.get("name") or file.get("id"))
+            available[name] = file
+    content = messages[-1].get("content", "")
+    question = (
+        content
+        if isinstance(content, str)
+        else "\n".join(
+            str(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict) and part.get("type") == "text"
+        )
+    )
+    text = normalized(question)
+    names = {name for name in available if normalized(name) in text}
+    if not names and re.search(
+        r"\b(?:this|that|the|attached|uploaded|ce|cet|cette|le|la|du|dies\w*|este|ese|questo)\s+(?:document|pdf|file|proposal|report|fichier|rapport|proposition|dokument)\b|\b(?:page|section)\s+\d+",
+        text,
+    ):
+        names = set(available)
+    immediate = bool(previous and previous[-1].get("files"))
+    if (
+        not names
+        and immediate
+        and re.search(r"\b(?:its|their|it|them|son|sa|ses)\b", text)
+        and re.search(
+            r"\b(?:budget|cost|risks?|timeline|schedule|summary|summari\w*|explain|detail\w*|shorter|translate|resume\w*|cout\w*|risque\w*)\b",
+            text,
+        )
+    ):
+        names = set(available)
+    return [dict(file, reused=True) for name, file in available.items() if name in names]
+
+
+def select_documents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Use the shared selector when available, without requiring it at load time."""
+    try:
+        from packages.turn_attachments import select_documents as atlas_select_documents
+    except ModuleNotFoundError as exc:
+        if exc.name != "packages":
+            raise
+        return fallback_documents(messages)
+    return atlas_select_documents(messages)
 
 
 class Filter:
