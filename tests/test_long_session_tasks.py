@@ -1,5 +1,6 @@
 """New long-session verifier controls, independent of D01-D30 and any provider."""
 
+import gzip
 import hashlib
 import json
 import tarfile
@@ -52,14 +53,26 @@ class LongSessionTests(unittest.TestCase):
             build(target)
             for path in ROOT.glob("D3[1-3]/**/*"):
                 if path.is_file() and "__pycache__" not in path.parts:
-                    self.assertEqual(
-                        path.read_bytes(),
-                        (target / path.relative_to(ROOT)).read_bytes(),
-                        str(path),
-                    )
+                    rebuilt = target / path.relative_to(ROOT)
+                    if path.name.endswith(".tar.gz"):
+                        # gzip bytes depend on the zlib build; compare the tar stream.
+                        self.assertEqual(
+                            gzip.decompress(path.read_bytes()),
+                            gzip.decompress(rebuilt.read_bytes()),
+                            str(path),
+                        )
+                    elif path.name == "task.json":
+                        # The recorded archive hash is checked against the committed archive below.
+                        committed = json.loads(path.read_text())
+                        fresh = json.loads(rebuilt.read_text())
+                        committed.pop("base_archive_sha256", None)
+                        fresh.pop("base_archive_sha256", None)
+                        self.assertEqual(committed, fresh, str(path))
+                    else:
+                        self.assertEqual(path.read_bytes(), rebuilt.read_bytes(), str(path))
             for task in ("D31", "D32", "D33"):
-                meta = json.loads((target / task / "task.json").read_text())
-                archive = target / task / "base.tar.gz"
+                meta = json.loads((ROOT / task / "task.json").read_text())
+                archive = ROOT / task / "base.tar.gz"
                 self.assertEqual(
                     hashlib.sha256(archive.read_bytes()).hexdigest(),
                     meta["base_archive_sha256"],
