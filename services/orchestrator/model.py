@@ -2,6 +2,7 @@
 
 from services.orchestrator.image_errors import read_error, decode_error
 from packages.profiles import PROFILES
+from packages import context_usage
 from packages.limits import LimitError
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
@@ -120,6 +121,7 @@ class GatewayModel:
         self.token_split_estimated = False
         self.reasoning_retried = False
         self.cost_ceiling: Decimal | None = None
+        self.context_samples: list[dict[str, object]] = []
         self.dispatch_hook: Callable[[str, Message], Awaitable[None]] | None = None
 
     def configure_quality(
@@ -476,6 +478,10 @@ class GatewayModel:
             payload["has_attachments"] = True
         if self.observing:
             payload.update(local_enabled=self.local_enabled, observe=True)
+        context = context_usage.measure(messages, payload["tools"], self.profile)
+        self.context_samples.append(context)
+        if (capture := context_usage.samples.get()) is not None:
+            capture.append(context)
         reserved = self.estimate(messages)
         started = monotonic()
         if self.dispatch_hook:
@@ -520,6 +526,7 @@ class GatewayModel:
                 if tail:
                     await sink({"delta": {"content": tail}})
             result = WireTurn.model_validate(wire)
+            context["provider_input_tokens"] = result.usage.prompt_tokens
             if self.dispatch_hook:
                 await self.dispatch_hook("acknowledged", wire)
             self.provider_retries += result.provider_retries

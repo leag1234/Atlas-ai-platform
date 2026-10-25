@@ -1,0 +1,12 @@
+{
+  "corruptions": [
+    "lost_instruction",
+    "missing_artifact",
+    "missing_dispatch",
+    "missing_turn",
+    "only_two_reductions",
+    "wrong_artifact"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

@@ -146,6 +146,13 @@ class Tools(Protocol):
     async def execute(self, call: Call, timeout: float) -> Message: ...
 
 
+class ResultReferences(Protocol):
+    async def retain(
+        self, call: Call, output: Message, messages: list[Message]
+    ) -> None: ...
+    async def reopen(self, call: Call) -> Message: ...
+
+
 class Stop(Exception):
     pass
 
@@ -166,6 +173,7 @@ async def run(
     retry_protocol: bool = True,
     terminal_tools: frozenset[str] = frozenset(),
     initial_calls: tuple[Call, ...] = (),
+    references: ResultReferences | None = None,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -391,24 +399,26 @@ async def run(
                 ):
                     quota_recovered = True
                     for denied in pending_calls[pending_calls.index(call) :]:
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": denied.id,
-                                "content": json.dumps(
-                                    {
-                                        "error": "tool_quota_exhausted",
-                                        "reason": quota,
-                                        "tools_executed": result.tool_calls,
-                                        "tool_limit": limits.tool_calls,
-                                        "searches_executed": counts["web_search"],
-                                        "search_limit": 3,
-                                        "fetches_executed": counts["web_fetch"],
-                                        "fetch_limit": 8,
-                                    }
-                                ),
-                            }
-                        )
+                        denial: Message = {
+                            "error": "tool_quota_exhausted",
+                            "reason": quota,
+                            "tools_executed": result.tool_calls,
+                            "tool_limit": limits.tool_calls,
+                            "searches_executed": counts["web_search"],
+                            "search_limit": 3,
+                            "fetches_executed": counts["web_fetch"],
+                            "fetch_limit": 8,
+                        }
+                        if references is not None:
+                            await references.retain(denied, denial, messages)
+                        else:
+                            messages.append(
+                                dict(
+                                    role="tool",
+                                    tool_call_id=denied.id,
+                                    content=json.dumps(denial),
+                                )
+                            )
                     logging.getLogger(__name__).info(
                         json.dumps(
                             {
@@ -452,7 +462,9 @@ async def run(
                 result.tool_calls += 1
                 counts["web_search" if call.name == "web_images" else call.name] += 1
                 output = await invoke(
-                    tools.execute(
+                    references.reopen(call)
+                    if references is not None and call.name == "reopen_result"
+                    else tools.execute(
                         call, min(125 if limits.code_mode else 15, remaining())
                     )
                 )
@@ -515,17 +527,20 @@ async def run(
                         }
                     )
                 )
+                if references is not None:
+                    await references.retain(call, output, messages)
+                else:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": json.dumps(output, ensure_ascii=False),
+                        }
+                    )
                 if call.name in terminal_tools and "error" not in output:
                     result.text = "".join(answer_parts)
                     result.state = "done"
                     return result
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": json.dumps(output, ensure_ascii=False),
-                    }
-                )
     except Stop as exc:
         result.reason = str(exc)
     except ValidationError as exc:

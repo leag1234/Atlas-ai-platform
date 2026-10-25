@@ -485,15 +485,26 @@ class Transcript:
 
     def events(self, data: dict[str, Any]) -> dict[str, Any]:
         turn, private = self.bound(data)
-        if turn["state"] != "running" or turn["action"] != "chat":
+        if turn["state"] != "running":
             raise ProjectError(409, "session_busy")
+        session_id = private["request"].get("work_session_id")
+        if session_id:
+            Work(self.scope).fence(
+                dict(
+                    session_id=session_id,
+                    request_id=turn["request_id"],
+                    generation=data.get("generation"),
+                )
+            )
+        elif "generation" in data:
+            raise ProjectError(422, "invalid_request")
         events = []
         for event in data["events"]:
             if (
                 event["org_id"] != self.org
                 or event["project_id"] != self.project
                 or event["request_id"] != turn["request_id"]
-                or event["session_id"] is not None
+                or event["session_id"] != session_id
                 or event["approval_id"] is not None
             ):
                 raise ProjectError(404, "not_found")
@@ -534,6 +545,7 @@ class Transcript:
                         "byte_counts",
                         "outcome",
                         "conversation_id",
+                        "session_id",
                         "model_dispatch",
                         "event_id",
                     )

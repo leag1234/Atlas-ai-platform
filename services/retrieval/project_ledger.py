@@ -139,7 +139,8 @@ def _model(value: Mapping[str, Any] | None, kind: str, counts: Json) -> Json | N
         "transmission",
     }
     if (
-        set(value) != required
+        not required <= set(value)
+        or set(value) - required - {"context"}
         or value["purpose"]
         not in {"generation", "embedding", "rerank", "ocr", "vision"}
         or value["transmission"]
@@ -163,6 +164,10 @@ def _model(value: Mapping[str, Any] | None, kind: str, counts: Json) -> Json | N
         raise ProjectError(422, "invalid_request")
     if not isinstance(value["provider_ref"], str) or not value["provider_ref"]:
         raise ProjectError(422, "invalid_request")
+    if "context" in value:
+        from services.retrieval.project_work_contract import validate
+
+        validate("ContextUsage", value["context"])
     model_counts = _bytes(value["byte_counts"])
     if model_counts != counts:
         raise ProjectError(422, "invalid_request")
@@ -190,6 +195,7 @@ def append(
     session_id: str | None = None,
     approval_id: str | None = None,
     model_dispatch: Mapping[str, Any] | None = None,
+    context_clearing: Mapping[str, Any] | None = None,
     audit_record: Mapping[str, Any] | None = None,
     event_id: str | None = None,
     timestamp: str | None = None,
@@ -274,6 +280,13 @@ def append(
         "model_dispatch": _model(model_dispatch, kind, counts),
         "audit_record": dict(audit_record) if audit_record is not None else None,
     }
+    if context_clearing is not None:
+        from services.retrieval.project_work_contract import validate
+
+        validate("ContextClearing", context_clearing)
+        if kind != "context_selected":
+            raise ProjectError(422, "invalid_request")
+        event["context_clearing"] = dict(context_clearing)
     existing = scope.db.execute(
         "SELECT data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND event_id=%s",
         (scope.identity.org, event["project_id"], event["event_id"]),

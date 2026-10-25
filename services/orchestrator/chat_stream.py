@@ -619,7 +619,17 @@ def response(
                     )
                     continue
                 if "error" in event:
-                    output = event
+                    metadata = event.get("atlas")
+                    output = {
+                        **event,
+                        "atlas": {
+                            **(metadata if isinstance(metadata, dict) else {}),
+                            "context": item.context_samples[-1]
+                            if item.context_samples
+                            else None,
+                            "context_samples": item.context_samples,
+                        },
+                    }
                 else:
                     output = {
                         **base,
@@ -643,6 +653,10 @@ def response(
                             "total_tokens": sum(item.tokens.values()),
                         }
                         output["atlas"] = {
+                            "context": item.context_samples[-1]
+                            if item.context_samples
+                            else None,
+                            "context_samples": item.context_samples,
                             "images": item.images,
                             "files": item.files,
                             "terminal_commands": item.terminal_commands,
