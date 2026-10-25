@@ -142,7 +142,7 @@ Keep the existing `.env` in place and run:
 Choose the new provider and enter its key at the hidden prompt. Setup checks the
 new account's model list and a streaming completion before replacing `.env`
 atomically with mode 600. It preserves generated secrets, storage settings,
-ports, accounts and conversations, and recreates only the gateway. Do not move
+ports, accounts and conversations, and recreates the gateway and, when enabled, the developer API. Do not move
 `.env` away or rerun fresh setup against existing volumes: a newly generated
 database password would no longer match the stored database.
 
@@ -156,8 +156,44 @@ Provider model and currency overrides are reset to the selected preset. Supply
 `--model` to override its text model. For a USD preset, set an operator-verified
 `ATLAS_USD_TO_EUR` in `.env` after switching, as described in the pricing notes.
 Add `--no-start` to save verified settings without restarting; then apply them with
-`docker compose up -d --no-deps --force-recreate --wait gateway`.
+`docker compose up -d --no-deps --force-recreate --wait gateway`
+(and add `devapi` when the API is enabled).
 For local Ollama, setup also starts the CPU model service for verification.
+
+## Developer API (optional)
+
+Enable the authenticated OpenAI-compatible developer endpoint with:
+
+```bash
+./atlas setup --api
+# For an existing installation:
+./atlas setup --reconfigure --api
+./atlas api-key create editor --daily-requests 20
+./atlas api-key list
+./atlas api-key revoke editor
+```
+
+The API is opt-in to avoid an extra listener and service for UI-only trials.
+No key is created automatically. Creation prints the host key-file path under
+`BRAIN/api-keys/` (mode 600), never its contents unless `--show` is explicitly
+supplied. The container's persistent `devapi` volume stores hashed keys and daily
+quotas. Read the private file into your client's API-key setting; do not log it.
+Use base URL `http://127.0.0.1:3001/v1` and model `atlas-code`.
+Choose another port with `--api-port 3101` during initial setup or
+`ATLAS_API_PORT=3101` in `.env`. The default bind address is loopback;
+`ATLAS_API_BIND=0.0.0.0` explicitly enables all interfaces. Apply `.env` changes
+with `docker compose up -d devapi`. Provide your own TLS reverse proxy before
+public use. This endpoint is separate from the browser chat adapter.
+
+The API shares the selected provider, model, context limits, request options and
+configured transient fallback with chat. Presets without verified EUR prices
+log a warning and disable monetary ceilings; token/time limits and per-key daily
+request quotas remain active. Provider bills still apply. See
+[API compatibility](api-compatibility.md) for supported endpoints and formats.
+Setup checks `GET /v1/models` returns the expected authentication-required response
+without provisioning a probe key. Authenticated clients receive the model list.
+The `api` Compose profile persists in `.env`; ordinary restart commands retain it.
+Include `--profile api` when removing all optional services and volumes.
 
 ## What you get
 
@@ -192,7 +228,7 @@ docker compose stop
 # Restart, retaining conversations, uploads and model downloads:
 docker compose up -d --wait
 # Remove the stack and ALL its saved data:
-docker compose --profile local down --volumes --remove-orphans
+docker compose --profile local --profile api down --volumes --remove-orphans
 ```
 
 The final command deletes this Compose project's database, conversations, uploads

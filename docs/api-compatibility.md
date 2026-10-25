@@ -6,8 +6,8 @@ upstream API definitions; the limits below describe this repository.
 
 There are two separate interfaces:
 
-- **Developer API:** `make serve-devapi`, loopback port 8030, base URL
-  `http://127.0.0.1:8030/v1`. Individual keys, text/functions and model `atlas-code`.
+- **Developer API:** Docker `./atlas setup --api`, loopback port 3001, base URL
+  `http://127.0.0.1:3001/v1`; standalone `make serve-devapi` uses port 8030. Individual keys, text/functions and model `atlas-code`.
 - **Chat adapter:** started by `make serve`, with port offset configuration. At
   offset 2100 its base URL is `http://127.0.0.1:10120/v1`. It powers the web assistant,
   including Atlas-specific document, project and image flows. It has no developer
@@ -36,6 +36,19 @@ MCP tools or files. Speech services use separate local endpoints.
 | Responses | Partial | `POST /v1/responses` supports text/functions, non-streamed JSON response envelopes and streaming. No stored responses, `previous_response_id`, hosted tools or multimodal input. |
 
 ## Start the developer API
+
+For Docker, run `./atlas setup --api` (or `./atlas setup --reconfigure --api`),
+then `./atlas api-key create editor --daily-requests 20`. Creation prints a private
+mode-600 file path under `BRAIN/api-keys/`; only explicit `--show` reveals the key.
+Use `./atlas api-key list` and `./atlas api-key revoke editor` to manage keys.
+No key is created automatically. Use the file as your SDK API key, base URL
+`http://127.0.0.1:3001/v1`, and model `atlas-code`. `ATLAS_API_PORT` changes the
+published port; `ATLAS_API_BIND=0.0.0.0` opts into all interfaces (supply your own
+TLS proxy). The `api` profile and `devapi` volume persist configuration and quotas.
+Setup checks the model-list authentication boundary; authenticated SDK calls get
+HTTP 200 and the public alias. See [quickstart](quickstart.md).
+
+Standalone legacy startup:
 
 Install the [runtime](installation.md). Supply `SCW_GENERATIVE_BASE_URL` and
 `SCW_GENERATIVE_API_KEY` in the process environment or a private local `.env`.
@@ -129,10 +142,22 @@ An empty stream can retry once before emitting content. `tool_choice="none"`
 omits tool definitions and selection options upstream, checks for nonempty text,
 and uses the same bounded recovery instead of returning a null successful answer.
 
-The developer transport still reads only `SCW_GENERATIVE_BASE_URL` and
-`SCW_GENERATIVE_API_KEY`. Quick-start Hetzner/Mistral/OVHcloud presets do not wire
-the developer endpoint/key; their native JSON behavior was not probed here and
-is not claimed. Keep preset variables unset for the verified legacy route.
+When `ATLAS_PROVIDER` is set, the developer API uses the same provider settings
+as chat: endpoint/key, text model, per-role context, request options, typed content
+and cumulative stream usage. Hetzner system messages are merged at the start;
+reasoning options follow the preset. A configured text fallback is tried once on
+transient transport errors before any output, within the original deadline.
+A partial stream is never replayed. Structured-output correction still gets at
+most two attempts. With `ATLAS_PROVIDER` unset, the legacy Scaleway route retains
+its existing request shape, settings and pricing.
+
+Unpriced presets (including USD prices without an explicit conversion) log the
+existing warning and disable monetary ceilings, including the daily money quota.
+Token, context, time and daily request quotas remain active. A route including an
+unpriced fallback is also reported as unpriced. Numeric cost telemetry is zero
+for such requests; the `unpriced` log field distinguishes this from verified-free
+inference. Provider billing still applies. Known-price transient failures retain
+the primary reservation when fallback succeeds. Context is checked for both models.
 
 ## Developer limits and error handling
 
@@ -143,7 +168,8 @@ are accepted. Input is conservatively budgeted from UTF-8 bytes; the EUR 0.05
 per-request ceiling can reject a request smaller than the model context window.
 There is a 120-second request deadline. JSON formats and `tool_choice="none"`
 reserve up to two attempts within the same EUR 0.05 ceiling and daily reservation.
-Other requests retain one attempt. Both attempts count toward reported tokens and cost;
+Other legacy requests retain one attempt; selected providers may use the
+configured transient fallback as described above. Both attempts count toward reported tokens and cost;
 an unknown attempt retains the full reservation. Larger JSON requests can therefore
 reach the cost limit sooner than ordinary text requests.
 
