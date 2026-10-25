@@ -48,6 +48,7 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     from services.orchestrator.citation_fragments import tool_citations
     from services.orchestrator.mermaid_check import FENCE
 
+    original = text
     text = tool_citations(text, retrieved)
     diagram_ranges: list[tuple[int, int]] = []
 
@@ -88,16 +89,24 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     if not retrieved:
         text = re.sub(r"(?im)^sources?\s*:.*(?:\n|$)", "", text)
 
+    if text != original:
+        from services.orchestrator.citation_cleanup import cleanup
+
+        text = cleanup(text)
     return text
 
 
-def inline_source_markers(text: str, retrieved: list[str]) -> str:
+def inline_source_markers(
+    text: str, retrieved: list[str], *, preserve_labels: bool = False
+) -> str:
     """Turn retrieved web URLs into compact Markdown links Open WebUI renders."""
     numbers = {url: index for index, url in enumerate(dict.fromkeys(retrieved), 1)}
     text = provider_reference_markers(text, retrieved)
 
     def markdown(match: re.Match[str]) -> str:
         url = match.group(1).rstrip(".,;:)]}>'\"")
+        if preserve_labels:
+            return match[0]
         return f"[{numbers[url]}]({url})" if url in numbers else match.group(0)
 
     text = re.sub(r"(?<!!)\[[^\]]+\]\((https?://[^\s)]+)\)", markdown, text)
