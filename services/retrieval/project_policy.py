@@ -32,6 +32,7 @@ class WorkLimits(Closed):
 
 
 class Quotas(Closed):
+    pinned_memory_tokens: Positive = 1500
     active_members: Positive
     active_projects: Positive
     stored_bytes: Positive
@@ -111,6 +112,7 @@ class ProjectCreate(Closed):
 
 
 class ProjectPatch(Closed):
+    pinned_memory_tokens: Positive | None = None
     name: Name | None = None
     default_action: Literal["chat", "work"] | None = None
     state: Literal["active", "archived"] | None = None

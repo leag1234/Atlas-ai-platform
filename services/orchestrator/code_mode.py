@@ -622,6 +622,12 @@ async def process_work(
                     dispatch.generation,
                 )
                 tools.selection.reopen_enabled = True
+                tools.selection.memory_enabled = True
+                from services.orchestrator.project_memory_tools import MemoryTools
+
+                tools.memory = MemoryTools(
+                    dispatch.broker, dispatch.state, dispatch.generation
+                )
             model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(

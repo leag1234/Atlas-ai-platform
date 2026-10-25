@@ -278,6 +278,8 @@ class ScopedProjectDocuments:
             (files.org, files.project),
         ).fetchall()
         for row in rows:
+            if row["data"].get("processor") == "typed-memory-1":
+                continue
             try:
                 version = files.get("version", str(row["parent_id"]))
                 file, _ = files.version(

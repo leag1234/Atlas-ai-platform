@@ -239,6 +239,10 @@ class ProjectFiles:
                 created = min(created, self.scope.project["data"]["created_at"])
             if days is not None and after(created, days) <= timestamp():
                 raise ProjectError(404, "not_found")
+        if kind == "memory":
+            from packages.project_memory import normalize
+
+            value = normalize(value)
         return value
 
     def listing(self, kind: str, parent: str | None = None) -> list[dict[str, Any]]:
@@ -1010,57 +1014,16 @@ class ProjectFiles:
         return revision
 
     def memory(self, data: dict[str, Any]) -> dict[str, Any]:
-        versions = []
-        for source in data["source_refs"]:
-            self.version(source["file_id"], source["version_id"], model=True)
-            versions.append(source["version_id"])
-        value = self.new()
-        value.update(
-            text=data["text"],
-            kind="derived" if versions else "user",
-            source_conversation_id=None,
-            source_turn_id=None,
-            source_file_version_ids=sorted(set(versions)),
-            status="proposed",
-            confirmed_by=None,
-            memory_revision=self.memory_revision(),
-        )
-        self.put("memory", value)
-        for version in set(versions):
-            self.db.execute(
-                "INSERT INTO atlas_projects.resource_sources VALUES(%s,%s,%s,%s)",
-                (self.org, self.project, value["id"], version),
-            )
-        self.emit("context_selected", versions, len(data["text"].encode("utf-8")))
-        return value
+        from services.retrieval.project_memory import create
+
+        return create(self, data)
 
     def patch_memory(
         self, identifier: str, data: dict[str, Any], expected: str | None
     ) -> dict[str, Any]:
-        value = self.get("memory", identifier)
-        self.scope.match(value, expected)
-        self.check_sources(value["source_file_version_ids"])
-        if data.get("status") == "deleted":
-            self.consume(
-                data.get("approval_id"),
-                "delete",
-                dict(
-                    memory_ids=[identifier],
-                    memory_revision=self.scope.project_data["memory_revision"],
-                ),
-            )
-            self.tombstone(value)
-        value.update({k: v for k, v in data.items() if k != "approval_id"})
-        if value["status"] == "active":
-            value["confirmed_by"] = self.scope.identity.member
-        value["memory_revision"] = self.memory_revision()
-        self.save(value)
-        self.emit(
-            "context_selected",
-            value["source_file_version_ids"],
-            len(value["text"].encode("utf-8")),
-        )
-        return value
+        from services.retrieval.project_memory import patch
+
+        return patch(self, identifier, data, expected)
 
     def tombstone(
         self, value: dict[str, Any], folder: dict[str, Any] | None = None
@@ -1098,6 +1061,9 @@ class ProjectFiles:
             self.tombstone(value)
             value.update(status="deleted", memory_revision=revision)
             self.save(value)
+            from services.retrieval.project_memory import audit
+
+            audit(self, value)
         self.emit(
             "context_selected",
             sorted(
@@ -1168,6 +1134,9 @@ class ProjectFiles:
 
     def context(self) -> dict[str, Any]:
         """Task-G seam: authorized data with revisions, never a system-policy prompt."""
+        from services.retrieval.project_memory import check_cap
+
+        check_cap(self)
         instructions = self.instructions()
         memory = [v for v in self.listing("memory") if v["status"] == "active"]
         return dict(

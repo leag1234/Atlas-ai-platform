@@ -55,3 +55,7 @@ body.atlas-project-open .atlas-side-pane { z-index: 80; }
 #atlas-project .atlas-project-composer { border-radius: 12px; background: var(--project-bg); }
 #atlas-project > header,#atlas-project > nav,#atlas-project > aside { background: var(--project-bg); }
 .atlas-project input[type=checkbox] { width: 16px; height: 16px; padding: 0; accent-color: #8a5538; }
+[data-memory-panel] article { padding: 10px 0; border-bottom: 1px solid var(--project-line); overflow-wrap: anywhere; }
+[data-memory-panel] small { display: block; margin-bottom: 6px; }
+[data-memory-panel] button { margin: 4px 6px 4px 0; }
+.atlas-project-dialog textarea { width: 100%; min-height: 100px; }

@@ -365,6 +365,7 @@ class WorkTools(CodeTools):
         self.deliverables: list[dict[str, Any]] = []
         self.selection: WorkToolSelection | None = None
         self.validation_failures: dict[str, str] = {}
+        self.memory: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
@@ -425,6 +426,8 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if call.name == "project_memory" and self.memory is not None:
+            return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:
             try:
                 result = self.selection.switch(call.arguments)

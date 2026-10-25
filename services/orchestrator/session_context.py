@@ -41,6 +41,8 @@ def assemble(
                 project_instructions=context["instructions_text"],
                 memory=context["facts"],
                 passages=context["passages"],
+                retrieved_memory=context.get("retrieved_memory", []),
+                memory_index=context.get("memory_index", []),
                 coverage=context["context_manifest"]["coverage"],
             )
         )
@@ -79,6 +81,8 @@ def assemble(
             "document_passages",
             dict(
                 passages=context["passages"],
+                retrieved_memory=context.get("retrieved_memory", []),
+                memory_index=context.get("memory_index", []),
                 coverage=context["context_manifest"]["coverage"],
             ),
         )
