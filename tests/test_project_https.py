@@ -12,14 +12,14 @@ from services.orchestrator import chat_api
 
 
 class ProjectHttpsTests(unittest.TestCase):
-    def request(self, origin, site="same-origin"):
+    def request(self, origin: str | None, site: str | None = "same-origin") -> Request:
         headers = [(b"host", b"test-atlas.indidea.org:10443")]
         if origin is not None:
             headers.append((b"origin", origin.encode()))
         if site is not None:
             headers.append((b"sec-fetch-site", site.encode()))
 
-        async def receive():
+        async def receive() -> dict[str, object]:
             return {"type": "http.request", "body": b"{", "more_body": False}
 
         return Request(
@@ -37,7 +37,7 @@ class ProjectHttpsTests(unittest.TestCase):
 
     def test_https_origin_reaches_body_validation_without_trusting_forwarded_headers(
         self,
-    ):
+    ) -> None:
         origin = "https://test-atlas.indidea.org:10443"
         with (
             patch.dict(
@@ -48,7 +48,7 @@ class ProjectHttpsTests(unittest.TestCase):
             response = asyncio.run(chat_api.chat(self.request(origin)))
             self.assertEqual(response.status_code, 400)
             self.assertEqual(
-                json.loads(response.body)["error"]["code"], "invalid_request"
+                json.loads(bytes(response.body))["error"]["code"], "invalid_request"
             )
             for rejected, site in [
                 (None, "same-origin"),
@@ -57,7 +57,9 @@ class ProjectHttpsTests(unittest.TestCase):
             ]:
                 response = asyncio.run(chat_api.chat(self.request(rejected, site)))
                 self.assertEqual(response.status_code, 403)
-                self.assertEqual(json.loads(response.body)["error"], "origin_rejected")
+                self.assertEqual(
+                    json.loads(bytes(response.body))["error"], "origin_rejected"
+                )
 
 
 if __name__ == "__main__":

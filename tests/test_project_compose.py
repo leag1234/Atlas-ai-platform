@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProjectComposeTests(unittest.TestCase):
-    def test_project_overlay_wires_identity_storage_and_contained_workers(self):
+    def test_project_overlay_wires_identity_storage_and_contained_workers(self) -> None:
         services = yaml.safe_load((ROOT / "compose.project.yaml").read_text())[
             "services"
         ]
@@ -36,16 +36,17 @@ class ProjectComposeTests(unittest.TestCase):
         self.assertEqual(services["gateway"]["build"]["target"], "project")
         self.assertTrue(all("ports" not in service for service in services.values()))
 
-    def test_project_startup_never_initializes_schema(self):
+    def test_project_startup_never_initializes_schema(self) -> None:
         spec = importlib.util.spec_from_file_location(
             "compose_entrypoint", ROOT / "infra/docker/entrypoint.py"
         )
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         store = types.ModuleType("services.retrieval.store")
-        store.Store = Mock()
+        setattr(store, "Store", Mock())
         uvicorn = types.ModuleType("uvicorn")
-        uvicorn.run = Mock()
+        setattr(uvicorn, "run", Mock())
         with (
             patch.dict(
                 sys.modules, {"services.retrieval.store": store, "uvicorn": uvicorn}
