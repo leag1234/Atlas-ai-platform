@@ -330,6 +330,7 @@ def webui(name: str, persistent: bool) -> None:
     for resource in (
         "packages/__init__.py",
         "packages/language.py",
+        "packages/turn_attachments.py",
         "prompts/activity-labels.json",
     ):
         options.extend(
