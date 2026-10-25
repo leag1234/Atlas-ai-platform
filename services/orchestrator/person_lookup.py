@@ -1,14 +1,18 @@
 """Exact-name discovery: retrieved excerpts, never a substituted biography."""
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from html import escape
 from typing import TYPE_CHECKING
 
-from services.orchestrator.loop import Call
-from services.orchestrator.model import GatewayError
+from packages.ports import atlas_ports
+from services.orchestrator.loop import Call, Limits, Query, run
+from services.orchestrator.model import GatewayError, GatewayModel
+from services.orchestrator.stream_client import sink_context
 from packages.turn_attachments import normalized
 
 if TYPE_CHECKING:
@@ -18,31 +22,6 @@ if TYPE_CHECKING:
 
 
 _NAME = r"([^\W\d_][\w'’.-]*(?:\s+[^\W\d_][\w'’.-]*){1,3})"
-_COMMON = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "as",
-        "at",
-        "born",
-        "by",
-        "for",
-        "from",
-        "he",
-        "her",
-        "his",
-        "in",
-        "is",
-        "of",
-        "on",
-        "she",
-        "the",
-        "to",
-        "was",
-        "with",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -51,48 +30,83 @@ class Evidence:
     passage: str
 
 
-def _keywords(text: str, name: str) -> set[str]:
-    name_words = set(re.findall(r"[^\W\d_]+", normalized(name)))
-    words = re.findall(r"[^\W\d_]{3,}", normalized(text))
-    return {
-        re.sub(r"(?:ers?|ed|s)$", "", word)
-        for word in words
-        if word not in _COMMON and word not in name_words
-    }
+_SYNTHESIS_INSTRUCTION = (
+    "Answer briefly using only the exact-name evidence below. Cite its URLs. "
+    "If it clearly describes different people with no dominant subject, ask for "
+    "profession, place, or date; a directory/listing alone is not a person description."
+)
 
 
-def _dominant_evidence(evidence: list[Evidence], name: str) -> list[Evidence] | None:
-    """Return a dominant group only when matching snippets describe one subject."""
-    if len(evidence) < 2:
-        return evidence
-    keywords = [_keywords(item.passage, name) for item in evidence]
-    groups: list[list[int]] = []
-    pending = set(range(len(evidence)))
-    while pending:
-        group = {pending.pop()}
-        changed = True
-        while changed:
-            changed = False
-            for index in tuple(pending):
-                if any(keywords[index] & keywords[member] for member in group):
-                    pending.remove(index)
-                    group.add(index)
-                    changed = True
-        groups.append(sorted(group))
-    groups.sort(key=len, reverse=True)
-    if len(groups) > 1 and len(groups[0]) == len(groups[1]):
-        return None
-    return [evidence[index] for index in groups[0]]
-
-
-def _synthesis(evidence: list[Evidence], name: str) -> str:
-    """Keep only retrieved, exact-name facts and attach their source links."""
-    facts: list[str] = []
-    for number, item in enumerate(evidence[:3], 1):
-        sentence = escape(item.passage).replace("\n", " ").strip()
-        if sentence and sentence not in facts:
-            facts.append(f"{sentence} [Source {number}]({item.url})")
-    return " ".join(facts)
+async def _answer_from_evidence(
+    request: "ChatRequest",
+    item: "Interaction",
+    tools: "ChatTools",
+    name: str,
+    evidence: list[Evidence],
+    started: float,
+) -> None:
+    """Use the normal bounded answer loop after deterministic evidence filtering."""
+    model = await GatewayModel.connect(
+        os.environ.get("ATLAS_GATEWAY_URL", atlas_ports().url("gateway")),
+        local_enabled=os.environ.get("GPU_LOCAL", "0") == "1",
+    )
+    model.tools = []
+    model.observing = True
+    model.sink = sink_context.get()
+    model.configure_quality(request.model, request.max_tokens)
+    model.local_enabled = os.environ.get("GPU_LOCAL", "0") == "1"
+    tools.model = model
+    item.retrieved_urls[:] = [source.url for source in evidence]
+    history: list[dict[str, object]] = [
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "untrusted_exact_name_evidence": [
+                        {"url": source.url, "passage": source.passage}
+                        for source in evidence
+                    ]
+                },
+                ensure_ascii=False,
+            ),
+        }
+    ]
+    try:
+        result = await run(
+            Query(question=request.user_text, lang=request.lang),
+            model,
+            tools,
+            _SYNTHESIS_INSTRUCTION,
+            Limits(
+                profile=request.model,
+                tool_calls=0,
+                tokens=None,
+                cost=Decimal("0.10"),
+                wall_clock=max(
+                    0, request.timeout_seconds - (time.monotonic() - started)
+                ),
+            ),
+            history=history,
+            retry_web=False,
+        )
+        item.reponse, item.state, item.task_type = (
+            result.text,
+            result.state,
+            "person_lookup",
+        )
+        item.cout_eur = float(result.cost)
+    finally:
+        item.provider_retries += model.provider_retries
+        item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
+        item.provider_model = model.provider_model
+        item.reasoning = model.reasoning
+        item.trace_tokens, item.answer_tokens = model.trace_tokens, model.answer_tokens
+        item.token_split_estimated = model.token_split_estimated
+        item.reasoning_retried = model.reasoning_retried
+        item.latence_ms["generation"] = model.generation_ms
+        if model.observations:
+            item.modele_utilise = model.observations[-1].provider
+            item.route_decision = model.observations[0].route
 
 
 def person_name(question: str) -> str | None:
@@ -181,9 +195,6 @@ async def lookup(
                 similar_name_found = True
             if matching and isinstance(url, str) and re.match(r"https?://", url):
                 evidence[url] = " ".join(matching)[:1200]
-    selected = _dominant_evidence(
-        [Evidence(url, passage) for url, passage in evidence.items()], name
-    )
     labels = {
         "en": (
             "I could not find reliable information identifying",
@@ -221,14 +232,11 @@ async def lookup(
             "Ricerche",
         ),
     }
-    missing, ambiguous, context, namesake, heading = labels[request.lang]
-    if selected:
-        text = f"**{escape(name)}**: {_synthesis(selected, name)}"
-    elif evidence:
-        citations = " ".join(
-            f"[Source {number}]({url})" for number, url in enumerate(evidence, 1)
-        )
-        text = f"{ambiguous} **{escape(name)}**. {citations}\n\n{context}"
+    missing, _ambiguous, context, namesake, heading = labels[request.lang]
+    exact_evidence = [Evidence(url, passage) for url, passage in evidence.items()]
+    if exact_evidence:
+        await _answer_from_evidence(request, item, tools, name, exact_evidence, started)
+        return
     else:
         text = f"{missing} **{escape(name)}**."
         if similar_name_found:
@@ -239,7 +247,5 @@ async def lookup(
         text += "\n\nSearch status: " + ", ".join(dict.fromkeys(failures)) + "."
     item.reponse, item.state, item.task_type = text, "done", "person_lookup"
     item.latence_ms["generation"] = (time.monotonic() - started) * 1000
-    from services.orchestrator.stream_client import sink_context
-
     if sink := sink_context.get():
         await sink({"delta": {"content": text}})
