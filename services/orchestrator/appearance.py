@@ -83,8 +83,45 @@ def is_appearance_request(
     )
 
 
+def is_spatial_drawing_request(question: str) -> bool:
+    text = _normalized(question)
+    if re.search(
+        r"\b(?:do not|don't|no|without|sans|pas de|ne .*pas|nicht|kein\w*|sin|senza)\b",
+        text,
+    ):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:floor[ -]?plans?|room layouts?|apartment (?:floor )?plans?|grundriss\w*|plattegrond|plan d[ ']*(?:appartement|maison)|plano de (?:piso|apartamento)|pianta dell.appartamento)\b"
+            r"|\b(?:draw|sketch|diagram|layout|show)\b.{0,90}\b(?:apartment|flat)\b"
+            r"|\brooms?\b.{0,30}\bfit together\b",
+            text,
+        )
+    )
+
+
+def spatial_drawing_instruction() -> str:
+    return (
+        "\n\nSpatial drawing route: produce one conceptual 2D floor plan as a complete "
+        'SVG with viewBox="0 0 400 300". Use adjacent labelled rectangles for rooms, '
+        "plausible approximate proportions, door openings and door swing paths, and "
+        "an entrance. Keep labels readable and inside rooms. Include living room, "
+        "kitchen, bedroom, bathroom and hallway when an ordinary apartment is requested. "
+        "After the SVG include a short legend explaining walls, doors and approximate "
+        "scale. State that this is an illustrative layout, not a measured plan or a "
+        "claim about building regulations. Use only rect, circle, ellipse, line, "
+        "polyline, path, text, g, title, desc and safe presentation attributes; no "
+        "style, defs, references, script, links, tool calls, Mermaid or ASCII art. "
+        "Do not provide a flowchart for a spatial arrangement. Supported outputs are "
+        "conceptual 2D SVG layouts and Mermaid process diagrams; if a requested format "
+        "cannot be supplied, state that explicitly."
+    )
+
+
 def is_simple_drawing_request(question: str) -> bool:
     """Recognize a direct request for a small illustration, never a diagram or process."""
+    if is_spatial_drawing_request(question):
+        return True
     normalized = _normalized(question)
     return bool(_DRAWING_REQUEST.match(normalized)) and not bool(
         _DRAWING_EXCLUSIONS.search(normalized)
@@ -177,6 +214,9 @@ def simple_drawing_instruction() -> str:
 
 
 _SVG = re.compile(r"<svg\b[^>]*>.*?</svg\s*>", re.I | re.S)
+_XML_PREAMBLE = re.compile(
+    r"<\?xml\b[^>]*\?>|<!DOCTYPE\b(?:[^>\[]|\[[\s\S]*?\])*>", re.I
+)
 _ALLOWED_TAGS = {
     "svg",
     "rect",
@@ -624,6 +664,9 @@ def without_svg_or_code(model_text: str) -> str:
         model_text,
         flags=re.I | re.S,
     )
+    # An SVG declaration is transport syntax, not answer prose. In particular,
+    # models sometimes put it immediately before a Commons-backed image.
+    clean = _XML_PREAMBLE.sub("", clean)
     # Splitting around an SVG can leave one half of its fence in each section.
     # Never let those delimiters fence the service-owned image and source line.
     return re.sub(r"(?m)^[ \t]*(?:`{3,}|~{3,})[^\n]*$", "", clean).strip()

@@ -191,6 +191,8 @@ async def process_documents(request: ChatRequest, item: Interaction) -> None:
         for source in sources
     ]
     image_messages: list[dict[str, object]] = []
+    if image_notice:
+        instructions += "\nThe vision call failed. You have not seen the images. Do not describe or infer their contents. Answer only the readable document portion. The service will disclose the vision failure."
     if image_context is not None:
         image_messages.append(
             {
@@ -263,7 +265,8 @@ async def process_documents(request: ChatRequest, item: Interaction) -> None:
 
         synthesis_notice = (
             "\n\n" + reduced_document_note(request.lang)
-            if any(
+            if any(not d.reused for d in request.documents)
+            and any(
                 metadata.get("hierarchical_synthesis") for metadata in item.documents
             )
             else ""

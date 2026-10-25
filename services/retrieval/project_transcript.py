@@ -523,6 +523,29 @@ class Transcript:
                 output={},
             ),
         )
+        if any(
+            ref["kind"] == "answer"
+            and ref["text"] == "location used: approximate, this request"
+            and ref["file_version_id"] is None
+            for ref in data["content_refs"]
+        ):
+            append(
+                self.scope,
+                kind="location_used",
+                request_id=turn["request_id"],
+                actor=dict(
+                    kind="member", member_id=self.scope.identity.member, service=None
+                ),
+                resource_refs=[],
+                source=dict(
+                    kind="device", ref="location used: approximate, this request"
+                ),
+                destination=dict(kind="connector", ref="OpenStreetMap"),
+                byte_counts={k: 0 for k in BYTE_KEYS},
+                outcome="succeeded",
+                conversation_id=turn["conversation_id"],
+                transcript=True,
+            )
         self.scope.event("transcript_" + terminal, self.project)
         self.audit(
             turn,

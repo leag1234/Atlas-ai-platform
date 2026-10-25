@@ -57,6 +57,10 @@ def required_research(
             )
             for index, query in enumerate(product_queries(question, history))
         )
+    from services.orchestrator.person_lookup import person_name, queries
+
+    if name := person_name(question):
+        return queries(name, language)
     urls = re.findall(r'https?://[^\s<>"\']+', question)
     practical = re.search(
         r"\b(comment|how|wie|como|come)\b.{0,80}\b(fabriqu\w*|constru\w*|build|make|bau\w*|camera|appareil)\b|\b(compar\w*|recommend\w*|recommand\w*|empfehl\w*|consigli\w*)\b",

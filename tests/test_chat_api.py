@@ -19,6 +19,27 @@ from packages.configuration import configuration_names
 
 
 class ChatAPITests(unittest.TestCase):
+    def test_upstream_urls_are_not_reflected_in_chat_errors(self) -> None:
+        payload = {"messages": [{"role": "user", "content": "Bonjour"}]}
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
+            TestClient(app) as client,
+            patch(
+                "services.orchestrator.chat_api.process",
+                side_effect=GatewayError(
+                    "provider_error",
+                    503,
+                    "External: 503, url='http://orchestrator:13720/v1/audio/speech'",
+                ),
+            ),
+        ):
+            response = client.post("/v1/chat/completions", json=payload)
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("orchestrator", response.text)
+        self.assertNotIn("13720", response.text)
+        self.assertIn("upstream service", response.json()["error"]["message"])
+
     def test_continue_response_returns_only_the_suffix_for_json_and_sse(self) -> None:
         async def respond(request: ChatRequest, item: Interaction) -> None:
             self.assertTrue(request.continuation)

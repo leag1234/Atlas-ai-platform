@@ -1,0 +1,534 @@
+{
+  "case": "english",
+  "area": "Paris",
+  "question": "bakery",
+  "language": "en",
+  "recorded_at": "2026-10-25T10:55:59.582518+00:00",
+  "source": "nominatim",
+  "candidates": [
+    {
+      "name": "Brioche Dorée",
+      "category": "bakery",
+      "distance_m": 2200,
+      "distance_kind": "approximate straight-line",
+      "address": "Rue de Bercy, 75012, Paris",
+      "website": "https://www.briochedoree.fr/store-finder/899003",
+      "phone": "+33 1 43 46 79 90",
+      "opening_hours": "Mo-Fr 06:00-20:30; Sa-Su 06:30-20:00",
+      "opening": {
+        "status": "open",
+        "closing_time": "2026-10-25T20:00:00+01:00",
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": "Europe/Paris"
+      },
+      "source": "https://www.openstreetmap.org/way/406575423",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Façon des boulangers",
+      "category": "bakery",
+      "distance_m": 1950,
+      "distance_kind": "approximate straight-line",
+      "address": "162 Avenue Ledru-Rollin, 75011, Paris",
+      "website": "https://facondesboulangers.com",
+      "phone": "",
+      "opening_hours": "Mo-Fr 07:00-20:00; Sa 08:00-18:00",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T07:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Paris"
+      },
+      "source": "https://www.openstreetmap.org/node/6496145377",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Maison Kerck",
+      "category": "bakery",
+      "distance_m": 2050,
+      "distance_kind": "approximate straight-line",
+      "address": "Rue Saint-Maur, 75011, Paris",
+      "website": "",
+      "phone": "",
+      "opening_hours": null,
+      "opening": {
+        "status": "unknown",
+        "closing_time": null,
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": null
+      },
+      "source": "https://www.openstreetmap.org/node/5959541287",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Chez Meunier",
+      "category": "bakery",
+      "distance_m": 2850,
+      "distance_kind": "approximate straight-line",
+      "address": "10 Place d'Italie, 75013, Paris",
+      "website": "https://www.chezmeunier.com/",
+      "phone": "+33143313393",
+      "opening_hours": "Mo-Fr 07:00-20:00; Sa-Su 07:00-19:30",
+      "opening": {
+        "status": "open",
+        "closing_time": "2026-10-25T19:30:00+01:00",
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": "Europe/Paris"
+      },
+      "source": "https://www.openstreetmap.org/node/978776434",
+      "provider": "nominatim"
+    }
+  ],
+  "exchanges": [
+    {
+      "service": "geocode",
+      "category": "bakery",
+      "response": [
+        {
+          "place_id": 97843631,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "way",
+          "osm_id": 406575423,
+          "lat": "48.8434316",
+          "lon": "2.3745272",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Brioche Dorée",
+          "display_name": "Brioche Dorée, Rue de Bercy, Quartier des Quinze-Vingts, 12th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75012, France",
+          "address": {
+            "shop": "Brioche Dorée",
+            "road": "Rue de Bercy",
+            "quarter": "Quartier des Quinze-Vingts",
+            "suburb": "12th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75012",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "level": "-2",
+            "phone": "+33 1 43 46 79 90",
+            "indoor": "room",
+            "website": "https://www.briochedoree.fr/store-finder/899003",
+            "operator": "Groupe Le Duff",
+            "check_date": "2026-09-04",
+            "ref:FR:SIRET": "53470477000138",
+            "brand:website": "https://www.briochedoree.fr",
+            "opening_hours": "Mo-Fr 06:00-20:30; Sa-Su 06:30-20:00",
+            "brand:wikidata": "Q2925606",
+            "brand:wikipedia": "fr:Brioche Dorée",
+            "produced_on_site": "no",
+            "check_date:opening_hours": "2026-09-04"
+          },
+          "boundingbox": [
+            "48.8433899",
+            "48.8434732",
+            "2.3744580",
+            "2.3745964"
+          ]
+        },
+        {
+          "place_id": 98320203,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 1744501664,
+          "lat": "48.8276552",
+          "lon": "2.3328565",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Boulangerie Fantasiiia",
+          "display_name": "Boulangerie Fantasiiia, Rue d'Alésia, Quartier du Parc-de-Montsouris, 14th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75014, France",
+          "address": {
+            "shop": "Boulangerie Fantasiiia",
+            "road": "Rue d'Alésia",
+            "suburb": "Quartier du Parc-de-Montsouris",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75014",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "organic": "yes",
+            "smoking": "no",
+            "wheelchair": "yes",
+            "indoor_seating": "yes",
+            "outdoor_seating": "no",
+            "payment:debit_cards": "yes",
+            "opening_hours:signed": "no",
+            "payment:credit_cards": "yes",
+            "check_date:opening_hours": "2022-11-13"
+          },
+          "boundingbox": [
+            "48.8276052",
+            "48.8277052",
+            "2.3328065",
+            "2.3329065"
+          ]
+        },
+        {
+          "place_id": 98710735,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 2273112665,
+          "lat": "48.8243823",
+          "lon": "2.3283563",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Les Jardins de Paul' Ha",
+          "display_name": "Les Jardins de Paul' Ha, 57, Rue du Père Corentin, Quartier du Petit-Montrouge, 14th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75014, France",
+          "address": {
+            "shop": "Les Jardins de Paul' Ha",
+            "house_number": "57",
+            "road": "Rue du Père Corentin",
+            "city_block": "Quartier du Petit-Montrouge",
+            "suburb": "14th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75014",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "wheelchair": "yes"
+          },
+          "boundingbox": [
+            "48.8243323",
+            "48.8244323",
+            "2.3283063",
+            "2.3284063"
+          ]
+        },
+        {
+          "place_id": 97807329,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 6496145377,
+          "lat": "48.8563287",
+          "lon": "2.3792810",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Façon des boulangers",
+          "display_name": "Façon des boulangers, 162, Avenue Ledru-Rollin, Quartier de la Roquette, 11th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75011, France",
+          "address": {
+            "shop": "Façon des boulangers",
+            "house_number": "162",
+            "road": "Avenue Ledru-Rollin",
+            "city_block": "Quartier de la Roquette",
+            "suburb": "11th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75011",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "website": "https://facondesboulangers.com",
+            "check_date": "2026-03-14",
+            "ref:FR:SIRET": "93867830700019",
+            "opening_hours": "Mo-Fr 07:00-20:00; Sa 08:00-18:00",
+            "outdoor_seating": "yes",
+            "check_date:opening_hours": "2026-03-14"
+          },
+          "boundingbox": [
+            "48.8562787",
+            "48.8563787",
+            "2.3792310",
+            "2.3793310"
+          ]
+        },
+        {
+          "place_id": 97917430,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 5959541287,
+          "lat": "48.8640992",
+          "lon": "2.3785812",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Maison Kerck",
+          "display_name": "Maison Kerck, Rue Saint-Maur, Quartier Saint-Ambroise, 11th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75011, France",
+          "address": {
+            "shop": "Maison Kerck",
+            "road": "Rue Saint-Maur",
+            "city_block": "Quartier Saint-Ambroise",
+            "suburb": "11th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75011",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "check_date": "2025-07-12",
+            "ref:FR:SIRET": "81960978500012",
+            "indoor_seating": "yes",
+            "outdoor_seating": "no"
+          },
+          "boundingbox": [
+            "48.8640492",
+            "48.8641492",
+            "2.3785312",
+            "2.3786312"
+          ]
+        },
+        {
+          "place_id": 98171561,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 1823551394,
+          "lat": "48.8808802",
+          "lon": "2.3287802",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Maison Landemaine",
+          "display_name": "Maison Landemaine, Rue du Cardinal Mercier, Quartier Saint-Georges, 9th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75009, France",
+          "address": {
+            "shop": "Maison Landemaine",
+            "road": "Rue du Cardinal Mercier",
+            "neighbourhood": "Quartier Saint-Georges",
+            "suburb": "9th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75009",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "website": "https://maisonlandemaine.com/boulangerie/",
+            "wheelchair": "yes",
+            "opening_hours": "Tu-Sa 07:00-20:15; Su 07:00-19:45",
+            "brand:wikidata": "Q89430707",
+            "payment:debit_cards": "yes",
+            "payment:credit_cards": "no"
+          },
+          "boundingbox": [
+            "48.8808302",
+            "48.8809302",
+            "2.3287302",
+            "2.3288302"
+          ]
+        },
+        {
+          "place_id": 98530274,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 3772933657,
+          "lat": "48.8807400",
+          "lon": "2.3249510",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "O' Délices",
+          "display_name": "O' Délices, Rue de Moscou, Quartier de l'Europe, 8th Arrondissement of Paris, Paris, Ile-de-France, Metropolitan France, 75008, France",
+          "address": {
+            "shop": "O' Délices",
+            "road": "Rue de Moscou",
+            "city_block": "Quartier de l'Europe",
+            "suburb": "8th Arrondissement of Paris",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75008",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "check_date": "2025-01-30",
+            "opening_hours": "Mo-Fr 06:30-20:00, Sa 07:30-19:00"
+          },
+          "boundingbox": [
+            "48.8806900",
+            "48.8807900",
+            "2.3249010",
+            "2.3250010"
+          ]
+        },
+        {
+          "place_id": 98195488,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 2387186010,
+          "lat": "48.8739209",
+          "lon": "2.3881457",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "La Valse des Pains",
+          "display_name": "La Valse des Pains, Rue des Pyrénées, Quartier de Belleville, 20th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75020, France",
+          "address": {
+            "shop": "La Valse des Pains",
+            "road": "Rue des Pyrénées",
+            "quarter": "Quartier de Belleville",
+            "suburb": "20th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75020",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "phone": "+33 9 81 44 41 27",
+            "check_date": "2024-08-10",
+            "wheelchair": "yes",
+            "opening_hours": "Mo,We-Su 07:00-20:00",
+            "indoor_seating": "yes",
+            "outdoor_seating": "no",
+            "contact:facebook": "https://www.facebook.com/La-Valse-des-Pains-208706089495099/"
+          },
+          "boundingbox": [
+            "48.8738709",
+            "48.8739709",
+            "2.3880957",
+            "2.3881957"
+          ]
+        },
+        {
+          "place_id": 98274435,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 9643556165,
+          "lat": "48.8323705",
+          "lon": "2.3153632",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Maé",
+          "display_name": "Maé, Rue Raymond Losserand, Quartier de Plaisance, 14th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75014, France",
+          "address": {
+            "shop": "Maé",
+            "road": "Rue Raymond Losserand",
+            "city_block": "Quartier de Plaisance",
+            "suburb": "14th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75014",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "ref:vatin": "FR29834337099",
+            "ref:FR:SIREN": "834337099",
+            "ref:FR:SIRET": "83433709900024"
+          },
+          "boundingbox": [
+            "48.8323205",
+            "48.8324205",
+            "2.3153132",
+            "2.3154132"
+          ]
+        },
+        {
+          "place_id": 97902917,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 978776434,
+          "lat": "48.8314755",
+          "lon": "2.3541835",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Chez Meunier",
+          "display_name": "Chez Meunier, 10, Place d'Italie, Quartier de Croulebarbe, 13th Arrondissement, Paris, Ile-de-France, Metropolitan France, 75013, France",
+          "address": {
+            "shop": "Chez Meunier",
+            "house_number": "10",
+            "road": "Place d'Italie",
+            "quarter": "Quartier de Croulebarbe",
+            "suburb": "13th Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Ile-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "Metropolitan France",
+            "postcode": "75013",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "phone": "+33143313393",
+            "website": "https://www.chezmeunier.com/",
+            "opening_hours": "Mo-Fr 07:00-20:00; Sa-Su 07:00-19:30",
+            "indoor_seating": "yes",
+            "outdoor_seating": "yes",
+            "contact:facebook": "ChezMeunierOfficiel",
+            "contact:instagram": "chezmeunier"
+          },
+          "boundingbox": [
+            "48.8314255",
+            "48.8315255",
+            "2.3541335",
+            "2.3542335"
+          ]
+        }
+      ]
+    }
+  ]
+}

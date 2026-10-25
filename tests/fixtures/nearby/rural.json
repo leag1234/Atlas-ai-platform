@@ -1,0 +1,116 @@
+{
+  "case": "rural",
+  "area": "Blesle",
+  "question": "boulangerie",
+  "language": "fr",
+  "recorded_at": "2026-10-25T10:55:59.582518+00:00",
+  "source": "nominatim",
+  "candidates": [
+    {
+      "name": "À la Chocolatine",
+      "category": "bakery",
+      "distance_m": 50,
+      "distance_kind": "approximate straight-line",
+      "address": "Place Édouard Onslow, 43450, Blesle",
+      "website": "",
+      "phone": "",
+      "opening_hours": "Sep-Jun Mo 06:30-13:00, Sep-Jun We-Su 06:30-13:00, 16:00-18:00; Jul-Aug Mo 06:30-13:00, Jul-Aug We 06:30-20:00, Jul-Aug Th, Fr 06:30-20:00, Jul-Aug Sa 06:30-19:00, Jul-Aug Su 06:30-16:00",
+      "opening": {
+        "status": "open",
+        "closing_time": "2026-10-25T13:00:00+01:00",
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": "Europe/Paris"
+      },
+      "source": "https://www.openstreetmap.org/node/9922565397",
+      "provider": "nominatim"
+    }
+  ],
+  "exchanges": [
+    {
+      "service": "geocode",
+      "category": "Blesle, France",
+      "response": [
+        {
+          "place_id": 87635254,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "relation",
+          "osm_id": 1541464,
+          "lat": "45.3189631",
+          "lon": "3.1696593",
+          "category": "boundary",
+          "type": "administrative",
+          "place_rank": 16,
+          "importance": 0.539925840464329,
+          "addresstype": "village",
+          "name": "Blesle",
+          "display_name": "Blesle, Brioude, Haute-Loire, Auvergne-Rhône-Alpes, France métropolitaine, 43450, France",
+          "address": {
+            "village": "Blesle",
+            "municipality": "Brioude",
+            "county": "Haute-Loire",
+            "ISO3166-2-lvl6": "FR-43",
+            "state": "Auvergne-Rhône-Alpes",
+            "ISO3166-2-lvl4": "FR-ARA",
+            "region": "France métropolitaine",
+            "postcode": "43450",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "boundingbox": [
+            "45.2685700",
+            "45.3530601",
+            "3.1326098",
+            "3.2198853"
+          ]
+        }
+      ]
+    },
+    {
+      "service": "geocode",
+      "category": "boulangerie",
+      "response": [
+        {
+          "place_id": 87064423,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 9922565397,
+          "lat": "45.3184747",
+          "lon": "3.1703683",
+          "category": "shop",
+          "type": "bakery",
+          "place_rank": 30,
+          "importance": 6.03639276721907e-05,
+          "addresstype": "shop",
+          "name": "À la Chocolatine",
+          "display_name": "À la Chocolatine, Place Édouard Onslow, Le Bourg Neuf, Chadecol, Blesle, Brioude, Haute-Loire, Auvergne-Rhône-Alpes, France métropolitaine, 43450, France",
+          "address": {
+            "shop": "À la Chocolatine",
+            "road": "Place Édouard Onslow",
+            "neighbourhood": "Le Bourg Neuf",
+            "hamlet": "Chadecol",
+            "village": "Blesle",
+            "municipality": "Brioude",
+            "county": "Haute-Loire",
+            "ISO3166-2-lvl6": "FR-43",
+            "state": "Auvergne-Rhône-Alpes",
+            "ISO3166-2-lvl4": "FR-ARA",
+            "region": "France métropolitaine",
+            "postcode": "43450",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "opening_hours": "Sep-Jun Mo 06:30-13:00, Sep-Jun We-Su 06:30-13:00, 16:00-18:00; Jul-Aug Mo 06:30-13:00, Jul-Aug We 06:30-20:00, Jul-Aug Th, Fr 06:30-20:00, Jul-Aug Sa 06:30-19:00, Jul-Aug Su 06:30-16:00"
+          },
+          "boundingbox": [
+            "45.3184247",
+            "45.3185247",
+            "3.1703183",
+            "3.1704183"
+          ]
+        }
+      ]
+    }
+  ]
+}

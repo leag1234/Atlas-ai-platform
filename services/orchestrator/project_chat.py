@@ -100,6 +100,13 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
 
         await process_scoped_project(request, item)
         return
+    from services.orchestrator.location import location_dependent
+
+    if location_dependent(request.user_text):
+        from services.orchestrator.nearby_chat import process_nearby
+
+        await process_nearby(request, item)
+        return
     started = time.monotonic()
     project = request.project_id
     base = retrieval_url() + f"/projects/{project}"
