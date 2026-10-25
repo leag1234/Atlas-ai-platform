@@ -87,10 +87,7 @@ class CommonsRenderTests(unittest.TestCase):
         observed = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<!DOCTYPE svg [<!ENTITY example 'example'>]>\n"
-            "A useful explanation.\n"
-            + SVG
-            + "\n\n"
-            + LEGEND
+            "A useful explanation.\n" + SVG + "\n\n" + LEGEND
         )
         intro, legend = mechanical_prose(observed)
         self.assertEqual(intro, "A useful explanation.")

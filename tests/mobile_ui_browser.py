@@ -16,7 +16,9 @@ RUN_TIMEOUT_SECONDS = 240
 
 def take_failure_screenshot(page: Page) -> None:
     try:
-        page.screenshot(path=str(OUTPUT / "failure.png"), full_page=True, timeout=10_000)
+        page.screenshot(
+            path=str(OUTPUT / "failure.png"), full_page=True, timeout=10_000
+        )
     except Exception:
         pass
 
@@ -49,24 +51,27 @@ def boxes_overlap(first: dict[str, float], second: dict[str, float]) -> bool:
 
 
 def host_header_boxes(page: Page) -> list[dict[str, float]]:
-    return page.evaluate("""() => [...document.querySelectorAll('button,a,[role="button"]')]
+    boxes: list[dict[str, float]] = (
+        page.evaluate("""() => [...document.querySelectorAll('button,a,[role="button"]')]
       .filter(node => !node.closest('#atlas-ui-selector'))
       .map(node => node.getBoundingClientRect())
       .filter(box => box.width && box.height && box.top < 84 && box.right > innerWidth / 2)
       .map(box => ({left: box.left, right: box.right, top: box.top, bottom: box.bottom}))""")
+    )
+    return boxes
 
 
 def assert_clear_of_host_controls(page: Page, width: int, height: int) -> None:
     page.set_viewport_size({"width": width, "height": height})
     toggle = page.locator("#atlas-ui-toggle")
     expect(toggle).to_be_visible(timeout=20_000)
-    toggle_box = toggle.bounding_box()
-    assert toggle_box is not None
-    toggle_box = {
-        "left": toggle_box["x"],
-        "right": toggle_box["x"] + toggle_box["width"],
-        "top": toggle_box["y"],
-        "bottom": toggle_box["y"] + toggle_box["height"],
+    toggle_rect = toggle.bounding_box()
+    assert toggle_rect is not None
+    toggle_box: dict[str, float] = {
+        "left": toggle_rect["x"],
+        "right": toggle_rect["x"] + toggle_rect["width"],
+        "top": toggle_rect["y"],
+        "bottom": toggle_rect["y"] + toggle_rect["height"],
     }
     controls = host_header_boxes(page)
     assert controls, "Open WebUI header controls were not rendered"
@@ -107,7 +112,9 @@ def main() -> None:
         page.set_default_timeout(30_000)
         try:
             authenticate(page)
-            before_style = page.add_style_tag(content="#atlas-ui-selector { right:20px; }")
+            before_style = page.add_style_tag(
+                content="#atlas-ui-selector { right:20px; }"
+            )
             page.screenshot(path=str(OUTPUT / "mobile-before.png"), full_page=True)
             before_style.evaluate("node => node.remove()")
             for viewport in ((390, 844), (390, 520), (1280, 800)):
