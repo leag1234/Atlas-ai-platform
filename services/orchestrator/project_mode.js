@@ -362,6 +362,19 @@
     if (session) { const status = detail('status', t(session.state)); status.dataset.sessionState = ''; right.append(detail('workspace', session.environment.workspace_id), status); }
     for (const folder of folders) right.append(detail('files', `${folder.name} · ${folder.locality === 'local_only' ? t('local') + ' · ' + t('device') : t('server')} · ${t(folder.model_use)}`));
     right.append(detail('repository', session?.repository_id || t('unavailable')), node('h2', t('context')), versionLabel('instructions', instructions.active_version_id || instructions.version));
+    const lastContext = ledger.filter(e => e.model_dispatch?.context && (!scope.conversation || e.conversation_id === scope.conversation)).sort((a, b) => b.seq - a.seq)[0]?.model_dispatch.context;
+    const used = node('section'); used.dataset.contextUsed = '';
+    used.append(node('h3', t('contextUsed')));
+    if (lastContext) {
+      used.append(node('p', `${lastContext.total_tokens} / ${lastContext.model_window ?? t('unknown')} ${t('contextTokens')}`));
+      for (const [layer, count] of Object.entries(lastContext.layers)) used.append(detail(layer, count));
+      used.append(detail('contextEstimate', lastContext.method));
+    } else used.append(node('p', t('unknown')));
+    for (const event of ledger.filter(e => e.context_clearing && (!scope.conversation || e.conversation_id === scope.conversation))) {
+      const clearing = event.context_clearing;
+      used.append(detail('contextCleared', `${clearing.tokens_removed} ${t('contextTokens')} · ${clearing.ids.join(', ')}`));
+    }
+    right.append(used);
     if (instructions.text) right.append(node('p', instructions.text));
     right.append(node('h3', t('memory')));
     for (const entry of memory) right.append(node('p', entry.text), detail('status', t(entry.status)));

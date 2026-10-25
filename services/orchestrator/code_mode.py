@@ -26,6 +26,7 @@ from services.orchestrator.loop import (
     Model,
     Query,
     Turn,
+    ResultReferences,
     run,
 )
 from services.orchestrator.model import GatewayError, GatewayModel
@@ -134,10 +135,19 @@ async def execute_turn(
     tools: CodeTools,
     limits: Limits,
     workspace_context: dict[str, Any] | None = None,
+    references: ResultReferences | None = None,
 ) -> CodeResult:
     history: list[Message] = [
         {"role": m.role, "content": redact(m.text)} for m in request.messages[:-1]
     ]
+    from packages import context_usage
+
+    registered = context_usage.parts.get() or {}
+    for original, message in zip(request.messages[:-1], history):
+        if original.text in registered:
+            context_usage.register(
+                str(message["content"]), redact(registered[original.text])
+            )
     if workspace_context is not None:
         history.append(
             {
@@ -145,6 +155,10 @@ async def execute_turn(
                 "content": json.dumps(redact({"code_workspace": workspace_context})),
             }
         )
+    if workspace_context is not None:
+        from packages.context_usage import register
+
+        register(str(history[-1]["content"]), {"session_state": workspace_context})
     result = await run(
         Query(question=redact(request.user_text), lang=request.lang),
         model,
@@ -153,6 +167,7 @@ async def execute_turn(
         + Path("prompts/chat-agent.txt").read_text(),
         limits,
         history=history,
+        references=references,
     )
     assert isinstance(result, CodeResult)
     result.text, replaced = honest(
@@ -500,6 +515,9 @@ async def process_work(
     from services.orchestrator.code_tools import WorkTools
     from services.retrieval.project_identity import ProjectError
 
+    from services.orchestrator.project_transcript import work_dispatch
+
+    dispatch = work_dispatch.get()
     broker = ExecutionBroker(subject, str(UUID(org_id)), str(UUID(project_id)))
     status, session = await broker.public(
         "GET", "work-sessions/" + str(UUID(session_id))
@@ -523,6 +541,9 @@ async def process_work(
         acquired["session"],
         str(UUID(item.request_id.removeprefix("chatcmpl-"))),
     )
+    if dispatch is not None:
+        dispatch.session_id = session_id
+        dispatch.generation = execution.session["lease"]["generation"]
     workspace = execution.workspace()
     tools = WorkTools(workspace, execution, sink_context.get())
     ceiling = execution.session["effective_limits"]
@@ -605,6 +626,7 @@ async def process_work(
                 raise RuntimeError("Invalid Work model client")
             model = connected
             model.configure_quality(code_profile(), request.max_tokens)
+            model.dispatch_hook = dispatch.publish if dispatch is not None else None
             model.work_check = execution.check
             model.work_cost = limits.cost
             model.work_per_call = Decimal(str(ceiling["per_call_eur"]))
@@ -638,6 +660,19 @@ async def process_work(
                     cost_limit=limits.cost,
                     check=execution.check,
                 )
+            references = None
+            if dispatch is not None:
+                from services.orchestrator.result_references import (
+                    ResultReferences as ScopedReferences,
+                )
+
+                references = ScopedReferences(
+                    dispatch.broker,
+                    str(request.conversation_id),
+                    execution.request_id,
+                    dispatch.generation,
+                )
+                tools.selection.reopen_enabled = True
             model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(
@@ -645,7 +680,12 @@ async def process_work(
                 model,
                 tools,
                 limits,
-                dict(root="/workspace", environment=execution.session["environment"]),
+                dict(
+                    root="/workspace",
+                    environment=execution.session["environment"],
+                    plan=execution.session.get("plan", []),
+                ),
+                **({"references": references} if references is not None else {}),
             )
             item.reponse = result.text
             if tools.nearby is not None and tools.nearby.result:
@@ -740,6 +780,11 @@ async def process_work(
                         input_tokens=model.input_tokens,
                         output_tokens=model.output_tokens,
                         tokens_estimated=False,
+                        **(
+                            {"context": dispatch.context}
+                            if dispatch is not None and dispatch.context is not None
+                            else {}
+                        ),
                     )
                 await execution.turn(
                     "release",

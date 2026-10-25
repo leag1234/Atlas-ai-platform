@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from decimal import Decimal
+from contextvars import ContextVar
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -14,6 +15,7 @@ from uuid import UUID, uuid4
 import aiohttp
 from fastapi import Request
 
+from packages import context_usage
 from packages.language import conversation_language, language_instruction
 from packages.ports import atlas_ports
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
@@ -176,13 +178,24 @@ class DispatchEvents:
         self.calls = 0
         self.unknown = False
         self.payload_bytes = 0
+        self.session_id: str | None = None
+        self.generation: int | None = None
+        self.context: dict[str, Any] | None = None
 
     async def publish(self, phase: str, value: Message) -> None:
+        payload: dict[str, Any] = dict(value)
         turn, context = self.state["turn"], self.state["context"]
         if phase == "intent":
             self.call_id = str(uuid4())
             self.calls += 1
             self.payload_bytes = len(json.dumps(value).encode())
+            self.context = context_usage.measure(
+                payload["messages"], payload["tools"], payload.get("profile")
+            )
+        elif phase == "acknowledged" and self.context is not None:
+            self.context["provider_input_tokens"] = payload.get("usage", {}).get(
+                "prompt_tokens"
+            )
         counts = dict(
             source_bytes=0,
             selected_utf8_bytes=sum(
@@ -209,10 +222,11 @@ class DispatchEvents:
             instructions_version=context["instructions_version"],
             memory_revision=context["memory_revision"],
             byte_counts=counts,
-            input_tokens=0,
-            output_tokens=0,
+            input_tokens=payload.get("usage", {}).get("prompt_tokens", 0),
+            output_tokens=payload.get("usage", {}).get("completion_tokens", 0),
             tokens_estimated=True,
             transmission=transmission,
+            **({"context": self.context} if self.context is not None else {}),
         )
         event = dict(
             org_id=self.broker.org,
@@ -224,7 +238,7 @@ class DispatchEvents:
                 kind="member", member_id=turn["created_by_member_id"], service=None
             ),
             conversation_id=turn["conversation_id"],
-            session_id=None,
+            session_id=self.session_id,
             request_id=turn["request_id"],
             kind="model_dispatch_intent" if phase == "intent" else "model_" + phase,
             resource_refs=context["context_manifest"]["sources"],
@@ -244,11 +258,16 @@ class DispatchEvents:
             audit_record=None,
         )
         result = await self.broker.call(
-            "events",
+            "work-events" if self.session_id else "events",
             dict(
                 conversation_id=turn["conversation_id"],
                 request_id=turn["request_id"],
                 events=[event],
+                **(
+                    {"generation": self.generation}
+                    if self.generation is not None
+                    else {}
+                ),
             ),
         )
         sink = sink_context.get()
@@ -272,6 +291,11 @@ def answer_refs(item: Interaction) -> list[dict[str, Any]]:
         # contract. Only this exact server-owned marker becomes a ledger event.
         refs.append(dict(kind="answer", text=LEDGER_LABEL, file_version_id=None))
     return refs
+
+
+work_dispatch: ContextVar[DispatchEvents | None] = ContextVar(
+    "work_dispatch", default=None
+)
 
 
 async def process_scoped_project(request: ChatRequest, item: Interaction) -> None:
@@ -312,6 +336,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         for event in state["events"]:
             await sink({"project": event})
     if state["replay"]:
+        if context := turn["usage"].get("context"):
+            item.context_samples.append(context)
         item.reponse = "\n".join(
             r["text"]
             for r in turn["content_refs"]
@@ -340,6 +366,17 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             ),
         )
     )
+    context_usage.register(
+        history[-1].text,
+        {
+            "project_instructions": context["instructions_text"],
+            "pinned_memory": context["facts"],
+            "document_passages": dict(
+                passages=context["passages"],
+                coverage=context["context_manifest"]["coverage"],
+            ),
+        },
+    )
     history.append(request.messages[-1])
     scoped = request.model_copy(
         update=dict(
@@ -366,14 +403,18 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         elif request.project_action == "work":
             from services.orchestrator.code_mode import process_work
 
-            await process_work(
-                scoped,
-                item,
-                subject=request._project_subject,
-                org_id=request.org_id,
-                project_id=request.project_id,
-                session_id=str(request.work_session_id),
-            )
+            dispatch_token = work_dispatch.set(events)
+            try:
+                await process_work(
+                    scoped,
+                    item,
+                    subject=request._project_subject,
+                    org_id=request.org_id,
+                    project_id=request.project_id,
+                    session_id=str(request.work_session_id),
+                )
+            finally:
+                work_dispatch.reset(dispatch_token)
         else:
             model = await GatewayModel.connect(
                 os.environ.get("ATLAS_GATEWAY_URL", atlas_ports().url("gateway")),
@@ -391,6 +432,13 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             # Buffer until citations and content have been checked, then emit the
             # canonical answer through the normal content delta path.
             model.sink = None
+            from packages.tool_results import declaration
+            from services.orchestrator.result_references import ResultReferences
+
+            model.tools.append(declaration())
+            references = ResultReferences(
+                broker, turn["conversation_id"], turn["request_id"]
+            )
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
@@ -406,6 +454,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     ),
                 ),
                 history=[dict(role=m.role, content=m.text) for m in history[:-1]],
+                references=references,
             )
             tool_calls = result.tool_calls
             item.state, item.cout_eur = result.state, float(result.cost)
@@ -448,6 +497,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             input_tokens=item.tokens.get("in", 0),
             output_tokens=item.tokens.get("out", 0),
             tokens_estimated=False,
+            **({"context": events.context} if events.context is not None else {}),
         )
         import anyio
 
