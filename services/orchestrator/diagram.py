@@ -5,7 +5,11 @@ import re
 import time
 from decimal import Decimal
 
-from services.orchestrator.appearance import _normalized
+from services.orchestrator.appearance import (
+    _normalized,
+    is_spatial_drawing_request,
+    spatial_drawing_instruction,
+)
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Limits, Message, Query, Result, Tools, run
@@ -21,6 +25,8 @@ _DIAGRAM = (
 def requested(question: str) -> bool:
     question = re.sub(r"<attached_files>.*?</attached_files>", "", question, flags=re.S)
     question = re.sub(r"^\[Attachment: [^\n]*\]$", "", question, flags=re.M)
+    if is_spatial_drawing_request(question):
+        return False
     text = _normalized(question)
     if re.search(
         r"\b(?:picture|photo|image|illustration|portrait|poster|logo|bild|foto|imagen|immagine)\b",
@@ -249,6 +255,8 @@ async def complete_svg(
             (
                 mechanical_svg_instruction()
                 if require_legend
+                else spatial_drawing_instruction()
+                if is_spatial_drawing_request(request.user_text)
                 else simple_drawing_instruction()
             )
             + "\nCorrect the previous drawing. Validation category: "

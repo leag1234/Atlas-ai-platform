@@ -28,6 +28,7 @@ class DocumentError(ValueError):
 class Attachment(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     filename: str = Field(min_length=1, max_length=255, pattern=r"^[^/\\\x00-\x1f]+$")
+    reused: bool = Field(default=False, exclude_if=lambda value: value is False)
     file_data: str = Field(min_length=1, max_length=22370000, repr=False)
     file_id: str | None = Field(
         default=None,
