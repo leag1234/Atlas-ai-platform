@@ -27,7 +27,7 @@ from decimal import Decimal
 from packages.limits import LimitError, ProviderLimitError
 from packages.validation import numeric_limit, malformed_tool_name
 from packages.tool_history import final_messages
-from serverless import ServerlessPolicy
+from serverless import ServerlessPolicy, classify_task
 
 
 _response_timeout: ContextVar[float | None] = ContextVar(
@@ -245,7 +245,12 @@ async def attempt(
         ) as session:
             async with session.post(
                 endpoint + "/chat/completions",
-                json=provider_settings.request_options(body),
+                json=provider_settings.request_options(
+                    body,
+                    role="vision"
+                    if classify_task(request.messages) == "vision"
+                    else ServerlessPolicy().public_profiles.get(request.profile or ""),
+                ),
                 headers={"Authorization": "Bearer " + provider_settings.api_key()},
                 allow_redirects=False,
             ) as response:

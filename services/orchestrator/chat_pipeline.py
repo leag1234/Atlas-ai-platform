@@ -79,6 +79,8 @@ from services.orchestrator.appearance import (
     mechanical_svg_instruction,
     simple_drawing_language,
     simple_drawing_instruction,
+    is_spatial_drawing_request,
+    spatial_drawing_instruction,
 )
 
 
@@ -645,6 +647,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     finally:
         context_usage.parts.reset(components)
         context_usage.samples.reset(capture)
+    from services.orchestrator.source_truth import clean_citation_residue
+
+    item.reponse = clean_citation_residue(item.reponse)
     item.reponse = verified_images(
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
@@ -728,6 +733,13 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
     ):
         language = requested_language(request.user_text) or language
     request = request.model_copy(update={"lang": language})
+    from services.orchestrator.location import location_dependent
+
+    if not request.continuation and location_dependent(request.user_text):
+        from services.orchestrator.nearby_chat import process_nearby
+
+        await process_nearby(request, item)
+        return
     if (
         extended_enabled()
         and not request.has_attachments
@@ -810,8 +822,10 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         item.reponse += notice
         if sink := sink_context.get():
             await sink({"delta": {"content": notice}})
-    if item.state == "done" and any(
-        d.get("hierarchical_synthesis") for d in item.documents
+    if (
+        item.state == "done"
+        and any(not d.reused for d in request.documents)
+        and any(d.get("hierarchical_synthesis") for d in item.documents)
     ):
         from services.orchestrator.attachment_reading import reduced_document_note
 
@@ -907,7 +921,11 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
         + Path("prompts/web-chat.txt").read_text()
         + language_instruction(request.lang)
         + guest_capability_instruction()
-        + simple_drawing_instruction(),
+        + (
+            spatial_drawing_instruction()
+            if is_spatial_drawing_request(request.user_text)
+            else simple_drawing_instruction()
+        ),
         Limits(
             profile=request.model,
             tool_calls=0,
@@ -949,6 +967,20 @@ async def _process(
     cost_limit: Decimal | None = None,
     wall_clock_limit: float | None = None,
 ) -> None:
+    from services.orchestrator.person_lookup import person_name, lookup
+
+    if (
+        not request.continuation
+        and not request.has_attachments
+        and not any(m.images for m in request.messages)
+        and (name := person_name(request.user_text))
+    ):
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        tools.daily_ledger = getattr(request, "daily_ledger", None)
+        tools.daily_user = getattr(request, "daily_user", "unknown")
+        tools.daily_lang = request.lang
+        await lookup(request, item, tools, name)
+        return
     technical_diagram = not request.continuation and diagram.requested(
         request.user_text
     )
@@ -958,6 +990,7 @@ async def _process(
     if (
         images_enabled()
         and not technical_diagram
+        and not is_spatial_drawing_request(request.user_text)
         and not explaining_image
         and not request.continuation
         and not request.has_attachments
@@ -1015,8 +1048,10 @@ async def _process(
     drawing = (
         not request.continuation
         and not request.has_attachments
-        and not images_enabled()
-        and not explicit_image_request(request.user_text)
+        and (
+            is_spatial_drawing_request(request.user_text)
+            or (not images_enabled() and not explicit_image_request(request.user_text))
+        )
         and is_simple_drawing_request(request.user_text)
     )
     if drawing:
@@ -1127,8 +1162,6 @@ async def _process(
             Decimal(str(vision_item.cout_eur)),
         )
     elif images_in_history and not request.has_attachments:
-        # The profiled vision route accepts a complete conversation. This retains
-        # validated history images (at most four) for text-only follow-ups.
         await process_vision(request, item)
         return
     started = time.monotonic()

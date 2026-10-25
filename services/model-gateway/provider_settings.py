@@ -74,7 +74,7 @@ def json_options(response_format: object) -> dict[str, Any]:
 
 
 def request_options(
-    body: dict[str, Any], provider: str | None = None
+    body: dict[str, Any], provider: str | None = None, *, role: str | None = None
 ) -> dict[str, Any]:
     name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     body = dict(body)
@@ -108,6 +108,19 @@ def request_options(
             body.pop("tools", None)
     if name:
         body.update(presets()[name].get("request_options", {}))
+    if name == "hetzner" and role == "code":
+        thinking = os.environ.get(
+            "ATLAS_CODE_THINKING", str(presets()[name]["code_thinking"]).lower()
+        )
+        if thinking not in ("true", "false"):
+            raise ValueError("invalid_code_thinking")
+        body["chat_template_kwargs"] = {
+            **body.get("chat_template_kwargs", {}),
+            "enable_thinking": thinking == "true",
+        }
+        if thinking == "true":
+            # The preset's effort=none would contradict the template switch.
+            body.pop("reasoning_effort", None)
     return body
 
 

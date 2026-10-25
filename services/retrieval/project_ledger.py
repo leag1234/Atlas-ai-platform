@@ -47,6 +47,7 @@ KINDS = frozenset(
         "file_purged",
         "extraction_completed",
         "context_selected",
+        "location_used",
         *MODEL_KINDS,
         "approval_requested",
         "approval_decided",
@@ -215,7 +216,10 @@ def append(
     }:
         raise ProjectError(422, "invalid_request")
     if transcript:
-        if kind not in MODEL_KINDS | {"context_selected"} or not conversation_id:
+        if (
+            kind not in MODEL_KINDS | {"context_selected", "location_used"}
+            or not conversation_id
+        ):
             raise ProjectError(403, "permission_denied")
         row = scope.db.execute(
             "SELECT data FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='turn' AND data->>'request_id'=%s",

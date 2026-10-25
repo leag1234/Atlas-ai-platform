@@ -276,6 +276,9 @@ async def finish_simple_drawing(
     request: ChatRequest, item: Interaction, result: Result
 ) -> None:
     """Deliver a guest SVG illustration without retrieval, legends, or image generation."""
+    from services.orchestrator.appearance import is_spatial_drawing_request
+
+    spatial = is_spatial_drawing_request(request.user_text)
     intro, alt, download, failure, note = simple_drawing_copy(request.lang)
     svg = extract_svg(result.text, canvas=(0.0, 0.0, 400.0, 300.0))
     if svg is None:
@@ -283,6 +286,13 @@ async def finish_simple_drawing(
     else:
         reference = store_svg(svg)
         item.images = [{"reference": reference, "kind": "drawing_svg"}]
+        if spatial:
+            # Preserve the model's legend outside the validated passive SVG.
+            legend = re.sub(
+                r"<svg\b[^>]*>.*?</svg\s*>", "", result.text, flags=re.I | re.S
+            ).strip()
+            legend = re.sub(r"```(?:svg|xml)?", "", legend).strip()
+            intro = legend
         item.reponse = (
             f"{intro}\n\n![{alt}]({reference})\n\n"
             f"[{download}]({reference}?download=1)\n\n_{note}_"

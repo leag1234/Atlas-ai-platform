@@ -461,6 +461,7 @@
     const filter = node('select'); filter.append(new Option(t('allSessions'), '')); sessions.forEach(id => filter.append(new Option(id, id))); filter.value = ledgerSession;
     filter.addEventListener('change', guarded(async () => { ledgerSession = filter.value; await panels(); })); right.append(field('session', filter));
     const panel = node('div'); panel.setAttribute('role','tabpanel');
+    for (const event of ledger.filter(e => e.kind === "location_used")) panel.append(node("p", "location used: approximate, this request"));
     const total = summary[ledgerTab];
     if (ledgerTab === 'model') {
       panel.append(detail('payloadBytes', total.payload_bytes), detail('uniqueBytes', total.unique_source_bytes), detail('calls', total.calls), detail('possibly_sent', total.possibly_sent_calls));

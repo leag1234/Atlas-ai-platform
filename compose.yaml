@@ -12,6 +12,7 @@ services:
       ATLAS_PROVIDER_API_KEY: ${ATLAS_PROVIDER_API_KEY:-}
       ATLAS_TEXT_MODEL: ${ATLAS_TEXT_MODEL:-}
       ATLAS_TEXT_FALLBACK_MODEL: ${ATLAS_TEXT_FALLBACK_MODEL:-}
+      ATLAS_CODE_THINKING: ${ATLAS_CODE_THINKING:-false}
       ATLAS_VISION_MODEL: ${ATLAS_VISION_MODEL:-}
       ATLAS_USD_TO_EUR: ${ATLAS_USD_TO_EUR:-}
       ATLAS_MODEL_CONTEXT: ${ATLAS_MODEL_CONTEXT:-}
@@ -89,6 +90,9 @@ services:
       ATLAS_RETRIEVAL_URL: http://retrieval:13711
       # Default trial provider. With the matching API key, append a fallback,
       # for example: searxng,tavily or searxng,serpapi.
+      ATLAS_OSM_CONTACT: ${ATLAS_OSM_CONTACT:-https://github.com/leag1234/atlas-ai-platform/issues}
+      ATLAS_NOMINATIM_URL: ${ATLAS_NOMINATIM_URL:-https://nominatim.openstreetmap.org/search}
+      ATLAS_OVERPASS_URLS: ${ATLAS_OVERPASS_URLS-${ATLAS_OVERPASS_URL:-https://overpass-api.de/api/interpreter}}
       ATLAS_SEARCH_PROVIDER: searxng
       ATLAS_SEARXNG_URL: ${ATLAS_SEARXNG_URL:-http://searxng:8080}
       ATLAS_SEARXNG_ENGINES: ${ATLAS_SEARXNG_ENGINES:-duckduckgo,brave,qwant,bing,google}

@@ -65,6 +65,42 @@ app.include_router(image_router)
 app.include_router(mcp_router)
 
 app.include_router(code_router)
+
+
+@app.post("/api/atlas/nearby-location")
+async def nearby_location(request: Request) -> Response:
+    from services.orchestrator.location import Location, location_tickets
+
+    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+        return JSONResponse({"error": "origin_rejected"}, status_code=403)
+    try:
+        body = bytearray()
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > 2048:
+                    return JSONResponse(
+                        {"error": "location_size_limit"}, status_code=413
+                    )
+        location = Location.model_validate_json(body)
+        token = location_tickets.issue(location)
+    except (ValueError, TimeoutError):
+        return JSONResponse(
+            {"error": "location_invalid_or_unavailable"}, status_code=400
+        )
+    return JSONResponse({"location_ref": token}, headers={"Cache-Control": "no-store"})
+
+
+@app.delete("/api/atlas/nearby-location/{token}")
+async def remove_nearby_location(token: UUID, request: Request) -> Response:
+    from services.orchestrator.location import location_tickets
+
+    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+        return Response(status_code=403)
+    location_tickets.take(str(token))
+    return Response(status_code=204)
+
+
 app.include_router(project_router)
 
 
@@ -202,8 +238,14 @@ async def chat(request: Request) -> Response:
 
                 scoped_subject, scoped_key = await authenticate_chat(request, raw)
                 raw, item.uploads, item.uploaded_images = await asyncio.to_thread(
-                    prepare_uploads, raw
+                    prepare_uploads, raw, user_from_headers(request.headers)
                 )
+                if isinstance(raw, dict) and "location_ref" in raw:
+                    from services.orchestrator.location import location_tickets
+
+                    reference = raw.pop("location_ref")
+                    if isinstance(reference, str):
+                        raw["location"] = location_tickets.take(reference)
                 payload = ChatRequest.model_validate(raw)
                 payload._project_subject = scoped_subject
                 payload._transcript_key = scoped_key

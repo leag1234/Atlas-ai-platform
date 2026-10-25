@@ -63,6 +63,15 @@ async def process_vision(
         if sink and emit:
             await sink({"delta": {"content": item.reponse}})
         return
+    if not any(message.images for message in request.messages):
+        from services.orchestrator.model import GatewayError
+
+        raise GatewayError("image_missing", 400, "No image bytes reached vision")
+    if request.messages[-1].images and (
+        request.has_attachments
+        or any("[Attachment:" in message.text for message in request.messages[:-1])
+    ):
+        request = request.model_copy(update={"messages": [request.messages[-1]]})
     started = time.monotonic()
     item.reasoning_effort = request.reasoning_effort
     item.cout_eur = 0.1  # Retain reservation on missing/invalid provider usage.

@@ -1,0 +1,612 @@
+{
+  "case": "abroad",
+  "area": "Berlin",
+  "question": "Apotheke",
+  "language": "de",
+  "recorded_at": "2026-10-25T10:55:59.582518+00:00",
+  "source": "nominatim",
+  "candidates": [
+    {
+      "name": "Arena Apotheke",
+      "category": "pharmacy",
+      "distance_m": 2850,
+      "distance_kind": "approximate straight-line",
+      "address": "Tamara-Danz-Straße, 10243, Berlin",
+      "website": "https://www.arena-apotheke.de/",
+      "phone": "+49 30 4226620",
+      "opening_hours": "Mo-Fr 08:00-20:00; Sa 09:00-20:00; Su,PH off",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T08:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Berlin"
+      },
+      "source": "https://www.openstreetmap.org/way/739645093",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Esmarch Apotheke",
+      "category": "pharmacy",
+      "distance_m": 1650,
+      "distance_kind": "approximate straight-line",
+      "address": "15 Hufelandstraße, 10407, Berlin",
+      "website": "http://www.esmarch-apotheke-berlin.de/",
+      "phone": "+49304250425",
+      "opening_hours": "Mo-Fr 09:00-18:30; Sa 09:00-13:00",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T09:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Berlin"
+      },
+      "source": "https://www.openstreetmap.org/node/1492336686",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Apotheke am Engelbecken",
+      "category": "pharmacy",
+      "distance_m": 1600,
+      "distance_kind": "approximate straight-line",
+      "address": "15 Heinrich-Heine-Straße, 10179, Berlin",
+      "website": "http://www.apotheke-am-engelbecken.de",
+      "phone": "+49 30 27560275",
+      "opening_hours": "Mo-Fr 08:00-19:00; Sa 08:30-14:00",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T08:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Berlin"
+      },
+      "source": "https://www.openstreetmap.org/node/269478054",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Grünberger Apotheke",
+      "category": "pharmacy",
+      "distance_m": 3000,
+      "distance_kind": "approximate straight-line",
+      "address": "43-45 Grünberger Straße, 10245, Berlin",
+      "website": "http://www.gruenberger-apotheke.de",
+      "phone": "+49 30 2933543",
+      "opening_hours": "Mo-Fr 08:00-19:00; Sa 09:00-13:00",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T08:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Berlin"
+      },
+      "source": "https://www.openstreetmap.org/node/876479038",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Sophien-Apotheke",
+      "category": "pharmacy",
+      "distance_m": 1650,
+      "distance_kind": "approximate straight-line",
+      "address": "157 Invalidenstraße, 10115, Berlin",
+      "website": "",
+      "phone": "",
+      "opening_hours": "Mo-Fr 08:00-19:00; Sa 08:00-14:00",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T08:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Berlin"
+      },
+      "source": "https://www.openstreetmap.org/node/3446123445",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Cecilien-Apotheke",
+      "category": "pharmacy",
+      "distance_m": 2750,
+      "distance_kind": "approximate straight-line",
+      "address": "1 Gaudystraße, 10437, Berlin",
+      "website": "http://www.cecilien-apo.de/",
+      "phone": "+49 30 138823550",
+      "opening_hours": "Mo-Fr 09:00-18:00; Sa 10:00-14:00; PH off",
+      "opening": {
+        "status": "closed",
+        "closing_time": null,
+        "next_opening": "2026-10-26T09:00:00+01:00",
+        "closing_soon": false,
+        "timezone": "Europe/Berlin"
+      },
+      "source": "https://www.openstreetmap.org/node/448913486",
+      "provider": "nominatim"
+    }
+  ],
+  "exchanges": [
+    {
+      "service": "geocode",
+      "category": "Alexanderplatz, Berlin, Germany",
+      "response": [
+        {
+          "place_id": 145504962,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "way",
+          "osm_id": 783052052,
+          "lat": "52.5219814",
+          "lon": "13.4136358",
+          "category": "place",
+          "type": "square",
+          "place_rank": 25,
+          "importance": 0.5119277148736227,
+          "addresstype": "square",
+          "name": "Alexanderplatz",
+          "display_name": "Alexanderplatz, Spandauer Vorstadt, Mitte, Berlin, Deutschland",
+          "address": {
+            "square": "Alexanderplatz",
+            "quarter": "Spandauer Vorstadt",
+            "suburb": "Mitte",
+            "borough": "Mitte",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "boundingbox": [
+            "52.5201457",
+            "52.5238113",
+            "13.4103097",
+            "13.4160801"
+          ]
+        }
+      ]
+    },
+    {
+      "service": "geocode",
+      "category": "Apotheke",
+      "response": [
+        {
+          "place_id": 144777021,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "way",
+          "osm_id": 739645093,
+          "lat": "52.5058097",
+          "lon": "13.4471414",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Arena Apotheke",
+          "display_name": "Arena Apotheke, Tamara-Danz-Straße, Mediaspree, Friedrichshain, Friedrichshain-Kreuzberg, Berlin, 10243, Deutschland",
+          "address": {
+            "amenity": "Arena Apotheke",
+            "road": "Tamara-Danz-Straße",
+            "quarter": "Mediaspree",
+            "suburb": "Friedrichshain",
+            "borough": "Friedrichshain-Kreuzberg",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10243",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "level": "0",
+            "phone": "+49 30 4226620",
+            "website": "https://www.arena-apotheke.de/",
+            "check_date": "2023-07-31",
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "payment:visa": "yes",
+            "opening_hours": "Mo-Fr 08:00-20:00; Sa 09:00-20:00; Su,PH off",
+            "payment:mastercard": "yes",
+            "payment:american_express": "yes"
+          },
+          "boundingbox": [
+            "52.5056609",
+            "52.5059812",
+            "13.4470564",
+            "13.4472291"
+          ]
+        },
+        {
+          "place_id": 145316029,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 1492336686,
+          "lat": "52.5321360",
+          "lon": "13.4318030",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Esmarch Apotheke",
+          "display_name": "Esmarch Apotheke, 15, Hufelandstraße, Bötzowkiez, Prenzlauer Berg, Pankow, Berlin, 10407, Deutschland",
+          "address": {
+            "amenity": "Esmarch Apotheke",
+            "house_number": "15",
+            "road": "Hufelandstraße",
+            "quarter": "Bötzowkiez",
+            "suburb": "Prenzlauer Berg",
+            "borough": "Pankow",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10407",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "contact:phone": "+49304250425",
+            "opening_hours": "Mo-Fr 09:00-18:30; Sa 09:00-13:00",
+            "contact:website": "http://www.esmarch-apotheke-berlin.de/",
+            "check_date:opening_hours": "2026-09-19"
+          },
+          "boundingbox": [
+            "52.5320860",
+            "52.5321860",
+            "13.4317530",
+            "13.4318530"
+          ]
+        },
+        {
+          "place_id": 146204588,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 269478054,
+          "lat": "52.5075790",
+          "lon": "13.4141040",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Apotheke am Engelbecken",
+          "display_name": "Apotheke am Engelbecken, 15, Heinrich-Heine-Straße, Heine-Viertel, Luisenstadt, Mitte, Berlin, 10179, Deutschland",
+          "address": {
+            "amenity": "Apotheke am Engelbecken",
+            "house_number": "15",
+            "road": "Heinrich-Heine-Straße",
+            "neighbourhood": "Heine-Viertel",
+            "quarter": "Luisenstadt",
+            "suburb": "Mitte",
+            "borough": "Mitte",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10179",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "operator": "Ralf Goepfert e.K.",
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "contact:phone": "+49 30 27560275",
+            "opening_hours": "Mo-Fr 08:00-19:00; Sa 08:30-14:00",
+            "contact:website": "http://www.apotheke-am-engelbecken.de",
+            "toilets:wheelchair": "no",
+            "check_date:opening_hours": "2026-08-12"
+          },
+          "boundingbox": [
+            "52.5075290",
+            "52.5076290",
+            "13.4140540",
+            "13.4141540"
+          ]
+        },
+        {
+          "place_id": 144712742,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 1659884034,
+          "lat": "52.5483468",
+          "lon": "13.3562137",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Märkische Apotheke",
+          "display_name": "Märkische Apotheke, 33, Müllerstraße, Brüsseler Kiez, Wedding, Mitte, Berlin, 13353, Deutschland",
+          "address": {
+            "amenity": "Märkische Apotheke",
+            "house_number": "33",
+            "road": "Müllerstraße",
+            "quarter": "Brüsseler Kiez",
+            "suburb": "Wedding",
+            "borough": "Mitte",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "13353",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "opening_hours": "Mo-Fr 08:30-19:00; Sa 09:00-18:00",
+            "toilets:wheelchair": "no",
+            "check_date:opening_hours": "2026-09-28"
+          },
+          "boundingbox": [
+            "52.5482968",
+            "52.5483968",
+            "13.3561637",
+            "13.3562637"
+          ]
+        },
+        {
+          "place_id": 145533011,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 876479038,
+          "lat": "52.5121401",
+          "lon": "13.4551452",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Grünberger Apotheke",
+          "display_name": "Grünberger Apotheke, 43-45, Grünberger Straße, Boxhagener Kiez, Friedrichshain, Friedrichshain-Kreuzberg, Berlin, 10245, Deutschland",
+          "address": {
+            "amenity": "Grünberger Apotheke",
+            "house_number": "43-45",
+            "road": "Grünberger Straße",
+            "quarter": "Boxhagener Kiez",
+            "suburb": "Friedrichshain",
+            "borough": "Friedrichshain-Kreuzberg",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10245",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "contact:phone": "+49 30 2933543",
+            "opening_hours": "Mo-Fr 08:00-19:00; Sa 09:00-13:00",
+            "contact:website": "http://www.gruenberger-apotheke.de",
+            "check_date:opening_hours": "2026-04-08"
+          },
+          "boundingbox": [
+            "52.5120901",
+            "52.5121901",
+            "13.4550952",
+            "13.4551952"
+          ]
+        },
+        {
+          "place_id": 146334452,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 7951875987,
+          "lat": "52.4990942",
+          "lon": "13.4404067",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Fürst Bismarck Apotheke",
+          "display_name": "Fürst Bismarck Apotheke, 47, Wrangelstraße, Wrangelkiez, Luisenstadt, Kreuzberg, Friedrichshain-Kreuzberg, Berlin, 10997, Deutschland",
+          "address": {
+            "amenity": "Fürst Bismarck Apotheke",
+            "house_number": "47",
+            "road": "Wrangelstraße",
+            "quarter": "Wrangelkiez",
+            "suburb": "Kreuzberg",
+            "borough": "Friedrichshain-Kreuzberg",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10997",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "operator": "Ilka Stamp",
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "limited",
+            "opening_hours": "Mo-Fr 08:00-18:30; Sa 08:30-14:00",
+            "check_date:opening_hours": "2025-08-12"
+          },
+          "boundingbox": [
+            "52.4990442",
+            "52.4991442",
+            "13.4403567",
+            "13.4404567"
+          ]
+        },
+        {
+          "place_id": 145599479,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 3446123445,
+          "lat": "52.5323503",
+          "lon": "13.3968456",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Sophien-Apotheke",
+          "display_name": "Sophien-Apotheke, 157, Invalidenstraße, Rosenthaler Vorstadt, Mitte, Berlin, 10115, Deutschland",
+          "address": {
+            "amenity": "Sophien-Apotheke",
+            "house_number": "157",
+            "road": "Invalidenstraße",
+            "quarter": "Rosenthaler Vorstadt",
+            "suburb": "Mitte",
+            "borough": "Mitte",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10115",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "drive_through": "no",
+            "opening_hours": "Mo-Fr 08:00-19:00; Sa 08:00-14:00",
+            "internet_access": "wlan",
+            "service:bicycle:pump": "no",
+            "service:bicycle:retail": "no",
+            "service:bicycle:second_hand": "no"
+          },
+          "boundingbox": [
+            "52.5323003",
+            "52.5324003",
+            "13.3967956",
+            "13.3968956"
+          ]
+        },
+        {
+          "place_id": 145123242,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 448913486,
+          "lat": "52.5468250",
+          "lon": "13.4126429",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Cecilien-Apotheke",
+          "display_name": "Cecilien-Apotheke, 1, Gaudystraße, Bremer Höhe, Gleimviertel, Prenzlauer Berg, Pankow, Berlin, 10437, Deutschland",
+          "address": {
+            "amenity": "Cecilien-Apotheke",
+            "house_number": "1",
+            "road": "Gaudystraße",
+            "neighbourhood": "Bremer Höhe",
+            "quarter": "Gleimviertel",
+            "suburb": "Prenzlauer Berg",
+            "borough": "Pankow",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "10437",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "check_date": "2025-05-07",
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "payment:visa": "yes",
+            "contact:phone": "+49 30 138823550",
+            "opening_hours": "Mo-Fr 09:00-18:00; Sa 10:00-14:00; PH off",
+            "contact:website": "http://www.cecilien-apo.de/",
+            "payment:mastercard": "yes",
+            "payment:credit_cards": "yes",
+            "check_date:opening_hours": "2025-05-07"
+          },
+          "boundingbox": [
+            "52.5467750",
+            "52.5468750",
+            "13.4125929",
+            "13.4126929"
+          ]
+        },
+        {
+          "place_id": 144817149,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 588557536,
+          "lat": "52.5487495",
+          "lon": "13.4506766",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Sky Apotheke am Antonplatz",
+          "display_name": "Sky Apotheke am Antonplatz, 1, Langhansstraße, Munizipalviertel, Weißensee, Pankow, Berlin, 13086, Deutschland",
+          "address": {
+            "amenity": "Sky Apotheke am Antonplatz",
+            "house_number": "1",
+            "road": "Langhansstraße",
+            "quarter": "Munizipalviertel",
+            "suburb": "Weißensee",
+            "borough": "Pankow",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "13086",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "website": "https://www.apotheke-am-antonplatz.de/",
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "contact:fax": "+49 30 92682 29",
+            "contact:email": "kontakt@apotheke-am-antonplatz.de",
+            "contact:phone": "+49 30 9251515",
+            "opening_hours": "Mo-Fr 08:00-20:00; Sa 09:00-14:00",
+            "check_date:opening_hours": "2025-04-14"
+          },
+          "boundingbox": [
+            "52.5486995",
+            "52.5487995",
+            "13.4506266",
+            "13.4507266"
+          ]
+        },
+        {
+          "place_id": 145597472,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 627415668,
+          "lat": "52.5505700",
+          "lon": "13.3842488",
+          "category": "amenity",
+          "type": "pharmacy",
+          "place_rank": 30,
+          "importance": 8.875486381318407e-05,
+          "addresstype": "amenity",
+          "name": "Gesundbrunnen- Apotheke",
+          "display_name": "Gesundbrunnen- Apotheke, 64, Badstraße, Gartenstadt Atlantic, Soldiner Kiez, Gesundbrunnen, Mitte, Berlin, 13357, Deutschland",
+          "address": {
+            "amenity": "Gesundbrunnen- Apotheke",
+            "house_number": "64",
+            "road": "Badstraße",
+            "neighbourhood": "Gartenstadt Atlantic",
+            "quarter": "Soldiner Kiez",
+            "suburb": "Gesundbrunnen",
+            "borough": "Mitte",
+            "city": "Berlin",
+            "ISO3166-2-lvl4": "DE-BE",
+            "postcode": "13357",
+            "country": "Deutschland",
+            "country_code": "de"
+          },
+          "extratags": {
+            "dispensing": "yes",
+            "healthcare": "pharmacy",
+            "wheelchair": "yes",
+            "contact:phone": "+49 30 4657011",
+            "opening_hours": "Mo-Fr 08:30-18:30; Sa 09:00-13:00",
+            "check_date:opening_hours": "2026-02-26"
+          },
+          "boundingbox": [
+            "52.5505200",
+            "52.5506200",
+            "13.3841988",
+            "13.3842988"
+          ]
+        }
+      ]
+    }
+  ]
+}

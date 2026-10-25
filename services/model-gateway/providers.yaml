@@ -11,6 +11,7 @@
     "text_model": "Qwen/Qwen3.6-35B-A3B-FP8",
     "vision_model": "Qwen/Qwen3.6-35B-A3B-FP8",
     "context": 262144, "experimental": true,
+    "code_thinking": false,
     "request_options": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": false}},
     "price": {"currency": "EUR", "input": 0, "output": 0},
     "sources": ["https://docs.hetzner.com/general/company-and-policy/experiments/inference/"]

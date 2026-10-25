@@ -103,7 +103,8 @@ async def authenticate_chat(
     ):
         raise ProjectError(409, "selector_conflict")
     browser_origin(request)
-    validate("ProjectChatRequest", raw)
+    # Location is validated by ChatRequest and never enters the durable broker.
+    validate("ProjectChatRequest", {k: v for k, v in raw.items() if k != "location"})
     key = request.headers.get("idempotency-key", "")
     if not key or len(key) > 200:
         raise ProjectError(422, "invalid_request", "Idempotency-Key is required")
@@ -308,6 +309,23 @@ class DispatchEvents:
                 await sink({"project": persisted})
 
 
+def answer_refs(item: Interaction) -> list[dict[str, Any]]:
+    from services.orchestrator.location import LEDGER_LABEL
+
+    if not item.reponse.strip():
+        return []
+    text = item.reponse
+    marker = item.location_used == LEDGER_LABEL
+    if marker:
+        text = text.removesuffix(LEDGER_LABEL).rstrip()
+    refs = [dict(kind="answer", text=text, file_version_id=None)] if text else []
+    if marker:
+        # A separate visible answer fragment uses the existing closed transcript
+        # contract. Only this exact server-owned marker becomes a ledger event.
+        refs.append(dict(kind="answer", text=LEDGER_LABEL, file_version_id=None))
+    return refs
+
+
 work_dispatch: ContextVar[DispatchEvents | None] = ContextVar(
     "work_dispatch", default=None
 )
@@ -377,7 +395,17 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     events.session_context = session_context
     tool_calls = 0
     try:
-        if request.project_action == "work":
+        from services.orchestrator.location import location_dependent
+
+        if request.project_action != "work" and location_dependent(request.user_text):
+            from services.orchestrator.nearby_chat import process_nearby
+
+            tool_calls = await process_nearby(
+                scoped,
+                item,
+                cost_limit=Decimal(str(turn["usage"]["reserved_eur"])),
+            )
+        elif request.project_action == "work":
             from services.orchestrator.code_mode import process_work
 
             dispatch_token = work_dispatch.set(events)
@@ -491,11 +519,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                         request_id=turn["request_id"],
                         conversation_id=turn["conversation_id"],
                         state=terminal,
-                        content_refs=[
-                            dict(kind="answer", text=item.reponse, file_version_id=None)
-                        ]
-                        if item.reponse.strip()
-                        else [],
+                        content_refs=answer_refs(item),
                         usage=usage,
                         error=error,
                     ),
