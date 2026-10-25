@@ -18,7 +18,7 @@ from fastapi import Request
 from packages import context_usage
 from packages.language import conversation_language, language_instruction
 from packages.ports import atlas_ports
-from services.orchestrator.chat_schema import ChatMessage, ChatRequest
+from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.code_api import ExecutionBroker
 from services.orchestrator.code_ui import project_mode
 from services.orchestrator.interactions import Interaction
@@ -175,11 +175,15 @@ class DispatchEvents:
         self.broker, self.state = broker, state
         self.call_id = ""
         self.calls = 0
+        self.state_update = False
         self.unknown = False
         self.payload_bytes = 0
         self.session_id: str | None = None
         self.generation: int | None = None
         self.context: dict[str, Any] | None = None
+        from services.orchestrator.session_context import SessionContext
+
+        self.session_context: SessionContext | None = None
 
     async def publish(self, phase: str, value: Message) -> None:
         payload: dict[str, Any] = dict(value)
@@ -191,6 +195,15 @@ class DispatchEvents:
             self.context = context_usage.measure(
                 payload["messages"], payload["tools"], payload.get("profile")
             )
+            if self.session_context and self.session_context.last:
+                from services.orchestrator.session_context import calibration
+
+                family, digest, estimate = self.session_context.last
+                self.context.update(
+                    calibrated_tokens=calibration.count(family, digest, estimate),
+                    calibration_factor=calibration.factors.get(family, 4 / 3),
+                    context_status=self.session_context.status,
+                )
         elif phase == "acknowledged" and self.context is not None:
             self.context["provider_input_tokens"] = payload.get("usage", {}).get(
                 "prompt_tokens"
@@ -216,7 +229,7 @@ class DispatchEvents:
             call_id=self.call_id,
             attempt=1,
             provider_ref="configured-generation",
-            purpose="generation",
+            purpose="session_state" if self.state_update else "generation",
             sources=context["context_manifest"]["sources"],
             instructions_version=context["instructions_version"],
             memory_revision=context["memory_revision"],
@@ -257,14 +270,18 @@ class DispatchEvents:
             audit_record=None,
         )
         result = await self.broker.call(
-            "work-events" if self.session_id else "events",
+            "state-events"
+            if self.state_update
+            else "work-events"
+            if self.session_id
+            else "events",
             dict(
                 conversation_id=turn["conversation_id"],
                 request_id=turn["request_id"],
                 events=[event],
                 **(
                     {"generation": self.generation}
-                    if self.generation is not None
+                    if self.generation is not None and not self.state_update
                     else {}
                 ),
             ),
@@ -327,39 +344,10 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         )
         item.state = "done"
         return
-    history = [
-        ChatMessage(
-            role="user" if r["kind"] == "question" else "assistant", content=r["text"]
-        )
-        for t in context["history"]
-        for r in t["content_refs"]
-        if r["kind"] in {"question", "answer"} and r["text"]
-    ]
-    history.append(
-        ChatMessage(
-            role="user",
-            content=json.dumps(
-                dict(
-                    project_instructions=context["instructions_text"],
-                    memory=context["facts"],
-                    passages=context["passages"],
-                    coverage=context["context_manifest"]["coverage"],
-                )
-            ),
-        )
-    )
-    context_usage.register(
-        history[-1].text,
-        {
-            "project_instructions": context["instructions_text"],
-            "pinned_memory": context["facts"],
-            "document_passages": dict(
-                passages=context["passages"],
-                coverage=context["context_manifest"]["coverage"],
-            ),
-        },
-    )
-    history.append(request.messages[-1])
+    from services.orchestrator.session_context import assemble, SessionContext
+
+    history, dropped = assemble(context, request.messages[-1])
+    session_context = SessionContext(broker, state, dropped)
     scoped = request.model_copy(
         update=dict(
             messages=history, lang=conversation_language(history, request.ui_locale)
@@ -370,6 +358,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     error: dict[str, Any] | None = None
     model: GatewayModel | None = None
     events = DispatchEvents(broker, state)
+    events.session_context = session_context
     tool_calls = 0
     try:
         if request.project_action == "work":
@@ -395,6 +384,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             model.configure_quality(request.model, request.max_tokens)
             model.cost_ceiling = Decimal(str(turn["usage"]["reserved_eur"]))
             model.dispatch_hook = events.publish
+            model.session_context = session_context
             model.tools = [
                 t
                 for t in model.tools
@@ -444,6 +434,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     coverage["warnings"][:8]
                 )
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
+        if session_context.warning:
+            item.reponse += "\n\n" + session_context.warning
         terminal = "completed" if item.state == "done" else "failed"
         if terminal == "failed":
             error = ProjectError(
@@ -514,3 +506,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     and event.get("turn_id") == turn["id"]
                 ):
                     await sink({"project": event})
+        if completed["turn"]["state"] == "completed":
+            from services.orchestrator.session_updates import schedule
+
+            schedule(broker, completed)

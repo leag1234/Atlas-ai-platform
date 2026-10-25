@@ -585,6 +585,9 @@ async def process_work(
             model = connected
             model.configure_quality(code_profile(), request.max_tokens)
             model.dispatch_hook = dispatch.publish if dispatch is not None else None
+            model.session_context = (
+                dispatch.session_context if dispatch is not None else None
+            )
             model.work_check = execution.check
             model.work_cost = limits.cost
             model.work_per_call = Decimal(str(ceiling["per_call_eur"]))

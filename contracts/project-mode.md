@@ -965,3 +965,65 @@ Work offers reopen_result as a core tool alongside the existing three core tools
 with four group slots. The additive optional switch_tool_group.focus field selects
 a group's tool into those slots when needed; every existing group capability
 remains reachable and the gateway's eight-tool capacity is unchanged.
+
+## Amendment 2026-10-25 (session state), approved by the supervisor
+
+REQ-PROJ-04/05/06/08/09: retrieval owns a typed SessionState for each conversation
+and, separately, each Work session. Decisions, established facts, open questions,
+files read/produced and current plan retain source and originating turn. State is
+derived content, never project instructions or activated memory. It inherits all
+source restrictions and revision invalidation of the represented turns.
+
+Private transcript `state-read` and `state-write` reuse transcript authentication,
+origin denial, bounded ingress, current scope/source checks and Idempotency-Key.
+They bind to the initiating member's completed turn. State-write compares the
+previous state revision and the exact covered turn IDs; stale concurrent updates
+fail 409. Retrieval validates the closed schema and provenance before atomically
+persisting state in the turn's private content, with storage quota accounting.
+No new database authority or startup migration is required. Context optionally
+returns session_state and represented_turn_ids; ContextRequest optionally selects
+work_session_id, checked against its conversation. Updates run after terminal
+persistence in a background task, one bounded gateway call with the fast public
+profile, outside the answer path. Failure logs metadata only and preserves state.
+
+Merge is keyed by entry ID within each category. Missing entries are retained;
+explicit replacements preserve their new source/turn. Open-question resolution
+and plan replacement are explicit fields; facts and decisions cannot disappear
+through omission. Invalid schema/provenance or an oversized merged state rejects
+the whole update. Constraints are excluded from generated state authority:
+project instructions and every active constraint are reread verbatim each turn.
+
+Assembly is system, project instructions, pinned memory and tool declarations
+(stable, never compacted), state, recent verbatim turns, tool results and document
+passages. ATLAS_CONTEXT_RECENT_TURNS defaults to 8; ATLAS_CONTEXT_RECENT_TOKENS to
+20000. Only turns covered by persisted state may be removed. At 60% of the active
+model window remove represented older turns; retain the recent configured window.
+At 80% display a warning; at 95% refuse with measured tokens/window and propose a
+new session starting from the state. Apply thresholds to the complete dispatch,
+including tools. Preserve the P1a raw estimate and add a calibrated count (initial
+4/3 correction; update from provider observations by provider family). Exact
+provider counts take precedence for their observed payload; changed payloads use
+the calibrated estimate. Each removal is a context_selected ledger event with
+ContextCompaction metadata, visible under Context used. No transcript is deleted.
+The right panel displays state read-only; Edit is a disabled step-3 placeholder.
+
+State update dispatches use additive `state-events` (TranscriptEvents envelope),
+restricted to the initiating member's completed turn and its state reservation.
+They retain the original source checks but grant no Work execution lease authority.
+Reserve at most EUR 0.01 from the turn's remaining ceiling before inference;
+reconcile acknowledged usage on state-write and retain unknown reservations on
+failure. A Work snapshot inherits the authorized conversation history and is
+also eligible as its conversation's snapshot. Tool evidence is supplied separately,
+with stable references and explicit truncation, to track files read/produced.
+The current unanswered question follows the document layer so the unchanged
+answer-format prompt's last-user-message contract remains true.
+
+Supervisor robustness ruling (2026-10-25): request each state update as JSON in
+message content, with JSON mode on verified provider capabilities and explicit
+instructions plus JSON/fenced-JSON extraction otherwise. Never force a state
+update tool call. For compatibility, accept a single validated update tool payload
+even when the provider labels its finish as `stop`. Normalize only the explicit
+entry aliases `src` to `source` and Chat fact `e` to `evidence`; collisions, duplicate
+JSON keys, unknown fields and invalid provenance still reject the payload. Failure
+retains the prior snapshot and logs a safe reason code. The next completed turn
+makes one fresh bounded update including uncovered turns; no immediate retry.

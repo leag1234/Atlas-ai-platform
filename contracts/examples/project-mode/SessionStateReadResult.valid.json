@@ -1,0 +1,16 @@
+{
+  "session_state": {
+    "decisions": [],
+    "established_facts": [],
+    "open_questions": [],
+    "files_read": [],
+    "files_produced": [],
+    "current_plan": []
+  },
+  "represented_turn_ids": [],
+  "previous_turn_id": null,
+  "session_id": null,
+  "budget_eur": 0.01,
+  "turns": [],
+  "evidence": []
+}

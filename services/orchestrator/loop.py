@@ -274,6 +274,9 @@ async def run(
                         }
                     )
                     raise Stop("model_calls")
+                prepare_context = getattr(type(model), "prepare_context", None)
+                if prepare_context is not None:
+                    await prepare_context(model, messages)
                 reserved = model.estimate(messages)
                 reserve(reserved)
                 if isinstance(result, CodeResult):

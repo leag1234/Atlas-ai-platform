@@ -201,7 +201,11 @@ class StreamDecoder:
             raise ValueError("empty_stream")
         if len({c["id"] for c in calls}) != len(calls):
             raise ValueError("duplicate_call")
-        if bool(calls) != (self.reason == "tool_calls"):
+        # Some compatible providers terminate valid tool payloads with stop.
+        # Keep payload validation and reject missing calls or truncated tool data.
+        if (calls and self.reason not in {"stop", "tool_calls"}) or (
+            not calls and self.reason == "tool_calls"
+        ):
             raise ValueError("inconsistent_finish")
         self.result = {
             "text": self.text,
