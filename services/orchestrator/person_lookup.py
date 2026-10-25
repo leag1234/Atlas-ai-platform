@@ -219,7 +219,7 @@ async def lookup(
         ),
         "es": (
             "No encontré información fiable que identifique a",
-            "Las fuentes recuperadas describen a distintas personas llamadas",
+            "Las fuentes recuperadas describen a distintas personas con el nombre",
             "¿Qué profesión, lugar o contexto puede indicar?",
             "Las personas con nombres similares no son la misma persona.",
             "Búsquedas",
