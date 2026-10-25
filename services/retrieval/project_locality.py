@@ -48,4 +48,6 @@ def policy_only_tightens(
     intersection: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
 ) -> bool:
     """An organization policy is valid only when it is no weaker than its ceiling."""
-    return intersection(dict(candidate), dict(ceiling)) == candidate
+    return intersection(dict(candidate), dict(ceiling)) == intersection(
+        dict(candidate), dict(candidate)
+    )

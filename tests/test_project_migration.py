@@ -295,7 +295,8 @@ class ProjectMigrationTests(unittest.TestCase):
                     self.instructions.encode(),
                 )
                 memory = files.listing("memory")
-                self.assertEqual(memory[0]["kind"], "legacy")
+                # Legacy entries migrate to the typed kind "fact" (typed memory amendment).
+                self.assertEqual(memory[0]["kind"], "fact")
                 self.assertEqual(memory[0]["text"], "Current fact")
                 for value in memory:
                     self.validator.validate(

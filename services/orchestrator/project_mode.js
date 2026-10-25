@@ -355,6 +355,52 @@
     checkScope(current); panelData = { instructions, memory, deliverables, jobs, summary, ledger, context, policy };
     renderPanels();
   }
+  async function memoryPatch(entry, changes) {
+    const current = generation;
+    const response = await request(base() + '/memory/' + entry.id, { method: 'PATCH', headers: {'If-Match': `"${entry.revision}"`}, body: changes });
+    await jsonResponse(response, current); checkScope(current); await panels(); say(t('saved'));
+  }
+  function memoryEditor(entry) {
+    const dialog = node('dialog', null, 'atlas-project-dialog'), form = node('form'), text = node('textarea'), kind = node('select');
+    text.value = entry.text; text.required = true; text.maxLength = 500;
+    for (const value of ['constraint','decision','fact','preference','open_question','summary']) kind.append(new Option(value.replaceAll('_', ' '), value));
+    kind.value = entry.kind;
+    const save = node('button', 'Save'); save.type = 'submit';
+    form.append(node('h2', 'Edit memory'), field('message', text), field('kind', kind), save, button('cancel', () => dialog.close()));
+    dialog.append(form); root.append(dialog); dialog.addEventListener('close', () => dialog.remove(), {once:true});
+    form.addEventListener('submit', guarded(async event => { event.preventDefault(); save.disabled = true; try { await memoryPatch(entry, {text:text.value, kind:kind.value, ...(kind.value === 'constraint' ? {pinned:true} : !['decision','fact'].includes(kind.value) ? {pinned:false} : {})}); dialog.close(); } finally { save.disabled = false; } }));
+    dialog.showModal(); text.focus();
+  }
+  function memoryPanel(entries) {
+    const panel = node('section'); panel.dataset.memoryPanel = ''; panel.append(node('h3', t('memory')));
+    for (const tier of ['pinned', 'retrievable', 'proposed', 'history']) {
+      const group = node(tier === 'history' ? 'details' : 'section'); group.dataset.memoryTier = tier;
+      group.append(node(tier === 'history' ? 'summary' : 'h4', tier === 'history' ? 'Memory history' : tier));
+      for (const kind of ['constraint','decision','fact','preference','open_question','summary']) {
+        const matching = entries.filter(e => e.kind === kind && (['superseded','rejected'].includes(e.status) ? tier === 'history' : e.status === 'proposed' ? tier === 'proposed' : tier === (e.pinned || e.kind === 'constraint' ? 'pinned' : 'retrievable')));
+        if (!matching.length) continue;
+        group.append(node('h5', kind.replaceAll('_', ' ')));
+        for (const entry of matching) {
+          const card = node('article'); card.dataset.memoryId = entry.id;
+          card.append(node('p', entry.text), node('small', `${entry.status} · revision ${entry.revision} · ${entry.source || 'user'} · ${entry.observed_at || entry.created_at}`));
+          if (entry.supersedes) card.append(node('small', `Supersedes ${entry.supersedes}`));
+          if (tier !== 'history') {
+            const edit = node('button', 'Edit'); edit.addEventListener('click', () => memoryEditor(entry)); card.append(edit);
+            if (entry.status === 'proposed') {
+              card.append(button('accept', () => memoryPatch(entry, {status:'active'})));
+              const reject = node('button', 'Reject'); reject.addEventListener('click', guarded(() => memoryPatch(entry, {status:'rejected'}))); card.append(reject);
+            } else if (['fact','decision'].includes(entry.kind)) {
+              const pin = node('button', entry.pinned ? 'Unpin' : 'Pin'); pin.addEventListener('click', guarded(() => memoryPatch(entry, {pinned:!entry.pinned}))); card.append(pin);
+            }
+          }
+          group.append(card);
+        }
+      }
+      panel.append(group);
+    }
+    if (!entries.length) panel.append(node('p', t('empty')));
+    return panel;
+  }
   function renderPanels() {
     if (!panelData) return;
     const { instructions, memory, deliverables, jobs, summary, ledger, context, policy } = panelData;
@@ -376,9 +422,7 @@
     }
     right.append(used);
     if (instructions.text) right.append(node('p', instructions.text));
-    right.append(node('h3', t('memory')));
-    for (const entry of memory) right.append(node('p', entry.text), detail('status', t(entry.status)));
-    if (!memory.length) right.append(node('p', t('empty')));
+    right.append(memoryPanel(memory));
     right.append(node('h3', t('selectedFiles')));
     for (const file of files) {
       const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.dataset.version = file.version_id; checkbox.checked = selected.has(file.version_id); checkbox.disabled = sending || configuring || uploading || file.locality === 'local_only' || file.availability === 'not_retained';

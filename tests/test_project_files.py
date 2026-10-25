@@ -574,13 +574,16 @@ class ProjectFilesTests(ProjectIsolationTests):
                 "file_versioned",
                 "file_read",
                 "context_selected",
+                "memory_changed",
                 "context_selected",
+                "memory_changed",
+                "memory_changed",
                 "context_selected",
             ],
         )
         self.assertEqual(
             [event["byte_counts"]["source_bytes"] for event in events],
-            [0, len(text.encode()), len(text.encode()), 8, 8, 8],
+            [0, len(text.encode()), len(text.encode()), 8, 0, 8, 0, 0, 8],
         )
         self.assertNotIn("Résumé", json.dumps(events, ensure_ascii=False))
 

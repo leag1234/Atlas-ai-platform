@@ -61,9 +61,16 @@ class SessionStates:
         session = private["request"].get("work_session_id")
         turns = self.eligible(turn["conversation_id"], session)
         # A late updater must never represent turns newer than its own terminal turn.
-        turns = turns[
-            : next(i for i, value in enumerate(turns) if value["id"] == turn["id"]) + 1
-        ]
+        position = next(
+            (i for i, value in enumerate(turns) if value["id"] == turn["id"]), None
+        )
+        if position is None:
+            raise ProjectError(
+                409,
+                "revision_conflict",
+                "Project memory changed before the session update",
+            )
+        turns = turns[: position + 1]
         snapshot = self.snapshot(turns, session)
         if turn["id"] not in snapshot["represented_turn_ids"] and not private.get(
             "state_reservation"

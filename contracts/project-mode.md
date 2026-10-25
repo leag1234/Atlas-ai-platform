@@ -1052,3 +1052,45 @@ history_compaction carries omitted represented IDs and token counts for the
 background ledger write. Canonical history and the public transcript are unchanged.
 MemoryEntry.kind includes constraint, the pinned kind already specified above.
 The transport response cap remains 160000 bytes.
+
+## Amendment 2026-10-25 (typed memory), approved by the supervisor
+
+REQ-PROJ-02/04/06/08/09: memory kinds are constraint, decision, fact, preference,
+open_question and summary. Legacy user/derived/legacy entries read as fact;
+existing provenance is preserved. Each entry exposes source and observed_at,
+pinned, supersedes and superseded_by. Missing fields migrate on read and persist
+on the next write. Facts default to their originating user/source and creation date.
+
+Active constraints are always pinned. Users can pin decisions and facts. The
+project pinned_memory_tokens limit defaults to 1500 and cannot exceed the
+organization quota of the same name (installation ceiling also intersects).
+The UTF-8/4 rounded-up estimate counts the complete serialized pinned component.
+An overflowing mutation is atomic and returns 429 with measured tokens, limit,
+and IDs/text of entries to unpin (constraints must be edited or retired).
+Lowering a cap below current use is rejected. Pinned entries are rendered verbatim
+in the stable prefix on every turn, outside state summarization and compaction.
+
+Other active entries share the scoped document index and hybrid ranking, retaining
+entry ID, revision, source date, turn and file-version provenance. Small tiers
+(up to 20 entries) include a one-line-per-entry index in the document context.
+Proposed, rejected and superseded entries never enter answer context. Source
+revocation applies before listing, indexing, retrieval and model use.
+
+MemoryCreate adds optional kind, pinned and status (proposed/active; default
+proposed). Public authenticated editor/owner activation is explicit confirmation.
+MemoryPatch adds kind, pinned and rejected status. Editing active content creates
+a new revision/ID with supersedes pointing to the previous entry; activation
+atomically marks that predecessor superseded. Proposed corrections leave the old
+entry active until acceptance. History remains inspectable. Every mutation emits
+metadata-only memory_changed ledger/audit events with IDs, revisions and status.
+No memory content becomes system policy or overrides project/organization policy.
+
+The private transcript memory route uses existing scoped broker authentication,
+origin denial, turn/source checks, idempotency and Work fencing. It accepts read,
+search, propose and correct; model writes are always proposed. Constraints and
+all document-derived content require user confirmation. Document provenance is
+server-inherited from the turn and prior entry and cannot be cleared by the model.
+Explicit remember commands (EN/FR/DE/ES/IT) in the actual user question create
+active facts when no document is selected; document-derived requests stay proposed.
+The model cannot invoke this explicit-command authority. Right-panel controls
+provide grouping by kind/tier, pinning, edits, accept/reject and revision history.

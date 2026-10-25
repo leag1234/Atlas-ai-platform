@@ -112,6 +112,7 @@ class WorkToolSelection:
         self.focus: str | None = None
         self.pending_focus: str | None = None
         self.reopen_enabled = False
+        self.memory_enabled = False
         self.catalog = {
             str(t["function"]["name"]): t
             for t in declarations(scoped=True)
@@ -120,6 +121,9 @@ class WorkToolSelection:
         from packages.tool_results import declaration
 
         self.catalog["reopen_result"] = declaration()
+        from packages.project_memory_tool import declaration as memory_declaration
+
+        self.catalog["project_memory"] = memory_declaration()
         self.catalog["switch_tool_group"] = dict(
             type="function",
             function=dict(
@@ -136,7 +140,11 @@ class WorkToolSelection:
             return (*CORE, *group)
         if self.focus in group:
             group = (self.focus, *(name for name in group if name != self.focus))
-        return (*CORE, "reopen_result", *group[:4])
+        return (
+            (*CORE, "reopen_result", "project_memory", *group[:3])
+            if self.memory_enabled
+            else (*CORE, "reopen_result", *group[:4])
+        )
 
     def declarations(self) -> list[dict[str, object]]:
         # The model asks for declarations at the next dispatch. Already-issued
