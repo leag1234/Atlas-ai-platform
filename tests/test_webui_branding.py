@@ -23,6 +23,15 @@ class WebUIBrandingTests(unittest.TestCase):
             webui,
         )
 
+    def test_compose_trial_does_not_advertise_unavailable_speech_endpoints(
+        self,
+    ) -> None:
+        compose = Path("compose.yaml").read_text()
+        webui = compose.split("  webui:\n", 1)[1].split("  frontend:\n", 1)[0]
+        self.assertIn("ENABLE_VOICE_INTERACTION: 'False'", webui)
+        self.assertNotIn("AUDIO_TTS_", webui)
+        self.assertNotIn("AUDIO_STT_", webui)
+
     def test_managed_environment_sets_atlas_name_and_disables_update_checks(
         self,
     ) -> None:

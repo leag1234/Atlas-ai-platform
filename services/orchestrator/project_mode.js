@@ -349,7 +349,7 @@
       api(projectBase + '/instructions'), list(projectBase + '/memory'), list(projectBase + '/deliverables'), list(projectBase + '/jobs'),
       api(projectBase + '/ledger/summary' + (ledgerSession ? '?session_id=' + ledgerSession : '')),
       list(projectBase + '/ledger' + (ledgerSession ? '?session_id=' + ledgerSession : '')),
-      scope.conversation ? api(projectBase + '/context', 'POST', { conversation_id: scope.conversation, query: input?.value.trim() || t('context'), action }) : null,
+      scope.conversation ? api(projectBase + '/context', 'POST', { conversation_id: scope.conversation, query: input?.value.trim() || t('context'), action, ...(action === 'work' && scope.session ? {work_session_id: scope.session} : {}) }) : null,
       memberships.find(m => m.org_id === scope.org)?.role === 'admin' ? api(`/api/atlas/orgs/${scope.org}/policy`) : null,
     ]);
     checkScope(current); panelData = { instructions, memory, deliverables, jobs, summary, ledger, context, policy };
@@ -362,11 +362,11 @@
     if (session) { const status = detail('status', t(session.state)); status.dataset.sessionState = ''; right.append(detail('workspace', session.environment.workspace_id), status); }
     for (const folder of folders) right.append(detail('files', `${folder.name} · ${folder.locality === 'local_only' ? t('local') + ' · ' + t('device') : t('server')} · ${t(folder.model_use)}`));
     right.append(detail('repository', session?.repository_id || t('unavailable')), node('h2', t('context')), versionLabel('instructions', instructions.active_version_id || instructions.version));
-    const lastContext = ledger.filter(e => e.model_dispatch?.context && (!scope.conversation || e.conversation_id === scope.conversation)).sort((a, b) => b.seq - a.seq)[0]?.model_dispatch.context;
+    const lastContext = ledger.filter(e => e.model_dispatch?.context && e.model_dispatch.purpose !== 'session_state' && (!scope.conversation || e.conversation_id === scope.conversation)).sort((a, b) => b.seq - a.seq)[0]?.model_dispatch.context;
     const used = node('section'); used.dataset.contextUsed = '';
     used.append(node('h3', t('contextUsed')));
     if (lastContext) {
-      used.append(node('p', `${lastContext.total_tokens} / ${lastContext.model_window ?? t('unknown')} ${t('contextTokens')}`));
+      used.append(node('p', `${lastContext.provider_input_tokens ?? lastContext.calibrated_tokens ?? lastContext.total_tokens} / ${lastContext.model_window ?? t('unknown')} ${t('contextTokens')}`));
       for (const [layer, count] of Object.entries(lastContext.layers)) used.append(detail(layer, count));
       used.append(detail('contextEstimate', lastContext.method));
     } else used.append(node('p', t('unknown')));
@@ -386,6 +386,19 @@
       const label = node('label', null, 'atlas-project-file'); label.append(checkbox, node('span', file.relative_path));
       right.append(label, versionLabel('version', file.version_id), detail('coverage', t(file.index_status)), button('preview', () => previewFile(file)));
     }
+    for (const event of ledger.filter(e => e.context_compaction && e.conversation_id === scope.conversation)) {
+      const compact = event.context_compaction;
+      used.append(node('p', `Compacted ${compact.turn_ids.length} turns · ${compact.tokens_removed} tokens removed · ${compact.tokens_added} state tokens`));
+    }
+    if (lastContext?.context_status === 'warning' || lastContext?.context_status === 'refuse') used.append(node('p', 'Context is nearly full. Start a new session from the session state.'));
+    const statePanel = node('section'); statePanel.dataset.sessionState = '';
+    statePanel.append(node('h3', t('session_state')));
+    const editState = node('button', 'Edit (available in step 3)'); editState.disabled = true; statePanel.append(editState);
+    for (const [category, entries] of Object.entries(context?.session_state || {})) {
+      statePanel.append(node('h4', category.replaceAll('_', ' ')));
+      for (const entry of entries) statePanel.append(node('p', entry.text), node('small', `${entry.source} · ${entry.turn_id}`));
+    }
+    right.append(statePanel);
     const coverage = context?.context_manifest?.coverage;
     for (const passage of context?.passages || []) right.append(versionLabel('version', passage.version_id), detail('coverage', locator(passage.locator)));
     if (coverage) {

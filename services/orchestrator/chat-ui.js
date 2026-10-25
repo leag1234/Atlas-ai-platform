@@ -341,8 +341,12 @@
     const option = (group, value) => `<button type="button" data-atlas-option="${group}" data-value="${value}" aria-label="${group === "size" ? `${value} px` : words[value]}" title="${group === "size" ? `${value} px` : words[value]}" aria-pressed="${saved[group] === value}" class="atlas-option">${group === "size" ? `${value} px` : words[value]}</button>`;
     const root = document.createElement("div"); root.id = "atlas-ui-selector";
     root.innerHTML = `<button id="atlas-ui-toggle" type="button" aria-label="${words.title}" aria-expanded="false">Aa</button><section id="atlas-ui-popover" aria-label="${words.title}" hidden><h2>${words.title}</h2>${Object.keys(choices).map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options" data-atlas-group="${group}">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}</section>`;
+    // Keep the control clear of the composer's Send/Stop button on phones and left of
+    // Open WebUI's top-right header buttons. Inline so the recorded M24 stylesheet is unchanged.
+    Object.assign(root.style, { top: "max(12px, env(safe-area-inset-top))", bottom: "auto", right: "132px" });
     document.body.append(root);
     const toggle = root.querySelector("#atlas-ui-toggle"), popover = root.querySelector("#atlas-ui-popover");
+    Object.assign(popover.style, { top: "52px", bottom: "auto" });
     const revoke = document.createElement('button'); revoke.type = 'button'; revoke.id = 'atlas-location-revoke';
     revoke.textContent = (localStorage.getItem('locale') || '').startsWith('fr') ? 'Révoquer le partage de position' : 'Revoke location sharing';
     revoke.addEventListener('click', async () => { await window.atlasLocation.revoke(); revoke.textContent = 'Location sharing revoked'; }); popover.append(revoke);

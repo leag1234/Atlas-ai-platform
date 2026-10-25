@@ -1,0 +1,120 @@
+{
+  "source": "P1b-2-live-2, Hetzner, 2026-10-25; exact captured model responses before loop_detected",
+  "responses": [
+    {
+      "provider_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+      "text": "I acknowledge the constraint: **ship only to France or Germany, never outside these countries.**\n\nNow let me execute the plan:\n\n\n",
+      "calls": [
+        {
+          "id": "chatcmpl-tool-a0663e4270591cbb",
+          "name": "update_plan",
+          "arguments": "{\"items\": [{\"status\": \"pending\", \"text\": \"Inspect source\"}, {\"status\": \"pending\", \"text\": \"Calculate allocation\"}, {\"status\": \"pending\", \"text\": \"Write register\"}, {\"status\": \"pending\", \"text\": \"Verify totals\"}]}"
+        },
+        {
+          "id": "chatcmpl-tool-b2426e5894d27929",
+          "name": "list_dir",
+          "arguments": "{\"path\": \".\"}"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 6618,
+        "completion_tokens": 132
+      },
+      "cost_eur": "0",
+      "reasoning": "",
+      "trace_tokens": 0,
+      "answer_tokens": 132,
+      "token_split_estimated": false,
+      "reasoning_retried": false,
+      "provider_retries": 0
+    },
+    {
+      "provider_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+      "text": "",
+      "calls": [
+        {
+          "id": "chatcmpl-tool-9fe6ddce866c6516",
+          "name": "update_plan",
+          "arguments": "{\"items\": [{\"status\": \"pending\", \"text\": \"Inspect source\"}, {\"status\": \"pending\", \"text\": \"Calculate allocation\"}, {\"status\": \"pending\", \"text\": \"Write register\"}, {\"status\": \"pending\", \"text\": \"Verify totals\"}]}"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 6975,
+        "completion_tokens": 80
+      },
+      "cost_eur": "0",
+      "reasoning": "",
+      "trace_tokens": 0,
+      "answer_tokens": 80,
+      "token_split_estimated": false,
+      "reasoning_retried": false,
+      "provider_retries": 0
+    },
+    {
+      "provider_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+      "text": "",
+      "calls": [
+        {
+          "id": "chatcmpl-tool-954d604cd6748829",
+          "name": "update_plan",
+          "arguments": "{\"items\": [{\"status\": \"in_progress\", \"text\": \"Inspect source\"}, {\"status\": \"pending\", \"text\": \"Calculate allocation\"}, {\"status\": \"pending\", \"text\": \"Write register\"}, {\"status\": \"pending\", \"text\": \"Verify totals\"}]}"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 7189,
+        "completion_tokens": 81
+      },
+      "cost_eur": "0",
+      "reasoning": "",
+      "trace_tokens": 0,
+      "answer_tokens": 81,
+      "token_split_estimated": false,
+      "reasoning_retried": false,
+      "provider_retries": 0
+    },
+    {
+      "provider_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+      "text": "",
+      "calls": [
+        {
+          "id": "chatcmpl-tool-9e0244589afaeb89",
+          "name": "update_plan",
+          "arguments": "{\"items\": [{\"status\": \"in_progress\", \"text\": \"Inspect source\"}, {\"status\": \"pending\", \"text\": \"Calculate allocation\"}, {\"status\": \"pending\", \"text\": \"Write register\"}, {\"status\": \"pending\", \"text\": \"Verify totals\"}]}"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 7403,
+        "completion_tokens": 81
+      },
+      "cost_eur": "0",
+      "reasoning": "",
+      "trace_tokens": 0,
+      "answer_tokens": 81,
+      "token_split_estimated": false,
+      "reasoning_retried": false,
+      "provider_retries": 0
+    },
+    {
+      "provider_model": "Qwen/Qwen3.6-35B-A3B-FP8",
+      "text": "",
+      "calls": [
+        {
+          "id": "chatcmpl-tool-89d68fa525963a4e",
+          "name": "update_plan",
+          "arguments": "{\"items\": [{\"status\": \"in_progress\", \"text\": \"Inspect source\"}, {\"status\": \"pending\", \"text\": \"Calculate allocation\"}, {\"status\": \"pending\", \"text\": \"Write register\"}, {\"status\": \"pending\", \"text\": \"Verify totals\"}]}"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 7618,
+        "completion_tokens": 81
+      },
+      "cost_eur": "0",
+      "reasoning": "",
+      "trace_tokens": 0,
+      "answer_tokens": 81,
+      "token_split_estimated": false,
+      "reasoning_retried": false,
+      "provider_retries": 0
+    }
+  ]
+}

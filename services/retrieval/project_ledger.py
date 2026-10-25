@@ -143,7 +143,7 @@ def _model(value: Mapping[str, Any] | None, kind: str, counts: Json) -> Json | N
         not required <= set(value)
         or set(value) - required - {"context"}
         or value["purpose"]
-        not in {"generation", "embedding", "rerank", "ocr", "vision"}
+        not in {"generation", "embedding", "rerank", "ocr", "vision", "session_state"}
         or value["transmission"]
         not in {"not_sent", "sent", "acknowledged", "possibly_sent"}
     ):
@@ -197,6 +197,7 @@ def append(
     approval_id: str | None = None,
     model_dispatch: Mapping[str, Any] | None = None,
     context_clearing: Mapping[str, Any] | None = None,
+    context_compaction: Mapping[str, Any] | None = None,
     audit_record: Mapping[str, Any] | None = None,
     event_id: str | None = None,
     timestamp: str | None = None,
@@ -291,6 +292,13 @@ def append(
         if kind != "context_selected":
             raise ProjectError(422, "invalid_request")
         event["context_clearing"] = dict(context_clearing)
+    if context_compaction is not None:
+        from services.retrieval.project_work_contract import validate
+
+        validate("ContextCompaction", context_compaction)
+        if kind != "context_selected":
+            raise ProjectError(422, "invalid_request")
+        event["context_compaction"] = dict(context_compaction)
     existing = scope.db.execute(
         "SELECT data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND event_id=%s",
         (scope.identity.org, event["project_id"], event["event_id"]),

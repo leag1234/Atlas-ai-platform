@@ -1,0 +1,30 @@
+{
+  "conversation_id": "10000000-0000-0000-0000-000000000001",
+  "request_id": "10000000-0000-0000-0000-000000000001",
+  "previous_turn_id": null,
+  "represented_turn_ids": [
+    "10000000-0000-0000-0000-000000000001"
+  ],
+  "update": {
+    "decisions": [],
+    "established_facts": [],
+    "open_questions": [],
+    "files_read": [],
+    "files_produced": [],
+    "current_plan": [],
+    "resolved_questions": [],
+    "replace_plan": false
+  },
+  "usage": {
+    "tool_calls": 0,
+    "model_calls": 0,
+    "elapsed_seconds": 0,
+    "cost_eur": 0,
+    "reserved_eur": 0,
+    "unknown_eur": 0,
+    "stored_bytes": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tokens_estimated": false
+  }
+}

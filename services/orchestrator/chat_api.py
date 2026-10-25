@@ -8,6 +8,7 @@ from packages.configuration import (
     temporarily_unavailable,
 )
 import logging
+import re
 
 import asyncio
 import json
@@ -103,6 +104,14 @@ async def remove_nearby_location(token: UUID, request: Request) -> Response:
 app.include_router(project_router)
 
 
+_UPSTREAM_URL = re.compile(r"https?://[^\s'\"]+", re.I)
+
+
+def public_error_detail(detail: str) -> str:
+    """Keep upstream topology out of API errors and therefore host UI toasts."""
+    return _UPSTREAM_URL.sub("upstream service", detail)
+
+
 @app.post("/atlas/cancel/{token}")
 async def cancel_chat(token: UUID, request: Request) -> Response:
     """Cancel one browser-owned stream without relying on proxy disconnects."""
@@ -116,7 +125,7 @@ async def trial_audio(operation: str) -> JSONResponse:
     return JSONResponse(
         {
             "error": "speech_unavailable",
-            "message": "Speech is unavailable on this endpoint. See the full stack installation guide.",
+            "message": "Speech is not enabled on this installation.",
         },
         status_code=503,
     )
@@ -387,6 +396,7 @@ async def chat(request: Request) -> Response:
                 Path(os.environ.get("ATLAS_INTERACTION_DIR", "BRAIN/interactions")),
             )
     if code:
+        detail = public_error_detail(detail)
         return JSONResponse(
             {
                 "error": {"message": detail or code, "type": code, "code": code},

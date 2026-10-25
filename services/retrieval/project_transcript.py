@@ -118,7 +118,11 @@ class Transcript:
         )
 
     def context(
-        self, conversation: str, query: str, selected: list[str]
+        self,
+        conversation: str,
+        query: str,
+        selected: list[str],
+        session: str | None = None,
     ) -> dict[str, Any]:
         self.files.get("conversation", conversation)
         self.check_sources(selected)
@@ -126,6 +130,10 @@ class Transcript:
             "file", self.scope.project_data["instructions_file_id"]
         )
         self.check_sources([instructions_file["version_id"]])
+        if session is not None:
+            work = Work(self.scope).get(session)
+            if work["conversation_id"] != conversation:
+                raise ProjectError(404, "not_found")
         base = self.files.context()
         permitted_facts = []
         for fact in base["memory"]:
@@ -190,23 +198,21 @@ class Transcript:
         sources = [
             {k: p[k] for k in ("file_id", "version_id", "locator")} for p in passages
         ]
-        history = []
-        for turn in self.turns(conversation):
-            private = self.files.row("turn", turn["id"])["private"]
-            if (
-                turn["state"] == "completed"
-                and turn["context_revision"] == base["memory_revision"]
-                and private["instructions_version"] == instructions["version"]
-                and private["policy_revision"] == base["policy_revision"]
-            ):
-                history.append(turn)
+        from services.retrieval.project_session_state import SessionStates
+
+        states = SessionStates(self)
+        history = states.eligible(conversation, session)
+        snapshot = states.snapshot(history, session)
         return dict(
             instructions_version=instructions["version"],
             instructions_text=instructions["text"],
             memory_revision=base["memory_revision"],
-            facts=base["memory"][:8],
+            facts=[f for f in base["memory"] if f["kind"] == "constraint"]
+            + [f for f in base["memory"] if f["kind"] != "constraint"][:8],
             passages=passages,
-            history=history[-8:],
+            history=history,
+            session_state=snapshot["session_state"],
+            represented_turn_ids=snapshot["represented_turn_ids"],
             context_manifest=dict(
                 sources=sources,
                 policy_revision=base["policy_revision"],
@@ -226,6 +232,8 @@ class Transcript:
     def state(
         self, turn: dict[str, Any], context: dict[str, Any], replay: bool
     ) -> dict[str, Any]:
+        from packages.session_context import transport_context
+
         rows = self.db.execute(
             "SELECT data FROM (SELECT seq,data FROM atlas_projects.transcript_progress WHERE org_id=%s AND project_id=%s AND turn_id=%s UNION ALL SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s) e ORDER BY seq LIMIT 100",
             (
@@ -243,7 +251,7 @@ class Transcript:
         events = [r["data"] for r in rows]
         return dict(
             turn=turn,
-            context=context,
+            context=transport_context(context),
             replay=replay,
             events=events,
             last_event_seq=max((e["seq"] for e in events), default=0),
@@ -264,12 +272,14 @@ class Transcript:
                 request["conversation_id"],
                 request["messages"][0]["content"],
                 request["file_version_ids"],
+                request.get("work_session_id"),
             )
             return 200, self.state(turn, context, True)
         context = self.context(
             request["conversation_id"],
             request["messages"][0]["content"],
             request["file_version_ids"],
+            request.get("work_session_id"),
         )
         turn = dict(
             self.files.new(data["request_id"]),
@@ -506,12 +516,16 @@ class Transcript:
         )
         return turn
 
-    def events(self, data: dict[str, Any]) -> dict[str, Any]:
+    def events(
+        self, data: dict[str, Any], *, state_update: bool = False
+    ) -> dict[str, Any]:
         turn, private = self.bound(data)
-        if turn["state"] != "running":
+        if turn["state"] != ("completed" if state_update else "running"):
+            raise ProjectError(409, "session_busy")
+        if state_update and not private.get("state_reservation"):
             raise ProjectError(409, "session_busy")
         session_id = private["request"].get("work_session_id")
-        if session_id:
+        if session_id and not state_update:
             Work(self.scope).fence(
                 dict(
                     session_id=session_id,
@@ -543,6 +557,10 @@ class Transcript:
                 ):
                     raise ProjectError(404, "not_found")
                 model = event["model_dispatch"]
+                if state_update and (
+                    model is None or model["purpose"] != "session_state"
+                ):
+                    raise ProjectError(422, "invalid_request")
                 if (
                     model is None
                     or model["instructions_version"] != private["instructions_version"]

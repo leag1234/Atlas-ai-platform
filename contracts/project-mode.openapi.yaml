@@ -4217,6 +4217,198 @@ paths:
         '503':
           $ref: '#/components/responses/Error503'
       description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/state-read:
+    post:
+      operationId: transcriptStateRead
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateRead'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateReadResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/state-write:
+    post:
+      operationId: transcriptStateWrite
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateWrite'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionSnapshot'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/state-events:
+    post:
+      operationId: transcriptStateEvents
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptEvents'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/compact:
+    post:
+      operationId: transcriptCompact
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCompaction'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
 components:
   securitySchemes:
     ExecutionBroker:
@@ -5999,6 +6191,7 @@ components:
           - user
           - derived
           - legacy
+          - constraint
         source_conversation_id:
           anyOf:
           - type: string
@@ -6653,6 +6846,7 @@ components:
           type: string
           enum:
           - generation
+          - session_state
           - embedding
           - rerank
           - ocr
@@ -6702,6 +6896,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context_compaction:
+          $ref: '#/components/schemas/ContextCompaction'
         context_clearing:
           $ref: '#/components/schemas/ContextClearing'
         org_id:
@@ -8860,6 +9056,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        work_session_id:
+          type: string
+          format: uuid
         conversation_id:
           type: string
           format: uuid
@@ -8999,6 +9198,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        history_compaction:
+          $ref: '#/components/schemas/ContextCompaction'
+        session_state:
+          $ref: '#/components/schemas/SessionState'
+        represented_turn_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         instructions_version:
           type: string
           format: uuid
@@ -9975,6 +10183,18 @@ components:
       additionalProperties: false
       required: [method, estimated, layers, stable_prefix_tokens, total_tokens, model_window, provider_input_tokens]
       properties:
+        calibrated_tokens:
+          type: integer
+          minimum: 0
+        calibration_factor:
+          type: number
+          minimum: 1
+        context_status:
+          enum:
+          - normal
+          - compact
+          - warning
+          - refuse
         method:
           const: utf8_bytes_div_4_ceil_per_component
         estimated:
@@ -10178,6 +10398,283 @@ components:
       - total_characters
       - has_more
       - trust
+    Entry:
+      additionalProperties: false
+      properties:
+        id:
+          maxLength: 100
+          minLength: 1
+          type: string
+        text:
+          maxLength: 2000
+          minLength: 1
+          type: string
+        source:
+          maxLength: 2000
+          minLength: 1
+          type: string
+        turn_id:
+          pattern: ^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$
+          type: string
+      required:
+      - id
+      - text
+      - source
+      - turn_id
+      type: object
+    SessionState:
+      additionalProperties: false
+      properties:
+        decisions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        established_facts:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        open_questions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_read:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_produced:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        current_plan:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+      required:
+      - decisions
+      - established_facts
+      - open_questions
+      - files_read
+      - files_produced
+      - current_plan
+      type: object
+    StateUpdate:
+      additionalProperties: false
+      properties:
+        decisions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        established_facts:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        open_questions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_read:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_produced:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        current_plan:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        resolved_questions:
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          maxItems: 64
+          type: array
+        replace_plan:
+          type: boolean
+      required:
+      - decisions
+      - established_facts
+      - open_questions
+      - files_read
+      - files_produced
+      - current_plan
+      - resolved_questions
+      - replace_plan
+      type: object
+    ContextCompaction:
+      type: object
+      additionalProperties: false
+      required:
+      - turn_ids
+      - tokens_removed
+      - tokens_added
+      - reason
+      properties:
+        turn_ids:
+          type: array
+          minItems: 1
+          items: &session_id001
+            type: string
+            format: uuid
+        tokens_removed:
+          type: integer
+          minimum: 0
+        tokens_added:
+          type: integer
+          minimum: 0
+        reason:
+          enum:
+          - recent_window
+          - threshold
+    SessionStateRead:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      - request_id
+      properties:
+        conversation_id: *session_id001
+        request_id: *session_id001
+    SessionStateWrite:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      - request_id
+      - previous_turn_id
+      - represented_turn_ids
+      - update
+      - usage
+      properties:
+        conversation_id: *session_id001
+        request_id: *session_id001
+        previous_turn_id:
+          anyOf:
+          - *session_id001
+          - type: 'null'
+        represented_turn_ids:
+          type: array
+          maxItems: 10000
+          items: *session_id001
+          uniqueItems: true
+        update:
+          $ref: '#/components/schemas/StateUpdate'
+        usage:
+          $ref: '#/components/schemas/Usage'
+    SessionCompaction:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      - request_id
+      - compaction
+      properties:
+        conversation_id: *session_id001
+        request_id: *session_id001
+        compaction:
+          $ref: '#/components/schemas/ContextCompaction'
+    SessionSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+      - session_state
+      - represented_turn_ids
+      properties:
+        session_state:
+          $ref: '#/components/schemas/SessionState'
+        represented_turn_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    SessionStateReadResult:
+      type: object
+      additionalProperties: false
+      required:
+      - session_state
+      - represented_turn_ids
+      - previous_turn_id
+      - session_id
+      - budget_eur
+      - turns
+      - evidence
+      properties:
+        work_plan:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanItem'
+        session_state:
+          $ref: '#/components/schemas/SessionState'
+        represented_turn_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        previous_turn_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        budget_eur:
+          type: number
+          minimum: 0
+          maximum: 0.01
+        turns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Turn'
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - turn_id
+            - tool_results
+            properties:
+              turn_id:
+                type: string
+                format: uuid
+              tool_results:
+                type: array
+                maxItems: 16
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - id
+                  - tool
+                  - content
+                  - truncated
+                  properties:
+                    id:
+                      type: string
+                    tool:
+                      type: string
+                    content:
+                      type: string
+                      maxLength: 4000
+                    truncated:
+                      type: boolean
   responses:
     Error401:
       description: Typed failure

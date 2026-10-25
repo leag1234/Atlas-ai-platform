@@ -242,7 +242,9 @@ def execute(
                 "POST",
                 ["conversations"] if data["action"] == "chat" else ["work-sessions"],
             )
-            return 200, transcript.context(data["conversation_id"], data["query"], [])
+            return 200, transcript.context(
+                data["conversation_id"], data["query"], [], data.get("work_session_id")
+            )
         work = Work(scope)
         if (
             len(tail) == 3
@@ -1020,6 +1022,10 @@ def transcript_dispatch(
     identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
 ) -> tuple[int, Any]:
     schemas = {
+        "state-events": "TranscriptEvents",
+        "state-read": "SessionStateRead",
+        "state-write": "SessionStateWrite",
+        "compact": "SessionCompaction",
         "begin": "TranscriptBegin",
         "finish": "TranscriptFinish",
         "events": "TranscriptEvents",
@@ -1037,6 +1043,26 @@ def transcript_dispatch(
         if operation == "begin":
             return transcript.begin(data, key)
         bound_turn, bound_private = transcript.bound(data)
+        if operation in {"state-read", "state-write", "state-events", "compact"}:
+            from services.retrieval.project_session_state import SessionStates
+
+            states = SessionStates(transcript)
+            if operation == "state-read":
+                return 200, states.read(data)
+            path = f"/internal/atlas/transcript/{operation}/{identity.project}"
+            replay = scope.replay("POST", path, key, canonical(data))
+            if replay is not None:
+                return replay
+            result = (
+                200,
+                states.write(data)
+                if operation == "state-write"
+                else states.compact(data)
+                if operation == "compact"
+                else transcript.events(data, state_update=True),
+            )
+            scope.remember("POST", path, key, canonical(data), result)
+            return result
         if operation == "work-events":
             session_id = bound_private["request"].get("work_session_id")
             if not session_id:

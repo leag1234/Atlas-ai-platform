@@ -81,6 +81,9 @@ class AgentRequest(BaseModel):
     tool_choice: Literal["auto", "none"] | dict[str, object] = Field(
         default="auto", exclude_if=lambda value: value == "auto"
     )
+    response_format: dict[Literal["type"], Literal["json_object"]] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     timeout: float = Field(gt=0, le=300)
     local_enabled: bool = True
     observe: bool = False
@@ -101,6 +104,10 @@ class AgentRequest(BaseModel):
 
     @model_validator(mode="after")
     def quality(self) -> Self:
+        if self.response_format is not None and self.response_format != {
+            "type": "json_object"
+        }:
+            raise ValueError("invalid_response_format")
         if isinstance(self.tool_choice, dict):
             function = self.tool_choice.get("function")
             if (
@@ -402,6 +409,7 @@ class AgentProvider:
             "messages": request.messages,
             "tools": request.tools,
             **({"tool_choice": request.tool_choice} if request.tools else {}),
+            **provider_settings.json_options(request.response_format),
             "max_tokens": 2048,
             "temperature": 0,
             "reasoning_effort": "none",
