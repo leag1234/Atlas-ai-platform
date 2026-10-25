@@ -69,7 +69,9 @@ class LongSessionTests(unittest.TestCase):
                         fresh.pop("base_archive_sha256", None)
                         self.assertEqual(committed, fresh, str(path))
                     else:
-                        self.assertEqual(path.read_bytes(), rebuilt.read_bytes(), str(path))
+                        self.assertEqual(
+                            path.read_bytes(), rebuilt.read_bytes(), str(path)
+                        )
             for task in ("D31", "D32", "D33"):
                 meta = json.loads((ROOT / task / "task.json").read_text())
                 archive = ROOT / task / "base.tar.gz"
