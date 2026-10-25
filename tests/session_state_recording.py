@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from decimal import Decimal
 import gzip
 import json
 import os
@@ -16,7 +17,13 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-def capture(destination: Path, count: int = 40, *, action: str = "chat") -> None:
+def capture(
+    destination: Path,
+    count: int = 40,
+    *,
+    action: str = "chat",
+    budget_eur: str = "1.00",
+) -> None:
     import psycopg
     from psycopg.types.json import Jsonb
     from fastapi import FastAPI
@@ -33,18 +40,26 @@ def capture(destination: Path, count: int = 40, *, action: str = "chat") -> None
     from services.retrieval.project_files import ProjectFiles
 
     preset = provider_settings.selected()
-    if (
-        os.environ.get("ATLAS_PROVIDER") != "hetzner"
+    provider = os.environ.get("ATLAS_PROVIDER", "")
+    if provider and (
+        provider != "hetzner"
         or preset is None
         or preset["price"] != dict(currency="EUR", input=0, output=0)
     ):
-        raise ValueError("free_hetzner_preset_required")
+        raise ValueError("legacy_scaleway_or_free_hetzner_required")
     if not provider_settings.api_key():
         raise ValueError("provider_credential_required")
+    budget = Decimal(budget_eur)
+    if not budget.is_finite() or not 0 < budget <= 1:
+        raise ValueError("invalid_live_budget")
+    spent = Decimal(0)
+    dispatch_lock = asyncio.Lock()
+    number = 0
     destination.mkdir(parents=True, exist_ok=False)
     evidence: dict[str, Any] = dict(
         mode="live",
-        provider="hetzner",
+        provider=provider or "legacy-scaleway",
+        budget_eur=str(budget),
         turns=[],
         model_rows=[],
         provider_rows=[],
@@ -71,7 +86,8 @@ def capture(destination: Path, count: int = 40, *, action: str = "chat") -> None
     async def stream(request: Any, model: str, timeout: float) -> Any:
         nonlocal last_dispatch
         # Hetzner documents ten requests/minute; pace both answer and state calls.
-        await asyncio.sleep(max(0, 6.2 - (time.monotonic() - last_dispatch)))
+        if provider == "hetzner":
+            await asyncio.sleep(max(0, 6.2 - (time.monotonic() - last_dispatch)))
         last_dispatch = time.monotonic()
         request_value = dict(
             request.model_dump(exclude={"timeout"}), provider_model=model
@@ -81,6 +97,7 @@ def capture(destination: Path, count: int = 40, *, action: str = "chat") -> None
             evidence["provider_rows"].append(
                 dict(
                     kind="stream",
+                    turn=number,
                     request=request_value,
                     response=events,
                     manifest=request_manifest("stream", request_value),
@@ -95,21 +112,41 @@ def capture(destination: Path, count: int = 40, *, action: str = "chat") -> None
                 yield event
 
     async def post(url: str, payload: Any, timeout: float) -> Any:
-        response = await original_post(url, payload, timeout)
-        if url.endswith("/agent/complete"):
+        nonlocal spent
+        if not url.endswith("/agent/complete"):
+            return await original_post(url, payload, timeout)
+        async with dispatch_lock:
+            remaining = budget - spent
+            if remaining <= 0:
+                raise ValueError("live_budget_exhausted")
+            payload = copy.deepcopy(payload)
+            reservation = min(
+                Decimal(str(payload.get("budget_eur", "0.10"))), remaining
+            )
+            payload["budget_eur"] = str(reservation)
+            spent += reservation
+            try:
+                response = await original_post(url, payload, timeout)
+            except BaseException:
+                evidence["cost_eur"] = float(spent)
+                evidence["unknown_reservation_eur"] = str(reservation)
+                save()
+                raise
+            spent += Decimal(str(response.get("cost_eur", 0))) - reservation
             evidence["model_rows"].append(
                 dict(
                     kind="complete",
+                    turn=number,
                     request=copy.deepcopy(payload),
                     response=response,
                     manifest=request_manifest("complete", payload),
                 )
             )
-            evidence["cost_eur"] += float(str(response.get("cost_eur", 0)))
+            evidence["cost_eur"] = float(spent)
             save()
-            if evidence["cost_eur"] > 0.50:
+            if spent > budget:
                 raise ValueError("live_budget_exceeded")
-        return response
+            return response
 
     gateway = FastAPI()
 
@@ -295,4 +332,5 @@ if __name__ == "__main__":
         Path(sys.argv[1]).resolve(),
         int(sys.argv[2]) if len(sys.argv) > 2 else 40,
         action=sys.argv[3] if len(sys.argv) > 3 else "chat",
+        budget_eur=sys.argv[4] if len(sys.argv) > 4 else "1.00",
     )
