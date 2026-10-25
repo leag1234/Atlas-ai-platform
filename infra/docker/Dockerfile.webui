@@ -1,5 +1,5 @@
 FROM ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933
-COPY packages/__init__.py packages/language.py /opt/atlas/packages/
+COPY packages/__init__.py packages/language.py packages/turn_attachments.py /opt/atlas/packages/
 COPY prompts/activity-labels.json /app/backend/prompts/activity-labels.json
 COPY infra/openwebui_images.py /opt/atlas/filter.py
 COPY infra/docker/webui_bootstrap.py /opt/atlas/webui_bootstrap.py

@@ -187,7 +187,7 @@ async def chat(request: Request) -> Response:
 
                 scoped_subject, scoped_key = await authenticate_chat(request, raw)
                 raw, item.uploads, item.uploaded_images = await asyncio.to_thread(
-                    prepare_uploads, raw
+                    prepare_uploads, raw, user_from_headers(request.headers)
                 )
                 payload = ChatRequest.model_validate(raw)
                 payload._project_subject = scoped_subject

@@ -9,6 +9,7 @@ import hashlib
 import json
 from types import SimpleNamespace
 from packages.language import status_language
+from packages.turn_attachments import select_documents
 from importlib import import_module
 import re
 import os
@@ -20,9 +21,9 @@ import aiohttp
 
 class Filter:
     def __init__(self) -> None:
-        self.references: OrderedDict[str, str] = OrderedDict()
+        self.references: OrderedDict[tuple[str, str], str] = OrderedDict()
 
-    async def upload(self, url: str) -> str:
+    async def upload(self, url: str, owner: str = "unknown") -> str:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=15), trust_env=False
         ) as client:
@@ -30,6 +31,7 @@ class Filter:
                 os.environ.get("ATLAS_ADAPTER_URL", "http://127.0.0.1:8020")
                 + "/images/upload",
                 json={"url": url},
+                headers={"X-OpenWebUI-User-Id": owner},
                 allow_redirects=False,
             ) as response:
                 data = await response.json()
@@ -45,10 +47,30 @@ class Filter:
                     raise ValueError("Invalid uploaded image reference")
                 return reference
 
+    async def owned_file(
+        self, entry: dict[str, Any], user: dict[str, Any] | None
+    ) -> tuple[Any, bytes]:
+        Files = import_module("open_webui.models.files").Files
+        Storage = import_module("open_webui.storage.provider").Storage
+        file = await Files.get_file_by_id(entry.get("id"))
+        if not file or not user or file.user_id != user.get("id"):
+            raise ValueError("Attachment unavailable for this user")
+        path = await asyncio.to_thread(Storage.get_file, file.path)
+
+        def read() -> bytes:
+            with Path(path).open("rb") as source:
+                return source.read(16 * 1024 * 1024 + 1)
+
+        raw = await asyncio.to_thread(read)
+        if len(raw) > 16 * 1024 * 1024:
+            raise ValueError(f"Document bytes: {len(raw)}; limit {16 * 1024 * 1024}")
+        return file, raw
+
     async def inlet(
         self,
         body: dict[str, Any],
         __user__: dict[str, Any] | None = None,
+        __metadata__: dict[str, Any] | None = None,
         __event_emitter__: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         # The injected composer sets this opaque browser-local token.  Rejecting
@@ -91,32 +113,80 @@ class Filter:
             )
         files = body.get("files") or []
         documents = [file for file in files if file.get("type") == "file"]
+        original_documents = documents
+        metadata = __metadata__ or {}
+        current_images = []
+        if metadata.get("chat_id") and metadata.get("user_message_id"):
+            Chats = import_module("open_webui.models.chats").Chats
+            chat = await Chats.get_chat_by_id_and_user_id(
+                metadata["chat_id"], (__user__ or {}).get("id")
+            )
+            if chat is None:
+                raise ValueError("Chat unavailable for this user")
+            mapping = chat.chat.get("history", {}).get("messages", {})
+            chain = []
+            key = metadata["user_message_id"]
+            visited = set()
+            while key and key not in visited:
+                visited.add(key)
+                message = mapping.get(key)
+                if not isinstance(message, dict):
+                    raise ValueError("Attachment turn unavailable")
+                chain.append(
+                    {
+                        **message,
+                        "files": [
+                            f
+                            for f in message.get("files", [])
+                            if f.get("type") == "file"
+                        ],
+                    }
+                )
+                key = message.get("parentId")
+            chain.reverse()
+            if not chain or chain[-1].get("role") != "user":
+                raise ValueError("Attachment turn unavailable")
+            documents = select_documents(chain)
+            original = mapping[metadata["user_message_id"]]
+            current_images = [
+                f
+                for f in original.get("files", [])
+                if f.get("type") == "image"
+                or str(f.get("content_type", "")).startswith("image/")
+            ]
+        if current_images:
+            last = body["messages"][-1]
+            content = last.get("content", "")
+            last["content"] = (
+                [{"type": "text", "text": content}]
+                if isinstance(content, str)
+                else [p for p in content if p.get("type") != "image_url"]
+            )
+            for entry in current_images:
+                file, raw = await self.owned_file(entry, __user__)
+                mime = str(file.meta.get("content_type", "image/png"))
+                if not mime.startswith("image/"):
+                    raise ValueError("Image attachment has invalid content type")
+                last["content"].append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:"
+                            + mime
+                            + ";base64,"
+                            + base64.b64encode(raw).decode()
+                        },
+                    }
+                )
+
         if len(documents) > 8:
             raise ValueError(f"Attached files: {len(documents)}; limit 8")
         if documents:
-            # These imports execute inside Open WebUI, whose verified user and
-            # database own file access; no client URL or filesystem path is trusted.
-            Files = import_module("open_webui.models.files").Files
-            Storage = import_module("open_webui.storage.provider").Storage
-
             last = body["messages"][-1]
             if isinstance(last["content"], str):
                 last["content"] = [{"type": "text", "text": last["content"]}]
             for entry in documents:
-                file = await Files.get_file_by_id(entry.get("id"))
-                if not file or not __user__ or file.user_id != __user__.get("id"):
-                    raise ValueError("Attachment unavailable for this user")
-                path = await asyncio.to_thread(Storage.get_file, file.path)
-
-                def read() -> bytes:
-                    with Path(path).open("rb") as source:
-                        return source.read(16 * 1024 * 1024 + 1)
-
-                raw = await asyncio.to_thread(read)
-                if len(raw) > 16 * 1024 * 1024:
-                    raise ValueError(
-                        f"Document bytes: {len(raw)}; limit {16 * 1024 * 1024}"
-                    )
+                file, raw = await self.owned_file(entry, __user__)
                 last["content"].append(
                     {
                         "type": "file",
@@ -124,12 +194,15 @@ class Filter:
                             "filename": file.meta.get("name", file.filename),
                             "file_data": base64.b64encode(raw).decode(),
                             "file_id": entry["id"],
+                            **({"reused": True} if entry.get("reused") else {}),
                         },
                     }
                 )
             # Consume originals before Open WebUI's fragment retrieval handler.
-            body["files"] = [file for file in files if file not in documents]
-        for message in body.get("messages", []):
+            body["files"] = [file for file in files if file not in original_documents]
+        body["files"] = [file for file in files if file not in original_documents]
+        owner = str((__user__ or {}).get("id") or "unknown")
+        for index, message in enumerate(body.get("messages", [])):
             if message.get("role") != "user" or not isinstance(
                 message.get("content"), list
             ):
@@ -138,10 +211,14 @@ class Filter:
                 data = part.get("image_url") if isinstance(part, dict) else None
                 if not isinstance(data, dict) or not isinstance(data.get("url"), str):
                     continue
+                if index < len(body["messages"]) - 1:
+                    part.clear()
+                    part.update(type="text", text="[Image attached in an earlier turn]")
+                    continue
                 url = data["url"]
                 if not url.startswith("data:image/"):
                     continue
-                digest = hashlib.sha256(url.encode()).hexdigest()
+                digest = (owner, hashlib.sha256(url.encode()).hexdigest())
                 if digest not in self.references:
                     if __event_emitter__:
                         await __event_emitter__(
@@ -153,7 +230,7 @@ class Filter:
                                 },
                             }
                         )
-                    self.references[digest] = await self.upload(url)
+                    self.references[digest] = await self.upload(url, owner)
                     while len(self.references) > 256:
                         self.references.popitem(last=False)
                 else:

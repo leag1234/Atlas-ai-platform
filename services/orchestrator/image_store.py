@@ -16,6 +16,9 @@ from fastapi.responses import Response, JSONResponse
 from packages.images import image_info
 from packages.image_upload import normalize_uploads, UploadError
 from typing import Any
+from packages.turn_attachments import select_documents
+from services.orchestrator.documents import Attachment
+from services.orchestrator.daily_budget import user_from_headers
 
 router = APIRouter()
 
@@ -45,10 +48,18 @@ def store(url: str) -> str:
 
 
 @router.get("/images/{key}")
-def generated_image(key: str) -> Response:
+def owned_image_response(key: str, request: Request) -> Response:
+    return generated_image(key, user_from_headers(request.headers))
+
+
+def generated_image(key: str, owner: str = "unknown") -> Response:
     if not re.fullmatch(r"[a-f0-9]{32}", key):
         return Response(status_code=404)
     path = directory() / (key + ".png")
+    try:
+        check_owner(key, owner)
+    except (ValueError, OSError):
+        return Response(status_code=404)
     if path.is_symlink():
         return Response(status_code=404)
     try:
@@ -121,13 +132,25 @@ def reference(key: str) -> str:
     )
 
 
-def load_uploaded(url: str) -> str:
+def check_owner(key: str, owner: str) -> None:
+    path = directory() / (key + ".owner")
+    if path.is_symlink():
+        raise ValueError("unknown_image_reference")
+    if path.exists():
+        if path.read_text() != hashlib.sha256(owner.encode()).hexdigest():
+            raise ValueError("unknown_image_reference")
+    elif owner != "unknown":
+        raise ValueError("unknown_image_reference")
+
+
+def load_uploaded(url: str, owner: str = "unknown") -> str:
     prefix = reference("")
     if not url.startswith(prefix):
         raise ValueError("unknown_image_reference")
     key = url[len(prefix) :]
     if not re.fullmatch(r"[a-f0-9]{32}", key) or directory().is_symlink():
         raise ValueError("unknown_image_reference")
+    check_owner(key, owner)
     fd = os.open(directory() / (key + ".png"), os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(fd, "rb") as source:
         raw = source.read(2 * 1024 * 1024 + 1)
@@ -137,14 +160,14 @@ def load_uploaded(url: str) -> str:
     return data
 
 
-def store_uploaded(url: str) -> str:
+def store_uploaded(url: str, owner: str = "unknown") -> str:
     image_info(url)
     root = directory()
     if root.is_symlink():
         raise ValueError("unsafe_image_directory")
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     root.chmod(0o700)
-    digest = hashlib.sha256(url.encode()).hexdigest()
+    digest = hashlib.sha256((owner + "\0" + url).encode()).hexdigest()
     lock_fd = os.open(
         root / "upload.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600
     )
@@ -158,10 +181,14 @@ def store_uploaded(url: str) -> str:
             raise ValueError("invalid_image_index")
         if digest in index:
             candidate = reference(str(index[digest]))
-            load_uploaded(candidate)
+            load_uploaded(candidate, owner)
             return candidate
         url_ref = store(url)
-        index[digest] = url_ref.rsplit("/", 1)[-1]
+        key = url_ref.rsplit("/", 1)[-1]
+        with (root / (key + ".owner")).open("x") as ownership:
+            os.fchmod(ownership.fileno(), 0o600)
+            ownership.write(hashlib.sha256(owner.encode()).hexdigest())
+        index[digest] = key
         temporary = root / ("upload-index-" + uuid4().hex + ".tmp")
         fd = os.open(
             temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
@@ -172,7 +199,9 @@ def store_uploaded(url: str) -> str:
         return url_ref
 
 
-def prepare_uploads(value: Any) -> tuple[Any, list[dict[str, int]], list[str]]:
+def prepare_uploads(
+    value: Any, owner: str = "unknown"
+) -> tuple[Any, list[dict[str, int]], list[str]]:
     if not isinstance(value, dict) or not isinstance(value.get("messages"), list):
         return value, [], []
     # Only file parts create document inputs; ignore untrusted internal fields.
@@ -180,6 +209,26 @@ def prepare_uploads(value: Any) -> tuple[Any, list[dict[str, int]], list[str]]:
     messages = value["messages"]
     if not 1 <= len(messages) <= 100:
         return value, [], []
+    document_turns = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        documents = (
+            [
+                Attachment.model_validate(p.get("file")).model_dump()
+                for p in content
+                if isinstance(p, dict) and p.get("type") == "file"
+            ]
+            if isinstance(content, list) and message.get("role") == "user"
+            else []
+        )
+        document_turns.append({**message, "files": documents})
+    value["documents"] = select_documents(document_turns)
+    # A reused file delivered on the current turn by the verified inlet retains its status.
+    current = document_turns[-1].get("files", []) if document_turns else []
+    if current:
+        value["documents"] = current
     changes: list[dict[str, int]] = []
     current_refs: list[str] = []
     for index, message in enumerate(messages):
@@ -189,15 +238,17 @@ def prepare_uploads(value: Any) -> tuple[Any, list[dict[str, int]], list[str]]:
             or not isinstance(message.get("content"), list)
         ):
             continue
+        if index < len(messages) - 1:
+            for part in message["content"]:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    part.clear()
+                    part.update(type="text", text="[Image attached in an earlier turn]")
         # Normalize each turn under the existing per-turn count and byte ceilings.
         _, normalized = normalize_uploads({"messages": [message]})
         changes.extend(normalized)
         for part in message["content"]:
             if isinstance(part, dict) and part.get("type") == "file":
-                from services.orchestrator.documents import Attachment
-
                 attachment = Attachment.model_validate(part.get("file"))
-                value["documents"].append(attachment.model_dump())
                 part.clear()
                 part.update(
                     type="text", text="[Attachment: " + attachment.filename + "]"
@@ -210,14 +261,14 @@ def prepare_uploads(value: Any) -> tuple[Any, list[dict[str, int]], list[str]]:
                 continue
             url = data["url"]
             if url.startswith("data:"):
-                url_ref = store_uploaded(url)
+                url_ref = store_uploaded(url, owner)
             else:
                 url_ref = url
                 # This reads only owned local references, never arbitrary URLs.
-                load_uploaded(url_ref)
+                load_uploaded(url_ref, owner)
             if index == len(messages) - 1:
                 current_refs.append(url_ref)
-                data["url"] = load_uploaded(url_ref)
+                data["url"] = load_uploaded(url_ref, owner)
             else:
                 part.clear()
                 part.update(type="text", text="[Image reference: " + url_ref + "]")
@@ -252,7 +303,9 @@ async def upload_image(request: Request) -> Response:
         normalize_uploads({"messages": [{"content": [part]}]})
         image_url = part["image_url"]
         assert isinstance(image_url, dict)
-        url_ref = await asyncio.to_thread(store_uploaded, image_url["url"])
+        url_ref = await asyncio.to_thread(
+            store_uploaded, image_url["url"], user_from_headers(request.headers)
+        )
         return JSONResponse({"url": url_ref})
     except UploadError as exc:
         return JSONResponse({"error": exc.code, "message": str(exc)}, status_code=413)
