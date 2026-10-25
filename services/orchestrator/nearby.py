@@ -403,6 +403,7 @@ class OSM:
                         distance_m=meters,
                         distance_kind="approximate straight-line",
                         address=address[:400],
+                        country=str(tags.get("addr:country", ""))[:2].upper(),
                         website=tags.get("website", tags.get("contact:website", "")),
                         phone=tags.get("phone", tags.get("contact:phone", "")),
                         opening_hours=tags.get("opening_hours"),
@@ -502,6 +503,7 @@ class OSM:
                             ("housenumber", address.get("house_number")),
                             ("street", address.get("road")),
                             ("postcode", address.get("postcode")),
+                            ("country", address.get("country_code")),
                             (
                                 "city",
                                 address.get(

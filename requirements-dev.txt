@@ -30,3 +30,7 @@ playwright==1.62.0
 
 # OSM syntax, holidays and local timezone evaluation (REQ-NEARBY-01).
 opening-hours-py==2.1.4
+
+# Nearby presentation: locale dates and country-aware phone formatting.
+Babel==2.18.0
+phonenumberslite==9.0.41

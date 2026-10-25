@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import json
+import re
 import os
 from pathlib import Path
 import tempfile
@@ -142,7 +143,27 @@ class NearbyHTTPTests(unittest.TestCase):
                             answer = response.json()["choices"][0]["message"]["content"]
                         self.assertIn("OpenStreetMap", answer)
                         self.assertIn("https://www.openstreetmap.org/", answer)
-                        self.assertIn("nominatim", answer)
+                        self.assertNotIn("Source: nominatim", answer)
+                        self.assertNotIn("location used:", answer)
+                        self.assertNotRegex(answer, r"\d{4}-\d{2}-\d{2}T\d{2}:")
+                        self.assertRegex(
+                            answer,
+                            r"\[OpenStreetMap\]\(https://www.openstreetmap.org/[^)]+\) \[\d+\]",
+                        )
+                        visible = re.sub(r"\[[^\]]+\]\(https?://[^)]+\)", "", answer)
+                        self.assertNotRegex(visible, r"https?://")
+                        if record["language"] == "fr":
+                            self.assertIn(
+                                "Position approximative, utilisée pour cette demande uniquement",
+                                answer,
+                            )
+                            self.assertEqual(answer.count("à vol d’oiseau"), 1)
+                        if case == "paris-bakery":
+                            self.assertIn("≈ 2,5 km", answer)
+                            self.assertIn("fermé, ouvre demain à 7 h 00", answer)
+                            self.assertIn("+33 1 43 31 40 66", answer)
+                            self.assertIn("Ouverts maintenant", answer)
+                            self.assertIn("Ouverture plus tard", answer)
                         self.assertTrue(
                             any(p["name"] in answer for p in record["candidates"]),
                             answer,
@@ -188,7 +209,7 @@ class NearbyHTTPTests(unittest.TestCase):
                                     answer=typed_answer,
                                 )
                             )
-        Path("BRAIN/nearby-2-http-journeys.json").write_text(
+        Path("BRAIN/nearby-3-http-journeys.json").write_text(
             json.dumps(receipts, ensure_ascii=False, indent=2)
         )
 

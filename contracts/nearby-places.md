@@ -98,3 +98,27 @@ and outbox RLS policies include this event kind while retaining all existing
 organization, membership, turn-owner, conversation and action predicates.
 Operators apply the existing project schema upgrade before deploying the updated
 scoped ledger behavior; this task applies it only to disposable test databases.
+
+## Presentation amendment, 2026-10-25
+REQ-NEARBY-01 presentation acceptance: render local times in the request language,
+with tomorrow or a localized date for later transitions; never expose ISO timestamps.
+Round approximate distances to readable metres/kilometres with localized decimal
+separators, explaining straight-line distance once. Show 3–5 available choices,
+grouped by open now, opening later, and unknown schedules. If the closest known
+open result exceeds 1.5 km straight-line, say the open results are far, walking
+may be longer, and offer a wider or narrower area; never invent a walking route.
+Use short source labels with Atlas numbered citations, no visible raw URLs.
+Separate country-formatted phone numbers from links. Localize the request-only
+location/OSM attribution footer; provider codes remain internal diagnostics.
+The internal coarse ledger label and location privacy contract remain unchanged.
+Own recorded/mobile expectations are updated for this owner-requested behavior.
+This session is local-only, EUR 0.20 maximum, at most five Nominatim requests.
+
+Presentation dependencies: pin Babel 2.18.0 (BSD-3-Clause, already installed as a
+transitive dependency) for locale date names, avoiding hand-maintained calendars.
+Add phonenumberslite 9.0.41 (Apache-2.0, 473,205-byte universal wheel) for national
+numbering plans, international display and extensions; omit geocoder/carrier data.
+Handwritten country regexes cannot reliably handle variable-length numbering plans.
+Both are CPU-only and make no network calls while formatting. Upstream sources:
+https://babel.pocoo.org/en/latest/api/dates.html and
+https://pypi.org/project/phonenumberslite/9.0.41/.

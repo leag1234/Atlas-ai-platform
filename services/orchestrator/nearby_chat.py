@@ -17,6 +17,7 @@ from services.orchestrator.interactions import Interaction
 from services.orchestrator.location import LEDGER_LABEL, Location
 from services.orchestrator.loop import Call, Message, Reservation
 from services.orchestrator.nearby import NearbyError, OSM, rank
+from services.orchestrator.nearby_presentation import render as render
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.tools import Runtime, Search
 
@@ -229,120 +230,6 @@ class NearbyTools:
         return await self.search.execute(call, min(timeout, 20))
 
 
-def safe_text(value: Any) -> str:
-    # Provider strings are data, never Markdown/HTML instructions or links.
-    import re
-
-    return re.sub(r"[\[\]<>`*\n\r]", "", str(value))[:400]
-
-
-def render(result: dict[str, Any], language: str) -> str:
-    french = language == "fr"
-    places = result["places"]
-    if not places:
-        check = result.get("web_fallback", {})
-        data = check.get("data", check)
-        rows = data.get("results", []) if isinstance(data, dict) else []
-        lines = [
-            "Aucun lieu OSM trouvé ; résultats web à confirmer, distances et horaires inconnus."
-            if french
-            else "No OSM places found; web results need confirmation, distances and hours are unknown."
-        ]
-        for row in rows[:5]:
-            if not isinstance(row, dict):
-                continue
-            url = str(row.get("link", ""))
-            if url.startswith("https://") and not any(c in url for c in "\n\r()<> "):
-                lines.append(
-                    f"- **{safe_text(row.get('title', ''))}** — {safe_text(row.get('snippet', ''))} [Source]({url})"
-                )
-        if not rows:
-            lines.append(
-                "Indiquez une commune ou essayez un rayon plus large."
-                if french
-                else "Enter a town or try a larger radius."
-            )
-        return (
-            "\n\n".join(lines)
-            + "\n\n© OpenStreetMap contributors (ODbL). Source: "
-            + safe_text(result.get("source", "unknown"))
-        )
-    lines = []
-    if result["open_count"] < 3:
-        lines.append(
-            (
-                f"{result['open_count']} lieu(x) indiqué(s) ouvert(s) dans ce rayon ; les prochaines ouvertures et horaires inconnus suivent."
-                if french
-                else f"{result['open_count']} place(s) listed open in this radius; next openings and unknown hours follow."
-            )
-        )
-    lines.append(
-        "Distances approximatives à vol d’oiseau ; horaires locaux selon OpenStreetMap."
-        if french
-        else "Approximate straight-line distances; local hours according to OpenStreetMap."
-    )
-    for place in places:
-        hours = place["opening"]
-        state = {
-            "open": "Ouvert" if french else "Open",
-            "closed": "Fermé" if french else "Closed",
-            "unknown": "Horaires non renseignés" if french else "Hours not listed",
-        }[hours["status"]]
-        if hours["closing_time"]:
-            state += (", ferme à " if french else ", closes at ") + hours[
-                "closing_time"
-            ]
-        elif hours["status"] == "open":
-            state += (
-                ", fermeture non indiquée" if french else ", no closing time listed"
-            )
-        if hours["closing_soon"]:
-            state += " (ferme bientôt)" if french else " (closing soon)"
-        if hours["next_opening"]:
-            state += (", prochaine ouverture " if french else ", next opens ") + hours[
-                "next_opening"
-            ]
-        address = safe_text(place["address"]) or (
-            "Adresse non renseignée" if french else "Address not listed"
-        )
-        lines.append(
-            f"- **{safe_text(place['name'])}** — ≈ {place['distance_m']} m — {state}. {address}. [OpenStreetMap]({place['source']})"
-        )
-        # Search evidence supplements OSM; do not convert prose into invented
-        # opening times or claim a search snippet confirms a current opening.
-        check = place.get("web_check", {})
-        data = check.get("data", check)
-        results = data.get("results", []) if isinstance(data, dict) else []
-        if isinstance(results, list):
-            for source in results[:1]:
-                if isinstance(source, dict) and str(source.get("link", "")).startswith(
-                    "https://"
-                ):
-                    url = str(source["link"])
-                    if not any(c in url for c in "\n\r()<> "):
-                        lines.append(
-                            f"  {'Vérification web (à confirmer)' if french else 'Web check (not a live opening guarantee)'}: {safe_text(source.get('snippet', ''))} [Source]({url})"
-                        )
-        if place["phone"]:
-            lines.append(
-                ("  Téléphone : " if french else "  Phone: ")
-                + safe_text(place["phone"])
-            )
-    if result["warnings"]:
-        lines.append(
-            "Certains résultats ou horaires restent incertains ; confirmez par téléphone."
-            if french
-            else "Some results or hours remain uncertain; confirm by phone."
-        )
-    lines.append(
-        "\n© OpenStreetMap contributors (ODbL). Source: "
-        + safe_text(result.get("source", "OpenStreetMap"))
-        + ". "
-        + LEDGER_LABEL
-    )
-    return "\n\n".join(lines)
-
-
 async def _process_nearby(
     request: ChatRequest,
     item: Interaction,
@@ -400,7 +287,7 @@ async def _process_nearby(
     # Work uses these same tools through its normal model discovery; ordinary
     # chat does not need an extra model call whose prose would be discarded.
     item.reponse = (
-        render(tools.result, request.lang)
+        render(tools.result, request.lang, item.retrieved_urls)
         if tools.result
         else (
             "Recherche de proximité indisponible : "

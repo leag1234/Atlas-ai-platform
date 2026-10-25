@@ -1,6 +1,7 @@
 """Explicit disposable-stack mobile check; real browser, auth and network."""
 
 import json
+import re
 from pathlib import Path
 import secrets
 
@@ -9,7 +10,7 @@ from playwright.sync_api import Request, expect, sync_playwright
 
 def main() -> None:
     base = "http://127.0.0.1:18331"
-    output = Path("BRAIN/nearby-2-browser")
+    output = Path("BRAIN/nearby-3-browser")
     output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -78,7 +79,30 @@ def main() -> None:
         modal.get_by_role("button", name="Cette fois seulement", exact=True).click()
         expect(modal).to_have_count(0)
         expect(page.locator("body")).to_contain_text("OpenStreetMap", timeout=115000)
+        expect(page.locator("body")).to_contain_text(
+            "Position approximative, utilisée pour cette demande uniquement",
+            timeout=115000,
+        )
+        answer = page.locator(".markdown-prose").last
+        visible = answer.inner_text()
+        page.screenshot(path=str(output / "granted-observed.png"))
+        (output / "granted-answer.txt").write_text(visible)
+        assert not re.search(
+            r"https?://|\d{4}-\d{2}-\d{2}T|Source: nominatim|location used:", visible
+        ), visible
+        assert "à vol d’oiseau" in visible
+        assert "Données © contributeurs OpenStreetMap (ODbL)" in visible
+        assert "OpenStreetMap" in visible
+        assert 3 <= answer.locator("li").count() <= 5
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        assert all(
+            not re.match(r"https?://", text)
+            for text in answer.locator("a").all_text_contents()
+        )
+        answer.locator("p").first.scroll_into_view_if_needed()
         page.screenshot(path=str(output / "granted.png"))
+        answer.locator("p").last.scroll_into_view_if_needed()
+        page.screenshot(path=str(output / "granted-footer.png"))
         assert page.locator('a[href*="openstreetmap.org/"]').count() > 0
         assert (
             page.evaluate(
