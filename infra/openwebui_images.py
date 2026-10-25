@@ -87,7 +87,8 @@ def select_documents(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     try:
         from packages.turn_attachments import select_documents as atlas_select_documents
     except ModuleNotFoundError as exc:
-        if exc.name != "packages":
+        # A stack may mount only part of the package: fall back in both cases.
+        if exc.name not in ("packages", "packages.turn_attachments"):
             raise
         return fallback_documents(messages)
     return atlas_select_documents(messages)
