@@ -1,0 +1,18 @@
+{
+  "method": "utf8_bytes_div_4_ceil_per_component",
+  "estimated": true,
+  "layers": {
+    "system": 0,
+    "project_instructions": 0,
+    "pinned_memory": 0,
+    "tool_declarations": 0,
+    "session_state": 0,
+    "recent_turns": 0,
+    "tool_results": 0,
+    "document_passages": 0
+  },
+  "stable_prefix_tokens": 0,
+  "total_tokens": 0,
+  "model_window": null,
+  "provider_input_tokens": null
+}

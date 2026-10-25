@@ -343,6 +343,10 @@ async def chat(request: Request) -> Response:
             {
                 "error": {"message": detail or code, "type": code, "code": code},
                 "atlas": {
+                    "context": item.context_samples[-1]
+                    if item.context_samples
+                    else None,
+                    "context_samples": item.context_samples,
                     "cost_eur": item.cout_eur,
                     "cost_kind": "reserved_upper_bound",
                     "provider_retries": item.provider_retries,
@@ -372,6 +376,8 @@ async def chat(request: Request) -> Response:
                 "hierarchical": any(
                     d.get("hierarchical_synthesis") for d in item.documents
                 ),
+                "context": item.context_samples[-1] if item.context_samples else None,
+                "context_samples": item.context_samples,
                 "images": item.images,
                 "files": item.files,
                 "terminal_commands": item.terminal_commands,

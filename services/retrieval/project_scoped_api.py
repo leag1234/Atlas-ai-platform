@@ -1003,7 +1003,7 @@ def execution_ingress(
     with store(dsn).scope(identity, identity.org, identity.project) as scope:
         if transcript:
             scope.authorize("POST", ["conversations"])
-            return 160000
+            return 8388608 if operation == "result-put" else 160000
         if operation == "publish":
             scope.authorize("POST", ["work-sessions"])
             folder = scope.project_data["deliverables_folder_id"]
@@ -1023,6 +1023,9 @@ def transcript_dispatch(
         "begin": "TranscriptBegin",
         "finish": "TranscriptFinish",
         "events": "TranscriptEvents",
+        "work-events": "WorkTranscriptEvents",
+        "result-put": "TranscriptResultPut",
+        "result-open": "TranscriptResultOpen",
     }
     if operation not in schemas or identity.project is None:
         raise ProjectError(404, "not_found")
@@ -1033,7 +1036,26 @@ def transcript_dispatch(
         transcript = Transcript(scope)
         if operation == "begin":
             return transcript.begin(data, key)
-        transcript.bound(data)
+        bound_turn, bound_private = transcript.bound(data)
+        if operation == "work-events":
+            session_id = bound_private["request"].get("work_session_id")
+            if not session_id:
+                raise ProjectError(409, "session_busy")
+            Work(scope).fence(
+                dict(
+                    session_id=session_id,
+                    request_id=bound_turn["request_id"],
+                    generation=data["generation"],
+                )
+            )
+        references = None
+        if operation in {"result-put", "result-open"}:
+            from services.retrieval.project_results import ResultReferences
+
+            references = ResultReferences(transcript)
+            references.bound(data)
+            if operation == "result-open":
+                return 200, references.open(data)
         path = f"/internal/atlas/transcript/{operation}/{identity.project}"
         body = canonical(data)
         replay = scope.replay("POST", path, key, body)
@@ -1041,7 +1063,9 @@ def transcript_dispatch(
             return replay
         result = (
             200,
-            transcript.finish(data)
+            references.put(data)
+            if references is not None
+            else transcript.finish(data)
             if operation == "finish"
             else transcript.events(data),
         )

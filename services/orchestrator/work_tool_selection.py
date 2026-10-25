@@ -54,6 +54,7 @@ PATTERNS = {
 class Switch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     group: Group
+    focus: str | None = None
 
 
 def select_group(
@@ -108,31 +109,46 @@ class WorkToolSelection:
             raise ValueError("Unknown Work tool group")
         self.group = group
         self.pending: str | None = None
+        self.focus: str | None = None
+        self.pending_focus: str | None = None
+        self.reopen_enabled = False
         self.catalog = {
             str(t["function"]["name"]): t
             for t in declarations(scoped=True)
             if isinstance(t["function"], dict)
         }
+        from packages.tool_results import declaration
+
+        self.catalog["reopen_result"] = declaration()
         self.catalog["switch_tool_group"] = dict(
             type="function",
             function=dict(
                 name="switch_tool_group",
-                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize). Keeps plan and approval tools. Does not grant permissions.",
+                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
                 parameters=Switch.model_json_schema(),
             ),
         )
 
     @property
     def names(self) -> tuple[str, ...]:
-        return (*CORE, *GROUPS[self.group])
+        group = GROUPS[self.group]
+        if not self.reopen_enabled:
+            return (*CORE, *group)
+        if self.focus in group:
+            group = (self.focus, *(name for name in group if name != self.focus))
+        return (*CORE, "reopen_result", *group[:4])
 
     def declarations(self) -> list[dict[str, object]]:
         # The model asks for declarations at the next dispatch. Already-issued
         # calls in the current batch retain the group they were offered.
         if self.pending is not None:
             self.group, self.pending = self.pending, None
+            self.focus, self.pending_focus = self.pending_focus, None
         return [self.catalog[name] for name in self.names]
 
     def switch(self, arguments: str) -> dict[str, Any]:
-        self.pending = Switch.model_validate_json(arguments).group
+        selected = Switch.model_validate_json(arguments)
+        if selected.focus is not None and selected.focus not in GROUPS[selected.group]:
+            raise ValueError("Unknown focus for tool group")
+        self.pending, self.pending_focus = selected.group, selected.focus
         return dict(group=self.pending, tools=list((*CORE, *GROUPS[self.pending])))

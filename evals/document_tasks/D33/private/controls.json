@@ -1,0 +1,12 @@
+{
+  "corruptions": [
+    "hidden_budget_overrun",
+    "lost_plan",
+    "missing_artifact",
+    "missing_dispatch",
+    "missing_turn",
+    "wrong_artifact"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

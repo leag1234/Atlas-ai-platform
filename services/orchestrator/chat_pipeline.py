@@ -613,7 +613,15 @@ async def dispatch_project(request: ChatRequest, item: Interaction) -> bool:
 async def process(request: ChatRequest, item: Interaction) -> None:
     from services.orchestrator.image_truth import verified_images
 
-    await _process_request(request, item)
+    from packages import context_usage
+
+    capture = context_usage.samples.set(item.context_samples)
+    components = context_usage.parts.set({})
+    try:
+        await _process_request(request, item)
+    finally:
+        context_usage.parts.reset(components)
+        context_usage.samples.reset(capture)
     item.reponse = verified_images(
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
@@ -1286,6 +1294,13 @@ async def _process(
                     {"untrusted_attachments": attachment_sources}, ensure_ascii=False
                 ),
             }
+        )
+    if attachment_sources:
+        from packages.context_usage import register
+
+        register(
+            str(attachment_history[-1]["content"]),
+            {"document_passages": attachment_sources},
         )
     try:
         if attachment_sources and model.sink:
