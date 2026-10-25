@@ -27,6 +27,15 @@ def context_window(profile: str, *, vision: bool = False) -> int:
 
     path = Path(__file__).resolve().parents[1] / "services/model-gateway/routing.yaml"
     routing = yaml.safe_load(path.read_text())
+    if provider := os.environ.get("ATLAS_PROVIDER"):
+        preset = yaml.safe_load(path.with_name("providers.yaml").read_text())[provider]
+        declared = preset["context"]
+        if isinstance(declared, dict):
+            declared = declared["vision" if vision else "text"]
+        window = int(os.environ.get("ATLAS_MODEL_CONTEXT") or declared)
+        if window <= 0:
+            raise ValueError("invalid_context_window")
+        return window
     role = "vision" if vision else routing["public_profiles"][profile]
     entry = routing["serverless"][role]
     model = os.environ.get(entry["env"], entry["model"])

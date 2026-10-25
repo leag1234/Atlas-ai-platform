@@ -208,6 +208,7 @@ async def attempt(
             if request.tools and not answer_only
             else {}
         ),
+        **provider_settings.json_options(request.response_format),
         "max_tokens": request.max_tokens,
         "temperature": 0,
         "reasoning_effort": "none",

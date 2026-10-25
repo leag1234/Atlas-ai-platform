@@ -1,0 +1,12 @@
+{
+  "session_state": {
+    "decisions": [],
+    "established_facts": [],
+    "open_questions": [],
+    "files_read": [],
+    "files_produced": [],
+    "current_plan": []
+  },
+  "represented_turn_ids": [],
+  "unknown": true
+}
