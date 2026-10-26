@@ -1,5 +1,10 @@
 # ATLAS
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/svg/atlas-logotype-dark.svg">
+  <img src="assets/brand/svg/atlas-logotype.svg" alt="Atlas" width="314">
+</picture>
+
 I started Atlas because I want to keep control over our data, something Claude
 and ChatGPT do not allow in the way I need. My aim is an agentic AI assistant
 platform close to their performance while enabling digital sovereignty.

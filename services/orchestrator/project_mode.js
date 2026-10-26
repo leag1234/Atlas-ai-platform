@@ -587,7 +587,10 @@
       if (!document.querySelector('#chat-input')) { showFailure(new Error(t('shellFailure'))); return; }
     }
     root = node('section', null, 'atlas-project'); root.id = 'atlas-project'; root.setAttribute('aria-label', t('projects'));
-    const header = node('header'), title = node('strong', 'Atlas · ' + t('projects'));
+    const header = node('header'), title = node('strong', '', 'atlas-project-title'), logo = document.createElement('img');
+    logo.className = 'atlas-project-logo'; logo.alt = 'Atlas'; logo.width = 126; logo.height = 40;
+    logo.src = document.documentElement.classList.contains('dark') ? '/static/atlas/brand/svg/atlas-logotype-dark.svg' : '/static/atlas/brand/svg/atlas-logotype.svg';
+    title.append(logo, document.createTextNode(' · ' + t('projects')));
     left = node('nav', null, 'atlas-project-left'); left.setAttribute('aria-label', t('projects'));
     center = node('main', null, 'atlas-project-center'); right = node('aside', null, 'atlas-project-right'); right.setAttribute('aria-label', t('context'));
     notice = node('div', '', 'atlas-project-notice'); notice.setAttribute('role', 'status');
