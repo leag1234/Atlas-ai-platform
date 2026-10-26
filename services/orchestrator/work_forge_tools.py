@@ -98,6 +98,10 @@ def exported_snapshot(raw: bytes, folder: str, limit: int) -> bytes:
 async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
     args = ForgeRequest.model_validate_json(arguments)
     action = args.action()
+    if args.kind == "publish_change":
+        refusal = tools.verification.refusal()
+        if refusal is not None:
+            return dict(refusal)
     execution = tools.execution
     repository_id = execution.session.get("repository_id")
     if not repository_id:

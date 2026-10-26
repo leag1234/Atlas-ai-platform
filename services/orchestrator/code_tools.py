@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from services.orchestrator.code_verification import Verification
 from services.orchestrator.code_workspace import Audit, Workspace, redact
 from services.orchestrator.loop import Call, Message, Reservation
 from services.orchestrator.stream_client import Sink
@@ -217,6 +218,7 @@ class CodeTools:
 
     async def execute(self, call: Call, timeout: float) -> Message:
         started = time.monotonic()
+        args: dict[str, Any] = {}
         await self.emit(
             "tool",
             tool=call.name,
@@ -279,6 +281,8 @@ class CodeTools:
             }
         except (ValueError, OSError, RuntimeError) as exc:
             result = {"error": redact(str(exc))}
+        if isinstance(self, WorkTools) and args:
+            self.verification.observe(call.name, redact(args), result)
         await self.emit(
             "tool",
             tool=call.name,
@@ -371,6 +375,7 @@ class WorkTools(CodeTools):
         # Scoped Work never writes the legacy unscoped audit files.
         self.workspace, self.execution, self.sink = workspace, execution, sink
         self.test_evidence = []
+        self.verification = Verification()
         self.deliverables: list[dict[str, Any]] = []
         self.selection: WorkToolSelection | None = None
         self.validation_failures: dict[str, str] = {}
@@ -380,6 +385,8 @@ class WorkTools(CodeTools):
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
+        if kind == "tool" and data.get("tool") == "run_command" and "arguments" in data:
+            output = dict(output, arguments=redact(data["arguments"]))
         if kind == "tool" and data.get("status") in {"completed", "failed"}:
             tool = str(data.get("tool", ""))
             if data["status"] == "failed":
@@ -387,7 +394,14 @@ class WorkTools(CodeTools):
             else:
                 self.validation_failures.pop(tool, None)
         mapped: dict[str, Any] = {}
-        for name in ("items", "approval", "file_version_ids", "steps", "cost_eur"):
+        for name in (
+            "items",
+            "approval",
+            "file_version_ids",
+            "steps",
+            "cost_eur",
+            "verification",
+        ):
             if name in output:
                 mapped[name] = output[name]
         for name in ("diff", "text", "detail"):

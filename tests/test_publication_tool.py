@@ -5,6 +5,7 @@ import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+from services.orchestrator.code_verification import Verification
 from services.orchestrator.work_forge_tools import ForgeRequest, execute
 from services.orchestrator.work_tool_selection import WorkToolSelection
 from test_work_forge_tools import archive
@@ -41,6 +42,12 @@ class PublicationToolTests(unittest.IsolatedAsyncioTestCase):
             "Tests verified",
         )
         tools = MagicMock()
+        tools.verification = Verification()
+        tools.verification.observe(
+            "run_command",
+            {"command": "pytest"},
+            {"exit_code": 0, "workspace_changed": False},
+        )
         tools.workspace.metadata.return_value = {"baseline": "a" * 40}
         tools.workspace.invoke = AsyncMock(
             return_value={"archive": base64.b64encode(archive()).decode()}

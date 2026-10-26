@@ -10393,10 +10393,30 @@ components:
       - ga_target_met
       - owner_gap_review
       - ci_run
+    VerificationStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, not_run]
+        command:
+          anyOf:
+          - type: string
+          - type: 'null'
+        exit_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        reason:
+          type: string
+      required: [status, command, exit_code, reason]
     ProgressOutput:
       type: object
       additionalProperties: false
       properties:
+        verification:
+          $ref: '#/components/schemas/VerificationStatus'
         items:
           type: array
           items:

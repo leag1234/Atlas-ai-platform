@@ -1147,3 +1147,27 @@ unknown overrides remain visibly unpriced, never silently classified as free.
 Compose forwards this optional setting only to the gateway. Measurement verifies
 both role and selected provider model before dispatch, without changing prompts,
 sampling, output limits or per-task budgets.
+
+### Work code verification (owner ruling 2026-10-26; REQ-ENG-004)
+
+Work records every recognized test command and explicit test command from the
+user task, including nonzero exits and timeouts. VerificationStatus is an
+additive ProgressOutput.verification field on terminal recaps and honesty events:
+`passed`, `failed`, or `not_run`, plus command, exit_code and factual reason.
+It reflects workspace command evidence, not correctness against unseen tests.
+A later file edit (including a shell edit) invalidates passing evidence.
+A command that changes source while testing cannot establish verification.
+A shell command that can skip or mask the test result, or only requests test
+help/version/collection, cannot establish passing evidence either.
+`publish_change` returns tests_not_verified before approval or publication unless
+the latest test succeeded with no later edit. Final claiming prose is preserved;
+when unsupported, an additional factual verification line is appended.
+The UI displays the status beside both the recap and replayed answer.
+
+Recognition includes Python module runners, test scripts, make test targets and
+inline Python (`-c` or a terminal heredoc) with unconditional assertions. Printed
+success text, uncalled/conditional assertions, disabled assertions and explicit
+early exits or exception suppression cannot establish an inline passing check.
+Unsupported command forms abstain; command evidence is not an independent oracle.
+Work running-command progress retains redacted arguments in tool_result so the
+command and its worker result can be audited in the same session/request.

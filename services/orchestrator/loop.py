@@ -1,5 +1,7 @@
 """POC-P6: reserve worst-case usage before starting cancellable I/O."""
 
+from services.orchestrator.code_verification import VerificationStatus
+
 from packages.profiles import PROFILES
 from packages.limits import LimitError
 
@@ -129,6 +131,7 @@ class Result:
 
 @dataclass
 class CodeResult(Result):
+    verification: VerificationStatus = field(default_factory=VerificationStatus)
     model_calls: int = 0
     limit_stop: dict[str, object] = field(default_factory=dict)
 
