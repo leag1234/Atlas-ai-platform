@@ -66,6 +66,7 @@ class WebUIBrandingTests(unittest.TestCase):
         hidden = managed_model("atlas-glm")
         self.assertEqual(public["id"], "atlas-qwen")
         self.assertEqual(public["name"], "Atlas")
+        self.assertEqual(public["meta"]["description"], "")
         self.assertEqual(public["access_grants"][0]["principal_id"], "*")
         self.assertEqual(hidden["id"], "atlas-glm")
         self.assertEqual(hidden["access_grants"], [])

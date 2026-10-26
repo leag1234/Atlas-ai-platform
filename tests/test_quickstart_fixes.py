@@ -202,6 +202,7 @@ class InletStartupTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(models.insert_new_model.await_count, 6)
         public = models.insert_new_model.call_args_list[0].args[0]
         self.assertEqual(public["name"], "Atlas")
+        self.assertEqual(public["meta"]["description"], "")
         self.assertEqual(public["access_grants"][0]["principal_id"], "*")
 
     async def test_failed_install_prevents_readiness(self) -> None:

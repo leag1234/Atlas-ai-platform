@@ -42,7 +42,7 @@ async def main() -> None:
         form = ModelForm(
             id=profile,
             name="Atlas" if public else profile,
-            meta=ModelMeta(description="ATLAS managed profile"),
+            meta=ModelMeta(description=""),
             params=ModelParams(),
             access_grants=(
                 [
