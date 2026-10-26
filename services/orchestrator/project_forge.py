@@ -294,6 +294,19 @@ class GitHubForge:
         for key in ("message", "body", "title"):
             if "Atlas-Operation:" in params.get(key, ""):
                 raise ForgeError("reserved_marker")
+        if kind == "publish_change":
+            branch_name(params["branch"])
+            branch_name(params["target"])
+            refs = self.refs()
+            if (
+                params["branch"] in refs
+                or refs.get(params["target"]) != action["base_commit"]
+            ):
+                raise ForgeError("base_mismatch")
+            return dict(
+                connector_digest=self.connector_digest(),
+                target_commit=action["base_commit"],
+            )
         names = (
             [params["name"]]
             if kind == "branch"
@@ -422,19 +435,27 @@ class GitHubForge:
                         return "unknown"
                     for row in rows:
                         if marker in (row.get("body") or ""):
-                            return (
-                                "succeeded"
-                                if (
-                                    row["title"] == params["title"]
-                                    and row["body"] == params["body"] + "\n\n" + marker
-                                    and row["head"]["ref"] == params["head"]
-                                    and row["base"]["ref"] == params["target"]
-                                    and row["head"]["sha"]
-                                    == operation["binding"]["head_commit"]
-                                    and row["base"]["sha"] == action["base_commit"]
-                                )
-                                else "conflict"
+                            matches = (
+                                row["title"] == params["title"]
+                                and row["body"] == params["body"] + "\n\n" + marker
+                                and row["head"]["ref"] == params["head"]
+                                and row["base"]["ref"] == params["target"]
+                                and row["head"]["sha"]
+                                == operation["binding"]["head_commit"]
+                                and row["base"]["sha"] == action["base_commit"]
                             )
+                            if matches and isinstance(row.get("html_url"), str):
+                                url = urlsplit(row["html_url"])
+                                configured = urlsplit(self.config.remote_ref)
+                                if (
+                                    url.scheme == "https"
+                                    and (url.hostname, url.port)
+                                    == (configured.hostname, configured.port)
+                                    and not url.username
+                                    and not url.password
+                                ):
+                                    operation["pr_url"] = row["html_url"]
+                            return "succeeded" if matches else "conflict"
                     if len(rows) < self.page_size:
                         return "absent"
                 return "unknown"

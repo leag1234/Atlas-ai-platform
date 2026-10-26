@@ -27,7 +27,7 @@ def execute_forge(scope: Scope, data: dict[str, Any]) -> dict[str, Any]:
             action = dict(data["action"])
             if "approval_id" in action:
                 raise ProjectError(422, "invalid_request")
-            if action["kind"] == "commit":
+            if action["kind"] in {"commit", "publish_change"}:
                 repository = broker.repository(repository_id)
                 selected = {
                     (v["file_id"], v["version_id"])
@@ -85,6 +85,9 @@ def execute_forge(scope: Scope, data: dict[str, Any]) -> dict[str, Any]:
             state=operation["state"],
             approval=approval,
             commit=operation["commit"],
+            pr_url=operation.get("pr_url"),
+            failed_step=operation.get("failed_step"),
+            completed_steps=operation.get("completed_steps", []),
         )
     except ForgeUnknown:
         raise ProjectError(503, "dependency_unavailable") from None

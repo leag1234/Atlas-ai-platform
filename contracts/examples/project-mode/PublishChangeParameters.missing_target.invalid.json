@@ -1,0 +1,6 @@
+{
+  "branch": "review/repair",
+  "message": "Repair total",
+  "title": "Fix discount",
+  "body": "Verified with unit tests"
+}

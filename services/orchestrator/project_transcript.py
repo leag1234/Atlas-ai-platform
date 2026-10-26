@@ -175,13 +175,16 @@ async def legacy_selection(
 
 
 class ContextTools:
-    def __init__(self, context: dict[str, Any]) -> None:
+    def __init__(self, context: dict[str, Any], memory: Any = None) -> None:
         self.context = context
+        self.memory = memory
 
     def estimate(self, call: Call) -> Reservation:
         return Reservation(0, Decimal(0))
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        if call.name == "project_memory" and self.memory is not None:
+            return dict(await self.memory.execute(call))
         if call.name != "rag_search":
             return {"error": "tool_unavailable"}
         return dict(trust="untrusted", data=dict(passages=self.context["passages"]))
@@ -442,13 +445,17 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             from services.orchestrator.result_references import ResultReferences
 
             model.tools.append(declaration())
+            from packages.project_memory_tool import declaration as memory_declaration
+            from services.orchestrator.project_memory_tools import MemoryTools
+
+            model.tools.append(memory_declaration())
             references = ResultReferences(
                 broker, turn["conversation_id"], turn["request_id"]
             )
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
-                ContextTools(context),
+                ContextTools(context, MemoryTools(broker, state)),
                 Path("prompts/chat.txt").read_text()
                 + language_instruction(scoped.lang),
                 Limits(

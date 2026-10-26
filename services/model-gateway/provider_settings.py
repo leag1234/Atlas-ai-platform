@@ -152,7 +152,7 @@ def configure(
     if os.environ["ATLAS_PROVIDER"] == "scaleway" and not os.environ.get(
         "ATLAS_TEXT_MODEL"
     ):
-        return config, prices
+        return code_model_override(config, prices, preset)
     roles: dict[str, Any] = {}
     rates: dict[str, Any] = {}
     for role in config:
@@ -255,4 +255,37 @@ def configure(
         for role in ("text", "code", "fast"):
             if role in roles:
                 roles[role]["fallback"] = "text_fallback"
+    return code_model_override(roles, rates, preset)
+
+
+def code_model_override(
+    roles: dict[str, Any], rates: dict[str, Any], preset: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    model = os.environ.get("ATLAS_CODE_MODEL")
+    if not model:
+        return roles, rates
+    roles, rates = dict(roles), dict(rates)
+    entry = roles["code"]
+    metadata = preset.get("code_models", {}).get(model, {})
+    capabilities = dict(entry["capabilities"][entry["model"]])
+    if model != entry["model"]:
+        capabilities["vision"] = False
+    if metadata:
+        capabilities["context"] = int(
+            os.environ.get("ATLAS_MODEL_CONTEXT") or metadata["context"]
+        )
+    if model not in rates:
+        price = metadata.get("price")
+        if price is not None and price.get("currency") != "EUR":
+            raise ValueError("code_model_price_requires_eur")
+        if price is None:
+            warn_unpriced(os.environ["ATLAS_PROVIDER"], model)
+        rates[model] = dict(
+            input_eur_per_mtok=str(price["input"]) if price else "0",
+            output_eur_per_mtok=str(price["output"]) if price else "0",
+            unpriced=price is None,
+        )
+    roles["code"] = dict(
+        entry, env="ATLAS_CODE_MODEL", model=model, capabilities={model: capabilities}
+    )
     return roles, rates

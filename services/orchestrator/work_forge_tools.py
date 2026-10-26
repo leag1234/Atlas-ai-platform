@@ -20,7 +20,7 @@ from services.retrieval.project_identity import ProjectError
 
 class ForgeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    kind: Literal["branch", "commit", "pull_request"]
+    kind: Literal["branch", "commit", "pull_request", "publish_change"]
     base_commit: str = Field(pattern=r"^[a-f0-9]{40}$")
     branch: str | None = None
     message: str | None = None
@@ -34,6 +34,7 @@ class ForgeRequest(BaseModel):
             "branch": {"branch"},
             "commit": {"branch", "message"},
             "pull_request": {"head", "target", "title", "body"},
+            "publish_change": {"branch", "target", "message", "title", "body"},
         }[self.kind]
         if self.model_fields_set != fields | {"kind", "base_commit"} or any(
             getattr(self, f) is None for f in fields
@@ -55,7 +56,7 @@ def declaration() -> dict[str, object]:
         type="function",
         function=dict(
             name="forge_action",
-            description="Publish to the selected project repository with inline approval. kind=branch: base_commit, branch. kind=commit: base_commit, branch, message; freezes the entire repository scratch snapshot before approval. kind=pull_request: base_commit (target SHA), head, target, title, body. Omit irrelevant fields. Broker performs no remote write until approval; report only the returned state. The repository and base SHA are in code_workspace.",
+            description="Publish a verified change with one inline approval using kind=publish_change: base_commit, branch (new branch), target, message, title, body. Freezes the entire repository scratch snapshot and publishes branch, commit and pull request together. Separate actions are also available. kind=branch: base_commit, branch. kind=commit: base_commit, branch, message; freezes the entire repository scratch snapshot before approval. kind=pull_request: base_commit (target SHA), head, target, title, body. Omit irrelevant fields. Broker performs no remote write until approval; report only the returned state. The repository and base SHA are in code_workspace.",
             parameters=ForgeRequest.model_json_schema(),
         ),
     )
@@ -110,7 +111,7 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
     if repo is None:
         raise ProjectError(404, "not_found")
     data = dict(execution.fence(), operation="issue", action=action)
-    if args.kind == "commit":
+    if args.kind in {"commit", "publish_change"}:
         export = await tools.workspace.invoke(
             "export",
             dict(baseline=tools.workspace.metadata()["baseline"]),
@@ -149,9 +150,15 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
             break
         await asyncio.sleep(0.25)
     else:
-        return dict(error="approval_expired", state="not_sent")
+        return dict(
+            error="approval_expired",
+            state="not_sent",
+            approval=dict(approval, decision="expired"),
+        )
     if decision != "allowed":
-        return dict(error="approval_" + decision, state="not_sent")
+        return dict(
+            error="approval_" + decision, state="not_sent", approval=current["approval"]
+        )
     await execution.broker.call("forge", dict(operation, operation="execute"))
     while time.monotonic() < deadline:
         current = await execution.broker.call(
@@ -162,6 +169,10 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
                 operation_id=current["operation_id"],
                 state=current["state"],
                 commit=current["commit"],
+                approval=current["approval"],
+                pr_url=current.get("pr_url"),
+                failed_step=current.get("failed_step"),
+                completed_steps=current.get("completed_steps", []),
                 **(
                     {"error": "forge_" + current["state"]}
                     if current["state"] != "succeeded"
@@ -173,4 +184,7 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
         operation_id=pending["operation_id"],
         state="unknown",
         error="forge_outcome_unknown",
+        approval=current["approval"],
+        failed_step=current.get("failed_step"),
+        completed_steps=current.get("completed_steps", []),
     )

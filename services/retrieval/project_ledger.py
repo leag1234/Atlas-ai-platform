@@ -47,6 +47,7 @@ KINDS = frozenset(
         "file_purged",
         "extraction_completed",
         "context_selected",
+        "memory_changed",
         "location_used",
         *MODEL_KINDS,
         "approval_requested",
@@ -198,6 +199,7 @@ def append(
     model_dispatch: Mapping[str, Any] | None = None,
     context_clearing: Mapping[str, Any] | None = None,
     context_compaction: Mapping[str, Any] | None = None,
+    memory_change: Mapping[str, Any] | None = None,
     audit_record: Mapping[str, Any] | None = None,
     event_id: str | None = None,
     timestamp: str | None = None,
@@ -292,6 +294,15 @@ def append(
         if kind != "context_selected":
             raise ProjectError(422, "invalid_request")
         event["context_clearing"] = dict(context_clearing)
+    if memory_change is not None:
+        if kind != "memory_changed" or set(memory_change) != {
+            "id",
+            "revision",
+            "status",
+            "supersedes",
+        }:
+            raise ProjectError(422, "invalid_request")
+        event["memory_change"] = dict(memory_change)
     if context_compaction is not None:
         from services.retrieval.project_work_contract import validate
 

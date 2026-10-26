@@ -40,10 +40,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "publish_document",
     ),
     "code": (
-        "read_file",
         "edit_file",
         "run_command",
         "forge_action",
+        "read_file",
         "write_file",
         "search",
     ),
@@ -119,6 +119,7 @@ class WorkToolSelection:
         self.focus: str | None = None
         self.pending_focus: str | None = None
         self.reopen_enabled = False
+        self.memory_enabled = False
         self.catalog = {
             str(t["function"]["name"]): t
             for t in declarations(scoped=True)
@@ -127,6 +128,9 @@ class WorkToolSelection:
         from packages.tool_results import declaration
 
         self.catalog["reopen_result"] = declaration()
+        from packages.project_memory_tool import declaration as memory_declaration
+
+        self.catalog["project_memory"] = memory_declaration()
         self.catalog["switch_tool_group"] = dict(
             type="function",
             function=dict(
@@ -141,9 +145,12 @@ class WorkToolSelection:
         group = GROUPS[self.group]
         if self.focus in group:
             group = (self.focus, *(name for name in group if name != self.focus))
-        if not self.reopen_enabled:
-            return (*CORE, *group[:5])
-        return (*CORE, "reopen_result", *group[:4])
+        extra: tuple[str, ...] = ()
+        if self.reopen_enabled:
+            extra += ("reopen_result",)
+        if self.memory_enabled:
+            extra += ("project_memory",)
+        return (*CORE, *extra, *group[: 5 - len(extra)])
 
     def declarations(self) -> list[dict[str, object]]:
         # The model asks for declarations at the next dispatch. Already-issued

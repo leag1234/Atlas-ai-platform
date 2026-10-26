@@ -1080,3 +1080,70 @@ operator ca_file. Git publication retains compare-and-swap refs and reconciliati
 REST uses token authentication and limit pagination. No network enters the worker.
 Work honors the selected public profile and validated ChatRequest output allowance;
 the measurement adapter calls the same product configuration function.
+
+## Amendment 2026-10-25 (typed memory), approved by the supervisor
+
+REQ-PROJ-02/04/06/08/09: memory kinds are constraint, decision, fact, preference,
+open_question and summary. Legacy user/derived/legacy entries read as fact;
+existing provenance is preserved. Each entry exposes source and observed_at,
+pinned, supersedes and superseded_by. Missing fields migrate on read and persist
+on the next write. Facts default to their originating user/source and creation date.
+
+Active constraints are always pinned. Users can pin decisions and facts. The
+project pinned_memory_tokens limit defaults to 1500 and cannot exceed the
+organization quota of the same name (installation ceiling also intersects).
+The UTF-8/4 rounded-up estimate counts the complete serialized pinned component.
+An overflowing mutation is atomic and returns 429 with measured tokens, limit,
+and IDs/text of entries to unpin (constraints must be edited or retired).
+Lowering a cap below current use is rejected. Pinned entries are rendered verbatim
+in the stable prefix on every turn, outside state summarization and compaction.
+
+Other active entries share the scoped document index and hybrid ranking, retaining
+entry ID, revision, source date, turn and file-version provenance. Small tiers
+(up to 20 entries) include a one-line-per-entry index in the document context.
+Proposed, rejected and superseded entries never enter answer context. Source
+revocation applies before listing, indexing, retrieval and model use.
+
+MemoryCreate adds optional kind, pinned and status (proposed/active; default
+proposed). Public authenticated editor/owner activation is explicit confirmation.
+MemoryPatch adds kind, pinned and rejected status. Editing active content creates
+a new revision/ID with supersedes pointing to the previous entry; activation
+atomically marks that predecessor superseded. Proposed corrections leave the old
+entry active until acceptance. History remains inspectable. Every mutation emits
+metadata-only memory_changed ledger/audit events with IDs, revisions and status.
+No memory content becomes system policy or overrides project/organization policy.
+
+The private transcript memory route uses existing scoped broker authentication,
+origin denial, turn/source checks, idempotency and Work fencing. It accepts read,
+search, propose and correct; model writes are always proposed. Constraints and
+all document-derived content require user confirmation. Document provenance is
+server-inherited from the turn and prior entry and cannot be cleared by the model.
+Explicit remember commands (EN/FR/DE/ES/IT) in the actual user question create
+active facts when no document is selected; document-derived requests stay proposed.
+The model cannot invoke this explicit-command authority. Right-panel controls
+provide grouping by kind/tier, pinning, edits, accept/reject and revision history.
+
+## Single-approval repository publication (2026-10-25)
+
+REQ-PROJ-05/06: publish_change freezes the complete scratch snapshot and proposes
+branch, target, commit message, PR title/body and a broker-derived diff summary.
+One inline approval binds these exact fields, immutable snapshot, base SHA,
+connector, scope, member, lease and policy. Separate actions remain available.
+The broker durably checkpoints branch, commit and pull_request, reauthorizes
+before each effect and checks the target base. Recovery reads remote state before
+resending only a proven-absent step, using the original operation identity.
+Public approval replay remains forbidden. Partial failures retain completed steps,
+failing step and unknown state when the remote result cannot be established.
+The Work result includes the verified PR URL on success or failing step otherwise.
+Approval decision updates are emitted to the inline card.
+
+## Code model selection for the bounded trial (2026-10-26)
+
+REQ-PROJ-05: with a configured provider preset, ATLAS_CODE_MODEL optionally selects
+only the code role. Without it, existing role/model selection is unchanged.
+Text, vision, fast and other roles retain their existing models and options.
+Known code models carry explicit gateway-owned context and pricing metadata;
+unknown overrides remain visibly unpriced, never silently classified as free.
+Compose forwards this optional setting only to the gateway. Measurement verifies
+both role and selected provider model before dispatch, without changing prompts,
+sampling, output limits or per-task budgets.

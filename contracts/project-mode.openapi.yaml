@@ -4514,6 +4514,65 @@ paths:
       description: Amendment 2026-10-25 (session state), approved by the supervisor.
         Private, scoped, source-authorized, idempotent transcript operation; ingress
         cap 160000 bytes.
+  /internal/atlas/transcript/memory:
+    post:
+      operationId: project_memory
+      summary: Turn-bound typed memory read, search, propose and correct
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptMemory'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MemoryEntry'
+                  memory_revision:
+                    type: integer
+                    minimum: 0
+                required:
+                - entries
+                - memory_revision
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (typed memory), approved by the supervisor. Model writes remain
+        proposed; current turn and Work fence required.
 components:
   securitySchemes:
     ExecutionBroker:
@@ -4598,6 +4657,70 @@ components:
         format: uuid
       description: Single-use broker approval bound to exact deletion/version scope.
   schemas:
+    TranscriptMemory:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        generation:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        arguments:
+          additionalProperties: false
+          properties:
+            operation:
+              enum:
+              - read
+              - search
+              - propose
+              - correct
+              type: string
+            id:
+              anyOf:
+              - format: uuid
+                type: string
+              - type: 'null'
+              default: null
+            query:
+              anyOf:
+              - maxLength: 2000
+                minLength: 1
+                type: string
+              - type: 'null'
+              default: null
+            text:
+              anyOf:
+              - maxLength: 500
+                minLength: 1
+                type: string
+                pattern: \S
+              - type: 'null'
+              default: null
+            kind:
+              default: fact
+              enum:
+              - constraint
+              - decision
+              - fact
+              - preference
+              - open_question
+              - summary
+              type: string
+          required:
+          - operation
+          type: object
+      required:
+      - conversation_id
+      - request_id
+      - generation
+      - arguments
     TranscriptBegin:
       type: object
       additionalProperties: false
@@ -5346,6 +5469,10 @@ components:
           minimum: 0
         per_turn:
           $ref: '#/components/schemas/WorkLimits'
+        pinned_memory_tokens:
+          type: integer
+          minimum: 1
+          default: 1500
       required:
       - active_members
       - active_projects
@@ -5359,7 +5486,8 @@ components:
       - daily_model_eur
       - monthly_model_eur
       - per_turn
-      description: Installation must supply numeric quotas; organization settings can only lower system ceilings.
+      description: Installation must supply numeric quotas; organization settings can only lower
+        system ceilings.
     Capabilities:
       type: object
       additionalProperties: false
@@ -5699,6 +5827,10 @@ components:
         policy_revision:
           type: integer
           minimum: 0
+        pinned_memory_tokens:
+          type: integer
+          minimum: 1
+          default: 1500
       required:
       - id
       - created_at
@@ -6340,6 +6472,11 @@ components:
           - derived
           - legacy
           - constraint
+          - decision
+          - fact
+          - preference
+          - open_question
+          - summary
         source_conversation_id:
           anyOf:
           - type: string
@@ -6361,6 +6498,8 @@ components:
           - proposed
           - active
           - deleted
+          - rejected
+          - superseded
         confirmed_by:
           anyOf:
           - type: string
@@ -6369,6 +6508,20 @@ components:
         memory_revision:
           type: integer
           minimum: 0
+        pinned:
+          type: boolean
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+          pattern: Z$
+        supersedes: &memory_uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        superseded_by: *memory_uuid
       required:
       - id
       - created_at
@@ -7109,6 +7262,7 @@ components:
           - retention_applied
           - administrative_access
           - repository_action
+          - memory_changed
         resource_refs:
           type: array
           items:
@@ -7151,6 +7305,28 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AuditRecord'
           - type: 'null'
+        memory_change:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              format: uuid
+            revision:
+              type: integer
+              minimum: 0
+            status:
+              type: string
+            supersedes:
+              anyOf:
+              - type: string
+                format: uuid
+              - type: 'null'
+          required:
+          - id
+          - revision
+          - status
+          - supersedes
       required:
       - org_id
       - project_id
@@ -7329,7 +7505,10 @@ components:
           - branch
           - commit
           - pull_request
+          - publish_change
           - local_read
+        publication:
+          $ref: '#/components/schemas/PublicationSummary'
         action_digest:
           type: string
           pattern: ^[a-f0-9]{64}$
@@ -8965,6 +9144,10 @@ components:
           enum:
           - active
           - archived
+        pinned_memory_tokens:
+          type: integer
+          minimum: 1
+          default: 1500
       required: []
       minProperties: 1
     GrantPut:
@@ -9143,6 +9326,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SourceRef'
+        kind:
+          type: string
+          enum:
+          - constraint
+          - decision
+          - fact
+          - preference
+          - open_question
+          - summary
+        pinned:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - proposed
+          - active
       required:
       - text
       - source_refs
@@ -9161,9 +9360,21 @@ components:
           - proposed
           - active
           - deleted
+          - rejected
         approval_id:
           type: string
           format: uuid
+        kind:
+          type: string
+          enum:
+          - constraint
+          - decision
+          - fact
+          - preference
+          - open_question
+          - summary
+        pinned:
+          type: boolean
       required: []
       minProperties: 1
       anyOf:
@@ -9171,6 +9382,10 @@ components:
         - text
       - required:
         - status
+      - required:
+        - kind
+      - required:
+        - pinned
       if:
         properties:
           status:
@@ -9378,6 +9593,14 @@ components:
             $ref: '#/components/schemas/Turn'
         context_manifest:
           $ref: '#/components/schemas/ContextManifest'
+        retrieved_memory:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryEntry'
+        memory_index:
+          type: array
+          items:
+            type: string
       required:
       - instructions_version
       - instructions_text
@@ -9638,11 +9861,121 @@ components:
       - base_commit
       - change_digest
       - parameters
+    PublishChangeAction:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          const: publish_change
+        base_commit:
+          type: string
+          pattern: ^[a-f0-9]{40,64}$
+        change_digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        parameters:
+          $ref: '#/components/schemas/PublishChangeParameters'
+        snapshot:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              format: uuid
+            sha256:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+          required:
+          - id
+          - sha256
+        approval_id:
+          type: string
+          format: uuid
+      required:
+      - kind
+      - base_commit
+      - change_digest
+      - parameters
+      - snapshot
+    PublishChangeParameters:
+      type: object
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        target:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        message:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        title:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        body:
+          type: string
+          maxLength: 32000
+      required:
+      - branch
+      - target
+      - message
+      - title
+      - body
+    PublicationSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        target:
+          type: string
+        message:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        base_commit:
+          type: string
+        change_digest:
+          type: string
+        diff:
+          type: array
+          maxItems: 20000
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              path:
+                type: string
+              status:
+                enum:
+                - added
+                - modified
+                - deleted
+            required:
+            - path
+            - status
+      required:
+      - branch
+      - target
+      - message
+      - title
+      - body
+      - base_commit
+      - change_digest
+      - diff
     RepositoryAction:
       oneOf:
       - $ref: '#/components/schemas/BranchAction'
       - $ref: '#/components/schemas/CommitAction'
       - $ref: '#/components/schemas/PullRequestAction'
+      - $ref: '#/components/schemas/PublishChangeAction'
     Operation:
       type: object
       additionalProperties: false

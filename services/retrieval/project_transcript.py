@@ -170,7 +170,11 @@ class Transcript:
         )
         count = len(passages)
         all_characters = sum(len(p["text"]) for p in passages)
-        passages = passages[:8]
+        from services.retrieval.project_memory_search import search
+        from packages.project_memory import pinned
+
+        passages, retrieved_memory = search(self.files, query, passages, base["memory"])
+        retrievable = [v for v in base["memory"] if not pinned(v)]
         warnings: list[str] = []
         documents = ScopedProjectDocuments(self.files)
         versions = selected or [
@@ -207,8 +211,16 @@ class Transcript:
             instructions_version=instructions["version"],
             instructions_text=instructions["text"],
             memory_revision=base["memory_revision"],
-            facts=[f for f in base["memory"] if f["kind"] == "constraint"]
-            + [f for f in base["memory"] if f["kind"] != "constraint"][:8],
+            facts=sorted(
+                [f for f in base["memory"] if pinned(f)], key=lambda f: f["id"]
+            ),
+            retrieved_memory=retrieved_memory,
+            memory_index=[
+                f"{v['id']} | {v['kind']} | {v['text'].splitlines()[0]} | {v['source']} | {v['observed_at']}"
+                for v in retrievable
+            ]
+            if len(retrievable) <= 20
+            else [],
             passages=passages,
             history=history,
             session_state=snapshot["session_state"],
@@ -275,6 +287,33 @@ class Transcript:
                 request.get("work_session_id"),
             )
             return 200, self.state(turn, context, True)
+        from packages.project_memory import explicit
+        from services.retrieval.project_memory import create
+
+        remembered = explicit(request["messages"][0]["content"])
+        if remembered is not None:
+            self.scope.authorize("POST", ["memory"])
+            refs = []
+            for version_id in request["file_version_ids"]:
+                version = self.files.get("version", version_id)
+                refs.append(
+                    dict(
+                        file_id=version["file_id"], version_id=version_id, locator=None
+                    )
+                )
+            create(
+                self.files,
+                dict(
+                    text=remembered,
+                    kind="fact",
+                    status="proposed" if refs else "active",
+                    source_refs=refs,
+                ),
+                provenance=dict(
+                    source_conversation_id=request["conversation_id"],
+                    source_turn_id=data["request_id"],
+                ),
+            )
         context = self.context(
             request["conversation_id"],
             request["messages"][0]["content"],
@@ -308,7 +347,7 @@ class Transcript:
             session = Work(self.scope).get(request["work_session_id"])
             sources.update(v["version_id"] for v in session["base_file_versions"])
         self.check_sources(sorted(sources))
-        for fact in context["facts"]:
+        for fact in context["facts"] + context.get("retrieved_memory", []):
             sources.update(fact["source_file_version_ids"])
         for historical in context["history"]:
             sources.update(

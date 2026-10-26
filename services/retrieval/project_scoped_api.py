@@ -194,6 +194,10 @@ def execute(
                 require_patch(data)
                 if data.get("state") == "active" and scope.project["state"] != "active":
                     scope.check_quota("active_projects", 1)
+                if "pinned_memory_tokens" in data:
+                    from services.retrieval.project_memory import check_cap
+
+                    check_cap(ProjectFiles(scope), limit=data["pinned_memory_tokens"])
                 value = public(scope.project)
                 value.update(data)
                 value["revision"] += 1
@@ -595,6 +599,26 @@ def ingress(identity: Identity, method: str, path: str) -> int:
         return preflight(scope, method, tail, query) if project else 160000
 
 
+def index_active_memory(identity: Identity, identifier: str) -> None:
+    if not os.environ.get("ATLAS_GATEWAY_URL"):
+        return
+    from packages.project_memory import pinned
+    from services.retrieval.project_memory_search import search
+
+    try:
+        with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+            identity, identity.org, identity.project
+        ) as scope:
+            scope.authorize("POST", ["memory"])
+            files = ProjectFiles(scope)
+            entry = files.get("memory", identifier)
+            Transcript(scope).check_sources(entry["source_file_version_ids"])
+            if entry["status"] == "active" and not pinned(entry):
+                search(files, entry["text"], [], [entry])
+    except (ProjectError, psycopg.Error, OSError, ValueError):
+        logging.getLogger(__name__).warning("project_memory_index_unavailable")
+
+
 def index_created_upload(identity: Identity, file_id: str, version_id: str) -> None:
     from services.retrieval.project_index import index_upload
 
@@ -669,6 +693,17 @@ async def projects(request: Request, path: str) -> Response:
                     result["file_id"],
                     result["id"],
                 )
+        if (
+            request.method in {"POST", "PATCH"}
+            and isinstance(result, dict)
+            and result.get("status") == "active"
+            and "/memory" in path
+        ):
+            upload_task = BackgroundTask(
+                index_active_memory,
+                replace(identity, project=parse_path(path)[1]),
+                result["id"],
+            )
         headers = {"Cache-Control": "private, no-store"}
         if (
             isinstance(result, tuple)
@@ -1065,6 +1100,7 @@ def transcript_dispatch(
     identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
 ) -> tuple[int, Any]:
     schemas = {
+        "memory": "TranscriptMemory",
         "state-events": "TranscriptEvents",
         "state-read": "SessionStateRead",
         "state-write": "SessionStateWrite",
@@ -1118,7 +1154,7 @@ def transcript_dispatch(
                 )
             )
         references = None
-        if operation in {"result-put", "result-open"}:
+        if operation in {"result-put", "result-open", "memory"}:
             from services.retrieval.project_results import ResultReferences
 
             references = ResultReferences(transcript)
@@ -1129,10 +1165,18 @@ def transcript_dispatch(
         body = canonical(data)
         replay = scope.replay("POST", path, key, body)
         if replay is not None:
+            if operation == "memory":
+                for entry in replay[1]["entries"]:
+                    current = transcript.files.get("memory", entry["id"])
+                    transcript.check_sources(current["source_file_version_ids"])
             return replay
+        from services.retrieval.project_memory import model_operation
+
         result = (
             200,
-            references.put(data)
+            model_operation(transcript, data)
+            if operation == "memory"
+            else references.put(data)
             if references is not None
             else transcript.finish(data)
             if operation == "finish"
