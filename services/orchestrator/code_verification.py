@@ -1,5 +1,6 @@
 """Work verification comes from command results, never from model narration."""
 
+import ast
 from dataclasses import dataclass, field
 import re
 import shlex
@@ -16,9 +17,29 @@ class VerificationStatus(BaseModel):
     reason: str = "No test command recorded in this turn"
 
 
+def inline_command(command: str) -> str:
+    """Normalize a single terminal Python heredoc, never its output or prose."""
+    command = command.strip()
+    match = re.fullmatch(
+        r"([^\n<>]*\bpython(?:3)?(?:\.\d+)?)(?:\s+-)?\s*<<\s*"
+        r"(['\"]?)([A-Za-z_][A-Za-z_0-9]*)\2\s*\n(.*?)\n\3\n?",
+        command,
+        re.S,
+    )
+    if match is None:
+        return command
+    prefix, quoted, _, source = match.groups()
+    # Unquoted heredocs undergo shell expansion, so the parsed source may differ.
+    if not quoted and any(char in source for char in "$`\\"):
+        return command
+    return prefix + " -c " + shlex.quote(source)
+
+
 def shell_parts(command: str) -> list[list[str]]:
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
+        lexer = shlex.shlex(
+            inline_command(command), posix=True, punctuation_chars=";&|()\n"
+        )
         lexer.whitespace = " \t\r"
         lexer.whitespace_split = True
         parts: list[list[str]] = [[]]
@@ -30,6 +51,33 @@ def shell_parts(command: str) -> list[list[str]]:
         return [part for part in parts if part]
     except ValueError:
         return []
+
+
+def inline_assertions(source: str) -> bool:
+    """Require an unconditional assertion, not a string or uncalled test body.
+
+    This recognizes local checks, not independent correctness. Reject explicit
+    early exits and exception suppression; shell exit zero must reach the check.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return False
+    if not any(isinstance(node, ast.Assert) for node in tree.body):
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Try, ast.TryStar, ast.With, ast.AsyncWith)):
+            return False
+        if isinstance(node, ast.Name) and node.id in {"exit", "quit", "exec", "eval"}:
+            return False
+        if isinstance(node, ast.Attribute) and node.attr in {
+            "exit",
+            "_exit",
+            "execv",
+            "execve",
+        }:
+            return False
+    return True
 
 
 def runner(part: list[str]) -> bool:
@@ -45,11 +93,22 @@ def runner(part: list[str]) -> bool:
         return True
     if re.fullmatch(r"python(?:3)?(?:\.\d+)?", name):
         return (
-            len(words) > 2 and words[1] == "-m" and words[2] in {"pytest", "unittest"}
-        ) or (
-            len(words) > 1
-            and re.search(r"(?:^|/)(?:test[^/]*|[^/]*_test)\.py$", words[1]) is not None
+            (len(words) > 2 and words[1] == "-m" and words[2] in {"pytest", "unittest"})
+            or (
+                len(words) > 2
+                and words[1] == "-c"
+                and not any(word.startswith("PYTHONOPTIMIZE=") for word in part)
+                and inline_assertions(words[2])
+            )
+            or (
+                len(words) > 1
+                and re.search(r"(?:^|/)(?:test[^/]*|[^/]*_test)\.py$", words[1])
+                is not None
+            )
         )
+    script = words[1] if name in {"bash", "sh"} and len(words) > 1 else words[0]
+    if re.search(r"(?:^|/)(?:run_tests?|test(?:s|[-_][\w-]+)?)\.sh$", script):
+        return True
     return name in {
         "npm",
         "pnpm",
@@ -97,7 +156,9 @@ class Verification:
     def conclusive(self, command: str) -> bool:
         """A shell exit is test evidence only when it cannot mask or skip the test."""
         try:
-            lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
+            lexer = shlex.shlex(
+                inline_command(command), posix=True, punctuation_chars=";&|()\n"
+            )
             lexer.whitespace = " \t\r"
             lexer.whitespace_split = True
             tokens = list(lexer)
@@ -115,7 +176,19 @@ class Verification:
             if part[0] != "cd" and not (runner(part) or part in self.explicit):
                 return False
             if any(
-                word in {"--help", "-h", "--version", "--collect-only", "--co", "-N"}
+                word
+                in {
+                    "--help",
+                    "-h",
+                    "--version",
+                    "--collect-only",
+                    "--co",
+                    "-N",
+                    "-n",
+                    "--dry-run",
+                    "--just-print",
+                    "--recon",
+                }
                 for word in part
             ):
                 return False

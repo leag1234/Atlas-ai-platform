@@ -1163,3 +1163,11 @@ help/version/collection, cannot establish passing evidence either.
 the latest test succeeded with no later edit. Final claiming prose is preserved;
 when unsupported, an additional factual verification line is appended.
 The UI displays the status beside both the recap and replayed answer.
+
+Recognition includes Python module runners, test scripts, make test targets and
+inline Python (`-c` or a terminal heredoc) with unconditional assertions. Printed
+success text, uncalled/conditional assertions, disabled assertions and explicit
+early exits or exception suppression cannot establish an inline passing check.
+Unsupported command forms abstain; command evidence is not an independent oracle.
+Work running-command progress retains redacted arguments in tool_result so the
+command and its worker result can be audited in the same session/request.

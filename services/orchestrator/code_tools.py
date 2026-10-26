@@ -379,6 +379,8 @@ class WorkTools(CodeTools):
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
+        if kind == "tool" and data.get("tool") == "run_command" and "arguments" in data:
+            output = dict(output, arguments=redact(data["arguments"]))
         if kind == "tool" and data.get("status") in {"completed", "failed"}:
             tool = str(data.get("tool", ""))
             if data["status"] == "failed":

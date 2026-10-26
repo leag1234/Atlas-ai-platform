@@ -324,3 +324,31 @@ class WorkVerificationTests(unittest.IsolatedAsyncioTestCase):
         )
         event = self.execution.broker.call.await_args.args[1]["progress"][0]
         self.assertEqual(event["output"]["verification"], status)
+
+    async def test_inline_worker_evidence_and_invalidation(self) -> None:
+        command = "python3 - <<'PY'\nvalue = 2\nassert value == 2\nPY"
+        await self.command(command)
+        self.assertEqual(self.tools.verification.status().status, "passed")
+        self.assertIsNone(self.tools.verification.refusal())
+        await self.command('echo "OK"')
+        self.assertEqual(self.tools.verification.status().command, command)
+        await self.command("python3 -c 'value = 2; assert value == 3'")
+        self.assertEqual(self.tools.verification.status().status, "failed")
+        await self.command(command)
+        await self.command("printf 'value = 3\n' > source.py")
+        self.assertEqual(self.tools.verification.status().status, "not_run")
+        self.assertIsNotNone(self.tools.verification.refusal())
+        fresh = WorkTools(self.workspace, self.execution)
+        self.assertEqual(fresh.verification.status().status, "not_run")
+
+    async def test_work_progress_retains_command_for_audit(self) -> None:
+        tools = WorkTools(self.workspace, self.execution)
+        self.execution.session["id"] = "session"
+        self.execution.broker.call = AsyncMock(return_value={"events": []})
+        arguments = json.dumps({"command": "python3 -c 'assert 2 == 2'"})
+        await tools.emit(
+            "tool", tool="run_command", status="running", arguments=arguments, output={}
+        )
+        event = self.execution.broker.call.await_args.args[1]["progress"][0]
+        result = json.loads(event["output"]["tool_result"])
+        self.assertEqual(json.loads(result["arguments"]), json.loads(arguments))
