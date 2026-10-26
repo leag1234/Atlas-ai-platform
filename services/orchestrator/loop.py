@@ -204,6 +204,7 @@ async def run(
     protocol_recovered = False
     links_recovered = False
     retrieved: set[str] = set()
+    tool_urls: set[str] = set()
     answer_parts: list[str] = []
     last_plan: tuple[str, Message] | None = None
     previous_call: tuple[str, str] | None = None
@@ -354,13 +355,27 @@ async def run(
                         urls,
                     )
                     from services.orchestrator.link_requests import (
+                        fallback_terms,
                         link_query,
                         unavailable,
                         instruction,
                         page_request,
                     )
 
-                    cleaned = cleanup(without_unretrieved(complete_text, retrieved))
+                    cleaned = cleanup(
+                        without_unretrieved(complete_text, retrieved | tool_urls)
+                    )
+                    if limits.code_mode:
+                        # Work preserves its prose when no external URL needs
+                        # filtering; otherwise it removes only that URL.
+                        result.text = (
+                            cleaned
+                            if urls(complete_text) - retrieved - tool_urls
+                            else complete_text
+                        )
+                        result.state = "done"
+                        setattr(result, "tool_urls", tool_urls)
+                        return result
                     if page_request(
                         query.question,
                         tuple(str(m.get("content", "")) for m in (history or [])),
@@ -389,7 +404,15 @@ async def run(
                                 {"role": "system", "content": instruction()}
                             )
                             continue
-                        complete_text = unavailable(terms, query.lang)
+                        complete_text = unavailable(
+                            fallback_terms(
+                                query.question,
+                                tuple(
+                                    str(m.get("content", "")) for m in (history or [])
+                                ),
+                            ),
+                            query.lang,
+                        )
                     result.text, result.state = complete_text, "done"
                     return result
             # Streaming already exposes this content; retain it in the final
@@ -557,6 +580,9 @@ async def run(
                     raise ValueError("invalid_tool_response")
                 if call.name == "update_plan" and "error" not in output:
                     last_plan = canonical, dict(output)
+                from services.orchestrator.source_truth import tool_result_urls
+
+                tool_urls.update(tool_result_urls(output))
                 if (
                     retry_web
                     and not retried
@@ -689,11 +715,11 @@ async def run(
         f"Searches: {counts['web_search']}; limit 3. Fetches: {counts['web_fetch']}; limit 8."
     )
     if links_recovered:
-        from services.orchestrator.link_requests import unavailable, link_query
+        from services.orchestrator.link_requests import fallback_terms, unavailable
 
         result.text = (
             unavailable(
-                link_query(
+                fallback_terms(
                     query.question,
                     tuple(str(m.get("content", "")) for m in (history or [])),
                 ),

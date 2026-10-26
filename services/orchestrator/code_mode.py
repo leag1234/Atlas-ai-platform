@@ -295,6 +295,7 @@ async def process_code(request: ChatRequest, item: Interaction) -> None:
                 workspace_context,
             )
             item.reponse = result.text
+            item.tool_urls.extend(getattr(result, "tool_urls", set()))
             item.verification = result.verification.model_dump()
             item.cout_eur = float(result.cost)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
@@ -739,6 +740,7 @@ async def process_work(
             if collect_workspace is not None:
                 await collect_workspace(workspace)
             item.reponse = result.text
+            item.tool_urls.extend(getattr(result, "tool_urls", set()))
             item.verification = result.verification.model_dump()
             if tools.nearby is not None and tools.nearby.result:
                 from services.orchestrator.nearby_chat import render
