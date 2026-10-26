@@ -61,6 +61,19 @@ KINDS = frozenset(
         "retention_applied",
         "administrative_access",
         "repository_action",
+        "runner_code_egress_approved",
+        "runner_code_egress_revoked",
+        "runner_session_opened",
+        "runner_session_closed",
+        "runner_command_requested",
+        "runner_command_approved",
+        "runner_command_denied",
+        "runner_command_started",
+        "runner_command_completed",
+        "runner_command_failed",
+        "runner_command_cancelled",
+        "runner_command_unknown",
+        "runner_file_fetched",
     }
 )
 
@@ -199,6 +212,7 @@ def append(
     model_dispatch: Mapping[str, Any] | None = None,
     context_clearing: Mapping[str, Any] | None = None,
     context_compaction: Mapping[str, Any] | None = None,
+    runner: Mapping[str, Any] | None = None,
     memory_change: Mapping[str, Any] | None = None,
     audit_record: Mapping[str, Any] | None = None,
     event_id: str | None = None,
@@ -294,6 +308,13 @@ def append(
         if kind != "context_selected":
             raise ProjectError(422, "invalid_request")
         event["context_clearing"] = dict(context_clearing)
+    if runner is not None:
+        from services.retrieval.project_work_contract import validate
+
+        validate("RunnerAudit", runner)
+        if not kind.startswith("runner_"):
+            raise ProjectError(422, "invalid_request")
+        event["runner"] = dict(runner)
     if memory_change is not None:
         if kind != "memory_changed" or set(memory_change) != {
             "id",

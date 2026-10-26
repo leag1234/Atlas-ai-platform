@@ -332,6 +332,10 @@ class Work:
             elif operation == "release":
                 if not data["cleanup_confirmed"] or data["terminal_state"] is None:
                     raise ProjectError(422, "invalid_request")
+                from services.retrieval.project_runners import close as close_runners
+
+                if data["terminal_state"] in {"cancelled", "failed"}:
+                    close_runners(self.scope, value["id"])
                 reservation = row["data"]["reservation_id"]
                 usage = data["usage"]
                 if row["data"]["cleanup"] and usage is not None:
@@ -563,6 +567,7 @@ class Work:
         value, execution = row["data"], row["execution"]
         if (
             not execution
+            or "runner_command" in execution
             or "forge_operation" in execution
             or "repository_import" in execution
         ):
@@ -598,6 +603,10 @@ class Work:
     def decide(self, identifier: str, data: dict[str, Any]) -> tuple[int, Any]:
         validate("ApprovalDecision", data)
         row = self.approval(identifier)
+        if row["execution"] and "runner_command" in row["execution"]:
+            from services.retrieval.project_runners import RemoteWork
+
+            return RemoteWork(self.scope).decide(identifier, data)
         if row["execution"] and "repository_import" in row["execution"]:
             from services.retrieval.project_repository_import import RepositoryImports
 

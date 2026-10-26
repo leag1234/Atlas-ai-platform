@@ -7262,6 +7262,19 @@ components:
           - retention_applied
           - administrative_access
           - repository_action
+          - runner_code_egress_approved
+          - runner_code_egress_revoked
+          - runner_session_opened
+          - runner_session_closed
+          - runner_command_requested
+          - runner_command_approved
+          - runner_command_denied
+          - runner_command_started
+          - runner_command_completed
+          - runner_command_failed
+          - runner_command_cancelled
+          - runner_command_unknown
+          - runner_file_fetched
           - memory_changed
         resource_refs:
           type: array
@@ -7305,6 +7318,8 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AuditRecord'
           - type: 'null'
+        runner:
+          $ref: '#/components/schemas/RunnerAudit'
         memory_change:
           type: object
           additionalProperties: false
@@ -7507,6 +7522,27 @@ components:
           - pull_request
           - publish_change
           - local_read
+        remote:
+          type: object
+          additionalProperties: false
+          properties:
+            target_id:
+              type: string
+              format: uuid
+            target_name:
+              type: string
+            command:
+              type: string
+            code_digest:
+              type: string
+            code_egress:
+              type: boolean
+            cwd:
+              type: string
+            timeout_s:
+              type: integer
+            project_rule:
+              type: string
         publication:
           $ref: '#/components/schemas/PublicationSummary'
         action_digest:
@@ -9651,6 +9687,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        always_allow:
+          type: boolean
+          default: false
         allow:
           type: boolean
           default: false
@@ -11174,6 +11213,151 @@ components:
                       maxLength: 4000
                     truncated:
                       type: boolean
+    RunnerAudit:
+      type: object
+      additionalProperties: false
+      required:
+      - target_id
+      - command_digest
+      - code_digest
+      - decision
+      - exit_code
+      - duration_s
+      - bytes_sent
+      - bytes_received
+      properties:
+        target_id:
+          type: string
+          format: uuid
+        command_digest:
+          anyOf:
+          - type: string
+          - type: 'null'
+        code_digest:
+          anyOf:
+          - type: string
+          - type: 'null'
+        decision:
+          anyOf:
+          - type: string
+          - type: 'null'
+        exit_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        duration_s:
+          anyOf:
+          - type: number
+          - type: 'null'
+        bytes_sent:
+          type: integer
+          minimum: 0
+        bytes_received:
+          type: integer
+          minimum: 0
+    RunnerExecution:
+      additionalProperties: false
+      properties:
+        session_id:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        request_id:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        generation:
+          minimum: 1
+          type: integer
+        operation:
+          enum:
+          - list
+          - prepare
+          - execute
+          - status
+          - fetch
+          - close
+          type: string
+        arguments:
+          anyOf:
+          - additionalProperties: false
+            properties:
+              capability:
+                anyOf:
+                - maxLength: 100
+                  type: string
+                - type: 'null'
+                default: null
+            type: object
+          - additionalProperties: false
+            properties:
+              target:
+                maxLength: 120
+                minLength: 1
+                type: string
+              command:
+                maxLength: 15000
+                minLength: 1
+                type: string
+              cwd:
+                default: .
+                maxLength: 1000
+                type: string
+              timeout_s:
+                default: 600
+                maximum: 1800
+                minimum: 1
+                type: integer
+              wait_s:
+                default: 5
+                maximum: 30
+                minimum: 0
+                type: integer
+            required:
+            - target
+            - command
+            type: object
+          - additionalProperties: false
+            properties:
+              command_id:
+                pattern: ^[a-f0-9-]{36}$
+                type: string
+              wait_s:
+                default: 5
+                maximum: 30
+                minimum: 0
+                type: integer
+              cancel:
+                default: false
+                type: boolean
+            required:
+            - command_id
+            type: object
+          - additionalProperties: false
+            properties:
+              target:
+                maxLength: 120
+                minLength: 1
+                type: string
+              path_or_glob:
+                maxLength: 1000
+                minLength: 1
+                type: string
+            required:
+            - target
+            - path_or_glob
+            type: object
+        snapshot_content:
+          anyOf:
+          - maxLength: 44739244
+            type: string
+          - type: 'null'
+          default: null
+      required:
+      - session_id
+      - request_id
+      - generation
+      - operation
+      type: object
+
   responses:
     Error401:
       description: Typed failure

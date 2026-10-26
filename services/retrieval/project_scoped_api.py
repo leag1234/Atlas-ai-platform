@@ -359,6 +359,33 @@ def dispatch(
     path = "/".join(segments)
     with store(dsn).scope(identity, org, project) as scope:
         guard(scope, method, tail)
+        if tail and tail[0] == "runner-targets":
+            from services.retrieval.project_runners import admin_api
+
+            if query:
+                raise ProjectError(422, "invalid_request")
+            data = json.loads(body) if body else {}
+            key = headers.get("idempotency-key", "")
+            if method != "GET":
+                if not key or len(key) > 200:
+                    raise ProjectError(422, "invalid_request")
+                replay = scope.replay(method, path, key, body)
+                if replay is not None:
+                    if project is None:
+                        scope.admin()
+                    if tail == ["runner-targets", "credentials"]:
+                        raise ProjectError(410, "public_key_already_shown")
+                    return replay
+            runner_result = admin_api(
+                scope, method, tail, data, headers.get("if-match")
+            )
+            if method != "GET":
+                remembered = (
+                    runner_result[0],
+                    {k: v for k, v in runner_result[1].items() if k != "public_key"},
+                )
+                scope.remember(method, path, key, body, remembered)
+            return runner_result
         checked = check_query(method, tail, query)
         if checked:
             path += "?" + urlencode(sorted(checked.items()))
@@ -885,6 +912,7 @@ EXECUTION_SCHEMAS = {
     "organize": "ExecutionOrganize",
     "publish": "ExecutionPublish",
     "forge": "ExecutionForge",
+    "remote": "RunnerExecution",
 }
 
 
@@ -934,6 +962,19 @@ def execution_dispatch(
             work.grant_stamp(identity.member)
         else:
             scope.authorize("POST", ["work-sessions"])
+        if operation == "remote":
+            from services.retrieval.project_runners import execute as execute_remote
+            from services.runner.contract import Execution
+
+            remote_data = Execution.model_validate(data).model_dump(exclude_none=True)
+            path = "/internal/atlas/execution/remote"
+            replay = scope.replay("POST", path, key, body)
+            if replay is not None:
+                work.fence(data)
+                return replay
+            result = (200, execute_remote(scope, remote_data))
+            scope.remember("POST", path, key, body, result)
+            return result
         if operation == "forge":
             from services.retrieval.project_work_forge import execute_forge
 
@@ -1040,12 +1081,26 @@ async def execution_broker(request: Request, operation: str) -> Response:
             key,
             request.headers.get("content-type", ""),
         )
+        from services.retrieval.project_runners import (
+            start_command as run_remote_command,
+        )
+
         return JSONResponse(
             result,
             status_code=status,
             headers=headers,
             background=(
                 BackgroundTask(
+                    run_remote_command,
+                    store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+                    identity,
+                    result["command_id"],
+                )
+                if operation == "remote"
+                and isinstance(result, dict)
+                and result.get("state") == "running"
+                and json.loads(body).get("operation") == "execute"
+                else BackgroundTask(
                     run_operation,
                     store(os.environ.get("ATLAS_PROJECT_DSN", "")),
                     identity,
@@ -1081,7 +1136,7 @@ def execution_ingress(
         if transcript:
             scope.authorize("POST", ["conversations"])
             return 8388608 if operation == "result-put" else 160000
-        if operation == "forge":
+        if operation in {"forge", "remote"}:
             scope.authorize("POST", ["work-sessions"])
             return int(scope.policy["quotas"]["upload_bytes"]) * 2 + 160000
         if operation == "publish":

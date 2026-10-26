@@ -1,0 +1,25 @@
+{
+  "name": "Linux build",
+  "os": "linux",
+  "arch": "unknown",
+  "shell": "posix",
+  "host": "build.example.invalid",
+  "port": 22,
+  "user": "runner",
+  "work_root": "/home/runner/work",
+  "credential_ref": "00000000-0000-0000-0000-000000000001",
+  "host_key_fingerprints": [
+    "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  ],
+  "jump_target_id": null,
+  "capabilities": [],
+  "permission_mode": "rules",
+  "allow_rules": [],
+  "deny_rules": [],
+  "sensitive_rules": [],
+  "max_parallel_sessions": 2,
+  "disk_quota_bytes": 1073741824,
+  "monthly_minutes": 300,
+  "same_locality": false,
+  "credential_fingerprint": "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+}

@@ -118,6 +118,11 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
         from services.orchestrator.work_forge_tools import declaration
 
         result.append(declaration())
+        from services.orchestrator.work_remote_tools import (
+            declarations as remote_declarations,
+        )
+
+        result.extend(remote_declarations())
     return result + (project_document_tools.declarations() if scoped else [])
 
 
@@ -371,6 +376,7 @@ class WorkTools(CodeTools):
         self.validation_failures: dict[str, str] = {}
         self.memory: Any = None
         self.nearby: Any = None
+        self.remote_references: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
@@ -436,10 +442,26 @@ class WorkTools(CodeTools):
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:
+            from services.orchestrator.work_tool_selection import (
+                GROUPS,
+                ToolSelectionError,
+            )
+
             try:
                 result = self.selection.switch(call.arguments)
+            except ToolSelectionError as exc:
+                result = exc.result
             except ValueError:
-                result = {"error": "invalid_tool_group"}
+                result = {
+                    "error": "invalid_tool_group",
+                    "reason": "arguments must contain a known group and optional focus only",
+                    "allowed_groups": [
+                        group
+                        for group in GROUPS
+                        if group != "remote" or self.selection.remote_enabled
+                    ],
+                    "next_step": "Use an allowed group; omit focus unless selecting a tool in that group.",
+                }
             await self.emit(
                 "tool",
                 tool=call.name,
@@ -483,6 +505,31 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return dict(trust="untrusted", **result)
+        if call.name in {"list_targets", "remote_run", "remote_status", "remote_fetch"}:
+            from services.orchestrator import work_remote_tools
+            from services.retrieval.project_identity import ProjectError
+
+            try:
+                result = await work_remote_tools.execute(
+                    self, call.name, call.arguments, timeout
+                )
+            except ProjectError as exc:
+                result = dict(exc.body)
+            except (ValueError, OSError, RuntimeError, TimeoutError):
+                result = dict(error="invalid_or_unavailable_remote_operation")
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=dict(
+                    remote=result,
+                    **({"error": result["error"]} if result.get("error") else {}),
+                ),
+            )
+            return dict(
+                trust="untrusted", **{k: v for k, v in result.items() if k != "trust"}
+            )
         if call.name == "forge_action":
             from services.orchestrator import work_forge_tools
             from services.retrieval.project_identity import ProjectError

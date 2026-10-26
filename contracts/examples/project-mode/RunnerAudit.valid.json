@@ -1,0 +1,10 @@
+{
+  "target_id": "11111111-1111-4111-8111-111111111111",
+  "command_digest": null,
+  "code_digest": null,
+  "decision": null,
+  "exit_code": null,
+  "duration_s": null,
+  "bytes_sent": 0,
+  "bytes_received": 0
+}

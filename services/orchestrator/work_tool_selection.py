@@ -15,9 +15,10 @@ from pydantic import BaseModel, ConfigDict
 
 from services.orchestrator.code_tools import declarations
 
-Group = Literal["documents", "spreadsheets", "presentations", "code", "files"]
+Group = Literal["documents", "spreadsheets", "presentations", "code", "files", "remote"]
 CORE = ("update_plan", "request_approval", "switch_tool_group")
 GROUPS: dict[str, tuple[str, ...]] = {
+    "remote": ("list_targets", "remote_run", "remote_status", "remote_fetch"),
     "documents": (
         "read_file",
         "read_document",
@@ -50,12 +51,23 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "files": ("list_dir", "read_file", "search", "write_file", "organize_files"),
 }
 PATTERNS = {
+    "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
     "presentations": r"\b(pptx|slides?|presentation|presentacion|prasentation|diaporama)\b",
     "spreadsheets": r"\b(xlsx|csv|spreadsheet|workbook|excel|tableur|tabellen|foglio|hoja)\b",
     "documents": r"\b(docx|pdf|document|memo|report|rapport|bericht|informe|relazione)\b",
     "code": r"\b(code|repository|repo|git|bug|function|python|javascript|fonction|codigo)\b",
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
 }
+
+
+class ToolSelectionError(ValueError):
+    def __init__(self, reason: str, **result: Any) -> None:
+        super().__init__(
+            "No remote targets available: " + reason
+            if result.get("error") == "remote_unavailable"
+            else reason
+        )
+        self.result = dict(result, reason=reason)
 
 
 class Switch(BaseModel):
@@ -114,6 +126,7 @@ class WorkToolSelection:
     def __init__(self, group: str) -> None:
         if group not in GROUPS:
             raise ValueError("Unknown Work tool group")
+        self.remote_enabled = group == "remote"
         self.group = group
         self.pending: str | None = None
         self.focus: str | None = None
@@ -125,6 +138,8 @@ class WorkToolSelection:
             for t in declarations(scoped=True)
             if isinstance(t["function"], dict)
         }
+        switch_schema = Switch.model_json_schema()
+        switch_schema["properties"]["group"]["enum"].remove("remote")
         from packages.tool_results import declaration
 
         self.catalog["reopen_result"] = declaration()
@@ -136,8 +151,22 @@ class WorkToolSelection:
             function=dict(
                 name="switch_tool_group",
                 description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
-                parameters=Switch.model_json_schema(),
+                parameters=switch_schema,
             ),
+        )
+
+        if self.remote_enabled:
+            self.enable_remote()
+
+    def enable_remote(self) -> None:
+        self.remote_enabled = True
+        switch = self.catalog["switch_tool_group"]["function"]
+        if not isinstance(switch, dict):
+            raise ValueError("Invalid switch declaration")
+        switch["parameters"] = Switch.model_json_schema()
+        switch["description"] = switch["description"].replace(
+            "files (list/read/search/write/organize).",
+            "files (list/read/search/write/organize), remote (list targets/run/status/fetch on a granted machine).",
         )
 
     @property
@@ -162,7 +191,19 @@ class WorkToolSelection:
 
     def switch(self, arguments: str) -> dict[str, Any]:
         selected = Switch.model_validate_json(arguments)
+        if selected.group == "remote" and not self.remote_enabled:
+            raise ToolSelectionError(
+                "no granted target for this project",
+                error="remote_unavailable",
+                next_step="Ask an administrator to grant a target to this project, then start a new turn.",
+            )
         if selected.focus is not None and selected.focus not in GROUPS[selected.group]:
-            raise ValueError("Unknown focus for tool group")
+            raise ToolSelectionError(
+                "focus must name a tool in the selected group",
+                error="invalid_tool_focus",
+                group=selected.group,
+                allowed_tools=list(GROUPS[selected.group]),
+                next_step="Use one of allowed_tools as focus, or omit focus.",
+            )
         self.pending, self.pending_focus = selected.group, selected.focus
         return dict(group=self.pending, tools=list((*CORE, *GROUPS[self.pending])))

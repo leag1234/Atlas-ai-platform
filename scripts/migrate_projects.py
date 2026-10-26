@@ -1153,6 +1153,8 @@ def restore(
             schema += "\n" + (schema_root / "project_work_schema.sql").read_text()
         if "transcript_progress" in exported:
             schema += "\n" + (schema_root / "project_transcript_schema.sql").read_text()
+        if "runner_targets" in exported:
+            schema += "\n" + (schema_root / "project_runner_schema.sql").read_text()
         (destination / "schema.sql").write_text(schema)
         evidence = dict(
             status="restored_offline",
@@ -1193,6 +1195,13 @@ def restore_database(dsn: str, bundle: Path) -> dict[str, Any]:
         order += ("transcript_progress",)
     if "forge_operations" in exported:
         order += ("forge_operations",)
+    if "runner_targets" in exported:
+        order += (
+            "runner_targets",
+            "runner_grants",
+            "runner_sessions",
+            "runner_commands",
+        )
     if set(exported) != set(order):
         raise ValueError("Recovery schema differs from the supported project store")
     with operator(dsn) as db:
@@ -1201,6 +1210,15 @@ def restore_database(dsn: str, bundle: Path) -> dict[str, Any]:
         ).fetchone():
             raise ValueError("Restore requires an empty project database")
         db.execute((bundle / "schema.sql").read_text())
+        if "runner_targets" in exported:
+            # Older exporters may carry current rows with the base project
+            # schema. Install the supported additive schema before restoring.
+            db.execute(
+                (
+                    Path(__file__).resolve().parents[1]
+                    / "services/retrieval/project_runner_schema.sql"
+                ).read_text()
+            )
         for table in order:
             rows = list(exported[table])
             if table == "resources":

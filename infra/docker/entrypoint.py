@@ -27,6 +27,10 @@ def main() -> None:
             port=13731,
             access_log=False,
         )
+    elif service == "runner":
+        from services.runner.main import main as run_runner
+
+        run_runner()
     elif service == "retrieval":
         import uvicorn
 
