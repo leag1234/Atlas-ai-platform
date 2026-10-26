@@ -49,6 +49,13 @@ class CodeModelSelectionTests(unittest.TestCase):
             metadata["price"]["input"] + metadata["price"]["output"],
         )
 
+    def test_hetzner_code_preset_is_used_without_an_override(self) -> None:
+        model = presets()["hetzner"]["code_model"]
+        with patch.dict(os.environ, {"ATLAS_PROVIDER": "hetzner"}, clear=True):
+            selected = ServerlessPolicy()
+        self.assertEqual(selected.models["code"], model)
+        self.assertEqual(selected.models["text"], presets()["hetzner"]["text_model"])
+
     def test_empty_override_preserves_existing_selection(self) -> None:
         with patch.dict(os.environ, {"ATLAS_PROVIDER": "hetzner"}, clear=True):
             before = ServerlessPolicy()

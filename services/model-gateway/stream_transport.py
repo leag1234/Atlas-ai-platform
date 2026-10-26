@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
 from provider_retry import (
+    ModelUnavailableError,
     ProviderResponseError,
     TransientProviderError,
     RetryLedger,
@@ -265,6 +266,12 @@ async def attempt(
                     )
                     if response.status in (502, 503, 504):
                         raise TransientProviderError("provider_error")
+                    if (
+                        response.status in (400, 404)
+                        and message is not None
+                        and "model not found" in message.lower()
+                    ):
+                        raise ModelUnavailableError("model_unavailable")
                     raise ProviderResponseError(response.status)
                 async for piece in response.content.iter_chunked(16384):
                     for event in decoder.feed(piece):
