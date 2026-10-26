@@ -11,7 +11,7 @@ class Input(BaseModel):
 
 class Target(Input):
     name: str = Field(min_length=1, max_length=120)
-    os: Literal["linux"] = "linux"
+    os: Literal["linux", "macos"] = "linux"
     arch: str = Field(default="unknown", max_length=100)
     shell: Literal["posix"] = "posix"
     host: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$")

@@ -38,6 +38,21 @@ def initialize() -> None:
         "ACCEPT",
     )
     rule("-A", "INPUT", "-i", "eth0", "-p", "tcp", "--dport", "13712", "-j", "ACCEPT")
+    # Docker DNATs its resolver to ephemeral loopback ports. These queries
+    # traverse INPUT too; permitting OUTPUT alone silently drops every lookup.
+    for protocol in ("udp", "tcp"):
+        rule(
+            "-A",
+            "INPUT",
+            "-i",
+            "lo",
+            "-d",
+            "127.0.0.11",
+            "-p",
+            protocol,
+            "-j",
+            "ACCEPT",
+        )
     rule("-P", "OUTPUT", "DROP")
     rule(
         "-A",

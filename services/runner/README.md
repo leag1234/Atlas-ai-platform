@@ -1,4 +1,4 @@
-# Linux remote runner broker
+# POSIX remote runner broker
 
 REQ-RUN-01–08; contract: `contracts/remote-runners.md` (approved by the supervisor).
 
@@ -28,12 +28,18 @@ reference and updating the target. Host/user/root/jump cannot move while session
 are open. A jump account must allow forwarding only to the intended destination
 and have an OpenSSH client for pinned scanning; no reverse connection is used.
 
-Linux prerequisites: Python 3, Git, OpenSSH/SFTP, POSIX shell and process groups.
+Linux/macOS prerequisites: Python 3, Git, OpenSSH/SFTP, POSIX shell and process groups.
 The target work root must exist and be writable. The broker connects only to
 registered endpoints. Its container firewall permits established responses, the
 Docker resolver, and those SSH pairs; the API accepts traffic on its control
 interface. Put isolated test targets on a second internal network. Targets never
 receive the broker's private keys, service secrets, provider keys or Docker socket.
+
+Register macOS with `os: macos`; the probe verifies Darwin and the helper uses
+`ps` process start times for reconciliation. Linux retains procfs process identity.
+Use a dedicated account and keep SDK caches inside its session workspace. Android
+commands can use an already running local adb server; device access and any
+device changes remain subject to the organization's command rules and consent.
 
 The first egress and exact command share an approval card. `ask` asks for commands;
 a confirmed project prefix rule can allow that prefix subsequently. `rules`

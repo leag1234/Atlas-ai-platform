@@ -281,7 +281,7 @@ components:
           minLength: 1
           type: string
         os:
-          const: linux
+          enum: [linux, macos]
           default: linux
           type: string
         arch:

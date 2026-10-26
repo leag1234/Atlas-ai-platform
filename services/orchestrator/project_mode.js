@@ -111,7 +111,7 @@
     const current = generation, orgBase = `/api/atlas/orgs/${scope.org}/runner-targets`;
     const dialog = node('dialog', null, 'atlas-project-dialog'), panel = node('section'), form = node('form');
     dialog.dataset.runnerAdmin = ''; panel.append(node('h2', 'Remote execution targets'));
-    panel.append(node('p', 'Register a dedicated Linux account. Host key fingerprints must be verified independently. Private keys stay in the runner broker.'));
+    panel.append(node('p', 'Register a dedicated Linux or macOS account. Host key fingerprints must be verified independently. Private keys stay in the runner broker.'));
     const entries = node('div'), status = node('p'); status.setAttribute('role', 'status');
     async function reload() {
       const targets = await api(orgBase); checkScope(current); entries.replaceChildren();
@@ -133,13 +133,14 @@
       const input = node(key.endsWith('rules') || key === 'host_key_fingerprints' ? 'textarea' : 'input'); input.name = key; input.value = value; input.setAttribute('aria-label', label); if (!key.endsWith('rules')) input.required = true;
       const labelNode = node('label', label); labelNode.append(input); form.append(labelNode); controls[key] = input;
     }
+    const targetOS = node('select'); targetOS.name = 'os'; targetOS.setAttribute('aria-label','Target operating system'); for (const os of ['linux','macos']) targetOS.append(new Option(os,os)); form.append(targetOS);
     const permission = node('select'); permission.name = 'permission_mode'; permission.setAttribute('aria-label','Permission mode'); for (const mode of ['rules','ask','auto']) permission.append(new Option(mode,mode)); form.append(permission);
     const publicKey = node('pre'), generate = node('button', 'Generate a key pair'); generate.type = 'button';
     generate.addEventListener('click', guarded(async () => { generate.disabled = true; try { const key = await api(orgBase + '/credentials', 'POST', {}); controls.credential_ref.value = key.credential_ref; controls.credential_fingerprint.value = key.fingerprint; publicKey.textContent = `Install this public key in the target account. It is shown once:\n${key.public_key}\n${key.fingerprint}`; } finally { generate.disabled = false; } }));
     const submit = node('button', 'Register target'); submit.type = 'submit';
     form.addEventListener('submit', guarded(async event => {
       event.preventDefault(); submit.disabled = true;
-      try { const value = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value.trim()])); value.port = Number(value.port); for (const key of ['allow_rules','deny_rules','host_key_fingerprints']) value[key] = value[key].split('\n').map(s => s.trim()).filter(Boolean); value.permission_mode = permission.value;
+      try { const value = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value.trim()])); value.port = Number(value.port); for (const key of ['allow_rules','deny_rules','host_key_fingerprints']) value[key] = value[key].split('\n').map(s => s.trim()).filter(Boolean); value.permission_mode = permission.value; value.os = targetOS.value;
         const target = await api(orgBase, 'POST', value); const probed = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(probed.last_probe); await reload();
       } finally { submit.disabled = false; }
     }));

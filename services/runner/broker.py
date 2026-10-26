@@ -109,7 +109,11 @@ class Broker:
                 json.dumps(dict(root=remote + "/workspace", **data)).encode(),
             )
         )
-        if result.get("error"):
+        if result.get("error") and result.get("state") not in {
+            "failed",
+            "timed_out",
+            "cancelled",
+        }:
             raise RunnerError(str(result["error"]))
         return result
 

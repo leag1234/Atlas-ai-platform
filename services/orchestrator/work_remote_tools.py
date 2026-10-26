@@ -48,6 +48,10 @@ def snapshot(raw: bytes, folder: str | None, limit: int) -> bytes:
             path = PurePosixPath(member.name)
             if member.isdir():
                 continue
+            # Export includes the worker's own Git baseline. It is never source
+            # to send, including when no repository folder was selected.
+            if path.parts and path.parts[0] == ".git":
+                continue
             if folder and (not path.parts or path.parts[0] != folder):
                 continue
             if (
