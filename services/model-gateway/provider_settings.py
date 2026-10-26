@@ -109,8 +109,9 @@ def request_options(
     if name:
         body.update(presets()[name].get("request_options", {}))
     if name == "hetzner" and role == "code":
-        thinking = os.environ.get(
-            "ATLAS_CODE_THINKING", str(presets()[name]["code_thinking"]).lower()
+        thinking = (
+            os.environ.get("ATLAS_CODE_THINKING")
+            or str(presets()[name]["code_thinking"]).lower()
         )
         if thinking not in ("true", "false"):
             raise ValueError("invalid_code_thinking")
@@ -261,7 +262,8 @@ def configure(
 def code_model_override(
     roles: dict[str, Any], rates: dict[str, Any], preset: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    model = os.environ.get("ATLAS_CODE_MODEL")
+    # An empty operator setting deliberately restores the preset default.
+    model = os.environ.get("ATLAS_CODE_MODEL") or preset.get("code_model")
     if not model:
         return roles, rates
     roles, rates = dict(roles), dict(rates)

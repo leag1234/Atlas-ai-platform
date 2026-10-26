@@ -21,7 +21,11 @@ from answer_content import (
     strip_file_promises,
 )
 from packages.context_limit import ContextExceeded
-from provider_retry import ProviderResponseError, TransientProviderError
+from provider_retry import (
+    ModelUnavailableError,
+    ProviderResponseError,
+    TransientProviderError,
+)
 from packages.limits import (
     ProviderFailure,
     LimitError,
@@ -472,6 +476,8 @@ async def stream_quality(
         except ProviderResponseError:
             raise
         except (RuntimeError, TimeoutError, LimitError) as exc:
+            if isinstance(exc, ModelUnavailableError) and task != "code":
+                raise
             if isinstance(exc, MalformedToolCall):
                 malformed_name = exc
                 if current.tools and not answer_emitted:
@@ -520,6 +526,8 @@ async def stream_quality(
                         if isinstance(exc, MalformedToolCall)
                         else "timeout"
                         if isinstance(exc, TimeoutError)
+                        else "model_unavailable"
+                        if isinstance(exc, ModelUnavailableError)
                         else "provider",
                         "attempt": index + 1,
                         "elapsed_seconds": round(monotonic() - started, 3),
@@ -790,6 +798,7 @@ async def stream_quality(
                     "token_split_estimated": estimated,
                     "cost_eur": str(spent),
                     "reasoning_retried": retried,
+                    "fallback": fallback,
                 }
             )
         )
