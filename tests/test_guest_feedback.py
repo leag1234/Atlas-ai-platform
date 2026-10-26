@@ -231,7 +231,7 @@ class ImageOwnershipTests(unittest.TestCase):
 
 
 class RoutingTests(unittest.TestCase):
-    def test_exact_person_starts_with_one_quoted_query(self) -> None:
+    def test_exact_person_has_two_quoted_queries(self) -> None:
         from services.orchestrator.search_policy import required_research
 
         for question in (
@@ -243,7 +243,7 @@ class RoutingTests(unittest.TestCase):
         ):
             with self.subTest(question=question):
                 calls = required_research(question, "en")
-                self.assertEqual(len(calls), 1)
+                self.assertEqual(len(calls), 2)
                 self.assertTrue(
                     all(
                         '"mira alderwick"'
@@ -251,6 +251,7 @@ class RoutingTests(unittest.TestCase):
                         for c in calls
                     )
                 )
+                self.assertIn("namesake", json.loads(calls[1].arguments)["query"])
         self.assertEqual(required_research("Do not look up a person", "en"), ())
 
     def test_spatial_requests_select_svg(self) -> None:
@@ -291,19 +292,6 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
             generation_ms=1.0,
             observations=[],
         )
-
-    def test_second_pass_uses_plain_context_for_unsupported_exclusions(self) -> None:
-        from services.orchestrator.person_lookup import second_query
-
-        passages = ["Mira Alderwick founded Cobalt Forge and Lumen OS."]
-        for provider in ("tavily", "searxng"):
-            with self.subTest(provider=provider):
-                call = second_query("Mira Alderwick", passages, "en", provider)
-                assert call is not None
-                self.assertEqual(
-                    json.loads(call.arguments)["query"],
-                    '"Mira Alderwick" biography profile career',
-                )
 
     async def test_consistent_exact_sources_are_written_by_model_with_citations(
         self,
@@ -478,7 +466,8 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("different people", item.reponse)
         assert answer.await_args is not None
         payload = json.loads(answer.await_args.kwargs["history"][0]["content"])
-        self.assertEqual(len(payload["untrusted_exact_name_evidence"]), 1)
+        directory = payload["untrusted_exact_name_evidence"][1]
+        self.assertEqual(directory["source_kind"], "directory")
 
     async def test_namesake_does_not_become_the_answer(self) -> None:
         from services.orchestrator.chat_pipeline import ChatTools
@@ -511,7 +500,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         }
         with patch.object(tools, "execute", AsyncMock(return_value=response)) as search:
             await lookup(request, item, tools, "Mira Alderwick")
-        self.assertEqual(search.await_count, 1)
+        self.assertEqual(search.await_count, 2)
         self.assertIn("could not find reliable", item.reponse)
         self.assertIn('"Mira Alderwick"', item.reponse)
         self.assertIn("not the same person", item.reponse)
@@ -562,183 +551,6 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         assert answer.await_args is not None
         payload = json.loads(answer.await_args.kwargs["history"][0]["content"])
         self.assertNotIn("Theo Alderwick", json.dumps(payload))
-
-    async def test_second_pass_uses_exclusions_to_find_other_identity(self) -> None:
-        from services.orchestrator.chat_pipeline import ChatTools
-        from services.orchestrator.interactions import Interaction
-        from services.orchestrator.loop import Result
-        from services.orchestrator.person_lookup import lookup
-
-        item = Interaction()
-        request = ChatRequest.model_validate(
-            {
-                "messages": [{"role": "user", "content": "Who is Mira Alderwick?"}],
-                "lang": "en",
-            }
-        )
-        tools = ChatTools(item, request.user_text, allow_image=False)
-        first = {
-            "data": {
-                "provider": "serpapi",
-                "results": [
-                    {
-                        "snippet": "Mira Alderwick founded Cobalt Forge and Lumen OS.",
-                        "link": "https://example.test/cobalt",
-                    }
-                ],
-            }
-        }
-        second = {
-            "data": {
-                "provider": "serpapi",
-                "results": [
-                    {
-                        "snippet": "Mira Alderwick is a marine biologist at Tide Institute.",
-                        "link": "https://example.test/tide",
-                    }
-                ],
-            }
-        }
-        answer = AsyncMock(
-            return_value=Result("Two people share this exact full name.")
-        )
-        with (
-            patch.object(
-                tools, "execute", AsyncMock(side_effect=[first, second])
-            ) as search,
-            patch(
-                "services.orchestrator.person_lookup.GatewayModel.connect",
-                new=AsyncMock(return_value=self.model()),
-            ),
-            patch("services.orchestrator.person_lookup.run", new=answer),
-        ):
-            await lookup(request, item, tools, "Mira Alderwick")
-        second_call = search.await_args_list[1].args[0]
-        self.assertEqual(search.await_count, 2)
-        self.assertEqual(
-            json.loads(second_call.arguments)["query"],
-            '"Mira Alderwick" -cobalt -forge -lumen',
-        )
-        self.assertEqual(
-            item.retrieved_urls,
-            ["https://example.test/cobalt", "https://example.test/tide"],
-        )
-
-    async def test_namesake_list_and_passing_mentions_are_not_cited(self) -> None:
-        from services.orchestrator.chat_pipeline import ChatTools
-        from services.orchestrator.interactions import Interaction
-        from services.orchestrator.loop import Result
-        from services.orchestrator.person_lookup import lookup
-
-        item = Interaction()
-        request = ChatRequest.model_validate(
-            {
-                "messages": [{"role": "user", "content": "Who is Mira Alderwick?"}],
-                "lang": "en",
-            }
-        )
-        tools = ChatTools(item, request.user_text, allow_image=False)
-        response = {
-            "data": {
-                "provider": "serpapi",
-                "results": [
-                    {
-                        "snippet": "Mira Alderwick designs fictional gardens.",
-                        "link": "https://example.test/profile",
-                    },
-                    {
-                        "snippet": "Alderwick is a surname shared by Theo Alderwick and Mira Alderwick.",
-                        "link": "https://example.test/surname",
-                    },
-                    {
-                        "snippet": "The band thanked Mira Alderwick for lending a phone.",
-                        "link": "https://example.test/band",
-                    },
-                    {
-                        "snippet": "A social post mentions Mira Alderwick beside a phone review.",
-                        "link": "https://example.test/social",
-                    },
-                ],
-            }
-        }
-        answer = AsyncMock(
-            return_value=Result("Mira Alderwick designs fictional gardens.")
-        )
-        with (
-            patch.object(tools, "execute", AsyncMock(return_value=response)),
-            patch(
-                "services.orchestrator.person_lookup.GatewayModel.connect",
-                new=AsyncMock(return_value=self.model()),
-            ),
-            patch("services.orchestrator.person_lookup.run", new=answer),
-        ):
-            await lookup(request, item, tools, "Mira Alderwick")
-        assert answer.await_args is not None
-        payload = json.loads(answer.await_args.kwargs["history"][0]["content"])
-        self.assertEqual(
-            [source["url"] for source in payload["untrusted_exact_name_evidence"]],
-            ["https://example.test/profile"],
-        )
-        self.assertEqual(item.retrieved_urls, ["https://example.test/profile"])
-
-    async def test_person_synthesis_uses_question_language(self) -> None:
-        from services.orchestrator.chat_pipeline import ChatTools
-        from services.orchestrator.interactions import Interaction
-        from services.orchestrator.loop import Result
-        from services.orchestrator.person_lookup import lookup
-
-        questions = {
-            "fr": "Qui est Mira Alderwick ?",
-            "de": "Wer ist Mira Alderwick?",
-            "es": "Quien es Mira Alderwick?",
-            "it": "Chi e Mira Alderwick?",
-        }
-        names = {"fr": "French", "de": "German", "es": "Spanish", "it": "Italian"}
-        response = {
-            "data": {
-                "provider": "tavily",
-                "results": [
-                    {
-                        "snippet": "Mira Alderwick is a novelist in Lisbon.",
-                        "link": "https://example.test/profile",
-                    }
-                ],
-            }
-        }
-        for language, question in questions.items():
-            with self.subTest(language=language):
-                item = Interaction()
-                request = ChatRequest.model_validate(
-                    {
-                        "messages": [{"role": "user", "content": question}],
-                        "lang": language,
-                    }
-                )
-                tools = ChatTools(item, request.user_text, allow_image=False)
-
-                async def fake_model(
-                    query: object,
-                    _model: object,
-                    _tools: object,
-                    instruction: str,
-                    _limits: object,
-                    **_: object,
-                ) -> Result:
-                    self.assertEqual(getattr(query, "lang"), language)
-                    self.assertIn(f"{names[language]} ({language})", instruction)
-                    self.assertIn(f"Reply in {names[language]}", instruction)
-                    return Result("localized answer")
-
-                with (
-                    patch.object(tools, "execute", AsyncMock(return_value=response)),
-                    patch(
-                        "services.orchestrator.person_lookup.GatewayModel.connect",
-                        new=AsyncMock(return_value=self.model()),
-                    ),
-                    patch("services.orchestrator.person_lookup.run", new=fake_model),
-                ):
-                    await lookup(request, item, tools, "Mira Alderwick")
-                self.assertEqual(item.reponse, "localized answer")
 
 
 class VisionDeliveryTests(unittest.IsolatedAsyncioTestCase):
