@@ -31,32 +31,14 @@ class Evidence:
     directory: bool
 
 
-_LANGUAGE_NAMES = {
-    "en": "English",
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "it": "Italian",
-}
-
 _SYNTHESIS_INSTRUCTION = (
     "Answer briefly using only the exact-name evidence below and cite its URLs. "
     "First identify distinct people: differences in profession, field, period, or "
     "place can mean separate identities. A directory or search listing alone is not "
     "an identity. When two or more notable identities are supported, name each briefly "
     "with sources, then ask which one is meant; if one is clearly dominant, answer about "
-    "it and mention the others in one line. A namesake is supported only when a passage "
-    "makes the asked full name, after case and accent folding, its subject; never infer a "
-    "namesake from a surname page or a passage about a different full name."
+    "it and mention the others in one line."
 )
-
-
-def synthesis_instruction(language: str) -> str:
-    """Keep person answers in the UI/question language, as on the normal chat path."""
-    return (
-        f"The user's question language is {_LANGUAGE_NAMES[language]} ({language}). "
-        f"Reply in {_LANGUAGE_NAMES[language]}. " + _SYNTHESIS_INSTRUCTION
-    )
 
 
 async def _answer_from_evidence(
@@ -104,7 +86,7 @@ async def _answer_from_evidence(
             Query(question=request.user_text, lang=request.lang),
             model,
             tools,
-            synthesis_instruction(request.lang),
+            _SYNTHESIS_INSTRUCTION,
             Limits(
                 profile=request.model,
                 tool_calls=0,
@@ -163,125 +145,23 @@ def person_name(question: str) -> str | None:
 
 
 def queries(name: str, language: str) -> tuple[Call, ...]:
-    return (
-        Call(
-            "person-exact",
-            "web_search",
-            json.dumps({"query": f'"{name}"', "lang": language}),
-        ),
-    )
-
-
-def _subject_passage(name: str, sentence: str) -> bool:
-    """Accept only a sentence that describes the asked full name as its subject."""
-    folded_name = normalized(name)
-    folded_sentence = normalized(sentence)
-    subject = r"(?<!\w)" + re.escape(folded_name) + r"(?!\w)"
-    predicates = (
-        r"is|was|are|were|founded|cofounded|created|designs|designed|developed|"
-        r"leads|led|works|worked|wrote|published|directs|served|joined|"
-        r"est|etait|a fonde|dirige|travaille|cree|concu|"
-        r"ist|war|grundete|leitet|arbeitet|entwickelte|"
-        r"es|fue|fundo|dirige|trabaja|creo|"
-        r"e|era|fondo|dirige|lavora|creo"
-    )
-    return bool(
-        re.search(
-            r"(?:^|[;:]\s*)" + subject + r"\s*(?:,|" + predicates + r")\b",
-            folded_sentence,
-        )
-    )
-
-
-def _distinctive_terms(name: str, passages: list[str]) -> tuple[str, ...]:
-    """Choose ranked identity terms deterministically from the first exact-name evidence."""
-    name_words = set(re.findall(r"[a-z0-9]+", normalized(name)))
-    stop_words = {
-        "a",
-        "an",
-        "and",
-        "as",
-        "at",
-        "by",
-        "for",
-        "from",
-        "in",
-        "is",
-        "of",
-        "on",
-        "the",
-        "to",
-        "was",
-        "who",
-        "with",
-        "le",
-        "la",
-        "les",
-        "de",
-        "des",
-        "du",
-        "un",
-        "une",
-        "und",
-        "der",
-        "die",
-        "das",
-        "el",
-        "los",
-        "las",
-        "del",
-        "il",
-        "lo",
-        "gli",
-        "di",
-        "da",
-        "e",
-        "founded",
-        "cofounded",
-        "created",
-        "designs",
-        "designed",
-        "developed",
-        "leads",
-        "led",
-        "works",
-        "worked",
-        "wrote",
-        "published",
-        "directs",
-        "served",
-        "joined",
-        "founder",
-        "creator",
+    disambiguation = {
+        "en": "namesake",
+        "fr": "homonyme",
+        "de": "Namensgleichheit",
+        "es": "homonimo",
+        "it": "omonimo",
     }
-    terms: list[str] = []
-    for passage in passages:
-        for word in re.findall(r"[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9'-]*", passage):
-            folded = normalized(word)
-            if len(folded) < 3 or folded in name_words or folded in stop_words:
-                continue
-            if folded not in terms:
-                terms.append(folded)
-            if len(terms) == 3:
-                return tuple(terms)
-    return tuple(terms)
-
-
-def second_query(
-    name: str, passages: list[str], language: str, provider: object
-) -> Call | None:
-    """Use the spare person-search slot to expose a potentially separate identity."""
-    terms = _distinctive_terms(name, passages)
-    if not terms:
-        return None
-    if provider == "serpapi":
-        query = " ".join([f'"{name}"', *(f"-{term}" for term in terms)])
-    else:
-        # Tavily does not document Boolean exclusions, and SearXNG delegates syntax to
-        # a varying engine set, so use portable context words rather than pretending.
-        query = f'"{name}" biography profile career'
-    return Call(
-        "person-other", "web_search", json.dumps({"query": query, "lang": language})
+    return tuple(
+        Call(
+            f"person-{i}", "web_search", json.dumps({"query": query, "lang": language})
+        )
+        for i, query in enumerate(
+            (
+                f'"{name}"',
+                f'"{name}" {disambiguation.get(language, disambiguation["en"])}',
+            )
+        )
     )
 
 
@@ -310,44 +190,6 @@ async def lookup(
     failures = []
     similar_name_found = False
     surname = normalized(name).split()[-1]
-
-    def retain_results(result: object) -> tuple[list[str], object]:
-        nonlocal similar_name_found
-        data = result.get("data") if isinstance(result, dict) else None
-        provider = data.get("provider") if isinstance(data, dict) else None
-        rows = data.get("results", []) if isinstance(data, dict) else []
-        retained: list[str] = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            url = row.get("link")
-            passage = str(
-                row.get("snippet") or row.get("content") or row.get("title") or ""
-            )
-            sentences = re.split(r"(?<=[.!?])\s+|\n", passage)
-            matching = [
-                sentence for sentence in sentences if _subject_passage(name, sentence)
-            ]
-            if not matching and re.search(
-                r"(?<!\w)" + re.escape(surname) + r"(?!\w)", normalized(passage)
-            ):
-                similar_name_found = True
-            if matching and isinstance(url, str) and re.match(r"https?://", url):
-                excerpt = " ".join(matching)[:1200]
-                passages, directory = evidence.setdefault(
-                    url,
-                    (
-                        [],
-                        _is_directory_source(url, row.get("title"), excerpt),
-                    ),
-                )
-                if excerpt not in passages:
-                    passages.append(excerpt)
-                    retained.append(excerpt)
-        return retained, provider
-
-    initial_passages: list[str] = []
-    provider: object = None
     for call in queries(name, request.lang):
         searched.append(json.loads(call.arguments)["query"])
         try:
@@ -357,22 +199,40 @@ async def lookup(
         except GatewayError as exc:
             failures.append(exc.code)
             continue
-        retained, provider = retain_results(result)
-        if retained:
-            # Search ranking makes the first exact-subject passage the deterministic
-            # dominant identity; later passages may already be a different namesake.
-            initial_passages.append(retained[0])
-    if follow_up := second_query(name, initial_passages, request.lang, provider):
-        searched.append(json.loads(follow_up.arguments)["query"])
-        try:
-            retain_results(
-                await tools.execute(
-                    follow_up,
-                    max(0.01, request.timeout_seconds - (time.monotonic() - started)),
-                )
+        data = result.get("data")
+        rows = data.get("results", []) if isinstance(data, dict) else []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            url = row.get("link")
+            # A full-name mention is evidence of a match, not proof that namesakes
+            # are the same person. Quote only the retrieved passage containing it.
+            passage = str(
+                row.get("snippet") or row.get("content") or row.get("title") or ""
             )
-        except GatewayError as exc:
-            failures.append(exc.code)
+            sentences = re.split(r"(?<=[.!?])\s+|\n", passage)
+            matching = [
+                s
+                for s in sentences
+                if re.search(
+                    r"(?<!\w)" + re.escape(normalized(name)) + r"(?!\w)", normalized(s)
+                )
+            ]
+            if not matching and re.search(
+                r"(?<!\w)" + re.escape(surname) + r"(?!\w)", normalized(passage)
+            ):
+                similar_name_found = True
+            if matching and isinstance(url, str) and re.match(r"https?://", url):
+                passage = " ".join(matching)[:1200]
+                passages, directory = evidence.setdefault(
+                    url,
+                    (
+                        [],
+                        _is_directory_source(url, row.get("title"), passage),
+                    ),
+                )
+                if passage not in passages:
+                    passages.append(passage)
     labels = {
         "en": (
             "I could not find reliable information identifying",
