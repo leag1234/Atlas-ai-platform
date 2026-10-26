@@ -7,6 +7,31 @@ from services.orchestrator.interactions import Interaction
 
 URL = re.compile(r"https?://[^\s<>\"'()\]]+")
 REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
+_PRODUCT_URL_KEYS = frozenset(
+    {
+        "url",
+        "download_url",
+        "download_route",
+        "preview_url",
+        "preview_route",
+        "content_url",
+        "file_url",
+        "reference",
+    }
+)
+
+
+def tool_result_urls(value: object) -> set[str]:
+    """Return URLs explicitly emitted in product-owned result fields only."""
+    if isinstance(value, dict):
+        found = set().union(*(tool_result_urls(part) for part in value.values()))
+        for key, part in value.items():
+            if key in _PRODUCT_URL_KEYS and isinstance(part, str):
+                found.update(urls(part))
+        return found
+    if isinstance(value, list):
+        return set().union(*(tool_result_urls(part) for part in value))
+    return set()
 
 
 def drawing_references(item: Interaction) -> set[str]:

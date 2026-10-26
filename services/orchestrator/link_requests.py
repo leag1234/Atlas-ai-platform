@@ -90,6 +90,20 @@ def link_query(question: str, history: Sequence[str] = ()) -> str:
     return (question + (" " + context if context else ""))[:500]
 
 
+def fallback_terms(question: str, history: Sequence[str] = ()) -> str:
+    """Give a concise query hint without echoing the complete request."""
+    context = re.sub(r"https?://\S+", "", question + "\n" + "\n".join(history[-1:]))
+    products = list(
+        dict.fromkeys(
+            re.findall(
+                r"\b[A-Z][a-zA-Z]+[ \t]+[A-Z]{1,4}(?:-[A-Z]{1,4})?[- ]?\d{1,4}[A-Za-z0-9-]*\b",
+                context,
+            )
+        )
+    )
+    return ", ".join(products[:3]) if products else "requested product or page"
+
+
 def instruction() -> str:
     return (
         "\nThis request requires verified links: use web_search and web_fetch to "

@@ -3,11 +3,11 @@
 import json
 import unittest
 from decimal import Decimal
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from services.orchestrator.citation_cleanup import cleanup, hollow
 from services.orchestrator.link_requests import link_request
-from services.orchestrator.loop import Limits, Query, Reservation, Turn, run
+from services.orchestrator.loop import Call, Limits, Query, Reservation, Turn, run
 from services.orchestrator.search_policy import required_research, requested_page_read
 from services.orchestrator.source_truth import without_unretrieved
 
@@ -142,6 +142,73 @@ class LinksGuardTests(unittest.TestCase):
 
 
 class LinksJourneyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_work_keeps_remote_fetch_project_file_link(self) -> None:
+        url = "https://atlas.example/api/atlas/project/files/report.txt/download"
+        model = Mock(
+            estimate=Mock(return_value=Reservation(100, Decimal("0.001"))),
+            complete=AsyncMock(
+                side_effect=[
+                    Turn("", (Call("fetch", "remote_fetch", "{}"),)),
+                    Turn(f"Remote checks completed. [Download report]({url})"),
+                ]
+            ),
+        )
+        tools = Mock(
+            estimate=Mock(return_value=Reservation(0, Decimal(0))),
+            execute=AsyncMock(return_value={"download_url": url}),
+        )
+        with patch("services.orchestrator.code_workspace.enabled", return_value=True):
+            result = await run(
+                Query(question="Give me the project file link", lang="en"),
+                model,
+                tools,
+                "",
+                Limits(
+                    profile="atlas-qwen",
+                    tokens=None,
+                    tool_calls=2,
+                    wall_clock=30,
+                    cost=Decimal("1"),
+                    model_calls=2,
+                    code_mode=True,
+                ),
+            )
+        self.assertEqual(result.state, "done")
+        self.assertIn("Remote checks completed.", result.text)
+        self.assertIn(url, result.text)
+        self.assertNotIn("could not retrieve verified links", result.text)
+
+    async def test_work_removes_only_an_invented_external_link(self) -> None:
+        model = Mock(
+            estimate=Mock(return_value=Reservation(100, Decimal("0.001"))),
+            complete=AsyncMock(
+                return_value=Turn(
+                    "Remote checks completed. [Invented](https://store.example/item)"
+                )
+            ),
+        )
+        tools = Mock(estimate=Mock(return_value=Reservation(0, Decimal(0))))
+        with patch("services.orchestrator.code_workspace.enabled", return_value=True):
+            result = await run(
+                Query(question="Give me the project file link", lang="en"),
+                model,
+                tools,
+                "",
+                Limits(
+                    profile="atlas-qwen",
+                    tokens=None,
+                    tool_calls=1,
+                    wall_clock=30,
+                    cost=Decimal("1"),
+                    model_calls=1,
+                    code_mode=True,
+                ),
+            )
+        self.assertEqual(result.state, "done")
+        self.assertIn("Remote checks completed.", result.text)
+        self.assertNotIn("store.example", result.text)
+        self.assertNotIn("could not retrieve verified links", result.text)
+
     async def test_owner_reply_recovers_with_same_budget(self) -> None:
         answer = "Yamaha P-145 — Thomann : [product page](https://shop.example/piano). Price could not be verified."
         model = Mock(

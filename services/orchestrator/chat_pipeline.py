@@ -858,6 +858,7 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             clean_answer(item.reponse),
             set(item.retrieved_urls)
             | drawing_references(item)
+            | set(item.tool_urls)
             | {str(c.get("source")) for c in item.citations}
             | set(
                 re.findall(
@@ -874,17 +875,21 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         )
         sources = visible_sources(item)
         from services.orchestrator.link_requests import (
+            fallback_terms,
             page_request,
             unavailable,
-            link_query,
         )
         from services.orchestrator.citation_cleanup import hollow
 
-        if page_request(
-            request.user_text, tuple(m.text for m in request.messages[:-1])
-        ) and hollow(clean_answer(result_before_guard), item.reponse):
+        if (
+            not request.project_id
+            and page_request(
+                request.user_text, tuple(m.text for m in request.messages[:-1])
+            )
+            and hollow(clean_answer(result_before_guard), item.reponse)
+        ):
             item.reponse = unavailable(
-                link_query(
+                fallback_terms(
                     request.user_text, tuple(m.text for m in request.messages[:-1])
                 ),
                 request.lang,
@@ -1808,11 +1813,11 @@ async def _process(
             "search_no_results",
             "daily_search_limit",
         }:
-            from services.orchestrator.link_requests import unavailable, link_query
+            from services.orchestrator.link_requests import fallback_terms, unavailable
 
             item.erreurs.append(exc.code)
             item.reponse = unavailable(
-                link_query(
+                fallback_terms(
                     request.user_text, tuple(m.text for m in request.messages[:-1])
                 ),
                 request.lang,
