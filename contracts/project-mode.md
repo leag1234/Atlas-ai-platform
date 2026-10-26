@@ -1053,6 +1053,34 @@ background ledger write. Canonical history and the public transcript are unchang
 MemoryEntry.kind includes constraint, the pinned kind already specified above.
 The transport response cap remains 160000 bytes.
 
+## Repository trial continuation (2026-10-25)
+
+REQ-PROJ-05: `POST P/repositories/import-approvals` accepts the repository
+registration fields except approval_id and issues a 120-second approval. It binds
+member, organization, project, connector, empty destination folder/revision, current
+grant/policy, immutable remote commit, exact paths and digest/bytes. The ordinary
+approval decision endpoint records the decision; `POST P/repositories` consumes
+it once and imports canonical versions atomically. No database bootstrap is needed.
+`GET P/repositories` lists authorized repository metadata. A Work session selecting
+a repository folder records that repository and mounts its selected versions.
+
+The private execution `forge` operation carries the ordinary lease fence and
+issue/execute/status. Issue accepts RepositoryAction; a commit additionally carries
+base64 canonical snapshot bytes. Retrieval stores an immutable version before
+issuing the approval. Execution uses the stored action, never subsequent scratch
+bytes. The model-facing code group's `forge_action` schema has branch, commit and
+pull_request variants and waits for inline approval. It extends Work's approval
+surface without changing the existing file/memory request_approval schema.
+
+Forgejo/Gitea connectors use the existing operator ATLAS_FORGE_CONNECTORS catalog,
+forge=forgejo or gitea, pinned HTTPS remote_ref/api_url (same origin, /api/v1),
+repository and token_env. Credentials stay in retrieval. A private instance must
+have explicitly allowed_addresses; TLS verification remains enabled with optional
+operator ca_file. Git publication retains compare-and-swap refs and reconciliation;
+REST uses token authentication and limit pagination. No network enters the worker.
+Work honors the selected public profile and validated ChatRequest output allowance;
+the measurement adapter calls the same product configuration function.
+
 ## Amendment 2026-10-25 (typed memory), approved by the supervisor
 
 REQ-PROJ-02/04/06/08/09: memory kinds are constraint, decision, fact, preference,
@@ -1094,3 +1122,28 @@ Explicit remember commands (EN/FR/DE/ES/IT) in the actual user question create
 active facts when no document is selected; document-derived requests stay proposed.
 The model cannot invoke this explicit-command authority. Right-panel controls
 provide grouping by kind/tier, pinning, edits, accept/reject and revision history.
+
+## Single-approval repository publication (2026-10-25)
+
+REQ-PROJ-05/06: publish_change freezes the complete scratch snapshot and proposes
+branch, target, commit message, PR title/body and a broker-derived diff summary.
+One inline approval binds these exact fields, immutable snapshot, base SHA,
+connector, scope, member, lease and policy. Separate actions remain available.
+The broker durably checkpoints branch, commit and pull_request, reauthorizes
+before each effect and checks the target base. Recovery reads remote state before
+resending only a proven-absent step, using the original operation identity.
+Public approval replay remains forbidden. Partial failures retain completed steps,
+failing step and unknown state when the remote result cannot be established.
+The Work result includes the verified PR URL on success or failing step otherwise.
+Approval decision updates are emitted to the inline card.
+
+## Code model selection for the bounded trial (2026-10-26)
+
+REQ-PROJ-05: with a configured provider preset, ATLAS_CODE_MODEL optionally selects
+only the code role. Without it, existing role/model selection is unchanged.
+Text, vision, fast and other roles retain their existing models and options.
+Known code models carry explicit gateway-owned context and pricing metadata;
+unknown overrides remain visibly unpriced, never silently classified as free.
+Compose forwards this optional setting only to the gateway. Measurement verifies
+both role and selected provider model before dispatch, without changing prompts,
+sampling, output limits or per-task budgets.

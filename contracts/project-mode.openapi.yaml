@@ -237,6 +237,51 @@ paths:
           $ref: '#/components/responses/Error429'
         '503':
           $ref: '#/components/responses/Error503'
+  /internal/atlas/execution/forge:
+    post:
+      operationId: executionForge
+      summary: Private scoped approval-gated repository publication
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionForge'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionForgeResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
   /internal/atlas/execution/organize:
     post:
       operationId: executionOrganize
@@ -3479,6 +3524,66 @@ paths:
           $ref: '#/components/responses/Error503'
         '504':
           $ref: '#/components/responses/Error504'
+  /api/atlas/orgs/{org}/projects/{project}/repositories/import-approvals:
+    post:
+      operationId: post_api_atlas_orgs_org_projects_project_repository_import_approval
+      summary: Issue an approval for an immutable repository import
+      x-roles:
+      - editor
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '416':
+          $ref: '#/components/responses/Error416'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositoryImportRequest'
   /api/atlas/orgs/{org}/projects/{project}/repositories:
     post:
       operationId: post_api_atlas_orgs_org_projects_project_repositories
@@ -4938,6 +5043,49 @@ components:
       required:
       - session
       - cleanup_required
+    ExecutionForgeResult:
+      type: object
+      additionalProperties: false
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        state:
+          enum: [pending, running, succeeded, failed, unknown]
+        approval_id:
+          type: string
+          format: uuid
+        approval:
+          $ref: '#/components/schemas/Approval'
+        commit:
+          anyOf:
+          - type: string
+            pattern: ^[a-f0-9]{40}$
+          - type: 'null'
+      required: [operation_id, state, approval]
+    ExecutionForge:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        operation:
+          enum: [issue, execute, status]
+        operation_id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/RepositoryAction'
+        snapshot_content:
+          type: string
+      required: [session_id, request_id, generation, operation]
     ExecutionApprovalIssue:
       type: object
       additionalProperties: false
@@ -7357,7 +7505,10 @@ components:
           - branch
           - commit
           - pull_request
+          - publish_change
           - local_read
+        publication:
+          $ref: '#/components/schemas/PublicationSummary'
         action_digest:
           type: string
           pattern: ^[a-f0-9]{64}$
@@ -9541,6 +9692,24 @@ components:
       required:
       - job_id
       - purge_at
+    RepositoryImportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        folder_id:
+          type: string
+          format: uuid
+        connector_id:
+          type: string
+          format: uuid
+        remote_ref:
+          type: string
+          format: uri
+          pattern: ^https://[^/@]+/[^@?#]+$
+      required:
+      - folder_id
+      - connector_id
+      - remote_ref
     RepositoryCreate:
       type: object
       additionalProperties: false
@@ -9692,11 +9861,121 @@ components:
       - base_commit
       - change_digest
       - parameters
+    PublishChangeAction:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          const: publish_change
+        base_commit:
+          type: string
+          pattern: ^[a-f0-9]{40,64}$
+        change_digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        parameters:
+          $ref: '#/components/schemas/PublishChangeParameters'
+        snapshot:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              format: uuid
+            sha256:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+          required:
+          - id
+          - sha256
+        approval_id:
+          type: string
+          format: uuid
+      required:
+      - kind
+      - base_commit
+      - change_digest
+      - parameters
+      - snapshot
+    PublishChangeParameters:
+      type: object
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        target:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        message:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        title:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        body:
+          type: string
+          maxLength: 32000
+      required:
+      - branch
+      - target
+      - message
+      - title
+      - body
+    PublicationSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        target:
+          type: string
+        message:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        base_commit:
+          type: string
+        change_digest:
+          type: string
+        diff:
+          type: array
+          maxItems: 20000
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              path:
+                type: string
+              status:
+                enum:
+                - added
+                - modified
+                - deleted
+            required:
+            - path
+            - status
+      required:
+      - branch
+      - target
+      - message
+      - title
+      - body
+      - base_commit
+      - change_digest
+      - diff
     RepositoryAction:
       oneOf:
       - $ref: '#/components/schemas/BranchAction'
       - $ref: '#/components/schemas/CommitAction'
       - $ref: '#/components/schemas/PullRequestAction'
+      - $ref: '#/components/schemas/PublishChangeAction'
     Operation:
       type: object
       additionalProperties: false

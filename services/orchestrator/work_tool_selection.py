@@ -39,7 +39,14 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "run_command",
         "publish_document",
     ),
-    "code": ("read_file", "search", "edit_file", "write_file", "run_command"),
+    "code": (
+        "edit_file",
+        "run_command",
+        "forge_action",
+        "read_file",
+        "write_file",
+        "search",
+    ),
     "files": ("list_dir", "read_file", "search", "write_file", "organize_files"),
 }
 PATTERNS = {
@@ -136,15 +143,14 @@ class WorkToolSelection:
     @property
     def names(self) -> tuple[str, ...]:
         group = GROUPS[self.group]
-        if not self.reopen_enabled:
-            return (*CORE, *group)
         if self.focus in group:
             group = (self.focus, *(name for name in group if name != self.focus))
-        return (
-            (*CORE, "reopen_result", "project_memory", *group[:3])
-            if self.memory_enabled
-            else (*CORE, "reopen_result", *group[:4])
-        )
+        extra: tuple[str, ...] = ()
+        if self.reopen_enabled:
+            extra += ("reopen_result",)
+        if self.memory_enabled:
+            extra += ("project_memory",)
+        return (*CORE, *extra, *group[: 5 - len(extra)])
 
     def declarations(self) -> list[dict[str, object]]:
         # The model asks for declarations at the next dispatch. Already-issued

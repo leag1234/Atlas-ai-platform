@@ -114,6 +114,10 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
         }
         for name, schema in SCHEMAS.items()
     ]
+    if scoped:
+        from services.orchestrator.work_forge_tools import declaration
+
+        result.append(declaration())
     return result + (project_document_tools.declarations() if scoped else [])
 
 
@@ -391,6 +395,8 @@ class WorkTools(CodeTools):
             mapped["measurement"] = {
                 k: output[k] for k in ("measured", "limit", "unit")
             }
+            if mapped["measurement"]["unit"] == "steps":
+                mapped["measurement"]["unit"] = "calls"
         event = dict(
             org_id=self.execution.broker.org,
             project_id=self.execution.broker.project,
@@ -477,6 +483,26 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return dict(trust="untrusted", **result)
+        if call.name == "forge_action":
+            from services.orchestrator import work_forge_tools
+            from services.retrieval.project_identity import ProjectError
+
+            try:
+                result = await work_forge_tools.execute(self, call.arguments, timeout)
+            except (ValueError, ProjectError) as exc:
+                result = dict(
+                    error=exc.body["error"]
+                    if isinstance(exc, ProjectError)
+                    else "invalid_tool_arguments"
+                )
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return result
         if call.name == "request_approval":
             try:
                 args = approval_arguments(call.arguments)

@@ -128,6 +128,15 @@ class Work:
                 or file["version_id"] != version["id"]
             ):
                 raise ProjectError(409, "revision_conflict", revision=file["revision"])
+        repositories = [
+            r
+            for r in self.files.listing("repository")
+            if r["folder_id"] in data["folder_ids"]
+        ]
+        if len(repositories) > 1:
+            raise ProjectError(
+                422, "invalid_request", "Select one repository per Work session"
+            )
         workspace = str(uuid4())
         value = dict(
             self.files.new(),
@@ -135,7 +144,7 @@ class Work:
             initiator_member_id=self.scope.identity.member,
             workspace_id=workspace,
             base_file_versions=data["base_versions"],
-            repository_id=None,
+            repository_id=repositories[0]["id"] if repositories else None,
             state="ready",
             plan=[],
             effective_limits=self.scope.policy["quotas"]["per_turn"],
@@ -552,7 +561,11 @@ class Work:
 
     def approval_current(self, row: dict[str, Any]) -> bool:
         value, execution = row["data"], row["execution"]
-        if not execution or "forge_operation" in execution:
+        if (
+            not execution
+            or "forge_operation" in execution
+            or "repository_import" in execution
+        ):
             return False
         lease = self.lease(value["session_id"])
         session = self.get(value["session_id"])
@@ -585,6 +598,10 @@ class Work:
     def decide(self, identifier: str, data: dict[str, Any]) -> tuple[int, Any]:
         validate("ApprovalDecision", data)
         row = self.approval(identifier)
+        if row["execution"] and "repository_import" in row["execution"]:
+            from services.retrieval.project_repository_import import RepositoryImports
+
+            return RepositoryImports(self.scope).decide(identifier, data)
         if row["execution"] and "forge_operation" in row["execution"]:
             from services.retrieval.project_forge import RepositoryActions
 

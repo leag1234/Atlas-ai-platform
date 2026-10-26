@@ -1,0 +1,6 @@
+{
+  "folder_id": "10000000-0000-4000-8000-000000000001",
+  "connector_id": "10000000-0000-4000-8000-000000000001",
+  "remote_ref": "https://example.org/repository",
+  "token": "not-accepted"
+}
