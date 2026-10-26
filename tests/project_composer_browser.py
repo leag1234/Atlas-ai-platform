@@ -193,6 +193,52 @@ class ProjectComposerTests(unittest.TestCase):
         )
         self.page.locator("[data-send]:not([disabled])").wait_for()
 
+    def test_work_verification_is_next_to_replayed_answer(self) -> None:
+        from playwright.sync_api import expect
+
+        self.turns = [
+            dict(
+                id="verified-turn",
+                request_id="request",
+                action="work",
+                state="completed",
+                content_refs=[dict(kind="answer", text="Proposed repair")],
+            )
+        ]
+        for status in ("failed", "not_run", "passed"):
+            self.events = [
+                dict(
+                    org_id=ORG,
+                    project_id=PROJECT,
+                    version=1,
+                    seq=1,
+                    request_id="request",
+                    type="recap",
+                    status="completed",
+                    label="Work turn complete",
+                    output=dict(
+                        text="Proposed repair",
+                        verification=dict(
+                            status=status,
+                            command="pytest",
+                            exit_code=1 if status == "failed" else 0,
+                            reason="Recorded command evidence",
+                        ),
+                    ),
+                )
+            ]
+            self.mount()
+            badge = self.page.locator(
+                '.atlas-project-turn [data-verification="' + status + '"]'
+            )
+            expect(badge).to_contain_text("Verification: " + status)
+            expect(badge).to_contain_text("pytest exited")
+            expect(
+                self.page.locator(
+                    '.atlas-project-activity [data-verification="' + status + '"]'
+                )
+            ).to_have_count(1)
+
     def test_organization_name_is_display_only(self) -> None:
         self.mount()
         organization = self.page.get_by_role(

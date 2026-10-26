@@ -266,6 +266,7 @@ class WorkAdapter:
                 sink_context.reset(sink)
             record.update(
                 state=item.state,
+                verification=item.verification,
                 reason="provider_error"
                 if "provider_error" in item.erreurs
                 else ";".join(item.erreurs),
@@ -276,6 +277,8 @@ class WorkAdapter:
             record["error"] = type(error).__name__
             raise RuntimeError(type(error).__name__) from None
         finally:
+            if item is not None:
+                record["verification"] = item.verification
             self.record_outcome(record)
             charge = ceiling if item is not None else Decimal(0)
             unknown = item is not None

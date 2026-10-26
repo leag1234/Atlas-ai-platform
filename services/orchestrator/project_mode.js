@@ -165,6 +165,8 @@
       const article = node('article', null, 'atlas-project-turn'); article.dataset.turn = turn.id;
       article.append(node('small', `${t(turn.action)} · ${t(turn.state)}`));
       for (const ref of turn.content_refs) if (ref.text) article.append(prose(ref.text, ref.kind === 'question' ? 'question' : 'answer'));
+      const checked = [...events.values()].filter(e => e.request_id === turn.request_id && e.output?.verification).sort((a,b) => b.seq - a.seq)[0];
+      if (checked) article.append(verificationBadge(checked.output.verification));
       if (turn.usage?.cost_eur != null) article.append(detail('cost', turn.usage.cost_eur));
       if (turn.usage?.unknown_eur) article.append(detail('unknownCost', turn.usage.unknown_eur));
       if (turn.usage?.reserved_eur) article.append(detail('reservedCost', turn.usage.reserved_eur));
@@ -251,7 +253,14 @@
     events.set(event.seq, event);
     renderEvents();
   }
+  function verificationBadge(value) {
+    const badge = node('p', `Verification: ${value.status} · ${value.reason}`, 'atlas-project-verification');
+    badge.dataset.verification = value.status;
+    if (value.command) badge.append(node('span', ` · ${value.command} exited ${value.exit_code}`));
+    return badge;
+  }
   function renderEvents() {
+    renderTurns();
     for (const event of [...events.values()].sort((a,b) => a.seq - b.seq)) renderEvent(event);
   }
   function renderEvent(event) {
@@ -263,6 +272,7 @@
     item.append(node('small', `${event.label || event.type} · ${t(event.status || event.state || '')}`));
     const out = event.output || {};
     for (const text of [event.text, event.error?.message, out.text, out.detail]) if (text) item.append(prose(text));
+    if (out.verification) item.append(verificationBadge(out.verification));
     if (out.tool_result) { const details = node('details'); details.append(node('summary', t('results')), node('pre', out.tool_result)); item.append(details); }
     if (out.items) for (const step of out.items) item.append(node('p', `${step.status}: ${step.text || step.title || step.step || ''}`));
     if (out.measurement) item.append(node('p', `${out.measurement.measured} / ${out.measurement.limit} ${out.measurement.unit}`));

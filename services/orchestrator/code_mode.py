@@ -16,7 +16,8 @@ import yaml
 
 from packages.ports import atlas_ports
 from services.orchestrator.chat_schema import ChatRequest
-from services.orchestrator.code_tools import CodeTools, declarations
+from services.orchestrator.code_tools import CodeTools, WorkTools, declarations
+from services.orchestrator.code_verification import annotate, explicit_tests
 from services.orchestrator.code_workspace import Audit, Workspace, enabled, redact
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import (
@@ -164,6 +165,8 @@ async def execute_turn(
         from packages.context_usage import register
 
         register(str(history[-1]["content"]), {"session_state": workspace_context})
+    if isinstance(tools, WorkTools):
+        tools.verification.explicit = explicit_tests(request.user_text)
     result = await run(
         Query(question=redact(request.user_text), lang=request.lang),
         model,
@@ -175,15 +178,22 @@ async def execute_turn(
         references=references,
     )
     assert isinstance(result, CodeResult)
-    result.text, replaced = honest(
-        redact(result.text), tools.test_evidence, request.lang
-    )
+    if isinstance(tools, WorkTools):
+        result.verification = tools.verification.status()
+        result.text, replaced = annotate(redact(result.text), result.verification)
+    else:
+        result.text, replaced = honest(
+            redact(result.text), tools.test_evidence, request.lang
+        )
     if replaced:
         await tools.emit(
             "honesty",
             label="Test claim corrected",
             status="completed",
-            output={"text": result.text},
+            output={
+                "text": result.text,
+                "verification": result.verification.model_dump(),
+            },
         )
     if result.limit_stop:
         await tools.emit(
@@ -285,6 +295,7 @@ async def process_code(request: ChatRequest, item: Interaction) -> None:
                 workspace_context,
             )
             item.reponse = result.text
+            item.verification = result.verification.model_dump()
             item.cout_eur = float(result.cost)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
             if result.reason:
@@ -721,6 +732,7 @@ async def process_work(
             if collect_workspace is not None:
                 await collect_workspace(workspace)
             item.reponse = result.text
+            item.verification = result.verification.model_dump()
             if tools.nearby is not None and tools.nearby.result:
                 from services.orchestrator.nearby_chat import render
                 from services.orchestrator.location import LEDGER_LABEL
@@ -757,6 +769,7 @@ async def process_work(
                 output=dict(
                     text=item.reponse,
                     steps=result.tool_calls,
+                    verification=result.verification.model_dump(),
                     cost_eur=item.cout_eur,
                     file_version_ids=[r["file_version_id"] for r in tools.deliverables],
                 ),
@@ -765,6 +778,7 @@ async def process_work(
         terminal = "cancelled"
         raise
     finally:
+        item.verification = tools.verification.status().model_dump()
         renewal.cancel()
         await asyncio.gather(renewal, return_exceptions=True)
         if model is not None:
