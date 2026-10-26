@@ -673,6 +673,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
             patch("services.orchestrator.person_lookup.run", new=answer),
         ):
             await lookup(request, item, tools, "Mira Alderwick")
+        assert answer.await_args is not None
         payload = json.loads(answer.await_args.kwargs["history"][0]["content"])
         self.assertEqual(
             [source["url"] for source in payload["untrusted_exact_name_evidence"]],
@@ -723,7 +724,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
                     _limits: object,
                     **_: object,
                 ) -> Result:
-                    self.assertEqual(query.lang, language)
+                    self.assertEqual(getattr(query, "lang"), language)
                     self.assertIn(f"{names[language]} ({language})", instruction)
                     self.assertIn(f"Reply in {names[language]}", instruction)
                     return Result("localized answer")
