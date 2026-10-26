@@ -49,6 +49,18 @@ def detected_language(text: str) -> str | None:
         normalized,
     ):
         return "fr"
+    # Exact-person questions are usually short, so statistical language detection
+    # has too little prose to distinguish their common interrogative forms.
+    question_starts = (
+        ("fr", r"\b(?:qui\s+est|qui\s+etait|parle[ -]?moi\s+de)\b"),
+        ("de", r"\b(?:wer\s+ist|wer\s+war)\b"),
+        ("es", r"\b(?:quien\s+es|quien\s+fue)\b"),
+        ("it", r"\b(?:chi\s+e|chi\s+era)\b"),
+        ("en", r"\b(?:who\s+is|who\s+was|tell\s+me\s+about)\b"),
+    )
+    for language, pattern in question_starts:
+        if re.search(pattern, normalized):
+            return language
     if re.match(r"\s*i would like\b", normalized):
         return "en"
     if not re.search(r"[^\W\d_]", text):
@@ -124,6 +136,8 @@ def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> s
     if len(re.findall(r"\b[\w'-]+\b", current)) < 5:
         if history is not None:
             return history
+        if language := detected_language(current):
+            return language
         # Statistical detection is unreliable on very short messages. Retain
         # explicit French cues locked by M19, otherwise honor the UI locale.
         normalized = "".join(

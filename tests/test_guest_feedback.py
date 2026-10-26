@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 from typing import Any
@@ -305,6 +306,20 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
                     '"Mira Alderwick" biography profile career',
                 )
 
+    def test_provider_shaped_fictional_results_keep_subject_titles_and_context(
+        self,
+    ) -> None:
+        from services.orchestrator.person_lookup import _subject_passage, _subject_title
+
+        fixture = json.loads(
+            Path("tests/fixtures/person-search-results.json").read_text()
+        )
+        serp_row = fixture["serpapi"]["data"]["results"][0]
+        searx_row = fixture["searxng"]["data"]["results"][0]
+        self.assertTrue(_subject_title("Élise Marceau", serp_row["title"]))
+        self.assertTrue(_subject_passage("Élise Marceau", serp_row["snippet"]))
+        self.assertTrue(_subject_passage("Élise Marceau", searx_row["content"]))
+
     async def test_consistent_exact_sources_are_written_by_model_with_citations(
         self,
     ) -> None:
@@ -511,7 +526,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         }
         with patch.object(tools, "execute", AsyncMock(return_value=response)) as search:
             await lookup(request, item, tools, "Mira Alderwick")
-        self.assertEqual(search.await_count, 1)
+        self.assertEqual(search.await_count, 2)
         self.assertIn("could not find reliable", item.reponse)
         self.assertIn('"Mira Alderwick"', item.reponse)
         self.assertIn("not the same person", item.reponse)
@@ -622,6 +637,41 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             item.retrieved_urls,
             ["https://example.test/cobalt", "https://example.test/tide"],
+        )
+
+    async def test_second_pass_uses_unfiltered_first_result_material(self) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Mira Alderwick?"}],
+                "lang": "en",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        first = {
+            "data": {
+                "provider": "serpapi",
+                "results": [
+                    {
+                        "title": "Alderwick family directory",
+                        "snippet": "A directory lists Mira Alderwick beside unrelated records.",
+                        "link": "https://directory.example.test/alderwick",
+                    }
+                ],
+            }
+        }
+        with patch.object(
+            tools, "execute", AsyncMock(side_effect=[first, {"data": {"results": []}}])
+        ) as search:
+            await lookup(request, item, tools, "Mira Alderwick")
+        self.assertEqual(search.await_count, 2)
+        self.assertIn(
+            "-directory",
+            json.loads(search.await_args_list[1].args[0].arguments)["query"],
         )
 
     async def test_namesake_list_and_passing_mentions_are_not_cited(self) -> None:

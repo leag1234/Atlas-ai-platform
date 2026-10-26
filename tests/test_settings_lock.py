@@ -130,6 +130,23 @@ class SettingsLockTests(unittest.TestCase):
             "en",
         )
 
+    def test_short_exact_person_questions_use_their_own_language(self) -> None:
+        questions = {
+            "fr": "Qui est Élise Marceau ?",
+            "de": "Wer ist Elise Marceau?",
+            "es": "Quien es Elisa Marceau?",
+            "it": "Chi e Elisa Marceau?",
+            "en": "Who is Elise Marceau?",
+        }
+        for language, question in questions.items():
+            with self.subTest(language=language):
+                self.assertEqual(
+                    conversation_language(
+                        [ChatMessage(role="user", content=question)], "en"
+                    ),
+                    language,
+                )
+
     def test_english_image_request_does_not_fall_back_to_french(self) -> None:
         self.assertEqual(
             conversation_language(

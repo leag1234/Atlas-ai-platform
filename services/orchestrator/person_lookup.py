@@ -173,7 +173,7 @@ def queries(name: str, language: str) -> tuple[Call, ...]:
 
 
 def _subject_passage(name: str, sentence: str) -> bool:
-    """Accept only a sentence that describes the asked full name as its subject."""
+    """Accept an exact-name sentence with a subject, apposition, or dated heading."""
     folded_name = normalized(name)
     folded_sentence = normalized(sentence)
     subject = r"(?<!\w)" + re.escape(folded_name) + r"(?!\w)"
@@ -185,10 +185,29 @@ def _subject_passage(name: str, sentence: str) -> bool:
         r"es|fue|fundo|dirige|trabaja|creo|"
         r"e|era|fondo|dirige|lavora|creo"
     )
+    dated_subject = subject + r"\s*(?:\([^)]{1,80}\)\s*)?"
     return bool(
         re.search(
-            r"(?:^|[;:]\s*)" + subject + r"\s*(?:,|" + predicates + r")\b",
+            r"(?:^|[;:]\s*|^.{0,48}?[·|:]\s*)"
+            + dated_subject
+            + r"(?:,\s*(?:an?\s+|the\s+|un[ae]?\s+|le\s+|la\s+|der\s+|die\s+|el\s+|il\s+)?[a-z]|\s+(?:"
+            + predicates
+            + r")\b)",
             folded_sentence,
+        )
+    )
+
+
+def _subject_title(name: str, title: object) -> bool:
+    """Titles may carry the identity when a provider truncates the snippet."""
+    if not isinstance(title, str):
+        return False
+    folded_name = normalized(name)
+    folded_title = normalized(title).strip()
+    return bool(
+        re.match(
+            re.escape(folded_name) + r"(?:\s*\([^)]{1,80}\))?\s*(?:$|[-—–|:,])",
+            folded_title,
         )
     )
 
@@ -272,9 +291,7 @@ def second_query(
 ) -> Call | None:
     """Use the spare person-search slot to expose a potentially separate identity."""
     terms = _distinctive_terms(name, passages)
-    if not terms:
-        return None
-    if provider == "serpapi":
+    if provider == "serpapi" and terms:
         query = " ".join([f'"{name}"', *(f"-{term}" for term in terms)])
     else:
         # Tavily does not document Boolean exclusions, and SearXNG delegates syntax to
@@ -324,10 +341,13 @@ async def lookup(
             passage = str(
                 row.get("snippet") or row.get("content") or row.get("title") or ""
             )
+            title = row.get("title")
             sentences = re.split(r"(?<=[.!?])\s+|\n", passage)
             matching = [
                 sentence for sentence in sentences if _subject_passage(name, sentence)
             ]
+            if not matching and _subject_title(name, title):
+                matching = [str(title) + (". " + passage if passage else "")]
             if not matching and re.search(
                 r"(?<!\w)" + re.escape(surname) + r"(?!\w)", normalized(passage)
             ):
@@ -346,7 +366,7 @@ async def lookup(
                     retained.append(excerpt)
         return retained, provider
 
-    initial_passages: list[str] = []
+    initial_material: list[str] = []
     provider: object = None
     for call in queries(name, request.lang):
         searched.append(json.loads(call.arguments)["query"])
@@ -357,12 +377,18 @@ async def lookup(
         except GatewayError as exc:
             failures.append(exc.code)
             continue
-        retained, provider = retain_results(result)
-        if retained:
-            # Search ranking makes the first exact-subject passage the deterministic
-            # dominant identity; later passages may already be a different namesake.
-            initial_passages.append(retained[0])
-    if follow_up := second_query(name, initial_passages, request.lang, provider):
+        _retained, provider = retain_results(result)
+        data = result.get("data") if isinstance(result, dict) else None
+        rows = data.get("results", []) if isinstance(data, dict) else []
+        for row in rows:
+            if isinstance(row, dict):
+                initial_material.append(
+                    " ".join(
+                        str(row.get(field) or "")
+                        for field in ("title", "snippet", "content")
+                    )
+                )
+    if follow_up := second_query(name, initial_material, request.lang, provider):
         searched.append(json.loads(follow_up.arguments)["query"])
         try:
             retain_results(

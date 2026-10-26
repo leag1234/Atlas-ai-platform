@@ -1,0 +1,38 @@
+{
+  "serpapi": {
+    "data": {
+      "provider": "serpapi",
+      "results": [
+        {
+          "title": "Élise Marceau (1951–2018) — Conservator",
+          "link": "https://profiles.example.test/elise-marceau",
+          "snippet": "Élise Marceau is a conservator who restored coastal maps for the fictional Port Rive museum.",
+          "source": "Example Profiles",
+          "date": "12 May 2024",
+          "redirect_link": "https://search.example.test/redirect/elise-marceau"
+        },
+        {
+          "title": "Marceau family directory | listings",
+          "link": "https://directory.example.test/people/marceau",
+          "snippet": "A directory lists Élise Marceau with several unrelated Marceau records.",
+          "source": "Example Directory"
+        }
+      ]
+    }
+  },
+  "searxng": {
+    "data": {
+      "provider": "searxng",
+      "results": [
+        {
+          "title": "Élise Marceau | Port Rive Museum archive",
+          "link": "https://archive.example.test/collections/elise-marceau",
+          "content": "2019 · Élise Marceau, a conservator of maritime charts, joined the fictional Port Rive Museum archive.",
+          "engine": "fictional-index",
+          "publishedDate": "2024-05-12",
+          "thumbnail": "https://images.example.test/elise-marceau.jpg"
+        }
+      ]
+    }
+  }
+}
