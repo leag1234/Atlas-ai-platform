@@ -1,4 +1,4 @@
-"""Linux target helper, transmitted as source; never contains credentials.
+"""POSIX target helper, transmitted as source; never contains credentials.
 
 The detached watchdog survives SSH loss, records process identity before work,
 and kills the entire command group on timeout/cancel. No command is replayed.
@@ -21,6 +21,24 @@ from typing import Any
 
 MAX_LOG = 16 * 1024 * 1024
 MAX_FETCH = 16 * 1024 * 1024
+
+
+def process_identity(pid: int) -> str | None:
+    if sys.platform == "darwin":
+        reply = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "lstart="],
+            capture_output=True,
+            text=True,
+            env={"PATH": os.defpath, "LC_ALL": "C"},
+            timeout=5,
+        )
+        return reply.stdout.strip() if reply.returncode == 0 else None
+    try:
+        # The comm field may contain spaces and parentheses.
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        return stat.rsplit(")", 1)[1].split()[19]
+    except FileNotFoundError:
+        return None
 
 
 def save(path: Path, value: dict[str, Any]) -> None:
@@ -58,9 +76,16 @@ def supervise(root: Path, state_dir: Path, data: dict[str, Any]) -> None:
             env[key] = value
 
     with (state_dir / "output.log").open("wb", buffering=0) as log:
+        cwd = inside(root, data["cwd"])
+        if not cwd.is_dir():
+            save(
+                record,
+                dict(state="failed", exit_code=None, error="remote_cwd_unavailable"),
+            )
+            return
         child = subprocess.Popen(
             ["/bin/sh", "-c", data["command"]],
-            cwd=inside(root, data["cwd"]),
+            cwd=cwd,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -73,7 +98,7 @@ def supervise(root: Path, state_dir: Path, data: dict[str, Any]) -> None:
             started_at=started,
             exit_code=None,
             timeout_s=data["timeout_s"],
-            process_start=Path(f"/proc/{child.pid}/stat").read_text().split()[21],
+            process_start=process_identity(child.pid),
         )
         save(record, state)
         reason, received, eof, last_disk = "", 0, False, started
@@ -215,9 +240,9 @@ def main(data: dict[str, Any]) -> dict[str, Any]:
         (state_dir / "cancel").touch()
     state = json.loads((state_dir / "state.json").read_text())
     if state["state"] == "running":
-        proc = Path(f"/proc/{state['pid']}/stat")
+        current_identity = process_identity(state["pid"])
         identity_matches = (
-            proc.exists() and proc.read_text().split()[21] == state["process_start"]
+            current_identity is not None and current_identity == state["process_start"]
         )
         expired = time.time() - state["started_at"] >= state.get("timeout_s", 1800)
         if identity_matches and (operation == "cancel" or expired):
@@ -231,7 +256,7 @@ def main(data: dict[str, Any]) -> dict[str, Any]:
                 exit_code=-9,
             )
             save(state_dir / "state.json", state)
-        if not proc.exists() or proc.read_text().split()[21] != state["process_start"]:
+        if not identity_matches:
             state["state"] = "unknown"
     log = state_dir / "output.log"
     if log.exists():

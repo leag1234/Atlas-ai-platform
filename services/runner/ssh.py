@@ -127,7 +127,11 @@ class SSH:
 
         if self.jump is None:
             allow(target["host"], target["port"])
-        host = "[" + target["host"] + "]:" + str(target["port"])
+        host = (
+            target["host"]
+            if target["port"] == 22
+            else "[" + target["host"] + "]:" + str(target["port"])
+        )
         path = self.root / "known_hosts"
         if path.exists():
             saved = path.read_text().splitlines()
@@ -163,7 +167,6 @@ class SSH:
                 timeout=10,
             )
         lines = []
-        host = "[" + target["host"] + "]:" + str(target["port"])
         for line in raw.decode("ascii", errors="replace").splitlines():
             fields = line.split()
             if len(fields) == 3 and not line.startswith("#"):
@@ -269,7 +272,8 @@ class SSH:
             + ").free,git=subprocess.check_output(['git','--version'],text=True).strip())))"
         )
         result: Json = json.loads(self.run("python3 -c " + shlex.quote(script)))
-        if result.get("os") != "linux":
+        expected = "darwin" if self.target.get("os") == "macos" else "linux"
+        if result.get("os") != expected:
             raise RunnerError("unsupported_target_os")
-        self.run("command -v setsid >/dev/null")
+        result["os"] = "macos" if expected == "darwin" else "linux"
         return dict(status="available", **result)

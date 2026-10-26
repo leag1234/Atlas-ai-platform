@@ -428,8 +428,6 @@ class WorkExecution:
         from services.retrieval.project_identity import ProjectError
 
         bases = self.session["base_file_versions"]
-        if not bases:
-            return
         buffer = io.BytesIO()
         remaining = self.session["effective_limits"]["expanded_bytes"]
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:

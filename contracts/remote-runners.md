@@ -3,7 +3,8 @@
 Status: approved by the supervisor (direction and owner answers, 2026-10-25).
 Source: design 18, REQ-RUN-01 through REQ-RUN-08; project mode sections 5–7.
 This is additive to `project-mode.openapi.yaml`; Linux is the first transport.
-Android, macOS and Windows execution are deferred to R-F/R-G/R-H.
+Owner-authorized real targets (2026-10-26) add macOS POSIX execution and
+read-only Android commands through the existing SSH transport. Windows remains deferred.
 
 ## Authority and storage
 
@@ -22,7 +23,7 @@ it verifies a short-lived retrieval-signed permission before SSH effects and
 rechecks the grant, command policy and approval binding. Durable broker
 checkpoints are execution state, not a second authorization database.
 
-Targets include revision/timestamps, Linux OS, architecture, shell, address,
+Targets include revision/timestamps, Linux or macOS OS, architecture, shell, address,
 work root, credential reference, pinned host-key fingerprints, optional jump
 target, permission mode, allow/deny/sensitive rules, session/disk/minutes quotas,
 probe status and same-locality designation. Grants include revision, project,
@@ -65,6 +66,9 @@ watchdog (600 second default, 1800 maximum). Cancel and timeout kill the group.
 A lost connection produces `unknown`; reconciliation checks the remote command
 record before any new work and never reruns a command. Session close/24-hour
 idle cleanup removes directories; failed cleanup stays visible and retryable.
+Process identity uses Linux procfs start time or macOS `ps` start time; a missing
+or changed identity never authorizes signalling a reused PID. Probing verifies
+the registered OS against the remote OS. macOS requires Python 3 and Git.
 Concurrency, reserved minutes and session disk limits apply before execution.
 
 ## Results and audit

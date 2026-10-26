@@ -220,6 +220,18 @@ class RunnerBrokerTests(unittest.TestCase):
             self.broker.transport(self.auth).run("test ! -e " + remote), b""
         )
 
+    def test_missing_cwd_is_terminal_and_can_be_cleaned(self) -> None:
+        self.command("true")
+        self.settle()
+        self.auth["command"].update(id=str(uuid4()), cwd="missing-directory")
+        self.broker.run(self.auth, self.content)
+        result = self.settle()
+        self.assertEqual(result["state"], "failed")
+        self.assertEqual(result["error"], "remote_cwd_unavailable")
+        self.assertEqual(self.broker.status(self.auth, log=True)["content"], "")
+        self.auth["commands"] = [dict(self.auth["command"], state="unknown")]
+        self.assertEqual(self.broker.close(self.auth)["state"], "closed")
+
     def test_timeout_cancel_and_reconnect_never_rerun(self) -> None:
         self.command("sleep 20", 1)
         self.assertEqual(self.settle()["state"], "timed_out")

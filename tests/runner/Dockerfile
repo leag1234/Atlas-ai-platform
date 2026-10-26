@@ -1,5 +1,5 @@
 FROM python:3.12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends openssh-server git util-linux && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server git util-linux iptables && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1001 runner && passwd -d runner \
     && mkdir -p /run/sshd /home/runner/.ssh /home/runner/work \
     && chown -R runner:runner /home/runner
