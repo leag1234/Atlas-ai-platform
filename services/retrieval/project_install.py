@@ -46,6 +46,7 @@ def install(
             )
         db.execute(Path(__file__).with_name("project_schema.sql").read_text())
         db.execute(Path(__file__).with_name("project_work_schema.sql").read_text())
+        db.execute(Path(__file__).with_name("project_runner_schema.sql").read_text())
         db.execute(
             Path(__file__).with_name("project_transcript_schema.sql").read_text()
         )
@@ -96,6 +97,7 @@ def upgrade_work(dsn: str) -> None:
         if not role or not role[0]:
             raise ValueError("Work migration requires the database operator")
         db.execute(Path(__file__).with_name("project_work_schema.sql").read_text())
+        db.execute(Path(__file__).with_name("project_runner_schema.sql").read_text())
         db.execute(
             Path(__file__).with_name("project_transcript_schema.sql").read_text()
         )

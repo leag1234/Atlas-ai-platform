@@ -1,0 +1,4 @@
+{
+  "target": "Linux build",
+  "command": "make test && cat test.log"
+}

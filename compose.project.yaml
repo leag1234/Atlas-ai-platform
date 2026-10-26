@@ -15,11 +15,13 @@ services:
       ATLAS_PROJECT_IDENTITY_SECRET: ${ATLAS_PROJECT_IDENTITY_SECRET:?Required}
       ATLAS_PROJECT_EXECUTION_SECRET: ${ATLAS_PROJECT_EXECUTION_SECRET:?Required}
       ATLAS_DATA_ROOT: /app/BRAIN/project-data
+      ATLAS_RUNNER_URL: http://runner:13712
     volumes: [project-data:/app/BRAIN/project-data]
   orchestrator:
     image: atlas-project-runtime:local
     environment:
       ATLAS_PROJECT_MODE: '1'
+      ATLAS_REMOTE_RUNNERS: '1'
       ATLAS_PROJECT_ORIGIN: ${ATLAS_PUBLIC_URL:?Set the public HTTPS origin}
       ATLAS_PROJECT_IDENTITY_SECRET: ${ATLAS_PROJECT_IDENTITY_SECRET:?Required}
       ATLAS_PROJECT_EXECUTION_SECRET: ${ATLAS_PROJECT_EXECUTION_SECRET:?Required}
@@ -29,8 +31,32 @@ services:
       ATLAS_PORT_BASE: ${ATLAS_PROJECT_PORT_BASE:-10700}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+  runner:
+    image: atlas-project-runner:local
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+      target: runner
+    environment:
+      ATLAS_PROJECT_SIGNING_KEY: ${ATLAS_PROJECT_SIGNING_KEY:?Required}
+      ATLAS_PROJECT_EXECUTION_SECRET: ${ATLAS_PROJECT_EXECUTION_SECRET:?Required}
+      ATLAS_RUNNER_KEYS: /keys
+      ATLAS_RUNNER_STATE: /state
+      ATLAS_RUNNER_FIREWALL: '1'
+    volumes:
+      - runner-keys:/keys
+      - runner-state:/state
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 512m
+    pids_limit: 128
   webui:
     environment:
       ENABLE_SIGNUP: ${ATLAS_PROJECT_SIGNUP:-False}
 volumes:
   project-data:
+  runner-keys:
+  runner-state:

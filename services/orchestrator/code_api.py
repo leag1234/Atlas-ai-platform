@@ -97,7 +97,10 @@ class ExecutionBroker:
             raise ProjectError(503, "dependency_unavailable")
         try:
             async with aiohttp.ClientSession(
-                trust_env=False, timeout=aiohttp.ClientTimeout(total=10)
+                trust_env=False,
+                timeout=aiohttp.ClientTimeout(
+                    total=55 if operation == "remote" else 10
+                ),
             ) as client:
                 resolved = await broker_identity(
                     client, self.subject, self.org, self.project

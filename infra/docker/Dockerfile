@@ -23,4 +23,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=docker:28-cli /usr/local/bin/docker /usr/local/bin/docker
 
+FROM project AS runner
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-client iptables \
+    && rm -rf /var/lib/apt/lists/*
+CMD ["runner"]
+
 FROM runtime AS default

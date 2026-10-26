@@ -94,6 +94,7 @@
   function navigation() {
     left.replaceChildren(node('h2', t('projects')));
     left.append(picker('organization', memberships, scope?.org, org => choose({ org })), picker('project', projects, scope?.project, project => choose({ org: scope.org, project })));
+    if (memberships.find(m => m.org_id === scope?.org)?.role === 'admin') { const remote = node('button', 'Remote targets'); remote.type = 'button'; remote.addEventListener('click', guarded(runnerAdmin)); left.append(remote); }
     const create = button('newProject', () => nameDialog('newProject', async name => {
       const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', { name, instructions: '', default_action: 'chat' });
       await choose({ org: scope.org, project: project.id });
@@ -105,6 +106,44 @@
     const fresh = button('newSession', () => nameDialog('newSession', async title => {
       const conversation = await api(base() + '/conversations', 'POST', { title }); await choose({ org: scope.org, project: scope.project, conversation: conversation.id });
     })); fresh.disabled = !scope?.project; left.append(fresh, button('ordinary', () => { cleanup(); scope = null; sessionStorage.removeItem(storageKey()); saveRoute(); root.remove(); if (owned) location.href = '/'; }));
+  }
+  async function runnerAdmin() {
+    const current = generation, orgBase = `/api/atlas/orgs/${scope.org}/runner-targets`;
+    const dialog = node('dialog', null, 'atlas-project-dialog'), panel = node('section'), form = node('form');
+    dialog.dataset.runnerAdmin = ''; panel.append(node('h2', 'Remote execution targets'));
+    panel.append(node('p', 'Register a dedicated Linux account. Host key fingerprints must be verified independently. Private keys stay in the runner broker.'));
+    const entries = node('div'), status = node('p'); status.setAttribute('role', 'status');
+    async function reload() {
+      const targets = await api(orgBase); checkScope(current); entries.replaceChildren();
+      for (const target of targets.items) {
+        const row = node('section'); row.append(node('strong', target.name), node('p', `${target.os} · ${target.permission_mode} · ${target.status}`));
+        const probe = node('button', 'Probe'); probe.type = 'button'; probe.addEventListener('click', guarded(async () => { const result = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(result.last_probe); await reload(); })); row.append(probe);
+        for (const enabled of [true, false]) { const grant = node('button', enabled ? 'Grant to this project' : 'Revoke from this project'); grant.type = 'button'; grant.disabled = !scope.project; grant.addEventListener('click', guarded(async () => { await api(base() + `/runner-targets/${target.id}/grant`, 'PUT', { enabled }); status.textContent = enabled ? 'Target granted to this project.' : 'Grant and egress permission revoked.'; })); row.append(grant); }
+        const audit = node('button', 'Command audit'); audit.type = 'button'; audit.disabled = !scope.project; audit.addEventListener('click', guarded(async () => { const result = await api(base() + `/runner-targets/${target.id}/commands`); const detail = node('pre', JSON.stringify(result.items, null, 2)); row.append(detail); })); row.append(audit);
+        const mode = node('select'); for (const value of ['ask','rules','auto']) mode.append(new Option(value, value)); mode.value = target.permission_mode; mode.setAttribute('aria-label', `Permission mode for ${target.name}`);
+        mode.addEventListener('change', guarded(async () => {
+          const fields = ['name','os','arch','shell','host','port','user','work_root','credential_ref','credential_fingerprint','host_key_fingerprints','jump_target_id','capabilities','permission_mode','allow_rules','deny_rules','sensitive_rules','max_parallel_sessions','disk_quota_bytes','monthly_minutes','same_locality'];
+          const body = Object.fromEntries(fields.map(key => [key, key === 'permission_mode' ? mode.value : target[key]]));
+          await request(`${orgBase}/${target.id}`, { method:'PUT', headers:{'If-Match':`"${target.revision}"`}, body }); await api(`${orgBase}/${target.id}/probe`, 'POST', {}); await reload();
+        })); row.append(mode); entries.append(row);
+      }
+    }
+    const controls = {};
+    for (const [key, label, value] of [['name','Name',''],['host','Host',''],['port','SSH port','22'],['user','SSH user','runner'],['work_root','Working root','/home/runner/work'],['host_key_fingerprints','Pinned host key SHA256 fingerprints (one per line)',''],['credential_ref','Credential reference',''],['credential_fingerprint','Credential public key fingerprint',''],['allow_rules','Allow command rules (one per line)','make *\npython3 -m unittest *'],['deny_rules','Deny command rules (one per line)','sudo *']]) {
+      const input = node(key.endsWith('rules') || key === 'host_key_fingerprints' ? 'textarea' : 'input'); input.name = key; input.value = value; input.setAttribute('aria-label', label); if (!key.endsWith('rules')) input.required = true;
+      const labelNode = node('label', label); labelNode.append(input); form.append(labelNode); controls[key] = input;
+    }
+    const permission = node('select'); permission.name = 'permission_mode'; permission.setAttribute('aria-label','Permission mode'); for (const mode of ['rules','ask','auto']) permission.append(new Option(mode,mode)); form.append(permission);
+    const publicKey = node('pre'), generate = node('button', 'Generate a key pair'); generate.type = 'button';
+    generate.addEventListener('click', guarded(async () => { generate.disabled = true; try { const key = await api(orgBase + '/credentials', 'POST', {}); controls.credential_ref.value = key.credential_ref; controls.credential_fingerprint.value = key.fingerprint; publicKey.textContent = `Install this public key in the target account. It is shown once:\n${key.public_key}\n${key.fingerprint}`; } finally { generate.disabled = false; } }));
+    const submit = node('button', 'Register target'); submit.type = 'submit';
+    form.addEventListener('submit', guarded(async event => {
+      event.preventDefault(); submit.disabled = true;
+      try { const value = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value.trim()])); value.port = Number(value.port); for (const key of ['allow_rules','deny_rules','host_key_fingerprints']) value[key] = value[key].split('\n').map(s => s.trim()).filter(Boolean); value.permission_mode = permission.value;
+        const target = await api(orgBase, 'POST', value); const probed = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(probed.last_probe); await reload();
+      } finally { submit.disabled = false; }
+    }));
+    form.append(generate, publicKey, submit); panel.append(entries, form, status, button('close', () => dialog.close())); dialog.append(panel); root.append(dialog); dialog.addEventListener('close', () => { publicKey.textContent = ''; dialog.remove(); }, {once:true}); dialog.showModal(); await reload();
   }
   async function choose(value) {
     cleanup(); lifecycle = new AbortController(); const current = generation;
@@ -283,6 +322,14 @@
   function approval(value) {
     const card = node('section', null, 'atlas-project-approval'); card.dataset.approval = value.id;
     card.append(node('strong', t('approvals')), node('p', `${t(value.action_kind)} · ${value.paths.join(', ')}`), node('p', `${t(value.destination.kind)} · ${value.maximum_bytes} ${t('bytes')}`), node('p', `${t('expires')}: ${value.expires_at}`));
+    let alwaysAllow;
+    if (value.remote) {
+      const remote = value.remote;
+      card.append(node('p', `Target: ${remote.target_name}`), node('pre', remote.command), node('p', `Directory: ${remote.cwd} · timeout: ${remote.timeout_s}s`), node('p', `Code digest: ${remote.code_digest}`));
+      if (remote.code_egress) card.append(node('p', 'This sends the selected workspace to this target. Allowing records code egress permission for this project.'));
+      alwaysAllow = node('input'); alwaysAllow.type = 'checkbox'; alwaysAllow.dataset.runnerAlways = '';
+      const label = node('label', 'Always allow commands starting with this command and its arguments (project rule)'); label.prepend(alwaysAllow); card.append(label);
+    }
     if (value.publication) {
       const publication = value.publication;
       for (const [label, text] of [['Branch', publication.branch], ['Target', publication.target], ['Commit message', publication.message], ['PR title', publication.title], ['PR body', publication.body], ['Base commit', publication.base_commit]]) card.append(node('p', `${label}: ${text}`));
@@ -294,7 +341,7 @@
     for (const allow of [true, false]) {
       const b = button(allow ? 'accept' : 'deny', async () => {
         root.querySelectorAll('[data-approval]').forEach(other => { if (other.dataset.approval === value.id) { other.dataset.decided = 'true'; other.querySelectorAll('button').forEach(control => { control.disabled = true; }); } });
-        try { await api(base() + '/approvals/' + value.id + '/decision', 'POST', { allow, action_digest: value.action_digest }); card.append(node('p', t('approveRecorded'))); }
+        try { await api(base() + '/approvals/' + value.id + '/decision', 'POST', { allow, action_digest: value.action_digest, ...(value.remote ? { always_allow: allow && alwaysAllow.checked } : {}) }); card.append(node('p', t('approveRecorded'))); }
         catch (error) { card.append(node('p', error.message)); throw error; }
       });
       b.disabled = value.decision !== 'pending' || !(session?.pending_approvals || []).some(a => a.id === value.id && a.decision === 'pending' && Date.parse(a.expires_at) > Date.now()); card.append(b);
@@ -332,7 +379,7 @@
     sending = true; controls(); stream = new AbortController();
     const pending = node('article', null, 'atlas-project-turn'); const answer = node('pre', '', 'answer'); pending.append(node('pre', question, 'question'), answer); transcript.append(pending);
     try {
-      if (action === 'work' && (!session || ['completed','failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
+      if (action === 'work' && (!session || ['failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
       const body = { model: window.atlasProjectProfile, org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });

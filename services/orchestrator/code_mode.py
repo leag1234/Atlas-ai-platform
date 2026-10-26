@@ -658,6 +658,12 @@ async def process_work(
                     bool(execution.session.get("repository_id")),
                 )
             )
+            if os.environ.get("ATLAS_REMOTE_RUNNERS") == "1":
+                targets = await broker.call(
+                    "remote", dict(execution.fence(), operation="list", arguments={})
+                )
+                if targets.get("items"):
+                    tools.selection.enable_remote()
             repository = None
             if execution.session.get("repository_id"):
                 status, repositories = await broker.public("GET", "repositories")
@@ -695,6 +701,7 @@ async def process_work(
                     execution.request_id,
                     dispatch.generation,
                 )
+                tools.remote_references = references
                 tools.selection.reopen_enabled = True
                 tools.selection.memory_enabled = True
                 from services.orchestrator.project_memory_tools import MemoryTools
