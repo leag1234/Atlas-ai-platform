@@ -251,6 +251,7 @@ class RoutingTests(unittest.TestCase):
                         for c in calls
                     )
                 )
+                self.assertIn("namesake", json.loads(calls[1].arguments)["query"])
         self.assertEqual(required_research("Do not look up a person", "en"), ())
 
     def test_spatial_requests_select_svg(self) -> None:
@@ -302,7 +303,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
 
         request = ChatRequest.model_validate(
             {
-                "messages": [{"role": "user", "content": "Who is Gaël Duval?"}],
+                "messages": [{"role": "user", "content": "Who is Lorin Vasquel?"}],
                 "lang": "en",
             }
         )
@@ -312,11 +313,11 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
             "data": {
                 "results": [
                     {
-                        "snippet": "Gaël Duval founded Mandrake Linux and /e/OS.",
+                        "snippet": "Lorin Vasquel founded Northwind Studio and Bay OS.",
                         "link": "https://example.test/profile",
                     },
                     {
-                        "snippet": "Gaël Duval is the founder of /e/OS and Murena.",
+                        "snippet": "Lorin Vasquel is the founder of Bay OS and Harbor Devices.",
                         "link": "https://example.test/company",
                     },
                 ]
@@ -333,15 +334,15 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
                 "services.orchestrator.person_lookup.run",
                 new=AsyncMock(
                     return_value=Result(
-                        "Gaël Duval is a French entrepreneur who founded Mandrake Linux, "
-                        "/e/OS, and Murena [1](https://example.test/profile) "
+                        "Lorin Vasquel is an entrepreneur who founded Northwind Studio, "
+                        "Bay OS, and Harbor Devices [1](https://example.test/profile) "
                         "[2](https://example.test/company)."
                     )
                 ),
             ) as answer,
         ):
-            await lookup(request, item, tools, "Gaël Duval")
-        self.assertIn("founded Mandrake Linux", item.reponse)
+            await lookup(request, item, tools, "Lorin Vasquel")
+        self.assertIn("founded Northwind Studio", item.reponse)
         self.assertIn("[1](https://example.test/profile)", item.reponse)
         self.assertEqual(
             item.retrieved_urls,
@@ -354,11 +355,15 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
             [
                 {
                     "url": "https://example.test/profile",
-                    "passage": "Gaël Duval founded Mandrake Linux and /e/OS.",
+                    "passages": ["Lorin Vasquel founded Northwind Studio and Bay OS."],
+                    "source_kind": "profile",
                 },
                 {
                     "url": "https://example.test/company",
-                    "passage": "Gaël Duval is the founder of /e/OS and Murena.",
+                    "passages": [
+                        "Lorin Vasquel is the founder of Bay OS and Harbor Devices."
+                    ],
+                    "source_kind": "profile",
                 },
             ],
         )
@@ -402,17 +407,67 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
                 "services.orchestrator.person_lookup.run",
                 new=AsyncMock(
                     return_value=Result(
-                        "The sources describe different people named Mira Alderwick. "
+                        "Mira Alderwick is a botanist in Glasgow [1](https://example.test/botanist); "
+                        "Mira Alderwick is a novelist in Lisbon [2](https://example.test/novelist). "
                         "What profession, location, or date do you mean? "
-                        "[1](https://example.test/botanist) "
-                        "[2](https://example.test/novelist)"
                     )
                 ),
             ),
         ):
             await lookup(request, item, tools, "Mira Alderwick")
-        self.assertIn("different people", item.reponse)
+        self.assertIn("botanist in Glasgow", item.reponse)
+        self.assertIn("novelist in Lisbon", item.reponse)
         self.assertIn("What profession", item.reponse)
+
+    async def test_directory_result_does_not_create_an_extra_identity(self) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        item = Interaction()
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Mira Alderwick?"}],
+                "lang": "en",
+            }
+        )
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        response = {
+            "data": {
+                "results": [
+                    {
+                        "snippet": "Mira Alderwick is a botanist in Glasgow.",
+                        "link": "https://example.test/botanist",
+                    },
+                    {
+                        "title": "People directory results",
+                        "snippet": "People directory profiles matching Mira Alderwick.",
+                        "link": "https://directory.example.test/search/people",
+                    },
+                ]
+            }
+        }
+        answer = AsyncMock(
+            return_value=Result(
+                "Mira Alderwick is a botanist in Glasgow [1](https://example.test/botanist)."
+            )
+        )
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=self.model()),
+            ),
+            patch("services.orchestrator.person_lookup.run", new=answer),
+        ):
+            await lookup(request, item, tools, "Mira Alderwick")
+        self.assertIn("botanist in Glasgow", item.reponse)
+        self.assertNotIn("different people", item.reponse)
+        assert answer.await_args is not None
+        payload = json.loads(answer.await_args.kwargs["history"][0]["content"])
+        directory = payload["untrusted_exact_name_evidence"][1]
+        self.assertEqual(directory["source_kind"], "directory")
 
     async def test_namesake_does_not_become_the_answer(self) -> None:
         from services.orchestrator.chat_pipeline import ChatTools

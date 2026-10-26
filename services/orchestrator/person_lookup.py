@@ -27,13 +27,17 @@ _NAME = r"([^\W\d_][\w'’.-]*(?:\s+[^\W\d_][\w'’.-]*){1,3})"
 @dataclass(frozen=True)
 class Evidence:
     url: str
-    passage: str
+    passages: tuple[str, ...]
+    directory: bool
 
 
 _SYNTHESIS_INSTRUCTION = (
-    "Answer briefly using only the exact-name evidence below. Cite its URLs. "
-    "If it clearly describes different people with no dominant subject, ask for "
-    "profession, place, or date; a directory/listing alone is not a person description."
+    "Answer briefly using only the exact-name evidence below and cite its URLs. "
+    "First identify distinct people: differences in profession, field, period, or "
+    "place can mean separate identities. A directory or search listing alone is not "
+    "an identity. When two or more notable identities are supported, name each briefly "
+    "with sources, then ask which one is meant; if one is clearly dominant, answer about "
+    "it and mention the others in one line."
 )
 
 
@@ -63,7 +67,13 @@ async def _answer_from_evidence(
             "content": json.dumps(
                 {
                     "untrusted_exact_name_evidence": [
-                        {"url": source.url, "passage": source.passage}
+                        {
+                            "url": source.url,
+                            "passages": list(source.passages),
+                            "source_kind": "directory"
+                            if source.directory
+                            else "profile",
+                        }
                         for source in evidence
                     ]
                 },
@@ -135,19 +145,38 @@ def person_name(question: str) -> str | None:
 
 
 def queries(name: str, language: str) -> tuple[Call, ...]:
-    context = {
-        "en": "biography professional profile",
-        "fr": "biographie profil professionnel",
-        "de": "Biografie berufliches Profil",
-        "es": "biografia perfil profesional",
-        "it": "biografia profilo professionale",
+    disambiguation = {
+        "en": "namesake",
+        "fr": "homonyme",
+        "de": "Namensgleichheit",
+        "es": "homonimo",
+        "it": "omonimo",
     }
     return tuple(
         Call(
             f"person-{i}", "web_search", json.dumps({"query": query, "lang": language})
         )
         for i, query in enumerate(
-            (f'"{name}"', f'"{name}" {context.get(language, context["en"])}')
+            (
+                f'"{name}"',
+                f'"{name}" {disambiguation.get(language, disambiguation["en"])}',
+            )
+        )
+    )
+
+
+def _is_directory_source(url: str, title: object, passage: str) -> bool:
+    """Keep listings available to synthesis without letting them establish an identity."""
+    source = f"{url} {title or ''} {passage}".casefold()
+    return any(
+        marker in source
+        for marker in (
+            "/search/",
+            "/directory/",
+            "/pub/dir/",
+            "people search",
+            "people directory",
+            "profiles matching",
         )
     )
 
@@ -156,7 +185,7 @@ async def lookup(
     request: "ChatRequest", item: "Interaction", tools: "ChatTools", name: str
 ) -> None:
     started = time.monotonic()
-    evidence: dict[str, str] = {}
+    evidence: dict[str, tuple[list[str], bool]] = {}
     searched = []
     failures = []
     similar_name_found = False
@@ -194,7 +223,16 @@ async def lookup(
             ):
                 similar_name_found = True
             if matching and isinstance(url, str) and re.match(r"https?://", url):
-                evidence[url] = " ".join(matching)[:1200]
+                passage = " ".join(matching)[:1200]
+                passages, directory = evidence.setdefault(
+                    url,
+                    (
+                        [],
+                        _is_directory_source(url, row.get("title"), passage),
+                    ),
+                )
+                if passage not in passages:
+                    passages.append(passage)
     labels = {
         "en": (
             "I could not find reliable information identifying",
@@ -233,7 +271,10 @@ async def lookup(
         ),
     }
     missing, _ambiguous, context, namesake, heading = labels[request.lang]
-    exact_evidence = [Evidence(url, passage) for url, passage in evidence.items()]
+    exact_evidence = [
+        Evidence(url, tuple(passages), directory)
+        for url, (passages, directory) in evidence.items()
+    ]
     if exact_evidence:
         await _answer_from_evidence(request, item, tools, name, exact_evidence, started)
         return
