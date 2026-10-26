@@ -442,10 +442,26 @@ class WorkTools(CodeTools):
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:
+            from services.orchestrator.work_tool_selection import (
+                GROUPS,
+                ToolSelectionError,
+            )
+
             try:
                 result = self.selection.switch(call.arguments)
+            except ToolSelectionError as exc:
+                result = exc.result
             except ValueError:
-                result = {"error": "invalid_tool_group"}
+                result = {
+                    "error": "invalid_tool_group",
+                    "reason": "arguments must contain a known group and optional focus only",
+                    "allowed_groups": [
+                        group
+                        for group in GROUPS
+                        if group != "remote" or self.selection.remote_enabled
+                    ],
+                    "next_step": "Use an allowed group; omit focus unless selecting a tool in that group.",
+                }
             await self.emit(
                 "tool",
                 tool=call.name,

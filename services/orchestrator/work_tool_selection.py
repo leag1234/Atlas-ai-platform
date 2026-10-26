@@ -60,6 +60,16 @@ PATTERNS = {
 }
 
 
+class ToolSelectionError(ValueError):
+    def __init__(self, reason: str, **result: Any) -> None:
+        super().__init__(
+            "No remote targets available: " + reason
+            if result.get("error") == "remote_unavailable"
+            else reason
+        )
+        self.result = dict(result, reason=reason)
+
+
 class Switch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     group: Group
@@ -182,8 +192,18 @@ class WorkToolSelection:
     def switch(self, arguments: str) -> dict[str, Any]:
         selected = Switch.model_validate_json(arguments)
         if selected.group == "remote" and not self.remote_enabled:
-            raise ValueError("No remote targets available")
+            raise ToolSelectionError(
+                "no granted target for this project",
+                error="remote_unavailable",
+                next_step="Ask an administrator to grant a target to this project, then start a new turn.",
+            )
         if selected.focus is not None and selected.focus not in GROUPS[selected.group]:
-            raise ValueError("Unknown focus for tool group")
+            raise ToolSelectionError(
+                "focus must name a tool in the selected group",
+                error="invalid_tool_focus",
+                group=selected.group,
+                allowed_tools=list(GROUPS[selected.group]),
+                next_step="Use one of allowed_tools as focus, or omit focus.",
+            )
         self.pending, self.pending_focus = selected.group, selected.focus
         return dict(group=self.pending, tools=list((*CORE, *GROUPS[self.pending])))

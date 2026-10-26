@@ -217,6 +217,88 @@ class RunnerRegistryTests(ProjectWorkTests):
             snapshot_content=base64.b64encode(raw).decode(),
         )
 
+    def test_runner_startup_discovery_and_actionable_switch_errors(self) -> None:
+        import asyncio
+        import json
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_workspace import Workspace
+        from services.orchestrator.loop import Call
+        from services.orchestrator.work_tool_selection import WorkToolSelection
+
+        fixture = self
+
+        class Client:
+            org = fixture.org
+            project = fixture.project
+
+            async def call(
+                self, operation: str, data: dict[str, Any]
+            ) -> dict[str, Any]:
+                response = fixture.broker(operation, data)
+                fixture.assertEqual(response.status_code, 200, response.text)
+                return dict(response.json())
+
+        session = self.request(
+            "GET",
+            self.project_path() + "/work-sessions/" + self.session["id"],
+            "editor",
+        ).json()
+        execution = WorkExecution(Client(), session, self.turn_id)
+        tools = WorkTools(Workspace(str(uuid4())), execution)
+        tools.selection = WorkToolSelection("code")
+
+        def switch(**arguments: Any) -> dict[str, Any]:
+            return asyncio.run(
+                tools.execute(
+                    Call(str(uuid4()), "switch_tool_group", json.dumps(arguments)), 10
+                )
+            )
+
+        self.assertEqual(self.remote("list", {}).json(), {"items": []})
+        unavailable = switch(group="remote")
+        self.assertEqual(unavailable["error"], "remote_unavailable")
+        self.assertEqual(unavailable["reason"], "no granted target for this project")
+        self.assertIn("next_step", unavailable)
+        self.assertIsNone(tools.selection.pending)
+
+        # The grant is committed after acquisition and before turn-start discovery.
+        target = self.register()
+        listing = asyncio.run(
+            execution.broker.call(
+                "remote", dict(execution.fence(), operation="list", arguments={})
+            )
+        )
+        self.assertEqual([t["id"] for t in listing["items"]], [target["id"]])
+        if listing.get("items"):
+            tools.selection.enable_remote()
+        self.assertEqual(switch(group="remote", focus="remote_run")["group"], "remote")
+        tools.selection.declarations()
+        self.assertIn("remote_run", tools.selection.names)
+        invalid = switch(group="remote", focus="run_command")
+        self.assertEqual(invalid["error"], "invalid_tool_focus")
+        self.assertIn("remote_run", invalid["allowed_tools"])
+        self.assertIsNone(tools.selection.pending)
+        unknown = switch(group="nonexistent")
+        self.assertEqual(unknown["error"], "invalid_tool_group")
+        self.assertIn("remote", unknown["allowed_groups"])
+        malformed = switch(group="remote", unexpected="not-echoed")
+        self.assertEqual(malformed["error"], "invalid_tool_group")
+        self.assertNotIn("not-echoed", json.dumps(malformed))
+        stale = self.broker(
+            "remote",
+            dict(execution.fence(), generation=2, operation="list", arguments={}),
+        )
+        self.assertEqual(stale.status_code, 409)
+        revoked = self.request(
+            "PUT",
+            self.project_path() + "/runner-targets/" + target["id"] + "/grant",
+            "admin",
+            dict(enabled=False),
+        )
+        self.assertEqual(revoked.status_code, 200)
+        self.assertEqual(self.remote("list", {}).json(), {"items": []})
+
     def test_runner_work_target_list_emits_valid_scoped_progress(self) -> None:
         import asyncio
         from services.retrieval.project_scoped_api import store
