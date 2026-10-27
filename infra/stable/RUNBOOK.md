@@ -503,3 +503,29 @@ Official OpenAI clients accept these extra fields. Browser code explicitly sets
 `atlas_ui: true` to retain existing progress rendering; this is a presentation flag,
 not authorization. The Atlas key edge always forces it off. No client header is
 used to infer the presentation.
+
+### Browser API-key management (0.6.x)
+
+The sidebar account menu exposes API keys through the signed-in WebUI session.
+It never receives the loopback administrator token. WebUI administrators have an
+Organization tab in that dialog, with list/revoke/create-for-email and policy
+controls. Users must sign in once before an administrator can resolve their email;
+that operation uses the existing private `ATLAS_WEBUI_ADMIN_TOKEN` directory setup.
+
+The stable guest organization (`ATLAS_API_KEY_ORG_ID=stable`) starts with
+`self_service`, 200 requests and EUR 2 per UTC day per key, 90-day default expiry,
+365-day maximum expiry, and five active keys per user. Other deployments start
+with `admin_only`. `ATLAS_API_KEY_POLICY` overrides only bootstrap policy;
+administrator changes persist in `api_key_policy` in the existing private key DB.
+Quota/default changes apply to new keys. `off` hides user management and rejects
+existing credentials at the public edge; administrators can still revoke keys or
+restore policy. `admin_only` leaves the user's list read-only.
+
+Keep `ATLAS_API_KEY_PEPPER` and `ATLAS_API_KEYS_DB` identical for adapter and
+loopback administration; do not use an empty DB environment value. The key DB
+must remain mode 0600. The additive policy table requires no data rewrite; a
+rollback can retain it. No public nginx route or loopback token exposure is needed:
+the existing authenticated `/api/atlas/` relay serves the dialog and management API.
+The browser's Origin must match `ATLAS_PROJECT_ORIGIN` when the external scheme
+or host differs from the adapter's request URL. A secret is shown only on creation,
+kept only in that dialog, and discarded on close; copy it to a secure destination.

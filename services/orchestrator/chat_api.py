@@ -65,6 +65,7 @@ from services.orchestrator.api_key_edge import (
     key_call,
 )
 from services.orchestrator.api_keys import KeyQuotaError
+from services.orchestrator.api_key_ui import router as key_ui_router
 
 
 app = FastAPI(title="ATLAS chat")
@@ -112,6 +113,7 @@ async def remove_nearby_location(token: UUID, request: Request) -> Response:
     return Response(status_code=204)
 
 
+app.include_router(key_ui_router)
 app.include_router(user_memory_router)
 app.mount("/api/atlas/v1", key_app)
 app.include_router(project_router)

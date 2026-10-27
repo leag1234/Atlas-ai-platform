@@ -34,7 +34,8 @@ lifetime_days (default 90, range 1..365), daily_requests and daily_micro_eur.
 The response contains metadata and the secret once. GET `/keys` omits secrets/hashes;
 DELETE `/keys/{id}` revokes; POST `/imports/{developer}` imports one legacy service
 credential and its history. The CLI is a client of these endpoints and writes the
-secret exclusively to a 0600 delivery file. Self-service is disabled.
+secret exclusively to a 0600 delivery file. This loopback service is administrator-only;
+browser self-service follows the organization policy described below.
 
 Storage schema: `api-keys.sql`. New credentials use HMAC-SHA256 over the entire key
 with an environment pepper; imported credentials retain SHA-256 and require rotation.
@@ -71,3 +72,30 @@ used to infer the presentation.
 Legacy service-key imports retain their explicit service budget identity and do not
 require an interactive login. This exception only imports an existing developer
 credential as model scope; new stable keys still require a signed-in login.
+
+### Authenticated browser management (0.6.x)
+
+`/api/atlas/keys` uses the HttpOnly WebUI session, verified against `/api/v1/auths/`.
+The returned user ID is the chat budget identity; email is the subject. Caller
+identity/role headers and the loopback administrator token grant no authority.
+Mutations require the same browser Origin; every response is private/no-store.
+The configured guest organization is `ATLAS_API_KEY_ORG_ID` (default `stable`).
+
+GET returns `data` (own metadata plus UTC `usage`), `policy` and `admin`.
+POST accepts only `name`, `lifetime_days` (30/90/365, default 90), `scopes`
+(default assistant); administrators may also supply `login` resolved by the host
+directory. Only its 201 response contains `key`. DELETE `/{id}` revokes an owned
+key. GET `?all=true` lists the organization for WebUI administrators only.
+PUT `/policy` is administrator-only and accepts mode, daily_requests,
+daily_micro_eur, max_lifetime_days and active_key_limit. Changes affect newly
+created keys; `off` disables existing credentials at the public edge as well.
+`admin_only` permits users to list but not create/revoke; `off` denies user access
+and hides the menu entry. Administrators retain management access in all modes.
+Active means neither expired nor revoked; default cap 5 is checked atomically
+for all browser creation, including administrator creation for another user.
+
+Stable initial policy: self_service, 200 requests and 2,000,000 micro EUR per UTC
+day per key, maximum 365 days, default expiry 90 days. Other deployments initialize
+admin_only. Persisted policy takes precedence over bootstrap environment values.
+Creation, revocation, policy changes, lists and rejected management requests emit
+K-A audit events without credentials or content. Responses never include hashes.
