@@ -730,6 +730,15 @@ async def process_work(
                     root="/workspace",
                     repository=repository,
                     listing=await workspace.invoke("list_dir", {"path": "."}, 10),
+                    files=[
+                        dict(
+                            file_id=file["id"],
+                            version=file["version_id"],
+                            path=file["folder_id"] + "/" + file["relative_path"],
+                            mime=file["mime"],
+                        )
+                        for file in selected_files
+                    ],
                     environment=execution.session["environment"],
                     plan=execution.session.get("plan", []),
                 ),

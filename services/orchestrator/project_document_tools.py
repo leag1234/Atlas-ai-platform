@@ -11,7 +11,7 @@ import time
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from packages.doc_render.schema import Content
 from services.orchestrator.project_document_input import DocumentInput, normalize
 
@@ -33,6 +33,13 @@ class Input(Arguments):
     file_id: str
     version: str
     selector: Selector = Field(default_factory=Selector)
+
+    @field_validator("selector", mode="before")
+    @classmethod
+    def decode_selector(cls, value: Any) -> Any:
+        # Some providers encode nested tool objects as JSON strings. Decode
+        # once, then retain the same closed, strictly typed selector boundary.
+        return json.loads(value) if isinstance(value, str) else value
 
 
 class Read(Input):
