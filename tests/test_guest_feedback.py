@@ -306,6 +306,18 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
                     '"Mira Alderwick" biography profile career',
                 )
 
+    def test_french_second_pass_uses_native_disambiguation(self) -> None:
+        from services.orchestrator.person_lookup import second_query
+
+        call = second_query(
+            "Éloïse Ravel",
+            ["Éloïse Ravel est invitée à Radio Rivage."],
+            "fr",
+            "searxng",
+        )
+        assert call is not None
+        self.assertEqual(json.loads(call.arguments)["query"], '"Éloïse Ravel" homonyme')
+
     def test_provider_shaped_fictional_results_keep_subject_titles_and_context(
         self,
     ) -> None:
@@ -319,6 +331,82 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(_subject_title("Élise Marceau", serp_row["title"]))
         self.assertTrue(_subject_passage("Élise Marceau", serp_row["snippet"]))
         self.assertTrue(_subject_passage("Élise Marceau", searx_row["content"]))
+        self.assertTrue(
+            _subject_title("Éloïse Ravel", "Qui est Éloïse Ravel ? — Repères")
+        )
+
+    async def test_french_searxng_replay_keeps_question_titled_main_identity(
+        self,
+    ) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Qui est Éloïse Ravel ?"}],
+                "lang": "fr",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        first = {
+            "data": {
+                "provider": "searxng",
+                "results": [
+                    {
+                        "title": "Radio Rivage",
+                        "snippet": "Éloïse Ravel est invitée à Radio Rivage.",
+                        "link": "https://example.test/radio",
+                    }
+                ],
+            }
+        }
+        second = {
+            "data": {
+                "provider": "searxng",
+                "results": [
+                    {
+                        "title": "Qui est Éloïse Ravel ? — Repères",
+                        "snippet": "Créatrice du projet fictif Aurore.",
+                        "link": "https://example.test/reperes",
+                    },
+                    {
+                        "title": "Éloïse Ravel — Encyclopédie",
+                        "snippet": "Notice biographique du projet fictif Aurore.",
+                        "link": "https://example.test/encyclopedie",
+                    },
+                ],
+            }
+        }
+        answer = AsyncMock(return_value=Result("Réponse française sourcée."))
+        with (
+            patch.object(
+                tools, "execute", AsyncMock(side_effect=[first, second])
+            ) as search,
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=self.model()),
+            ),
+            patch("services.orchestrator.person_lookup.run", new=answer),
+        ):
+            await lookup(request, item, tools, "Éloïse Ravel")
+        self.assertEqual(
+            json.loads(search.await_args_list[1].args[0].arguments)["query"],
+            '"Éloïse Ravel" homonyme',
+        )
+        self.assertEqual(
+            item.retrieved_urls,
+            [
+                "https://example.test/radio",
+                "https://example.test/reperes",
+                "https://example.test/encyclopedie",
+            ],
+        )
+        assert answer.await_args is not None
+        evidence = json.loads(answer.await_args.kwargs["history"][0]["content"])
+        self.assertEqual(len(evidence["untrusted_exact_name_evidence"]), 3)
 
     async def test_consistent_exact_sources_are_written_by_model_with_citations(
         self,
