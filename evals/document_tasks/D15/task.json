@@ -52,7 +52,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Match customers to orders and list every unmatched record."
+      "prompt": "Abbinate clienti e ordini e indicate ogni record senza corrispondenza."
     },
     {
       "execute": true,

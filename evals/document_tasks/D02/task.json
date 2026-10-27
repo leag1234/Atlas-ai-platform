@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Transcribe the visible fields in both scans."
+      "prompt": "Transcrivez les champs visibles dans les deux numérisations."
     },
     {
       "execute": true,

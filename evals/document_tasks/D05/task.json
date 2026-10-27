@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Which clauses changed between these two versions?"
+      "prompt": "Indichi quali clausole sono cambiate fra le due versioni."
     },
     {
       "execute": true,

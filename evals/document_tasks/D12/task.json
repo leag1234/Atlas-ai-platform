@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "List the located additions and removals."
+      "prompt": "Listez les ajouts et suppressions avec leur emplacement."
     },
     {
       "execute": true,

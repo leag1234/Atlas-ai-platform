@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Stop on cancellation and replay the history once."
+      "prompt": "Si fermi all'annullamento e riproduca la cronologia una sola volta."
     },
     {
       "execute": true,

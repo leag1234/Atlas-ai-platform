@@ -52,7 +52,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Complete the available server portion and explain the unavailable local portion."
+      "prompt": "Complete la parte serveur disponible y explique la parte locale indisponible."
     },
     {
       "execute": true,

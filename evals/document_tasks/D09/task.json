@@ -52,7 +52,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Combine both sections without dropping their tables."
+      "prompt": "Combine ambas secciones sin perder sus tablas."
     },
     {
       "execute": true,

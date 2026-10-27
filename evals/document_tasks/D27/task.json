@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Verify that none of the foreign resources can be accessed."
+      "prompt": "Vérifiez qu'aucune ressource étrangère n'est accessible."
     },
     {
       "execute": true,

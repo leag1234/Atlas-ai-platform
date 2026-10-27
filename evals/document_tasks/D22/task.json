@@ -48,7 +48,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Handle the existing destination without losing either original."
+      "prompt": "Traitez la destination existante sans perdre aucun original."
     },
     {
       "execute": true,

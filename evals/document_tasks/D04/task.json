@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Tell me why each unreadable input cannot be read."
+      "prompt": "Explique por qué no puede leerse cada entrada ilegible."
     },
     {
       "execute": true,

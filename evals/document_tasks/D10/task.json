@@ -52,7 +52,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Write the requested decision and budget handout."
+      "prompt": "Rediga la decisione richiesta e la sintesi del budget."
     },
     {
       "execute": true,

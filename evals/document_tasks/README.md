@@ -60,6 +60,7 @@ variant uses another language. Short variants require the same task context.
 The negative variant requests explanation only, with no execution. These are
 additional regression requests for later owner approval, not extra attempts at
 one of the 30 primary cases. Do not tune prompts or model behavior using this set.
+Planned additions: ODT, ODS and ODP tasks are wanted but intentionally do not block this 30-task suite.
 
 ## Build and qualify, without evaluating an agent
 
@@ -100,6 +101,12 @@ available during rendering; CPU, memory, PIDs and time are bounded. The image mu
 exist for tests; missing tooling fails rather than skips. Freeze its image digest
 and package versions with the owner review. The Dockerfile is a build recipe,
 not a claim that Debian package availability is immutable.
+
+The approved amd64 renderer build is `atlas-document-eval-renderer@sha256:9a7fe7de8e07ba050772bea2a1387cfd430c5bfc0dfda2d9db12ea78dba2e29c`.
+Its installed package versions are `libreoffice-writer`, `libreoffice-calc`, and
+`libreoffice-impress` `4:7.4.7-1+deb12u14`; `poppler-utils` `22.12.0-2+deb12u3`;
+and `fonts-dejavu-core` `2.37-6`. A clean test worker builds this same
+evaluation-only recipe if the tagged image is absent and fails if that build fails.
 
 Verifiers reopen real packages, compare ordered records, types, formulas and
 caches, preserve unrelated styles/paragraphs, and check all source locators. Office

@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "List the body contents in the order a reader encounters them."
+      "prompt": "Listez le contenu du corps dans l'ordre où un lecteur le rencontre."
     },
     {
       "execute": true,

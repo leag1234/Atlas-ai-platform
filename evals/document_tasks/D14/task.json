@@ -52,7 +52,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Keep the first row for each identifier."
+      "prompt": "Conserve la primera fila de cada identificador."
     },
     {
       "execute": true,

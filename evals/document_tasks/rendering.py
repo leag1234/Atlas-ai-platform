@@ -15,10 +15,39 @@ from PIL import Image
 IMAGE = "atlas-document-eval-renderer:local"
 
 
+def ensure_image(image: str) -> None:
+    """Build the fixed evaluation renderer when a clean CI worker lacks it."""
+    found = subprocess.run(
+        ["docker", "image", "inspect", image], capture_output=True, check=False
+    )
+    if found.returncode == 0:
+        return
+    if image != IMAGE:
+        raise ValueError("renderer_failed_or_unavailable")
+    root = Path(__file__).resolve().parents[2]
+    built = subprocess.run(
+        [
+            "docker",
+            "build",
+            "-f",
+            "evals/document_tasks/Dockerfile.renderer",
+            "-t",
+            IMAGE,
+            ".",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    if built.returncode != 0:
+        raise ValueError("renderer_failed_or_unavailable")
+
+
 @functools.lru_cache(maxsize=256)
 def render_bytes(raw: bytes, suffix: str, image: str = IMAGE) -> dict[str, Any]:
     if suffix not in {".pdf", ".docx", ".xlsx", ".pptx"}:
         raise ValueError("unsupported_render_format")
+    ensure_image(image)
     root = Path(__file__).resolve().parents[2] / "BRAIN"
     root.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="document-render-", dir=root) as directory:

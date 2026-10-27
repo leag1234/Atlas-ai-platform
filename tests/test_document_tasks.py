@@ -12,7 +12,7 @@ from collections import Counter
 from pathlib import Path
 
 from evals.document_tasks.build_fixtures import build
-from evals.document_tasks.catalog import LANGUAGES, TITLES
+from evals.document_tasks.catalog import LANGUAGES, TASK_IDS, TITLES
 from evals.document_tasks.formats import digest, pack, unpack
 from evals.document_tasks.verifier import verify
 from services.retrieval.project_work_contract import matches, schemas
@@ -30,10 +30,8 @@ class DocumentTaskTests(unittest.TestCase):
         return directory
 
     def test_all_metadata_and_language_balance(self) -> None:
-        directories = sorted(TASKS.glob("D*/task.json"))
-        self.assertEqual(
-            [p.parent.name for p in directories], [f"D{n:02d}" for n in range(1, 31)]
-        )
+        directories = [TASKS / identifier / "task.json" for identifier in TASK_IDS]
+        self.assertEqual([p.parent.name for p in directories], list(TASK_IDS))
         languages: Counter[str] = Counter()
         for number, path in enumerate(directories, 1):
             with self.subTest(task=path.parent.name):
@@ -90,7 +88,7 @@ class DocumentTaskTests(unittest.TestCase):
         self.assertEqual(languages, Counter(dict.fromkeys(LANGUAGES, 6)))
 
     def test_every_known_good_output_passes_and_every_corruption_fails(self) -> None:
-        for task in sorted(TASKS.glob("D??")):
+        for task in (TASKS / identifier for identifier in TASK_IDS):
             with self.subTest(task=task.name, control="known-good"):
                 destination = Path(self.temporary().name)
                 unpack((task / "private/good.tar.gz").read_bytes(), destination)
@@ -120,7 +118,8 @@ class DocumentTaskTests(unittest.TestCase):
                 p.relative_to(root).as_posix(): hashlib.sha256(
                     p.read_bytes()
                 ).hexdigest()
-                for p in root.glob("D??/**/*")
+                for identifier in TASK_IDS
+                for p in (root / identifier).glob("**/*")
                 if p.is_file() and "__pycache__" not in p.parts
             }
 

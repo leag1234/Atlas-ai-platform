@@ -43,7 +43,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Report stored cells and distinguish calculation expressions from cached numbers."
+      "prompt": "Melden Sie gespeicherte Zellen und unterscheiden Sie Formeln von zwischengespeicherten Zahlen."
     },
     {
       "execute": true,

@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from evals.document_tasks.catalog import LANGUAGES
+from evals.document_tasks.catalog import LANGUAGES, TASK_IDS
 from evals.document_tasks.formats import digest, json_bytes, safe_path, unpack
 from services.retrieval.project_work_contract import matches, schemas
 
@@ -41,7 +41,8 @@ class TaskSpec:
 
 def load_tasks(root: Path = ROOT) -> list[TaskSpec]:
     tasks = []
-    for path in sorted(root.glob("D??/task.json")):
+    for identifier in TASK_IDS:
+        path = root / identifier / "task.json"
         data = json.loads(path.read_text())
         projection = {
             k: v for k, v in data.items() if k not in {"title", "prompt", "variants"}
@@ -59,7 +60,7 @@ def load_tasks(root: Path = ROOT) -> list[TaskSpec]:
         ):
             raise ValueError("fixture_hash_or_id_mismatch")
         tasks.append(TaskSpec(path.parent, data))
-    if [t.identifier for t in tasks] != [f"D{n:02d}" for n in range(1, 31)] or any(
+    if [t.identifier for t in tasks] != list(TASK_IDS) or any(
         sum(t.public["language"] == lang for t in tasks) != 6 for lang in LANGUAGES
     ):
         raise ValueError("incomplete_or_unbalanced_task_set")

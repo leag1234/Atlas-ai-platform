@@ -52,7 +52,7 @@
     {
       "execute": true,
       "kind": "natural",
-      "prompt": "Save this cell rectangle in the specified delimited format."
+      "prompt": "Enregistrez cette plage de cellules dans le format délimité demandé."
     },
     {
       "execute": true,
