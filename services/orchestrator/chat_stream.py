@@ -651,6 +651,7 @@ def response(
                             if item.context_samples
                             else None,
                             "context_samples": item.context_samples,
+                            "context_manifest": item.context_manifest,
                         },
                     }
                 else:
@@ -684,6 +685,7 @@ def response(
                             if item.context_samples
                             else None,
                             "context_samples": item.context_samples,
+                            "context_manifest": item.context_manifest,
                             "images": item.images,
                             "files": item.files,
                             "terminal_commands": item.terminal_commands,

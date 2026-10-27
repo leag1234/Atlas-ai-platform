@@ -57,6 +57,7 @@ from services.orchestrator.code_api import router as code_router
 from services.orchestrator.image_store import router as image_router
 
 from services.orchestrator.app import app as harness_app
+from services.orchestrator.user_memory_ui import router as user_memory_router
 
 from services.orchestrator.api_key_edge import (
     app as key_app,
@@ -111,6 +112,7 @@ async def remove_nearby_location(token: UUID, request: Request) -> Response:
     return Response(status_code=204)
 
 
+app.include_router(user_memory_router)
 app.mount("/api/atlas/v1", key_app)
 app.include_router(project_router)
 
@@ -470,6 +472,7 @@ async def chat(request: Request) -> Response:
                     if item.context_samples
                     else None,
                     "context_samples": item.context_samples,
+                    "context_manifest": item.context_manifest,
                     "cost_eur": item.cout_eur,
                     "cost_kind": "reserved_upper_bound",
                     "provider_retries": item.provider_retries,
@@ -503,6 +506,7 @@ async def chat(request: Request) -> Response:
                 ),
                 "context": item.context_samples[-1] if item.context_samples else None,
                 "context_samples": item.context_samples,
+                "context_manifest": item.context_manifest,
                 "images": item.images,
                 "files": item.files,
                 "terminal_commands": item.terminal_commands,

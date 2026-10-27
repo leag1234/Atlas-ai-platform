@@ -16,6 +16,7 @@ class Interaction:
     verification: dict[str, object] | None = None
     location_used: str = ""
     nearby_source: str = ""
+    context_manifest: dict[str, object] = field(default_factory=lambda: {"sources": []})
     context_samples: list[dict[str, object]] = field(default_factory=list)
     provider_retries: int = 0
     commons_requests: list[dict[str, object]] = field(default_factory=list)
