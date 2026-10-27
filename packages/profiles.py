@@ -4,7 +4,19 @@ import json
 from pathlib import Path
 
 
-MODEL_PROFILE_IMAGE_URL = "/static/atlas/brand/svg/atlas-model-avatar.svg"
+# Open WebUI serves a model avatar only from an http(s) or data:image URL and
+# falls back to its favicon otherwise, so the avatar is embedded.
+MODEL_PROFILE_IMAGE_URL = (
+    "data:image/svg+xml;base64,"
+    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAx"
+    "MjggMTI4IiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkF0bGFzIj4KICA8dGl0bGU+QXRsYXM8"
+    "L3RpdGxlPgogIDxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiByeD0iMjgiIGZpbGw9"
+    "IiMxQTFBMTgiLz4KICA8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxMyAxMykgc2NhbGUoMS4w"
+    "MikiPgogICAgPHBhdGggZD0iTTIyLjYgNTAgQTM0IDI0IDAgMSAxIDY1LjYgNjAiIGZpbGw9"
+    "Im5vbmUiIHN0cm9rZT0iI0VERUNFOCIgc3Ryb2tlLXdpZHRoPSIxMCIgc3Ryb2tlLWxpbmVj"
+    "YXA9InJvdW5kIi8+CiAgICA8Y2lyY2xlIGN4PSIzMyIgY3k9Ijc2IiByPSIxMyIgZmlsbD0i"
+    "I0UwNUEyQiIvPgogIDwvZz4KPC9zdmc+Cg=="
+)
 
 
 def load_profiles() -> tuple[str, ...]:
