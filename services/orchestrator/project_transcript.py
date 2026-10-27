@@ -373,6 +373,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     turn, context = state["turn"], state["context"]
     if request._connector_scope:
         request._connector_scope["conversation"] = turn["conversation_id"]
+    item.context_manifest = context["context_manifest"]
     item.request_id = "chatcmpl-" + turn["request_id"]
     sink = sink_context.get()
     if sink:
