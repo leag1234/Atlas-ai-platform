@@ -16,5 +16,8 @@
 !infra/searxng/
 !infra/searxng/settings.yml
 !infra/openwebui_images.py
+!assets/
+!assets/brand/
+!assets/brand/**
 **/__pycache__
 **/*.pyc
