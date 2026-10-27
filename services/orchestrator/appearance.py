@@ -214,6 +214,8 @@ def simple_drawing_instruction() -> str:
 
 
 _SVG = re.compile(r"<svg\b[^>]*>.*?</svg\s*>", re.I | re.S)
+_SVG_START = re.compile(r"<svg\b", re.I)
+_SVG_END = re.compile(r"</svg\s*>", re.I)
 _XML_PREAMBLE = re.compile(
     r"<\?xml\b[^>]*\?>|<!DOCTYPE\b(?:[^>\[]|\[[\s\S]*?\])*>", re.I
 )
@@ -258,6 +260,72 @@ _COMMON_ATTRS = {
 
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _svg_candidate(model_text: str) -> str | None:
+    """Return the first SVG root, including an incomplete end for repair."""
+    start = _SVG_START.search(model_text)
+    if start is None:
+        return None
+    end = _SVG_END.search(model_text, start.end())
+    return model_text[start.start() : end.end()] if end else model_text[start.start() :]
+
+
+def _deduplicate_svg_attributes(raw: str) -> str:
+    """Keep the first quoted value for duplicate XML attributes in ordinary tags."""
+    tag = re.compile(
+        r"<(?P<name>[A-Za-z_:][\w:.-]*)(?P<attrs>(?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)\s*(?P<close>/?)>"
+    )
+    attribute = re.compile(r"\s+([A-Za-z_:][\w:.-]*)\s*=\s*(\"[^\"]*\"|'[^']*')")
+
+    def deduplicate(match: re.Match[str]) -> str:
+        seen: set[str] = set()
+        attributes: list[str] = []
+        for name, value in attribute.findall(match["attrs"]):
+            if name not in seen:
+                seen.add(name)
+                attributes.append(f" {name}={value}")
+        return "<" + match["name"] + "".join(attributes) + match["close"] + ">"
+
+    return tag.sub(deduplicate, raw)
+
+
+def _close_svg_at_end(raw: str) -> str:
+    """Close only a clean, end-truncated sequence of XML tags."""
+    tail = re.search(r"</([A-Za-z_:][\w:.-]*)\s*$", raw)
+    if tail:
+        raw += ">"
+    if "<!--" in raw or "<?" in raw or "<!" in raw or not raw.rstrip().endswith(">"):
+        return raw
+    tag = re.compile(r"<(?P<closing>/)?(?P<name>[A-Za-z_:][\w:.-]*)(?P<body>[^<>]*)>")
+    tags = list(tag.finditer(raw))
+    if not tags or len(tags) != raw.count("<"):
+        return raw
+    open_tags: list[str] = []
+    for match in tags:
+        name = match["name"]
+        if match["closing"]:
+            if match["body"].strip() or not open_tags or open_tags[-1] != name:
+                return raw
+            open_tags.pop()
+        elif not match["body"].rstrip().endswith("/"):
+            open_tags.append(name)
+    if not open_tags or open_tags[0].lower() != "svg":
+        return raw
+    return raw + "".join(f"</{name}>" for name in reversed(open_tags))
+
+
+def _repair_svg_xml(raw: str) -> str:
+    """Apply syntax-only repairs before the established SVG security validation."""
+    repaired = re.sub(
+        r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)", "&amp;", raw
+    )
+    # Leave real elements untouched so the existing allow-list still rejects them.
+    repaired = re.sub(r"<(?!/?[A-Za-z_:][\w:.-]*(?:\s|/?>)|!--|\?|!)", "&lt;", repaired)
+    repaired = _deduplicate_svg_attributes(repaired)
+    return _close_svg_at_end(repaired)
+
+
 _SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 _COMMONS_QUERY = re.compile(
     r"<!--\s*commons-query:\s*([A-Za-z0-9 -]{2,80})\s*-->", re.I
@@ -515,6 +583,7 @@ def extract_svg(
     require_legend: bool = False,
     canvas: tuple[float, float, float, float] = _FIXED_VIEWBOX,
     reasons: list[str] | None = None,
+    parser_errors: list[str] | None = None,
 ) -> str | None:
     """Validate primitives; normalize only the standard SVG namespace."""
 
@@ -524,21 +593,26 @@ def extract_svg(
         if reasons is not None:
             reasons.append(reason)
 
-    match = _SVG.search(model_text)
-    if not match:
+    raw = _svg_candidate(model_text)
+    if raw is None:
         reject("missing_svg")
         return None
-    raw = match.group(0)
     if len(raw.encode()) > 96_000:
         reject("byte_limit")
         return None
-    # A bare ampersand in model text is a common XML typo, not active content.
-    raw = re.sub(r"&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)", "&amp;", raw)
+    repaired = _repair_svg_xml(raw)
+    if len(repaired.encode()) > 96_000:
+        reject("byte_limit")
+        return None
     try:
-        root = ElementTree.fromstring(raw)
-    except ElementTree.ParseError:
+        root = ElementTree.fromstring(repaired)
+    except ElementTree.ParseError as error:
+        if parser_errors is not None:
+            parser_errors.append(str(error))
         reject("invalid_xml")
         return None
+    if repaired != raw:
+        _LOGGER.info("mechanical_svg_normalized reason=xml_repair")
     elements = list(root.iter())
     if len(elements) > 120:
         reject("element_limit")
