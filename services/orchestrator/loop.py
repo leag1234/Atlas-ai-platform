@@ -177,6 +177,7 @@ async def run(
     terminal_tools: frozenset[str] = frozenset(),
     initial_calls: tuple[Call, ...] = (),
     references: ResultReferences | None = None,
+    skill_messages: list[Message] | None = None,
     include_intermediate: bool = True,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
@@ -209,6 +210,7 @@ async def run(
     answer_parts: list[str] = []
     last_plan: tuple[str, Message] | None = None
     previous_call: tuple[str, str] | None = None
+    skills_inserted = 0
 
     def record_limit(values: dict[str, object]) -> None:
         if isinstance(result, CodeResult):
@@ -264,6 +266,12 @@ async def run(
 
     try:
         while True:
+            # Only the catalog loader supplies this separate instruction channel.
+            # Insert after every tool in a batch has its response, and keep the
+            # messages in this run's context without persisting them as history.
+            if skill_messages is not None:
+                messages.extend(dict(m) for m in skill_messages[skills_inserted:])
+                skills_inserted = len(skill_messages)
             if initial_calls:
                 turn = Turn("", initial_calls, Reservation(0, Decimal(0)))
                 initial_calls = ()

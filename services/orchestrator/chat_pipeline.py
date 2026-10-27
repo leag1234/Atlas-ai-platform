@@ -5,6 +5,7 @@ from packages.validation import describe_validation
 from pydantic import ValidationError
 
 import asyncio
+from typing import Any
 import json
 import logging
 import copy
@@ -224,6 +225,7 @@ class ChatTools(Runtime):
             question,
         )
         self.item = item
+        self.skills: Any = None
         self.daily_ledger: DailyLedger | None = None
         self.daily_user = "unknown"
         self.daily_lang = "en"
@@ -250,6 +252,13 @@ class ChatTools(Runtime):
     async def _execute(
         self, call: Call, timeout: float, *, trusted_render: bool
     ) -> Message:
+        if self.skills is not None:
+            if not await self.skills.authorized():
+                return {"error": "skill_authority_revoked"}
+            if call.name == "load_skill":
+                return dict(await self.skills.execute(call, timeout))
+            if self.skills.blocks(call.name):
+                return {"error": "skill_action_not_permitted"}
         sink = sink_context.get()
         urls: list[str] = []
         try:
@@ -1289,6 +1298,14 @@ async def _process(
     tools.search_language = search_language(
         request.conversation_messages, request.ui_locale
     )
+    from services.orchestrator.skill_tools import SkillTools, offer
+
+    if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":
+        tools.skills = await SkillTools.connect(
+            request._skill_catalog, telemetry=item.skills_loaded
+        )
+        if tools.skills.entries and not appearance:
+            model.tools = offer(model.tools, tools.skills.declaration())
     tools.model = model
     tools.terminal_code_disabled = structured_presentation
     file_context = ""
@@ -1453,6 +1470,9 @@ async def _process(
             ),
             include_intermediate=request.atlas_ui,
             history=attachment_history,
+            skill_messages=tools.skills.instructions
+            if tools.skills is not None
+            else None,
             retry_web=True,
             initial_calls=discovery,
             terminal_tools=frozenset({"generate_image"})
@@ -1622,6 +1642,9 @@ async def _process(
                         ),
                         include_intermediate=request.atlas_ui,
                         history=recovery_history,
+                        skill_messages=tools.skills.instructions
+                        if tools.skills is not None
+                        else None,
                     )
                     result.cost += first_result.cost
                     result.tool_calls += first_result.tool_calls

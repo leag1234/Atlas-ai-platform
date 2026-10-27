@@ -184,6 +184,7 @@ class ContextTools:
     ) -> None:
         self.context = context
         self.memory = memory
+        self.skills: Any = None
         self.check = check
 
     def estimate(self, call: Call) -> Reservation:
@@ -192,6 +193,13 @@ class ContextTools:
     async def execute(self, call: Call, timeout: float) -> Message:
         if self.check is not None:
             await self.check()
+        if self.skills is not None:
+            if not await self.skills.authorized():
+                return {"error": "skill_authority_revoked"}
+            if call.name == "load_skill":
+                return dict(await self.skills.execute(call, timeout))
+            if self.skills.blocks(call.name):
+                return {"error": "skill_action_not_permitted"}
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name != "rag_search":
@@ -472,10 +480,21 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             references = ResultReferences(
                 broker, turn["conversation_id"], turn["request_id"]
             )
+            from services.orchestrator.skill_tools import SkillTools
+
+            context_tools = ContextTools(
+                context, MemoryTools(broker, state), check=check
+            )
+            if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":
+                context_tools.skills = await SkillTools.connect(
+                    broker, telemetry=item.skills_loaded
+                )
+                if context_tools.skills.entries:
+                    model.tools.append(context_tools.skills.declaration())
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
-                ContextTools(context, MemoryTools(broker, state), check=check),
+                context_tools,
                 Path("prompts/chat.txt").read_text()
                 + language_instruction(scoped.lang),
                 Limits(
@@ -488,6 +507,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 ),
                 history=[dict(role=m.role, content=m.text) for m in history[:-1]],
                 references=references,
+                skill_messages=context_tools.skills.instructions
+                if context_tools.skills is not None
+                else None,
             )
             tool_calls = result.tool_calls
             item.state, item.cout_eur = result.state, float(result.cost)
