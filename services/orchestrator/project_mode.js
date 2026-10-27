@@ -9,7 +9,9 @@
   const owned = location.pathname === '/project-mode';
   let root, left, center, right, notice, identity = '', scope, lifecycle, stream, polling, generation = 0;
   let memberships = [], projects = [], conversations = [], files = [], folders = [], selected = new Set(), turns = [], events = new Map(), session = null, action = 'chat', sending = false;
-  let transcript, activity, composer, input, send, stop, toggle, uploads, sessionLabel;
+  let transcript, activity, composer, input, send, stop, uploads, sessionLabel, projectInfo;
+  let projectTab = 'mine', projectSearch = '', projectSort = 'recent';
+  let booting = false;
   let replayAfter = 0, configuring = false, uploading = false;
   const liveRequests = new Set();
   const selections = () => new URLSearchParams(location.search);
@@ -33,10 +35,6 @@
     if (value.kind === 'sheet_range') return `${t('sheet')} ${value.sheet}, ${value.range}`;
     if (value.kind === 'table_cell') return `${t('table')} ${value.table}, ${t('row')} ${value.row}, ${t('column')} ${value.column}`;
     return t('unknown');
-  }
-  function versionLabel(key, value) {
-    const label = detail(key, value == null ? t('unknown') : uuid(String(value)) ? String(value).slice(0,8) : `v${value}`);
-    if (value != null) label.title = String(value); return label;
   }
   const guarded = fn => async event => { const current = generation; try { await fn(event); } catch (error) { if (current === generation) failure(error); } };
   function checkScope(current) { if (current !== generation) throw new DOMException('Scope changed', 'AbortError'); }
@@ -73,8 +71,8 @@
   function cleanup() {
     generation++; sideResize?.disconnect(); lifecycle?.abort(); stream?.abort(); clearTimeout(polling);
     window.atlasSideView?.close(); document.body.classList.remove('atlas-project-open');
-    document.querySelector('.atlas-app-root')?.removeAttribute('inert');
-    events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined; ledgerSession = '';
+    document.querySelector('[data-atlas-project-host-main]')?.removeAttribute('inert');
+    events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined;
   }
   function picker(key, values, selectedID, change) {
     const select = node('select'); select.append(new Option('—', ''));
@@ -82,69 +80,109 @@
     select.value = selectedID || ''; select.addEventListener('change', guarded(() => change(select.value)));
     return field(key, select);
   }
-  async function nameDialog(key, submit) {
+  async function nameDialog(key, submit, initial = '') {
     const dialog = node('dialog', null, 'atlas-project-dialog'), form = node('form'), name = node('input');
-    name.required = true; name.maxLength = 120;
-    const create = node('button', t('create')); create.type = 'submit';
+    name.required = true; name.maxLength = 120; name.value = initial;
+    const create = node('button', t(key === 'renameProject' ? 'save' : 'create')); create.type = 'submit';
     form.append(node('h2', t(key)), field('name', name), create, button('cancel', () => dialog.close())); dialog.append(form); root.append(dialog);
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     form.addEventListener('submit', guarded(async event => { event.preventDefault(); create.disabled = true; try { await submit(name.value.trim()); dialog.close(); } finally { create.disabled = false; } }));
     dialog.showModal(); name.focus();
   }
-  function navigation() {
-    left.replaceChildren(node('h2', t('projects')));
-    left.append(picker('organization', memberships, scope?.org, org => choose({ org })), picker('project', projects, scope?.project, project => choose({ org: scope.org, project })));
-    if (memberships.find(m => m.org_id === scope?.org)?.role === 'admin') { const remote = node('button', 'Remote targets'); remote.type = 'button'; remote.addEventListener('click', guarded(runnerAdmin)); left.append(remote); }
-    const create = button('newProject', () => nameDialog('newProject', async name => {
+  function ordinary() {
+    cleanup(); scope = null; sessionStorage.removeItem(storageKey()); saveRoute(); root?.remove();
+    if (owned) location.href = '/';
+  }
+  async function createProject() {
+    if (!root?.isConnected) await mount();
+    return nameDialog('newProject', async name => {
       const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', { name, instructions: '', default_action: 'chat' });
       await choose({ org: scope.org, project: project.id });
-    })); create.disabled = !scope?.org; left.append(create, node('h3', t('conversations')));
-    for (const conversation of conversations) {
-      const b = button('newSession', () => choose({ org: scope.org, project: scope.project, conversation: conversation.id })); b.textContent = conversation.title;
-      b.dataset.conversation = conversation.id; b.setAttribute('aria-current', String(conversation.id === scope?.conversation)); left.append(b);
-    }
-    const fresh = button('newSession', () => nameDialog('newSession', async title => {
-      const conversation = await api(base() + '/conversations', 'POST', { title }); await choose({ org: scope.org, project: scope.project, conversation: conversation.id });
-    })); fresh.disabled = !scope?.project; left.append(fresh, button('ordinary', () => { cleanup(); scope = null; sessionStorage.removeItem(storageKey()); saveRoute(); root.remove(); if (owned) location.href = '/'; }));
+    });
   }
-  async function runnerAdmin() {
-    const current = generation, orgBase = `/api/atlas/orgs/${scope.org}/runner-targets`;
-    const dialog = node('dialog', null, 'atlas-project-dialog'), panel = node('section'), form = node('form');
-    dialog.dataset.runnerAdmin = ''; panel.append(node('h2', 'Remote execution targets'));
-    panel.append(node('p', 'Register a dedicated Linux or macOS account. Host key fingerprints must be verified independently. Private keys stay in the runner broker.'));
-    const entries = node('div'), status = node('p'); status.setAttribute('role', 'status');
-    async function reload() {
-      const targets = await api(orgBase); checkScope(current); entries.replaceChildren();
-      for (const target of targets.items) {
-        const row = node('section'); row.append(node('strong', target.name), node('p', `${target.os} · ${target.permission_mode} · ${target.status}`));
-        const probe = node('button', 'Probe'); probe.type = 'button'; probe.addEventListener('click', guarded(async () => { const result = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(result.last_probe); await reload(); })); row.append(probe);
-        for (const enabled of [true, false]) { const grant = node('button', enabled ? 'Grant to this project' : 'Revoke from this project'); grant.type = 'button'; grant.disabled = !scope.project; grant.addEventListener('click', guarded(async () => { await api(base() + `/runner-targets/${target.id}/grant`, 'PUT', { enabled }); status.textContent = enabled ? 'Target granted to this project.' : 'Grant and egress permission revoked.'; })); row.append(grant); }
-        const audit = node('button', 'Command audit'); audit.type = 'button'; audit.disabled = !scope.project; audit.addEventListener('click', guarded(async () => { const result = await api(base() + `/runner-targets/${target.id}/commands`); const detail = node('pre', JSON.stringify(result.items, null, 2)); row.append(detail); })); row.append(audit);
-        const mode = node('select'); for (const value of ['ask','rules','auto']) mode.append(new Option(value, value)); mode.value = target.permission_mode; mode.setAttribute('aria-label', `Permission mode for ${target.name}`);
-        mode.addEventListener('change', guarded(async () => {
-          const fields = ['name','os','arch','shell','host','port','user','work_root','credential_ref','credential_fingerprint','host_key_fingerprints','jump_target_id','capabilities','permission_mode','allow_rules','deny_rules','sensitive_rules','max_parallel_sessions','disk_quota_bytes','monthly_minutes','same_locality'];
-          const body = Object.fromEntries(fields.map(key => [key, key === 'permission_mode' ? mode.value : target[key]]));
-          await request(`${orgBase}/${target.id}`, { method:'PUT', headers:{'If-Match':`"${target.revision}"`}, body }); await api(`${orgBase}/${target.id}/probe`, 'POST', {}); await reload();
-        })); row.append(mode); entries.append(row);
+  function navigation() {
+    left.replaceChildren();
+    if (owned) {
+      const logo = node('img'); logo.src = '/static/atlas/brand/svg/atlas-logotype.svg'; logo.alt = 'Atlas'; logo.className = 'atlas-project-logo';
+      left.append(logo, button('ordinary', ordinary));
+      const row = node('div', null, 'atlas-project-nav-row');
+      row.append(button('projects', () => choose({org:scope.org})), iconButton('newProject', '+', createProject)); left.append(row);
+    }
+    if (owned && memberships.length > 1) left.append(picker('organization', memberships, scope?.org, org => choose({org})));
+  }
+  function iconButton(key, symbol, fn) {
+    const value = button(key, fn); value.textContent = symbol; value.setAttribute('aria-label', t(key)); value.title = t(key); if (key === 'upload') value.dataset.uploadControl = ''; return value;
+  }
+  function relativeTime(value) {
+    const seconds = Math.round((Date.parse(value) - Date.now()) / 1000);
+    if (!Number.isFinite(seconds)) return '';
+    const unit = Math.abs(seconds) < 3600 ? 'minute' : Math.abs(seconds) < 86400 ? 'hour' : 'day';
+    return new Intl.RelativeTimeFormat(window.atlasProjectLocale.language(), {numeric:'auto'}).format(Math.round(seconds / ({minute:60,hour:3600,day:86400}[unit])), unit);
+  }
+  function projectsPage() {
+    root.dataset.view = 'projects'; right.replaceChildren(); center.replaceChildren();
+    const header = node('div', null, 'atlas-project-page-heading');
+    header.append(node('h1', t('projects')), button('newProject', createProject, 'atlas-project-primary')); center.append(header);
+    const toolbar = node('div', null, 'atlas-project-list-toolbar'), tabs = node('div', null, 'atlas-project-tabs'); tabs.setAttribute('role','tablist');
+    const available = [['mine','yourProjects'],['shared','sharedProjects']];
+    if (projects.some(p => p.visibility === 'organization')) available.push(['organization','organization']);
+    if (!available.some(([key]) => key === projectTab)) projectTab = 'mine';
+    for (const [key,label] of available) {
+      const tab = button(label, () => { projectTab = key; projectsPage(); }); tab.setAttribute('role','tab'); tab.setAttribute('aria-selected', String(key === projectTab)); tabs.append(tab);
+    }
+    const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects'); search.setAttribute('aria-label',t('searchProjects')); search.value = projectSearch;
+    const searchButton = iconButton('searchProjects', '⌕', () => { search.hidden = !search.hidden; if (!search.hidden) search.focus(); }); search.hidden = !projectSearch;
+    search.addEventListener('input', () => { projectSearch = search.value; renderCards(); });
+    const sort = node('select'); sort.setAttribute('aria-label', t('sortProjects')); sort.append(new Option(t('recentActivity'),'recent'), new Option(t('name'),'name')); sort.value = projectSort;
+    sort.addEventListener('change', () => { projectSort = sort.value; renderCards(); });
+    toolbar.append(tabs, searchButton, search, sort);
+    if (!owned && memberships.length > 1) toolbar.append(picker('organization',memberships,scope.org,org => choose({org})));
+    center.append(toolbar);
+    const grid = node('div', null, 'atlas-project-grid'); grid.setAttribute('role','tabpanel'); center.append(grid);
+    function renderCards() {
+      grid.replaceChildren();
+      const values = projects.filter(p => (projectTab === 'organization' ? p.visibility === 'organization' : projectTab === 'shared' ? p.shared_with_me === true : p.shared_with_me !== true && p.visibility !== 'organization') && (p.name + ' ' + (p.description || '')).toLocaleLowerCase().includes(projectSearch.toLocaleLowerCase()));
+      values.sort((a,b) => projectSort === 'name' ? a.name.localeCompare(b.name) : (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0));
+      for (const project of values) {
+        const card = node('button', null, 'atlas-project-card'); card.type = 'button'; card.dataset.projectCard = project.id;
+        const top = node('div', null, 'atlas-project-card-top'), lock = node('span', '', 'atlas-project-lock'); lock.setAttribute('aria-label',t('privateProject')); lock.title = t('privateProject');
+        top.append(node('h2', project.name), lock); card.append(top);
+        if (project.description) card.append(node('p', project.description));
+        card.append(node('small', relativeTime(project.updated_at || project.created_at)));
+        card.addEventListener('click', guarded(() => choose({org:scope.org,project:project.id}))); grid.append(card);
       }
+      if (!values.length) { const empty = node('div', null, 'atlas-project-empty'); empty.append(node('h2', t(projectTab === 'shared' ? 'noSharedProjects' : 'noProjects')), node('p', t(projectSearch ? 'noSearchResults' : 'projectIntro'))); grid.append(empty); }
     }
-    const controls = {};
-    for (const [key, label, value] of [['name','Name',''],['host','Host',''],['port','SSH port','22'],['user','SSH user','runner'],['work_root','Working root','/home/runner/work'],['host_key_fingerprints','Pinned host key SHA256 fingerprints (one per line)',''],['credential_ref','Credential reference',''],['credential_fingerprint','Credential public key fingerprint',''],['allow_rules','Allow command rules (one per line)','make *\npython3 -m unittest *'],['deny_rules','Deny command rules (one per line)','sudo *']]) {
-      const input = node(key.endsWith('rules') || key === 'host_key_fingerprints' ? 'textarea' : 'input'); input.name = key; input.value = value; input.setAttribute('aria-label', label); if (!key.endsWith('rules')) input.required = true;
-      const labelNode = node('label', label); labelNode.append(input); form.append(labelNode); controls[key] = input;
+    renderCards();
+  }
+  async function renameProject() {
+    await nameDialog('renameProject', async name => {
+      projectInfo = await jsonResponse(await request(base(), {method:'PATCH', headers:{'If-Match':`"${projectInfo.revision}"`},body:{name}}), generation);
+      projects = projects.map(p => p.id === scope.project ? projectInfo : p); projectHeading();
+    }, projectInfo.name);
+  }
+  function projectHeading() {
+    center.querySelector('.atlas-project-heading')?.remove();
+    const heading = node('div', null, 'atlas-project-heading');
+    const breadcrumb = button('projects', () => choose({org:scope.org}), 'atlas-project-breadcrumb'); heading.append(breadcrumb);
+    if (scope.conversation) {
+      heading.append(node('span', ' / '), button('project', () => choose({org:scope.org,project:scope.project}), 'atlas-project-breadcrumb'));
+      heading.lastChild.textContent = projectInfo.name;
+    } else {
+      const title = node('div', null, 'atlas-project-page-heading'); title.append(node('h1',projectInfo.name), iconButton('renameProject','✎',renameProject)); heading.append(title);
+      if (projectInfo.description) heading.append(node('p', projectInfo.description, 'atlas-project-description'));
     }
-    const targetOS = node('select'); targetOS.name = 'os'; targetOS.setAttribute('aria-label','Target operating system'); for (const os of ['linux','macos']) targetOS.append(new Option(os,os)); form.append(targetOS);
-    const permission = node('select'); permission.name = 'permission_mode'; permission.setAttribute('aria-label','Permission mode'); for (const mode of ['rules','ask','auto']) permission.append(new Option(mode,mode)); form.append(permission);
-    const publicKey = node('pre'), generate = node('button', 'Generate a key pair'); generate.type = 'button';
-    generate.addEventListener('click', guarded(async () => { generate.disabled = true; try { const key = await api(orgBase + '/credentials', 'POST', {}); controls.credential_ref.value = key.credential_ref; controls.credential_fingerprint.value = key.fingerprint; publicKey.textContent = `Install this public key in the target account. It is shown once:\n${key.public_key}\n${key.fingerprint}`; } finally { generate.disabled = false; } }));
-    const submit = node('button', 'Register target'); submit.type = 'submit';
-    form.addEventListener('submit', guarded(async event => {
-      event.preventDefault(); submit.disabled = true;
-      try { const value = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value.trim()])); value.port = Number(value.port); for (const key of ['allow_rules','deny_rules','host_key_fingerprints']) value[key] = value[key].split('\n').map(s => s.trim()).filter(Boolean); value.permission_mode = permission.value; value.os = targetOS.value;
-        const target = await api(orgBase, 'POST', value); const probed = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(probed.last_probe); await reload();
-      } finally { submit.disabled = false; }
-    }));
-    form.append(generate, publicKey, submit); panel.append(entries, form, status, button('close', () => dialog.close())); dialog.append(panel); root.append(dialog); dialog.addEventListener('close', () => { publicKey.textContent = ''; dialog.remove(); }, {once:true}); dialog.showModal(); await reload();
+    center.prepend(heading);
+  }
+  function conversationList() {
+    const list = node('section', null, 'atlas-project-conversations'); list.append(node('h2', t('conversations')));
+    for (const conversation of conversations) {
+      const row = node('button', null, 'atlas-project-conversation'); row.type = 'button'; row.dataset.conversation = conversation.id;
+      row.append(node('span', conversation.title), node('small', relativeTime(conversation.updated_at || conversation.created_at)));
+      row.addEventListener('click', guarded(() => choose({org:scope.org,project:scope.project,conversation:conversation.id}))); list.append(row);
+    }
+    if (!conversations.length) list.append(node('p',t('noConversations')));
+    center.append(list);
   }
   async function choose(value) {
     cleanup(); lifecycle = new AbortController(); const current = generation;
@@ -155,78 +193,115 @@
     if (current !== generation) return;
     if (value.project) {
       if (!projects.some(p => p.id === value.project)) throw new Error(t('selectionError'));
-      const project = await api(base()); action = project.default_action;
+      projectInfo = {...projects.find(p => p.id === value.project), ...await api(base())}; action = 'chat';
       conversations = await list(base() + '/conversations');
       if (value.conversation && !conversations.some(c => c.id === value.conversation)) throw new Error(t('selectionError'));
-      if (!value.conversation && conversations.length) value.conversation = conversations[0].id;
     }
     if (current !== generation) return;
     saveRoute(); navigation();
     const side = document.getElementById('atlas-side-view'); if (side && sideResize) sideResize.observe(side);
     document.body.classList.add('atlas-project-open');
-    document.querySelector('.atlas-app-root')?.setAttribute('inert', '');
+    hostMain()?.setAttribute('inert', '');
     say('');
-    if (value.project) await mountConversation(current);
+    if (value.project) await mountConversation(current); else projectsPage();
   }
+  const eligibleFiles = () => files.filter(f => f.locality !== 'local_only' && f.availability !== 'not_retained' && f.id !== projectInfo.instructions_file_id && folders.some(folder => folder.id === f.folder_id && folder.model_use === 'allow'));
   async function mountConversation(current) {
     [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]);
     if (current !== generation) return;
-    center.replaceChildren();
+    center.replaceChildren(); root.dataset.view = scope.conversation ? 'conversation' : 'project'; projectHeading();
+    eligibleFiles().forEach(f => selected.add(f.version_id));
     transcript = node('div', null, 'atlas-project-transcript'); transcript.setAttribute('role', 'log'); transcript.setAttribute('aria-label', t('conversations'));
     activity = node('div'); activity.className = 'atlas-project-activity';
     composer = node('form', null, 'atlas-project-composer');
     input = node('textarea'); input.maxLength = 32000; input.required = true; input.setAttribute('aria-label', t('message'));
-    toggle = node('div', null, 'atlas-project-toolbar');
-    for (const mode of ['chat', 'work']) { const b = button(mode, async () => { if (sending || configuring || uploading) return; action = mode; session = null; delete scope.session; saveRoute(); await setAction(); }); b.dataset.action = mode; toggle.append(b); }
     sessionLabel = node('p', '', 'atlas-project-detail');
     uploads = node('input'); uploads.type = 'file'; uploads.multiple = true;
-    uploads.addEventListener('change', guarded(upload));
+    uploads.addEventListener('change', guarded(() => upload()));
     send = node('button', t('send')); send.type = 'submit'; send.dataset.send = '';
     stop = button('stop', cancel); stop.disabled = true; stop.dataset.stop = '';
-    composer.append(toggle, sessionLabel, field('message', input), field('upload', uploads), send, stop);
+    input.placeholder = t('composerPlaceholder');
+    const tools = node('div', null, 'atlas-project-composer-tools');
+    uploads.setAttribute('aria-label',t('upload')); uploads.hidden = true;
+    tools.append(iconButton('upload','+', () => uploads.click()), uploads, sessionLabel, stop, send);
+    composer.append(input, tools);
     composer.addEventListener('submit', guarded(submit));
     input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!send.disabled) composer.requestSubmit(); } });
     const history = node('div', null, 'atlas-project-history'); history.append(transcript, activity); center.append(history, composer);
-    if (!scope.conversation) { send.disabled = true; input.disabled = true; say(t('selectionError')); await panels(); return; }
+    if (!scope.conversation) { history.hidden = true; conversationList(); controls(); await panels(); return; }
     await refreshTurns();
     if (scope.session) {
       session = await api(base() + '/work-sessions/' + scope.session);
       if (session.conversation_id !== scope.conversation) throw new Error(t('selectionError'));
       action = 'work';
+      selected.clear();
       for (const version of session.base_file_versions) if (files.some(f => f.version_id === version.version_id)) selected.add(version.version_id);
     }
     await setAction();
-    await replay(); await panels();
+    await replay(); await restoreSession(); await panels();
     if (current === generation) { input.focus(); schedule(current); }
   }
   function renderTurns() {
     transcript.replaceChildren();
     for (const turn of turns) {
       const article = node('article', null, 'atlas-project-turn'); article.dataset.turn = turn.id;
-      article.append(node('small', `${t(turn.action)} · ${t(turn.state)}`));
+      article.append(node('small', `Atlas · ${t(turn.state)}`));
       for (const ref of turn.content_refs) if (ref.text) article.append(prose(ref.text, ref.kind === 'question' ? 'question' : 'answer'));
       const checked = [...events.values()].filter(e => e.request_id === turn.request_id && e.output?.verification).sort((a,b) => b.seq - a.seq)[0];
       if (checked) article.append(verificationBadge(checked.output.verification));
       if (turn.usage?.cost_eur != null) article.append(detail('cost', turn.usage.cost_eur));
       if (turn.usage?.unknown_eur) article.append(detail('unknownCost', turn.usage.unknown_eur));
       if (turn.usage?.reserved_eur) article.append(detail('reservedCost', turn.usage.reserved_eur));
+      for (const item of panelData?.deliverables || []) if (item.turn_id === turn.request_id || item.request_id === turn.request_id || turn.content_refs.some(ref => ref.text?.includes(item.download_route))) article.append(fileCard(item));
+      const lastContext = turn.usage?.context;
+      if (lastContext?.layers) {
+        const used = node('details'); used.dataset.contextUsed = ''; used.append(node('summary',t('contextUsed')));
+        for (const [layer,count] of Object.entries(lastContext.layers)) used.append(detail(layer,count)); article.append(used);
+      }
       transcript.append(article);
     }
   }
+  let markdownModule;
+  function scopedLink(label, href) {
+    const link = node('a',label); link.href = projectURL(href);
+    if (new URL(link.href).pathname.includes('/sources/')) link.addEventListener('click', guarded(async event => {
+      event.preventDefault(); const source = await api(link.href);
+      await window.atlasSideView.open({kind:'markdown',content:source.text,title:`${files.find(file => file.id === source.file_id)?.relative_path || t('files')} · ${locator(source.locator)}`,readOnly:true});
+    }));
+    return link;
+  }
   function prose(text, cls) {
-    const content = node('pre', null, cls);
-    // Plain text plus authorized scoped links; source text never becomes HTML.
+    const content = node('div', null, cls), plain = node('pre'); content.append(plain);
+    // Safe text remains usable if the optional local Markdown asset cannot load.
     const pattern = /\[([^\[\]]+)\]\(([^)]+)\)/g;
     let offset = 0;
     for (const match of text.matchAll(pattern)) {
-      content.append(document.createTextNode(text.slice(offset, match.index)));
-      try { const link = node('a', match[1]); link.href = projectURL(match[2]);
-        if (new URL(link.href).pathname.includes('/sources/')) link.addEventListener('click', guarded(async event => { event.preventDefault(); const source = await api(link.href); await window.atlasSideView.open({ kind:'markdown', content:source.text, title:`${files.find(file => file.id === source.file_id)?.relative_path || t('files')} · ${locator(source.locator)}` }); }));
-        content.append(link); }
-      catch { content.append(document.createTextNode(match[0])); }
+      plain.append(document.createTextNode(text.slice(offset,match.index)));
+      try {plain.append(scopedLink(match[1],match[2]));} catch {plain.append(document.createTextNode(match[0]));}
       offset = match.index + match[0].length;
     }
-    content.append(document.createTextNode(text.slice(offset))); return content;
+    plain.append(document.createTextNode(text.slice(offset)));
+    if (cls === 'question') return content;
+    const current = generation;
+    markdownModule ||= import('/static/atlas/vendor/marked/marked.esm.js');
+    markdownModule.then(({marked}) => {
+      if (current !== generation || !content.isConnected) return;
+      const renderer = new marked.Renderer(); renderer.html = () => ''; renderer.image = () => '';
+      const parsed = new DOMParser().parseFromString(marked.parse(text,{renderer,async:false}),'text/html');
+      const allowed = new Set('P BR HR H1 H2 H3 H4 H5 H6 BLOCKQUOTE UL OL LI PRE CODE STRONG EM DEL TABLE THEAD TBODY TR TH TD A'.split(' '));
+      const fragment = document.createDocumentFragment();
+      const copy = (source,target) => {
+        for (const child of source.childNodes) {
+          if (child.nodeType === Node.TEXT_NODE) {target.append(document.createTextNode(child.textContent)); continue;}
+          if (child.nodeType !== Node.ELEMENT_NODE || !allowed.has(child.tagName)) continue;
+          if (child.tagName === 'A') {
+            try {target.append(scopedLink(child.textContent,child.getAttribute('href')));} catch {target.append(document.createTextNode(child.textContent));}
+          } else {const element = node(child.tagName); copy(child,element); target.append(element);}
+        }
+      };
+      copy(parsed.body,fragment); content.replaceChildren(fragment); content.dataset.format = 'markdown';
+    }).catch(() => {content.dataset.format = 'text';});
+    return content;
   }
   async function refreshTurns() {
     const current = generation;
@@ -234,12 +309,11 @@
   }
   function controls() {
     const activeWork = action === 'work' && ['running','awaiting_approval','cancelling'].includes(session?.state);
-    send.disabled = sending || configuring || uploading || activeWork || !scope?.conversation; input.disabled = sending;
-    uploads.disabled = sending || configuring || uploading; stop.disabled = !sending && !['running','awaiting_approval','cancelling'].includes(session?.state);
-    toggle.querySelectorAll('button').forEach(b => { b.disabled = sending || configuring || uploading; b.setAttribute('aria-pressed', String(b.dataset.action === action)); });
+    send.disabled = sending || configuring || uploading || activeWork; input.disabled = sending;
+    uploads.disabled = sending || configuring || uploading || activeWork; stop.disabled = !sending && !['running','awaiting_approval','cancelling'].includes(session?.state);
+    stop.hidden = stop.disabled;
     refreshApprovals();
-    right.querySelectorAll('[data-session-state]').forEach(value => { value.textContent = t('status') + ': ' + t(session?.state || 'unknown'); });
-    right.querySelectorAll('.atlas-project-file input').forEach(control => { const file = files.find(f => f.version_id === control.dataset.version); control.disabled = sending || configuring || uploading || file?.locality === 'local_only' || file?.availability === 'not_retained'; });
+    root.querySelectorAll('[data-upload-control],.atlas-project-drop').forEach(control => {control.disabled = uploads.disabled;});
   }
   async function setAction() {
     const current = generation;
@@ -251,12 +325,11 @@
       scope.session = session.id; saveRoute();
       } finally { if (current === generation) { configuring = false; controls(); } }
     }
-    const limits = session?.effective_limits;
-    sessionLabel.textContent = limits && action === 'work' ? `${t('limits')}: ${limits.tool_calls} · ${limits.wall_seconds} ${t('seconds')} · ${t('cost')} ${limits.cost_eur}` : `${t('chat')} · 120–300 ${t('seconds')}`;
+    sessionLabel.textContent = sending ? t('running') : 'Atlas';
     controls();
   }
-  async function upload() {
-    const current = generation, incoming = [...uploads.files]; uploading = true; controls();
+  async function upload(incoming = [...uploads.files]) {
+    const current = generation; uploading = true; controls();
     try {
       let folder = folders.find(f => f.locality === 'server' && f.model_use === 'allow' && f.id !== projects.find(p => p.id === scope.project)?.deliverables_folder_id);
       if (!folder) folder = await api(base() + '/folders', 'POST', { name: t('files'), locality: 'server', model_use: 'allow' });
@@ -294,9 +367,9 @@
     renderEvents();
   }
   function verificationBadge(value) {
-    const badge = node('p', `Verification: ${value.status} · ${value.reason}`, 'atlas-project-verification');
+    const badge = node('p', `${t('verification')}: ${value.status} · ${value.reason}`, 'atlas-project-verification');
     badge.dataset.verification = value.status;
-    if (value.command) badge.append(node('span', ` · ${value.command} exited ${value.exit_code}`));
+    if (value.command) badge.append(node('span', ` · ${value.command} ${t('exited')} ${value.exit_code}`));
     return badge;
   }
   function renderEvents() {
@@ -308,8 +381,8 @@
     if (!turns.some(turn => turn.request_id === event.request_id) && !liveRequests.has(event.request_id)) return;
     if (event.conversation_id && event.conversation_id !== scope.conversation) return;
     if (!event.version) return;
-    const item = node('section', null, 'atlas-project-event'); item.dataset.eventSeq = String(event.seq);
-    item.append(node('small', `${event.label || event.type} · ${t(event.status || event.state || '')}`));
+    const item = node(event.output?.approval || event.type === 'error' ? 'section' : 'details', null, 'atlas-project-event'); item.dataset.eventSeq = String(event.seq);
+    item.append(node(item.tagName === 'DETAILS' ? 'summary' : 'small', `Atlas · ${t(event.status || event.state || 'running')}`));
     const out = event.output || {};
     for (const text of [event.text, event.error?.message, out.text, out.detail]) if (text) item.append(prose(text));
     if (out.verification) item.append(verificationBadge(out.verification));
@@ -332,23 +405,23 @@
   }
   function approval(value) {
     const card = node('section', null, 'atlas-project-approval'); card.dataset.approval = value.id;
-    card.append(node('strong', t('approvals')), node('p', `${t(value.action_kind)} · ${value.paths.join(', ')}`), node('p', `${t(value.destination.kind)} · ${value.maximum_bytes} ${t('bytes')}`), node('p', `${t('expires')}: ${value.expires_at}`));
+    card.append(node('strong', t('approvals')), node('p', `${t(value.action_kind)} · ${value.paths.join(', ')}`), node('p', `${t(value.destination.kind)} · ${value.maximum_bytes} ${t('bytes')}`), node('p', `${t('expires')}: ${new Intl.DateTimeFormat(window.atlasProjectLocale.language(),{dateStyle:'short',timeStyle:'short'}).format(new Date(value.expires_at))}`));
     let alwaysAllow;
     if (value.remote) {
       const remote = value.remote;
-      card.append(node('p', `Target: ${remote.target_name}`), node('pre', remote.command), node('p', `Directory: ${remote.cwd} · timeout: ${remote.timeout_s}s`), node('p', `Code digest: ${remote.code_digest}`));
-      if (remote.code_egress) card.append(node('p', 'This sends the selected workspace to this target. Allowing records code egress permission for this project.'));
+      card.append(node('p', `${t('target')}: ${remote.target_name}`), node('pre', remote.command), node('p', `${t('directory')}: ${remote.cwd} · ${t('timeout')}: ${remote.timeout_s}s`), node('p', `${t('codeDigest')}: ${remote.code_digest}`));
+      if (remote.code_egress) card.append(node('p', t('codeTransfer')));
       alwaysAllow = node('input'); alwaysAllow.type = 'checkbox'; alwaysAllow.dataset.runnerAlways = '';
-      const label = node('label', 'Always allow commands starting with this command and its arguments (project rule)'); label.prepend(alwaysAllow); card.append(label);
+      const label = node('label', t('alwaysAllow')); label.prepend(alwaysAllow); card.append(label);
     }
     if (value.publication) {
       const publication = value.publication;
-      for (const [label, text] of [['Branch', publication.branch], ['Target', publication.target], ['Commit message', publication.message], ['PR title', publication.title], ['PR body', publication.body], ['Base commit', publication.base_commit]]) card.append(node('p', `${label}: ${text}`));
+      for (const [label, text] of [['Branch', publication.branch], ['Target', publication.target], ['Commit message', publication.message], ['PR title', publication.title], ['PR body', publication.body], ['Base commit', publication.base_commit]]) card.append(node('p', `${t(label)}: ${text}`));
       const changes = node('ul');
       for (const change of publication.diff) changes.append(node('li', `${change.status}: ${change.path}`));
       card.append(changes);
     }
-    if (value.decision !== 'pending') { card.dataset.decided = 'true'; card.append(node('p', value.decision)); }
+    if (value.decision !== 'pending') { card.dataset.decided = 'true'; card.append(node('p', t(value.decision))); }
     for (const allow of [true, false]) {
       const b = button(allow ? 'accept' : 'deny', async () => {
         root.querySelectorAll('[data-approval]').forEach(other => { if (other.dataset.approval === value.id) { other.dataset.decided = 'true'; other.querySelectorAll('button').forEach(control => { control.disabled = true; }); } });
@@ -366,10 +439,21 @@
       await consume(await request(base() + '/events?after=' + after), event => { checkScope(current); count++; replayAfter = Math.max(replayAfter, event.seq); eventRecord(event); });
     } while (count === 100);
   }
+  async function restoreSession() {
+    if (session || !scope?.conversation) return;
+    const latest = [...events.values()].filter(e => e.conversation_id === scope.conversation && (e.session_id || e.output?.approval?.session_id)).sort((a,b) => b.seq - a.seq)[0];
+    const id = latest?.session_id || latest?.output?.approval?.session_id;
+    if (!uuid(id)) return;
+    const value = await api(base() + '/work-sessions/' + id);
+    if (value.conversation_id !== scope.conversation) throw new Error(t('selectionError'));
+    session = value; scope.session = id; action = 'work'; selected.clear();
+    for (const version of session.base_file_versions) if (files.some(f => f.version_id === version.version_id)) selected.add(version.version_id);
+    saveRoute(); controls();
+  }
   function schedule(current) {
     polling = setTimeout(async () => {
       try {
-        await replay();
+        await replay(); await restoreSession();
         if (session) { const id = session.id, value = await api(base() + '/work-sessions/' + id); if (session?.id === id) { session = value; controls(); } }
         await refreshTurns();
       } catch (error) { if (current === generation) failure(error); }
@@ -385,11 +469,23 @@
     checkScope(current); stream?.abort(); say(t('stopped'));
   }
   async function submit(event) {
-    event.preventDefault(); if (sending || configuring || uploading || !scope?.conversation || !input.value.trim()) return;
-    const current = generation, question = input.value.trim();
-    sending = true; controls(); stream = new AbortController();
+    event.preventDefault(); if (sending || configuring || uploading || !input.value.trim()) return;
+    const question = input.value.trim();
+    if (!scope.conversation) {
+      configuring = true; controls();
+      try { const conversation = await api(base() + '/conversations', 'POST', {title:question.slice(0,120)}); await choose({org:scope.org,project:scope.project,conversation:conversation.id}); input.value = question; }
+      finally { configuring = false; controls(); }
+    }
+    const current = generation;
+    sending = true; sessionLabel.textContent = t('running'); controls(); stream = new AbortController();
     const pending = node('article', null, 'atlas-project-turn'); const answer = node('pre', '', 'answer'); pending.append(node('pre', question, 'question'), answer); transcript.append(pending);
     try {
+      // The scoped agent can answer directly or call tools; no user mode selection.
+      action = 'work';
+      [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]);
+      const versions = eligibleFiles().map(file => file.version_id);
+      if (session && (session.base_file_versions.length !== versions.length || session.base_file_versions.some(file => !versions.includes(file.version_id)))) {session = null; delete scope.session;}
+      selected = new Set(versions);
       if (action === 'work' && (!session || ['failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
       const body = { model: window.atlasProjectProfile, org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
@@ -407,189 +503,64 @@
       if (current === generation) {
         sending = false; configuring = true; controls();
         try { await refreshTurns(); await replay(); if (session) session = await api(base() + '/work-sessions/' + session.id); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); }
-        finally { if (current === generation) { configuring = false; controls(); input.focus(); } }
+        finally { if (current === generation) { configuring = false; sessionLabel.textContent = 'Atlas'; controls(); input.focus(); } }
       }
     }
   }
-  let ledgerTab = 'server', ledgerSession = '', panelData, sideResize;
+  let panelData, sideResize;
   const detail = (key, value) => node('p', `${t(key)}: ${value == null ? t('unknown') : value}`, 'atlas-project-detail');
   async function panels() {
-    const current = generation, projectBase = base();
-    const [instructions, memory, deliverables, jobs, summary, ledger, context, policy] = await Promise.all([
-      api(projectBase + '/instructions'), list(projectBase + '/memory'), list(projectBase + '/deliverables'), list(projectBase + '/jobs'),
-      api(projectBase + '/ledger/summary' + (ledgerSession ? '?session_id=' + ledgerSession : '')),
-      list(projectBase + '/ledger' + (ledgerSession ? '?session_id=' + ledgerSession : '')),
-      scope.conversation ? api(projectBase + '/context', 'POST', { conversation_id: scope.conversation, query: input?.value.trim() || t('context'), action, ...(action === 'work' && scope.session ? {work_session_id: scope.session} : {}) }) : null,
-      memberships.find(m => m.org_id === scope.org)?.role === 'admin' ? api(`/api/atlas/orgs/${scope.org}/policy`) : null,
-    ]);
-    checkScope(current); panelData = { instructions, memory, deliverables, jobs, summary, ledger, context, policy };
-    renderPanels();
-  }
-  function repositoryImport() {
-    const form = node('form'); form.dataset.repositoryImport = '';
-    const folder = node('select');
-    for (const item of folders.filter(f => f.locality === 'server' && f.model_use === 'allow')) { const option = node('option', item.name); option.value = item.id; folder.append(option); }
-    const connector = node('input'); connector.required = true;
-    const remote = node('input'); remote.type = 'url'; remote.required = true;
-    const submit = button('repository', async () => {
-      if (!form.reportValidity()) return;
-      submit.disabled = true;
-      try {
-        const data = {folder_id: folder.value, connector_id: connector.value.trim(), remote_ref: remote.value.trim()};
-        const value = await api(base() + '/repositories/import-approvals', 'POST', data);
-        const card = node('section', null, 'atlas-project-approval'); card.dataset.importApproval = value.id;
-        card.append(node('strong', 'Approve repository import'), node('p', remote.value), node('p', value.paths.join(', ')), node('p', `${value.maximum_bytes} ${t('bytes')} · ${t('expires')}: ${value.expires_at}`));
-        for (const allow of [true, false]) card.append(button(allow ? 'accept' : 'deny', async () => {
-          card.querySelectorAll('button').forEach(b => b.disabled = true);
-          await api(base() + '/approvals/' + value.id + '/decision', 'POST', {allow, action_digest: value.action_digest});
-          if (allow) {
-            await api(base() + '/repositories', 'POST', {...data, approval_id: value.id});
-            [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]);
-            files.filter(f => f.folder_id === data.folder_id).forEach(f => selected.add(f.version_id));
-            session = null; delete scope.session; saveRoute();
-            if (scope.conversation) await setAction();
-            await panels();
-          } else card.append(node('p', 'Import denied'));
-        }));
-        form.append(card);
-      } finally { submit.disabled = false; }
-    });
-    form.append(field('files', folder), field('Connector ID', connector), field('Repository HTTPS URL', remote), submit);
-    form.addEventListener('submit', event => event.preventDefault());
-    return form;
-  }
-  async function memoryPatch(entry, changes) {
     const current = generation;
-    const response = await request(base() + '/memory/' + entry.id, { method: 'PATCH', headers: {'If-Match': `"${entry.revision}"`}, body: changes });
-    await jsonResponse(response, current); checkScope(current); await panels(); say(t('saved'));
+    const [instructions, memory, deliverables] = await Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables')]);
+    checkScope(current); panelData = {instructions,memory,deliverables}; renderPanels(); renderTurns();
   }
-  function memoryEditor(entry) {
-    const dialog = node('dialog', null, 'atlas-project-dialog'), form = node('form'), text = node('textarea'), kind = node('select');
-    text.value = entry.text; text.required = true; text.maxLength = 500;
-    for (const value of ['constraint','decision','fact','preference','open_question','summary']) kind.append(new Option(value.replaceAll('_', ' '), value));
-    kind.value = entry.kind;
-    const save = node('button', 'Save'); save.type = 'submit';
-    form.append(node('h2', 'Edit memory'), field('message', text), field('kind', kind), save, button('cancel', () => dialog.close()));
-    dialog.append(form); root.append(dialog); dialog.addEventListener('close', () => dialog.remove(), {once:true});
-    form.addEventListener('submit', guarded(async event => { event.preventDefault(); save.disabled = true; try { await memoryPatch(entry, {text:text.value, kind:kind.value, ...(kind.value === 'constraint' ? {pinned:true} : !['decision','fact'].includes(kind.value) ? {pinned:false} : {})}); dialog.close(); } finally { save.disabled = false; } }));
-    dialog.showModal(); text.focus();
+  async function requestChange(key, value) {
+    const conversation = await api(base() + '/conversations', 'POST', {title:t(key)});
+    await choose({org:scope.org,project:scope.project,conversation:conversation.id});
+    input.value = t(key) + '\n' + (value.text ?? value.path) + '\n' + t('changeApproval');
+    composer.requestSubmit();
   }
-  function memoryPanel(entries) {
-    const panel = node('section'); panel.dataset.memoryPanel = ''; panel.append(node('h3', t('memory')));
-    for (const tier of ['pinned', 'retrievable', 'proposed', 'history']) {
-      const group = node(tier === 'history' ? 'details' : 'section'); group.dataset.memoryTier = tier;
-      group.append(node(tier === 'history' ? 'summary' : 'h4', tier === 'history' ? 'Memory history' : tier));
-      for (const kind of ['constraint','decision','fact','preference','open_question','summary']) {
-        const matching = entries.filter(e => e.kind === kind && (['superseded','rejected'].includes(e.status) ? tier === 'history' : e.status === 'proposed' ? tier === 'proposed' : tier === (e.pinned || e.kind === 'constraint' ? 'pinned' : 'retrievable')));
-        if (!matching.length) continue;
-        group.append(node('h5', kind.replaceAll('_', ' ')));
-        for (const entry of matching) {
-          const card = node('article'); card.dataset.memoryId = entry.id;
-          card.append(node('p', entry.text), node('small', `${entry.status} · revision ${entry.revision} · ${entry.source || 'user'} · ${entry.observed_at || entry.created_at}`));
-          if (entry.supersedes) card.append(node('small', `Supersedes ${entry.supersedes}`));
-          if (tier !== 'history') {
-            const edit = node('button', 'Edit'); edit.addEventListener('click', () => memoryEditor(entry)); card.append(edit);
-            if (entry.status === 'proposed') {
-              card.append(button('accept', () => memoryPatch(entry, {status:'active'})));
-              const reject = node('button', 'Reject'); reject.addEventListener('click', guarded(() => memoryPatch(entry, {status:'rejected'}))); card.append(reject);
-            } else if (['fact','decision'].includes(entry.kind)) {
-              const pin = node('button', entry.pinned ? 'Unpin' : 'Pin'); pin.addEventListener('click', guarded(() => memoryPatch(entry, {pinned:!entry.pinned}))); card.append(pin);
-            }
-          }
-          group.append(card);
-        }
-      }
-      panel.append(group);
-    }
-    if (!entries.length) panel.append(node('p', t('empty')));
-    return panel;
+  function confirmChange(key, value) {
+    const dialog = node('dialog',null,'atlas-project-dialog');
+    dialog.append(node('h2',t('confirmRemove')),node('p',value.path || value.text),node('p',t('changeApproval')),
+      button('remove',async () => {dialog.close(); await requestChange(key,value);}),button('cancel',() => dialog.close()));
+    dialog.addEventListener('close',() => dialog.remove(),{once:true}); root.append(dialog); dialog.showModal();
+  }
+  function fileCard(item) {
+    const file = files.find(f => f.version_id === item.file_version_id), card = node('section', null, 'atlas-project-file-card'); card.dataset.deliverable = item.id;
+    const name = file?.relative_path || item.filename || t('files');
+    card.append(node('span', name.split('.').pop().toUpperCase(), 'atlas-project-file-type'), node('strong',name));
+    const actions = node('div'); const download = node('a',t('download')); download.href = projectURL(item.download_route); download.download = name;
+    actions.append(button('preview', () => previewDeliverable(item)),download); card.append(actions); return card;
   }
   function renderPanels() {
     if (!panelData) return;
-    const { instructions, memory, deliverables, jobs, summary, ledger, context, policy } = panelData;
-    right.replaceChildren(node('h2', t('environment')), detail('workspace', t('server')), detail('device', t('unavailable')));
-    if (session) { const status = detail('status', t(session.state)); status.dataset.sessionState = ''; right.append(detail('workspace', session.environment.workspace_id), status); }
-    for (const folder of folders) right.append(detail('files', `${folder.name} · ${folder.locality === 'local_only' ? t('local') + ' · ' + t('device') : t('server')} · ${t(folder.model_use)}`));
-    right.append(detail('repository', session?.repository_id || t('unavailable')), node('h2', t('context')), versionLabel('instructions', instructions.active_version_id || instructions.version));
-    const importPanel = node('details'); importPanel.append(node('summary', 'Attach repository'), repositoryImport()); right.append(importPanel);
-    const lastContext = ledger.filter(e => e.model_dispatch?.context && e.model_dispatch.purpose !== 'session_state' && (!scope.conversation || e.conversation_id === scope.conversation)).sort((a, b) => b.seq - a.seq)[0]?.model_dispatch.context;
-    const used = node('section'); used.dataset.contextUsed = '';
-    used.append(node('h3', t('contextUsed')));
-    if (lastContext) {
-      used.append(node('p', `${lastContext.provider_input_tokens ?? lastContext.calibrated_tokens ?? lastContext.total_tokens} / ${lastContext.model_window ?? t('unknown')} ${t('contextTokens')}`));
-      for (const [layer, count] of Object.entries(lastContext.layers)) used.append(detail(layer, count));
-      used.append(detail('contextEstimate', lastContext.method));
-    } else used.append(node('p', t('unknown')));
-    for (const event of ledger.filter(e => e.context_clearing && (!scope.conversation || e.conversation_id === scope.conversation))) {
-      const clearing = event.context_clearing;
-      used.append(detail('contextCleared', `${clearing.tokens_removed} ${t('contextTokens')} · ${clearing.ids.join(', ')}`));
+    const {instructions,memory,deliverables} = panelData; right.replaceChildren();
+    const panels = node('div', null, 'atlas-project-panels'); right.append(panels);
+    const instructionsPanel = node('section', null, 'atlas-project-panel'); instructionsPanel.dataset.panel = 'instructions';
+    const text = node('textarea'); text.value = instructions.text || ''; text.setAttribute('aria-label',t('instructions')); text.placeholder = t('instructionsPlaceholder'); text.maxLength = 4000;
+    const change = button('editInConversation', () => requestChange('changeInstructions', {text:text.value})); change.hidden = true;
+    text.addEventListener('input', () => {change.hidden = text.value === (instructions.text || '');});
+    instructionsPanel.append(node('h2',t('instructions')),text,change); panels.append(instructionsPanel);
+    const filePanel = node('section',null,'atlas-project-panel'); filePanel.dataset.panel = 'files';
+    const title = node('div',null,'atlas-project-panel-heading'); title.append(node('h2',t('files')),iconButton('upload','+',() => uploads.click())); filePanel.append(title);
+    const drop = node('button',t('dropFiles'),'atlas-project-drop'); drop.type = 'button'; drop.addEventListener('click',() => uploads.click());
+    drop.addEventListener('dragover', event => {event.preventDefault(); drop.classList.add('dragging');});
+    drop.addEventListener('dragleave', () => drop.classList.remove('dragging'));
+    drop.addEventListener('drop',guarded(async event => {event.preventDefault();drop.classList.remove('dragging'); if (!uploads.disabled) await upload([...event.dataTransfer.files]);})); filePanel.append(drop);
+    for (const file of files.filter(f => f.id !== projectInfo.instructions_file_id)) {
+      const item = deliverables.find(d => d.file_version_id === file.version_id);
+      if (item) {const card = fileCard(item); card.append(iconButton('remove','×',() => confirmChange('removeFile',{file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(card);continue;}
+      const row = node('div',null,'atlas-project-file'); row.dataset.fileId = file.id;
+      const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(row);
     }
-    right.append(used);
-    if (instructions.text) right.append(node('p', instructions.text));
-    right.append(memoryPanel(memory));
-    right.append(node('h3', t('selectedFiles')));
-    for (const file of files) {
-      const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.dataset.version = file.version_id; checkbox.checked = selected.has(file.version_id); checkbox.disabled = sending || configuring || uploading || file.locality === 'local_only' || file.availability === 'not_retained';
-      checkbox.addEventListener('change', guarded(async () => { if (sending || configuring || uploading) return; checkbox.checked ? selected.add(file.version_id) : selected.delete(file.version_id); session = null; delete scope.session; saveRoute(); await setAction(); if (panelData) renderPanels(); }));
-      const label = node('label', null, 'atlas-project-file'); label.append(checkbox, node('span', file.relative_path));
-      right.append(label, versionLabel('version', file.version_id), detail('coverage', t(file.index_status)), button('preview', () => previewFile(file)));
+    for (const item of deliverables.filter(d => !files.some(f => f.version_id === d.file_version_id))) filePanel.append(fileCard(item));
+    panels.append(filePanel);
+    if (memory.length) {
+      const memoryPanel = node('section',null,'atlas-project-panel'); memoryPanel.dataset.panel = 'memory'; memoryPanel.append(node('h2',t('memory')));
+      for (const entry of memory) { const row = node('div',null,'atlas-project-memory'); row.append(node('p',entry.text),iconButton('remove','×',() => confirmChange('removeMemory',{memory_id:entry.id,text:entry.text,revision:entry.revision}))); memoryPanel.append(row); } panels.append(memoryPanel);
     }
-    for (const event of ledger.filter(e => e.context_compaction && e.conversation_id === scope.conversation)) {
-      const compact = event.context_compaction;
-      used.append(node('p', `Compacted ${compact.turn_ids.length} turns · ${compact.tokens_removed} tokens removed · ${compact.tokens_added} state tokens`));
-    }
-    if (lastContext?.context_status === 'warning' || lastContext?.context_status === 'refuse') used.append(node('p', 'Context is nearly full. Start a new session from the session state.'));
-    const statePanel = node('section'); statePanel.dataset.sessionState = '';
-    statePanel.append(node('h3', t('session_state')));
-    const editState = node('button', 'Edit (available in step 3)'); editState.disabled = true; statePanel.append(editState);
-    for (const [category, entries] of Object.entries(context?.session_state || {})) {
-      statePanel.append(node('h4', category.replaceAll('_', ' ')));
-      for (const entry of entries) statePanel.append(node('p', entry.text), node('small', `${entry.source} · ${entry.turn_id}`));
-    }
-    right.append(statePanel);
-    const coverage = context?.context_manifest?.coverage;
-    for (const passage of context?.passages || []) right.append(versionLabel('version', passage.version_id), detail('coverage', locator(passage.locator)));
-    if (coverage) {
-      right.append(detail('coverage', `${coverage.selected_units} ${t('of')} ${coverage.total_units ?? t('unknown')} ${t(coverage.unit)}${coverage.complete ? '' : ' · ' + t('partial')}`));
-      for (const warning of coverage.warnings) right.append(node('p', warning));
-    }
-    right.append(detail('connectors', policy ? (policy.effective_policy.connector_allowlist.join(', ') || t('empty')) : t('unavailable')), detail('imagePolicy', policy?.effective_policy.image_safety_floor || t('unavailable')));
-    for (const value of session?.pending_approvals || []) if (value.decision === 'pending') right.append(approval(value));
-    right.append(node('h2', t('results')));
-    for (const item of deliverables) {
-      const block = node('section'); block.dataset.deliverable = item.id;
-      block.append(detail('format', item.mime), detail('bytes', item.size_bytes), detail('validation', t(item.validation.status)), detail('status', t(item.strategy)));
-      const link = node('a', t('download')); link.href = projectURL(item.download_route); link.download = ''; block.append(link, button('preview', () => previewDeliverable(item))); right.append(block);
-    }
-    if (!deliverables.length) right.append(node('p', t('empty')));
-    right.append(node('h3', t('jobs')));
-    if (session) { right.append(detail('session', `${session.id} · ${t(session.state)}`)); if (['running','awaiting_approval','cancelling'].includes(session.state)) right.append(button('cancel', cancel)); }
-    for (const job of jobs) right.append(detail('jobs', `${job.kind} · ${t(job.status)} · ${job.progress ?? t('unknown')}`));
-    right.append(node('p', t('scheduled')), node('h2', t('ledger')));
-    const tabs = node('div', null, 'atlas-project-ledger-tabs'); tabs.setAttribute('role', 'tablist');
-    for (const [tab, key] of [['local','local'], ['server','onServer'], ['model','model'], ['produced','produced']]) {
-      const control = button(key, () => { ledgerTab = tab; renderPanels(); }); control.setAttribute('role', 'tab'); control.setAttribute('aria-selected', String(tab === ledgerTab)); control.dataset.ledgerTab = tab; tabs.append(control);
-    }
-    right.append(tabs);
-    const sessions = [...new Set(ledger.map(e => e.session_id).filter(Boolean))]; if (session && !sessions.includes(session.id)) sessions.push(session.id);
-    const filter = node('select'); filter.append(new Option(t('allSessions'), '')); sessions.forEach(id => filter.append(new Option(id, id))); filter.value = ledgerSession;
-    filter.addEventListener('change', guarded(async () => { ledgerSession = filter.value; await panels(); })); right.append(field('session', filter));
-    const panel = node('div'); panel.setAttribute('role','tabpanel');
-    for (const event of ledger.filter(e => e.kind === "location_used")) panel.append(node("p", "location used: approximate, this request"));
-    const total = summary[ledgerTab];
-    if (ledgerTab === 'model') {
-      panel.append(detail('payloadBytes', total.payload_bytes), detail('uniqueBytes', total.unique_source_bytes), detail('calls', total.calls), detail('possibly_sent', total.possibly_sent_calls));
-      for (const event of ledger.filter(e => e.model_dispatch)) {
-        const call = event.model_dispatch;
-        panel.append(detail('status', `${event.kind} · ${event.outcome} · ${event.timestamp}`), detail('model', call.provider_ref), detail('sourceBytes', call.byte_counts?.source_bytes ?? event.byte_counts.source_bytes), detail('payloadBytes', event.byte_counts.serialized_payload_bytes), detail('extractBytes', event.byte_counts.selected_utf8_bytes), detail('imageBytes', event.byte_counts.image_bytes));
-        for (const source of call.sources) { const file = files.find(f => f.id === source.file_id); if (file) { panel.append(button('preview', () => previewFile({ ...file, version_id: source.version_id })), detail('coverage', locator(source.locator))); } }
-      }
-    } else {
-      panel.append(detail('files', total.known === false ? t('unknown') : total.files), detail('bytes', total.known === false ? t('unknown') : total.bytes));
-    }
-    panel.append(detail('asOf', summary.as_of_seq));
-    for (const event of ledger.filter(e => ['failed','unknown','denied'].includes(e.outcome))) panel.append(detail('status', `${event.kind} · ${event.outcome} · ${event.timestamp}`));
-    right.append(panel, button('refresh', panels));
+    controls();
   }
   function projectURL(value) {
     const url = new URL(value, location.origin);
@@ -610,68 +581,141 @@
     const src = projectURL(base() + '/deliverables/' + item.id + '/preview');
     const current = generation, response = await request(src);
     if ((response.headers.get('content-type') || '').startsWith('application/pdf')) await window.atlasSideView.open({ kind:'pdf', src, title:t('preview') });
-    else { const content = await response.text(); checkScope(current); await window.atlasSideView.open({ kind:'markdown', content, title:t('preview') }); }
+    else { const content = await response.text(); checkScope(current); await window.atlasSideView.open({ kind:'markdown', content, title:t('preview'), readOnly:true }); }
+  }
+  function hostMain() {
+    const input = document.querySelector('#chat-input');
+    const main = document.querySelector('#chat-container') || input?.closest('main') || input?.closest('#chat');
+    if (main) main.dataset.atlasProjectHostMain = '';
+    return main;
+  }
+  function installNavigation() {
+    if (owned || !identity || /^\/(auth|admin)/.test(location.pathname)) return;
+    const sidebar = document.querySelector('#pinned-menu-items-list') || document.querySelector('#sidebar');
+    if (!sidebar) return;
+    if (!document.getElementById('atlas-project-entry')) {
+      const row = node('div',null,'atlas-project-nav-row'); row.id = 'atlas-project-navigation';
+      const entry = button('projects',async () => {await mount(); await choose({org:scope?.org || memberships[0]?.org_id});}); entry.id = 'atlas-project-entry';
+      row.append(entry,iconButton('newProject','+',createProject));
+      const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
+      if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
+    }
+    document.body.classList.add('atlas-project-enabled');
+    const rail = document.querySelector('#sidebar');
+    if (sidebar.id === 'pinned-menu-items-list' && rail && !rail.querySelector('[data-project-rail]')) {
+      const entry = iconButton('projects','▦', async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id});}); entry.dataset.projectRail = ''; rail.append(entry);
+      new ResizeObserver(entries => {entry.hidden = entries[0].contentRect.width > 100;}).observe(rail);
+    }
+    document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {control.parentElement.hidden = true;});
+    const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
+    if (document.title !== title) document.title = title;
+    if (root?.isConnected && !owned) {
+      const main = hostMain();
+      if (main) {const rect = main.getBoundingClientRect(); root.style.left = Math.max(0,rect.left) + 'px';}
+    }
+  }
+  async function adminEntry() {
+    if (!location.pathname.startsWith('/admin/settings') || document.getElementById('atlas-project-admin')) return;
+    lifecycle = new AbortController();
+    const me = await api('/api/atlas/me');
+    memberships = me.memberships.filter(m => m.role === 'admin');
+    if (!memberships.length) return;
+    scope = {org:memberships[0].org_id};
+    projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
+    root = node('div',null,'atlas-project-admin'); root.id = 'atlas-project-admin';
+    root.append(button('Remote targets',runnerAdmin));
+    (document.querySelector('#main-content') || document.body).append(root);
+  }
+  async function runnerAdmin() {
+    const current = generation, orgBase = `/api/atlas/orgs/${scope.org}/runner-targets`;
+    const dialog = node('dialog', null, 'atlas-project-dialog'), panel = node('section'), form = node('form');
+    dialog.dataset.runnerAdmin = ''; panel.append(node('h2', t("Remote execution targets")));
+    panel.append(node('p', t("Register a dedicated Linux or macOS account. Host key fingerprints must be verified independently. Private keys stay in the runner broker.")));
+    const entries = node('div'), status = node('p'); status.setAttribute('role', 'status');
+    async function reload() {
+      const targets = await api(orgBase); checkScope(current); entries.replaceChildren();
+      for (const target of targets.items) {
+        const row = node('section'); row.append(node('strong', target.name), node('p', `${target.os} · ${target.permission_mode} · ${target.status}`));
+        const probe = node('button', t("Probe")); probe.type = 'button'; probe.addEventListener('click', guarded(async () => { const result = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(result.last_probe); await reload(); })); row.append(probe);
+        for (const enabled of [true, false]) { const grant = node('button', t(enabled ? 'Grant to this project' : 'Revoke from this project')); grant.type = 'button'; grant.disabled = !scope.project; grant.addEventListener('click', guarded(async () => { await api(base() + `/runner-targets/${target.id}/grant`, 'PUT', { enabled }); status.textContent = t(enabled ? 'Target granted to this project.' : 'Grant and egress permission revoked.'); })); row.append(grant); }
+        const audit = node('button', t("Command audit")); audit.type = 'button'; audit.disabled = !scope.project; audit.addEventListener('click', guarded(async () => { const result = await api(base() + `/runner-targets/${target.id}/commands`); const detail = node('pre', JSON.stringify(result.items, null, 2)); row.append(detail); })); row.append(audit);
+        const mode = node('select'); for (const value of ['ask','rules','auto']) mode.append(new Option(t(value), value)); mode.value = target.permission_mode; mode.setAttribute('aria-label', `${t('Permission mode')}: ${target.name}`);
+        mode.addEventListener('change', guarded(async () => {
+          const fields = ['name','os','arch','shell','host','port','user','work_root','credential_ref','credential_fingerprint','host_key_fingerprints','jump_target_id','capabilities','permission_mode','allow_rules','deny_rules','sensitive_rules','max_parallel_sessions','disk_quota_bytes','monthly_minutes','same_locality'];
+          const body = Object.fromEntries(fields.map(key => [key, key === 'permission_mode' ? mode.value : target[key]]));
+          await request(`${orgBase}/${target.id}`, { method:'PUT', headers:{'If-Match':`"${target.revision}"`}, body }); await api(`${orgBase}/${target.id}/probe`, 'POST', {}); await reload();
+        })); row.append(mode); entries.append(row);
+      }
+    }
+    const controls = {};
+    for (const [key, label, value] of [['name','Name',''],['host','Host',''],['port','SSH port','22'],['user','SSH user','runner'],['work_root','Working root','/home/runner/work'],['host_key_fingerprints','Pinned host key SHA256 fingerprints (one per line)',''],['credential_ref','Credential reference',''],['credential_fingerprint','Credential public key fingerprint',''],['allow_rules','Allow command rules (one per line)','make *\npython3 -m unittest *'],['deny_rules','Deny command rules (one per line)','sudo *']]) {
+      const input = node(key.endsWith('rules') || key === 'host_key_fingerprints' ? 'textarea' : 'input'); input.name = key; input.value = value; input.setAttribute('aria-label', t(label)); if (!key.endsWith('rules')) input.required = true;
+      const labelNode = node('label', t(label)); labelNode.append(input); form.append(labelNode); controls[key] = input;
+    }
+    const targetOS = node('select'); targetOS.name = 'os'; targetOS.setAttribute('aria-label',t('Target operating system')); for (const os of ['linux','macos']) targetOS.append(new Option(os,os)); form.append(targetOS);
+    const permission = node('select'); permission.name = 'permission_mode'; permission.setAttribute('aria-label',t('Permission mode')); for (const mode of ['rules','ask','auto']) permission.append(new Option(t(mode),mode)); form.append(permission);
+    const publicKey = node('pre'), generate = node('button', t("Generate a key pair")); generate.type = 'button';
+    generate.addEventListener('click', guarded(async () => { generate.disabled = true; try { const key = await api(orgBase + '/credentials', 'POST', {}); controls.credential_ref.value = key.credential_ref; controls.credential_fingerprint.value = key.fingerprint; publicKey.textContent = `${t('Install this public key in the target account. It is shown once:')}\n${key.public_key}\n${key.fingerprint}`; } finally { generate.disabled = false; } }));
+    const submit = node('button', t("Register target")); submit.type = 'submit';
+    form.addEventListener('submit', guarded(async event => {
+      event.preventDefault(); submit.disabled = true;
+      try { const value = Object.fromEntries(Object.entries(controls).map(([key, control]) => [key, control.value.trim()])); value.port = Number(value.port); for (const key of ['allow_rules','deny_rules','host_key_fingerprints']) value[key] = value[key].split('\n').map(s => s.trim()).filter(Boolean); value.permission_mode = permission.value; value.os = targetOS.value;
+        const target = await api(orgBase, 'POST', value); const probed = await api(`${orgBase}/${target.id}/probe`, 'POST', {}); status.textContent = JSON.stringify(probed.last_probe); await reload();
+      } finally { submit.disabled = false; }
+    }));
+    form.append(generate, publicKey, submit); panel.append(picker('project',projects,scope.project,async project => {scope.project = project; await reload();}), entries, form, status, button('close', () => dialog.close())); dialog.append(panel); root.append(dialog); dialog.addEventListener('close', () => { publicKey.textContent = ''; dialog.remove(); }, {once:true}); dialog.showModal(); await reload();
   }
   async function boot() {
+    if (location.pathname.startsWith('/admin/settings')) {try {await adminEntry();} catch(error) {showFailure(error);} return;}
     if (/^\/(auth|admin)/.test(location.pathname)) return;
+    if (booting) return; booting = true;
     try {
-      const me = await fetch('/api/atlas/me', { credentials: 'same-origin' });
-      if (!me.ok) { if (owned || selections().has('project')) throw new Error(`${t('failure')} (${me.status})`); return; }
+      const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
+      if (!me.ok) {if (owned || selections().has('project')) throw new Error(`${t('failure')} (${me.status})`); return;}
       memberships = (await me.json()).memberships;
-      const host = await fetch('/api/v1/auths/', { credentials: 'same-origin' });
-      if (!host.ok) throw new Error(t('signIn'));
-      identity = (await host.json()).id;
-      if (!identity) throw new Error(t('signIn'));
-      // Only selection IDs survive reload. Never persist prose, events or tokens.
+      const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
+      if (!host.ok) {if (!owned && !selections().has('project')) return; throw new Error(t('signIn'));}
+      identity = (await host.json()).id; if (!identity) throw new Error(t('signIn'));
+      document.getElementById('atlas-project-failure')?.remove();
       for (let i = sessionStorage.length - 1; i >= 0; i--) { const key = sessionStorage.key(i); if (key.startsWith('atlas-project:') && key !== storageKey()) sessionStorage.removeItem(key); }
-      document.getElementById('atlas-project-entry')?.remove();
-      const entry = button('projects', () => mount()); entry.id = 'atlas-project-entry'; document.body.append(entry);
-      if (owned || selections().has('project') || sessionStorage.getItem(storageKey())) await mount();
-    } catch (error) { showFailure(error); }
+      installNavigation();
+      if (owned || selections().has('project')) await mount();
+    } catch(error) {showFailure(error);} finally {booting = false;}
   }
   function showFailure(error) {
     cleanup(); root?.remove(); document.getElementById('atlas-project-failure')?.remove();
-    const warning = node('aside', '', 'atlas-project-failure'); errorNotice(warning, error, 'shellFailure'); warning.id = 'atlas-project-failure'; warning.setAttribute('role', 'alert');
-    const link = node('a', t('fallback')); link.href = '/project-mode' + location.search; warning.append(link); document.body.append(warning);
+    const warning = node('aside','','atlas-project-failure'); errorNotice(warning,error,'shellFailure'); warning.id = 'atlas-project-failure'; warning.setAttribute('role','alert');
+    warning.append(button('close',() => warning.remove())); document.body.append(warning);
   }
   async function mount() {
     if (root?.isConnected) return;
-    if (!owned && !document.querySelector('#chat-input')) {
-      await new Promise(resolve => {
-        const timer = setTimeout(() => { observer.disconnect(); resolve(); }, 10000);
-        const observer = new MutationObserver(() => { if (document.querySelector('#chat-input')) { clearTimeout(timer); observer.disconnect(); resolve(); } });
-        observer.observe(document.body, { childList: true, subtree: true });
-      });
-      if (!document.querySelector('#chat-input')) { showFailure(new Error(t('shellFailure'))); return; }
-    }
-    root = node('section', null, 'atlas-project'); root.id = 'atlas-project'; root.setAttribute('aria-label', t('projects'));
-    const header = node('header'), title = node('strong', '', 'atlas-project-title'), logo = document.createElement('img');
-    logo.className = 'atlas-project-logo'; logo.alt = 'Atlas'; logo.width = 126; logo.height = 40;
-    logo.src = document.documentElement.classList.contains('dark') ? '/static/atlas/brand/svg/atlas-logotype-dark.svg' : '/static/atlas/brand/svg/atlas-logotype.svg';
-    title.append(logo, document.createTextNode(' · ' + t('projects')));
-    left = node('nav', null, 'atlas-project-left'); left.setAttribute('aria-label', t('projects'));
-    center = node('main', null, 'atlas-project-center'); right = node('aside', null, 'atlas-project-right'); right.setAttribute('aria-label', t('context'));
-    notice = node('div', '', 'atlas-project-notice'); notice.setAttribute('role', 'status');
-    function drawer(panel, key) { return button(key, event => { const opened = !panel.classList.contains('is-open'); left.classList.remove('is-open'); right.classList.remove('is-open'); panel.classList.toggle('is-open', opened); event.currentTarget.setAttribute('aria-expanded', String(opened)); if (opened) panel.querySelector('button,select')?.focus(); }, 'atlas-project-drawer'); }
-    header.append(drawer(left, 'projects'), title, drawer(right, 'context'), button('close', () => { cleanup(); root.remove(); scope = null; sessionStorage.removeItem(storageKey()); saveRoute(); }));
-    root.append(header, left, center, right, notice); document.body.append(root);
+    root = node('section',null,'atlas-project'); root.id = 'atlas-project'; root.lang = window.atlasProjectLocale.language(); root.setAttribute('aria-label',t('projects')); root.dataset.owned = String(owned);
+    left = node('nav',null,'atlas-project-left'); left.setAttribute('aria-label',t('projects'));
+    center = node('main',null,'atlas-project-center'); right = node('aside',null,'atlas-project-right'); right.setAttribute('aria-label',t('context'));
+    notice = node('div','','atlas-project-notice'); notice.setAttribute('role','status');
+    const mobile = node('header',null,'atlas-project-mobile-header');
+    const home = button('ordinary',ordinary), logo = node('img'); logo.src = '/static/atlas/brand/svg/atlas-logotype.svg'; logo.alt = 'Atlas'; home.replaceChildren(logo);
+    mobile.append(home,button('projects',() => choose({org:scope.org})));
+    root.append(mobile,left,center,right,notice); document.body.append(root);
     const side = document.getElementById('atlas-side-view');
-    if (side) { sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width', side.getBoundingClientRect().width + 'px')); sideResize.observe(side); }
-    root.addEventListener('keydown', event => { if (event.key === 'Escape') { left.classList.remove('is-open'); right.classList.remove('is-open'); input?.focus(); } });
-    let stored = {}; try { stored = JSON.parse(sessionStorage.getItem(storageKey()) || '{}'); } catch { sessionStorage.removeItem(storageKey()); }
-    const q = selections(), value = q.has('org') || q.has('project') ? { org: q.get('org'), project: q.get('project'), conversation: q.get('conversation'), session: q.get('session') } : stored;
-    if (!value.org && memberships.length === 1) value.org = memberships[0].org_id;
-    try { await choose(value); } catch (error) { if (error.name === 'AbortError') return; cleanup(); sessionStorage.removeItem(storageKey()); showFailure(error); }
+    if (side) {sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width',side.getBoundingClientRect().width+'px')); sideResize.observe(side);}
+    const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session')};
+    try {await choose(value); installNavigation();} catch(error) {if (error.name !== 'AbortError') showFailure(error);}
   }
   let route = location.pathname;
   const watch = new MutationObserver(() => {
+    installNavigation();
+    if (!identity && !booting && document.querySelector('#chat-input')) boot();
     if (location.pathname !== route) {
       const prior = route; route = location.pathname; cleanup(); root?.remove();
-      if (/^\/auth/.test(prior) && !/^\/(auth|admin)/.test(route)) boot();
-      if (/^\/(auth|admin)/.test(route)) { if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-entry')?.remove(); }
+      if (route.startsWith('/admin/settings')) guarded(adminEntry)();
+      if (/^\/(auth|admin)/.test(prior) && !/^\/(auth|admin)/.test(route)) boot();
+      if (/^\/(auth|admin)/.test(route)) { if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
     }
   });
-  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (!/^\/(auth|admin)/.test(location.pathname)) guarded(mount)(); });
+  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project')) guarded(mount)(); });
+  document.addEventListener('click', event => {const link = event.target.closest?.('#sidebar a, a#sidebar-new-chat-button, #pinned-menu-items-list a'); if (link && root?.isConnected) ordinary();});
+  window.addEventListener('resize', installNavigation);
   window.addEventListener('pagehide', cleanup);
   const start = () => { watch.observe(document.body, { childList: true, subtree: true }); boot(); };
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', start, { once: true }) : start();
