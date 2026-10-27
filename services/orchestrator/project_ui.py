@@ -49,8 +49,14 @@ def project_asset(asset: str) -> Response:
     filename, media_type = assets[asset]
     content = (ROOT / filename).read_text()
     if asset == "client.js":
+        from services.orchestrator.code_mode import code_profile
+
         content = (
-            "window.atlasProjectProfile = " + json.dumps(PROFILES[0]) + ";\n" + content
+            "window.atlasProjectProfile = " + json.dumps(PROFILES[0]) + ";\n"
+            "window.atlasProjectWorkProfile = "
+            + json.dumps(code_profile())
+            + ";\n"
+            + content
         )
     return Response(
         content,
