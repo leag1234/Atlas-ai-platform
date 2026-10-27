@@ -378,6 +378,7 @@ class WorkTools(CodeTools):
         self.verification = Verification()
         self.deliverables: list[dict[str, Any]] = []
         self.selection: WorkToolSelection | None = None
+        self.connectors: Any = None
         self.validation_failures: dict[str, str] = {}
         self.memory: Any = None
         self.nearby: Any = None
@@ -453,11 +454,12 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if self.connectors is not None and call.name in self.connectors.targets:
+            return dict(await self.connectors.execute(call, timeout))
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:
             from services.orchestrator.work_tool_selection import (
-                GROUPS,
                 ToolSelectionError,
             )
 
@@ -471,7 +473,7 @@ class WorkTools(CodeTools):
                     "reason": "arguments must contain a known group and optional focus only",
                     "allowed_groups": [
                         group
-                        for group in GROUPS
+                        for group in self.selection.groups
                         if group != "remote" or self.selection.remote_enabled
                     ],
                     "next_step": "Use an allowed group; omit focus unless selecting a tool in that group.",

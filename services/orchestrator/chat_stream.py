@@ -665,6 +665,11 @@ def response(
                             "terminal_commands": item.terminal_commands,
                             "terminal_failed_commands": item.terminal_failed_commands,
                             "uploaded_images": item.uploaded_images,
+                            **(
+                                {"connector_approvals": payload._connector_approvals}
+                                if payload._connector_approvals
+                                else {}
+                            ),
                             "cost_eur": item.cout_eur,
                             "provider_model": item.provider_model,
                             "reasoning_effort": payload.reasoning_effort,

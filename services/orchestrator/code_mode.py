@@ -719,6 +719,11 @@ async def process_work(
                 tools.memory = MemoryTools(
                     dispatch.broker, dispatch.state, dispatch.generation
                 )
+            from services.orchestrator.connectors import prepare as prepare_connectors
+
+            tools.connectors = await prepare_connectors(request)
+            if tools.connectors is not None:
+                tools.selection.add_connectors(tools.connectors)
             model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(

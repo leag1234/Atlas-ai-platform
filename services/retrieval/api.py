@@ -11,9 +11,12 @@ from services.retrieval.store import Chunk, Store
 from services.retrieval.tool import Request
 
 from services.retrieval.project_api import router
+from services.retrieval.connector_api import router as connector_router
 
 app = FastAPI(title="ATLAS retrieval")
 app.include_router(router)
+
+app.include_router(connector_router)
 
 
 def store() -> Store:

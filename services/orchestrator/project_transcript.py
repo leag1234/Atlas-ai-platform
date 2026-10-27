@@ -178,11 +178,16 @@ class ContextTools:
     def __init__(self, context: dict[str, Any], memory: Any = None) -> None:
         self.context = context
         self.memory = memory
+        self.connectors: Any = None
 
     def estimate(self, call: Call) -> Reservation:
         return Reservation(0, Decimal(0))
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        if self.connectors is not None and (
+            call.name.startswith("mcp_") or call.name == "switch_connector_group"
+        ):
+            return dict(await self.connectors.execute(call, timeout))
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name != "rag_search":
@@ -366,6 +371,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         request._transcript_key,
     )
     turn, context = state["turn"], state["context"]
+    if request._connector_scope:
+        request._connector_scope["conversation"] = turn["conversation_id"]
     item.request_id = "chatcmpl-" + turn["request_id"]
     sink = sink_context.get()
     if sink:
@@ -452,10 +459,16 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             references = ResultReferences(
                 broker, turn["conversation_id"], turn["request_id"]
             )
+            from services.orchestrator.connectors import prepare as prepare_connectors
+
+            context_tools = ContextTools(context, MemoryTools(broker, state))
+            context_tools.connectors = await prepare_connectors(request)
+            if context_tools.connectors is not None:
+                context_tools.connectors.bind(model)
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
-                ContextTools(context, MemoryTools(broker, state)),
+                context_tools,
                 Path("prompts/chat.txt").read_text()
                 + language_instruction(scoped.lang),
                 Limits(

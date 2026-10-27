@@ -50,6 +50,7 @@ from services.orchestrator.project_ui import (
 from services.retrieval.project_identity import ProjectError
 from services.orchestrator.code_ui import project_mode
 from services.orchestrator.mcp_confirmation import router as mcp_router
+from services.orchestrator.connectors import router as connector_router
 from services.orchestrator.code_api import router as code_router
 
 from services.orchestrator.image_store import router as image_router
@@ -63,6 +64,7 @@ app.mount("/harness", harness_app)
 app.include_router(image_router)
 
 app.include_router(mcp_router)
+app.include_router(connector_router)
 
 app.include_router(code_router)
 
@@ -249,6 +251,9 @@ async def chat(request: Request) -> Response:
                 payload = ChatRequest.model_validate(raw)
                 payload._project_subject = scoped_subject
                 payload._transcript_key = scoped_key
+                from services.orchestrator.connectors import authenticate
+
+                await authenticate(request, payload)
             except UploadError as exc:
                 status, code, detail = 413, exc.code, str(exc)
             except ValidationError as exc:
@@ -441,6 +446,11 @@ async def chat(request: Request) -> Response:
                 "terminal_commands": item.terminal_commands,
                 "terminal_failed_commands": item.terminal_failed_commands,
                 "uploaded_images": item.uploaded_images,
+                **(
+                    {"connector_approvals": payload._connector_approvals}
+                    if payload._connector_approvals
+                    else {}
+                ),
                 "reasoning_effort": payload.reasoning_effort,
                 "max_output_tokens": payload.max_tokens,
                 "cost_eur": item.cout_eur,

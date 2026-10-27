@@ -1283,6 +1283,11 @@ async def _process(
     tools.search_language = search_language(
         request.conversation_messages, request.ui_locale
     )
+    from services.orchestrator.connectors import prepare as prepare_connectors
+
+    tools.connectors = await prepare_connectors(request)
+    if tools.connectors is not None:
+        tools.connectors.bind(model)
     tools.model = model
     tools.terminal_code_disabled = structured_presentation
     file_context = ""
