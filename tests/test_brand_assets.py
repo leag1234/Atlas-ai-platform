@@ -105,6 +105,14 @@ class BrandAssetTests(unittest.TestCase):
         for target in PUBLIC_MIME_TYPES:
             self.assertIn(target, dockerfile)
 
+    def test_model_avatar_is_a_self_contained_neutral_tile(self) -> None:
+        avatar = (ROOT / "assets/brand/svg/atlas-model-avatar.svg").read_text()
+        self.assertIn('viewBox="0 0 128 128"', avatar)
+        self.assertIn('rx="28"', avatar)
+        self.assertIn('fill="#1A1A18"', avatar)
+        self.assertIn('stroke="#EDECE8"', avatar)
+        self.assertIn('fill="#E05A2B"', avatar)
+
 
 if __name__ == "__main__":
     unittest.main()

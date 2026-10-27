@@ -6,7 +6,7 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.parse import quote
-from packages.profiles import PROFILES
+from packages.profiles import MODEL_PROFILE_IMAGE_URL, PROFILES
 from packages.ports import atlas_ports
 
 
@@ -23,7 +23,7 @@ def managed_model(profile: str) -> dict[str, Any]:
         "name": "Atlas" if public else profile,
         "base_model_id": None,
         "params": {},
-        "meta": {"description": ""},
+        "meta": {"description": "", "profile_image_url": MODEL_PROFILE_IMAGE_URL},
         "access_grants": (
             [
                 {

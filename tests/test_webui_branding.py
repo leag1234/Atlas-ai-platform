@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from services.orchestrator import serving
 from services.orchestrator.webui import managed_model
+from packages.profiles import MODEL_PROFILE_IMAGE_URL
 
 
 class WebUIBrandingTests(unittest.TestCase):
@@ -67,6 +68,7 @@ class WebUIBrandingTests(unittest.TestCase):
         self.assertEqual(public["id"], "atlas-qwen")
         self.assertEqual(public["name"], "Atlas")
         self.assertEqual(public["meta"]["description"], "")
+        self.assertEqual(public["meta"]["profile_image_url"], MODEL_PROFILE_IMAGE_URL)
         self.assertEqual(public["access_grants"][0]["principal_id"], "*")
         self.assertEqual(hidden["id"], "atlas-glm")
         self.assertEqual(hidden["access_grants"], [])

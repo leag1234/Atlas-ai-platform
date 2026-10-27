@@ -35,14 +35,14 @@ async def main() -> None:
         raise RuntimeError("attachment_inlet_activation_failed")
 
     from open_webui.models.models import ModelForm, ModelMeta, ModelParams, Models  # type: ignore[import-not-found]  # runs inside the Open WebUI image
-    from packages.profiles import PROFILES
+    from packages.profiles import MODEL_PROFILE_IMAGE_URL, PROFILES
 
     for profile in PROFILES:
         public = profile == PROFILES[0]
         form = ModelForm(
             id=profile,
             name="Atlas" if public else profile,
-            meta=ModelMeta(description=""),
+            meta=ModelMeta(description="", profile_image_url=MODEL_PROFILE_IMAGE_URL),
             params=ModelParams(),
             access_grants=(
                 [

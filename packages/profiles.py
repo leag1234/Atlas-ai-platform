@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 
 
+MODEL_PROFILE_IMAGE_URL = "/static/atlas/brand/svg/atlas-model-avatar.svg"
+
+
 def load_profiles() -> tuple[str, ...]:
     contract = Path(__file__).resolve().parents[1] / "contracts/m21-profiles.json"
     models = json.loads(contract.read_text())["models"]

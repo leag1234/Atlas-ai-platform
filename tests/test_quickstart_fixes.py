@@ -203,6 +203,10 @@ class InletStartupTests(unittest.IsolatedAsyncioTestCase):
         public = models.insert_new_model.call_args_list[0].args[0]
         self.assertEqual(public["name"], "Atlas")
         self.assertEqual(public["meta"]["description"], "")
+        self.assertEqual(
+            public["meta"]["profile_image_url"],
+            "/static/atlas/brand/svg/atlas-model-avatar.svg",
+        )
         self.assertEqual(public["access_grants"][0]["principal_id"], "*")
 
     async def test_failed_install_prevents_readiness(self) -> None:
