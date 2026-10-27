@@ -35,7 +35,11 @@ def entity(member: str, org: str, identifier: str | None = None) -> dict[str, An
 
 
 def public(row: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = dict(row["data"])
+    result: dict[str, Any] = {
+        key: value
+        for key, value in row["data"].items()
+        if key not in {"skills", "skill_enabled", "skill_digests"}
+    }
     for key in ("revision", "role", "status", "state", "owner_member_id"):
         if key in row:
             result[key] = str(row[key]) if key == "owner_member_id" else row[key]

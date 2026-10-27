@@ -251,6 +251,10 @@ async def chat(request: Request) -> Response:
                 payload = ChatRequest.model_validate(raw)
                 payload._project_subject = scoped_subject
                 payload._transcript_key = scoped_key
+                if not payload.org_id:
+                    from services.orchestrator.skill_catalog import ordinary_catalog
+
+                    payload._skill_catalog = await ordinary_catalog(request)
             except UploadError as exc:
                 status, code, detail = 413, exc.code, str(exc)
             except ValidationError as exc:
@@ -442,6 +446,7 @@ async def chat(request: Request) -> Response:
                 "context_manifest": item.context_manifest,
                 "images": item.images,
                 "files": item.files,
+                "skills_loaded": item.skills_loaded,
                 "terminal_commands": item.terminal_commands,
                 "terminal_failed_commands": item.terminal_failed_commands,
                 "uploaded_images": item.uploaded_images,

@@ -133,6 +133,7 @@ class WorkToolSelection:
         self.pending_focus: str | None = None
         self.reopen_enabled = False
         self.memory_enabled = False
+        self.skills_enabled = False
         self.catalog = {
             str(t["function"]["name"]): t
             for t in declarations(scoped=True)
@@ -179,6 +180,8 @@ class WorkToolSelection:
             extra += ("reopen_result",)
         if self.memory_enabled:
             extra += ("project_memory",)
+        if self.skills_enabled:
+            extra += ("load_skill",)
         return (*CORE, *extra, *group[: 5 - len(extra)])
 
     def declarations(self) -> list[dict[str, object]]:

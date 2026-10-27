@@ -280,6 +280,26 @@ def perform(root: Path, action: str, args: dict[str, Any]) -> dict[str, Any]:
                             return {"matches": results, "truncated": True}
                         results.append(row)
         return {"matches": results, "truncated": False}
+    if action == "skill_resource":
+        path = target(root, args["path"])
+        if not args["path"].startswith(".atlas-skills/"):
+            raise ValueError("invalid_skill_resource_path")
+        content = base64.b64decode(args["content"], validate=True)
+        if len(content) > FILE_CAP:
+            raise ValueError("skill_resource_size_limit")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Never overwrite a workspace file or follow a link planted by a script.
+        if path.exists():
+            if (
+                not path.is_file()
+                or path.stat().st_size != len(content)
+                or path.read_bytes() != content
+            ):
+                raise ValueError("skill_resource_conflict")
+            return {"path": args["path"], "size_bytes": len(content)}
+        with path.open("xb") as stream:
+            stream.write(content)
+        return {"path": args["path"], "size_bytes": len(content)}
     if action in {"edit_file", "write_file"}:
         path = target(root, args["path"])
         if ".git" in path.relative_to(root).parts:

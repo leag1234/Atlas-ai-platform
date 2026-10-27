@@ -204,7 +204,12 @@ def execute(
                 value["updated_at"] = entity(member, org)["updated_at"]
                 scope.db.execute(
                     "UPDATE atlas_projects.projects SET data=%s,state=%s,revision=revision+1 WHERE org_id=%s AND id=%s",
-                    (Jsonb(value), value["state"], org, project),
+                    (
+                        Jsonb({**scope.project_data, **value}),
+                        value["state"],
+                        org,
+                        project,
+                    ),
                 )
                 scope.event("project_changed", project)
                 return 200, value
@@ -359,6 +364,25 @@ def dispatch(
     path = "/".join(segments)
     with store(dsn).scope(identity, org, project) as scope:
         guard(scope, method, tail)
+        if tail and tail[0] == "skills":
+            from services.retrieval.project_skills import api, authorize
+
+            authorize(scope, method, tail)
+            if query:
+                raise ProjectError(422, "invalid_request")
+            key = headers.get("idempotency-key", "")
+            if method != "GET":
+                if not key or len(key) > 200:
+                    raise ProjectError(
+                        422, "invalid_request", "Idempotency-Key is required"
+                    )
+                replay = scope.replay(method, path, key, body)
+                if replay is not None:
+                    return replay
+            skill_result = api(scope, method, tail, body, headers.get("if-match"))
+            if method != "GET":
+                scope.remember(method, path, key, body, skill_result)
+            return skill_result
         if tail and tail[0] == "runner-targets":
             from services.retrieval.project_runners import admin_api
 
@@ -623,6 +647,12 @@ def ingress(identity: Identity, method: str, path: str) -> int:
         query = check_query(
             method, tail, parse_qs(parsed.query, keep_blank_values=True)
         )
+        if tail and tail[0] == "skills":
+            from packages.skills import ZIP_BYTES
+            from services.retrieval.project_skills import authorize
+
+            authorize(scope, method, tail)
+            return ZIP_BYTES if method == "POST" and project is None else 160000
         return preflight(scope, method, tail, query) if project else 160000
 
 

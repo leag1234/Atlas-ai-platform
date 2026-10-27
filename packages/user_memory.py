@@ -99,10 +99,17 @@ def inferred_kind(text: str) -> Kind:
 def projection(entries: list[dict[str, Any]]) -> str:
     return encoded(
         {
+            **(
+                {
+                    "notice": "These are memories the user asked you to keep; you may say you remember them."
+                }
+                if entries
+                else {}
+            ),
             "user_memory": [
                 {k: e[k] for k in ("id", "kind", "text", "source", "observed_at")}
                 for e in entries
-            ]
+            ],
         }
     )
 
