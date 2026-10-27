@@ -171,6 +171,13 @@ def require_stable_configuration() -> None:
             raise RuntimeError("invalid_configuration: ATLAS_TRUSTED_EMAIL_HEADER")
 
 
+OPENWEBUI_KEY_ENDPOINTS = (
+    "/api/models",
+    "/api/chat/completions",
+    "/api/v1/chat/completions",
+)
+
+
 def stable_webui_options() -> list[str]:
     """Pinned Open WebUI trusted-header settings, absent outside stable mode.
 
@@ -180,7 +187,17 @@ def stable_webui_options() -> list[str]:
     """
     if not stable_mode():
         return []
+    # Owner decision 2026-10-27: Open WebUI keys for a tester group until Atlas
+    # keys (design 19, K-A) replace them; off unless the operator opts in, and
+    # limited to the model list and chat completions.
+    api_keys = os.environ.get("ATLAS_OPENWEBUI_API_KEYS") == "1"
     return [
+        "-e",
+        "ENABLE_API_KEYS=" + str(api_keys),
+        "-e",
+        "ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS=True",
+        "-e",
+        "API_KEYS_ALLOWED_ENDPOINTS=" + ",".join(OPENWEBUI_KEY_ENDPOINTS),
         "-e",
         "WEBUI_AUTH=True",
         "-e",
