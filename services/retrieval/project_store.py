@@ -192,14 +192,36 @@ class Scope:
     def authorize(self, method: str, tail: list[str]) -> None:
         if self.project is None:
             return
-        owner = not tail or tail[0] == "grants"
-        chat = tail in (["conversations"], ["context"])
+        owner = not tail or tail[0] in {"grants", "connectors"}
+        chat = tail in (["conversations"], ["context"]) or (
+            len(tail) == 3 and tail[0] == "conversations" and tail[2] == "share"
+        )
         if method == "GET":
             return
+        if (
+            self.role == "viewer"
+            and len(tail) == 3
+            and tail[0] == "conversations"
+            and tail[2] == "share"
+        ):
+            # A viewer's exception to read-only permissions is limited to their
+            # own conversation. Resolve that authority before parsing input.
+            own = self.db.execute(
+                "SELECT id FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='conversation' AND id=%s AND data->>'owner_member_id'=%s",
+                (self.identity.org, self.project_id, tail[1], self.identity.member),
+            ).fetchone()
+            if own is None:
+                raise ProjectError(403, "permission_denied")
         if owner and self.role != "owner":
             raise ProjectError(403, "permission_denied")
+        cancel = len(tail) == 3 and tail[0] == "work-sessions" and tail[2] == "cancel"
         if not owner and not chat and self.role not in ("owner", "editor"):
-            raise ProjectError(403, "permission_denied")
+            if not (cancel and self.member["role"] == "admin"):
+                raise ProjectError(
+                    403,
+                    "permission_denied",
+                    "Viewer role cannot edit or start/approve Work",
+                )
         if (
             self.project["state"] != "active"
             and not chat
@@ -345,6 +367,7 @@ class Scope:
             value = entity(actor, org)
             value.update(
                 identity_subject=data["identity_subject"],
+                display_name=data.get("display_name", "Member"),
                 role=data["role"],
                 status="invited",
                 joined_at=None,

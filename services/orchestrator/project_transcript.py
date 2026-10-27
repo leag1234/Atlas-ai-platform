@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from time import monotonic
 from typing import Any
+from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
 import aiohttp
@@ -175,14 +176,22 @@ async def legacy_selection(
 
 
 class ContextTools:
-    def __init__(self, context: dict[str, Any], memory: Any = None) -> None:
+    def __init__(
+        self,
+        context: dict[str, Any],
+        memory: Any = None,
+        check: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self.context = context
         self.memory = memory
+        self.check = check
 
     def estimate(self, call: Call) -> Reservation:
         return Reservation(0, Decimal(0))
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        if self.check is not None:
+            await self.check()
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name != "rag_search":
@@ -397,6 +406,15 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     events = DispatchEvents(broker, state)
     events.session_context = session_context
     tool_calls = 0
+
+    async def check() -> None:
+        await broker.call(
+            "check",
+            dict(
+                conversation_id=turn["conversation_id"], request_id=turn["request_id"]
+            ),
+        )
+
     try:
         from services.orchestrator.location import location_dependent
 
@@ -407,6 +425,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 scoped,
                 item,
                 cost_limit=Decimal(str(turn["usage"]["reserved_eur"])),
+                check=check,
             )
         elif request.project_action == "work":
             from services.orchestrator.code_mode import process_work
@@ -455,7 +474,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
-                ContextTools(context, MemoryTools(broker, state)),
+                ContextTools(context, MemoryTools(broker, state), check=check),
                 Path("prompts/chat.txt").read_text()
                 + language_instruction(scoped.lang),
                 Limits(

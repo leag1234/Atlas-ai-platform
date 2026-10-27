@@ -96,11 +96,13 @@ class PolicyPatch(Closed):
 
 
 class MemberCreate(Closed):
+    display_name: Name = "Member"
     identity_subject: Annotated[str, Field(min_length=1)]
     role: Literal["admin", "member"]
 
 
 class MemberPatch(Closed):
+    display_name: Name | None = None
     role: Literal["admin", "member"] | None = None
     status: Literal["active", "revoked"] | None = None
 
