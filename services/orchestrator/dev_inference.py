@@ -231,7 +231,12 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
         return error(exc.code, 400, exc.detail)
     except ValidationError as exc:
         return error("invalid_request", 400, describe_validation(exc))
-    except QuotaError:
+    except QuotaError as exc:
+        from services.orchestrator.api_keys import KeyQuotaError
+        from services.orchestrator.api_key_edge import error as key_error
+
+        if isinstance(exc, KeyQuotaError):
+            return key_error(429, "quota_exceeded", **exc.values)
         return error("quota_exceeded", 429)
     except PermissionError:
         return error("unauthorized", 401)

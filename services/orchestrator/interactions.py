@@ -12,6 +12,7 @@ from uuid import uuid4
 
 @dataclass
 class Interaction:
+    steps: list[dict[str, object]] = field(default_factory=list)
     verification: dict[str, object] | None = None
     location_used: str = ""
     nearby_source: str = ""

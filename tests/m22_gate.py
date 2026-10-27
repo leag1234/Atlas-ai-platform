@@ -122,7 +122,7 @@ def main() -> None:
     def ask(
         name: str, payload: dict[str, Any]
     ) -> tuple[str, dict[str, Any], list[Any]]:
-        payload = {"stream": True, "ui_locale": "fr", **payload}
+        payload = {"stream": True, "ui_locale": "fr", **payload, "atlas_ui": True}
         started = time.monotonic()
         events: list[Any] = []
         with urlopen(

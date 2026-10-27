@@ -96,6 +96,7 @@ class DiagramDeliveryTests(unittest.TestCase):
             response = client.post(
                 "/v1/chat/completions",
                 json={
+                    "atlas_ui": True,
                     "ui_locale": "en",
                     "stream": stream,
                     "messages": [{"role": "user", "content": question}],
@@ -235,6 +236,7 @@ class DiagramDeliveryTests(unittest.TestCase):
             ):
                 payload = ChatRequest.model_validate(
                     {
+                        "atlas_ui": True,
                         "messages": [
                             {
                                 "role": "user",

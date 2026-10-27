@@ -166,6 +166,17 @@ def response(
                 temporary.reponse = without_unretrieved(
                     temporary.reponse,
                     set(item.retrieved_urls)
+                    # Canonical API answers already contain server-resolved RAG
+                    # links. Keep exactly those validated citations on re-render.
+                    | {
+                        os.environ.get(
+                            "ATLAS_PUBLIC_URL",
+                            atlas_ports().url("adapter", "localhost"),
+                        ).rstrip("/")
+                        + "/sources/"
+                        + str(citation["chunk_id"])
+                        for citation in item.citations
+                    }
                     | drawing_references(item)
                     | {
                         str(chunk["source"])
@@ -231,6 +242,12 @@ def response(
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
             nonlocal received_content
+            if not payload.atlas_ui and not isinstance(event.get("project"), dict):
+                # A tool turn cannot be distinguished from a final turn until it
+                # completes. Emit progress separately, then the canonical answer.
+                if "phase" in event:
+                    await queue.put({"atlas": {"steps": [event]}})
+                return
             if isinstance(event.get("project"), dict):
                 await queue.put(event)
                 return
@@ -451,7 +468,9 @@ def response(
                     await process(payload, item)
                     if item.state != "done":
                         raise RuntimeError("request_stopped")
-                    if payload.code_mode:
+                    if not payload.atlas_ui and not payload.code_mode:
+                        await content(item.reponse, final=True)
+                    elif payload.code_mode:
                         await queue.put({"delta": {"content": item.reponse}})
                     else:
                         await content(
@@ -463,7 +482,8 @@ def response(
                             final=True,
                         )
                     if (
-                        not payload.code_mode
+                        payload.atlas_ui
+                        and not payload.code_mode
                         and item.files
                         and (not file_request or not item.reponse)
                     ):
@@ -656,7 +676,11 @@ def response(
                             "completion_tokens": item.tokens["out"],
                             "total_tokens": sum(item.tokens.values()),
                         }
+                        from services.orchestrator.source_truth import visible_sources
+
                         output["atlas"] = {
+                            "steps": item.steps,
+                            "sources": visible_sources(item),
                             "context": item.context_samples[-1]
                             if item.context_samples
                             else None,

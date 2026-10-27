@@ -449,3 +449,57 @@ not an untrusted multi-tenant service.
 ## After every deployment: look at the public page
 
 Tests that call the adapter directly skip the front door. Run `PROBE_USER=... PROBE_PW=... python infra/stable/public_probe.py "<prompt>" <screenshot.png>` (Playwright, real browser, the public URL) and open the screenshot: images must render (`complete` true, non-zero size) and "Image unavailable" must not appear. A missing nginx route for `/images/` once made every generated image and SVG drawing look broken while the adapter served them correctly.
+
+## Atlas-owned API keys (K-A; operator deployment only)
+
+Deploy the reviewed adapter and relay together. The checked-in nginx configuration
+adds `/api/atlas/v1/` with Basic authentication off and Bearer `atl_` required. It
+forwards Authorization to the relay and clears client identity headers. The relay
+routes that prefix to the adapter; the adapter resolves identity exclusively from
+the key. All existing browser routes keep Basic authentication and Origin policy.
+Keep the relay/adapter on loopback. Preserve the interim Open WebUI tester-key
+policy until those testers rotate to Atlas keys; disabling it is a separate owner
+rollout step. Both nginx key routes remain available in this source configuration.
+
+Before replacing nginx configuration, reconcile any temporary Open WebUI-key route
+on the deployed release. Validate `nginx -t` and use the normal owner deployment
+procedure; no guest instance modification is implied by this source change.
+
+Provision persistent `ATLAS_API_KEYS_DB` and a private `ATLAS_API_KEY_PEPPER` in the
+stable environment. Run `services.orchestrator.api_key_admin:app` on a separate
+loopback listener with its own `ATLAS_API_KEY_ADMIN_TOKEN`; never expose or proxy
+that listener. See [key administration, client example and migration](../../runbooks/devapi.md#atlas-assistant-keys-design-19-k-a).
+Create keys with `--login` so the host directory resolves the budget identity; preserve the
+same `ATLAS_DATA_DIR`; this prevents a second user budget bucket. Set the existing
+user/global cost and search caps before issuance. Default expiry is 90 days, maximum
+365; only an administrator issues keys.
+
+Generated download/image/local-source links still require browser authentication;
+an API key alone cannot fetch them. Public web citations are ordinary external URLs.
+Communicate this K-A limitation to testers who request files or generated images.
+
+### Login resolution and clean API answers (K-A)
+
+In stable mode use `--login tester` or `--login tester@example.invalid` with
+`--name external --scope assistant --key-file /secure/delivery.key`; no internal
+WebUI identifier is needed. The admin HTTP body likewise accepts `login`, `name`
+and `scopes`. Configure `ATLAS_WEBUI_URL` (the private WebUI HTTP listener) and
+`ATLAS_WEBUI_ADMIN_TOKEN` (an administrator session token, injected securely).
+The administrator service reads `/api/v1/users/` with pagination and resolves the
+email to the exact forwarded user ID used by the budget ledger. It does not create
+users. A missing login returns `user_never_signed_in` (404): ask the user to sign
+in once. An ambiguous local part returns 409: supply the full email. Inactive users
+return 403. Directory failures return 503 and never select a guessed budget bucket.
+Project mode retains org/member selection and can also resolve `login`.
+Without `ATLAS_WEBUI_ADMIN_TOKEN`, stable mode accepts an explicit identity instead of `login`: `--subject <email> --member-id <user id> --budget-user <user id>`, taken from the user's Open WebUI record (the user must have signed in once).
+
+Both `/api/atlas/v1/chat/completions` and plain `/v1/chat/completions` put only
+the final cited answer in `choices[].message.content` / `delta.content`. API SSE
+buffers answer text until the assistant finishes; progress remains available during
+execution in the extra `atlas.steps` field, and the final frame includes the complete
+`atlas.steps` and `atlas.sources` arrays. JSON responses include the same arrays.
+Sources are retrieved URLs; inline citations stay in answer content.
+Official OpenAI clients accept these extra fields. Browser code explicitly sets
+`atlas_ui: true` to retain existing progress rendering; this is a presentation flag,
+not authorization. The Atlas key edge always forces it off. No client header is
+used to infer the presentation.

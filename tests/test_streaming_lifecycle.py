@@ -19,6 +19,7 @@ from services.orchestrator.stream_client import sink_context
 def request() -> ChatRequest:
     return ChatRequest.model_validate(
         {
+            "atlas_ui": True,
             "stream": True,
             "reasoning_effort": "low",
             "messages": [{"role": "user", "content": "Bonjour"}],
@@ -98,7 +99,10 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("private-provider-detail")
 
         payload = ChatRequest.model_validate(
-            {"messages": [{"role": "user", "content": "Create a PDF"}]}
+            {
+                "atlas_ui": True,
+                "messages": [{"role": "user", "content": "Create a PDF"}],
+            }
         )
         with (
             tempfile.TemporaryDirectory() as directory,

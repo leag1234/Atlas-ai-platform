@@ -97,6 +97,7 @@ def main() -> None:
                 data=json.dumps(
                     {
                         "model": profile,
+                        "atlas_ui": True,
                         "stream": True,
                         "messages": [{"role": "user", "content": content}],
                     }
@@ -253,6 +254,7 @@ def main() -> None:
                 json.dumps(
                     {
                         "model": PROFILES[0],
+                        "atlas_ui": True,
                         "stream": False,
                         "messages": [{"role": "user", "content": cases["J41"]}],
                         "files": files,

@@ -500,7 +500,9 @@ class GatewayModel:
         if self.dispatch_hook:
             await self.dispatch_hook("intent", payload)
         try:
-            if self.sink is None:
+            from services.orchestrator.stream_client import metadata_only_context
+
+            if self.sink is None or metadata_only_context.get():
                 wire = await self.post(self.url + "/agent/complete", payload, timeout)
             else:
                 payload["reasoning_effort"] = self.reasoning_effort

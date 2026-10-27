@@ -33,6 +33,7 @@ class FileStreamTests(unittest.IsolatedAsyncioTestCase):
 
         request = ChatRequest.model_validate(
             {
+                "atlas_ui": True,
                 "stream": True,
                 "ui_locale": "en",
                 "messages": [

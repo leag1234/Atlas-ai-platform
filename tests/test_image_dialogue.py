@@ -291,7 +291,8 @@ class SceneDialogueTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(GatewayModel, "connect", AsyncMock()) as chat,
             ):
                 await _process(
-                    ChatRequest(messages=history([ORIGINAL, complaint])), Interaction()
+                    ChatRequest(atlas_ui=True, messages=history([ORIGINAL, complaint])),
+                    Interaction(),
                 )
                 generate.assert_awaited_once()
                 chat.assert_not_awaited()
@@ -562,7 +563,9 @@ class ImageStreamTests(unittest.IsolatedAsyncioTestCase):
         from services.orchestrator.chat_stream import response
         from services.orchestrator.stream_client import sink_context
 
-        request = ChatRequest(messages=[ChatMessage(role="user", content="Hello")])
+        request = ChatRequest(
+            atlas_ui=True, messages=[ChatMessage(role="user", content="Hello")]
+        )
         for content in (
             "Before ![Image générée]([unverified source]) after",
             "Before ![Image](/images/previous) after",
@@ -612,7 +615,10 @@ class ImageStreamTests(unittest.IsolatedAsyncioTestCase):
         ):
             item = Interaction()
             await process(
-                ChatRequest(messages=[ChatMessage(role="user", content="Hello")]), item
+                ChatRequest(
+                    atlas_ui=True, messages=[ChatMessage(role="user", content="Hello")]
+                ),
+                item,
             )
         self.assertNotIn("![", item.reponse)
 
@@ -999,7 +1005,7 @@ class ImageWireTests(unittest.IsolatedAsyncioTestCase):
             )
 
         for index in range(1, 5):
-            request = ChatRequest(messages=history(OWNER_TURNS[:index]))
+            request = ChatRequest(atlas_ui=True, messages=history(OWNER_TURNS[:index]))
             with (
                 patch.dict(
                     "os.environ",

@@ -71,6 +71,7 @@ class DocumentActivityTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         request = ChatRequest(
+            atlas_ui=True,
             stream=True,
             ui_locale="fr",
             messages=[ChatMessage(role="user", content="Résume ce document.")],
@@ -136,6 +137,7 @@ class DocumentActivityTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         request = ChatRequest(
+            atlas_ui=True,
             stream=True,
             ui_locale="en",
             messages=[ChatMessage(role="user", content="Summarize this.")],
