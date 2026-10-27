@@ -30,7 +30,11 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
             (name, "none") for name in ("atlas-qwen", "atlas-glm", "atlas-deepseek")
         ]:
             request = ChatRequest.model_validate(
-                {"model": model, "messages": [{"role": "user", "content": "Explain."}]}
+                {
+                    "atlas_ui": True,
+                    "model": model,
+                    "messages": [{"role": "user", "content": "Explain."}],
+                }
             )
             self.assertEqual(request.reasoning_effort, effort)
 
@@ -93,7 +97,11 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
                 closed.set()
 
         payload = ChatRequest.model_validate(
-            {"stream": True, "messages": [{"role": "user", "content": "Explain."}]}
+            {
+                "atlas_ui": True,
+                "stream": True,
+                "messages": [{"role": "user", "content": "Explain."}],
+            }
         )
         with (
             tempfile.TemporaryDirectory() as root,
@@ -133,6 +141,7 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
 
         payload = ChatRequest.model_validate(
             {
+                "atlas_ui": True,
                 "stream": True,
                 "ui_locale": "fr",
                 "messages": [{"role": "user", "content": "Read this source."}],
@@ -169,7 +178,11 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError("private provider body")
 
         payload = ChatRequest.model_validate(
-            {"stream": True, "messages": [{"role": "user", "content": "Explain"}]}
+            {
+                "atlas_ui": True,
+                "stream": True,
+                "messages": [{"role": "user", "content": "Explain"}],
+            }
         )
         item = Interaction()
         with (

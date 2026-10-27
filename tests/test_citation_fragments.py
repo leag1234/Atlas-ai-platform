@@ -139,7 +139,10 @@ class CitationDeliveryTests(unittest.IsolatedAsyncioTestCase):
             item.reponse = expected
 
         request = ChatRequest.model_validate(
-            {"messages": [{"role": "user", "content": "Is Orange down today?"}]}
+            {
+                "atlas_ui": True,
+                "messages": [{"role": "user", "content": "Is Orange down today?"}],
+            }
         )
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -176,9 +179,10 @@ class CitationDeliveryTests(unittest.IsolatedAsyncioTestCase):
 
                     request = ChatRequest.model_validate(
                         {
+                            "atlas_ui": True,
                             "messages": [
                                 {"role": "user", "content": "Is Orange down today?"}
-                            ]
+                            ],
                         }
                     )
                     with (

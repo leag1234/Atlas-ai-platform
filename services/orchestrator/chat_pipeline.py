@@ -914,7 +914,8 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
                 request.user_text, tuple(m.text for m in request.messages[:-1])
             ),
         )
-        item.reponse += source_footer(sources, request.lang)
+        if request.atlas_ui:
+            item.reponse += source_footer(sources, request.lang)
 
 
 async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> None:
@@ -955,6 +956,7 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
             {"role": message.role, "content": message.text}
             for message in request.messages[:-1]
         ],
+        include_intermediate=request.atlas_ui,
         retry_web=False,
         initial_calls=(),
     )
@@ -1466,6 +1468,7 @@ async def _process(
                     - (time.monotonic() - started),
                 ),
             ),
+            include_intermediate=request.atlas_ui,
             history=attachment_history,
             skill_messages=tools.skills.instructions
             if tools.skills is not None
@@ -1637,6 +1640,7 @@ async def _process(
                             produces_files=True,
                             wall_clock=max(0, remaining_seconds - 90),
                         ),
+                        include_intermediate=request.atlas_ui,
                         history=recovery_history,
                         skill_messages=tools.skills.instructions
                         if tools.skills is not None

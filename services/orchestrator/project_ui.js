@@ -78,7 +78,7 @@ el('send').onclick = action(async () => {
   if (!project() || !el('conversations').value) throw new Error('Select a project and a conversation.');
   const request = {model: 'atlas', project_id: project(), conversation_id: el('conversations').value, messages: [{role: 'user', content: el('question').value}]};
   el('send').disabled = true;
-  try { await api('/v1/chat/completions', 'POST', request); el('question').value = ''; await facts(); await history(); }
+  try { await api('/v1/chat/completions', 'POST', {...request, atlas_ui: true}); el('question').value = ''; await facts(); await history(); }
   finally { el('send').disabled = false; }
 });
 action(async () => { options('projects', await api('/projects')); await selectProject(); })();

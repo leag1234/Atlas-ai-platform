@@ -338,8 +338,8 @@ def append(
     if existing is not None:
         return dict(existing["data"])
     previous = scope.db.execute(
-        "SELECT data->>'digest' AS digest FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s ORDER BY seq DESC LIMIT 1",
-        (scope.identity.org, event["project_id"]),
+        "SELECT atlas_projects.ledger_head(%s) AS digest",
+        (event["project_id"],),
     ).fetchone()
     event["previous_digest"] = previous["digest"] if previous else None
     row = scope.db.execute(

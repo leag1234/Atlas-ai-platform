@@ -178,6 +178,7 @@ async def run(
     initial_calls: tuple[Call, ...] = (),
     references: ResultReferences | None = None,
     skill_messages: list[Message] | None = None,
+    include_intermediate: bool = True,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -423,9 +424,16 @@ async def run(
                         )
                     result.text, result.state = complete_text, "done"
                     return result
-            # Streaming already exposes this content; retain it in the final
-            # HTTP answer and journal as well when a tool interrupts the prose.
-            answer_parts.append(turn.text)
+            # Browser rendering retains interrupted prose. API clients receive
+            # that narration as metadata, separate from the final answer.
+            if include_intermediate:
+                answer_parts.append(turn.text)
+            elif turn.text:
+                from services.orchestrator.stream_client import sink_context
+
+                sink = sink_context.get()
+                if sink:
+                    await sink({"phase": "intermediate_narration", "text": turn.text})
             if quota_recovered:
                 raise Stop("tool_quota_exhausted")
             messages.append(

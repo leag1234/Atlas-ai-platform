@@ -35,6 +35,7 @@ class Transcript:
             owner_member_id=self.scope.identity.member,
             last_action="chat",
             legacy_chat_id=None,
+            visibility="private",
         )
         self.files.put("conversation", value)
         self.scope.event("conversation_created", self.project)
@@ -287,6 +288,16 @@ class Transcript:
                 request.get("work_session_id"),
             )
             return 200, self.state(turn, context, True)
+        running = self.db.execute(
+            "SELECT id FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='turn' AND parent_id=%s AND data->>'state'='running' LIMIT 1",
+            (self.org, self.project, request["conversation_id"]),
+        ).fetchone()
+        if running is not None:
+            raise ProjectError(
+                409,
+                "session_busy",
+                "Conversation busy; retry after the running turn completes",
+            )
         from packages.project_memory import explicit
         from services.retrieval.project_memory import create
 
@@ -323,6 +334,7 @@ class Transcript:
         turn = dict(
             self.files.new(data["request_id"]),
             conversation_id=request["conversation_id"],
+            member_id=self.scope.identity.member,
             action=request["project_action"],
             request_id=data["request_id"],
             content_refs=[

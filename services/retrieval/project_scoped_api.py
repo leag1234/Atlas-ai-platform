@@ -95,13 +95,23 @@ def guard(scope: Scope, method: str, tail: list[str]) -> None:
         scope.authorize(method, tail)
         if scope.member["role"] == "admin":
             scope.event("administrative_access", str(scope.project["id"]))
-    elif tail and tail[0] in ("members", "policy"):
+    elif tail and tail[0] in (
+        "members",
+        "policy",
+        "project-grants",
+        "project-ownership",
+    ):
         scope.admin()
 
 
 def execute(
     scope: Scope, method: str, tail: list[str], body: bytes, expected: str | None
 ) -> tuple[int, Any]:
+    from services.retrieval.project_sharing import execute as sharing
+
+    shared_result = sharing(scope, method, tail, body, expected)
+    if shared_result is not None:
+        return shared_result
     org, member = scope.identity.org, scope.identity.member
     if scope.project is None:
         if tail == ["members"] and method == "POST":
@@ -1185,6 +1195,7 @@ def transcript_dispatch(
     identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
 ) -> tuple[int, Any]:
     schemas = {
+        "check": "SessionStateRead",
         "memory": "TranscriptMemory",
         "state-events": "TranscriptEvents",
         "state-read": "SessionStateRead",
@@ -1207,6 +1218,10 @@ def transcript_dispatch(
         if operation == "begin":
             return transcript.begin(data, key)
         bound_turn, bound_private = transcript.bound(data)
+        if operation == "check":
+            if bound_turn["state"] != "running":
+                raise ProjectError(409, "session_busy", "Turn is no longer running")
+            return 200, {"state": "running"}
         if operation in {"state-read", "state-write", "state-events", "compact"}:
             from services.retrieval.project_session_state import SessionStates
 

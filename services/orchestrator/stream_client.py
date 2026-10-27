@@ -9,6 +9,7 @@ import json
 import aiohttp
 
 Sink = Callable[[dict[str, object]], Awaitable[None]]
+metadata_only_context: ContextVar[bool] = ContextVar("metadata_only", default=False)
 sink_context: ContextVar[Sink | None] = ContextVar("stream_sink", default=None)
 
 

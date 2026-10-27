@@ -192,6 +192,17 @@ def loopback_html_injector(
                             without_header(header, b"connection")
                             + b"\r\nConnection: close"
                         )
+                        if target_path.startswith("/api/atlas/v1/"):
+                            for name in (
+                                b"x-atlas-user",
+                                b"x-atlas-user-role",
+                                b"x-atlas-proxy-secret",
+                                b"x-openwebui-user-id",
+                                b"x-openwebui-user-email",
+                                b"x-atlas-project-identity",
+                                b"x-atlas-identity-secret",
+                            ):
+                                project_header = without_header(project_header, name)
                         with socket.create_connection(
                             ("127.0.0.1", atlas_ports().port("adapter")), timeout=5
                         ) as adapter:
