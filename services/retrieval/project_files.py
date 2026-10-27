@@ -239,6 +239,10 @@ class ProjectFiles:
                 created = min(created, self.scope.project["data"]["created_at"])
             if days is not None and after(created, days) <= timestamp():
                 raise ProjectError(404, "not_found")
+        if kind == "conversation":
+            value.setdefault("visibility", "private")
+        if kind == "turn":
+            value.setdefault("member_id", value["created_by_member_id"])
         if kind == "memory":
             from packages.project_memory import normalize
 

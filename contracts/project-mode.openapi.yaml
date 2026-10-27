@@ -12,6 +12,413 @@ security:
 - TrustedUser: []
   TrustedProxy: []
 paths:
+  /api/atlas/orgs/{org}/projects/{project}/members:
+    get:
+      operationId: listProjectOrganizationMembers
+      summary: listProjectOrganizationMembers
+      x-roles:
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        display_name:
+                          type: string
+                      required:
+                      - id
+                      - display_name
+                  next_cursor:
+                    type: 'null'
+                required:
+                - items
+                - next_cursor
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /api/atlas/orgs/{org}/projects/{project}/connectors:
+    get:
+      operationId: getProjectConnectors
+      summary: getProjectConnectors
+      x-roles:
+      - owner
+      - editor
+      - viewer
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  connector_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+                    maxItems: 100
+                    uniqueItems: true
+                required:
+                - connector_ids
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+    put:
+      operationId: setProjectConnectors
+      summary: setProjectConnectors
+      x-roles:
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  connector_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+                    maxItems: 100
+                    uniqueItems: true
+                required:
+                - connector_ids
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                connector_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  maxItems: 100
+                  uniqueItems: true
+              required:
+              - connector_ids
+  /api/atlas/orgs/{org}/projects/{project}/conversations/{conversation}/share:
+    post:
+      operationId: shareProjectConversation
+      summary: shareProjectConversation
+      x-roles:
+      - owner
+      - editor
+      - viewer
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: conversation
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                confirm:
+                  type: boolean
+                  const: true
+              required:
+              - confirm
+  /api/atlas/orgs/{org}/project-grants/{target_project}/{member}:
+    delete:
+      operationId: adminRevokeProjectGrant
+      summary: adminRevokeProjectGrant
+      x-roles:
+      - admin
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: target_project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: member
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Success
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /api/atlas/orgs/{org}/project-ownership/{target_project}:
+    post:
+      operationId: adminTransferProjectOwnership
+      summary: adminTransferProjectOwnership
+      x-roles:
+      - admin
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: target_project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: Success
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                member_id:
+                  type: string
+                  format: uuid
+              required:
+              - member_id
+  /internal/atlas/transcript/check:
+    post:
+      operationId: checkProjectTranscript
+      summary: Revalidate identity, grant and running turn at a tool boundary
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateRead'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  state:
+                    type: string
+                    const: running
+                required:
+                - state
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor. Private, scoped, source-authorized,
+        idempotent transcript operation; ingress cap 160000 bytes.
   /internal/atlas/execution/acquire:
     post:
       operationId: executionAcquire
@@ -5691,6 +6098,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
         id:
           type: string
           format: uuid
@@ -5760,6 +6171,11 @@ components:
       type: object
       additionalProperties: false
       properties:
+        connector_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         id:
           type: string
           format: uuid
@@ -6544,6 +6960,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        visibility:
+          type: string
+          enum: [private, shared]
         id:
           type: string
           format: uuid
@@ -6641,6 +7060,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        member_id:
+          type: string
+          format: uuid
         id:
           type: string
           format: uuid
@@ -9067,6 +9489,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
         identity_subject:
           type: string
           minLength: 1
@@ -9082,6 +9508,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
         role:
           type: string
           enum:

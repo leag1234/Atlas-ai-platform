@@ -287,7 +287,14 @@ async def scoped_work_route(
 
             import json
 
-            await cleanup_work(broker, session, str(json.loads(body)["request_id"]))
+            try:
+                await cleanup_work(broker, session, str(json.loads(body)["request_id"]))
+            except ProjectError as exc:
+                if exc.status != 404:
+                    raise
+                # Cancellation authority does not grant private transcript access.
+                # Keep the accepted response; the running holder observes the
+                # cancellation at its next tool boundary and performs cleanup.
         response_headers = {"Cache-Control": "private, no-store"}
         if "revision" in result:
             response_headers["ETag"] = f'"{result["revision"]}"'
