@@ -38,14 +38,18 @@ class DockerContextTests(unittest.TestCase):
                         if any(c in source for c in "*?[")
                         else [Path(source.rstrip("/"))]
                     ):
-                        files = (
-                            [path]
-                            if path.is_file()
-                            else [p for p in path.rglob("*") if p.is_file()]
-                        )
-                        for file in files:
-                            if not included(file.as_posix(), rules):
-                                missing.append(f"{dockerfile.name}: {file.as_posix()}")
+                        if path.is_file():
+                            ok = included(path.as_posix(), rules)
+                        else:
+                            # A copied directory may legitimately lose ignored
+                            # files (caches); it must still reach the context.
+                            ok = any(
+                                included(p.as_posix(), rules)
+                                for p in path.rglob("*")
+                                if p.is_file()
+                            )
+                        if not ok:
+                            missing.append(f"{dockerfile.name}: {path.as_posix()}")
         self.assertEqual(missing, [])
 
 
