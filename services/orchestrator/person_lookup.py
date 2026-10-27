@@ -358,10 +358,14 @@ def _subject_title(name: str, title: object) -> bool:
         return False
     folded_name = normalized(name)
     folded_title = normalized(title).strip()
+    name_title = re.escape(folded_name) + r"(?:\s*\([^)]{1,80}\))?"
     return bool(
-        re.match(
-            re.escape(folded_name) + r"(?:\s*\([^)]{1,80}\))?\s*(?:$|[-—–|:,])",
-            folded_title,
+        re.match(name_title + r"\s*(?:$|[-—–|:,])", folded_title)
+        # French result pages are frequently headed as a question rather than
+        # beginning with the subject's name.  The full-name boundary keeps this
+        # as strict as the normal title form.
+        or re.match(
+            r"qui est\s+" + name_title + r"\s*\?\s*(?:$|[-—–|:,])", folded_title
         )
     )
 
@@ -447,6 +451,11 @@ def second_query(
     terms = _distinctive_terms(name, passages)
     if provider == "serpapi" and terms:
         query = " ".join([f'"{name}"', *(f"-{term}" for term in terms)])
+    elif language == "fr":
+        # English career terms suppress French disambiguation and reference
+        # pages in SearXNG.  The French namesake term keeps the exact name
+        # broad while making the spare pass useful for ambiguous identities.
+        query = f'"{name}" homonyme'
     else:
         # Tavily does not document Boolean exclusions, and SearXNG delegates syntax to
         # a varying engine set, so use portable context words rather than pretending.
