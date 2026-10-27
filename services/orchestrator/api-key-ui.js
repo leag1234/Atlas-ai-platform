@@ -2,9 +2,9 @@
 (() => {
   'use strict';
   const words = {
-    en: ['API keys','Create a key','Name','Expiry','days','Create','Close','Copy','Copied','Copy this key now. It will never be shown again. Keep it private.','Revoke','Revoke this key? Applications using it will lose access immediately.','Cancel','No API keys yet.','Ask your administrator to create or revoke keys.','Created','Last used','Expires','Daily quota','Today','Never','Revoked','Expired','Scopes','Owner','My keys','Organization','Create for a user (email)','Organization policy','Disabled','Administrators only','Self-service','Requests per day','EUR per day','Maximum expiry (days)','Active keys per user','Save policy','Model','Base URL','Could not complete this action. Try again.','You have reached the active-key limit. Revoke an unused key first.','This expiry exceeds your organization’s limit.','The user must sign in once before a key can be created.','Loading…','Secret key','Policy saved','Assistant','Model access','Key revoked'],
-    fr: ['Clés API','Créer une clé','Nom','Expiration','jours','Créer','Fermer','Copier','Copié','Copiez cette clé maintenant. Elle ne sera plus jamais affichée. Gardez-la secrète.','Révoquer','Révoquer cette clé ? Les applications qui l’utilisent perdront immédiatement leur accès.','Annuler','Aucune clé API pour le moment.','Demandez à votre administrateur de créer ou révoquer des clés.','Création','Dernière utilisation','Expiration','Quota quotidien','Aujourd’hui','Jamais','Révoquée','Expirée','Autorisations','Propriétaire','Mes clés','Organisation','Créer pour un utilisateur (adresse e-mail)','Politique de l’organisation','Désactivées','Administrateurs uniquement','Libre-service','Requêtes par jour','EUR par jour','Expiration maximale (jours)','Clés actives par utilisateur','Enregistrer la politique','Modèle','URL de base','Impossible de terminer cette action. Réessayez.','Vous avez atteint la limite de clés actives. Révoquez d’abord une clé inutilisée.','Cette expiration dépasse la limite de votre organisation.','L’utilisateur doit se connecter une fois avant la création d’une clé.','Chargement…','Clé secrète','Politique enregistrée','Assistant','Accès au modèle','Clé révoquée'],
-    de: ['API-Schlüssel','Schlüssel erstellen','Name','Ablauf','Tage','Erstellen','Schließen','Kopieren','Kopiert','Kopieren Sie diesen Schlüssel jetzt. Er wird nie wieder angezeigt. Halten Sie ihn geheim.','Widerrufen','Diesen Schlüssel widerrufen? Anwendungen verlieren damit sofort den Zugriff.','Abbrechen','Noch keine API-Schlüssel.','Bitten Sie Ihren Administrator, Schlüssel zu erstellen oder zu widerrufen.','Erstellt','Zuletzt verwendet','Läuft ab','Tageskontingent','Heute','Nie','Widerrufen','Abgelaufen','Berechtigungen','Eigentümer','Meine Schlüssel','Organisation','Für einen Benutzer erstellen (E-Mail)','Organisationsrichtlinie','Deaktiviert','Nur Administratoren','Selbstbedienung','Anfragen pro Tag','EUR pro Tag','Maximale Gültigkeit (Tage)','Aktive Schlüssel pro Benutzer','Richtlinie speichern','Modell','Basis-URL','Diese Aktion ist fehlgeschlagen. Versuchen Sie es erneut.','Die Grenze aktiver Schlüssel ist erreicht. Widerrufen Sie zuerst einen ungenutzten Schlüssel.','Diese Gültigkeit überschreitet die Organisationsgrenze.','Der Benutzer muss sich zuerst einmal anmelden.','Laden…','Geheimer Schlüssel','Richtlinie gespeichert','Assistent','Modellzugriff','Schlüssel widerrufen'],
+    en: ['API keys','Create a key','Name','Expiry','days','Create','Close','Copy','Copied','Copy this key now. It will never be shown again. Keep it private.','Revoke','Revoke this key? Applications using it will lose access immediately.','Cancel','No API keys yet.','Ask your administrator to create or revoke keys.','Created','Last used','Expires','Daily quota','Today','Never','Revoked','Expired','Scopes','Owner','My keys','Organization','Create for a user (email)','Organization policy','Disabled','Administrators only','Self-service','Requests per day','EUR per day','Maximum expiry (days)','Active keys per user','Save policy','Model','Base URL','Could not complete this action. Try again.','You have reached the active-key limit. Revoke an unused key first.','This expiry exceeds your organization’s limit.','The user must sign in once before a key can be created.','Loading…','Secret key','Policy saved','Assistant','Model access','Key revoked','requests and','per day','Show revoked keys','Usage today','Access: full assistant'],
+    fr: ['Clés API','Créer une clé','Nom','Expiration','jours','Créer','Fermer','Copier','Copié','Copiez cette clé maintenant. Elle ne sera plus jamais affichée. Gardez-la secrète.','Révoquer','Révoquer cette clé ? Les applications qui l’utilisent perdront immédiatement leur accès.','Annuler','Aucune clé API pour le moment.','Demandez à votre administrateur de créer ou révoquer des clés.','Création','Dernière utilisation','Expiration','Quota quotidien','Aujourd’hui','Jamais','Révoquée','Expirée','Autorisations','Propriétaire','Mes clés','Organisation','Créer pour un utilisateur (adresse e-mail)','Politique de l’organisation','Désactivées','Administrateurs uniquement','Libre-service','Requêtes par jour','EUR par jour','Expiration maximale (jours)','Clés actives par utilisateur','Enregistrer la politique','Modèle','URL de base','Impossible de terminer cette action. Réessayez.','Vous avez atteint la limite de clés actives. Révoquez d’abord une clé inutilisée.','Cette expiration dépasse la limite de votre organisation.','L’utilisateur doit se connecter une fois avant de créer une clé.','Chargement…','Clé secrète','Politique enregistrée','Assistant','Accès au modèle','Clé révoquée','requêtes et','par jour','Afficher les clés révoquées','Utilisation aujourd’hui','Accès : assistant complet'],
+    de: ['API-Schlüssel','Schlüssel erstellen','Name','Ablauf','Tage','Erstellen','Schließen','Kopieren','Kopiert','Kopieren Sie diesen Schlüssel jetzt. Er wird nie wieder angezeigt. Halten Sie ihn geheim.','Widerrufen','Diesen Schlüssel widerrufen? Anwendungen verlieren damit sofort den Zugriff.','Abbrechen','Noch keine API-Schlüssel.','Bitten Sie Ihren Administrator, Schlüssel zu erstellen oder zu widerrufen.','Erstellt','Zuletzt verwendet','Läuft ab','Tageskontingent','Heute','Nie','Widerrufen','Abgelaufen','Berechtigungen','Eigentümer','Meine Schlüssel','Organisation','Für einen Benutzer erstellen (E-Mail)','Organisationsrichtlinie','Deaktiviert','Nur Administratoren','Selbstbedienung','Anfragen pro Tag','EUR pro Tag','Maximale Gültigkeit (Tage)','Aktive Schlüssel pro Benutzer','Richtlinie speichern','Modell','Basis-URL','Diese Aktion ist fehlgeschlagen. Versuchen Sie es erneut.','Die Grenze aktiver Schlüssel ist erreicht. Widerrufen Sie zuerst einen ungenutzten Schlüssel.','Diese Gültigkeit überschreitet die Organisationsgrenze.','Der Benutzer muss sich zuerst einmal anmelden.','Laden…','Geheimer Schlüssel','Richtlinie gespeichert','Assistent','Modellzugriff','Schlüssel widerrufen','Anfragen und','pro Tag','Widerrufene Schlüssel anzeigen','Heutige Nutzung','Zugriff: vollständiger Assistent','Schlüssel'],
     es: ['Claves API','Crear una clave','Nombre','Caducidad','días','Crear','Cerrar','Copiar','Copiado','Copie esta clave ahora. No volverá a mostrarse. Manténgala en secreto.','Revocar','¿Revocar esta clave? Las aplicaciones perderán el acceso inmediatamente.','Cancelar','Todavía no hay claves API.','Pida a su administrador que cree o revoque claves.','Creación','Último uso','Caduca','Cuota diaria','Hoy','Nunca','Revocada','Caducada','Permisos','Propietario','Mis claves','Organización','Crear para un usuario (correo electrónico)','Política de la organización','Desactivadas','Solo administradores','Autoservicio','Solicitudes por día','EUR por día','Caducidad máxima (días)','Claves activas por usuario','Guardar política','Modelo','URL base','No se pudo completar la acción. Inténtelo de nuevo.','Ha alcanzado el límite de claves activas. Revoque primero una clave sin uso.','Esta caducidad supera el límite de su organización.','El usuario debe iniciar sesión una vez antes de crear una clave.','Cargando…','Clave secreta','Política guardada','Asistente','Acceso al modelo','Clave revocada'],
     it: ['Chiavi API','Crea una chiave','Nome','Scadenza','giorni','Crea','Chiudi','Copia','Copiato','Copiate questa chiave ora. Non verrà più mostrata. Conservatela in segreto.','Revoca','Revocare questa chiave? Le applicazioni perderanno immediatamente l’accesso.','Annulla','Nessuna chiave API.','Chiedete all’amministratore di creare o revocare le chiavi.','Creazione','Ultimo utilizzo','Scadenza','Quota giornaliera','Oggi','Mai','Revocata','Scaduta','Permessi','Proprietario','Le mie chiavi','Organizzazione','Crea per un utente (e-mail)','Politica dell’organizzazione','Disattivate','Solo amministratori','Autogestione','Richieste al giorno','EUR al giorno','Scadenza massima (giorni)','Chiavi attive per utente','Salva politica','Modello','URL di base','Impossibile completare l’azione. Riprovate.','È stato raggiunto il limite di chiavi attive. Revocate prima una chiave inutilizzata.','Questa scadenza supera il limite dell’organizzazione.','L’utente deve accedere una volta prima di creare una chiave.','Caricamento…','Chiave segreta','Politica salvata','Assistente','Accesso al modello','Chiave revocata']
   };
@@ -13,7 +13,7 @@
   const el = (tag, text, cls) => { const node = document.createElement(tag); if (text) node.textContent = text; if (cls) node.className = cls; return node; };
   const button = (text, action, cls) => { const node = el('button', text, cls); node.type = 'button'; node.onclick = action; return node; };
   const base = '/api/atlas/keys';
-  let state, dialog, content, status, all = false, opener;
+  let state, dialog, content, status, all = false, showRevoked = false, opener;
   const request = async (path = '', method = 'GET', data) => {
     const response = await fetch(base + path, { method, credentials: 'same-origin', headers: data ? { 'Content-Type': 'application/json' } : {}, body: data ? JSON.stringify(data) : undefined, cache: 'no-store' });
     const value = response.status === 204 ? {} : await response.json();
@@ -27,6 +27,8 @@
   const select = pairs => { const node = el('select'); pairs.forEach(([value, label]) => { const option = el('option', label); option.value = value; node.append(option); }); return node; };
   const date = value => value ? new Date(value * 1000).toLocaleDateString(locale()) : t(20);
   const euro = value => new Intl.NumberFormat(locale(), { style: 'currency', currency: 'EUR' }).format(value / 1000000);
+  const quota = key => `${key.daily_requests} ${t(49)} ${euro(key.daily_micro_eur)} ${t(50)}`;
+  const usage = key => `${t(19)} : ${key.usage.requests} ${locale() === 'fr' ? 'requêtes' : 'requests'}, ${euro(key.usage.charged_micro_eur)}`;
   const reload = async () => { state = await request(all ? '?all=true' : ''); render(); };
   const secretBox = value => {
     const section = el('section', '', 'atlas-key-secret');
@@ -59,35 +61,44 @@
     if (state.admin) {
       const tabs = el('div','','atlas-key-tabs');
       [false,true].forEach(value => { const tab = button(t(value ? 26 : 25), () => run(async () => { all = value; await reload(); })); tab.setAttribute('aria-pressed',String(all === value)); tabs.append(tab); }); content.append(tabs);
-      if (all) content.append(policyForm());
+      if (all) {
+        const revoked = input('checkbox'); revoked.checked = showRevoked; revoked.onchange = () => { showRevoked = revoked.checked; render(); };
+        const toggle = el('label','','atlas-key-revoked-toggle'); toggle.append(revoked, el('span',t(51))); content.append(toggle, policyForm());
+      }
     }
     if (!allowed) content.append(el('p',t(14),'atlas-key-muted'));
     if (allowed) {
-      const form = el('form','','atlas-key-form'); form.append(el('h3',t(1)));
+      const form = el('form','','atlas-key-form');
       const name = field(form,t(2),input('text')); name.required = true; name.maxLength = 100; name.autocomplete = 'off';
       const expiry = field(form,t(3),select([30,90,365].filter(day => day <= state.policy.max_lifetime_days).map(day => [String(day),`${day} ${t(4)}`]))); expiry.value = String(state.policy.max_lifetime_days >= 90 ? 90 : 30);
-      const scopes = field(form,t(23),select([['assistant',t(46)],['model',t(47)]]));
+      const permittedScopes = [['assistant',t(46)],['model',t(47)]];
+      const scopes = permittedScopes.length > 1 ? field(form,t(23),select(permittedScopes)) : null;
       const owner = state.admin && all ? field(form,t(27),input('email')) : null;
       const create = button(t(5)); create.type = 'submit'; form.append(create);
-      form.onsubmit = event => { event.preventDefault(); run(async () => { create.disabled = true; try { const value = await request('','POST',{ name:name.value.trim(),lifetime_days:Number(expiry.value),scopes:[scopes.value],...(owner?.value ? {login:owner.value} : {}) }); await reload(); if (content?.isConnected) secretBox(value.key); } finally { create.disabled = false; } }); }; content.append(form);
+      form.onsubmit = event => { event.preventDefault(); run(async () => { create.disabled = true; try { const value = await request('','POST',{ name:name.value.trim(),lifetime_days:Number(expiry.value),scopes:[scopes?.value || permittedScopes[0][0]],...(owner?.value ? {login:owner.value} : {}) }); await reload(); if (content?.isConnected) secretBox(value.key); } finally { create.disabled = false; } }); }; content.append(form);
     }
     const list = el('div','','atlas-key-list');
-    if (!state.data.length) list.append(el('p',t(13),'atlas-key-muted'));
-    state.data.slice().reverse().forEach(key => {
-      const card = el('article','','atlas-key-card'); const heading = el('div','','atlas-key-card-head'); heading.append(el('h3',key.name),el('code',key.prefix + '…'));
+    const keys = state.data.slice().reverse().filter(key => !all || showRevoked || !key.revoked_at);
+    if (!keys.length) list.append(el('p',t(13),'atlas-key-muted'));
+    const table = el('table','','atlas-key-table');
+    const headings = [2,'key',15,16,17,52,''];
+    const head = el('thead'), headRow = el('tr'); headings.forEach(label => headRow.append(el('th',label === 'key' ? (locale() === 'fr' ? 'Clé' : 'Key') : (label === '' ? '' : t(label))))); head.append(headRow); table.append(head);
+    const body = el('tbody');
+    keys.forEach(key => {
+      const row = el('tr','','atlas-key-row');
       const inactive = key.revoked_at ? t(21) : key.expires_at * 1000 <= Date.now() ? t(22) : '';
-      if (inactive) heading.append(el('span',inactive,'atlas-key-muted'));
-      card.append(heading); const meta = el('dl');
-      const values = [[23,key.scopes.map(scope => t(scope === 'assistant' ? 46 : 47)).join(', ')],[15,date(key.created_at)],[16,date(key.last_used_at)],[17,date(key.expires_at)],[18,`${key.daily_requests} · ${euro(key.daily_micro_eur)}`],[19,`${key.usage.requests} · ${euro(key.usage.charged_micro_eur)}`]];
-      if (all) values.unshift([24,key.subject]); values.forEach(([label,value]) => meta.append(el('dt',t(label)),el('dd',value))); card.append(meta);
-      if (allowed && !inactive) card.append(button(t(10),() => revoke(key),'atlas-key-danger')); list.append(card);
-    }); content.append(list);
+      if (inactive) row.classList.add('atlas-key-inactive');
+      const name = el('th',''); name.scope = 'row'; name.append(el('strong',key.name), el('code',key.prefix + '…','atlas-key-prefix atlas-key-prefix-mobile'), el('small',key.scopes.includes('assistant') ? t(53) : `${t(23)} : ${t(47)}`)); if (all) name.append(el('small',key.subject)); if (inactive) name.append(el('small',inactive));
+      const cells = [name,el('td',key.prefix + '…','atlas-key-prefix'),el('td',date(key.created_at)),el('td',date(key.last_used_at)),el('td',date(key.expires_at)),el('td','')];
+      const use = cells[5]; use.append(el('span',usage(key)),el('small',quota(key)));
+      const action = el('td',''); if (allowed && !inactive) action.append(button(t(10),() => revoke(key),'atlas-key-danger')); cells.push(action); cells.forEach(cell => row.append(cell)); body.append(row);
+    }); table.append(body); if (keys.length) list.append(table); content.append(list);
     const guide = el('details'); guide.append(el('summary',`${t(38)} · ${t(37)} atlas`));
     guide.append(el('p',`${t(38)} : https://${location.host}/api/atlas/v1`),el('p',`${t(37)} : atlas`));
     guide.append(el('pre',`curl https://${location.host}/api/atlas/v1/chat/completions \\\n  -H "Authorization: Bearer $ATLAS_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"atlas","messages":[{"role":"user","content":"Bonjour"}]}'`)); content.append(guide);
   };
   const open = trigger => {
-    if (dialog?.open) return; opener = trigger; all = false;
+    if (dialog?.open) return; opener = trigger; all = false; showRevoked = false;
     dialog = el('dialog','','atlas-key-dialog'); dialog.id = 'atlas-api-keys-dialog'; dialog.setAttribute('aria-labelledby','atlas-key-title');
     const header = el('div','','atlas-key-header'), title = el('h2',t(0)); title.id = 'atlas-key-title';
     const close = () => { dialog.querySelectorAll('input').forEach(node => { node.value = ''; }); dialog.close(); dialog.remove(); opener?.focus(); };

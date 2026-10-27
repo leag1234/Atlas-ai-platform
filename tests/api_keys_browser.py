@@ -7,6 +7,7 @@ Credentials remain in process memory and never enter screenshots or output.
 """
 
 import os
+import re
 from pathlib import Path
 
 from playwright.sync_api import (
@@ -102,10 +103,10 @@ def create_copy(page: Page, dialog: Locator, name: str) -> str:
 
 
 def revoke(page: Page, dialog: Locator, name: str) -> None:
-    card = dialog.locator("article").filter(
-        has=page.get_by_role("heading", name=name, exact=True)
+    row = dialog.locator(".atlas-key-row").filter(
+        has=page.get_by_text(name, exact=True)
     )
-    card.get_by_role("button", name="Révoquer", exact=True).click()
+    row.get_by_role("button", name="Révoquer", exact=True).click()
     confirm = page.locator(".atlas-key-confirm")
     expect(confirm).to_be_visible()
     confirm.get_by_role("button", name="Annuler", exact=True).click()
@@ -116,11 +117,11 @@ def revoke(page: Page, dialog: Locator, name: str) -> None:
         next(key for key in listing["data"] if key["name"] == name)["revoked_at"]
         is None
     )
-    card.get_by_role("button", name="Révoquer", exact=True).click()
+    row.get_by_role("button", name="Révoquer", exact=True).click()
     page.locator(".atlas-key-confirm").get_by_role(
         "button", name="Révoquer", exact=True
     ).click()
-    expect(card.get_by_text("Révoquée", exact=True)).to_be_visible()
+    expect(row.get_by_text("Révoquée", exact=True)).to_be_visible()
     listing = page.request.get(
         os.environ["ATLAS_KEYS_BROWSER_URL"] + "/api/atlas/keys"
     ).json()
@@ -157,6 +158,19 @@ def main() -> None:
             alice, page = session(browser, "camille")
             dialog = open_keys(page)
             first_secret = create_copy(page, dialog, "Application personnelle")
+            expect(dialog.locator(".atlas-key-table")).to_be_visible()
+            expect(
+                dialog.get_by_role("columnheader", name="Nom", exact=True)
+            ).to_be_visible()
+            expect(
+                dialog.get_by_role("columnheader", name="Clé", exact=True)
+            ).to_be_visible()
+            expect(
+                dialog.get_by_text(re.compile(r"200 requêtes et 2,00.*€ par jour"))
+            ).to_be_visible()
+            expect(
+                dialog.get_by_text("Accès : assistant complet", exact=True)
+            ).to_be_visible()
             screenshots(page, dialog)
 
             bob, second_page = session(browser, "dominique")
@@ -198,6 +212,10 @@ def main() -> None:
             admin_dialog = open_keys(admin_page)
             admin_dialog.get_by_role("button", name="Organisation", exact=True).click()
             expect(
+                admin_dialog.get_by_label("Afficher les clés révoquées", exact=True)
+            ).not_to_be_checked()
+            admin_dialog.get_by_label("Afficher les clés révoquées", exact=True).check()
+            expect(
                 admin_dialog.get_by_text("camille@example.invalid", exact=True)
             ).to_be_visible()
             expect(
@@ -233,16 +251,15 @@ def main() -> None:
                 key for key in listing if key["name"] == "Intégration administrée"
             )
             assert issued["daily_requests"] == 150
-            card = admin_dialog.locator("article").filter(
-                has=admin_page.get_by_role(
-                    "heading", name="Intégration administrée", exact=True
-                )
+            row = admin_dialog.locator(".atlas-key-row").filter(
+                has=admin_page.get_by_text("Intégration administrée", exact=True)
             )
-            card.get_by_role("button", name="Révoquer", exact=True).click()
+            row.get_by_role("button", name="Révoquer", exact=True).click()
             admin_page.locator(".atlas-key-confirm").get_by_role(
                 "button", name="Révoquer", exact=True
             ).click()
-            expect(card.get_by_text("Révoquée", exact=True)).to_be_visible()
+            expect(admin_dialog.get_by_text("Clé révoquée", exact=True)).to_be_visible()
+            expect(row).to_have_class("atlas-key-row atlas-key-inactive")
             assert (
                 next(
                     key
