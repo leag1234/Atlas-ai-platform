@@ -118,7 +118,7 @@ async def _answer_from_evidence(
             retry_web=False,
         )
         item.reponse, item.state, item.task_type = (
-            result.text,
+            _person_answer(result.text, evidence),
             result.state,
             "person_lookup",
         )
@@ -135,6 +135,13 @@ async def _answer_from_evidence(
         if model.observations:
             item.modele_utilise = model.observations[-1].provider
             item.route_decision = model.observations[0].route
+
+
+def _person_answer(text: str, evidence: list[Evidence]) -> str:
+    """Reject model-authored person citations outside the exact evidence set."""
+    from services.orchestrator.source_truth import person_citations
+
+    return person_citations(text, {source.url for source in evidence})
 
 
 def person_name(question: str) -> str | None:

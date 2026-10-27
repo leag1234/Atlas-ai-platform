@@ -396,6 +396,53 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("What profession", item.reponse)
 
+    async def test_person_answer_drops_fake_markdown_citation_and_claim(self) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Aster Vale?"}],
+                "lang": "en",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        response = {
+            "data": {
+                "results": [
+                    {
+                        "snippet": "Aster Vale founded Quill Harbor.",
+                        "link": "https://example.test/aster",
+                    }
+                ]
+            }
+        }
+        model = self.model()
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=model),
+            ),
+            patch(
+                "services.orchestrator.person_lookup.run",
+                new=AsyncMock(
+                    return_value=Result(
+                        "Aster Vale is an entrepreneur [[unverified source](entrepreneur)]. "
+                        "Aster Vale founded Quill Harbor [1](https://example.test/aster)."
+                    )
+                ),
+            ),
+        ):
+            await lookup(request, item, tools, "Aster Vale")
+        self.assertNotIn("entrepreneur", item.reponse)
+        self.assertNotIn("unverified source", item.reponse)
+        self.assertNotIn("Aster Vale is an entrepreneur", item.reponse)
+        self.assertIn("[1](https://example.test/aster)", item.reponse)
+
     async def test_mixed_exact_namesakes_are_judged_by_model(self) -> None:
         from services.orchestrator.chat_pipeline import ChatTools
         from services.orchestrator.interactions import Interaction

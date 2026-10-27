@@ -7,6 +7,9 @@ from services.orchestrator.interactions import Interaction
 
 URL = re.compile(r"https?://[^\s<>\"'()\]]+")
 REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
+_MARKDOWN_LINK = re.compile(
+    r"(?<!!)\[\[([^\]\n]+)\]\(([^)\n]+)\)\]|(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)"
+)
 _PRODUCT_URL_KEYS = frozenset(
     {
         "url",
@@ -67,6 +70,35 @@ def visible_sources(item: Interaction) -> list[str]:
 
 def urls(text: str) -> set[str]:
     return {match.rstrip(".,;:)]}>'\"") for match in URL.findall(text)}
+
+
+def person_citations(text: str, evidence_urls: set[str]) -> str:
+    """Keep person-synthesis citations only when they name supplied evidence.
+
+    A malformed Markdown target can make a model's unsupported attribution look like
+    a source. If that was the sentence's only citation, the claim cannot be retained.
+    """
+
+    def target(match: re.Match[str]) -> str:
+        return (match.group(2) or match.group(4) or "").strip().strip("<>")
+
+    def valid(match: re.Match[str]) -> bool:
+        return target(match) in evidence_urls
+
+    parts = re.split(r"(?<=[.!?])(?=\s)|(?<=\n)", text)
+    cleaned: list[str] = []
+    for part in parts:
+        matches = list(_MARKDOWN_LINK.finditer(part))
+        if matches and any(not valid(match) for match in matches):
+            kept = _MARKDOWN_LINK.sub(
+                lambda match: match[0] if valid(match) else "", part
+            )
+            if not any(valid(match) for match in _MARKDOWN_LINK.finditer(kept)):
+                continue
+            cleaned.append(kept)
+        else:
+            cleaned.append(part)
+    return "".join(cleaned)
 
 
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
