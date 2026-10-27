@@ -92,6 +92,13 @@ class BrandAssetTests(unittest.TestCase):
         script = (ROOT / "services/orchestrator/brand-ui.js").read_text()
         self.assertIn("atlas-symbol-dark.svg", script)
         self.assertIn("atlas-symbol.svg", script)
+        self.assertIn("atlas-logotype-dark.svg", script)
+        self.assertIn("atlas-logotype.svg", script)
+        self.assertIn("localStorage.getItem('theme')", script)
+        self.assertIn("theme === 'system'", script)
+        self.assertIn("atlas-theme-change", script)
+        self.assertIn("/static/logo.png", script)
+        self.assertNotIn("location.reload", script)
 
     def test_compose_image_copies_the_pinned_shell_asset_names(self) -> None:
         dockerfile = (ROOT / "infra/docker/Dockerfile.webui").read_text()

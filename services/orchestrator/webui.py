@@ -23,7 +23,7 @@ def managed_model(profile: str) -> dict[str, Any]:
         "name": "Atlas" if public else profile,
         "base_model_id": None,
         "params": {},
-        "meta": {"description": "ATLAS managed profile"},
+        "meta": {"description": ""},
         "access_grants": (
             [
                 {
