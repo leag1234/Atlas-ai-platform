@@ -1,5 +1,7 @@
 """POC-P6: reserve worst-case usage before starting cancellable I/O."""
 
+from services.orchestrator.code_verification import VerificationStatus
+
 from packages.profiles import PROFILES
 from packages.limits import LimitError
 
@@ -129,6 +131,7 @@ class Result:
 
 @dataclass
 class CodeResult(Result):
+    verification: VerificationStatus = field(default_factory=VerificationStatus)
     model_calls: int = 0
     limit_stop: dict[str, object] = field(default_factory=dict)
 
@@ -144,6 +147,13 @@ class Model(Protocol):
 class Tools(Protocol):
     def estimate(self, call: Call) -> Reservation: ...
     async def execute(self, call: Call, timeout: float) -> Message: ...
+
+
+class ResultReferences(Protocol):
+    async def retain(
+        self, call: Call, output: Message, messages: list[Message]
+    ) -> None: ...
+    async def reopen(self, call: Call) -> Message: ...
 
 
 class Stop(Exception):
@@ -166,6 +176,7 @@ async def run(
     retry_protocol: bool = True,
     terminal_tools: frozenset[str] = frozenset(),
     initial_calls: tuple[Call, ...] = (),
+    references: ResultReferences | None = None,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -191,7 +202,12 @@ async def run(
     recent: list[tuple[str, str]] = []
     quota_recovered = False
     protocol_recovered = False
+    links_recovered = False
+    retrieved: set[str] = set()
+    tool_urls: set[str] = set()
     answer_parts: list[str] = []
+    last_plan: tuple[str, Message] | None = None
+    previous_call: tuple[str, str] | None = None
 
     def record_limit(values: dict[str, object]) -> None:
         if isinstance(result, CodeResult):
@@ -266,6 +282,9 @@ async def run(
                         }
                     )
                     raise Stop("model_calls")
+                prepare_context = getattr(type(model), "prepare_context", None)
+                if prepare_context is not None:
+                    await prepare_context(model, messages)
                 reserved = model.estimate(messages)
                 reserve(reserved)
                 if isinstance(result, CodeResult):
@@ -330,6 +349,70 @@ async def run(
                     )
                     continue
                 else:
+                    from services.orchestrator.citation_cleanup import cleanup, hollow
+                    from services.orchestrator.source_truth import (
+                        without_unretrieved,
+                        urls,
+                    )
+                    from services.orchestrator.link_requests import (
+                        fallback_terms,
+                        link_query,
+                        unavailable,
+                        instruction,
+                        page_request,
+                    )
+
+                    cleaned = cleanup(
+                        without_unretrieved(complete_text, retrieved | tool_urls)
+                    )
+                    if limits.code_mode:
+                        # Work preserves its prose when no external URL needs
+                        # filtering; otherwise it removes only that URL.
+                        result.text = (
+                            cleaned
+                            if urls(complete_text) - retrieved - tool_urls
+                            else complete_text
+                        )
+                        result.state = "done"
+                        setattr(result, "tool_urls", tool_urls)
+                        return result
+                    if page_request(
+                        query.question,
+                        tuple(str(m.get("content", "")) for m in (history or [])),
+                    ) and (
+                        hollow(complete_text, cleaned)
+                        or not urls(cleaned).intersection(retrieved)
+                    ):
+                        terms = link_query(
+                            query.question,
+                            tuple(str(m.get("content", "")) for m in (history or [])),
+                        )
+                        if not links_recovered and not counts["web_search"]:
+                            links_recovered = True
+                            logging.getLogger(__name__).info(
+                                "citation_guard_recovery search_attempt=1"
+                            )
+                            initial_calls = (
+                                Call(
+                                    "recover-links",
+                                    "web_search",
+                                    json.dumps({"query": terms, "lang": query.lang}),
+                                ),
+                            )
+                            answer_parts.clear()
+                            messages.append(
+                                {"role": "system", "content": instruction()}
+                            )
+                            continue
+                        complete_text = unavailable(
+                            fallback_terms(
+                                query.question,
+                                tuple(
+                                    str(m.get("content", "")) for m in (history or [])
+                                ),
+                            ),
+                            query.lang,
+                        )
                     result.text, result.state = complete_text, "done"
                     return result
             # Streaming already exposes this content; retain it in the final
@@ -373,6 +456,43 @@ async def run(
                     )
                 result.state = "tool"
                 remaining()
+                try:
+                    canonical = json.dumps(json.loads(call.arguments), sort_keys=True)
+                except json.JSONDecodeError:
+                    canonical = call.arguments
+                consecutive = previous_call == (call.name, canonical)
+                previous_call = call.name, canonical
+                if (
+                    call.name == "update_plan"
+                    and last_plan is not None
+                    and last_plan[0] == canonical
+                ):
+                    # Only reuse a successfully executed plan. Status/text changes
+                    # still cross validation and persist as a new execution step.
+                    acknowledgement: Message = dict(last_plan[1], unchanged=True)
+                    if consecutive:
+                        acknowledgement["next_step"] = (
+                            "Act on the plan. Execute the next pending step or provide the requested answer."
+                        )
+                    if references is not None:
+                        await references.retain(call, acknowledgement, messages)
+                    else:
+                        messages.append(
+                            dict(
+                                role="tool",
+                                tool_call_id=call.id,
+                                content=json.dumps(acknowledgement),
+                            )
+                        )
+                    result.trace.append(
+                        dict(
+                            tool=call.name,
+                            arguments=call.arguments,
+                            output=acknowledgement,
+                            reused=True,
+                        )
+                    )
+                    continue
                 quota = (
                     "tool_calls"
                     if result.tool_calls >= limits.tool_calls
@@ -391,24 +511,26 @@ async def run(
                 ):
                     quota_recovered = True
                     for denied in pending_calls[pending_calls.index(call) :]:
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": denied.id,
-                                "content": json.dumps(
-                                    {
-                                        "error": "tool_quota_exhausted",
-                                        "reason": quota,
-                                        "tools_executed": result.tool_calls,
-                                        "tool_limit": limits.tool_calls,
-                                        "searches_executed": counts["web_search"],
-                                        "search_limit": 3,
-                                        "fetches_executed": counts["web_fetch"],
-                                        "fetch_limit": 8,
-                                    }
-                                ),
-                            }
-                        )
+                        denial: Message = {
+                            "error": "tool_quota_exhausted",
+                            "reason": quota,
+                            "tools_executed": result.tool_calls,
+                            "tool_limit": limits.tool_calls,
+                            "searches_executed": counts["web_search"],
+                            "search_limit": 3,
+                            "fetches_executed": counts["web_fetch"],
+                            "fetch_limit": 8,
+                        }
+                        if references is not None:
+                            await references.retain(denied, denial, messages)
+                        else:
+                            messages.append(
+                                dict(
+                                    role="tool",
+                                    tool_call_id=denied.id,
+                                    content=json.dumps(denial),
+                                )
+                            )
                     logging.getLogger(__name__).info(
                         json.dumps(
                             {
@@ -441,10 +563,6 @@ async def run(
                     raise Stop("search_limit")
                 if call.name == "web_fetch" and counts[call.name] >= 8:
                     raise Stop("fetch_limit")
-                try:
-                    canonical = json.dumps(json.loads(call.arguments), sort_keys=True)
-                except json.JSONDecodeError:
-                    canonical = call.arguments
                 recent.append((call.name, canonical))
                 if len(recent) >= 3 and recent[-1] == recent[-2] == recent[-3]:
                     raise Stop("loop_detected")
@@ -452,12 +570,19 @@ async def run(
                 result.tool_calls += 1
                 counts["web_search" if call.name == "web_images" else call.name] += 1
                 output = await invoke(
-                    tools.execute(
+                    references.reopen(call)
+                    if references is not None and call.name == "reopen_result"
+                    else tools.execute(
                         call, min(125 if limits.code_mode else 15, remaining())
                     )
                 )
                 if not isinstance(output, dict):
                     raise ValueError("invalid_tool_response")
+                if call.name == "update_plan" and "error" not in output:
+                    last_plan = canonical, dict(output)
+                from services.orchestrator.source_truth import tool_result_urls
+
+                tool_urls.update(tool_result_urls(output))
                 if (
                     retry_web
                     and not retried
@@ -473,6 +598,19 @@ async def run(
                     )
                     pending_calls.append(retry)
                     retried = True
+                if call.name in {"web_search", "web_fetch"} and "error" not in output:
+                    data = output.get("data", output)
+                    if isinstance(data, dict):
+                        if isinstance(data.get("url"), str):
+                            retrieved.add(str(data["url"]))
+                        rows = data.get("results")
+                        if isinstance(rows, list):
+                            retrieved.update(
+                                str(row["link"])
+                                for row in rows
+                                if isinstance(row, dict)
+                                and isinstance(row.get("link"), str)
+                            )
                 if (
                     call.name == "web_search"
                     and not counts["web_fetch"]
@@ -482,14 +620,24 @@ async def run(
 
                     data = output.get("data", output)
                     rows = data.get("results") if isinstance(data, dict) else None
-                    if requested_page_read(query.question) and isinstance(rows, list):
+                    if requested_page_read(
+                        query.question,
+                        tuple(str(m.get("content", "")) for m in (history or [])),
+                    ) and isinstance(rows, list):
+                        from services.orchestrator.link_requests import page_request
+
+                        reads: list[Call] = list(initial_calls)
                         for row in rows:
+                            if len(reads) >= 3:
+                                break
                             if isinstance(row, dict) and isinstance(
                                 row.get("link"), str
                             ):
-                                initial_calls = (
+                                reads.append(
                                     Call(
-                                        call.id + "-read",
+                                        call.id
+                                        + "-read"
+                                        + (str(len(reads)) if reads else ""),
                                         "web_fetch",
                                         json.dumps(
                                             {
@@ -497,9 +645,21 @@ async def run(
                                                 "query": query.question,
                                             }
                                         ),
-                                    ),
+                                    )
                                 )
-                                break
+                                if len(reads) >= (
+                                    3
+                                    if page_request(
+                                        query.question,
+                                        tuple(
+                                            str(m.get("content", ""))
+                                            for m in (history or [])
+                                        ),
+                                    )
+                                    else 1
+                                ):
+                                    break
+                        initial_calls = tuple(reads)
                 event: Message = {
                     "tool": call.name,
                     "arguments": call.arguments,
@@ -515,17 +675,20 @@ async def run(
                         }
                     )
                 )
+                if references is not None:
+                    await references.retain(call, output, messages)
+                else:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": json.dumps(output, ensure_ascii=False),
+                        }
+                    )
                 if call.name in terminal_tools and "error" not in output:
                     result.text = "".join(answer_parts)
                     result.state = "done"
                     return result
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": json.dumps(output, ensure_ascii=False),
-                    }
-                )
     except Stop as exc:
         result.reason = str(exc)
     except ValidationError as exc:
@@ -551,6 +714,20 @@ async def run(
         f"limit {limits.wall_clock:.3f} seconds. "
         f"Searches: {counts['web_search']}; limit 3. Fetches: {counts['web_fetch']}; limit 8."
     )
+    if links_recovered:
+        from services.orchestrator.link_requests import fallback_terms, unavailable
+
+        result.text = (
+            unavailable(
+                fallback_terms(
+                    query.question,
+                    tuple(str(m.get("content", "")) for m in (history or [])),
+                ),
+                query.lang,
+            )
+            + "\n\n"
+            + result.text
+        )
     if isinstance(result, CodeResult) and result.limit_stop:
         result.text += (
             " Required/measured "

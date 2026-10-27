@@ -1,5 +1,10 @@
 # ATLAS
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/svg/atlas-logotype-dark.svg">
+  <img src="assets/brand/svg/atlas-logotype.svg" alt="Atlas" width="314">
+</picture>
+
 I started Atlas because I want to keep control over our data, something Claude
 and ChatGPT do not allow in the way I need. My aim is an agentic AI assistant
 platform close to their performance while enabling digital sovereignty.
@@ -56,6 +61,16 @@ http://localhost:3000 and create the first administrator account. Use
 `./atlas setup --http-port 3100` to choose another port. Step by step:
 [Docker quickstart](docs/quickstart.md).
 
+For the OpenAI-compatible developer API, use `./atlas setup --api` (or
+`./atlas setup --reconfigure --api` for an existing installation), then
+`./atlas api-key create editor --daily-requests 20`. This prints the path to a
+mode-600 key file; only an explicit `--show` prints the key. Point your client at
+`http://127.0.0.1:3001/v1`, read that file as its API key, and use model
+`atlas-code`. Manage keys with `./atlas api-key list` and
+`./atlas api-key revoke editor`. The API uses your selected provider; it is opt-in
+and creates no key automatically. Set `ATLAS_API_PORT` for another port or
+`ATLAS_API_BIND=0.0.0.0` to opt into listening on all interfaces.
+
 **Limitations of the Docker install.** It is meant for evaluation:
 
 - **No image generation.** Generating images needs a GPU host (full installation).
@@ -72,6 +87,8 @@ http://localhost:3000 and create the first administrator account. Use
 
 Requests for a missing feature get a clear "not enabled on this installation"
 answer.
+
+Set `ATLAS_REMOVE_OPEN_WEBUI_SUFFIX=1` only for a deployment with at most 50 users in any rolling 30-day period, written permission from Open WebUI, or an enterprise license.
 
 ### 🚀 Get the full benefits: full installation
 

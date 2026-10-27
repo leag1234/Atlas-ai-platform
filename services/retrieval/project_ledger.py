@@ -47,6 +47,8 @@ KINDS = frozenset(
         "file_purged",
         "extraction_completed",
         "context_selected",
+        "memory_changed",
+        "location_used",
         *MODEL_KINDS,
         "approval_requested",
         "approval_decided",
@@ -59,6 +61,19 @@ KINDS = frozenset(
         "retention_applied",
         "administrative_access",
         "repository_action",
+        "runner_code_egress_approved",
+        "runner_code_egress_revoked",
+        "runner_session_opened",
+        "runner_session_closed",
+        "runner_command_requested",
+        "runner_command_approved",
+        "runner_command_denied",
+        "runner_command_started",
+        "runner_command_completed",
+        "runner_command_failed",
+        "runner_command_cancelled",
+        "runner_command_unknown",
+        "runner_file_fetched",
     }
 )
 
@@ -139,9 +154,10 @@ def _model(value: Mapping[str, Any] | None, kind: str, counts: Json) -> Json | N
         "transmission",
     }
     if (
-        set(value) != required
+        not required <= set(value)
+        or set(value) - required - {"context"}
         or value["purpose"]
-        not in {"generation", "embedding", "rerank", "ocr", "vision"}
+        not in {"generation", "embedding", "rerank", "ocr", "vision", "session_state"}
         or value["transmission"]
         not in {"not_sent", "sent", "acknowledged", "possibly_sent"}
     ):
@@ -163,6 +179,10 @@ def _model(value: Mapping[str, Any] | None, kind: str, counts: Json) -> Json | N
         raise ProjectError(422, "invalid_request")
     if not isinstance(value["provider_ref"], str) or not value["provider_ref"]:
         raise ProjectError(422, "invalid_request")
+    if "context" in value:
+        from services.retrieval.project_work_contract import validate
+
+        validate("ContextUsage", value["context"])
     model_counts = _bytes(value["byte_counts"])
     if model_counts != counts:
         raise ProjectError(422, "invalid_request")
@@ -190,10 +210,15 @@ def append(
     session_id: str | None = None,
     approval_id: str | None = None,
     model_dispatch: Mapping[str, Any] | None = None,
+    context_clearing: Mapping[str, Any] | None = None,
+    context_compaction: Mapping[str, Any] | None = None,
+    runner: Mapping[str, Any] | None = None,
+    memory_change: Mapping[str, Any] | None = None,
     audit_record: Mapping[str, Any] | None = None,
     event_id: str | None = None,
     timestamp: str | None = None,
     cleanup: bool = False,
+    transcript: bool = False,
 ) -> Json:
     """Append once and queue the exact payload in the caller's authorized transaction."""
     if scope.project is None:
@@ -206,7 +231,27 @@ def append(
         "unknown",
     }:
         raise ProjectError(422, "invalid_request")
-    if cleanup:
+    if transcript:
+        if (
+            kind not in MODEL_KINDS | {"context_selected", "location_used"}
+            or not conversation_id
+        ):
+            raise ProjectError(403, "permission_denied")
+        row = scope.db.execute(
+            "SELECT data FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='turn' AND data->>'request_id'=%s",
+            (scope.identity.org, scope.project_id, request_id),
+        ).fetchone()
+        if (
+            row is None
+            or row["data"]["created_by_member_id"] != scope.identity.member
+            or row["data"]["conversation_id"] != conversation_id
+        ):
+            raise ProjectError(404, "not_found")
+        scope.authorize(
+            "POST",
+            ["conversations"] if row["data"]["action"] == "chat" else ["work-sessions"],
+        )
+    elif cleanup:
         # Internal cleanup records survive archival; no public write permission
         # changes. Only the broker's terminal approval audit uses this path.
         if (
@@ -256,6 +301,36 @@ def append(
         "model_dispatch": _model(model_dispatch, kind, counts),
         "audit_record": dict(audit_record) if audit_record is not None else None,
     }
+    if context_clearing is not None:
+        from services.retrieval.project_work_contract import validate
+
+        validate("ContextClearing", context_clearing)
+        if kind != "context_selected":
+            raise ProjectError(422, "invalid_request")
+        event["context_clearing"] = dict(context_clearing)
+    if runner is not None:
+        from services.retrieval.project_work_contract import validate
+
+        validate("RunnerAudit", runner)
+        if not kind.startswith("runner_"):
+            raise ProjectError(422, "invalid_request")
+        event["runner"] = dict(runner)
+    if memory_change is not None:
+        if kind != "memory_changed" or set(memory_change) != {
+            "id",
+            "revision",
+            "status",
+            "supersedes",
+        }:
+            raise ProjectError(422, "invalid_request")
+        event["memory_change"] = dict(memory_change)
+    if context_compaction is not None:
+        from services.retrieval.project_work_contract import validate
+
+        validate("ContextCompaction", context_compaction)
+        if kind != "context_selected":
+            raise ProjectError(422, "invalid_request")
+        event["context_compaction"] = dict(context_compaction)
     existing = scope.db.execute(
         "SELECT data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND event_id=%s",
         (scope.identity.org, event["project_id"], event["event_id"]),

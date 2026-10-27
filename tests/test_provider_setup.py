@@ -164,7 +164,11 @@ class TrialBoundaryTests(unittest.TestCase):
         services = compose["services"]
         self.assertEqual(
             set(name for name, value in services.items() if "ports" in value),
-            {"frontend", "ollama"},
+            {"devapi", "frontend", "ollama"},
+        )
+        self.assertEqual(services["devapi"]["profiles"], ["api"])
+        self.assertTrue(
+            services["devapi"]["ports"][0].startswith("${ATLAS_API_BIND:-127.0.0.1}:")
         )
         self.assertEqual(services["ollama"]["profiles"], ["local"])
         self.assertEqual(
@@ -220,4 +224,7 @@ class TrialBoundaryTests(unittest.TestCase):
             self.assertIn("Code mode is unavailable", response.json()["message"])
             response = client.post("/v1/audio/transcriptions")
             self.assertEqual(response.status_code, 503)
-            self.assertIn("Speech is unavailable", response.json()["message"])
+            self.assertEqual(
+                response.json()["message"],
+                "Speech is not enabled on this installation.",
+            )

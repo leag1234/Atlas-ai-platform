@@ -21,6 +21,12 @@ from services.orchestrator.deadline import request_deadline
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.model import GatewayError
+from services.retrieval.project_identity import ProjectError
+from services.orchestrator.cancellation import (
+    cancelled_by_user,
+    register as register_cancellation,
+    unregister as unregister_cancellation,
+)
 from packages.configuration import (
     configuration_names,
     guest_configuration_failure,
@@ -43,7 +49,7 @@ def response(
         else "0.10"
     )
     display_deadline = payload.timeout_seconds
-    if payload.code_mode:
+    if payload.code_mode or payload.project_action == "work":
         from services.orchestrator.code_mode import settings
 
         ceiling = str(settings().cost)
@@ -122,10 +128,22 @@ def response(
 
             if not text and not final:
                 return
+            # Scoped processing buffers and validates the canonical answer before
+            # persistence. Its source authority is unrelated to legacy project IDs.
+            if payload.org_id:
+                if final:
+                    await queue.put(
+                        {
+                            "delta": {"content": text},
+                            "atlas": {"turn": turn, "phase": "generating"},
+                        }
+                    )
+                return
             pre_rendered = final and text == item.reponse
             temporary = Interaction()
             from services.orchestrator.source_truth import (
                 drawing_references,
+                clean_citation_residue,
                 inline_source_markers,
                 provider_reference_markers,
                 visible_sources,
@@ -170,11 +188,13 @@ def response(
                         )
                     },
                 )
+                temporary.reponse = clean_citation_residue(temporary.reponse)
                 # JSON finalization already numbers links before appending the
-                # server's source details. Do not rewrite that footer as inline links.
+                # server's source details. Nearby also supplies numbered, named
+                # links: numeric-only link labels are misparsed by Open WebUI.
                 render_sources = (
                     provider_reference_markers
-                    if pre_rendered
+                    if pre_rendered or item.task_type == "nearby"
                     else inline_source_markers
                 )
                 temporary.reponse = render_sources(
@@ -211,6 +231,9 @@ def response(
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
             nonlocal received_content
+            if isinstance(event.get("project"), dict):
+                await queue.put(event)
+                return
             if payload.code_mode and isinstance(event.get("code"), dict):
                 code = event["code"]
                 assert isinstance(code, dict)
@@ -459,8 +482,22 @@ def response(
                 await queue.put({"finish": True})
             except asyncio.CancelledError:
                 item.state = "cancelled"
-                item.erreurs.append("cancelled")
+                if cancelled_by_user(
+                    str(payload.cancel_id) if payload.cancel_id is not None else None
+                ):
+                    item.state = "cancelled_by_user"
+                    item.erreurs.append("cancelled_by_user")
+                    item.rejection = {
+                        "code": "cancelled_by_user",
+                        "message": "Stopped by user.",
+                    }
+                else:
+                    item.erreurs.append("cancelled")
                 raise
+            except ProjectError as exc:
+                item.state = "error"
+                item.erreurs.append(str(exc.body["error"]))
+                await queue.put({"error": exc.body})
             except TimeoutError:
                 item.state = "error"
                 item.erreurs.append("stream_error")
@@ -551,12 +588,20 @@ def response(
             await queue.put(None)
 
         task = asyncio.create_task(produce())
+        cancel_id = str(payload.cancel_id) if payload.cancel_id is not None else None
+        if cancel_id is not None:
+            register_cancellation(cancel_id, task)
         try:
             yield heartbeat()
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=1)
                 except TimeoutError:
+                    # A direct user cancellation can interrupt the producer while
+                    # it is finalizing, before it can enqueue the sentinel.
+                    # Never leave the SSE response (and its budget finally) orphaned.
+                    if task.done():
+                        break
                     last_activity = time.monotonic()
                     if not answer_started:
                         yield heartbeat()
@@ -565,8 +610,29 @@ def response(
                     continue
                 if event is None:
                     break
+                if isinstance(event.get("project"), dict):
+                    project_event = event["project"]
+                    assert isinstance(project_event, dict)
+                    yield (
+                        "event: atlas.project\nid: "
+                        + str(project_event["seq"])
+                        + "\ndata: "
+                        + json.dumps(project_event)
+                        + "\n\n"
+                    )
+                    continue
                 if "error" in event:
-                    output = event
+                    metadata = event.get("atlas")
+                    output = {
+                        **event,
+                        "atlas": {
+                            **(metadata if isinstance(metadata, dict) else {}),
+                            "context": item.context_samples[-1]
+                            if item.context_samples
+                            else None,
+                            "context_samples": item.context_samples,
+                        },
+                    }
                 else:
                     output = {
                         **base,
@@ -590,6 +656,10 @@ def response(
                             "total_tokens": sum(item.tokens.values()),
                         }
                         output["atlas"] = {
+                            "context": item.context_samples[-1]
+                            if item.context_samples
+                            else None,
+                            "context_samples": item.context_samples,
                             "images": item.images,
                             "files": item.files,
                             "terminal_commands": item.terminal_commands,
@@ -645,6 +715,8 @@ def response(
             if not task.done():
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+            if cancel_id is not None:
+                unregister_cancellation(cancel_id)
             item.latence_ms["total"] = (time.monotonic() - started) * 1000
             write_interaction(
                 item,

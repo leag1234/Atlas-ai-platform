@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
 from provider_retry import (
+    ModelUnavailableError,
     ProviderResponseError,
     TransientProviderError,
     RetryLedger,
@@ -27,7 +28,7 @@ from decimal import Decimal
 from packages.limits import LimitError, ProviderLimitError
 from packages.validation import numeric_limit, malformed_tool_name
 from packages.tool_history import final_messages
-from serverless import ServerlessPolicy
+from serverless import ServerlessPolicy, classify_task
 
 
 _response_timeout: ContextVar[float | None] = ContextVar(
@@ -208,6 +209,7 @@ async def attempt(
             if request.tools and not answer_only
             else {}
         ),
+        **provider_settings.json_options(request.response_format),
         "max_tokens": request.max_tokens,
         "temperature": 0,
         "reasoning_effort": "none",
@@ -244,7 +246,12 @@ async def attempt(
         ) as session:
             async with session.post(
                 endpoint + "/chat/completions",
-                json=provider_settings.request_options(body),
+                json=provider_settings.request_options(
+                    body,
+                    role="vision"
+                    if classify_task(request.messages) == "vision"
+                    else ServerlessPolicy().public_profiles.get(request.profile or ""),
+                ),
                 headers={"Authorization": "Bearer " + provider_settings.api_key()},
                 allow_redirects=False,
             ) as response:
@@ -259,6 +266,12 @@ async def attempt(
                     )
                     if response.status in (502, 503, 504):
                         raise TransientProviderError("provider_error")
+                    if (
+                        response.status in (400, 404)
+                        and message is not None
+                        and "model not found" in message.lower()
+                    ):
+                        raise ModelUnavailableError("model_unavailable")
                     raise ProviderResponseError(response.status)
                 async for piece in response.content.iter_chunked(16384):
                     for event in decoder.feed(piece):

@@ -42,6 +42,32 @@ from services.retrieval.store import Store
 WEBUI_IMAGE = "ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933"
 SEARXNG_IMAGE = "searxng/searxng:2026.10.17-1c10abe2d@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e"
 
+# Open WebUI v0.11.3's shipped shell references these paths. Keep its shell and
+# license notices untouched; these read-only mounts provide Atlas artwork there.
+BRAND_ASSET_MOUNTS = (
+    ("assets/brand/png/atlas-symbol-512.png", "/app/build/favicon.png"),
+    ("assets/brand/png/atlas-symbol-512.png", "/app/build/static/favicon.png"),
+    ("assets/brand/png/atlas-symbol-128.png", "/app/build/static/favicon-96x96.png"),
+    ("assets/brand/svg/atlas-symbol.svg", "/app/build/static/favicon.svg"),
+    (
+        "services/orchestrator/static/brand/atlas-symbol.ico",
+        "/app/build/static/favicon.ico",
+    ),
+    ("assets/brand/png/atlas-symbol-256.png", "/app/build/static/apple-touch-icon.png"),
+    ("assets/brand/png/atlas-symbol-512.png", "/app/build/static/logo.png"),
+    ("assets/brand/png/atlas-symbol-512.png", "/app/build/static/splash.png"),
+    ("assets/brand/png/atlas-symbol-dark-512.png", "/app/build/static/splash-dark.png"),
+    (
+        "assets/brand/png/atlas-symbol-256.png",
+        "/app/build/static/web-app-manifest-192x192.png",
+    ),
+    (
+        "assets/brand/png/atlas-symbol-512.png",
+        "/app/build/static/web-app-manifest-512x512.png",
+    ),
+    ("services/orchestrator/static/brand/manifest.json", "/app/build/manifest.json"),
+)
+
 
 def stable_mode() -> bool:
     """Whether this process is the separately deployed stable instance."""
@@ -145,6 +171,13 @@ def require_stable_configuration() -> None:
             raise RuntimeError("invalid_configuration: ATLAS_TRUSTED_EMAIL_HEADER")
 
 
+OPENWEBUI_KEY_ENDPOINTS = (
+    "/api/models",
+    "/api/chat/completions",
+    "/api/v1/chat/completions",
+)
+
+
 def stable_webui_options() -> list[str]:
     """Pinned Open WebUI trusted-header settings, absent outside stable mode.
 
@@ -154,7 +187,17 @@ def stable_webui_options() -> list[str]:
     """
     if not stable_mode():
         return []
+    # Owner decision 2026-10-27: Open WebUI keys for a tester group until Atlas
+    # keys (design 19, K-A) replace them; off unless the operator opts in, and
+    # limited to the model list and chat completions.
+    api_keys = os.environ.get("ATLAS_OPENWEBUI_API_KEYS") == "1"
     return [
+        "-e",
+        "ENABLE_API_KEYS=" + str(api_keys),
+        "-e",
+        "ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS=True",
+        "-e",
+        "API_KEYS_ALLOWED_ENDPOINTS=" + ",".join(OPENWEBUI_KEY_ENDPOINTS),
         "-e",
         "WEBUI_AUTH=True",
         "-e",
@@ -252,6 +295,10 @@ def webui(name: str, persistent: bool) -> None:
         "-e",
         "ENABLE_VERSION_UPDATE_CHECK=False",
         "-e",
+        "ENABLE_EVALUATION_ARENA_MODELS=False",
+        "-e",
+        "ATLAS_REMOVE_OPEN_WEBUI_SUFFIX",
+        "-e",
         "TERMINAL_SERVER_CONNECTIONS",
         "-e",
         f"OPENAI_API_BASE_URL=http://{gateway}:{ports.port('adapter')}/v1",
@@ -313,6 +360,15 @@ def webui(name: str, persistent: bool) -> None:
             str(Path("services/orchestrator/chat-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/chat-ui.js:ro",
             "-v",
+            str(Path("services/orchestrator/brand-ui.js").resolve())
+            + ":/app/backend/open_webui/static/atlas/brand-ui.js:ro",
+            "-v",
+            str(Path("assets/brand").resolve())
+            + ":/app/backend/open_webui/static/atlas/brand:ro",
+            "-v",
+            str(Path("services/orchestrator/static/nearby.css").resolve())
+            + ":/app/backend/open_webui/static/atlas/nearby.css:ro",
+            "-v",
             str(Path("services/orchestrator/static/fonts").resolve())
             + ":/app/backend/open_webui/static/atlas/fonts:ro",
             "-v",
@@ -320,9 +376,12 @@ def webui(name: str, persistent: bool) -> None:
             + ":/app/backend/open_webui/static/atlas/vendor:ro",
         ]
     )
+    for source, target in BRAND_ASSET_MOUNTS:
+        options.extend(["-v", str(Path(source).resolve()) + ":" + target + ":ro"])
     for resource in (
         "packages/__init__.py",
         "packages/language.py",
+        "packages/turn_attachments.py",
         "prompts/activity-labels.json",
     ):
         options.extend(

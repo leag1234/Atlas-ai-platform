@@ -1,4 +1,4 @@
-"""Install the managed image/document inlet before accepting any accounts.
+"""Install the managed image/document inlet and public model before accounts.
 
 Source: open-webui v0.11.3 backend/open_webui/{config,models/functions}.py,
 read 2026-10-22. Runs inside that pinned image with its own dependencies.
@@ -33,6 +33,35 @@ async def main() -> None:
     )
     if result is None:
         raise RuntimeError("attachment_inlet_activation_failed")
+
+    from open_webui.models.models import ModelForm, ModelMeta, ModelParams, Models  # type: ignore[import-not-found]  # runs inside the Open WebUI image
+    from packages.profiles import MODEL_PROFILE_IMAGE_URL, PROFILES
+
+    for profile in PROFILES:
+        public = profile == PROFILES[0]
+        form = ModelForm(
+            id=profile,
+            name="Atlas" if public else profile,
+            meta=ModelMeta(description="", profile_image_url=MODEL_PROFILE_IMAGE_URL),
+            params=ModelParams(),
+            access_grants=(
+                [
+                    {
+                        "principal_type": "user",
+                        "principal_id": "*",
+                        "permission": "read",
+                    }
+                ]
+                if public
+                else []
+            ),
+        )
+        if await Models.get_model_by_id(profile) is None:
+            configured = await Models.insert_new_model(form, "atlas-managed")
+        else:
+            configured = await Models.update_model_by_id(profile, form)
+        if configured is None:
+            raise RuntimeError("managed_model_configuration_failed")
     print("Atlas attachment inlet ready.", flush=True)
 
 

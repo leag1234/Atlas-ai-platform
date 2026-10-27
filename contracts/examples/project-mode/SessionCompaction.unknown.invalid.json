@@ -1,0 +1,13 @@
+{
+  "conversation_id": "10000000-0000-0000-0000-000000000001",
+  "request_id": "10000000-0000-0000-0000-000000000001",
+  "compaction": {
+    "turn_ids": [
+      "10000000-0000-0000-0000-000000000001"
+    ],
+    "tokens_removed": 100,
+    "tokens_added": 20,
+    "reason": "threshold"
+  },
+  "unknown": true
+}

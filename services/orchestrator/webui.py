@@ -6,13 +6,36 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.parse import quote
-from packages.profiles import PROFILES
+from packages.profiles import MODEL_PROFILE_IMAGE_URL, PROFILES
 from packages.ports import atlas_ports
 
 
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args: Any, **kwargs: Any) -> None:
         return None
+
+
+def managed_model(profile: str) -> dict[str, Any]:
+    """Return the Open WebUI override without changing the gateway profile id."""
+    public = profile == PROFILES[0]
+    return {
+        "id": profile,
+        "name": "Atlas" if public else profile,
+        "base_model_id": None,
+        "params": {},
+        "meta": {"description": "", "profile_image_url": MODEL_PROFILE_IMAGE_URL},
+        "access_grants": (
+            [
+                {
+                    "principal_type": "user",
+                    "principal_id": "*",
+                    "permission": "read",
+                }
+            ]
+            if public
+            else []
+        ),
+    }
 
 
 def configure(
@@ -79,22 +102,7 @@ def configure(
     if trusted_headers:
         for profile in PROFILES:
             current = call("/models/model?id=" + quote(profile))
-            if current is not None:
-                continue
             call(
-                "/models/create",
-                {
-                    "id": profile,
-                    "name": profile,
-                    "base_model_id": None,
-                    "params": {},
-                    "meta": {"description": "ATLAS managed profile"},
-                    "access_grants": [
-                        {
-                            "principal_type": "user",
-                            "principal_id": "*",
-                            "permission": "read",
-                        }
-                    ],
-                },
+                "/models/model/update" if current is not None else "/models/create",
+                managed_model(profile),
             )

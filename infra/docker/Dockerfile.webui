@@ -1,11 +1,27 @@
 FROM ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933
-COPY packages/__init__.py packages/language.py /opt/atlas/packages/
+COPY packages/__init__.py packages/language.py packages/profiles.py packages/turn_attachments.py /opt/atlas/packages/
+COPY contracts/m21-profiles.json /opt/atlas/contracts/m21-profiles.json
 COPY prompts/activity-labels.json /app/backend/prompts/activity-labels.json
 COPY infra/openwebui_images.py /opt/atlas/filter.py
 COPY infra/docker/webui_bootstrap.py /opt/atlas/webui_bootstrap.py
 COPY infra/docker/webui-start.sh /opt/atlas/start.sh
 COPY services/orchestrator/chat-ui.css /app/backend/open_webui/static/atlas/chat-ui.css
 COPY services/orchestrator/chat-ui.js /app/backend/open_webui/static/atlas/chat-ui.js
+COPY services/orchestrator/brand-ui.js /app/backend/open_webui/static/atlas/brand-ui.js
 COPY services/orchestrator/static/ /app/backend/open_webui/static/atlas/
-RUN python -c 'from pathlib import Path; p=Path("/app/build/index.html"); p.write_text(p.read_text().replace("</head>", "<link rel=\"stylesheet\" href=\"/static/atlas/chat-ui.css\"><script src=\"/static/atlas/chat-ui.js\"></script></head>", 1))'
+COPY assets/brand/ /app/backend/open_webui/static/atlas/brand/
+COPY assets/brand/png/atlas-symbol-512.png /app/build/favicon.png
+COPY assets/brand/png/atlas-symbol-512.png /app/build/static/favicon.png
+COPY assets/brand/png/atlas-symbol-128.png /app/build/static/favicon-96x96.png
+COPY assets/brand/svg/atlas-symbol.svg /app/build/static/favicon.svg
+COPY services/orchestrator/static/brand/atlas-symbol.ico /app/build/static/favicon.ico
+COPY assets/brand/png/atlas-symbol-256.png /app/build/static/apple-touch-icon.png
+COPY assets/brand/png/atlas-symbol-512.png /app/build/static/logo.png
+COPY assets/brand/png/atlas-symbol-512.png /app/build/static/splash.png
+COPY assets/brand/png/atlas-symbol-dark-512.png /app/build/static/splash-dark.png
+COPY assets/brand/png/atlas-symbol-256.png /app/build/static/web-app-manifest-192x192.png
+COPY assets/brand/png/atlas-symbol-512.png /app/build/static/web-app-manifest-512x512.png
+COPY services/orchestrator/static/brand/manifest.json /app/build/manifest.json
+RUN python -c 'from pathlib import Path; p=Path("/app/build/index.html"); p.write_text(p.read_text().replace("</head>", "<link rel=\"stylesheet\" href=\"/static/atlas/chat-ui.css\"><script src=\"/static/atlas/brand-ui.js\"></script><script src=\"/static/atlas/chat-ui.js\"></script></head>", 1))'
+RUN python -c 'from pathlib import Path; p=Path("/app/build/index.html"); p.write_text(p.read_text().replace("</head>", "<link rel=\"stylesheet\" href=\"/project-mode/style.css\"><script defer src=\"/project-mode/locale.js\"></script><script defer src=\"/project-mode/client.js\"></script></head>", 1))'
 ENTRYPOINT ["bash", "/opt/atlas/start.sh"]

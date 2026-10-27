@@ -1,0 +1,552 @@
+openapi: 3.1.0
+info:
+  title: Remote runners
+  version: 1.0.0
+  description: Approved by the supervisor, 2026-10-25. Additive Linux contract.
+paths:
+  /api/atlas/orgs/{org}/runner-targets:
+    get:
+      operationId: get__api_atlas_orgs_org_runner-targets
+      responses:
+        '200':
+          description: Authorized response; no private keys
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+    post:
+      operationId: post__api_atlas_orgs_org_runner-targets
+      responses:
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+        '201':
+          description: Authorized response; no private keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunnerTarget'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunnerTargetInput'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  /api/atlas/orgs/{org}/runner-targets/credentials:
+    post:
+      operationId: post__api_atlas_orgs_org_runner-targets_credentials
+      responses:
+        '200':
+          description: Authorized response; no private keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneratedCredential'
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+        '410':
+          description: The public key was already shown; generate a new credential
+            if lost.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id001
+              type: object
+              additionalProperties: false
+              properties: {}
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  /api/atlas/orgs/{org}/runner-targets/{target}:
+    put:
+      operationId: put__api_atlas_orgs_org_runner-targets_target
+      responses:
+        '200':
+          description: Authorized response; no private keys
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunnerTargetInput'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+      - name: If-Match
+        in: header
+        required: true
+        schema:
+          type: string
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: target
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  /api/atlas/orgs/{org}/runner-targets/{target}/probe:
+    post:
+      operationId: post__api_atlas_orgs_org_runner-targets_target_probe
+      responses:
+        '200':
+          description: Authorized response; no private keys
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id001
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: target
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  /api/atlas/orgs/{org}/projects/{project}/runner-targets:
+    get:
+      operationId: get__api_atlas_orgs_org_projects_project_runner-targets
+      responses:
+        '200':
+          description: Authorized response; no private keys
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  /api/atlas/orgs/{org}/projects/{project}/runner-targets/{target}/grant:
+    put:
+      operationId: put__api_atlas_orgs_org_projects_project_runner-targets_target_grant
+      responses:
+        '200':
+          description: Authorized response; no private keys
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantInput'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          maxLength: 200
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: target
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  /internal/atlas/execution/remote:
+    post:
+      operationId: post__internal_atlas_execution_remote
+      responses:
+        '200':
+          description: Authorized response; no private keys
+        '403':
+          description: Policy or role denied
+        '404':
+          description: Not found in scope
+      security:
+      - ExecutionSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunnerExecution'
+    parameters: []
+  /api/atlas/orgs/{org}/projects/{project}/runner-targets/{target}/commands:
+    get:
+      operationId: listRunnerCommands
+      responses:
+        '200':
+          description: Up to 100 tenant-scoped command audit records; no log contents.
+    parameters:
+    - name: org
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: project
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: target
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+components:
+  schemas:
+    RunnerTargetInput:
+      additionalProperties: false
+      properties: &id006
+        name:
+          maxLength: 120
+          minLength: 1
+          type: string
+        os:
+          enum: [linux, macos]
+          default: linux
+          type: string
+        arch:
+          default: unknown
+          maxLength: 100
+          type: string
+        shell:
+          const: posix
+          default: posix
+          type: string
+        host:
+          pattern: ^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$
+          type: string
+        port:
+          default: 22
+          maximum: 65535
+          minimum: 1
+          type: integer
+        user:
+          pattern: ^[a-z_][a-z0-9_-]{0,63}$
+          type: string
+        work_root:
+          maxLength: 500
+          pattern: ^/[A-Za-z0-9_/-]+$
+          type: string
+        credential_ref:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        credential_fingerprint:
+          pattern: ^SHA256:[A-Za-z0-9+/]{43}$
+          type: string
+        host_key_fingerprints:
+          items:
+            type: string
+          maxItems: 8
+          minItems: 1
+          type: array
+        jump_target_id:
+          anyOf:
+          - pattern: ^[a-f0-9-]{36}$
+            type: string
+          - type: 'null'
+          default: null
+        capabilities:
+          items:
+            type: string
+          maxItems: 20
+          type: array
+        permission_mode:
+          default: rules
+          enum:
+          - ask
+          - rules
+          - auto
+          type: string
+        allow_rules:
+          items:
+            type: string
+          maxItems: 100
+          type: array
+        deny_rules:
+          items:
+            type: string
+          maxItems: 100
+          type: array
+        sensitive_rules:
+          items:
+            type: string
+          maxItems: 100
+          type: array
+        max_parallel_sessions:
+          default: 2
+          maximum: 16
+          minimum: 1
+          type: integer
+        disk_quota_bytes:
+          default: 1073741824
+          maximum: 10737418240
+          minimum: 1048576
+          type: integer
+        monthly_minutes:
+          default: 300
+          maximum: 100000
+          minimum: 1
+          type: integer
+        same_locality:
+          default: false
+          type: boolean
+      required: &id007
+      - name
+      - host
+      - user
+      - work_root
+      - credential_ref
+      - credential_fingerprint
+      - host_key_fingerprints
+      type: object
+    RunnerExecution:
+      additionalProperties: false
+      properties:
+        session_id:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        request_id:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        generation:
+          minimum: 1
+          type: integer
+        operation:
+          enum:
+          - list
+          - prepare
+          - execute
+          - status
+          - fetch
+          - close
+          type: string
+        arguments:
+          anyOf:
+          - &id002
+            additionalProperties: false
+            properties:
+              capability:
+                anyOf:
+                - maxLength: 100
+                  type: string
+                - type: 'null'
+                default: null
+            type: object
+          - &id003
+            additionalProperties: false
+            properties:
+              target:
+                maxLength: 120
+                minLength: 1
+                type: string
+              command:
+                maxLength: 15000
+                minLength: 1
+                type: string
+              cwd:
+                default: .
+                maxLength: 1000
+                type: string
+              timeout_s:
+                default: 600
+                maximum: 1800
+                minimum: 1
+                type: integer
+              wait_s:
+                default: 5
+                maximum: 30
+                minimum: 0
+                type: integer
+            required:
+            - target
+            - command
+            type: object
+          - &id004
+            additionalProperties: false
+            properties:
+              command_id:
+                pattern: ^[a-f0-9-]{36}$
+                type: string
+              wait_s:
+                default: 5
+                maximum: 30
+                minimum: 0
+                type: integer
+              cancel:
+                default: false
+                type: boolean
+            required:
+            - command_id
+            type: object
+          - &id005
+            additionalProperties: false
+            properties:
+              target:
+                maxLength: 120
+                minLength: 1
+                type: string
+              path_or_glob:
+                maxLength: 1000
+                minLength: 1
+                type: string
+            required:
+            - target
+            - path_or_glob
+            type: object
+        snapshot_content:
+          anyOf:
+          - maxLength: 44739244
+            type: string
+          - type: 'null'
+          default: null
+      required:
+      - session_id
+      - request_id
+      - generation
+      - operation
+      type: object
+    list_targets: *id002
+    remote_run: *id003
+    remote_status: *id004
+    remote_fetch: *id005
+    GrantInput:
+      type: object
+      additionalProperties: false
+      required:
+      - enabled
+      properties:
+        enabled:
+          type: boolean
+    GeneratedCredential:
+      type: object
+      additionalProperties: false
+      required:
+      - credential_ref
+      - fingerprint
+      - public_key
+      properties:
+        credential_ref:
+          type: string
+          format: uuid
+        fingerprint:
+          type: string
+        public_key:
+          type: string
+          description: Public ed25519 key, shown only in this response; never a private
+            key.
+    RunnerTarget:
+      allOf:
+      - type: object
+        properties: *id006
+        required: *id007
+      - type: object
+        required:
+        - id
+        - revision
+        - status
+        properties:
+          id:
+            type: string
+            format: uuid
+          revision:
+            type: integer
+          status:
+            type: string
+            enum:
+            - available
+            - unavailable
+          last_probe:
+            type:
+            - object
+            - 'null'
+  securitySchemes:
+    SessionIdentity:
+      type: apiKey
+      in: cookie
+      name: session
+    ExecutionSecret:
+      type: apiKey
+      in: header
+      name: X-Atlas-Execution-Secret
+security:
+- SessionIdentity: []

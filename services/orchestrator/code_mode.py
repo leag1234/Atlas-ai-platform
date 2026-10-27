@@ -16,7 +16,8 @@ import yaml
 
 from packages.ports import atlas_ports
 from services.orchestrator.chat_schema import ChatRequest
-from services.orchestrator.code_tools import CodeTools, declarations
+from services.orchestrator.code_tools import CodeTools, WorkTools, declarations
+from services.orchestrator.code_verification import annotate, explicit_tests
 from services.orchestrator.code_workspace import Audit, Workspace, enabled, redact
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import (
@@ -26,6 +27,7 @@ from services.orchestrator.loop import (
     Model,
     Query,
     Turn,
+    ResultReferences,
     run,
 )
 from services.orchestrator.model import GatewayError, GatewayModel
@@ -55,6 +57,7 @@ def settings() -> Limits:
 class CodeModel(GatewayModel):
     """Keep gateway per-call ceilings, while the loop owns the larger turn budget."""
 
+    work_tools: Callable[[], list[dict[str, object]]] | None = None
     work_cost: Decimal | None = None
     work_per_call: Decimal = Decimal("0.10")
     work_unknown: bool = False
@@ -72,7 +75,7 @@ class CodeModel(GatewayModel):
         )
 
     def available_tools(self, messages: list[Message]) -> list[dict[str, object]]:
-        return self.tools
+        return self.work_tools() if self.work_tools is not None else self.tools
 
     async def complete(self, messages: list[Message], timeout: float) -> Turn:
         if self.work_check is not None:
@@ -86,6 +89,11 @@ class CodeModel(GatewayModel):
             self.spent = max(self.spent, before + reserved)
             self.work_unknown = True
             raise
+
+
+def configure_work_model(model: CodeModel, request: ChatRequest) -> None:
+    """One request configuration for public Work and its measurement adapter."""
+    model.configure_quality(request.model, request.max_tokens)
 
 
 CLAIM = re.compile(
@@ -133,10 +141,19 @@ async def execute_turn(
     tools: CodeTools,
     limits: Limits,
     workspace_context: dict[str, Any] | None = None,
+    references: ResultReferences | None = None,
 ) -> CodeResult:
     history: list[Message] = [
         {"role": m.role, "content": redact(m.text)} for m in request.messages[:-1]
     ]
+    from packages import context_usage
+
+    registered = context_usage.parts.get() or {}
+    for original, message in zip(request.messages[:-1], history):
+        if original.text in registered:
+            context_usage.register(
+                str(message["content"]), redact(registered[original.text])
+            )
     if workspace_context is not None:
         history.append(
             {
@@ -144,6 +161,12 @@ async def execute_turn(
                 "content": json.dumps(redact({"code_workspace": workspace_context})),
             }
         )
+    if workspace_context is not None:
+        from packages.context_usage import register
+
+        register(str(history[-1]["content"]), {"session_state": workspace_context})
+    if isinstance(tools, WorkTools):
+        tools.verification.explicit = explicit_tests(request.user_text)
     result = await run(
         Query(question=redact(request.user_text), lang=request.lang),
         model,
@@ -152,17 +175,25 @@ async def execute_turn(
         + Path("prompts/chat-agent.txt").read_text(),
         limits,
         history=history,
+        references=references,
     )
     assert isinstance(result, CodeResult)
-    result.text, replaced = honest(
-        redact(result.text), tools.test_evidence, request.lang
-    )
+    if isinstance(tools, WorkTools):
+        result.verification = tools.verification.status()
+        result.text, replaced = annotate(redact(result.text), result.verification)
+    else:
+        result.text, replaced = honest(
+            redact(result.text), tools.test_evidence, request.lang
+        )
     if replaced:
         await tools.emit(
             "honesty",
             label="Test claim corrected",
             status="completed",
-            output={"text": result.text},
+            output={
+                "text": result.text,
+                "verification": result.verification.model_dump(),
+            },
         )
     if result.limit_stop:
         await tools.emit(
@@ -264,6 +295,8 @@ async def process_code(request: ChatRequest, item: Interaction) -> None:
                 workspace_context,
             )
             item.reponse = result.text
+            item.tool_urls.extend(getattr(result, "tool_urls", set()))
+            item.verification = result.verification.model_dump()
             item.cout_eur = float(result.cost)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
             if result.reason:
@@ -407,8 +440,6 @@ class WorkExecution:
         from services.retrieval.project_identity import ProjectError
 
         bases = self.session["base_file_versions"]
-        if not bases:
-            return
         buffer = io.BytesIO()
         remaining = self.session["effective_limits"]["expanded_bytes"]
         with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
@@ -486,6 +517,7 @@ async def process_work(
     org_id: str,
     project_id: str,
     session_id: str,
+    collect_workspace: Callable[[Workspace], Awaitable[None]] | None = None,
 ) -> None:
     """Task-G handoff after verified identity and scoped conversation/context selection.
 
@@ -499,6 +531,9 @@ async def process_work(
     from services.orchestrator.code_tools import WorkTools
     from services.retrieval.project_identity import ProjectError
 
+    from services.orchestrator.project_transcript import work_dispatch
+
+    dispatch = work_dispatch.get()
     broker = ExecutionBroker(subject, str(UUID(org_id)), str(UUID(project_id)))
     status, session = await broker.public(
         "GET", "work-sessions/" + str(UUID(session_id))
@@ -522,6 +557,9 @@ async def process_work(
         acquired["session"],
         str(UUID(item.request_id.removeprefix("chatcmpl-"))),
     )
+    if dispatch is not None:
+        dispatch.session_id = session_id
+        dispatch.generation = execution.session["lease"]["generation"]
     workspace = execution.workspace()
     tools = WorkTools(workspace, execution, sink_context.get())
     ceiling = execution.session["effective_limits"]
@@ -535,6 +573,7 @@ async def process_work(
     started = time.monotonic()
     model: CodeModel | None = None
     result: CodeResult | None = None
+    nearby_usage: dict[str, Any] | None = None
     terminal = "failed"
     owner = asyncio.current_task()
     assert owner is not None
@@ -551,6 +590,48 @@ async def process_work(
     try:
         async with asyncio.timeout(limits.wall_clock):
             await workspace.prepare()
+            await execution.snapshot(workspace)
+            from services.orchestrator.location import location_dependent
+
+            if location_dependent(request.user_text) and (
+                request.location is None
+                or (request.location.position is None and not request.location.place)
+            ):
+                from services.orchestrator.nearby_chat import process_nearby
+
+                await execution.check()
+                count = await process_nearby(
+                    request,
+                    item,
+                    max_calls=min(8, limits.tool_calls),
+                    cost_limit=limits.cost,
+                    check=execution.check,
+                )
+                terminal = "completed" if item.state == "done" else "failed"
+                nearby_usage = dict(
+                    tool_calls=count,
+                    model_calls=0,
+                    elapsed_seconds=time.monotonic() - started,
+                    cost_eur=item.cout_eur,
+                    reserved_eur=0,
+                    unknown_eur=0,
+                    stored_bytes=0,
+                    input_tokens=0,
+                    output_tokens=0,
+                    tokens_estimated=False,
+                )
+                await tools.emit(
+                    "recap",
+                    label="Nearby places",
+                    status=terminal,
+                    output=dict(
+                        text=item.reponse,
+                        steps=count,
+                        cost_eur=item.cout_eur,
+                        file_version_ids=[],
+                    ),
+                )
+                return
             await tools.emit(
                 "workspace", label="Server workspace", status="completed", output={}
             )
@@ -561,20 +642,114 @@ async def process_work(
             if not isinstance(connected, CodeModel):
                 raise RuntimeError("Invalid Work model client")
             model = connected
-            model.configure_quality(code_profile(), request.max_tokens)
+            configure_work_model(model, request)
+            model.dispatch_hook = dispatch.publish if dispatch is not None else None
+            model.session_context = (
+                dispatch.session_context if dispatch is not None else None
+            )
             model.work_check = execution.check
             model.work_cost = limits.cost
             model.work_per_call = Decimal(str(ceiling["per_call_eur"]))
-            model.tools = declarations(scoped=True)
+            from services.orchestrator.work_tool_selection import (
+                WorkToolSelection,
+                select_group,
+            )
+
+            selected_files = []
+            for version in execution.session["base_file_versions"]:
+                status, file = await broker.public("GET", "files/" + version["file_id"])
+                if status != 200:
+                    raise ProjectError(status, str(file.get("error", "not_found")))
+                selected_files.append(file)
+            tools.selection = WorkToolSelection(
+                select_group(
+                    request.user_text,
+                    selected_files,
+                    bool(execution.session.get("repository_id")),
+                )
+            )
+            if os.environ.get("ATLAS_REMOTE_RUNNERS") == "1":
+                targets = await broker.call(
+                    "remote", dict(execution.fence(), operation="list", arguments={})
+                )
+                if targets.get("items"):
+                    tools.selection.enable_remote()
+            repository = None
+            if execution.session.get("repository_id"):
+                status, repositories = await broker.public("GET", "repositories")
+                if status != 200:
+                    raise ProjectError(status, "dependency_unavailable")
+                repository = next(
+                    (
+                        r
+                        for r in repositories["items"]
+                        if r["id"] == execution.session["repository_id"]
+                    ),
+                    None,
+                )
+            if request.location and location_dependent(request.user_text):
+                from services.orchestrator.nearby_chat import NearbyTools
+                from services.orchestrator.chat_pipeline import ChatTools
+
+                tools.nearby = NearbyTools(
+                    request.location,
+                    ChatTools(item),
+                    language=request.lang,
+                    max_calls=min(8, limits.tool_calls),
+                    cost_limit=limits.cost,
+                    check=execution.check,
+                )
+            references = None
+            if dispatch is not None:
+                from services.orchestrator.result_references import (
+                    ResultReferences as ScopedReferences,
+                )
+
+                references = ScopedReferences(
+                    dispatch.broker,
+                    str(request.conversation_id),
+                    execution.request_id,
+                    dispatch.generation,
+                )
+                tools.remote_references = references
+                tools.selection.reopen_enabled = True
+                tools.selection.memory_enabled = True
+                from services.orchestrator.project_memory_tools import MemoryTools
+
+                tools.memory = MemoryTools(
+                    dispatch.broker, dispatch.state, dispatch.generation
+                )
+            model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(
                 request,
                 model,
                 tools,
                 limits,
-                dict(root="/workspace", environment=execution.session["environment"]),
+                dict(
+                    root="/workspace",
+                    repository=repository,
+                    listing=await workspace.invoke("list_dir", {"path": "."}, 10),
+                    environment=execution.session["environment"],
+                    plan=execution.session.get("plan", []),
+                ),
+                **({"references": references} if references is not None else {}),
             )
+            if collect_workspace is not None:
+                await collect_workspace(workspace)
             item.reponse = result.text
+            item.tool_urls.extend(getattr(result, "tool_urls", set()))
+            item.verification = result.verification.model_dump()
+            if tools.nearby is not None and tools.nearby.result:
+                from services.orchestrator.nearby_chat import render
+                from services.orchestrator.location import LEDGER_LABEL
+
+                item.reponse = render(tools.nearby.result, request.lang)
+                item.location_used = LEDGER_LABEL
+                item.nearby_source = tools.nearby.result["source"]
+                item.retrieved_urls.extend(
+                    p["source"] for p in tools.nearby.result["places"]
+                )
             from services.orchestrator.file_results import project_deliverable_links
 
             for receipt in tools.deliverables:
@@ -583,23 +758,34 @@ async def process_work(
                     item.reponse += "\n\n" + links
             item.cout_eur = float(model.spent)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
+            reason = result.reason or next(iter(tools.validation_failures.values()), "")
+            terminal = (
+                "completed" if result.state == "done" and not reason else "failed"
+            )
+            item.state = "done" if terminal == "completed" else "failed"
+            if terminal == "failed":
+                reason = reason or result.state
+                item.erreurs.append(reason)
+                item.reponse += "\n\nWork failed: " + reason
             await tools.emit(
                 "recap",
-                label="Work turn complete",
-                status="completed",
+                label="Work turn complete"
+                if terminal == "completed"
+                else "Work failed: " + reason,
+                status=terminal,
                 output=dict(
                     text=item.reponse,
                     steps=result.tool_calls,
+                    verification=result.verification.model_dump(),
                     cost_eur=item.cout_eur,
                     file_version_ids=[r["file_version_id"] for r in tools.deliverables],
                 ),
             )
-            terminal = "completed"
-            item.state = "done"
     except asyncio.CancelledError:
         terminal = "cancelled"
         raise
     finally:
+        item.verification = tools.verification.status().model_dump()
         renewal.cancel()
         await asyncio.gather(renewal, return_exceptions=True)
         if model is not None:
@@ -626,10 +812,16 @@ async def process_work(
             else:
                 raise
         if cleanup_authorized:
+            if tools.nearby is not None:
+                tools.nearby.position = None
+            if request.location:
+                request.location.position = None
+                request.location.place = None
+                request.location = None
 
             async def finish() -> None:
                 await workspace.cleanup()
-                usage = None
+                usage = nearby_usage
                 if result is not None and model is not None and not model.work_unknown:
                     usage = dict(
                         tool_calls=result.tool_calls,
@@ -642,6 +834,11 @@ async def process_work(
                         input_tokens=model.input_tokens,
                         output_tokens=model.output_tokens,
                         tokens_estimated=False,
+                        **(
+                            {"context": dispatch.context}
+                            if dispatch is not None and dispatch.context is not None
+                            else {}
+                        ),
                     )
                 await execution.turn(
                     "release",

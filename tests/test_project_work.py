@@ -121,6 +121,212 @@ class ProjectWorkTests(ProjectIsolationTests):
         data.update(changes)
         return self.broker("turn", data)
 
+    def test_canonical_conversation_work_uses_one_lease_reservation(self) -> None:
+        conversation = self.request(
+            "POST",
+            self.project_path() + "/conversations",
+            "editor",
+            dict(title="Work report"),
+        )
+        self.assertEqual(conversation.status_code, 201, conversation.text)
+        session = self.request(
+            "POST",
+            self.project_path() + "/work-sessions",
+            "editor",
+            dict(
+                conversation_id=conversation.json()["id"],
+                folder_ids=[],
+                base_versions=[],
+            ),
+        )
+        self.assertEqual(session.status_code, 201, session.text)
+        payload = dict(
+            request_id=self.turn_id,
+            request=dict(
+                model="atlas",
+                org_id=self.org,
+                project_id=self.project,
+                conversation_id=conversation.json()["id"],
+                project_action="work",
+                work_session_id=session.json()["id"],
+                messages=[dict(role="user", content="Compare reports")],
+                stream=True,
+            ),
+        )
+        headers = {
+            "X-Atlas-Execution-Secret": os.environ["ATLAS_PROJECT_EXECUTION_SECRET"],
+            "X-Atlas-Execution-Audience": "atlas-retrieval-execution",
+            "X-Atlas-Project-Identity": sign(
+                self.identity("editor", self.project), self.key.encode()
+            ),
+            "Idempotency-Key": "work-transcript",
+        }
+        begun = self.client.post(
+            "/internal/atlas/transcript/begin", json=payload, headers=headers
+        )
+        self.assertEqual(begun.status_code, 201, begun.text)
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            self.assertEqual(scope.usage("daily_model_eur"), 0)
+        self.session = session.json()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            self.assertEqual(
+                scope.usage("daily_model_eur"),
+                self.session["effective_limits"]["cost_eur"],
+            )
+        self.error(self.acquire(), 409, "session_busy")
+        self.assertEqual(
+            self.turn(
+                "release", terminal_state="completed", cleanup_confirmed=True
+            ).status_code,
+            200,
+        )
+
+        from services.retrieval.project_work import empty_usage
+
+        finished = self.client.post(
+            "/internal/atlas/transcript/finish",
+            headers=dict(headers, **{"Idempotency-Key": "work-finish"}),
+            json=dict(
+                request_id=self.turn_id,
+                conversation_id=conversation.json()["id"],
+                state="completed",
+                content_refs=[],
+                usage=empty_usage(),
+                error=None,
+            ),
+        )
+        self.assertEqual(finished.status_code, 200, finished.text)
+        self.assertEqual(
+            finished.json()["usage"]["unknown_eur"],
+            self.session["effective_limits"]["cost_eur"],
+        )
+
+    def test_cancelled_transcript_keeps_recovery_usage_and_reason(self) -> None:
+        self.cancelled_transcript(reload=False)
+
+    def test_disconnected_cancelled_turn_is_reconciled_on_reload(self) -> None:
+        self.cancelled_transcript(reload=True)
+
+    def cancelled_transcript(self, *, reload: bool) -> None:
+        from services.retrieval.project_transcript import Transcript
+        from services.retrieval.project_work import Work, empty_usage
+        from services.retrieval.project_identity import ProjectError
+
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            transcript = Transcript(scope)
+            conversation = transcript.create(dict(title="Cancellation evidence"))
+            session = Work(scope).create(
+                dict(
+                    conversation_id=conversation["id"], folder_ids=[], base_versions=[]
+                )
+            )
+            request = dict(
+                model="atlas",
+                org_id=self.org,
+                project_id=self.project,
+                conversation_id=conversation["id"],
+                project_action="work",
+                work_session_id=session["id"],
+                messages=[dict(role="user", content="Prepare report")],
+                stream=True,
+            )
+            _, begun = transcript.begin(
+                dict(request_id=self.turn_id, request=request), "cancellation-evidence"
+            )
+            self.assertEqual(begun["turn"]["state"], "running")
+            work = Work(scope)
+            work.acquire(
+                dict(
+                    session_id=session["id"],
+                    request_id=self.turn_id,
+                    expected_revision=session["revision"],
+                    storage_bytes=0,
+                )
+            )
+            work.cancel(session["id"], dict(request_id=self.turn_id))
+            recovery = dict(
+                session_id=session["id"],
+                request_id=str(uuid4()),
+                generation=1,
+                operation="recover",
+                usage=None,
+                terminal_state=None,
+                cleanup_confirmed=False,
+            )
+            work.turn(recovery)
+            work.turn(
+                dict(
+                    recovery,
+                    generation=2,
+                    operation="release",
+                    terminal_state="cancelled",
+                    cleanup_confirmed=True,
+                )
+            )
+            if reload:
+                finished = transcript.turns(conversation["id"])[0]
+            else:
+                finished = transcript.finish(
+                    dict(
+                        request_id=self.turn_id,
+                        conversation_id=conversation["id"],
+                        state="failed",
+                        content_refs=[],
+                        usage=empty_usage(),
+                        error=ProjectError(
+                            409, "session_busy", "Work cancellation requested"
+                        ).body,
+                    )
+                )
+            self.assertEqual(finished["state"], "cancelled")
+            self.assertEqual(
+                finished["usage"]["unknown_eur"],
+                session["effective_limits"]["cost_eur"],
+            )
+            self.assertEqual(finished["usage"]["reserved_eur"], 0)
+            reloaded = transcript.turns(conversation["id"])[0]
+            self.assertEqual(reloaded["usage"], finished["usage"])
+            self.assertIn("cancelled", reloaded["content_refs"][-1]["text"])
+
+    def test_legacy_alias_resolves_only_the_current_scoped_session(self) -> None:
+        alias = str(uuid4())
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            value = files.get("work_session", self.session["id"])
+            value["legacy_session_id"] = alias
+            files.save(value)
+        response = self.request(
+            "GET", self.project_path() + "/work-sessions/" + alias, "editor"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id"], self.session["id"])
+        self.error(
+            self.request(
+                "GET",
+                self.project_path(self.second_project) + "/work-sessions/" + alias,
+                "admin",
+            ),
+            404,
+            "not_found",
+        )
+        self.error(
+            self.request(
+                "GET", self.project_path() + "/work-sessions/" + alias, "other"
+            ),
+            404,
+            "not_found",
+        )
+
     def test_concurrent_turns_and_cleanup_boundary(self) -> None:
         with ThreadPoolExecutor(max_workers=2) as workers:
             replies = list(workers.map(lambda _: self.acquire(), range(2)))
@@ -456,6 +662,8 @@ class ProjectWorkTests(ProjectIsolationTests):
                 (schema_root / "project_schema.sql").read_text()
                 + "\n"
                 + (schema_root / "project_work_schema.sql").read_text()
+                + "\n"
+                + (schema_root / "project_transcript_schema.sql").read_text()
             )
             migration.write_json(
                 bundle / "recovery.json", dict(files=migration.inventory(bundle))

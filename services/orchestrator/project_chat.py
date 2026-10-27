@@ -93,6 +93,20 @@ def render_project_citations(item: Interaction, project: str, answer: str) -> st
 
 
 async def process_project(request: ChatRequest, item: Interaction) -> None:
+    from services.orchestrator.code_ui import project_mode
+
+    if request.org_id is not None or project_mode() or request.project_action == "work":
+        from services.orchestrator.project_transcript import process_scoped_project
+
+        await process_scoped_project(request, item)
+        return
+    from services.orchestrator.location import location_dependent
+
+    if location_dependent(request.user_text):
+        from services.orchestrator.nearby_chat import process_nearby
+
+        await process_nearby(request, item)
+        return
     started = time.monotonic()
     project = request.project_id
     base = retrieval_url() + f"/projects/{project}"
@@ -126,23 +140,6 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
             "conversation_id": None,
         }
     )
-    if request.project_action == "work":
-        from services.orchestrator.code_mode import process_code
-
-        # Work remains an explicit, scoped action. Task H replaces the legacy
-        # workspace adapter while preserving this resolved history boundary.
-        await process_code(
-            request.model_copy(
-                update={
-                    "messages": scoped_messages,
-                    "lang": scoped.lang,
-                    "code_mode": True,
-                    "code_session_id": request.work_session_id,
-                }
-            ),
-            item,
-        )
-        return
     followup = is_followup(scoped_messages)
     iteration = image_iteration(scoped_messages)
     if followup or request.has_attachments or request.messages[-1].images:

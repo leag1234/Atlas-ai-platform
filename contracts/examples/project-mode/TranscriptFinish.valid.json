@@ -1,0 +1,19 @@
+{
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "conversation_id": "10000000-0000-4000-8000-000000000001",
+  "state": "completed",
+  "content_refs": [],
+  "usage": {
+    "tool_calls": 0,
+    "model_calls": 0,
+    "elapsed_seconds": 0,
+    "cost_eur": 0,
+    "reserved_eur": 0,
+    "unknown_eur": 0,
+    "stored_bytes": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "tokens_estimated": false
+  },
+  "error": null
+}

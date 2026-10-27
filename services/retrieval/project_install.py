@@ -46,6 +46,10 @@ def install(
             )
         db.execute(Path(__file__).with_name("project_schema.sql").read_text())
         db.execute(Path(__file__).with_name("project_work_schema.sql").read_text())
+        db.execute(Path(__file__).with_name("project_runner_schema.sql").read_text())
+        db.execute(
+            Path(__file__).with_name("project_transcript_schema.sql").read_text()
+        )
         provision(db, org, admin, name, subject, policy)
         db.execute(
             "INSERT INTO atlas_projects.installation(initial_org,initial_admin,ceilings) VALUES(%s,%s,%s)",
@@ -54,6 +58,34 @@ def install(
         if legacy is not None:
             migrate_legacy(db, legacy, org, admin, policy)
     return org, admin
+
+
+def allow_forge_connector(dsn: str, connector_id: str) -> None:
+    """Operator catalog enrollment; organization admins still grant its use."""
+    from uuid import UUID
+
+    identifier = str(UUID(connector_id))
+    with psycopg.connect(dsn) as db:
+        operator = db.execute(
+            "SELECT rolsuper FROM pg_roles WHERE rolname=current_user"
+        ).fetchone()
+        if operator is None or not operator[0]:
+            raise ValueError("Connector enrollment requires the database operator")
+        row = db.execute(
+            "SELECT initial_org,initial_admin,ceilings FROM atlas_projects.installation FOR UPDATE"
+        ).fetchone()
+        if row is None:
+            raise ValueError("Project installation is required")
+        policy = Policy.model_validate(row[2]).model_dump()
+        if identifier not in policy["connector_allowlist"]:
+            policy["connector_allowlist"].append(identifier)
+            db.execute(
+                "UPDATE atlas_projects.installation SET ceilings=%s", (Jsonb(policy),)
+            )
+            db.execute(
+                "INSERT INTO atlas_projects.audit(org_id,id,member_id,project_id,kind) VALUES(%s,%s,%s,NULL,'installation_connector_allowed')",
+                (row[0], str(uuid4()), row[1]),
+            )
 
 
 def upgrade_work(dsn: str) -> None:
@@ -65,6 +97,10 @@ def upgrade_work(dsn: str) -> None:
         if not role or not role[0]:
             raise ValueError("Work migration requires the database operator")
         db.execute(Path(__file__).with_name("project_work_schema.sql").read_text())
+        db.execute(Path(__file__).with_name("project_runner_schema.sql").read_text())
+        db.execute(
+            Path(__file__).with_name("project_transcript_schema.sql").read_text()
+        )
 
 
 def provision(
@@ -167,11 +203,17 @@ def migrate_legacy(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upgrade-work", action="store_true")
+    parser.add_argument("--allow-forge-connector")
     parser.add_argument("--name")
     parser.add_argument("--admin-subject")
     parser.add_argument("--policy", type=Path)
     parser.add_argument("--legacy-db", type=Path)
     args = parser.parse_args()
+    if args.allow_forge_connector:
+        allow_forge_connector(
+            os.environ["ATLAS_RETRIEVAL_DSN"], args.allow_forge_connector
+        )
+        return
     if args.upgrade_work:
         upgrade_work(os.environ["ATLAS_RETRIEVAL_DSN"])
         return

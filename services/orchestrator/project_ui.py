@@ -2,6 +2,7 @@
 
 from packages.limits import LimitError
 from packages.ports import atlas_ports
+from packages.profiles import PROFILES
 from services.retrieval.project_identity import ProjectError
 
 import asyncio
@@ -26,8 +27,45 @@ ROOT = Path(__file__).parent
 CSP = "default-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 
+@router.get("/project-mode")
+def project_surface() -> Response:
+    if not project_mode():
+        return public_error(ProjectError(409, "feature_not_available"))
+    return HTMLResponse(
+        (ROOT / "project_mode.html").read_text(),
+        headers={"Cache-Control": "private, no-store", "Content-Security-Policy": CSP},
+    )
+
+
+@router.get("/project-mode/{asset}")
+def project_asset(asset: str) -> Response:
+    assets = {
+        "client.js": ("project_mode.js", "text/javascript"),
+        "locale.js": ("project_locale.js", "text/javascript"),
+        "style.css": ("project_mode.css", "text/css"),
+    }
+    if asset not in assets:
+        return public_error(ProjectError(404, "not_found"))
+    filename, media_type = assets[asset]
+    content = (ROOT / filename).read_text()
+    if asset == "client.js":
+        content = (
+            "window.atlasProjectProfile = " + json.dumps(PROFILES[0]) + ";\n" + content
+        )
+    return Response(
+        content,
+        media_type=media_type,
+        headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.get("/project-ui")
 def ui() -> Response:
+    if project_mode():
+        return Response(
+            status_code=307,
+            headers={"Location": "/project-mode", "Cache-Control": "private, no-store"},
+        )
     return HTMLResponse(
         (ROOT / "project_ui.html").read_text(), headers={"Content-Security-Policy": CSP}
     )
@@ -145,7 +183,9 @@ async def verified_subject(request: Request, client: aiohttp.ClientSession) -> s
         url = os.environ.get("ATLAS_WEBUI_URL") or atlas_ports().url("chat_ui")
         async with client.get(
             url.rstrip("/") + "/api/v1/auths/",
-            headers={"Authorization": "Bearer " + token},
+            # This shared streaming client preserves encoded response bytes.
+            # Identity verification must receive bounded, decodable JSON.
+            headers={"Authorization": "Bearer " + token, "Accept-Encoding": "identity"},
             allow_redirects=False,
         ) as reply:
             if reply.status in {401, 403}:

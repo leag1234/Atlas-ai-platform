@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from packages.model_json import aliases, object_content
+
 
 class Fact(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -16,7 +18,10 @@ class Consolidation(BaseModel):
 
 
 def consolidated(text: str, question: str) -> tuple[str, list[str]]:
-    result = Consolidation.model_validate_json(text)
+    value = object_content(text)
+    if isinstance(value.get("facts"), list):
+        value["facts"] = [aliases(fact, "fact") for fact in value["facts"]]
+    result = Consolidation.model_validate(value)
     if any(f.evidence not in question for f in result.facts):
         raise ValueError("ungrounded_memory")
     return result.answer, list(dict.fromkeys(f.text for f in result.facts))

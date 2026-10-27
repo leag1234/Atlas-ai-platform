@@ -25,6 +25,7 @@ from services.orchestrator.project_forge import (
     ForgeError,
     ForgeUnknown,
     GitHubForge,
+    ForgejoForge,
     snapshot_files,
 )
 from services.retrieval.project_files import ProjectFiles, action_digest, timestamp
@@ -44,7 +45,8 @@ def configured_adapter(repository: Json) -> ForgeAdapter:
             repository["connector_id"]
         ]
         if (
-            repository["forge"] != "github"
+            repository["forge"] not in {"github", "forgejo", "gitea"}
+            or repository["forge"] != configured.get("forge", "github")
             or configured["remote_ref"] != repository["remote_ref"]
         ):
             raise ValueError
@@ -60,14 +62,26 @@ def configured_adapter(repository: Json) -> ForgeAdapter:
             addresses = socket.getaddrinfo(
                 parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM
             )
-            if not addresses or any(
-                not ipaddress.ip_address(item[4][0]).is_global for item in addresses
+            allowed = (
+                configured.get("allowed_addresses", [])
+                if repository["forge"] in {"forgejo", "gitea"}
+                else []
+            )
+            if (
+                not isinstance(allowed, list)
+                or not addresses
+                or any(
+                    not ipaddress.ip_address(item[4][0]).is_global
+                    and item[4][0] not in allowed
+                    for item in addresses
+                )
             ):
                 raise ValueError
         token = os.environ[configured["token_env"]]
         if not token:
             raise ValueError
-        return GitHubForge(
+        adapter = GitHubForge if repository["forge"] == "github" else ForgejoForge
+        return adapter(
             Connector(
                 remote_ref=configured["remote_ref"],
                 api_url=configured["api_url"],
@@ -75,6 +89,8 @@ def configured_adapter(repository: Json) -> ForgeAdapter:
                 author_name=configured["author_name"],
                 author_email=configured["author_email"],
                 token=token,
+                ca_file=configured.get("ca_file"),
+                username=configured.get("username", "x-access-token"),
             )
         )
     except (KeyError, TypeError, ValueError, OSError, ForgeError):
@@ -97,7 +113,7 @@ class RepositoryActions:
         return value
 
     def snapshot(self, action: Json) -> tuple[bytes | None, list[Json], list[str]]:
-        if action["kind"] != "commit":
+        if action["kind"] not in {"commit", "publish_change"}:
             return None, [], []
         ref = action["snapshot"]
         version = self.files.get("version", ref["id"])
@@ -173,6 +189,8 @@ class RepositoryActions:
     def current(self, operation: Json) -> tuple[Json, bytes | None]:
         self.scope.authorize("POST", ["repositories"])
         approval = self.work.approval(operation["approval_id"])["data"]
+        if operation.get("fence"):
+            self.work.fence(operation["fence"])
         if (
             self.scope.identity.member != approval["requested_by_member_id"]
             or self.scope.org["revision"] != approval["policy_revision"]
@@ -184,7 +202,9 @@ class RepositoryActions:
         content, _, _ = self.snapshot(operation["action"])
         return approval, content
 
-    def submit(self, identifier: str, data: Json) -> tuple[int, Json]:
+    def submit(
+        self, identifier: str, data: Json, fence: Json | None = None
+    ) -> tuple[int, Json]:
         validate("RepositoryAction", data)
         action = {k: v for k, v in data.items() if k != "approval_id"}
         if "approval_id" in data:
@@ -218,13 +238,45 @@ class RepositoryActions:
                 (self.files.org, self.files.project, approval["id"]),
             )
             operation["state"] = "running"
+            if operation.get("fence"):
+                session = self.work.get(operation["fence"]["session_id"])
+                session["state"] = "running"
+                self.files.save(session)
             self.save(operation)
             self.audit(operation, approval, "execution", "allowed")
         else:
             repository = self.repository(identifier)
             content, versions, paths = self.snapshot(action)
-            binding = configured_adapter(repository).bind(action)
+            adapter = configured_adapter(repository)
+            binding = adapter.bind(action)
+            publication = None
+            if action["kind"] == "publish_change":
+                from services.orchestrator.forge_publication import diff_summary
+
+                _, before = adapter.import_snapshot(
+                    self.scope.policy["quotas"]["upload_bytes"], action["base_commit"]
+                )
+                if content is None:
+                    raise ProjectError(422, "invalid_request")
+                publication = {
+                    key: action["parameters"][key]
+                    for key in ("branch", "target", "message", "title", "body")
+                }
+                publication.update(
+                    base_commit=action["base_commit"],
+                    change_digest=action["change_digest"],
+                )
+                publication["diff"] = diff_summary(before, content)
+                if not publication["diff"]:
+                    raise ProjectError(
+                        422, "invalid_request", "No repository changes to publish"
+                    )
+            if fence is not None:
+                session, _ = self.work.fence(fence)
+                if session["repository_id"] != identifier:
+                    raise ProjectError(403, "permission_denied")
             operation = dict(
+                fence=fence,
                 id=str(uuid4()),
                 created_at=timestamp(),
                 action=action,
@@ -247,7 +299,7 @@ class RepositoryActions:
             )
             approval = dict(
                 self.files.new(),
-                session_id=None,
+                session_id=fence["session_id"] if fence else None,
                 requested_by_member_id=self.scope.identity.member,
                 approver_member_id=self.scope.identity.member,
                 actor=dict(
@@ -266,6 +318,8 @@ class RepositoryActions:
                 consumed_at=None,
                 policy_revision=self.scope.org["revision"],
             )
+            if publication is not None:
+                approval["publication"] = publication
             operation["approval_id"] = approval["id"]
             self.scope.db.execute(
                 "INSERT INTO atlas_projects.file_approvals(org_id,project_id,id,data,execution) VALUES(%s,%s,%s,%s,%s)",
@@ -288,6 +342,10 @@ class RepositoryActions:
                 ),
             )
             self.audit(operation, approval, "request", "pending")
+            if fence:
+                session = self.work.get(fence["session_id"])
+                session["state"] = "awaiting_approval"
+                self.files.save(session)
         return 202, dict(
             operation_id=operation["id"],
             state=operation["state"],
@@ -321,6 +379,10 @@ class RepositoryActions:
             return 403, ProjectError(403, "approval_required").body
         approval["decision"] = "allowed" if data["allow"] else "denied"
         self.work.update_approval(approval)
+        if operation.get("fence"):
+            session = self.work.get(operation["fence"]["session_id"])
+            session["state"] = "running"
+            self.files.save(session)
         self.audit(operation, approval, "decision", approval["decision"])
         return 200, dict(accepted=True, consumed_at=None)
 
@@ -338,7 +400,17 @@ def run_operation(store: ScopedProjects, identity: Identity, identifier: str) ->
         if not acquired or not acquired[0]:
             return
         try:
-            _run_operation(store, identity, identifier)
+            with store.scope(identity, identity.org, identity.project) as scope:
+                combined = (
+                    RepositoryActions(scope).operation(identifier)["action"]["kind"]
+                    == "publish_change"
+                )
+            if combined:
+                from services.retrieval.project_publication import run_publication
+
+                run_publication(store, identity, identifier)
+            else:
+                _run_operation(store, identity, identifier)
         except (ProjectError, psycopg.Error, OSError, ForgeError):
             # Stored intent survives infrastructure/authority failure. Never
             # print exception contents or mistake lack of evidence for success.

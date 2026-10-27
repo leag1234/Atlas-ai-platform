@@ -77,12 +77,22 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 block for block in text.split("location ") if "proxy_pass " in block
             ]
             # The production front door has one more proxy location: the image route.
-            self.assertEqual(len(blocks), 4 if name == "atlas.indidea.org.conf" else 3)
+            # Both have the Stop cancel route.
+            self.assertEqual(len(blocks), 5 if name == "atlas.indidea.org.conf" else 4)
             for block in blocks:
                 self.assertIn("include /etc/nginx/atlas-proxy-secret.conf;", block)
                 self.assertIn('proxy_set_header X-Atlas-User "$remote_user@', block)
                 self.assertIn("proxy_set_header X-Atlas-User-Role user;", block)
-                self.assertIn('proxy_set_header Authorization "";', block)
+                if block.startswith(
+                    "~ ^/api/(chat/completions|v1/chat/completions|models)$"
+                ):
+                    # Only an Open WebUI key (Bearer sk-) passes; basic credentials never do.
+                    self.assertIn("auth_basic $", block)
+                    self.assertIn("proxy_set_header Authorization $", block)
+                else:
+                    self.assertIn('proxy_set_header Authorization "";', block)
+            self.assertIn('"~^Bearer (sk-[A-Za-z0-9_-]+)$" "Bearer $1";', text)
+            self.assertIn('"~^Bearer sk-" off;', text)
 
     def test_stable_cookie_bridge_and_code_execution_disabled(self) -> None:
         shell = b"<html><head></head></html>"

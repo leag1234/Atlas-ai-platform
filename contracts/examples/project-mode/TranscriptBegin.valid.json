@@ -1,0 +1,18 @@
+{
+  "request_id": "10000000-0000-4000-8000-000000000001",
+  "request": {
+    "model": "configured-public-profile",
+    "org_id": "10000000-0000-4000-8000-000000000001",
+    "project_id": "10000000-0000-4000-8000-000000000001",
+    "conversation_id": "10000000-0000-4000-8000-000000000001",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Example"
+      }
+    ],
+    "stream": true,
+    "project_action": "work",
+    "work_session_id": "10000000-0000-4000-8000-000000000001"
+  }
+}

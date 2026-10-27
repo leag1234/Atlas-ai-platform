@@ -31,6 +31,10 @@ class ProviderResponseError(RuntimeError):
         self.status = status
 
 
+class ModelUnavailableError(RuntimeError):
+    """A requested model is unavailable and may use the configured alternate."""
+
+
 @dataclass
 class RetryLedger:
     spent: Decimal = Decimal(0)

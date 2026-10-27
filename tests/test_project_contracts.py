@@ -238,6 +238,27 @@ class ProjectContractTests(unittest.TestCase):
         cls.validator = SchemaValidator(cls.document)
         cls.schemas = cls.document["components"]["schemas"]
 
+    def test_approved_slide_locators_and_coverage_remain_closed(self) -> None:
+        self.validator.validate(
+            dict(kind="slide", slide=1), self.schemas["SourceLocator"]
+        )
+        for invalid in (
+            dict(kind="slide", slide=0),
+            dict(kind="slide", slide=True),
+            dict(kind="slide", slide=1, page=1),
+            dict(kind="unknown", slide=1),
+        ):
+            with self.assertRaises(Invalid):
+                self.validator.validate(invalid, self.schemas["SourceLocator"])
+        coverage = dict(
+            complete=True, selected_units=1, total_units=1, unit="slides", warnings=[]
+        )
+        self.validator.validate(coverage, self.schemas["Coverage"])
+        with self.assertRaises(Invalid):
+            self.validator.validate(
+                dict(coverage, unit="unknown"), self.schemas["Coverage"]
+            )
+
     def test_commit_snapshot_and_target_are_required_and_closed(self) -> None:
         value = json.loads((EXAMPLES / "CommitAction.valid.json").read_text())
         self.validator.validate(value, self.schemas["RepositoryAction"])
@@ -389,6 +410,36 @@ class ProjectContractTests(unittest.TestCase):
                     for response in success:
                         if "content" in response:
                             self.assertTrue(response["content"])
+
+    def test_private_transcript_contract_is_closed(self) -> None:
+        for operation, name in (
+            ("begin", "TranscriptBegin"),
+            ("finish", "TranscriptFinish"),
+            ("events", "TranscriptEvents"),
+        ):
+            route = self.document["paths"]["/internal/atlas/transcript/" + operation][
+                "post"
+            ]
+            self.assertEqual(
+                route["security"],
+                [{"ExecutionBroker": [], "ScopedProjectIdentity": []}],
+            )
+            self.assertFalse(self.schemas[name]["additionalProperties"])
+            self.assertEqual(
+                set(self.schemas[name]["properties"]),
+                set(self.schemas[name]["required"]),
+            )
+            value = json.loads((EXAMPLES / (name + ".valid.json")).read_text())
+            self.validator.validate(value, self.schemas[name])
+            for field in self.schemas[name]["required"]:
+                invalid = dict(value)
+                del invalid[field]
+                with self.assertRaises(Invalid):
+                    self.validator.validate(invalid, self.schemas[name])
+            with self.assertRaises(Invalid):
+                self.validator.validate(
+                    dict(value, member_id="caller"), self.schemas[name]
+                )
 
     def test_private_identity_resolution_contract(self) -> None:
         operation = self.document["paths"]["/internal/atlas/identity"]["post"]

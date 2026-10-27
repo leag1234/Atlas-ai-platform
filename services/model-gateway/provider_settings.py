@@ -62,8 +62,19 @@ def api_key() -> str:
     return os.environ.get("ATLAS_PROVIDER_API_KEY", "")
 
 
+def json_options(response_format: object) -> dict[str, Any]:
+    # Internal state requests fall back to instructions on unverified providers.
+    # Explicit developer-API response_format continues to pass through unchanged.
+    name = os.environ.get("ATLAS_PROVIDER", "")
+    if response_format and (
+        not name or presets().get(name, {}).get("json_response_format") is True
+    ):
+        return {"response_format": response_format}
+    return {}
+
+
 def request_options(
-    body: dict[str, Any], provider: str | None = None
+    body: dict[str, Any], provider: str | None = None, *, role: str | None = None
 ) -> dict[str, Any]:
     name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     body = dict(body)
@@ -97,6 +108,20 @@ def request_options(
             body.pop("tools", None)
     if name:
         body.update(presets()[name].get("request_options", {}))
+    if name == "hetzner" and role == "code":
+        thinking = (
+            os.environ.get("ATLAS_CODE_THINKING")
+            or str(presets()[name]["code_thinking"]).lower()
+        )
+        if thinking not in ("true", "false"):
+            raise ValueError("invalid_code_thinking")
+        body["chat_template_kwargs"] = {
+            **body.get("chat_template_kwargs", {}),
+            "enable_thinking": thinking == "true",
+        }
+        if thinking == "true":
+            # The preset's effort=none would contradict the template switch.
+            body.pop("reasoning_effort", None)
     return body
 
 
@@ -128,7 +153,7 @@ def configure(
     if os.environ["ATLAS_PROVIDER"] == "scaleway" and not os.environ.get(
         "ATLAS_TEXT_MODEL"
     ):
-        return config, prices
+        return code_model_override(config, prices, preset)
     roles: dict[str, Any] = {}
     rates: dict[str, Any] = {}
     for role in config:
@@ -177,7 +202,7 @@ def configure(
             else "text",
             "capabilities": {
                 model: {
-                    "context": int(os.environ.get("ATLAS_MODEL_CONTEXT", context)),
+                    "context": int((os.environ.get("ATLAS_MODEL_CONTEXT") or context)),
                     "tools": True,
                     "vision": bool(vision and model == vision),
                 }
@@ -216,7 +241,12 @@ def configure(
             "capabilities": {
                 fallback_text: {
                     "context": int(
-                        os.environ.get("ATLAS_MODEL_CONTEXT", preset["context"])
+                        os.environ.get("ATLAS_MODEL_CONTEXT")
+                        or (
+                            preset["context"]["text"]
+                            if isinstance(preset["context"], dict)
+                            else preset["context"]
+                        )
                     ),
                     "tools": True,
                     "vision": False,
@@ -226,4 +256,38 @@ def configure(
         for role in ("text", "code", "fast"):
             if role in roles:
                 roles[role]["fallback"] = "text_fallback"
+    return code_model_override(roles, rates, preset)
+
+
+def code_model_override(
+    roles: dict[str, Any], rates: dict[str, Any], preset: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    # An empty operator setting deliberately restores the preset default.
+    model = os.environ.get("ATLAS_CODE_MODEL") or preset.get("code_model")
+    if not model:
+        return roles, rates
+    roles, rates = dict(roles), dict(rates)
+    entry = roles["code"]
+    metadata = preset.get("code_models", {}).get(model, {})
+    capabilities = dict(entry["capabilities"][entry["model"]])
+    if model != entry["model"]:
+        capabilities["vision"] = False
+    if metadata:
+        capabilities["context"] = int(
+            os.environ.get("ATLAS_MODEL_CONTEXT") or metadata["context"]
+        )
+    if model not in rates:
+        price = metadata.get("price")
+        if price is not None and price.get("currency") != "EUR":
+            raise ValueError("code_model_price_requires_eur")
+        if price is None:
+            warn_unpriced(os.environ["ATLAS_PROVIDER"], model)
+        rates[model] = dict(
+            input_eur_per_mtok=str(price["input"]) if price else "0",
+            output_eur_per_mtok=str(price["output"]) if price else "0",
+            unpriced=price is None,
+        )
+    roles["code"] = dict(
+        entry, env="ATLAS_CODE_MODEL", model=model, capabilities={model: capabilities}
+    )
     return roles, rates

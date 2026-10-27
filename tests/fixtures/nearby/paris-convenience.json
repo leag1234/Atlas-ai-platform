@@ -1,0 +1,524 @@
+{
+  "case": "paris-convenience",
+  "area": "Paris",
+  "question": "supérette",
+  "language": "fr",
+  "recorded_at": "2026-10-25T10:55:59.582518+00:00",
+  "source": "nominatim",
+  "candidates": [
+    {
+      "name": "Superette",
+      "category": "convenience",
+      "distance_m": 2400,
+      "distance_kind": "approximate straight-line",
+      "address": "Rue du Faubourg Saint-Antoine, 75012, Paris",
+      "website": "",
+      "phone": "",
+      "opening_hours": null,
+      "opening": {
+        "status": "unknown",
+        "closing_time": null,
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": null
+      },
+      "source": "https://www.openstreetmap.org/node/7539908779",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Diderot Supérette",
+      "category": "convenience",
+      "distance_m": 2450,
+      "distance_kind": "approximate straight-line",
+      "address": "Boulevard Diderot, 75012, Paris",
+      "website": "",
+      "phone": "",
+      "opening_hours": "Mo-Su",
+      "opening": {
+        "status": "open",
+        "closing_time": null,
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": "Europe/Paris"
+      },
+      "source": "https://www.openstreetmap.org/node/6298981145",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Supérette du 13",
+      "category": "convenience",
+      "distance_m": 2700,
+      "distance_kind": "approximate straight-line",
+      "address": "Boulevard Vincent Auriol, 75013, Paris",
+      "website": "",
+      "phone": "",
+      "opening_hours": null,
+      "opening": {
+        "status": "unknown",
+        "closing_time": null,
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": null
+      },
+      "source": "https://www.openstreetmap.org/node/3711131237",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Supérette de Belleville",
+      "category": "convenience",
+      "distance_m": 2450,
+      "distance_kind": "approximate straight-line",
+      "address": "Boulevard de la Villette, 75010, Paris",
+      "website": "",
+      "phone": "",
+      "opening_hours": null,
+      "opening": {
+        "status": "unknown",
+        "closing_time": null,
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": null
+      },
+      "source": "https://www.openstreetmap.org/node/6916107685",
+      "provider": "nominatim"
+    },
+    {
+      "name": "Anna’s Supérette",
+      "category": "convenience",
+      "distance_m": 2350,
+      "distance_kind": "approximate straight-line",
+      "address": "Rue de Charenton, 75012, Paris",
+      "website": "",
+      "phone": "",
+      "opening_hours": null,
+      "opening": {
+        "status": "unknown",
+        "closing_time": null,
+        "next_opening": null,
+        "closing_soon": false,
+        "timezone": null
+      },
+      "source": "https://www.openstreetmap.org/node/13588542850",
+      "provider": "nominatim"
+    }
+  ],
+  "exchanges": [
+    {
+      "service": "geocode",
+      "category": "supérette",
+      "response": [
+        {
+          "place_id": 98299329,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 7539908779,
+          "lat": "48.8500515",
+          "lon": "2.3840413",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Superette",
+          "display_name": "Superette, Rue du Faubourg Saint-Antoine, Quartier des Quinze-Vingts, Paris 12e Arrondissement, Paris, Île-de-France, France métropolitaine, 75012, France",
+          "address": {
+            "shop": "Superette",
+            "road": "Rue du Faubourg Saint-Antoine",
+            "quarter": "Quartier des Quinze-Vingts",
+            "suburb": "Paris 12e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75012",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "check_date": "2025-12-18",
+            "ref:FR:SIRET": "34197192700023",
+            "opening_hours:signed": "no"
+          },
+          "boundingbox": [
+            "48.8500015",
+            "48.8501015",
+            "2.3839913",
+            "2.3840913"
+          ]
+        },
+        {
+          "place_id": 420053468,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 8952346733,
+          "lat": "48.8671924",
+          "lon": "2.3752107",
+          "category": "amenity",
+          "type": "fast_food",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "amenity",
+          "name": "Superette",
+          "display_name": "Superette, 63, Rue Jean-Pierre Timbaud, Quartier de la Folie-Méricourt, Paris 11e Arrondissement, Paris, Île-de-France, France métropolitaine, 75011, France",
+          "address": {
+            "amenity": "Superette",
+            "house_number": "63",
+            "road": "Rue Jean-Pierre Timbaud",
+            "city_block": "Quartier de la Folie-Méricourt",
+            "suburb": "Paris 11e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75011",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "cuisine": "burger",
+            "check_date": "2026-06-16",
+            "ref:FR:SIRET": "99474926500017",
+            "opening_hours": "12:00-14:30,19:00-22:30",
+            "contact:instagram": "https://www.instagram.com/superette.burger"
+          },
+          "boundingbox": [
+            "48.8671424",
+            "48.8672424",
+            "2.3751607",
+            "2.3752607"
+          ]
+        },
+        {
+          "place_id": 98465357,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 1877600066,
+          "lat": "48.8851690",
+          "lon": "2.3306135",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Supérette du Sacré-Cœur",
+          "display_name": "Supérette du Sacré-Cœur, Rue Caulaincourt, Quartier des Grandes-Carrières, Paris 18e Arrondissement, Paris, Île-de-France, France métropolitaine, 75018, France",
+          "address": {
+            "shop": "Supérette du Sacré-Cœur",
+            "road": "Rue Caulaincourt",
+            "city_block": "Quartier des Grandes-Carrières",
+            "suburb": "Paris 18e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75018",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": null,
+          "boundingbox": [
+            "48.8851190",
+            "48.8852190",
+            "2.3305635",
+            "2.3306635"
+          ]
+        },
+        {
+          "place_id": 98266582,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 6298981145,
+          "lat": "48.8467102",
+          "lon": "2.3826583",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Diderot Supérette",
+          "display_name": "Diderot Supérette, Boulevard Diderot, Quartier des Quinze-Vingts, Paris 12e Arrondissement, Paris, Île-de-France, France métropolitaine, 75012, France",
+          "address": {
+            "shop": "Diderot Supérette",
+            "road": "Boulevard Diderot",
+            "quarter": "Quartier des Quinze-Vingts",
+            "suburb": "Paris 12e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75012",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "check_date": "2026-01-02",
+            "ref:FR:SIRET": "84854257700012",
+            "opening_hours": "Mo-Su"
+          },
+          "boundingbox": [
+            "48.8466602",
+            "48.8467602",
+            "2.3826083",
+            "2.3827083"
+          ]
+        },
+        {
+          "place_id": 98113152,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 13072417969,
+          "lat": "48.8852159",
+          "lon": "2.3945873",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Sai Supérette",
+          "display_name": "Sai Supérette, 112, Boulevard Sérurier, Quartier d'Amérique, Paris 19e Arrondissement, Paris, Île-de-France, France métropolitaine, 75019, France",
+          "address": {
+            "shop": "Sai Supérette",
+            "house_number": "112",
+            "road": "Boulevard Sérurier",
+            "city_block": "Quartier d'Amérique",
+            "suburb": "Paris 19e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75019",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "ref:FR:SIRET": "94267867300016"
+          },
+          "boundingbox": [
+            "48.8851659",
+            "48.8852659",
+            "2.3945373",
+            "2.3946373"
+          ]
+        },
+        {
+          "place_id": 97670716,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 11627968303,
+          "lat": "48.8263974",
+          "lon": "2.3850438",
+          "category": "amenity",
+          "type": "arts_centre",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "amenity",
+          "name": "Supérette du Quotidien",
+          "display_name": "Supérette du Quotidien, Rue Jean-Baptiste Berlier, Quartier de la Gare, Paris 13e Arrondissement, Paris, Île-de-France, France métropolitaine, 75013, France",
+          "address": {
+            "amenity": "Supérette du Quotidien",
+            "road": "Rue Jean-Baptiste Berlier",
+            "quarter": "Quartier de la Gare",
+            "suburb": "Paris 13e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75013",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": null,
+          "boundingbox": [
+            "48.8263474",
+            "48.8264474",
+            "2.3849938",
+            "2.3850938"
+          ]
+        },
+        {
+          "place_id": 98227561,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 4405823596,
+          "lat": "48.8265913",
+          "lon": "2.3728593",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Aksha supérette",
+          "display_name": "Aksha supérette, Rue de Patay, Quartier de la Gare, Paris 13e Arrondissement, Paris, Île-de-France, France métropolitaine, 75013, France",
+          "address": {
+            "shop": "Aksha supérette",
+            "road": "Rue de Patay",
+            "quarter": "Quartier de la Gare",
+            "suburb": "Paris 13e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75013",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "level": "0",
+            "wheelchair": "no",
+            "ref:FR:SIRET": "88379135200015",
+            "opening_hours": "Mo 14:30-20:00, Tu-Fr 10:30-20:00, Sa 14:30-20:00"
+          },
+          "boundingbox": [
+            "48.8265413",
+            "48.8266413",
+            "2.3728093",
+            "2.3729093"
+          ]
+        },
+        {
+          "place_id": 98357007,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 3711131237,
+          "lat": "48.8346813",
+          "lon": "2.3679582",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Supérette du 13",
+          "display_name": "Supérette du 13, Boulevard Vincent Auriol, Quartier de la Gare, Paris 13e Arrondissement, Paris, Île-de-France, France métropolitaine, 75013, France",
+          "address": {
+            "shop": "Supérette du 13",
+            "road": "Boulevard Vincent Auriol",
+            "quarter": "Quartier de la Gare",
+            "suburb": "Paris 13e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75013",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "panoramax": "fc1b93bf-7800-486b-8ee8-d8801f8d6957",
+            "ref:FR:SIRET": "83804189500015",
+            "opening_hours:signed": "no",
+            "check_date:opening_hours": "2024-03-29"
+          },
+          "boundingbox": [
+            "48.8346313",
+            "48.8347313",
+            "2.3679082",
+            "2.3680082"
+          ]
+        },
+        {
+          "place_id": 98441055,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 6916107685,
+          "lat": "48.8733699",
+          "lon": "2.3751451",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Supérette de Belleville",
+          "display_name": "Supérette de Belleville, Boulevard de la Villette, Quartier de l'Hôpital Saint-Louis, Paris 10e Arrondissement, Paris, Île-de-France, France métropolitaine, 75010, France",
+          "address": {
+            "shop": "Supérette de Belleville",
+            "road": "Boulevard de la Villette",
+            "city_block": "Quartier de l'Hôpital Saint-Louis",
+            "suburb": "Paris 10e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75010",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "wheelchair": "no",
+            "contact:city": "Paris",
+            "ref:FR:SIRET": "92846638200019",
+            "contact:street": "Boulevard de la Villette",
+            "contact:postcode": "75010",
+            "contact:housenumber": "25",
+            "opening_hours:signed": "no"
+          },
+          "boundingbox": [
+            "48.8733199",
+            "48.8734199",
+            "2.3750951",
+            "2.3751951"
+          ]
+        },
+        {
+          "place_id": 98464912,
+          "licence": "Data © OpenStreetMap contributors, ODbL 1.0. http://osm.org/copyright",
+          "osm_type": "node",
+          "osm_id": 13588542850,
+          "lat": "48.8459262",
+          "lon": "2.3799875",
+          "category": "shop",
+          "type": "convenience",
+          "place_rank": 30,
+          "importance": 9.317235065227768e-05,
+          "addresstype": "shop",
+          "name": "Anna’s Supérette",
+          "display_name": "Anna’s Supérette, Rue de Charenton, Quartier des Quinze-Vingts, Paris 12e Arrondissement, Paris, Île-de-France, France métropolitaine, 75012, France",
+          "address": {
+            "shop": "Anna’s Supérette",
+            "road": "Rue de Charenton",
+            "quarter": "Quartier des Quinze-Vingts",
+            "suburb": "Paris 12e Arrondissement",
+            "city_district": "Paris",
+            "city": "Paris",
+            "ISO3166-2-lvl6": "FR-75C",
+            "state": "Île-de-France",
+            "ISO3166-2-lvl4": "FR-IDF",
+            "region": "France métropolitaine",
+            "postcode": "75012",
+            "country": "France",
+            "country_code": "fr"
+          },
+          "extratags": {
+            "check_date": "2026-02-21",
+            "ref:FR:SIRET": "91484510200021",
+            "opening_hours:signed": "no",
+            "check_date:opening_hours": "2026-02-21"
+          },
+          "boundingbox": [
+            "48.8458762",
+            "48.8459762",
+            "2.3799375",
+            "2.3800375"
+          ]
+        }
+      ]
+    }
+  ]
+}

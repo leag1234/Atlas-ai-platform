@@ -7,6 +7,7 @@ import re
 from pydantic import Field, field_validator, model_validator
 
 from services.retrieval.project_policy import Closed, Name
+from packages.project_memory import MemoryKind
 
 
 class FolderCreate(Closed):
@@ -77,6 +78,11 @@ class PageLocator(Closed):
     page: int = Field(ge=1)
 
 
+class SlideLocator(Closed):
+    kind: Literal["slide"]
+    slide: int = Field(ge=1)
+
+
 class ParagraphLocator(Closed):
     kind: Literal["paragraph"]
     paragraph: int = Field(ge=0)
@@ -106,7 +112,12 @@ class SourceRef(Closed):
     version_id: UUID
     locator: (
         Annotated[
-            PageLocator | ParagraphLocator | TableLocator | SheetLocator | TextLocator,
+            PageLocator
+            | SlideLocator
+            | ParagraphLocator
+            | TableLocator
+            | SheetLocator
+            | TextLocator,
             Field(discriminator="kind"),
         ]
         | None
@@ -114,18 +125,23 @@ class SourceRef(Closed):
 
 
 class MemoryCreate(Closed):
+    kind: MemoryKind = "fact"
+    pinned: bool = False
+    status: Literal["proposed", "active"] = "proposed"
     text: str = Field(min_length=1, max_length=500, pattern=r"\S")
     source_refs: list[SourceRef]
 
 
 class MemoryPatch(Closed):
+    kind: MemoryKind | None = None
+    pinned: bool | None = None
     text: str | None = Field(default=None, min_length=1, max_length=500, pattern=r"\S")
-    status: Literal["proposed", "active", "deleted"] | None = None
+    status: Literal["proposed", "active", "deleted", "rejected"] | None = None
     approval_id: UUID | None = None
 
     @model_validator(mode="after")
     def changes(self) -> "MemoryPatch":
-        if not self.model_fields_set & {"text", "status"}:
+        if not self.model_fields_set & {"text", "status", "kind", "pinned"}:
             raise ValueError("Empty patch")
         if any(getattr(self, k) is None for k in self.model_fields_set):
             raise ValueError("Null field")

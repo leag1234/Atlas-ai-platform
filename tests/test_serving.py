@@ -142,6 +142,22 @@ class ServingTests(unittest.TestCase):
         self.assertIn("WEBUI_AUTH_TRUSTED_ROLE_HEADER=X-Atlas-User-Role", options)
         self.assertIn("ENABLE_SIGNUP=False", options)
         self.assertIn("ENABLE_FORWARD_USER_INFO_HEADERS=True", options)
+        self.assertIn("ENABLE_API_KEYS=False", options)
+        self.assertIn("ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS=True", options)
+        self.assertIn(
+            "API_KEYS_ALLOWED_ENDPOINTS=/api/models,/api/chat/completions,/api/v1/chat/completions",
+            options,
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "ATLAS_STABLE": "1",
+                "ATLAS_TRUSTED_EMAIL_HEADER": "X-Atlas-User",
+                "ATLAS_OPENWEBUI_API_KEYS": "1",
+            },
+            clear=True,
+        ):
+            self.assertIn("ENABLE_API_KEYS=True", stable_webui_options())
         with patch.dict(os.environ, {"ATLAS_STABLE": "1"}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "WEBUI_SECRET_KEY"):
                 require_stable_configuration()

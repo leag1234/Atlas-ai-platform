@@ -12,9 +12,14 @@ from uuid import uuid4
 
 @dataclass
 class Interaction:
+    verification: dict[str, object] | None = None
+    location_used: str = ""
+    nearby_source: str = ""
+    context_samples: list[dict[str, object]] = field(default_factory=list)
     provider_retries: int = 0
     commons_requests: list[dict[str, object]] = field(default_factory=list)
     retrieved_urls: list[str] = field(default_factory=list)
+    tool_urls: list[str] = field(default_factory=list)
     terminal_commands: int = 0
     terminal_failed_commands: int = 0
     files: list[str] = field(default_factory=list)

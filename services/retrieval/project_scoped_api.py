@@ -55,6 +55,7 @@ from services.retrieval.project_file_api import (
     publication_parts,
 )
 from services.retrieval.project_files import ProjectFiles
+from services.retrieval.project_transcript import Transcript, canonical
 from services.retrieval.project_work import Work
 from services.retrieval.project_work_contract import validate
 from services.retrieval.project_ledger import summary
@@ -193,6 +194,10 @@ def execute(
                 require_patch(data)
                 if data.get("state") == "active" and scope.project["state"] != "active":
                     scope.check_quota("active_projects", 1)
+                if "pinned_memory_tokens" in data:
+                    from services.retrieval.project_memory import check_cap
+
+                    check_cap(ProjectFiles(scope), limit=data["pinned_memory_tokens"])
                 value = public(scope.project)
                 value.update(data)
                 value["revision"] += 1
@@ -220,7 +225,48 @@ def execute(
                 scope.grant_write(tail[1], None, expected)
                 return 204, None
     if scope.project is not None and tail:
+        transcript = Transcript(scope)
+        if tail == ["conversations"]:
+            if method == "POST":
+                return 201, transcript.create(json.loads(body))
+            if method == "GET":
+                return 200, dict(
+                    items=transcript.files.listing("conversation"), next_cursor=None
+                )
+        if (
+            len(tail) == 3
+            and tail[0] == "conversations"
+            and tail[2] == "turns"
+            and method == "GET"
+        ):
+            return 200, dict(items=transcript.turns(tail[1]), next_cursor=None)
+        if tail == ["context"] and method == "POST":
+            data = validate("ContextRequest", json.loads(body))
+            scope.authorize(
+                "POST",
+                ["conversations"] if data["action"] == "chat" else ["work-sessions"],
+            )
+            return 200, transcript.context(
+                data["conversation_id"], data["query"], [], data.get("work_session_id")
+            )
         work = Work(scope)
+        if tail in (["repositories"], ["repositories", "import-approvals"]):
+            from services.retrieval.project_repository_import import RepositoryImports
+
+            imports = RepositoryImports(scope)
+            if method == "GET" and tail == ["repositories"]:
+                return 200, dict(
+                    items=imports.files.listing("repository"), next_cursor=None
+                )
+            if method == "POST":
+                try:
+                    return 201, imports.issue(json.loads(body)) if len(
+                        tail
+                    ) == 2 else imports.create(json.loads(body))
+                except ForgeUnknown:
+                    raise ProjectError(503, "dependency_unavailable") from None
+                except ForgeError:
+                    raise ProjectError(409, "revision_conflict") from None
         if (
             len(tail) == 3
             and tail[0] == "repositories"
@@ -290,7 +336,13 @@ def dispatch(
     if path == "me" and method == "GET":
         with store(dsn).scope(identity, identity.org, identity.project) as scope:
             return 200, {
-                "memberships": [{"org_id": identity.org, "role": scope.member["role"]}],
+                "memberships": [
+                    {
+                        "org_id": identity.org,
+                        "role": scope.member["role"],
+                        "name": scope.org["data"]["name"],
+                    }
+                ],
                 "capabilities": p0_capabilities(work=True),
             }
     parsed = urlsplit(path)
@@ -307,6 +359,33 @@ def dispatch(
     path = "/".join(segments)
     with store(dsn).scope(identity, org, project) as scope:
         guard(scope, method, tail)
+        if tail and tail[0] == "runner-targets":
+            from services.retrieval.project_runners import admin_api
+
+            if query:
+                raise ProjectError(422, "invalid_request")
+            data = json.loads(body) if body else {}
+            key = headers.get("idempotency-key", "")
+            if method != "GET":
+                if not key or len(key) > 200:
+                    raise ProjectError(422, "invalid_request")
+                replay = scope.replay(method, path, key, body)
+                if replay is not None:
+                    if project is None:
+                        scope.admin()
+                    if tail == ["runner-targets", "credentials"]:
+                        raise ProjectError(410, "public_key_already_shown")
+                    return replay
+            runner_result = admin_api(
+                scope, method, tail, data, headers.get("if-match")
+            )
+            if method != "GET":
+                remembered = (
+                    runner_result[0],
+                    {k: v for k, v in runner_result[1].items() if k != "public_key"},
+                )
+                scope.remember(method, path, key, body, remembered)
+            return runner_result
         checked = check_query(method, tail, query)
         if checked:
             path += "?" + urlencode(sorted(checked.items()))
@@ -319,6 +398,8 @@ def dispatch(
                 )
             if tail and tail[0] == "approvals":
                 return execute(scope, method, tail, body, headers.get("if-match"))
+            if tail == ["repositories"]:
+                return execute(scope, method, tail, body, headers.get("if-match"))
             if (
                 len(tail) == 3
                 and tail[0] == "repositories"
@@ -326,9 +407,40 @@ def dispatch(
                 and "approval_id" in json.loads(body)
             ):
                 return execute(scope, method, tail, body, headers.get("if-match"))
+            if tail == ["context"]:
+                context_request = validate("ContextRequest", json.loads(body))
+                scope.authorize(
+                    "POST",
+                    ["conversations"]
+                    if context_request["action"] == "chat"
+                    else ["work-sessions"],
+                )
             replay = scope.replay(method, path, key, body)
             if replay is not None:
                 authorize_replay(scope, method, tail, replay[1])
+                if tail == ["conversations"]:
+                    ProjectFiles(scope).get("conversation", replay[1]["id"])
+                if tail == ["context"]:
+                    transcript = Transcript(scope)
+                    context = replay[1]
+                    versions = [context["instructions_version"]] + [
+                        p["version_id"] for p in context["passages"]
+                    ]
+                    for fact in context["facts"]:
+                        versions.extend(fact["source_file_version_ids"])
+                    transcript.check_sources(versions)
+                    for turn in context["history"]:
+                        current = transcript.files.get("turn", turn["id"])
+                        transcript.sources(current)
+                    if (
+                        context["memory_revision"]
+                        != scope.project_data["memory_revision"]
+                        or context["context_manifest"]["policy_revision"]
+                        != scope.org["revision"]
+                        or context["instructions_version"]
+                        != transcript.files.instructions()["version"]
+                    ):
+                        raise ProjectError(409, "revision_conflict")
                 return replay
         result: tuple[int, Any]
         if project and tail == ["events"] and method == "GET":
@@ -343,16 +455,45 @@ def dispatch(
             if session_id:
                 Work(scope).get(session_id)
             rows = scope.db.execute(
-                "SELECT data FROM (SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s) e WHERE seq>%s AND (%s::text IS NULL OR data->>'session_id'=%s) ORDER BY seq LIMIT 100",
-                (org, project, org, project, int(after), session_id, session_id),
+                "SELECT data FROM (SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s UNION ALL SELECT seq,data FROM atlas_projects.transcript_progress WHERE org_id=%s AND project_id=%s) e WHERE seq>%s AND (%s::text IS NULL OR data->>'session_id'=%s) ORDER BY seq LIMIT 100",
+                (
+                    org,
+                    project,
+                    org,
+                    project,
+                    org,
+                    project,
+                    int(after),
+                    session_id,
+                    session_id,
+                ),
             ).fetchall()
+            visible = []
+            for row in rows:
+                event = row["data"]
+                if event.get("version") == 1:
+                    try:
+                        row_turn = scope.db.execute(
+                            "SELECT data FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='turn' AND data->>'request_id'=%s",
+                            (org, project, event["request_id"]),
+                        ).fetchone()
+                        if row_turn is not None:
+                            turn = ProjectFiles(scope).get(
+                                "turn", row_turn["data"]["id"]
+                            )
+                            Transcript(scope).sources(turn)
+                    except ProjectError as exc:
+                        if exc.status in {403, 404, 409}:
+                            continue
+                        raise
+                visible.append(row)
             content = "".join(
                 "event: atlas.project\nid: "
                 + str(row["data"]["seq"])
                 + "\ndata: "
                 + json.dumps(row["data"], separators=(",", ":"))
                 + "\n\n"
-                for row in rows
+                for row in visible
             ).encode()
             result = (200, (200, content, {"Content-Type": "text/event-stream"}))
         elif project and tail == ["ledger"] and method == "GET":
@@ -445,7 +586,7 @@ def check_query(
     if (
         len(tail) == 3
         and tail[0] == "files"
-        and tail[2] == "content"
+        and tail[2] in {"content", "extraction"}
         and method == "GET"
     ):
         allowed.add("version")
@@ -483,6 +624,42 @@ def ingress(identity: Identity, method: str, path: str) -> int:
             method, tail, parse_qs(parsed.query, keep_blank_values=True)
         )
         return preflight(scope, method, tail, query) if project else 160000
+
+
+def index_active_memory(identity: Identity, identifier: str) -> None:
+    if not os.environ.get("ATLAS_GATEWAY_URL"):
+        return
+    from packages.project_memory import pinned
+    from services.retrieval.project_memory_search import search
+
+    try:
+        with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+            identity, identity.org, identity.project
+        ) as scope:
+            scope.authorize("POST", ["memory"])
+            files = ProjectFiles(scope)
+            entry = files.get("memory", identifier)
+            Transcript(scope).check_sources(entry["source_file_version_ids"])
+            if entry["status"] == "active" and not pinned(entry):
+                search(files, entry["text"], [], [entry])
+    except (ProjectError, psycopg.Error, OSError, ValueError):
+        logging.getLogger(__name__).warning("project_memory_index_unavailable")
+
+
+def index_created_upload(identity: Identity, file_id: str, version_id: str) -> None:
+    from services.retrieval.project_index import index_upload
+
+    try:
+        index_upload(
+            store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+            identity,
+            file_id,
+            version_id,
+        )
+    except (ProjectError, psycopg.Error, OSError, ValueError):
+        # The upload is already durable. Restrictions/revocation prevent further
+        # processing; never turn a committed upload into an ambiguous retry.
+        logging.getLogger(__name__).warning("project_index_unavailable")
 
 
 @router.api_route(
@@ -526,6 +703,34 @@ async def projects(request: Request, path: str) -> Response:
             bytes(body),
             dict(request.headers),
         )
+        upload_task = None
+        if request.method == "POST" and status == 201 and isinstance(result, dict):
+            value = result.get("file")
+            if isinstance(value, dict) and "job_id" in result:
+                upload_task = BackgroundTask(
+                    index_created_upload,
+                    replace(identity, project=parse_path(path)[1]),
+                    value["id"],
+                    value["version_id"],
+                )
+            elif path.endswith("/versions") and "file_id" in result:
+                upload_task = BackgroundTask(
+                    index_created_upload,
+                    replace(identity, project=parse_path(path)[1]),
+                    result["file_id"],
+                    result["id"],
+                )
+        if (
+            request.method in {"POST", "PATCH"}
+            and isinstance(result, dict)
+            and result.get("status") == "active"
+            and "/memory" in path
+        ):
+            upload_task = BackgroundTask(
+                index_active_memory,
+                replace(identity, project=parse_path(path)[1]),
+                result["id"],
+            )
         headers = {"Cache-Control": "private, no-store"}
         if (
             isinstance(result, tuple)
@@ -555,7 +760,7 @@ async def projects(request: Request, path: str) -> Response:
                     if isinstance(result, dict)
                     and result.get("state") == "running"
                     and "operation_id" in result
-                    else None
+                    else upload_task
                 ),
             )
         )
@@ -596,10 +801,29 @@ def resolve_identity(data: IdentityResolutionRequest) -> dict[str, Any]:
         rows = db.execute(
             "SELECT * FROM atlas_projects.identity_memberships(%s)", (data.subject,)
         ).fetchall()
+    memberships = []
+    for member in rows:
+        discovery = Identity(
+            data.subject,
+            str(member["member_id"]),
+            str(member["org_id"]),
+            None,
+            member["membership_revision"],
+            member["policy_revision"],
+            int(time.time()) + 60,
+        )
+        # Display names use the existing RLS-authorized organization read. No
+        # bootstrap privilege, storage migration or caller authority is added.
+        with repository.scope(discovery, discovery.org, None) as scope:
+            memberships.append(
+                dict(
+                    org_id=discovery.org,
+                    role=scope.member["role"],
+                    name=scope.org["data"]["name"],
+                )
+            )
     result: dict[str, Any] = {
-        "memberships": [
-            dict(org_id=str(row["org_id"]), role=row["role"]) for row in rows
-        ],
+        "memberships": memberships,
         "identity": None,
         "expires": None,
     }
@@ -687,6 +911,8 @@ EXECUTION_SCHEMAS = {
     "events": "ExecutionEvents",
     "organize": "ExecutionOrganize",
     "publish": "ExecutionPublish",
+    "forge": "ExecutionForge",
+    "remote": "RunnerExecution",
 }
 
 
@@ -736,6 +962,23 @@ def execution_dispatch(
             work.grant_stamp(identity.member)
         else:
             scope.authorize("POST", ["work-sessions"])
+        if operation == "remote":
+            from services.retrieval.project_runners import execute as execute_remote
+            from services.runner.contract import Execution
+
+            remote_data = Execution.model_validate(data).model_dump(exclude_none=True)
+            path = "/internal/atlas/execution/remote"
+            replay = scope.replay("POST", path, key, body)
+            if replay is not None:
+                work.fence(data)
+                return replay
+            result = (200, execute_remote(scope, remote_data))
+            scope.remember("POST", path, key, body, result)
+            return result
+        if operation == "forge":
+            from services.retrieval.project_work_forge import execute_forge
+
+            return 200, execute_forge(scope, data)
         if operation == "decisions":
             return work.decide(data["approval_id"], data["decision"])
         if package is not None:
@@ -778,9 +1021,11 @@ def execution_dispatch(
         return result
 
 
+@router.post("/internal/atlas/transcript/{operation}")
 @router.post("/internal/atlas/execution/{operation}")
 async def execution_broker(request: Request, operation: str) -> Response:
     headers = {"Cache-Control": "private, no-store"}
+    transcript = request.url.path.startswith("/internal/atlas/transcript/")
     try:
         credential = request.headers.get("x-atlas-project-identity", "")
         secret = request.headers.get("x-atlas-execution-secret", "")
@@ -811,7 +1056,9 @@ async def execution_broker(request: Request, operation: str) -> Response:
         key = request.headers.get("idempotency-key", "")
         if not key or len(key) > 200:
             raise ProjectError(422, "invalid_request")
-        limit = await asyncio.to_thread(execution_ingress, identity, operation)
+        limit = await asyncio.to_thread(
+            execution_ingress, identity, operation, transcript
+        )
         body = bytearray()
         async with asyncio.timeout(5):
             async for chunk in request.stream():
@@ -827,14 +1074,44 @@ async def execution_broker(request: Request, operation: str) -> Response:
                     )
                 body.extend(chunk)
         status, result = await asyncio.to_thread(
-            execution_dispatch,
+            transcript_dispatch if transcript else execution_dispatch,
             identity,
             operation,
             bytes(body),
             key,
             request.headers.get("content-type", ""),
         )
-        return JSONResponse(result, status_code=status, headers=headers)
+        from services.retrieval.project_runners import (
+            start_command as run_remote_command,
+        )
+
+        return JSONResponse(
+            result,
+            status_code=status,
+            headers=headers,
+            background=(
+                BackgroundTask(
+                    run_remote_command,
+                    store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+                    identity,
+                    result["command_id"],
+                )
+                if operation == "remote"
+                and isinstance(result, dict)
+                and result.get("state") == "running"
+                and json.loads(body).get("operation") == "execute"
+                else BackgroundTask(
+                    run_operation,
+                    store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+                    identity,
+                    result["operation_id"],
+                )
+                if operation == "forge"
+                and isinstance(result, dict)
+                and result.get("state") == "running"
+                else None
+            ),
+        )
     except ProjectError as exc:
         return JSONResponse(exc.body, status_code=exc.status, headers=headers)
     except (ValueError, TypeError, psycopg.IntegrityError):
@@ -849,11 +1126,19 @@ async def execution_broker(request: Request, operation: str) -> Response:
         )
 
 
-def execution_ingress(identity: Identity, operation: str = "") -> int:
+def execution_ingress(
+    identity: Identity, operation: str = "", transcript: bool = False
+) -> int:
     dsn = os.environ.get("ATLAS_PROJECT_DSN", "")
     if not dsn:
         raise ProjectError(503, "dependency_unavailable")
     with store(dsn).scope(identity, identity.org, identity.project) as scope:
+        if transcript:
+            scope.authorize("POST", ["conversations"])
+            return 8388608 if operation == "result-put" else 160000
+        if operation in {"forge", "remote"}:
+            scope.authorize("POST", ["work-sessions"])
+            return int(scope.policy["quotas"]["upload_bytes"]) * 2 + 160000
         if operation == "publish":
             scope.authorize("POST", ["work-sessions"])
             folder = scope.project_data["deliverables_folder_id"]
@@ -864,3 +1149,93 @@ def execution_ingress(identity: Identity, operation: str = "") -> int:
             )
         Work(scope).grant_stamp(identity.member)
         return 160000
+
+
+def transcript_dispatch(
+    identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
+) -> tuple[int, Any]:
+    schemas = {
+        "memory": "TranscriptMemory",
+        "state-events": "TranscriptEvents",
+        "state-read": "SessionStateRead",
+        "state-write": "SessionStateWrite",
+        "compact": "SessionCompaction",
+        "begin": "TranscriptBegin",
+        "finish": "TranscriptFinish",
+        "events": "TranscriptEvents",
+        "work-events": "WorkTranscriptEvents",
+        "result-put": "TranscriptResultPut",
+        "result-open": "TranscriptResultOpen",
+    }
+    if operation not in schemas or identity.project is None:
+        raise ProjectError(404, "not_found")
+    data = validate(schemas[operation], json.loads(body))
+    with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+        identity, identity.org, identity.project
+    ) as scope:
+        transcript = Transcript(scope)
+        if operation == "begin":
+            return transcript.begin(data, key)
+        bound_turn, bound_private = transcript.bound(data)
+        if operation in {"state-read", "state-write", "state-events", "compact"}:
+            from services.retrieval.project_session_state import SessionStates
+
+            states = SessionStates(transcript)
+            if operation == "state-read":
+                return 200, states.read(data)
+            path = f"/internal/atlas/transcript/{operation}/{identity.project}"
+            replay = scope.replay("POST", path, key, canonical(data))
+            if replay is not None:
+                return replay
+            result = (
+                200,
+                states.write(data)
+                if operation == "state-write"
+                else states.compact(data)
+                if operation == "compact"
+                else transcript.events(data, state_update=True),
+            )
+            scope.remember("POST", path, key, canonical(data), result)
+            return result
+        if operation == "work-events":
+            session_id = bound_private["request"].get("work_session_id")
+            if not session_id:
+                raise ProjectError(409, "session_busy")
+            Work(scope).fence(
+                dict(
+                    session_id=session_id,
+                    request_id=bound_turn["request_id"],
+                    generation=data["generation"],
+                )
+            )
+        references = None
+        if operation in {"result-put", "result-open", "memory"}:
+            from services.retrieval.project_results import ResultReferences
+
+            references = ResultReferences(transcript)
+            references.bound(data)
+            if operation == "result-open":
+                return 200, references.open(data)
+        path = f"/internal/atlas/transcript/{operation}/{identity.project}"
+        body = canonical(data)
+        replay = scope.replay("POST", path, key, body)
+        if replay is not None:
+            if operation == "memory":
+                for entry in replay[1]["entries"]:
+                    current = transcript.files.get("memory", entry["id"])
+                    transcript.check_sources(current["source_file_version_ids"])
+            return replay
+        from services.retrieval.project_memory import model_operation
+
+        result = (
+            200,
+            model_operation(transcript, data)
+            if operation == "memory"
+            else references.put(data)
+            if references is not None
+            else transcript.finish(data)
+            if operation == "finish"
+            else transcript.events(data),
+        )
+        scope.remember("POST", path, key, body, result)
+        return result

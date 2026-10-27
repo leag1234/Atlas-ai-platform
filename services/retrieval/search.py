@@ -35,9 +35,13 @@ class Scores(BaseModel):
 class Gateway:
     def __init__(self, url: str) -> None:
         self.url = url.rstrip("/")
+        self.timeout = 30.0
+        self.request_bytes = self.response_bytes = 0
 
     def post(self, operation: str, payload: dict[str, object]) -> object:
         data = json.dumps(payload, allow_nan=False).encode()
+        self.request_bytes = len(data)
+        self.response_bytes = 0
         if len(data) > 800000:
             raise LimitError("context_exceeded", len(data), 800000, "request bytes")
         request = Request(
@@ -46,8 +50,9 @@ class Gateway:
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urlopen(request, timeout=30) as response:
+            with urlopen(request, timeout=self.timeout) as response:
                 body = response.read(800001)
+                self.response_bytes = len(body)
             if len(body) > 800000:
                 raise LimitError(
                     "provider_response_limit", len(body), 800000, "response bytes"

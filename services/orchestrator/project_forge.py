@@ -14,6 +14,7 @@ import json
 import os
 import re
 import subprocess
+import ssl
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -99,6 +100,10 @@ def branch_name(value: str) -> None:
 
 
 class ForgeAdapter(Protocol):
+    def connector_digest(self) -> str: ...
+    def import_snapshot(
+        self, limit: int, revision: str | None = None
+    ) -> tuple[str, bytes]: ...
     def bind(self, action: Json) -> Json: ...
     def prepare(self, operation: Json, content: bytes | None) -> str | None: ...
     def reconcile(self, operation: Json) -> Outcome: ...
@@ -113,6 +118,8 @@ class Connector:
     author_name: str
     author_email: str
     token: str = field(repr=False, compare=False)
+    ca_file: str | None = None
+    username: str = "x-access-token"
 
 
 class GitHubForge:
@@ -121,6 +128,11 @@ class GitHubForge:
     Connector URLs are operator-pinned, never derived from action parameters.
     The injected HTTP transport is a test seam; production uses HTTPS only.
     """
+
+    authorization_scheme = "Bearer"
+    accept = "application/vnd.github+json"
+    page_size = 100
+    page_parameter = "per_page"
 
     def __init__(
         self, connector: Connector, *, transport: httpx.BaseTransport | None = None
@@ -131,6 +143,7 @@ class GitHubForge:
             parsed = urlsplit(value)
             if (
                 parsed.scheme != "https"
+                or not parsed.hostname
                 or parsed.username
                 or parsed.password
                 or parsed.query
@@ -139,6 +152,8 @@ class GitHubForge:
                 raise ForgeError("invalid_connector")
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", connector.repository):
             raise ForgeError("invalid_connector")
+        if any(c in connector.username for c in ":\r\n"):
+            raise ForgeError("invalid_connector")
         if any(c in connector.author_name + connector.author_email for c in "\r\n<>"):
             raise ForgeError("invalid_connector")
 
@@ -146,9 +161,9 @@ class GitHubForge:
         # Deliberately do not inherit worker/provider credentials, git hooks,
         # SSH agents, credential helpers, proxies or user Git configuration.
         authorization = base64.b64encode(
-            ("x-access-token:" + self.config.token).encode()
+            (self.config.username + ":" + self.config.token).encode()
         ).decode()
-        return {
+        result = {
             "PATH": os.defpath,
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": os.devnull,
@@ -165,6 +180,10 @@ class GitHubForge:
             "GIT_CONFIG_KEY_4": "protocol.https.allow",
             "GIT_CONFIG_VALUE_4": "always",
         }
+
+        if self.config.ca_file:
+            result["GIT_SSL_CAINFO"] = self.config.ca_file
+        return result
 
     def git(
         self,
@@ -213,11 +232,81 @@ class GitHubForge:
             )
             yield path
 
+    def connector_digest(self) -> str:
+        return hashlib.sha256(
+            canonical(
+                dict(
+                    remote_ref=self.config.remote_ref,
+                    api_url=self.config.api_url,
+                    repository=self.config.repository,
+                    author_name=self.config.author_name,
+                    author_email=self.config.author_email,
+                    username=self.config.username,
+                    ca_file=self.config.ca_file,
+                )
+            )
+        ).hexdigest()
+
+    def import_snapshot(
+        self, limit: int, revision: str | None = None
+    ) -> tuple[str, bytes]:
+        if revision is None:
+            metadata = self.request("GET", "")
+            branch = metadata.get("default_branch")
+            if not isinstance(branch, str):
+                raise ForgeError("invalid_default_branch")
+            branch_name(branch)
+            revision = self.refs().get(branch)
+        if revision is None or not re.fullmatch(r"[a-f0-9]{40}", revision):
+            raise ForgeError("invalid_base_commit")
+        files = []
+        total = 0
+        with self.checkout(revision) as path:
+            entries = self.git(["ls-tree", "-r", "-z", "--long", revision], path).split(
+                b"\0"
+            )
+            if len(entries) > 20001:
+                raise ForgeError("repository_entry_limit")
+            for entry in entries:
+                if not entry:
+                    continue
+                meta, name = entry.split(b"\t", 1)
+                mode, kind, oid, size = meta.split()
+                if mode not in (b"100644", b"100755") or kind != b"blob":
+                    raise ForgeError("unsupported_repository_entry")
+                total += int(size)
+                if total > limit:
+                    raise ForgeError("repository_byte_limit")
+                content = self.git(["cat-file", "blob", oid.decode("ascii")], path)
+                files.append(
+                    dict(
+                        path=name.decode("utf-8"),
+                        mode=mode.decode(),
+                        content=base64.b64encode(content).decode(),
+                    )
+                )
+        payload = canonical(dict(files=sorted(files, key=lambda f: f["path"])))
+        snapshot_files(payload, hashlib.sha256(payload).hexdigest())
+        return revision, payload
+
     def bind(self, action: Json) -> Json:
         params, kind = action["parameters"], action["kind"]
         for key in ("message", "body", "title"):
             if "Atlas-Operation:" in params.get(key, ""):
                 raise ForgeError("reserved_marker")
+        if kind == "publish_change":
+            branch_name(params["branch"])
+            branch_name(params["target"])
+            refs = self.refs()
+            if (
+                params["branch"] in refs
+                or refs.get(params["target"]) != action["base_commit"]
+            ):
+                raise ForgeError("base_mismatch")
+            return dict(
+                connector_digest=self.connector_digest(),
+                target_commit=action["base_commit"],
+            )
         names = (
             [params["name"]]
             if kind == "branch"
@@ -227,19 +316,7 @@ class GitHubForge:
         )
         for name in names:
             branch_name(name)
-        binding = {
-            "connector_digest": hashlib.sha256(
-                canonical(
-                    {
-                        "remote_ref": self.config.remote_ref,
-                        "api_url": self.config.api_url,
-                        "repository": self.config.repository,
-                        "author_name": self.config.author_name,
-                        "author_email": self.config.author_email,
-                    }
-                )
-            ).hexdigest()
-        }
+        binding = dict(connector_digest=self.connector_digest())
         refs = self.refs()
         if kind == "branch":
             if names[0] in refs:
@@ -320,6 +397,7 @@ class GitHubForge:
             with httpx.Client(
                 transport=self.transport,
                 trust_env=False,
+                verify=ssl.create_default_context(cafile=self.config.ca_file),
                 follow_redirects=False,
                 timeout=15,
             ) as client:
@@ -330,8 +408,10 @@ class GitHubForge:
                     + self.config.repository
                     + suffix,
                     headers={
-                        "Authorization": "Bearer " + self.config.token,
-                        "Accept": "application/vnd.github+json",
+                        "Authorization": self.authorization_scheme
+                        + " "
+                        + self.config.token,
+                        "Accept": self.accept,
                     },
                     json=data,
                 )
@@ -348,26 +428,35 @@ class GitHubForge:
                 marker = "<!-- Atlas-Operation: " + operation["id"] + " -->"
                 for page in range(1, 101):
                     rows = self.request(
-                        "GET", "/pulls?state=all&per_page=100&page=" + str(page)
+                        "GET",
+                        f"/pulls?state=all&{self.page_parameter}={self.page_size}&page={page}",
                     )
                     if not isinstance(rows, list):
                         return "unknown"
                     for row in rows:
                         if marker in (row.get("body") or ""):
-                            return (
-                                "succeeded"
-                                if (
-                                    row["title"] == params["title"]
-                                    and row["body"] == params["body"] + "\n\n" + marker
-                                    and row["head"]["ref"] == params["head"]
-                                    and row["base"]["ref"] == params["target"]
-                                    and row["head"]["sha"]
-                                    == operation["binding"]["head_commit"]
-                                    and row["base"]["sha"] == action["base_commit"]
-                                )
-                                else "conflict"
+                            matches = (
+                                row["title"] == params["title"]
+                                and row["body"] == params["body"] + "\n\n" + marker
+                                and row["head"]["ref"] == params["head"]
+                                and row["base"]["ref"] == params["target"]
+                                and row["head"]["sha"]
+                                == operation["binding"]["head_commit"]
+                                and row["base"]["sha"] == action["base_commit"]
                             )
-                    if len(rows) < 100:
+                            if matches and isinstance(row.get("html_url"), str):
+                                url = urlsplit(row["html_url"])
+                                configured = urlsplit(self.config.remote_ref)
+                                if (
+                                    url.scheme == "https"
+                                    and (url.hostname, url.port)
+                                    == (configured.hostname, configured.port)
+                                    and not url.username
+                                    and not url.password
+                                ):
+                                    operation["pr_url"] = row["html_url"]
+                            return "succeeded" if matches else "conflict"
+                    if len(rows) < self.page_size:
                         return "absent"
                 return "unknown"
             refs = self.refs()
@@ -439,6 +528,30 @@ class GitHubForge:
                 ],
                 path,
             )
+
+
+class ForgejoForge(GitHubForge):
+    """Gitea-compatible REST with the same credential-isolated atomic Git writes.
+
+    Gitea API tokens use the token scheme; list pagination uses limit, not
+    GitHub's per_page. One row per page also respects an operator's lower cap.
+    """
+
+    authorization_scheme = "token"
+    accept = "application/json"
+    page_size = 1
+    page_parameter = "limit"
+
+    def __init__(
+        self, connector: Connector, *, transport: httpx.BaseTransport | None = None
+    ) -> None:
+        super().__init__(connector, transport=transport)
+        remote, api = urlsplit(connector.remote_ref), urlsplit(connector.api_url)
+        if (remote.hostname, remote.port) != (
+            api.hostname,
+            api.port,
+        ) or api.path.rstrip("/") != "/api/v1":
+            raise ForgeError("invalid_connector")
 
 
 # Configured adapters are selected explicitly by the retrieval broker.

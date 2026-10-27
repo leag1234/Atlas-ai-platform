@@ -1,0 +1,5 @@
+{
+  "source": "P1b-live-1 captured Chat consolidation",
+  "question": "Maintain this plan: Inspect source; Calculate allocation; Write register; Verify totals. Our project permits shipment only to France or Germany. Acknowledge briefly.",
+  "response": "{\"answer\":\"Plan acknowledged: Inspect source, Calculate allocation, Write register, Verify totals. Shipment restricted to France and Germany.\",\"facts\":[{\"text\":\"Project shipping constraint: Ship only to France or Germany. Never ship outside these countries.\",\"e\":\"Maintain this plan: Inspect source; Calculate allocation; Write register; Verify totals. Our project permits shipment only to France or Germany. Acknowledge briefly.\"},{\"text\":\"Project plan: Inspect source; Calculate allocation; Write register; Verify totals.\",\"e\":\"Maintain this plan: Inspect source; Calculate allocation; Write register; Verify totals. Our project permits shipment only to France or Germany. Acknowledge briefly.\"}]}"
+}

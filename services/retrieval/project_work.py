@@ -53,7 +53,19 @@ class Work:
         ).fetchone()
 
     def get(self, identifier: str) -> dict[str, Any]:
-        value = self.files.get("work_session", identifier)
+        try:
+            value = self.files.get("work_session", identifier)
+        except ProjectError as exc:
+            if exc.status != 404:
+                raise
+            aliases = self.db.execute(
+                "SELECT id FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='work_session' AND data->>'legacy_session_id'=%s",
+                (self.org, self.project, identifier),
+            ).fetchall()
+            if len(aliases) != 1:
+                raise ProjectError(404, "not_found") from None
+            value = self.files.get("work_session", str(aliases[0]["id"]))
+        identifier = value["id"]
         row = self.lease(identifier)
         value["lease"] = (
             None
@@ -116,6 +128,15 @@ class Work:
                 or file["version_id"] != version["id"]
             ):
                 raise ProjectError(409, "revision_conflict", revision=file["revision"])
+        repositories = [
+            r
+            for r in self.files.listing("repository")
+            if r["folder_id"] in data["folder_ids"]
+        ]
+        if len(repositories) > 1:
+            raise ProjectError(
+                422, "invalid_request", "Select one repository per Work session"
+            )
         workspace = str(uuid4())
         value = dict(
             self.files.new(),
@@ -123,7 +144,7 @@ class Work:
             initiator_member_id=self.scope.identity.member,
             workspace_id=workspace,
             base_file_versions=data["base_versions"],
-            repository_id=None,
+            repository_id=repositories[0]["id"] if repositories else None,
             state="ready",
             plan=[],
             effective_limits=self.scope.policy["quotas"]["per_turn"],
@@ -311,6 +332,10 @@ class Work:
             elif operation == "release":
                 if not data["cleanup_confirmed"] or data["terminal_state"] is None:
                     raise ProjectError(422, "invalid_request")
+                from services.retrieval.project_runners import close as close_runners
+
+                if data["terminal_state"] in {"cancelled", "failed"}:
+                    close_runners(self.scope, value["id"])
                 reservation = row["data"]["reservation_id"]
                 usage = data["usage"]
                 if row["data"]["cleanup"] and usage is not None:
@@ -540,7 +565,12 @@ class Work:
 
     def approval_current(self, row: dict[str, Any]) -> bool:
         value, execution = row["data"], row["execution"]
-        if not execution or "forge_operation" in execution:
+        if (
+            not execution
+            or "runner_command" in execution
+            or "forge_operation" in execution
+            or "repository_import" in execution
+        ):
             return False
         lease = self.lease(value["session_id"])
         session = self.get(value["session_id"])
@@ -573,6 +603,14 @@ class Work:
     def decide(self, identifier: str, data: dict[str, Any]) -> tuple[int, Any]:
         validate("ApprovalDecision", data)
         row = self.approval(identifier)
+        if row["execution"] and "runner_command" in row["execution"]:
+            from services.retrieval.project_runners import RemoteWork
+
+            return RemoteWork(self.scope).decide(identifier, data)
+        if row["execution"] and "repository_import" in row["execution"]:
+            from services.retrieval.project_repository_import import RepositoryImports
+
+            return RepositoryImports(self.scope).decide(identifier, data)
         if row["execution"] and "forge_operation" in row["execution"]:
             from services.retrieval.project_forge import RepositoryActions
 

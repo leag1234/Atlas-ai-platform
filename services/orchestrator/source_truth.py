@@ -7,6 +7,34 @@ from services.orchestrator.interactions import Interaction
 
 URL = re.compile(r"https?://[^\s<>\"'()\]]+")
 REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
+_MARKDOWN_LINK = re.compile(
+    r"(?<!!)\[\[([^\]\n]+)\]\(([^)\n]+)\)\]|(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)"
+)
+_PRODUCT_URL_KEYS = frozenset(
+    {
+        "url",
+        "download_url",
+        "download_route",
+        "preview_url",
+        "preview_route",
+        "content_url",
+        "file_url",
+        "reference",
+    }
+)
+
+
+def tool_result_urls(value: object) -> set[str]:
+    """Return URLs explicitly emitted in product-owned result fields only."""
+    if isinstance(value, dict):
+        found = set().union(*(tool_result_urls(part) for part in value.values()))
+        for key, part in value.items():
+            if key in _PRODUCT_URL_KEYS and isinstance(part, str):
+                found.update(urls(part))
+        return found
+    if isinstance(value, list):
+        return set().union(*(tool_result_urls(part) for part in value))
+    return set()
 
 
 def drawing_references(item: Interaction) -> set[str]:
@@ -44,10 +72,40 @@ def urls(text: str) -> set[str]:
     return {match.rstrip(".,;:)]}>'\"") for match in URL.findall(text)}
 
 
+def person_citations(text: str, evidence_urls: set[str]) -> str:
+    """Keep person-synthesis citations only when they name supplied evidence.
+
+    A malformed Markdown target can make a model's unsupported attribution look like
+    a source. If that was the sentence's only citation, the claim cannot be retained.
+    """
+
+    def target(match: re.Match[str]) -> str:
+        return (match.group(2) or match.group(4) or "").strip().strip("<>")
+
+    def valid(match: re.Match[str]) -> bool:
+        return target(match) in evidence_urls
+
+    parts = re.split(r"(?<=[.!?])(?=\s)|(?<=\n)", text)
+    cleaned: list[str] = []
+    for part in parts:
+        matches = list(_MARKDOWN_LINK.finditer(part))
+        if matches and any(not valid(match) for match in matches):
+            kept = _MARKDOWN_LINK.sub(
+                lambda match: match[0] if valid(match) else "", part
+            )
+            if not any(valid(match) for match in _MARKDOWN_LINK.finditer(kept)):
+                continue
+            cleaned.append(kept)
+        else:
+            cleaned.append(part)
+    return "".join(cleaned)
+
+
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
     from services.orchestrator.citation_fragments import tool_citations
     from services.orchestrator.mermaid_check import FENCE
 
+    original = text
     text = tool_citations(text, retrieved)
     diagram_ranges: list[tuple[int, int]] = []
 
@@ -88,16 +146,43 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     if not retrieved:
         text = re.sub(r"(?im)^sources?\s*:.*(?:\n|$)", "", text)
 
+    if text != original:
+        from services.orchestrator.citation_cleanup import cleanup
+
+        text = cleanup(text)
     return text
 
 
-def inline_source_markers(text: str, retrieved: list[str]) -> str:
+def clean_citation_residue(text: str) -> str:
+    """Remove citation-only connective phrases and punctuation gaps in prose."""
+    from services.orchestrator.citation_fragments import _CODE
+
+    def clean(value: str) -> str:
+        value = re.sub(
+            r"(?i)[ \t]+(?:issues? de sources?|according to sources?|from sources?)[ \t]*(?=[.,;]|$)",
+            "",
+            value,
+        )
+        value = re.sub(r",[ \t]*(?=\.)", "", value)
+        return re.sub(r"[ \t]+([.,])", r"\1", value)
+
+    return "".join(
+        part if index % 2 else clean(part)
+        for index, part in enumerate(_CODE.split(text))
+    )
+
+
+def inline_source_markers(
+    text: str, retrieved: list[str], *, preserve_labels: bool = False
+) -> str:
     """Turn retrieved web URLs into compact Markdown links Open WebUI renders."""
     numbers = {url: index for index, url in enumerate(dict.fromkeys(retrieved), 1)}
     text = provider_reference_markers(text, retrieved)
 
     def markdown(match: re.Match[str]) -> str:
         url = match.group(1).rstrip(".,;:)]}>'\"")
+        if preserve_labels:
+            return match[0]
         return f"[{numbers[url]}]({url})" if url in numbers else match.group(0)
 
     text = re.sub(r"(?<!!)\[[^\]]+\]\((https?://[^\s)]+)\)", markdown, text)

@@ -1,7 +1,7 @@
 -- REQ-PROJ-05. Explicit idempotent operator migration, never application startup.
 ALTER TABLE atlas_projects.resources DROP CONSTRAINT IF EXISTS resources_kind_check;
 ALTER TABLE atlas_projects.resources ADD CONSTRAINT resources_kind_check CHECK
-(kind IN ('folder','file','version','instructions','memory','derived','job','deliverable','outbox','work_session','repository'));
+(kind IN ('folder','file','version','instructions','memory','derived','job','deliverable','outbox','work_session','repository','conversation','turn'));
 CREATE TABLE IF NOT EXISTS atlas_projects.work_leases (
  org_id uuid NOT NULL, project_id uuid NOT NULL, session_id uuid NOT NULL,
  generation bigint NOT NULL CHECK(generation>0), request_id uuid NOT NULL,

@@ -3,17 +3,153 @@
   // Open WebUI stores its selected interface language in "locale" (v0.11.3).
   // Keep this in the shared overlay so the trial and host launcher agree.
   const nativeFetch = window.fetch.bind(window);
-  window.fetch = (input, options) => {
+  const nearbyIntent = text => {
+    const value = text.replace(/<attached_files>[\s\S]*?<\/attached_files>/g, '').replace(/^\[Attachment: [^\n]*\]$/gm, '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (/\b(recette|recipe|translate|tradui\w*|definition|explain|explique|histoire)\b/.test(value)) return false;
+    const near = /\b(near(?:by|est)?|around me|close(?:st)?|pres|proche\w*|autour|quartier|a pied|dans le coin|cerca|vicino|nahe)\b/.test(value);
+    return (/\b(baker\w*|boulanger\w*|pain|bread|backerei|panaderia|panificio|convenience|superette\w*|epicerie\w*|lait|milk|pharmac\w*|medicament\w*|medicine|apotheke\w*|farmacia\w*|supermarket\w*|supermarche\w*|restaurant\w*|cafe\w*|coffee|fuel|essence)\b/.test(value) && (near || /\b(open|ouvert\w*|abiert\w*|offen|aperto|maintenant|now|heure|tout de suite|ou aller)\b/.test(value)));
+  };
+  const locationIdentity = async () => {
+    const headers = new Headers();
+    const token = localStorage.getItem('token');
+    if (token) headers.set('Authorization', 'Bearer ' + token);
+    try {
+      const response = await nativeFetch('/api/v1/auths/', { credentials: 'same-origin', headers, cache: 'no-store' });
+      if (!response.ok) return null;
+      const user = await response.json();
+      return typeof user.id === 'string' ? user.id : null;
+    } catch { return null; }
+  };
+  const permissionKey = id => 'atlas-location-permission:' + id;
+  async function requestLocation(signal) {
+    if (!document.getElementById('atlas-nearby-style')) {
+      const style = document.createElement('link');
+      style.id = 'atlas-nearby-style'; style.rel = 'stylesheet'; style.href = '/static/atlas/nearby.css';
+      document.head.append(style);
+    }
+    const id = await locationIdentity();
+    const french = (localStorage.getItem('locale') || navigator.language).startsWith('fr');
+    const words = french ? ['Partager votre position approximative ?', 'Cette fois seulement', 'Toujours partager', 'Refuser', 'Indiquez un lieu (par exemple près de la place Bellecour)', 'Utiliser ce lieu', 'Annuler', 'Seule la permission est mémorisée. Révocable dans les paramètres. La position approximative est utilisée pour cette demande uniquement.'] : ['Share your approximate location?', 'Share this time only', 'Always share', 'Refuse', 'Enter a place (for example near Bellecour square)', 'Use this place', 'Cancel', 'Only permission is remembered. Revoke it in settings. Approximate location is used for this request only.'];
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const locate = mode => new Promise(resolve => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(position => {
+        const latitude = Math.round(position.coords.latitude * 1000) / 1000;
+        const step = .001 / Math.max(.01, Math.cos(latitude * Math.PI / 180));
+        resolve({ consent: mode, timezone, position: { latitude, longitude: Math.max(-180, Math.min(180, Math.round(position.coords.longitude / step) * step)) } });
+      }, () => resolve(null), { enableHighAccuracy: false, maximumAge: 0, timeout: 10000 });
+    });
+    let denied = false;
+    if (id && localStorage.getItem(permissionKey(id)) === 'always') {
+      const result = await locate('always');
+      if (result) return result;
+      denied = true;
+    }
+    return new Promise((resolve, reject) => {
+      const dialog = document.createElement('dialog'); dialog.id = 'atlas-location-consent'; dialog.setAttribute('aria-label', words[0]);
+      const title = document.createElement('h2'), note = document.createElement('p'), controls = document.createElement('div');
+      title.textContent = words[0]; note.textContent = words[7]; dialog.append(title, note, controls);
+      const finish = value => { signal?.removeEventListener('abort', abort); dialog.remove(); resolve(value); };
+      const abort = () => { dialog.remove(); reject(new DOMException('Aborted', 'AbortError')); };
+      const button = (label, action) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', action); controls.append(b); return b; };
+      const typed = consent => {
+        controls.replaceChildren(); title.textContent = words[4];
+        const form = document.createElement('form'), input = document.createElement('input');
+        input.required = true; input.minLength = 2; input.maxLength = 200; input.autocomplete = 'off'; input.setAttribute('aria-label', words[4]);
+        const submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = words[5];
+        form.append(input, submit); controls.append(form); button(words[6], () => finish({ consent, timezone }));
+        form.addEventListener('submit', event => { event.preventDefault(); finish({ consent, timezone, place: input.value.trim() }); }); input.focus();
+      };
+      for (const [mode, label] of [['once', words[1]], ['always', words[2]]]) {
+        const b = button(label, async () => {
+          controls.querySelectorAll('button').forEach(control => { control.disabled = true; });
+          const result = await locate(mode);
+          if (!dialog.isConnected) return;
+          if (result) { if (mode === 'always' && id) localStorage.setItem(permissionKey(id), 'always'); finish(result); }
+          else typed('denied');
+        });
+        if (mode === 'always' && !id) b.disabled = true;
+      }
+      button(words[3], () => typed('refused'));
+      dialog.addEventListener('cancel', event => { event.preventDefault(); finish({ consent: 'refused', timezone }); });
+      document.body.append(dialog); dialog.showModal();
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) abort(); else if (denied) typed('denied');
+    });
+  }
+  window.atlasLocation = { needs: nearbyIntent, request: requestLocation, async revoke() { const id = await locationIdentity(); if (id) localStorage.removeItem(permissionKey(id)); } };
+
+  let activeCancellation = null;
+  const stopMark = () => {
+    const messages = document.querySelectorAll(".chat-assistant");
+    const message = messages[messages.length - 1];
+    if (!message || message.querySelector(".atlas-stop-mark")) return;
+    const mark = document.createElement("p");
+    mark.className = "atlas-stop-mark";
+    mark.setAttribute("role", "status");
+    mark.style.margin = "8px 0 0";
+    mark.style.color = "var(--atlas-muted)";
+    mark.style.fontSize = ".875em";
+    mark.style.fontStyle = "italic";
+    mark.textContent = "Stopped.";
+    message.append(mark);
+  };
+  const cancelActive = () => {
+    if (!activeCancellation) return;
+    const token = activeCancellation;
+    activeCancellation = null;
+    stopMark();
+    nativeFetch(`/atlas/cancel/${token}`, { method: "POST", headers: { Origin: location.origin } }).catch(() => {});
+  };
+  window.fetch = async (input, options) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
     if (url.origin === location.origin && /^\/api\/(?:v1\/)?chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
       const locale = (localStorage.getItem("locale") || document.documentElement.lang || "").toLowerCase().split("-")[0];
       if (["en", "fr", "de", "es", "it", "nl"].includes(locale)) {
         const body = JSON.parse(options.body);
-        options = { ...options, body: JSON.stringify({ ...body, ui_locale: locale }) };
+        const cancel_id = crypto.randomUUID();
+        activeCancellation = cancel_id;
+        options = { ...options, body: JSON.stringify({ ...body, ui_locale: locale, cancel_id }) };
+      }
+    }
+    if (url.origin === location.origin && /^\/(?:api\/(?:v1\/)?)?chat\/completions$|^\/v1\/chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
+      const body = JSON.parse(options.body);
+      const message = body.user_message || [...(body.messages || [])].reverse().find(m => m.role === 'user');
+      const text = typeof message?.content === 'string' ? message.content : (message?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
+      if (!body.location && !body.code_mode && nearbyIntent(text)) {
+        const location = await requestLocation(options.signal);
+        if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (url.pathname.startsWith('/api/')) {
+          // The host expects a background-task response and persists its body.
+          // It receives only an opaque capability, never location metadata.
+          const saved = await nativeFetch('/api/atlas/nearby-location', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(location), signal: options.signal});
+          if (!saved.ok) throw new Error('Location service unavailable');
+          body.location_ref = (await saved.json()).location_ref;
+          options.signal?.addEventListener('abort', () => { nativeFetch('/api/atlas/nearby-location/' + body.location_ref, {method: 'DELETE', credentials: 'same-origin'}).catch(() => {}); }, {once: true});
+        } else {
+          body.location = location;
+        }
+        options = { ...options, body: JSON.stringify(body) };
       }
     }
     return nativeFetch(input, options);
   };
+  const prepareStop = () => {
+    const button = document.querySelector('#stop-response-button,[aria-label="Stop"]');
+    if (!button || button.dataset.atlasStopReady) return;
+    button.dataset.atlasStopReady = "true";
+    button.id = "stop-response-button";
+    button.setAttribute("aria-label", "Stop generating");
+    button.title = "Stop generating";
+    button.addEventListener("click", cancelActive, { capture: true });
+  };
+  new MutationObserver(prepareStop).observe(document.documentElement, { childList: true, subtree: true });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && activeCancellation && document.querySelector('#stop-response-button,[aria-label="Stop"]')) {
+      event.preventDefault();
+      document.querySelector('#stop-response-button,[aria-label="Stop"]').click();
+    }
+  }, true);
   const key = "atlas-ui";
   const defaults = { style: "arrondi", mode: "system", accent: "green", size: "16" };
   const choices = { style: ["dense", "arrondi", "document"], mode: ["system", "light", "dark"], accent: ["green", "blue", "orange", "violet", "graphite"], size: ["14", "16", "18", "20"] };
@@ -205,11 +341,19 @@
     const option = (group, value) => `<button type="button" data-atlas-option="${group}" data-value="${value}" aria-label="${group === "size" ? `${value} px` : words[value]}" title="${group === "size" ? `${value} px` : words[value]}" aria-pressed="${saved[group] === value}" class="atlas-option">${group === "size" ? `${value} px` : words[value]}</button>`;
     const root = document.createElement("div"); root.id = "atlas-ui-selector";
     root.innerHTML = `<button id="atlas-ui-toggle" type="button" aria-label="${words.title}" aria-expanded="false">Aa</button><section id="atlas-ui-popover" aria-label="${words.title}" hidden><h2>${words.title}</h2>${Object.keys(choices).map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options" data-atlas-group="${group}">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}</section>`;
+    // Keep the control clear of the composer's Send/Stop button on phones and left of
+    // Open WebUI's top-right header buttons. Inline so the recorded M24 stylesheet is unchanged.
+    Object.assign(root.style, { top: "max(12px, env(safe-area-inset-top))", bottom: "auto", right: "132px" });
     document.body.append(root);
     const toggle = root.querySelector("#atlas-ui-toggle"), popover = root.querySelector("#atlas-ui-popover");
+    Object.assign(popover.style, { top: "52px", bottom: "auto" });
+    const revoke = document.createElement('button'); revoke.type = 'button'; revoke.id = 'atlas-location-revoke';
+    revoke.textContent = (localStorage.getItem('locale') || '').startsWith('fr') ? 'Révoquer le partage de position' : 'Revoke location sharing';
+    revoke.addEventListener('click', async () => { await window.atlasLocation.revoke(); revoke.textContent = 'Location sharing revoked'; }); popover.append(revoke);
+
     const close = () => { popover.hidden = true; toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
     toggle.addEventListener("click", () => { popover.hidden = !popover.hidden; toggle.setAttribute("aria-expanded", String(!popover.hidden)); if (!popover.hidden) popover.querySelector("button").focus(); });
-    root.addEventListener("click", event => { const button = event.target.closest("[data-atlas-option]"); if (!button) return; const group = button.dataset.atlasOption; persist({ [group]: button.dataset.value }); root.querySelectorAll(`[data-atlas-option="${group}"]`).forEach(item => item.setAttribute("aria-pressed", String(item === button))); if (group === "mode") { localStorage.setItem("theme", button.dataset.value); location.reload(); } });
+    root.addEventListener("click", event => { const button = event.target.closest("[data-atlas-option]"); if (!button) return; const group = button.dataset.atlasOption; persist({ [group]: button.dataset.value }); root.querySelectorAll(`[data-atlas-option="${group}"]`).forEach(item => item.setAttribute("aria-pressed", String(item === button))); if (group === "mode") { const theme = button.dataset.value; localStorage.setItem("theme", theme); document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)); window.dispatchEvent(new Event("atlas-theme-change")); } });
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !popover.hidden) { event.preventDefault(); event.stopImmediatePropagation(); close(); } }, true);
   };
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", mount, { once: true }) : mount();
@@ -240,7 +384,7 @@
       const href = URL.createObjectURL(new Blob([value], { type })), link = element("a");
       link.href = href; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(href), 1000);
     };
-    const app = [...document.body.children].find(node => node.tagName === "DIV" && node.style.display === "contents");
+    const app = [...document.body.children].find(node => node.tagName === "DIV" && node.style.display === "contents") || document.querySelector(".atlas-project-host");
     if (!app) return;
     app.classList.add("atlas-app-root");
     const pane = element("aside", "atlas-side-pane"); pane.id = "atlas-side-view"; pane.hidden = true; pane.setAttribute("aria-label", "Side view");

@@ -1,0 +1,4 @@
+{
+  "target": "Linux build",
+  "path_or_glob": "reports/*.xml"
+}

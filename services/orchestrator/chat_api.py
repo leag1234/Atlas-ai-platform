@@ -8,6 +8,7 @@ from packages.configuration import (
     temporarily_unavailable,
 )
 import logging
+import re
 
 import asyncio
 import json
@@ -16,6 +17,7 @@ import time
 from collections.abc import AsyncIterator
 from decimal import Decimal
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
@@ -37,9 +39,11 @@ from services.orchestrator.daily_budget import (
     maintenance_message,
     user_from_headers,
 )
+from services.orchestrator.cancellation import cancel
 
 from services.orchestrator.project_ui import (
     ProjectGate,
+    browser_origin,
     public_error,
     router as project_router,
 )
@@ -61,7 +65,59 @@ app.include_router(image_router)
 app.include_router(mcp_router)
 
 app.include_router(code_router)
+
+
+@app.post("/api/atlas/nearby-location")
+async def nearby_location(request: Request) -> Response:
+    from services.orchestrator.location import Location, location_tickets
+
+    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+        return JSONResponse({"error": "origin_rejected"}, status_code=403)
+    try:
+        body = bytearray()
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > 2048:
+                    return JSONResponse(
+                        {"error": "location_size_limit"}, status_code=413
+                    )
+        location = Location.model_validate_json(body)
+        token = location_tickets.issue(location)
+    except (ValueError, TimeoutError):
+        return JSONResponse(
+            {"error": "location_invalid_or_unavailable"}, status_code=400
+        )
+    return JSONResponse({"location_ref": token}, headers={"Cache-Control": "no-store"})
+
+
+@app.delete("/api/atlas/nearby-location/{token}")
+async def remove_nearby_location(token: UUID, request: Request) -> Response:
+    from services.orchestrator.location import location_tickets
+
+    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+        return Response(status_code=403)
+    location_tickets.take(str(token))
+    return Response(status_code=204)
+
+
 app.include_router(project_router)
+
+
+_UPSTREAM_URL = re.compile(r"https?://[^\s'\"]+", re.I)
+
+
+def public_error_detail(detail: str) -> str:
+    """Keep upstream topology out of API errors and therefore host UI toasts."""
+    return _UPSTREAM_URL.sub("upstream service", detail)
+
+
+@app.post("/atlas/cancel/{token}")
+async def cancel_chat(token: UUID, request: Request) -> Response:
+    """Cancel one browser-owned stream without relying on proxy disconnects."""
+    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+        return JSONResponse({"error": "origin_rejected"}, status_code=403)
+    return Response(status_code=202 if cancel(str(token)) else 404)
 
 
 @app.post("/v1/audio/{operation}")
@@ -69,7 +125,7 @@ async def trial_audio(operation: str) -> JSONResponse:
     return JSONResponse(
         {
             "error": "speech_unavailable",
-            "message": "Speech is unavailable on this endpoint. See the full stack installation guide.",
+            "message": "Speech is not enabled on this installation.",
         },
         status_code=503,
     )
@@ -125,7 +181,12 @@ async def execute(
 
 @app.post("/v1/chat/completions")
 async def chat(request: Request) -> Response:
-    if request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
+    if project_mode():
+        try:
+            browser_origin(request)
+        except ProjectError as exc:
+            return public_error(exc)
+    elif request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
         return JSONResponse({"error": "origin_rejected"}, status_code=403)
     item, started = Interaction(), time.monotonic()
     status, code, payload = 200, "", None
@@ -173,10 +234,21 @@ async def chat(request: Request) -> Response:
                                 and p.get("type") == "text"
                                 and isinstance(p.get("text"), str)
                             )[:32000]
+                from services.orchestrator.project_transcript import authenticate_chat
+
+                scoped_subject, scoped_key = await authenticate_chat(request, raw)
                 raw, item.uploads, item.uploaded_images = await asyncio.to_thread(
-                    prepare_uploads, raw
+                    prepare_uploads, raw, user_from_headers(request.headers)
                 )
+                if isinstance(raw, dict) and "location_ref" in raw:
+                    from services.orchestrator.location import location_tickets
+
+                    reference = raw.pop("location_ref")
+                    if isinstance(reference, str):
+                        raw["location"] = location_tickets.take(reference)
                 payload = ChatRequest.model_validate(raw)
+                payload._project_subject = scoped_subject
+                payload._transcript_key = scoped_key
             except UploadError as exc:
                 status, code, detail = 413, exc.code, str(exc)
             except ValidationError as exc:
@@ -207,7 +279,7 @@ async def chat(request: Request) -> Response:
             reserve = Decimal("0.30" if payload.has_attachments else "0.10")
             if payload.code_mode and project_mode():
                 return public_error(ProjectError(409, "feature_not_available"))
-            if payload.code_mode:
+            if payload.code_mode or payload.project_action == "work":
                 from services.orchestrator.code_mode import settings
 
                 reserve = settings().cost
@@ -244,6 +316,8 @@ async def chat(request: Request) -> Response:
                 )
                 code = "cost_budget" if status == 429 else "request_stopped"
                 detail = item.reponse
+    except ProjectError as exc:
+        return public_error(exc)
     except asyncio.CancelledError:
         status, code = 499, "cancelled"
     except GatewayError as exc:
@@ -322,10 +396,15 @@ async def chat(request: Request) -> Response:
                 Path(os.environ.get("ATLAS_INTERACTION_DIR", "BRAIN/interactions")),
             )
     if code:
+        detail = public_error_detail(detail)
         return JSONResponse(
             {
                 "error": {"message": detail or code, "type": code, "code": code},
                 "atlas": {
+                    "context": item.context_samples[-1]
+                    if item.context_samples
+                    else None,
+                    "context_samples": item.context_samples,
                     "cost_eur": item.cout_eur,
                     "cost_kind": "reserved_upper_bound",
                     "provider_retries": item.provider_retries,
@@ -355,6 +434,8 @@ async def chat(request: Request) -> Response:
                 "hierarchical": any(
                     d.get("hierarchical_synthesis") for d in item.documents
                 ),
+                "context": item.context_samples[-1] if item.context_samples else None,
+                "context_samples": item.context_samples,
                 "images": item.images,
                 "files": item.files,
                 "terminal_commands": item.terminal_commands,

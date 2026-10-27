@@ -11,12 +11,16 @@
     "text_model": "Qwen/Qwen3.6-35B-A3B-FP8",
     "vision_model": "Qwen/Qwen3.6-35B-A3B-FP8",
     "context": 262144, "experimental": true,
+    "code_model": "Qwen/Qwen3.8-27B",
+    "code_thinking": true,
+    "code_models": {"Qwen/Qwen3.8-27B": {"context": 262144, "price": {"currency": "EUR", "input": 0, "output": 0}, "source": "https://docs.hetzner.com/general/company-and-policy/experiments/inference/", "verified_at": "2026-10-26"}},
     "request_options": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": false}},
     "price": {"currency": "EUR", "input": 0, "output": 0},
     "sources": ["https://docs.hetzner.com/general/company-and-policy/experiments/inference/"]
   },
   # Source: https://www.scaleway.com/en/docs/generative-apis/quickstart/; https://www.scaleway.com/en/docs/generative-apis/faq/; https://www.scaleway.com/en/pricing/model-as-a-service/; fetched 2026-10-22.
   "scaleway": {
+    "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Scaleway", "base_url": "https://api.scaleway.ai/v1",
     "text_model": "qwen3.5-397b-a17b", "vision_model": "gemma-4-26b-a4b-it",
@@ -27,6 +31,7 @@
   },
   # Source: https://docs.mistral.ai/api/endpoint/chat; https://docs.mistral.ai/models/mistral-small-4-0-26-03; https://docs.mistral.ai/inference/pricing; fetched 2026-10-22.
   "mistral": {
+    "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
     "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
@@ -46,6 +51,7 @@
   # Source: https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/; https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output; fetched 2026-10-22.
   # Text and vision IDs also checked against the account model list on 2026-10-23.
   "ovhcloud": {
+    "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "OVHcloud AI Endpoints", "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
     "text_model": "Qwen3.5-397B-A17B", "vision_model": "Qwen2.5-VL-72B-Instruct",
@@ -54,6 +60,7 @@
   },
   # Source: https://docs.ollama.com/api/openai-compatibility; https://ollama.com/library/qwen3; fetched 2026-10-22.
   "local": {
+    "json_response_format": true,
     "name": "Local Ollama (CPU supported, GPU recommended)", "base_url": "http://ollama:11434/v1",
     "text_model": "qwen3:0.6b", "vision_model": null,
     "context": 32768, "price": {"currency": "EUR", "input": 0, "output": 0},

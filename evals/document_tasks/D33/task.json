@@ -1,0 +1,87 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "2384d9fb5ed2f891f137083d7851613f207588bf27c63986773162437ab29af7",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "exact_values",
+        "transcript_and_artifact_agree"
+      ],
+      "mime": "application/json",
+      "path": "register.json"
+    }
+  ],
+  "id": "D33",
+  "input_manifest": [
+    {
+      "path": "PROJECT.md",
+      "sha256": "d1e99c249aaf89ad9361dfbdb5b5bf3ec890b7ca3db9ed16e89420907efdbc20",
+      "size_bytes": 68
+    },
+    {
+      "path": "plan.json",
+      "sha256": "f18a4106fb130832f8a4622cb0c7dfc73506976a32bc64610c92209f6bad1327",
+      "size_bytes": 88
+    },
+    {
+      "path": "session.json",
+      "sha256": "352664a053f0a3582921d520ae5abd12c15c73a4ec02d477b9468304d98eb372",
+      "size_bytes": 3652
+    }
+  ],
+  "language": "en",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Execute the recorded session.json turns in one conversation, retaining the task plan. Publish register.json at the final turn.",
+  "title": "Sixty-turn Work context budget and plan",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Conserve le plan et les chiffres pendant toute la session."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Continue the plan",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Execute the recorded session.json turns in one conversation, retaining the task plan. Publish register.json at the final turn."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "EXECUTE THE RECORDED SESSION.JSON TURNS IN ONE CONVERSATION, RETAINING THE TASK PLAN. PUBLISH REGISTER.JSON AT THE FINAL TURN."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Complete the session and produce the checked register."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Explain the session only. Do not execute tools or publish artifacts."
+    }
+  ],
+  "verifier_ref": "D33/verifier.py",
+  "verifier_timeout_seconds": 30
+}

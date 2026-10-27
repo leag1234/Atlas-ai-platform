@@ -794,3 +794,380 @@ another version, charge or event, after current authorization, live fencing and
 source restrictions. Different payload conflicts. Stale generation/lease is
 `409 session_busy`, stale version/folder revision is `409 revision_conflict`,
 occupied path is `409 path_conflict`; other errors retain existing Error semantics.
+
+## Amendment 2026-10-24 (private transcript interface), approved by the supervisor
+
+REQ-PROJ-03/04/07: three private POST routes; no existing public request or response schema changes.
+
+1. `/internal/atlas/transcript/begin`
+   - Closed request `TranscriptBegin`, all fields required:
+     `request_id: UUID`, `request: ProjectChatRequest` (existing schema).
+   - Closed response `TranscriptState`, all fields required:
+     `turn: Turn`, `context: Context`, `replay: boolean`,
+     `events: array<ProjectEvent>` (maximum 100), `last_event_seq: integer >= 0`.
+   - First use returns 201 and atomically creates a running canonical turn with
+     the question, exact selected versions, action and current context revision.
+     Resolve scope, conversation, selected files, source restrictions and policy
+     before context selection. Return canonical authorized history in Context.
+     Work additionally checks the selected session belongs to the conversation.
+   - Scope/member/key plus the canonical request hash identify a single request.
+     Same key/body returns 200 with the existing turn and replay=true, even if a
+     caller generated another request_id; the original server binding wins.
+     Different body returns 409 idempotency_conflict. Replays never dispatch.
+     Further replay uses existing project events with after/Last-Event-ID.
+
+2. `/internal/atlas/transcript/finish`
+   - Closed request `TranscriptFinish`, all fields required:
+     `request_id: UUID`, `conversation_id: UUID`,
+     `state: completed|failed|cancelled`, `content_refs: array<ContentRef>`,
+     `usage: Usage`, `error: Error|null` (all referenced schemas already exist).
+   - Response 200 `Turn` (existing schema).
+   - Resolve the running turn by authenticated scope, conversation and request;
+     derive IDs, action, creator, selected versions, persistability and context
+     revision from the stored begin operation. Only the initiating member's
+     authenticated service request may finish that turn. Enforce source
+     restrictions again and retain unknown cost reservations. Never permit an
+     arbitrary caller to replace question content or another member's turn.
+   - Persist checked answer, terminal state/usage and one terminal ProgressEvent
+     plus its audit/outbox atomically. Duplicate identical finish replays the
+     original result; conflicting finish fails with idempotency_conflict.
+     Stale context remains inspectable but is excluded from future context.
+
+3. `/internal/atlas/transcript/events`
+   - Closed request `TranscriptEvents`, all fields required:
+     `conversation_id: UUID`, `request_id: UUID`,
+     `events: array<ProjectEvent>` (minimum 1, maximum 40).
+   - Closed response `TranscriptEventsResult`, required
+     `events: array<ProjectEvent>` (minimum 1, maximum 40).
+   - Bind events to the running turn and current authority. Replace caller
+     sequence, scope and link fields with server authority; reject inconsistent
+     links. Allocate from the existing shared project sequence and persist
+     content-bearing progress separately from metadata-only audit/outbox.
+     Support actual Chat model-dispatch intent/outcome events, checked errors,
+     and recaps; never infer transmissions from narration. Work tool/approval
+     events remain on the existing fenced execution broker.
+
+All three routes reuse the existing execution service credential and audience
+plus a freshly resolved scoped identity, forbid browser Origin/Fetch Metadata,
+require Idempotency-Key and a 160000-byte bounded JSON body, and are excluded
+from the public BFF. Reauthorize before replay and before accepting content.
+Use existing typed Error semantics, including measured size/quota refusals.
+Chat permits current viewer/editor/owner, including archived read/Chat projects;
+Work requires editor/owner, active project and the existing execution lease for
+execution. No viewer acquires Work authority. Organization/project/member fields
+cannot be caller authority. Retention, FORCE RLS and source invalidation apply.
+Chat reserves its existing effective per-request cost against organization quotas
+at begin; Work keeps its existing lease reservations without double charging.
+An ambiguous/crashed dispatch retains its reservation and never auto-resumes.
+
+## Amendment 2026-10-24 (slide locators), approved by the supervisor
+
+PPTX extraction uses SourceLocator {kind: slide, slide: N}, with N the
+one-based slide position in presentation order. Coverage.unit is slides;
+selected_units counts distinct indexed slides and total_units is the source
+slide count, or null when it cannot be determined safely. Speaker notes are
+associated with their slide. Coverage.complete is false for omitted or
+truncated content; warnings identify affected slides and reasons. The same
+slide locator is preserved in extraction segments, indexed sources, Chat
+citations and ledger source references. Retrieval retains ownership of
+canonical storage and the index; this amendment grants no database access,
+network access, OCR dispatch authority or worker storage access.
+
+## Amendment 2026-10-25 (organization names), approved by the supervisor
+
+REQ-PROJ-04/08: organization and membership responses expose the stored organization
+`name` as read-only display metadata. It grants no authority and never replaces
+UUID scope selectors. Existing organization storage already contains this field.
+
+## Scoped model approval adapter
+
+REQ-PROJ-05: the model-facing approval tool accepts a flat `effect_kind` selector
+(overwrite, delete_file, delete_memory) and the exact fields for that effect.
+The orchestrator deterministically maps it to the unchanged strict ScopedApproval
+and execution broker effects. Unknown, irrelevant, missing or mistyped fields
+are rejected before broker calls; authority and exact-effect validation remain
+server-owned. Existing strict internal arguments remain compatible.
+A Work loop stop or unresolved tool validation failure produces a failed session,
+turn and recap with the reason; returning text alone never implies completion.
+
+## L7 owner ruling: model document input and terminal readback
+
+REQ-PROJ-05/08: `publish_document` offers Markdown `content` for DOCX/PDF/XLSX
+(headings, paragraphs, lists, simple pipe tables), or `title` and `slides`
+(title/bullets, optional notes/table) for PPTX. The server maps these inputs
+into the existing strict Content model; existing structured objects and JSON
+strings encoding that model remain accepted. Invalid, ambiguous and oversized
+inputs fail before publication. Format, source coverage, permissions, package
+verification and publication schemas are unchanged.
+
+Cancellation uses the current Work lease request_id. Recovery retains the
+original reservation_id as the turn's usage attribution. Failed/cancelled
+terminal transcripts retain their reason in answer content and authoritative
+usage, including unknown reservations, for reload.
+
+Final transcript persistence is shielded from browser disconnect. On reload,
+the original creator may reconcile a still-running Work turn through the
+existing authorized finish boundary only when its session is cancelled and
+the released lease retains the matching reservation_id. This never resumes
+inference or reconciles an unrelated execution.
+
+## Amendment 2026-10-25 (context telemetry / tool-result references), approved by the supervisor
+
+REQ-PROJ-04/05/06/08/09: additive P1a context measurement. Usage and ModelDispatch
+may include `context` (ContextUsage). Public Chat response metadata exposes
+`context` and `context_samples`, including failed dispatch attempts. Each sample
+reports the active gateway-declared model window, estimated input tokens split
+into system, project_instructions, pinned_memory, tool_declarations, session_state,
+recent_turns, tool_results and document_passages. stable_prefix_tokens is the sum
+of the first four layers; total_tokens is the sum of all layers. The estimation
+method is `utf8_bytes_div_4_ceil_per_component`; provider_input_tokens is separate
+and nullable, never an attributed provider breakdown. No thresholds, routing,
+content order or budgets change in measurement. Context-only estimates exclude
+image bytes and are not a billing or exact provider-token claim. The right panel
+shows Context used, the split, window and estimation method for the latest call.
+Work model events use the same private transcript event authorization and additionally
+require the active Work session/request lease. Existing clients may omit the new
+optional fields. D31-D33 are separate recorded-only long-session tasks; D01-D30
+and their gates remain unchanged. Synthetic verifier controls are not recordings.
+
+The additive `/internal/atlas/transcript/work-events` route accepts closed
+WorkTranscriptEvents (conversation_id, request_id, generation, events), uses the
+existing transcript broker authentication and response, and requires the current
+Work fence. The original TranscriptEvents envelope is unchanged.
+
+Two additional private routes, `result-put` and `result-open`, use the same
+authentication, scope, origin denial and Idempotency-Key. All fields in their
+closed schemas are required; generation is null for Chat and the current lease
+generation for Work. A result ID is `origin_turn_uuid:result_uuid`. Bodies are
+canonical turn-private content, retained and revoked with that turn and its
+source versions; they never enter metadata-only ledger events. Storage charges
+actual UTF-8 bytes to the existing stored_bytes quota. Put accepts at most
+1048576 UTF-8 content bytes (8388608-byte JSON ingress cap for escaped content);
+open retains the 160000-byte ingress cap and returns at most 8192 Unicode
+characters, using zero-based half-open ranges. No filesystem path is accepted.
+Reopen rechecks the requesting turn, original turn's sources, conversation,
+project, membership and identical Work session (or Chat conversation); it never
+replays cached content before authorization. Store replay is idempotent after
+authorization and the current Work fence. Unknown/inaccessible references are
+404; invalid ranges 422; stale leases 409; quota 429 and sizes 413 with values.
+
+Every executed tool result is stored before entering context. Continuously keep
+the last ATLAS_CONTEXT_KEEP_RESULTS complete eligible bodies (default 4, 0-100)
+in the active loop. Older bodies become a two-line deterministic description
+and reopen_result reference. Original content is unchanged in storage. Approval,
+plan and group-selection results, user messages, assistant decisions and stable
+prefix are excluded from clearing. Each clearing emits context_selected with
+optional ContextClearing metadata (ids, estimated tokens_removed/tokens_added,
+method), atomically with storage, and is displayed in the right panel.
+No structured state summarization or history compaction is added in P1a.
+
+Work offers reopen_result as a core tool alongside the existing three core tools,
+with four group slots. The additive optional switch_tool_group.focus field selects
+a group's tool into those slots when needed; every existing group capability
+remains reachable and the gateway's eight-tool capacity is unchanged.
+
+## Amendment 2026-10-25 (session state), approved by the supervisor
+
+REQ-PROJ-04/05/06/08/09: retrieval owns a typed SessionState for each conversation
+and, separately, each Work session. Decisions, established facts, open questions,
+files read/produced and current plan retain source and originating turn. State is
+derived content, never project instructions or activated memory. It inherits all
+source restrictions and revision invalidation of the represented turns.
+
+Private transcript `state-read` and `state-write` reuse transcript authentication,
+origin denial, bounded ingress, current scope/source checks and Idempotency-Key.
+They bind to the initiating member's completed turn. State-write compares the
+previous state revision and the exact covered turn IDs; stale concurrent updates
+fail 409. Retrieval validates the closed schema and provenance before atomically
+persisting state in the turn's private content, with storage quota accounting.
+No new database authority or startup migration is required. Context optionally
+returns session_state and represented_turn_ids; ContextRequest optionally selects
+work_session_id, checked against its conversation. Updates run after terminal
+persistence in a background task, one bounded gateway call with the fast public
+profile, outside the answer path. Failure logs metadata only and preserves state.
+
+Merge is keyed by entry ID within each category. Missing entries are retained;
+explicit replacements preserve their new source/turn. Open-question resolution
+and plan replacement are explicit fields; facts and decisions cannot disappear
+through omission. Invalid schema/provenance or an oversized merged state rejects
+the whole update. Constraints are excluded from generated state authority:
+project instructions and every active constraint are reread verbatim each turn.
+
+Assembly is system, project instructions, pinned memory and tool declarations
+(stable, never compacted), state, recent verbatim turns, tool results and document
+passages. ATLAS_CONTEXT_RECENT_TURNS defaults to 8; ATLAS_CONTEXT_RECENT_TOKENS to
+20000. Only turns covered by persisted state may be removed. At 60% of the active
+model window remove represented older turns; retain the recent configured window.
+At 80% display a warning; at 95% refuse with measured tokens/window and propose a
+new session starting from the state. Apply thresholds to the complete dispatch,
+including tools. Preserve the P1a raw estimate and add a calibrated count (initial
+4/3 correction; update from provider observations by provider family). Exact
+provider counts take precedence for their observed payload; changed payloads use
+the calibrated estimate. Each removal is a context_selected ledger event with
+ContextCompaction metadata, visible under Context used. No transcript is deleted.
+The right panel displays state read-only; Edit is a disabled step-3 placeholder.
+
+State update dispatches use additive `state-events` (TranscriptEvents envelope),
+restricted to the initiating member's completed turn and its state reservation.
+They retain the original source checks but grant no Work execution lease authority.
+Reserve at most EUR 0.01 from the turn's remaining ceiling before inference;
+reconcile acknowledged usage on state-write and retain unknown reservations on
+failure. A Work snapshot inherits the authorized conversation history and is
+also eligible as its conversation's snapshot. Tool evidence is supplied separately,
+with stable references and explicit truncation, to track files read/produced.
+The current unanswered question follows the document layer so the unchanged
+answer-format prompt's last-user-message contract remains true.
+
+Supervisor robustness ruling (2026-10-25): request each state update as JSON in
+message content, with JSON mode on verified provider capabilities and explicit
+instructions plus JSON/fenced-JSON extraction otherwise. Never force a state
+update tool call. For compatibility, accept a single validated update tool payload
+even when the provider labels its finish as `stop`. Normalize only the explicit
+entry aliases `src` to `source` and Chat fact `e` to `evidence`; collisions, duplicate
+JSON keys, unknown fields and invalid provenance still reject the payload. Failure
+retains the prior snapshot and logs a safe reason code. The next completed turn
+makes one fresh bounded update including uncovered turns; no immediate retry.
+
+Supervisor answer-isolation ruling (2026-10-25, P1b-3): scoped project Chat uses
+normal prose completion, without the consolidation-JSON answer contract. State
+updates and compaction-event persistence run independently in background tasks;
+neither failure can reject or delay the user's answer. State parsing accepts the
+first JSON object surrounded by prose, then enforces the unchanged closed schema,
+alias and provenance rules. Unusable output leaves the previous state intact;
+unrepresented verbatim history remains eligible on the next turn. Compaction
+records are best effort on failure and remain visible through the Context ledger
+when persistence succeeds. Pinned content and the 95% overflow boundary remain
+unchanged.
+
+Supervisor Work-loop ruling (2026-10-25, P1b-3): within an answer step, identical
+successful update_plan arguments are acknowledged without another tool execution
+or execution-budget charge. A status or text change is a new plan execution.
+Consecutive identical plans receive an instruction to act on the plan. Model-call,
+wall-clock and monetary limits remain enforced, and invalid plans or other tool
+loops retain the existing loop detector.
+
+Live transport correction (P1b-3): internal TranscriptState applies the same recent
+window before sending history over the bounded broker response. Optional Context
+history_compaction carries omitted represented IDs and token counts for the
+background ledger write. Canonical history and the public transcript are unchanged.
+MemoryEntry.kind includes constraint, the pinned kind already specified above.
+The transport response cap remains 160000 bytes.
+
+## Repository trial continuation (2026-10-25)
+
+REQ-PROJ-05: `POST P/repositories/import-approvals` accepts the repository
+registration fields except approval_id and issues a 120-second approval. It binds
+member, organization, project, connector, empty destination folder/revision, current
+grant/policy, immutable remote commit, exact paths and digest/bytes. The ordinary
+approval decision endpoint records the decision; `POST P/repositories` consumes
+it once and imports canonical versions atomically. No database bootstrap is needed.
+`GET P/repositories` lists authorized repository metadata. A Work session selecting
+a repository folder records that repository and mounts its selected versions.
+
+The private execution `forge` operation carries the ordinary lease fence and
+issue/execute/status. Issue accepts RepositoryAction; a commit additionally carries
+base64 canonical snapshot bytes. Retrieval stores an immutable version before
+issuing the approval. Execution uses the stored action, never subsequent scratch
+bytes. The model-facing code group's `forge_action` schema has branch, commit and
+pull_request variants and waits for inline approval. It extends Work's approval
+surface without changing the existing file/memory request_approval schema.
+
+Forgejo/Gitea connectors use the existing operator ATLAS_FORGE_CONNECTORS catalog,
+forge=forgejo or gitea, pinned HTTPS remote_ref/api_url (same origin, /api/v1),
+repository and token_env. Credentials stay in retrieval. A private instance must
+have explicitly allowed_addresses; TLS verification remains enabled with optional
+operator ca_file. Git publication retains compare-and-swap refs and reconciliation;
+REST uses token authentication and limit pagination. No network enters the worker.
+Work honors the selected public profile and validated ChatRequest output allowance;
+the measurement adapter calls the same product configuration function.
+
+## Amendment 2026-10-25 (typed memory), approved by the supervisor
+
+REQ-PROJ-02/04/06/08/09: memory kinds are constraint, decision, fact, preference,
+open_question and summary. Legacy user/derived/legacy entries read as fact;
+existing provenance is preserved. Each entry exposes source and observed_at,
+pinned, supersedes and superseded_by. Missing fields migrate on read and persist
+on the next write. Facts default to their originating user/source and creation date.
+
+Active constraints are always pinned. Users can pin decisions and facts. The
+project pinned_memory_tokens limit defaults to 1500 and cannot exceed the
+organization quota of the same name (installation ceiling also intersects).
+The UTF-8/4 rounded-up estimate counts the complete serialized pinned component.
+An overflowing mutation is atomic and returns 429 with measured tokens, limit,
+and IDs/text of entries to unpin (constraints must be edited or retired).
+Lowering a cap below current use is rejected. Pinned entries are rendered verbatim
+in the stable prefix on every turn, outside state summarization and compaction.
+
+Other active entries share the scoped document index and hybrid ranking, retaining
+entry ID, revision, source date, turn and file-version provenance. Small tiers
+(up to 20 entries) include a one-line-per-entry index in the document context.
+Proposed, rejected and superseded entries never enter answer context. Source
+revocation applies before listing, indexing, retrieval and model use.
+
+MemoryCreate adds optional kind, pinned and status (proposed/active; default
+proposed). Public authenticated editor/owner activation is explicit confirmation.
+MemoryPatch adds kind, pinned and rejected status. Editing active content creates
+a new revision/ID with supersedes pointing to the previous entry; activation
+atomically marks that predecessor superseded. Proposed corrections leave the old
+entry active until acceptance. History remains inspectable. Every mutation emits
+metadata-only memory_changed ledger/audit events with IDs, revisions and status.
+No memory content becomes system policy or overrides project/organization policy.
+
+The private transcript memory route uses existing scoped broker authentication,
+origin denial, turn/source checks, idempotency and Work fencing. It accepts read,
+search, propose and correct; model writes are always proposed. Constraints and
+all document-derived content require user confirmation. Document provenance is
+server-inherited from the turn and prior entry and cannot be cleared by the model.
+Explicit remember commands (EN/FR/DE/ES/IT) in the actual user question create
+active facts when no document is selected; document-derived requests stay proposed.
+The model cannot invoke this explicit-command authority. Right-panel controls
+provide grouping by kind/tier, pinning, edits, accept/reject and revision history.
+
+## Single-approval repository publication (2026-10-25)
+
+REQ-PROJ-05/06: publish_change freezes the complete scratch snapshot and proposes
+branch, target, commit message, PR title/body and a broker-derived diff summary.
+One inline approval binds these exact fields, immutable snapshot, base SHA,
+connector, scope, member, lease and policy. Separate actions remain available.
+The broker durably checkpoints branch, commit and pull_request, reauthorizes
+before each effect and checks the target base. Recovery reads remote state before
+resending only a proven-absent step, using the original operation identity.
+Public approval replay remains forbidden. Partial failures retain completed steps,
+failing step and unknown state when the remote result cannot be established.
+The Work result includes the verified PR URL on success or failing step otherwise.
+Approval decision updates are emitted to the inline card.
+
+## Code model selection for the bounded trial (2026-10-26)
+
+REQ-PROJ-05: with a configured provider preset, ATLAS_CODE_MODEL optionally selects
+only the code role. Without it, existing role/model selection is unchanged.
+Text, vision, fast and other roles retain their existing models and options.
+Known code models carry explicit gateway-owned context and pricing metadata;
+unknown overrides remain visibly unpriced, never silently classified as free.
+Compose forwards this optional setting only to the gateway. Measurement verifies
+both role and selected provider model before dispatch, without changing prompts,
+sampling, output limits or per-task budgets.
+
+### Work code verification (owner ruling 2026-10-26; REQ-ENG-004)
+
+Work records every recognized test command and explicit test command from the
+user task, including nonzero exits and timeouts. VerificationStatus is an
+additive ProgressOutput.verification field on terminal recaps and honesty events:
+`passed`, `failed`, or `not_run`, plus command, exit_code and factual reason.
+It reflects workspace command evidence, not correctness against unseen tests.
+A later file edit (including a shell edit) invalidates passing evidence.
+A command that changes source while testing cannot establish verification.
+A shell command that can skip or mask the test result, or only requests test
+help/version/collection, cannot establish passing evidence either.
+`publish_change` returns tests_not_verified before approval or publication unless
+the latest test succeeded with no later edit. Final claiming prose is preserved;
+when unsupported, an additional factual verification line is appended.
+The UI displays the status beside both the recap and replayed answer.
+
+Recognition includes Python module runners, test scripts, make test targets and
+inline Python (`-c` or a terminal heredoc) with unconditional assertions. Printed
+success text, uncalled/conditional assertions, disabled assertions and explicit
+early exits or exception suppression cannot establish an inline passing check.
+Unsupported command forms abstain; command evidence is not an independent oracle.
+Work running-command progress retains redacted arguments in tool_result so the
+command and its worker result can be audited in the same session/request.

@@ -1,0 +1,12 @@
+{
+  "kind": "publish_change",
+  "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "change_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parameters": {
+    "branch": "review/repair",
+    "target": "main",
+    "message": "Repair total",
+    "title": "Fix discount",
+    "body": "Verified with unit tests"
+  }
+}

@@ -1,0 +1,290 @@
+{
+  "source": "Owned bundled SearXNG, Hetzner piano conversation, 2026-10-25. Authentic tool exchanges, no edited responses.",
+  "rows": [
+    {
+      "kind": "search",
+      "request": {
+        "query": "Yamaha P-145 (site:thomann.de OR site:woodbrass.com OR site:boulanger.com)",
+        "n": 5,
+        "lang": "fr",
+        "news": false
+      },
+      "response": {
+        "provider": "searxng",
+        "language": "fr",
+        "outcome": "ok",
+        "results": [
+          {
+            "title": "Yamaha P-145 - STOCK B - Pianos numériques portables | Woodbrass",
+            "link": "https://www.woodbrass.com/pianos-numeriques-portables-yamaha-p-145-stock-b-p417149.html",
+            "snippet": "Souple, simple, et précis, le Yamaha P-145 est un excellent premier clavier pour les pianistes qui souhaitent débuter sur un instrument réaliste, sans s'encombrer de fonctionnalités superflues.",
+            "date": "None",
+            "engine": "duckduckgo"
+          },
+          {
+            "title": "Woodbrass",
+            "link": "https://www.woodbrass.com/pianos-numeriques-portables-yamaha-p-145-noir-pack-complet-avec-stand-offert-p409845.html",
+            "snippet": "Avec son clavier 88 touches lestées, son sonorité réaliste et sa connectivité USB, il offre une expérience pianistique authentique tout en restant compact et abordable. ### Clavier - Clavier 88 touches - Mécanique GHS (Graded Hammer Standard) : Ce mécanisme simule le toucher d'un piano acoustique.",
+            "date": "None",
+            "engine": "duckduckgo"
+          },
+          {
+            "title": "Yamaha P-145 B BT - Musikhaus Thomann",
+            "link": "https://www.thomann.de/de/yamaha_p_145_b_bt.htm",
+            "snippet": "Das Yamaha P-145 B BT bietet die grundlegendsten Funktionen eines Stagepianos, ohne das komfortable Spielgefühl eines echten akustischen Klaviers der P-Serie von Yamaha zu verlieren. Dank seines einfachen Designs der Benutzeroberfläche gestaltet sich die Bedienung besonders intuitiv.",
+            "date": "None",
+            "engine": "duckduckgo"
+          },
+          {
+            "title": "Yamaha P-145 B BT - Thomann België",
+            "link": "https://www.thomann.de/be/yamaha_p_145_b_bt.htm",
+            "snippet": "To claim this, you must register the product and complete the relevant form in your Yamaha Music Connect account, Yamaha will then refund the Cashback amount directly.",
+            "date": "None",
+            "engine": "duckduckgo"
+          },
+          {
+            "title": "Yamaha P145 - Pianos numériques portables | Woodbrass",
+            "link": "https://www.woodbrass.com/fr-be/pianos-numeriques-portables-yamaha-p145-p378848.html",
+            "snippet": "Souple, simple, et précis, le Yamaha P-145 est un excellent premier clavier pour les pianistes qui souhaitent débuter sur un instrument réaliste, sans s'encombrer de fonctionnalités superflues.",
+            "date": "None",
+            "engine": "duckduckgo"
+          }
+        ],
+        "engines": [
+          {
+            "engine": "duckduckgo",
+            "outcome": "ok",
+            "http_status": 200,
+            "retry_after": 0,
+            "result_count": 10
+          },
+          {
+            "engine": "wikipedia",
+            "outcome": "empty_results",
+            "http_status": 200,
+            "retry_after": 0,
+            "result_count": 0
+          }
+        ],
+        "consulted_at": "2026-10-25T12:58:28.754893+00:00"
+      }
+    },
+    {
+      "kind": "search",
+      "request": {
+        "query": "Roland FP-10 (site:thomann.de OR site:woodbrass.com OR site:boulanger.com)",
+        "n": 5,
+        "lang": "fr",
+        "news": false
+      },
+      "response": {
+        "provider": "searxng",
+        "language": "fr",
+        "outcome": "partial_results",
+        "results": [
+          {
+            "title": "Roland FP-10 – Thomann France",
+            "link": "https://www.thomann.fr/roland_fp_10.htm",
+            "snippet": "Le FP-10 de Roland dispose de 15 sonorités. Parmi elles, 6 sont dédiées aux pianos droits et à queue. Des effets de réverbe et de …",
+            "date": "None",
+            "engine": "bing"
+          },
+          {
+            "title": "Roland - FP-10 | Digital Piano",
+            "link": "https://www.roland.com/fr-ca/products/fp-10/",
+            "snippet": "Rempli de fonctionnalités numériques de dernier cri, le FP-10 rend vos séances de jeu ludiques et productives. Il vous permet d’être …",
+            "date": "None",
+            "engine": "bing"
+          },
+          {
+            "title": "Roland fp 10 d'occasion - Instruments de musique - leboncoin",
+            "link": "https://www.leboncoin.fr/ck/instruments_de_musique/roland-fp-10",
+            "snippet": "Consultez nos annonces de roland fp 10 d'occasion. Trouvez toutes nos annonces de Instruments de musique sur leboncoin",
+            "date": "None",
+            "engine": "bing"
+          },
+          {
+            "title": "Roland FP-10: Avis et Test Complet | LePetitPianiste.com",
+            "link": "https://lepetitpianiste.com/avis/roland-fp-10/",
+            "snippet": "5 nov. 2025 · Dans ce test complet, on va décortiquer chaque aspect du Roland FP-10 : de son toucher PHA-4 jusqu’à ses capacités …",
+            "date": "None",
+            "engine": "bing"
+          },
+          {
+            "title": "Roland FP-10 - Piano numérique - noir - 88 touches - Fnac",
+            "link": "https://www.fnac.com/mp44778916/Roland-FP-10-Piano-numerique-noir-88-touches",
+            "snippet": "Ce piano numérique d’un prix abordable est toujours prêt à jouer, procure des sensations rassurantes grâce à son clavier PHA-4 …",
+            "date": "None",
+            "engine": "bing"
+          }
+        ],
+        "engines": [
+          {
+            "engine": "duckduckgo",
+            "outcome": "upstream_blocked",
+            "reason": "cooldown",
+            "retry_after": 2.227487570140511,
+            "result_count": 0
+          },
+          {
+            "engine": "brave",
+            "outcome": "upstream_blocked",
+            "http_status": 200,
+            "retry_after": 59.99999130005017,
+            "result_count": 0
+          },
+          {
+            "engine": "qwant",
+            "outcome": "upstream_blocked",
+            "http_status": 200,
+            "retry_after": 59.99999257968739,
+            "result_count": 0
+          },
+          {
+            "engine": "startpage",
+            "outcome": "empty_results",
+            "http_status": 200,
+            "retry_after": 0,
+            "result_count": 0
+          },
+          {
+            "engine": "bing",
+            "outcome": "ok",
+            "http_status": 200,
+            "retry_after": 0,
+            "result_count": 10
+          },
+          {
+            "engine": "wikipedia",
+            "outcome": "upstream_blocked",
+            "reason": "cooldown",
+            "retry_after": 2.2273989696986973,
+            "result_count": 0
+          }
+        ],
+        "consulted_at": "2026-10-25T12:58:29.612852+00:00",
+        "message": "Search returned partial results; some sources were unavailable or too few web results were found."
+      }
+    },
+    {
+      "kind": "fetch",
+      "request": {
+        "url": "https://www.woodbrass.com/pianos-numeriques-portables-yamaha-p-145-stock-b-p417149.html",
+        "query": "Donne des liens chez thomann ou autre"
+      },
+      "response": {
+        "recorded_exception": "ValueError",
+        "message": "http_404"
+      }
+    },
+    {
+      "kind": "fetch",
+      "request": {
+        "url": "https://www.woodbrass.com/pianos-numeriques-portables-yamaha-p-145-noir-pack-complet-avec-stand-offert-p409845.html",
+        "query": "Donne des liens chez thomann ou autre"
+      },
+      "response": {
+        "recorded_exception": "ValueError",
+        "message": "http_404"
+      }
+    },
+    {
+      "kind": "fetch",
+      "request": {
+        "url": "https://www.thomann.de/de/yamaha_p_145_b_bt.htm",
+        "query": "Donne des liens chez thomann ou autre"
+      },
+      "response": {
+        "url": "https://www.thomann.de/de/yamaha_p_145_b_bt.htm",
+        "consulted_at": "2026-10-25T12:58:33.161498+00:00",
+        "text": "Yamaha P-145 B BT\nStagepiano\n- 88-Tasten Graded Hammer Compact (GHC) Tastatur gewichtet\n- Klangerzeugung: Yamaha CFIIIS mit Dämpferresonanz\n- 64-stimmig Polyphon\n- 10 Instrument Presets\n- 50 interne Preset Songs + 303 zusätzliche Songs zum Lernen via Smart Pianist App\n- Dual / Duo Modus\n- 4 Reverb Effekte + Sound Boost (1 Typ)\n- integrierte Lautsprecher 2x 7 Watt (ovale Bauweise 12 x 8 cm)\n- integrierte Bluetooth-Funktion\n- Stereo Kopfhörerausgang 6.3 mm Klinke\n- Sustain Pedal Eingang 6.3 mm Klinke\n- Eingang für optionales Pedal-Einheit LP-5A (nicht im Lieferumfang enthalten)\n- USB to Host Anschluss für MIDI- und Audioübertragung zum PC\n- Abmessungen (B x H x T): 1.326 x 129 x 268 mm\n- Gewicht: 11.1 kg\n- inkl. externes 12V / 1.5A Netzteil PA-150B, Notenhalter und Sustain Pedal\n- \n        Erhältlich seit Mai 2025\n- \n    Artikelnummer 613589\n- \n        Verkaufseinheit 1 Stück\n- \n                        Anzahl der Tasten 88\n- \n                        Hammermechanik Ja\n- \n                        Anzahl der Stimmen 64\n- \n                        Anzahl der Sounds 10\n- \n                        Effekte Ja\n- \n                        Lautsprecher Ja\n- \n                        Anzahl der Kopfhöreranschlüsse 1\n- \n                        Sequenzer Nein\n- \n                        Metronom Ja\n- \n                        Masterkeyboard-Funktionen Nein\n- \n                        Pitch Bend Nein\n- \n                        Modulation Wheel Nein\n- \n                        Anzahl der Splitzonen 0\n- \n                        Layerfunktion Ja\n- \n                            Mitgeliefertes Zubehör Bedienungsanleitung, Pedal, Notenhalter\n- \n                            Gewicht 11,1 kg\n- \n                            \nKompaktes Instrument für Einsteiger\nDas Yamaha P-145 B BT bietet die grundlegendsten Funktionen eines Stagepianos, ohne das komfortable Spielgefühl eines echten akustischen Klaviers der P-Serie von Yamaha zu verlieren. Dank seines einfachen Designs der Benutzeroberfläche gestaltet sich die Bedienung besonders intuitiv. Über eine einzelne Taste können in Kombination mit der Klaviatur unter anderem der Dual-Mode zum Layern von Klängen, Voice-Demo- und Preset-Songs, der Duo-Mode für zwei Spieler sowie auch der Nachhall gewählt werden. Darüber hinaus ist es für eine drahtlose Verbindung Bluetooth-fähig, sodass Lieblingssongs von einem Smartphone oder Tablet über die internen Lautsprecher des Yamaha P-145 B BT ertönen können. Im Gegensatz zu seinen Vorgängern der P-Serie besitzt dieses Modell ein flacheres Gehäusedesign. So wird ein kompaktes Übungsinstrument für Einsteiger mit überschaubarer Größe und Gewicht geboten.\nAuthentischer Klang\nDie 88 Tasten des Yamaha P-145 B BT nutzen die GHC-Klaviatur, was für Graded Hammer Compact steht. So wird ein weitaus kompakteres Design als bei den Vorgängermodellen der P-Serie erreicht, welche die GHS-Klaviatur (Graded Hammer Standard) nutzen. Gespielt werden die hellen, transparenten Klänge eines Yamaha-Konzertflügels, des CFIIIS. Dabei wird der satte Resonanzklang über eine Dämpferresonanzfunktion reproduziert, sobald man ein optional erhältliches Sustain-Pedal auf der Rückseite angeschlossen hat. Links daneben befindet sich auch ein MIDI- und USB-Anschluss zum Senden von Daten an einen Computer. Zudem kann zwischen vier verschiedenen Nachhall-Algorithmen zur Simulation von akustischen Räumen gewählt werden, deren Intensität angepasst werden kann. Angepasst werden kann auch die Anschlagempfindlichkeit, die auf Weich, Mittel, Hart oder Fixiert gestellt werden kann.\nSpielt sich wie ein echtes Klavier\nDieses Einsteigermodell der P-Serie von Yamaha eignet sich hervorragend als Übungsinstrument für die eigenen vier Wände, um so für professionelle Auftritte an echten Klavieren bestens vorbereitet zu sein. Beim Design des Yamaha P-145 B BT wurde das Gewicht der Tasten an das von akustischen Klavieren angepasst. Zudem reagieren die Tasten des Yamaha P-145 B BT präzise bei schneller gespielten Passagen – und Unstimmigkeiten zwischen der Anschlagsstärke und dem resultierenden Klang wurden durch ein durchdachtes technisches Design verhindert. Schnell ausgewählt und verwaltet werden können alle Klänge über die App „Smart Pianist“ von Yamaha, über die auch alle Funktionen dieses Digitalpianos intuitiv über das Smartphone gesteuert werden können. Eine Verbindung zu einem Smartphone erfolgt hierbei entweder über ein passendes USB-Kabel oder drahtlos über den optional erhältlichen Yamaha DU-BT01.\nÜber Yamaha\nYamaha gehört seit vielen Jahrzehnten zu den bekanntesten Herstellern von Musikinstrumenten und Audiotechnik weltweit. Die lange Geschichte des japanischen Unternehmens begann Ende des 19. Jahrhunderts mit dem Harmonium. Das Portfolio wurde stetig erweitert, sodass Yamaha heute als einer von wenigen Herstellern beinahe die gesamte Palette von Musikinstrumenten anbietet: Von Klavieren und Flügeln über Gitarren, Blas- und Streichinstrumente, Schlagzeug und Percussion bis hin zu elektronischen Keyboards und Synthesizern. Auch in der Tontechnik ist Yamaha als Hersteller von Mischpulten, Verstärkern, PA-Systemen und mehr eine feste Größe. Als Leitmotiv gilt bei Yamaha die Verbindung von traditionellem Handwerk mit moderner Technik.\nVielfältige Übungsmöglichkeiten\nMit an Bord des Yamaha P-145 B BT sind zehn Preset-Songs bekannter klassischer Komponisten, zu denen geübt werden kann. Zehn weitere Demo-Songs stellen die klanglichen Möglichkeiten dieses Stagepianos vor. Neben einem klassischen Klang eines Klaviers kann nämlich auch mit Klängen von E-Pianos, Pfeifenorgeln, Cembalos und Streichern gespielt werden. Alle Klänge können über den Dual-Modus gelayert werden. Somit lassen sich zwei Klänge gleichzeitig über eine Taste spielen. Um zu einem vorgegebenen Tempo zu üben, kann das Metronom aktiviert werden. Sein Tempo kann zwischen 32 und 280BPM eingestellt werden. Darüber hinaus bietet die App ‚Smart Pianist‘ weitaus mehr Möglichkeiten zum Üben. Darunter sind 303 klassische Stücke von Komponisten wie Bayer, Burgmüller, Czerny und Hanon zu finden.",
+        "handle": "9d649793b35bf739e394bb596ff734309433643c0d0f48e4083560fa9ccc1508",
+        "truncated": false,
+        "selected": false,
+        "passages": [
+          {
+            "start": 0,
+            "end": 6059
+          }
+        ],
+        "examined": 1,
+        "token_budget": 4000,
+        "estimated_tokens": 1651
+      }
+    },
+    {
+      "kind": "search",
+      "request": {
+        "query": "Casio CT-S1 (site:thomann.de OR site:woodbrass.com OR site:boulanger.com)",
+        "n": 5,
+        "lang": "fr",
+        "news": false
+      },
+      "response": {
+        "provider": "searxng",
+        "language": "fr",
+        "outcome": "upstream_blocked",
+        "results": [],
+        "engines": [
+          {
+            "engine": "duckduckgo",
+            "outcome": "upstream_blocked",
+            "http_status": 200,
+            "retry_after": 59.99999524001032,
+            "result_count": 0
+          },
+          {
+            "engine": "brave",
+            "outcome": "upstream_blocked",
+            "reason": "cooldown",
+            "retry_after": 51.89247062196955,
+            "result_count": 0
+          },
+          {
+            "engine": "qwant",
+            "outcome": "upstream_blocked",
+            "reason": "cooldown",
+            "retry_after": 52.05239605391398,
+            "result_count": 0
+          },
+          {
+            "engine": "startpage",
+            "outcome": "upstream_blocked",
+            "reason": "cooldown",
+            "retry_after": 22.052488394081593,
+            "result_count": 0
+          },
+          {
+            "engine": "bing",
+            "outcome": "upstream_blocked",
+            "reason": "cooldown",
+            "retry_after": 22.19240736356005,
+            "result_count": 0
+          },
+          {
+            "engine": "google",
+            "outcome": "upstream_blocked",
+            "http_status": 200,
+            "retry_after": 59.99999533966184,
+            "result_count": 0
+          },
+          {
+            "engine": "wikipedia",
+            "outcome": "empty_results",
+            "http_status": 200,
+            "retry_after": 0,
+            "result_count": 0
+          }
+        ],
+        "consulted_at": "2026-10-25T12:58:37.740785+00:00",
+        "message": "Web search was blocked by upstream engines; no verified results were obtained.",
+        "attempts": [
+          {
+            "provider": "searxng",
+            "outcome": "upstream_blocked"
+          }
+        ]
+      }
+    }
+  ]
+}

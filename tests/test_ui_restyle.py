@@ -90,7 +90,8 @@ class UIRestyleTest(unittest.TestCase):
             'style: "arrondi", mode: "system", accent: "green", size: "16"', script
         )
         self.assertIn("localStorage.setItem(key, JSON.stringify(saved))", script)
-        self.assertIn('localStorage.setItem("theme", button.dataset.value)', script)
+        self.assertIn("const theme = button.dataset.value;", script)
+        self.assertIn('localStorage.setItem("theme", theme)', script)
         self.assertIn('event.key === "Escape"', script)
         self.assertIn("aria-expanded", script)
 

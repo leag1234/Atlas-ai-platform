@@ -1,0 +1,15 @@
+{
+  "branch": "review/repair",
+  "target": "main",
+  "message": "Repair total",
+  "title": "Fix discount",
+  "body": "Verified with unit tests",
+  "base_commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "change_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "diff": [
+    {
+      "path": "totals.py",
+      "status": "modified"
+    }
+  ]
+}

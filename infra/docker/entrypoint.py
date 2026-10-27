@@ -14,11 +14,32 @@ def main() -> None:
 
         with serve(CPUModels(), port=13710, host="0.0.0.0") as server:
             server.serve_forever()
-    elif service == "retrieval":
-        from services.retrieval.store import Store
+    elif service == "devapi-health":
+        from services.orchestrator.dev_health import main as check_devapi
+
+        check_devapi()
+    elif service == "devapi":
         import uvicorn
 
-        Store(os.environ["ATLAS_RETRIEVAL_DSN"]).initialize()
+        uvicorn.run(
+            "services.orchestrator.devapi:app",
+            host="0.0.0.0",
+            port=13731,
+            access_log=False,
+        )
+    elif service == "runner":
+        from services.runner.main import main as run_runner
+
+        run_runner()
+    elif service == "retrieval":
+        import uvicorn
+
+        from services.retrieval.store import Store
+
+        # Project schemas are installed explicitly by an operator. Runtime uses
+        # atlas_project_app, which must never attempt schema creation.
+        if not os.environ.get("ATLAS_PROJECT_DSN"):
+            Store(os.environ["ATLAS_RETRIEVAL_DSN"]).initialize()
         uvicorn.run(
             "services.retrieval.api:app", host="0.0.0.0", port=13711, access_log=False
         )

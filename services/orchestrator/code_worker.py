@@ -116,7 +116,36 @@ def read_text(path: Path) -> str:
     return path.read_text()
 
 
+def workspace_digest(root: Path) -> str:
+    """Hash workspace bytes/modes without trusting a shell-writable Git index."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    count = size = 0
+    for parent, directories, files in os.walk(root, followlinks=False):
+        directories[:] = sorted(
+            d for d in directories if d not in {".git", "__pycache__", ".pytest_cache"}
+        )
+        for name in sorted([*directories, *files]):
+            path = Path(parent) / name
+            mode = path.lstat().st_mode
+            count += 1
+            digest.update(str(path.relative_to(root)).encode())
+            digest.update(str(mode).encode())
+            if stat.S_ISREG(mode):
+                size += path.stat().st_size
+                if size > MAX_BYTES or count > MAX_FILES:
+                    raise ValueError("verification_workspace_limit")
+                with path.open("rb") as stream:
+                    while chunk := stream.read(65536):
+                        digest.update(chunk)
+            elif stat.S_ISLNK(mode):
+                digest.update(os.readlink(path).encode())
+    return digest.hexdigest()
+
+
 def command(root: Path, text: str, timeout: float, memory_mb: int) -> dict[str, object]:
+    before = workspace_digest(root)
     started = time.monotonic()
     output = bytearray()
     truncated = False
@@ -166,6 +195,7 @@ def command(root: Path, text: str, timeout: float, memory_mb: int) -> dict[str, 
             process.wait()
             process.stdout.close()
     return {
+        "workspace_changed": before != workspace_digest(root),
         "exit_code": process.returncode,
         "output": output.decode("utf-8", "replace"),
         "truncated": truncated,

@@ -72,3 +72,9 @@ override it); system, production judge and reference must remain distinct. The
 previous reference cannot disable reasoning on Scaleway. Recorded evaluations
 match provider identity as well as role/messages, and calibration is reacquired
 when the reference changes. Existing per-call/series budgets remain enforced.
+
+With `ATLAS_PROVIDER=hetzner`, code requests default to Qwen/Qwen3.8-27B with
+thinking enabled, while chat, document, and vision requests retain the
+Qwen/Qwen3.6-35B-A3B-FP8 text default with thinking disabled. Set
+`ATLAS_CODE_MODEL` and/or `ATLAS_CODE_THINKING` to override the code defaults;
+an empty value restores the preset.

@@ -237,6 +237,51 @@ paths:
           $ref: '#/components/responses/Error429'
         '503':
           $ref: '#/components/responses/Error503'
+  /internal/atlas/execution/forge:
+    post:
+      operationId: executionForge
+      summary: Private scoped approval-gated repository publication
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecutionForge'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionForgeResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
   /internal/atlas/execution/organize:
     post:
       operationId: executionOrganize
@@ -3479,6 +3524,66 @@ paths:
           $ref: '#/components/responses/Error503'
         '504':
           $ref: '#/components/responses/Error504'
+  /api/atlas/orgs/{org}/projects/{project}/repositories/import-approvals:
+    post:
+      operationId: post_api_atlas_orgs_org_projects_project_repository_import_approval
+      summary: Issue an approval for an immutable repository import
+      x-roles:
+      - editor
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '416':
+          $ref: '#/components/responses/Error416'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RepositoryImportRequest'
   /api/atlas/orgs/{org}/projects/{project}/repositories:
     post:
       operationId: post_api_atlas_orgs_org_projects_project_repositories
@@ -3929,6 +4034,545 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ProjectChatRequest'
+  /internal/atlas/transcript/begin:
+    post:
+      operationId: transcriptBegin
+      summary: 'Private transcript interface: begin'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptBegin'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptState'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '201':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptState'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by
+        the supervisor. See contracts/project-mode.md for authorization, idempotency,
+        quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/finish:
+    post:
+      operationId: transcriptFinish
+      summary: 'Private transcript interface: finish'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptFinish'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Turn'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by
+        the supervisor. See contracts/project-mode.md for authorization, idempotency,
+        quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/events:
+    post:
+      operationId: transcriptEvents
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptEvents'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by
+        the supervisor. See contracts/project-mode.md for authorization, idempotency,
+        quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/work-events:
+    post:
+      operationId: context_work_events
+      summary: P1a scoped context work-events
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkTranscriptEvents'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/result-put:
+    post:
+      operationId: context_result_put
+      summary: P1a scoped context result-put
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptResultPut'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultPutReceipt'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/result-open:
+    post:
+      operationId: context_result_open
+      summary: P1a scoped context result-open
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptResultOpen'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReopenedResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: 'Amendment 2026-10-24 (private transcript interface), approved by the supervisor. See contracts/project-mode.md for authorization, idempotency, quota and RLS rules. Bounded JSON body: 160000 bytes.'
+  /internal/atlas/transcript/state-read:
+    post:
+      operationId: transcriptStateRead
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateRead'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStateReadResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/state-write:
+    post:
+      operationId: transcriptStateWrite
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionStateWrite'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionSnapshot'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/state-events:
+    post:
+      operationId: transcriptStateEvents
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptEvents'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/compact:
+    post:
+      operationId: transcriptCompact
+      summary: 'Private transcript interface: events'
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCompaction'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptEventsResult'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (session state), approved by the supervisor.
+        Private, scoped, source-authorized, idempotent transcript operation; ingress
+        cap 160000 bytes.
+  /internal/atlas/transcript/memory:
+    post:
+      operationId: project_memory
+      summary: Turn-bound typed memory read, search, propose and correct
+      security:
+      - ExecutionBroker: []
+        ScopedProjectIdentity: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: X-Atlas-Execution-Audience
+        in: header
+        required: true
+        schema:
+          const: atlas-retrieval-execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscriptMemory'
+      responses:
+        '200':
+          description: Authoritative transaction result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MemoryEntry'
+                  memory_revision:
+                    type: integer
+                    minimum: 0
+                required:
+                - entries
+                - memory_revision
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      description: Amendment 2026-10-25 (typed memory), approved by the supervisor. Model writes remain
+        proposed; current turn and Work fence required.
 components:
   securitySchemes:
     ExecutionBroker:
@@ -4013,6 +4657,163 @@ components:
         format: uuid
       description: Single-use broker approval bound to exact deletion/version scope.
   schemas:
+    TranscriptMemory:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        generation:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        arguments:
+          additionalProperties: false
+          properties:
+            operation:
+              enum:
+              - read
+              - search
+              - propose
+              - correct
+              type: string
+            id:
+              anyOf:
+              - format: uuid
+                type: string
+              - type: 'null'
+              default: null
+            query:
+              anyOf:
+              - maxLength: 2000
+                minLength: 1
+                type: string
+              - type: 'null'
+              default: null
+            text:
+              anyOf:
+              - maxLength: 500
+                minLength: 1
+                type: string
+                pattern: \S
+              - type: 'null'
+              default: null
+            kind:
+              default: fact
+              enum:
+              - constraint
+              - decision
+              - fact
+              - preference
+              - open_question
+              - summary
+              type: string
+          required:
+          - operation
+          type: object
+      required:
+      - conversation_id
+      - request_id
+      - generation
+      - arguments
+    TranscriptBegin:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id: &transcript_id001
+          type: string
+          format: uuid
+        request:
+          $ref: '#/components/schemas/ProjectChatRequest'
+      required:
+      - request_id
+      - request
+    TranscriptState:
+      type: object
+      additionalProperties: false
+      properties:
+        turn:
+          $ref: '#/components/schemas/Turn'
+        context:
+          $ref: '#/components/schemas/Context'
+        replay:
+          type: boolean
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+          maxItems: 100
+        last_event_seq:
+          type: integer
+          minimum: 0
+      required:
+      - turn
+      - context
+      - replay
+      - events
+      - last_event_seq
+    TranscriptFinish:
+      type: object
+      additionalProperties: false
+      properties:
+        request_id: *transcript_id001
+        conversation_id: *transcript_id001
+        state:
+          type: string
+          enum:
+          - completed
+          - failed
+          - cancelled
+        content_refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentRef'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/Error'
+          - type: 'null'
+      required:
+      - request_id
+      - conversation_id
+      - state
+      - content_refs
+      - usage
+      - error
+    TranscriptEvents:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id: *transcript_id001
+        request_id: *transcript_id001
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+          minItems: 1
+          maxItems: 40
+      required:
+      - conversation_id
+      - request_id
+      - events
+    TranscriptEventsResult:
+      type: object
+      additionalProperties: false
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+          minItems: 1
+          maxItems: 40
+      required:
+      - events
     OrganizationOperation:
       type: object
       additionalProperties: false
@@ -4242,6 +5043,49 @@ components:
       required:
       - session
       - cleanup_required
+    ExecutionForgeResult:
+      type: object
+      additionalProperties: false
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        state:
+          enum: [pending, running, succeeded, failed, unknown]
+        approval_id:
+          type: string
+          format: uuid
+        approval:
+          $ref: '#/components/schemas/Approval'
+        commit:
+          anyOf:
+          - type: string
+            pattern: ^[a-f0-9]{40}$
+          - type: 'null'
+      required: [operation_id, state, approval]
+    ExecutionForge:
+      type: object
+      additionalProperties: false
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        operation:
+          enum: [issue, execute, status]
+        operation_id:
+          type: string
+          format: uuid
+        action:
+          $ref: '#/components/schemas/RepositoryAction'
+        snapshot_content:
+          type: string
+      required: [session_id, request_id, generation, operation]
     ExecutionApprovalIssue:
       type: object
       additionalProperties: false
@@ -4625,6 +5469,10 @@ components:
           minimum: 0
         per_turn:
           $ref: '#/components/schemas/WorkLimits'
+        pinned_memory_tokens:
+          type: integer
+          minimum: 1
+          default: 1500
       required:
       - active_members
       - active_projects
@@ -4638,7 +5486,8 @@ components:
       - daily_model_eur
       - monthly_model_eur
       - per_turn
-      description: Installation must supply numeric quotas; organization settings can only lower system ceilings.
+      description: Installation must supply numeric quotas; organization settings can only lower
+        system ceilings.
     Capabilities:
       type: object
       additionalProperties: false
@@ -4701,6 +5550,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context:
+          $ref: '#/components/schemas/ContextUsage'
         tool_calls:
           type: integer
           minimum: 0
@@ -4976,6 +5827,10 @@ components:
         policy_revision:
           type: integer
           minimum: 0
+        pinned_memory_tokens:
+          type: integer
+          minimum: 1
+          default: 1500
       required:
       - id
       - created_at
@@ -5242,6 +6097,17 @@ components:
         - kind
         - start
         - end
+      - type: object
+        additionalProperties: false
+        properties:
+          kind:
+            const: slide
+          slide:
+            type: integer
+            minimum: 1
+        required:
+        - kind
+        - slide
     SourceRef:
       type: object
       additionalProperties: false
@@ -5605,6 +6471,12 @@ components:
           - user
           - derived
           - legacy
+          - constraint
+          - decision
+          - fact
+          - preference
+          - open_question
+          - summary
         source_conversation_id:
           anyOf:
           - type: string
@@ -5626,6 +6498,8 @@ components:
           - proposed
           - active
           - deleted
+          - rejected
+          - superseded
         confirmed_by:
           anyOf:
           - type: string
@@ -5634,6 +6508,20 @@ components:
         memory_revision:
           type: integer
           minimum: 0
+        pinned:
+          type: boolean
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+          pattern: Z$
+        supersedes: &memory_uuid
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        superseded_by: *memory_uuid
       required:
       - id
       - created_at
@@ -6244,6 +7132,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context:
+          $ref: '#/components/schemas/ContextUsage'
         call_id:
           type: string
           format: uuid
@@ -6257,6 +7147,7 @@ components:
           type: string
           enum:
           - generation
+          - session_state
           - embedding
           - rerank
           - ocr
@@ -6306,6 +7197,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        context_compaction:
+          $ref: '#/components/schemas/ContextCompaction'
+        context_clearing:
+          $ref: '#/components/schemas/ContextClearing'
         org_id:
           type: string
           format: uuid
@@ -6350,6 +7245,7 @@ components:
           - file_purged
           - extraction_completed
           - context_selected
+          - location_used
           - model_dispatch_intent
           - model_sent
           - model_acknowledged
@@ -6366,6 +7262,20 @@ components:
           - retention_applied
           - administrative_access
           - repository_action
+          - runner_code_egress_approved
+          - runner_code_egress_revoked
+          - runner_session_opened
+          - runner_session_closed
+          - runner_command_requested
+          - runner_command_approved
+          - runner_command_denied
+          - runner_command_started
+          - runner_command_completed
+          - runner_command_failed
+          - runner_command_cancelled
+          - runner_command_unknown
+          - runner_file_fetched
+          - memory_changed
         resource_refs:
           type: array
           items:
@@ -6408,6 +7318,30 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AuditRecord'
           - type: 'null'
+        runner:
+          $ref: '#/components/schemas/RunnerAudit'
+        memory_change:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              format: uuid
+            revision:
+              type: integer
+              minimum: 0
+            status:
+              type: string
+            supersedes:
+              anyOf:
+              - type: string
+                format: uuid
+              - type: 'null'
+          required:
+          - id
+          - revision
+          - status
+          - supersedes
       required:
       - org_id
       - project_id
@@ -6586,7 +7520,31 @@ components:
           - branch
           - commit
           - pull_request
+          - publish_change
           - local_read
+        remote:
+          type: object
+          additionalProperties: false
+          properties:
+            target_id:
+              type: string
+              format: uuid
+            target_name:
+              type: string
+            command:
+              type: string
+            code_digest:
+              type: string
+            code_egress:
+              type: boolean
+            cwd:
+              type: string
+            timeout_s:
+              type: integer
+            project_rule:
+              type: string
+        publication:
+          $ref: '#/components/schemas/PublicationSummary'
         action_digest:
           type: string
           pattern: ^[a-f0-9]{64}$
@@ -8077,6 +9035,12 @@ components:
         org_id:
           type: string
           format: uuid
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: \S
+          description: Read-only organization display name; never an authority selector.
         role:
           type: string
           enum:
@@ -8085,6 +9049,7 @@ components:
       required:
       - org_id
       - role
+      - name
     Me:
       type: object
       additionalProperties: false
@@ -8215,6 +9180,10 @@ components:
           enum:
           - active
           - archived
+        pinned_memory_tokens:
+          type: integer
+          minimum: 1
+          default: 1500
       required: []
       minProperties: 1
     GrantPut:
@@ -8393,6 +9362,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SourceRef'
+        kind:
+          type: string
+          enum:
+          - constraint
+          - decision
+          - fact
+          - preference
+          - open_question
+          - summary
+        pinned:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - proposed
+          - active
       required:
       - text
       - source_refs
@@ -8411,9 +9396,21 @@ components:
           - proposed
           - active
           - deleted
+          - rejected
         approval_id:
           type: string
           format: uuid
+        kind:
+          type: string
+          enum:
+          - constraint
+          - decision
+          - fact
+          - preference
+          - open_question
+          - summary
+        pinned:
+          type: boolean
       required: []
       minProperties: 1
       anyOf:
@@ -8421,6 +9418,10 @@ components:
         - text
       - required:
         - status
+      - required:
+        - kind
+      - required:
+        - pinned
       if:
         properties:
           status:
@@ -8454,6 +9455,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        work_session_id:
+          type: string
+          format: uuid
         conversation_id:
           type: string
           format: uuid
@@ -8493,6 +9497,7 @@ components:
           - paragraphs
           - cells
           - characters
+          - slides
         warnings:
           type: array
           items:
@@ -8592,6 +9597,15 @@ components:
       type: object
       additionalProperties: false
       properties:
+        history_compaction:
+          $ref: '#/components/schemas/ContextCompaction'
+        session_state:
+          $ref: '#/components/schemas/SessionState'
+        represented_turn_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
         instructions_version:
           type: string
           format: uuid
@@ -8615,6 +9629,14 @@ components:
             $ref: '#/components/schemas/Turn'
         context_manifest:
           $ref: '#/components/schemas/ContextManifest'
+        retrieved_memory:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryEntry'
+        memory_index:
+          type: array
+          items:
+            type: string
       required:
       - instructions_version
       - instructions_text
@@ -8665,6 +9687,9 @@ components:
       type: object
       additionalProperties: false
       properties:
+        always_allow:
+          type: boolean
+          default: false
         allow:
           type: boolean
           default: false
@@ -8706,6 +9731,24 @@ components:
       required:
       - job_id
       - purge_at
+    RepositoryImportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        folder_id:
+          type: string
+          format: uuid
+        connector_id:
+          type: string
+          format: uuid
+        remote_ref:
+          type: string
+          format: uri
+          pattern: ^https://[^/@]+/[^@?#]+$
+      required:
+      - folder_id
+      - connector_id
+      - remote_ref
     RepositoryCreate:
       type: object
       additionalProperties: false
@@ -8857,11 +9900,121 @@ components:
       - base_commit
       - change_digest
       - parameters
+    PublishChangeAction:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          const: publish_change
+        base_commit:
+          type: string
+          pattern: ^[a-f0-9]{40,64}$
+        change_digest:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        parameters:
+          $ref: '#/components/schemas/PublishChangeParameters'
+        snapshot:
+          type: object
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              format: uuid
+            sha256:
+              type: string
+              pattern: ^[a-f0-9]{64}$
+          required:
+          - id
+          - sha256
+        approval_id:
+          type: string
+          format: uuid
+      required:
+      - kind
+      - base_commit
+      - change_digest
+      - parameters
+      - snapshot
+    PublishChangeParameters:
+      type: object
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        target:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        message:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        title:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        body:
+          type: string
+          maxLength: 32000
+      required:
+      - branch
+      - target
+      - message
+      - title
+      - body
+    PublicationSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        target:
+          type: string
+        message:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        base_commit:
+          type: string
+        change_digest:
+          type: string
+        diff:
+          type: array
+          maxItems: 20000
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              path:
+                type: string
+              status:
+                enum:
+                - added
+                - modified
+                - deleted
+            required:
+            - path
+            - status
+      required:
+      - branch
+      - target
+      - message
+      - title
+      - body
+      - base_commit
+      - change_digest
+      - diff
     RepositoryAction:
       oneOf:
       - $ref: '#/components/schemas/BranchAction'
       - $ref: '#/components/schemas/CommitAction'
       - $ref: '#/components/schemas/PullRequestAction'
+      - $ref: '#/components/schemas/PublishChangeAction'
     Operation:
       type: object
       additionalProperties: false
@@ -9071,7 +10224,7 @@ components:
       properties:
         id:
           type: string
-          pattern: ^D(?:0[1-9]|[12][0-9]|30)$
+          pattern: ^D(?:0[1-9]|[12][0-9]|3[0-3])$
         language:
           type: string
           enum:
@@ -9240,10 +10393,30 @@ components:
       - ga_target_met
       - owner_gap_review
       - ci_run
+    VerificationStatus:
+      type: object
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [passed, failed, not_run]
+        command:
+          anyOf:
+          - type: string
+          - type: 'null'
+        exit_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        reason:
+          type: string
+      required: [status, command, exit_code, reason]
     ProgressOutput:
       type: object
       additionalProperties: false
       properties:
+        verification:
+          $ref: '#/components/schemas/VerificationStatus'
         items:
           type: array
           items:
@@ -9333,7 +10506,7 @@ components:
       properties:
         id:
           type: string
-          pattern: ^D(?:0[1-9]|[12][0-9]|30)$
+          pattern: ^D(?:0[1-9]|[12][0-9]|3[0-3])$
         language:
           type: string
           enum:
@@ -9562,6 +10735,649 @@ components:
       required:
       - items
       - next_cursor
+    # Amendment 2026-10-25 (context telemetry / tool-result references), approved by the supervisor
+    ContextUsage:
+      type: object
+      additionalProperties: false
+      required: [method, estimated, layers, stable_prefix_tokens, total_tokens, model_window, provider_input_tokens]
+      properties:
+        calibrated_tokens:
+          type: integer
+          minimum: 0
+        calibration_factor:
+          type: number
+          minimum: 1
+        context_status:
+          enum:
+          - normal
+          - compact
+          - warning
+          - refuse
+        method:
+          const: utf8_bytes_div_4_ceil_per_component
+        estimated:
+          const: true
+        layers:
+          type: object
+          additionalProperties: false
+          required: [system, project_instructions, pinned_memory, tool_declarations, session_state, recent_turns, tool_results, document_passages]
+          properties:
+            system:
+              type: integer
+              minimum: 0
+            project_instructions:
+              type: integer
+              minimum: 0
+            pinned_memory:
+              type: integer
+              minimum: 0
+            tool_declarations:
+              type: integer
+              minimum: 0
+            session_state:
+              type: integer
+              minimum: 0
+            recent_turns:
+              type: integer
+              minimum: 0
+            tool_results:
+              type: integer
+              minimum: 0
+            document_passages:
+              type: integer
+              minimum: 0
+        stable_prefix_tokens:
+          type: integer
+          minimum: 0
+        total_tokens:
+          type: integer
+          minimum: 0
+        model_window:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        provider_input_tokens:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+
+    WorkTranscriptEvents:
+      type: object
+      additionalProperties: false
+      required: [conversation_id, request_id, generation, events]
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+        generation:
+          type: integer
+          minimum: 1
+        events:
+          type: array
+          minItems: 1
+          maxItems: 40
+          items:
+            $ref: '#/components/schemas/ProjectEvent'
+    ContextClearing:
+      type: object
+      additionalProperties: false
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items: &context_id003
+            type: string
+            pattern: ^[a-f0-9-]{36}:[a-f0-9-]{36}$
+        tokens_removed: &context_id001
+          type: integer
+          minimum: 0
+        tokens_added: *context_id001
+        method:
+          const: utf8_bytes_div_4_ceil_per_component
+      required:
+      - ids
+      - tokens_removed
+      - tokens_added
+      - method
+    ResultRange:
+      type: object
+      additionalProperties: false
+      properties:
+        start: *context_id001
+        end: *context_id001
+      required:
+      - start
+      - end
+    TranscriptResultPut:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id: &context_id002
+          type: string
+          format: uuid
+        request_id: *context_id002
+        generation: &context_id004
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        id: *context_id003
+        tool:
+          type: string
+          pattern: ^[a-zA-Z0-9_]{1,80}$
+        content:
+          type: string
+          maxLength: 1048576
+      required:
+      - conversation_id
+      - request_id
+      - generation
+      - id
+      - tool
+      - content
+    TranscriptResultOpen:
+      type: object
+      additionalProperties: false
+      properties:
+        conversation_id: *context_id002
+        request_id: *context_id002
+        generation: *context_id004
+        id: *context_id003
+        range:
+          anyOf:
+          - $ref: '#/components/schemas/ResultRange'
+          - type: 'null'
+      required:
+      - conversation_id
+      - request_id
+      - generation
+      - id
+      - range
+    ClearedResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *context_id003
+        summary:
+          type: string
+          maxLength: 512
+        tokens_removed: *context_id001
+        tokens_added: *context_id001
+      required:
+      - id
+      - summary
+      - tokens_removed
+      - tokens_added
+    ResultPutReceipt:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *context_id003
+        cleared:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClearedResult'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerEvent'
+      required:
+      - id
+      - cleared
+      - events
+    ReopenedResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *context_id003
+        tool:
+          type: string
+        content:
+          type: string
+          maxLength: 8192
+        start: *context_id001
+        end: *context_id001
+        total_characters: *context_id001
+        has_more:
+          type: boolean
+        trust:
+          const: untrusted
+      required:
+      - id
+      - tool
+      - content
+      - start
+      - end
+      - total_characters
+      - has_more
+      - trust
+    Entry:
+      additionalProperties: false
+      properties:
+        id:
+          maxLength: 100
+          minLength: 1
+          type: string
+        text:
+          maxLength: 2000
+          minLength: 1
+          type: string
+        source:
+          maxLength: 2000
+          minLength: 1
+          type: string
+        turn_id:
+          pattern: ^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$
+          type: string
+      required:
+      - id
+      - text
+      - source
+      - turn_id
+      type: object
+    SessionState:
+      additionalProperties: false
+      properties:
+        decisions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        established_facts:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        open_questions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_read:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_produced:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        current_plan:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+      required:
+      - decisions
+      - established_facts
+      - open_questions
+      - files_read
+      - files_produced
+      - current_plan
+      type: object
+    StateUpdate:
+      additionalProperties: false
+      properties:
+        decisions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        established_facts:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        open_questions:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_read:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        files_produced:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        current_plan:
+          items:
+            $ref: '#/components/schemas/Entry'
+          maxItems: 64
+          type: array
+        resolved_questions:
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          maxItems: 64
+          type: array
+        replace_plan:
+          type: boolean
+      required:
+      - decisions
+      - established_facts
+      - open_questions
+      - files_read
+      - files_produced
+      - current_plan
+      - resolved_questions
+      - replace_plan
+      type: object
+    ContextCompaction:
+      type: object
+      additionalProperties: false
+      required:
+      - turn_ids
+      - tokens_removed
+      - tokens_added
+      - reason
+      properties:
+        turn_ids:
+          type: array
+          minItems: 1
+          items: &session_id001
+            type: string
+            format: uuid
+        tokens_removed:
+          type: integer
+          minimum: 0
+        tokens_added:
+          type: integer
+          minimum: 0
+        reason:
+          enum:
+          - recent_window
+          - threshold
+    SessionStateRead:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      - request_id
+      properties:
+        conversation_id: *session_id001
+        request_id: *session_id001
+    SessionStateWrite:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      - request_id
+      - previous_turn_id
+      - represented_turn_ids
+      - update
+      - usage
+      properties:
+        conversation_id: *session_id001
+        request_id: *session_id001
+        previous_turn_id:
+          anyOf:
+          - *session_id001
+          - type: 'null'
+        represented_turn_ids:
+          type: array
+          maxItems: 10000
+          items: *session_id001
+          uniqueItems: true
+        update:
+          $ref: '#/components/schemas/StateUpdate'
+        usage:
+          $ref: '#/components/schemas/Usage'
+    SessionCompaction:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      - request_id
+      - compaction
+      properties:
+        conversation_id: *session_id001
+        request_id: *session_id001
+        compaction:
+          $ref: '#/components/schemas/ContextCompaction'
+    SessionSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+      - session_state
+      - represented_turn_ids
+      properties:
+        session_state:
+          $ref: '#/components/schemas/SessionState'
+        represented_turn_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    SessionStateReadResult:
+      type: object
+      additionalProperties: false
+      required:
+      - session_state
+      - represented_turn_ids
+      - previous_turn_id
+      - session_id
+      - budget_eur
+      - turns
+      - evidence
+      properties:
+        work_plan:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanItem'
+        session_state:
+          $ref: '#/components/schemas/SessionState'
+        represented_turn_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        previous_turn_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        session_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        budget_eur:
+          type: number
+          minimum: 0
+          maximum: 0.01
+        turns:
+          type: array
+          items:
+            $ref: '#/components/schemas/Turn'
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - turn_id
+            - tool_results
+            properties:
+              turn_id:
+                type: string
+                format: uuid
+              tool_results:
+                type: array
+                maxItems: 16
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - id
+                  - tool
+                  - content
+                  - truncated
+                  properties:
+                    id:
+                      type: string
+                    tool:
+                      type: string
+                    content:
+                      type: string
+                      maxLength: 4000
+                    truncated:
+                      type: boolean
+    RunnerAudit:
+      type: object
+      additionalProperties: false
+      required:
+      - target_id
+      - command_digest
+      - code_digest
+      - decision
+      - exit_code
+      - duration_s
+      - bytes_sent
+      - bytes_received
+      properties:
+        target_id:
+          type: string
+          format: uuid
+        command_digest:
+          anyOf:
+          - type: string
+          - type: 'null'
+        code_digest:
+          anyOf:
+          - type: string
+          - type: 'null'
+        decision:
+          anyOf:
+          - type: string
+          - type: 'null'
+        exit_code:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        duration_s:
+          anyOf:
+          - type: number
+          - type: 'null'
+        bytes_sent:
+          type: integer
+          minimum: 0
+        bytes_received:
+          type: integer
+          minimum: 0
+    RunnerExecution:
+      additionalProperties: false
+      properties:
+        session_id:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        request_id:
+          pattern: ^[a-f0-9-]{36}$
+          type: string
+        generation:
+          minimum: 1
+          type: integer
+        operation:
+          enum:
+          - list
+          - prepare
+          - execute
+          - status
+          - fetch
+          - close
+          type: string
+        arguments:
+          anyOf:
+          - additionalProperties: false
+            properties:
+              capability:
+                anyOf:
+                - maxLength: 100
+                  type: string
+                - type: 'null'
+                default: null
+            type: object
+          - additionalProperties: false
+            properties:
+              target:
+                maxLength: 120
+                minLength: 1
+                type: string
+              command:
+                maxLength: 15000
+                minLength: 1
+                type: string
+              cwd:
+                default: .
+                maxLength: 1000
+                type: string
+              timeout_s:
+                default: 600
+                maximum: 1800
+                minimum: 1
+                type: integer
+              wait_s:
+                default: 5
+                maximum: 30
+                minimum: 0
+                type: integer
+            required:
+            - target
+            - command
+            type: object
+          - additionalProperties: false
+            properties:
+              command_id:
+                pattern: ^[a-f0-9-]{36}$
+                type: string
+              wait_s:
+                default: 5
+                maximum: 30
+                minimum: 0
+                type: integer
+              cancel:
+                default: false
+                type: boolean
+            required:
+            - command_id
+            type: object
+          - additionalProperties: false
+            properties:
+              target:
+                maxLength: 120
+                minLength: 1
+                type: string
+              path_or_glob:
+                maxLength: 1000
+                minLength: 1
+                type: string
+            required:
+            - target
+            - path_or_glob
+            type: object
+        snapshot_content:
+          anyOf:
+          - maxLength: 44739244
+            type: string
+          - type: 'null'
+          default: null
+      required:
+      - session_id
+      - request_id
+      - generation
+      - operation
+      type: object
+
   responses:
     Error401:
       description: Typed failure

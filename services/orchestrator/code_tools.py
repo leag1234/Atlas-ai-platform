@@ -6,11 +6,15 @@ import os
 import re
 import time
 import threading
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from services.orchestrator.work_tool_selection import WorkToolSelection
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from services.orchestrator.code_verification import Verification
 from services.orchestrator.code_workspace import Audit, Workspace, redact
 from services.orchestrator.loop import Call, Message, Reservation
 from services.orchestrator.stream_client import Sink
@@ -95,14 +99,31 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
             "type": "function",
             "function": {
                 "name": name,
-                "description": DESCRIPTIONS[name],
+                "description": (
+                    DESCRIPTIONS[name]
+                    + " For delete_file supply file_id, base_version, revision."
+                    " For overwrite also supply folder_id, path, sha256, size_bytes."
+                    " For delete_memory supply only memory_ids, memory_revision."
+                    " Always supply effect_kind and maximum_bytes; omit all irrelevant fields."
+                    if scoped and name == "request_approval"
+                    else DESCRIPTIONS[name]
+                ),
                 "parameters": (
-                    ScopedApproval if scoped and name == "request_approval" else schema
+                    ModelApproval if scoped and name == "request_approval" else schema
                 ).model_json_schema(),
             },
         }
         for name, schema in SCHEMAS.items()
     ]
+    if scoped:
+        from services.orchestrator.work_forge_tools import declaration
+
+        result.append(declaration())
+        from services.orchestrator.work_remote_tools import (
+            declarations as remote_declarations,
+        )
+
+        result.extend(remote_declarations())
     return result + (project_document_tools.declarations() if scoped else [])
 
 
@@ -197,6 +218,7 @@ class CodeTools:
 
     async def execute(self, call: Call, timeout: float) -> Message:
         started = time.monotonic()
+        args: dict[str, Any] = {}
         await self.emit(
             "tool",
             tool=call.name,
@@ -259,6 +281,8 @@ class CodeTools:
             }
         except (ValueError, OSError, RuntimeError) as exc:
             result = {"error": redact(str(exc))}
+        if isinstance(self, WorkTools) and args:
+            self.verification.observe(call.name, redact(args), result)
         await self.emit(
             "tool",
             tool=call.name,
@@ -300,6 +324,48 @@ class ScopedApproval(Arguments):
     maximum_bytes: int = Field(ge=0)
 
 
+class ModelApproval(Arguments):
+    effect_kind: Literal["overwrite", "delete_file", "delete_memory"]
+    maximum_bytes: int = Field(ge=0)
+    file_id: str | None = None
+    folder_id: str | None = None
+    path: str | None = None
+    base_version: str | None = None
+    revision: int | None = Field(default=None, ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    size_bytes: int | None = Field(default=None, ge=0)
+    memory_ids: list[str] | None = Field(default=None, max_length=100)
+    memory_revision: int | None = Field(default=None, ge=0)
+
+    def canonical(self) -> dict[str, Any]:
+        variants: dict[
+            str, type[OverwriteEffect] | type[DeleteEffect] | type[MemoryEffect]
+        ] = {
+            "overwrite": OverwriteEffect,
+            "delete_file": DeleteEffect,
+            "delete_memory": MemoryEffect,
+        }
+        schema = variants[self.effect_kind]
+        fields = self.model_fields_set - {"effect_kind", "maximum_bytes"}
+        if fields != schema.model_fields.keys():
+            raise ValueError("Provide exactly the fields required by effect_kind")
+        effects = schema.model_validate(self.model_dump(include=fields))
+        return ScopedApproval(
+            action_kind="overwrite" if self.effect_kind == "overwrite" else "delete",
+            effects=effects,
+            maximum_bytes=self.maximum_bytes,
+        ).model_dump()
+
+
+def approval_arguments(arguments: str) -> dict[str, Any]:
+    # Preserve the strict internal interface while exposing only the flat form
+    # to the model. Both routes still cross the same strict broker boundary.
+    value = json.loads(arguments)
+    if isinstance(value, dict) and "effect_kind" in value:
+        return ModelApproval.model_validate_json(arguments).canonical()
+    return ScopedApproval.model_validate_json(arguments).model_dump()
+
+
 class WorkTools(CodeTools):
     """Adapt existing tool events once, before retrieval allocates durable sequences."""
 
@@ -309,12 +375,33 @@ class WorkTools(CodeTools):
         # Scoped Work never writes the legacy unscoped audit files.
         self.workspace, self.execution, self.sink = workspace, execution, sink
         self.test_evidence = []
+        self.verification = Verification()
         self.deliverables: list[dict[str, Any]] = []
+        self.selection: WorkToolSelection | None = None
+        self.validation_failures: dict[str, str] = {}
+        self.memory: Any = None
+        self.nearby: Any = None
+        self.remote_references: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
+        if kind == "tool" and data.get("tool") == "run_command" and "arguments" in data:
+            output = dict(output, arguments=redact(data["arguments"]))
+        if kind == "tool" and data.get("status") in {"completed", "failed"}:
+            tool = str(data.get("tool", ""))
+            if data["status"] == "failed":
+                self.validation_failures[tool] = str(output.get("error", "tool_failed"))
+            else:
+                self.validation_failures.pop(tool, None)
         mapped: dict[str, Any] = {}
-        for name in ("items", "approval", "file_version_ids", "steps", "cost_eur"):
+        for name in (
+            "items",
+            "approval",
+            "file_version_ids",
+            "steps",
+            "cost_eur",
+            "verification",
+        ):
             if name in output:
                 mapped[name] = output[name]
         for name in ("diff", "text", "detail"):
@@ -328,6 +415,8 @@ class WorkTools(CodeTools):
             mapped["measurement"] = {
                 k: output[k] for k in ("measured", "limit", "unit")
             }
+            if mapped["measurement"]["unit"] == "steps":
+                mapped["measurement"]["unit"] = "calls"
         event = dict(
             org_id=self.execution.broker.org,
             project_id=self.execution.broker.project,
@@ -358,6 +447,55 @@ class WorkTools(CodeTools):
         await self.execution.check()
         from services.orchestrator import project_document_tools
 
+        if self.selection is not None and call.name not in self.selection.names:
+            return {
+                "error": "tool_not_selected",
+                "group": self.selection.group,
+                "next_step": "Use switch_tool_group to select the required tools",
+            }
+        if call.name == "project_memory" and self.memory is not None:
+            return dict(await self.memory.execute(call))
+        if call.name == "switch_tool_group" and self.selection is not None:
+            from services.orchestrator.work_tool_selection import (
+                GROUPS,
+                ToolSelectionError,
+            )
+
+            try:
+                result = self.selection.switch(call.arguments)
+            except ToolSelectionError as exc:
+                result = exc.result
+            except ValueError:
+                result = {
+                    "error": "invalid_tool_group",
+                    "reason": "arguments must contain a known group and optional focus only",
+                    "allowed_groups": [
+                        group
+                        for group in GROUPS
+                        if group != "remote" or self.selection.remote_enabled
+                    ],
+                    "next_step": "Use an allowed group; omit focus unless selecting a tool in that group.",
+                }
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return result
+        if call.name in {"nearby_places", "geocode"}:
+            if self.nearby is None:
+                return {"error": "location_required"}
+            result = await self.nearby.execute(call, timeout)
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return dict(result)
         if call.name in project_document_tools.SCHEMAS:
             from services.retrieval.project_identity import ProjectError
 
@@ -381,8 +519,83 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return dict(trust="untrusted", **result)
+        if call.name in {"list_targets", "remote_run", "remote_status", "remote_fetch"}:
+            from services.orchestrator import work_remote_tools
+            from services.retrieval.project_identity import ProjectError
+
+            try:
+                result = await work_remote_tools.execute(
+                    self, call.name, call.arguments, timeout
+                )
+            except ProjectError as exc:
+                result = dict(exc.body)
+            except (ValueError, OSError, RuntimeError, TimeoutError):
+                result = dict(error="invalid_or_unavailable_remote_operation")
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=dict(
+                    remote=result,
+                    **({"error": result["error"]} if result.get("error") else {}),
+                ),
+            )
+            return dict(
+                trust="untrusted", **{k: v for k, v in result.items() if k != "trust"}
+            )
+        if call.name == "forge_action":
+            from services.orchestrator import work_forge_tools
+            from services.retrieval.project_identity import ProjectError
+
+            try:
+                result = await work_forge_tools.execute(self, call.arguments, timeout)
+            except (ValueError, ProjectError) as exc:
+                result = dict(
+                    error=exc.body["error"]
+                    if isinstance(exc, ProjectError)
+                    else "invalid_tool_arguments"
+                )
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return result
         if call.name == "request_approval":
-            args = ScopedApproval.model_validate_json(call.arguments).model_dump()
+            try:
+                args = approval_arguments(call.arguments)
+            except ValidationError as exc:
+                # Validation is a recoverable tool result, as for CodeTools and
+                # document tools. Never approve, coerce, or echo invalid inputs.
+                result = {
+                    "error": "invalid_tool_arguments",
+                    "details": exc.errors(include_input=False, include_url=False),
+                }
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed",
+                    output=result,
+                )
+                return result
+            except ValueError:
+                result = {
+                    "error": "invalid_tool_arguments",
+                    "details": "Provide exactly the fields required by effect_kind",
+                }
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed",
+                    output=result,
+                )
+                return result
+            self.validation_failures.pop(call.name, None)
             approval = await self.execution.broker.call(
                 "approvals",
                 dict(

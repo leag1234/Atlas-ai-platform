@@ -2,10 +2,12 @@
 
 from services.orchestrator.image_errors import read_error, decode_error
 from packages.profiles import PROFILES
+from packages import context_usage
 from packages.limits import LimitError
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
 import json
+from collections.abc import Awaitable, Callable
 from packages.tool_history import final_messages
 import re
 from decimal import Decimal
@@ -119,6 +121,11 @@ class GatewayModel:
         self.token_split_estimated = False
         self.reasoning_retried = False
         self.cost_ceiling: Decimal | None = None
+        self.context_samples: list[dict[str, object]] = []
+        from services.orchestrator.session_context import SessionContext
+
+        self.session_context: SessionContext | None = None
+        self.dispatch_hook: Callable[[str, Message], Awaitable[None]] | None = None
 
     def configure_quality(
         self,
@@ -450,6 +457,12 @@ class GatewayModel:
                     )
         return available
 
+    async def prepare_context(self, messages: list[Message]) -> None:
+        if self.session_context is not None:
+            await self.session_context.prepare(
+                messages, self.available_tools(messages), self.profile
+            )
+
     async def complete(self, messages: list[Message], timeout: float) -> Turn:
         payload: Message = {
             "messages": messages,
@@ -474,8 +487,18 @@ class GatewayModel:
             payload["has_attachments"] = True
         if self.observing:
             payload.update(local_enabled=self.local_enabled, observe=True)
+        context = (
+            await self.session_context.prepare(messages, payload["tools"], self.profile)
+            if self.session_context is not None
+            else context_usage.measure(messages, payload["tools"], self.profile)
+        )
+        self.context_samples.append(context)
+        if (capture := context_usage.samples.get()) is not None:
+            capture.append(context)
         reserved = self.estimate(messages)
         started = monotonic()
+        if self.dispatch_hook:
+            await self.dispatch_hook("intent", payload)
         try:
             if self.sink is None:
                 wire = await self.post(self.url + "/agent/complete", payload, timeout)
@@ -516,6 +539,11 @@ class GatewayModel:
                 if tail:
                     await sink({"delta": {"content": tail}})
             result = WireTurn.model_validate(wire)
+            context["provider_input_tokens"] = result.usage.prompt_tokens
+            if self.session_context is not None:
+                self.session_context.observe(result.usage.prompt_tokens)
+            if self.dispatch_hook:
+                await self.dispatch_hook("acknowledged", wire)
             self.provider_retries += result.provider_retries
             if result.text:
                 cleaned = clean_answer(result.text, allow_empty=True)
@@ -558,6 +586,10 @@ class GatewayModel:
                         "tools": [c.name for c in result.calls],
                     }
                 )
+        except BaseException:
+            if self.dispatch_hook:
+                await self.dispatch_hook("unknown", {})
+            raise
         finally:
             self.generation_ms += (monotonic() - started) * 1000
         if self.observing and result.observation is None:

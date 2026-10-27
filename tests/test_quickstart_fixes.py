@@ -10,6 +10,8 @@ import tempfile
 import time
 from types import SimpleNamespace
 from typing import Any
+
+from packages.profiles import MODEL_PROFILE_IMAGE_URL
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -159,13 +161,28 @@ class InletStartupTests(unittest.IsolatedAsyncioTestCase):
             insert_new_function=AsyncMock(return_value=object()),
             update_function_by_id=AsyncMock(return_value=object()),
         )
+        models = SimpleNamespace(
+            get_model_by_id=AsyncMock(return_value=None),
+            insert_new_model=AsyncMock(return_value=object()),
+        )
         module = SimpleNamespace(
             Functions=functions,
             FunctionForm=SimpleNamespace,
             FunctionMeta=SimpleNamespace,
         )
         with (
-            patch.dict("sys.modules", {"open_webui.models.functions": module}),
+            patch.dict(
+                "sys.modules",
+                {
+                    "open_webui.models.functions": module,
+                    "open_webui.models.models": SimpleNamespace(
+                        Models=models,
+                        ModelForm=lambda **kwargs: kwargs,
+                        ModelMeta=lambda **kwargs: kwargs,
+                        ModelParams=lambda **kwargs: kwargs,
+                    ),
+                },
+            ),
             patch(
                 "infra.docker.webui_bootstrap.Path.read_text",
                 return_value="managed-source",
@@ -184,6 +201,12 @@ class InletStartupTests(unittest.IsolatedAsyncioTestCase):
             functions.update_function_by_id.call_args.args[1],
             {"content": "managed-source", "is_active": True, "is_global": True},
         )
+        self.assertEqual(models.insert_new_model.await_count, 6)
+        public = models.insert_new_model.call_args_list[0].args[0]
+        self.assertEqual(public["name"], "Atlas")
+        self.assertEqual(public["meta"]["description"], "")
+        self.assertEqual(public["meta"]["profile_image_url"], MODEL_PROFILE_IMAGE_URL)
+        self.assertEqual(public["access_grants"][0]["principal_id"], "*")
 
     async def test_failed_install_prevents_readiness(self) -> None:
         functions = SimpleNamespace(

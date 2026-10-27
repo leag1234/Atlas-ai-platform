@@ -79,6 +79,8 @@ from services.orchestrator.appearance import (
     mechanical_svg_instruction,
     simple_drawing_language,
     simple_drawing_instruction,
+    is_spatial_drawing_request,
+    spatial_drawing_instruction,
 )
 
 
@@ -229,6 +231,9 @@ class ChatTools(Runtime):
         self.image_prompt: str | None = None
         self.terminal_code_disabled = False
         self.source_truncated = False
+        self.fetched_pages: dict[str, str] = {}
+        self.search_snippets: dict[str, str] = {}
+        self.shopping_searches: dict[str, list[Message]] = {}
         self.model: GatewayModel | None = None
         self.terminal = None
         if os.environ.get("ATLAS_TERMINAL_ENABLED") == "1":
@@ -350,6 +355,14 @@ class ChatTools(Runtime):
             if call.name == "web_search" and isinstance(data, dict):
                 data = self.search_evidence(data)
                 output = {**output, "data": data}
+                query = json.loads(call.arguments).get("query", "")
+                if " (site:" in query:
+                    rows = data.get("results", [])
+                    self.shopping_searches[query] = (
+                        [row for row in rows if isinstance(row, dict)]
+                        if isinstance(rows, list)
+                        else []
+                    )
             if call.name == "web_search" and str(output.get("error")) in OUTCOMES:
                 outcome = str(output["error"])
                 self.item.erreurs.append(outcome)
@@ -381,6 +394,18 @@ class ChatTools(Runtime):
                     ]
             if call.name in {"web_search", "web_fetch"} and "error" not in output:
                 self.item.retrieved_urls.extend(urls)
+                if call.name == "web_search" and isinstance(data, dict):
+                    for row in data.get("results", []):
+                        if isinstance(row, dict) and isinstance(row.get("link"), str):
+                            self.search_snippets[row["link"]] = str(
+                                row.get("snippet", "")
+                            )
+                if (
+                    call.name == "web_fetch"
+                    and isinstance(data, dict)
+                    and isinstance(data.get("text"), str)
+                ):
+                    self.fetched_pages.update({url: str(data["text"]) for url in urls})
             if "error" in output:
                 self.item.erreurs.append(str(output["error"]))
             sink = sink_context.get()
@@ -613,7 +638,18 @@ async def dispatch_project(request: ChatRequest, item: Interaction) -> bool:
 async def process(request: ChatRequest, item: Interaction) -> None:
     from services.orchestrator.image_truth import verified_images
 
-    await _process_request(request, item)
+    from packages import context_usage
+
+    capture = context_usage.samples.set(item.context_samples)
+    components = context_usage.parts.set({})
+    try:
+        await _process_request(request, item)
+    finally:
+        context_usage.parts.reset(components)
+        context_usage.samples.reset(capture)
+    from services.orchestrator.source_truth import clean_citation_residue
+
+    item.reponse = clean_citation_residue(item.reponse)
     item.reponse = verified_images(
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
@@ -697,6 +733,13 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
     ):
         language = requested_language(request.user_text) or language
     request = request.model_copy(update={"lang": language})
+    from services.orchestrator.location import location_dependent
+
+    if not request.continuation and location_dependent(request.user_text):
+        from services.orchestrator.nearby_chat import process_nearby
+
+        await process_nearby(request, item)
+        return
     if (
         extended_enabled()
         and not request.has_attachments
@@ -779,8 +822,10 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         item.reponse += notice
         if sink := sink_context.get():
             await sink({"delta": {"content": notice}})
-    if item.state == "done" and any(
-        d.get("hierarchical_synthesis") for d in item.documents
+    if (
+        item.state == "done"
+        and any(not d.reused for d in request.documents)
+        and any(d.get("hierarchical_synthesis") for d in item.documents)
     ):
         from services.orchestrator.attachment_reading import reduced_document_note
 
@@ -808,10 +853,12 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             item.reponse,
             {str(image["reference"]) for image in item.images if "reference" in image},
         )
+        result_before_guard = item.reponse
         item.reponse = without_unretrieved(
             clean_answer(item.reponse),
             set(item.retrieved_urls)
             | drawing_references(item)
+            | set(item.tool_urls)
             | {str(c.get("source")) for c in item.citations}
             | set(
                 re.findall(
@@ -827,7 +874,33 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             ),
         )
         sources = visible_sources(item)
-        item.reponse = inline_source_markers(item.reponse, sources)
+        from services.orchestrator.link_requests import (
+            fallback_terms,
+            page_request,
+            unavailable,
+        )
+        from services.orchestrator.citation_cleanup import hollow
+
+        if (
+            not request.project_id
+            and page_request(
+                request.user_text, tuple(m.text for m in request.messages[:-1])
+            )
+            and hollow(clean_answer(result_before_guard), item.reponse)
+        ):
+            item.reponse = unavailable(
+                fallback_terms(
+                    request.user_text, tuple(m.text for m in request.messages[:-1])
+                ),
+                request.lang,
+            )
+        item.reponse = inline_source_markers(
+            item.reponse,
+            sources,
+            preserve_labels=page_request(
+                request.user_text, tuple(m.text for m in request.messages[:-1])
+            ),
+        )
         item.reponse += source_footer(sources, request.lang)
 
 
@@ -853,7 +926,11 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
         + Path("prompts/web-chat.txt").read_text()
         + language_instruction(request.lang)
         + guest_capability_instruction()
-        + simple_drawing_instruction(),
+        + (
+            spatial_drawing_instruction()
+            if is_spatial_drawing_request(request.user_text)
+            else simple_drawing_instruction()
+        ),
         Limits(
             profile=request.model,
             tool_calls=0,
@@ -895,6 +972,20 @@ async def _process(
     cost_limit: Decimal | None = None,
     wall_clock_limit: float | None = None,
 ) -> None:
+    from services.orchestrator.person_lookup import person_name, lookup
+
+    if (
+        not request.continuation
+        and not request.has_attachments
+        and not any(m.images for m in request.messages)
+        and (name := person_name(request.user_text))
+    ):
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        tools.daily_ledger = getattr(request, "daily_ledger", None)
+        tools.daily_user = getattr(request, "daily_user", "unknown")
+        tools.daily_lang = request.lang
+        await lookup(request, item, tools, name)
+        return
     technical_diagram = not request.continuation and diagram.requested(
         request.user_text
     )
@@ -904,6 +995,7 @@ async def _process(
     if (
         images_enabled()
         and not technical_diagram
+        and not is_spatial_drawing_request(request.user_text)
         and not explaining_image
         and not request.continuation
         and not request.has_attachments
@@ -961,8 +1053,10 @@ async def _process(
     drawing = (
         not request.continuation
         and not request.has_attachments
-        and not images_enabled()
-        and not explicit_image_request(request.user_text)
+        and (
+            is_spatial_drawing_request(request.user_text)
+            or (not images_enabled() and not explicit_image_request(request.user_text))
+        )
         and is_simple_drawing_request(request.user_text)
     )
     if drawing:
@@ -981,9 +1075,16 @@ async def _process(
         if sink:
             await sink({"delta": {"content": item.reponse}})
         return
-    followup = not request.continuation and is_followup(request.messages)
+    from services.orchestrator.link_requests import page_request, instruction
+
+    links = (
+        page_request(request.user_text, tuple(m.text for m in request.messages[:-1]))
+        and not request.continuation
+    )
+    followup = not links and not request.continuation and is_followup(request.messages)
     appearance = (
-        not request.continuation
+        not links
+        and not request.continuation
         and not technical_diagram
         and not request.has_attachments
         and is_appearance_request(request.user_text, history=request.messages[:-1])
@@ -997,6 +1098,7 @@ async def _process(
             request.user_text,
             request.lang,
             device_timings="tavily" in search_providers(),
+            history=tuple(m.text for m in request.messages[:-1]) if links else (),
         )
         if not request.has_attachments and (not followup or images_in_history)
         else ()
@@ -1065,8 +1167,6 @@ async def _process(
             Decimal(str(vision_item.cout_eur)),
         )
     elif images_in_history and not request.has_attachments:
-        # The profiled vision route accepts a complete conversation. This retains
-        # validated history images (at most four) for text-only follow-ups.
         await process_vision(request, item)
         return
     started = time.monotonic()
@@ -1114,7 +1214,7 @@ async def _process(
     )
     model.sink = (
         None
-        if appearance or image_discussion or technical_diagram
+        if appearance or image_discussion or technical_diagram or links
         else sink_context.get()
     )
     delivery_buffer = diagram.DeliveryBuffer(model.sink) if model.sink else None
@@ -1287,6 +1387,13 @@ async def _process(
                 ),
             }
         )
+    if attachment_sources:
+        from packages.context_usage import register
+
+        register(
+            str(attachment_history[-1]["content"]),
+            {"document_passages": attachment_sources},
+        )
     try:
         if attachment_sources and model.sink:
             await model.sink({"phase": "synthesizing_document"})
@@ -1304,6 +1411,7 @@ async def _process(
             )
             + (Path("prompts/followup.txt").read_text() if followup else "")
             + language_instruction(request.lang)
+            + (instruction() if links else "")
             + (policy_instruction() if image_discussion else "")
             + extended_instruction()
             + (guest_capability_instruction() if not images_enabled() else "")
@@ -1481,6 +1589,7 @@ async def _process(
                         Path("prompts/chat.txt").read_text()
                         + Path("prompts/chat-agent.txt").read_text()
                         + language_instruction(request.lang)
+                        + (instruction() if links else "")
                         + file_context
                         + "\n\nFile-delivery recovery: the prior answer produced no file. "
                         "Use terminal_command to create the requested files from the "
@@ -1623,6 +1732,19 @@ async def _process(
             result.text = inline_fallback(
                 result.text, request.lang, preserve_code=preserve_code
             )
+        from services.orchestrator.source_truth import urls as urls_in_text
+        from services.orchestrator.shopping_links import render_shopping
+
+        if links and (
+            shopping := render_shopping(tools.shopping_searches, request.lang)
+        ):
+            result.text = shopping
+        if links and urls_in_text(result.text):
+            from services.orchestrator.shopping_prices import verified_prices
+
+            result.text = verified_prices(
+                result.text, tools.fetched_pages, request.lang, tools.search_snippets
+            )
         item.reponse, item.state, item.cout_eur = (
             result.text + ("\n\n" + notice if notice else ""),
             result.state,
@@ -1678,11 +1800,32 @@ async def _process(
             )
         if (
             (technical_diagram or image_discussion)
+            and not links
             and not appearance
             and (sink := sink_context.get())
         ):
             await sink({"delta": {"content": item.reponse}})
     except GatewayError as exc:
+        if links and exc.code in {
+            "search_unavailable",
+            "quota_exceeded",
+            "search_rate_limited",
+            "search_no_results",
+            "daily_search_limit",
+        }:
+            from services.orchestrator.link_requests import fallback_terms, unavailable
+
+            item.erreurs.append(exc.code)
+            item.reponse = unavailable(
+                fallback_terms(
+                    request.user_text, tuple(m.text for m in request.messages[:-1])
+                ),
+                request.lang,
+            )
+            item.reponse += "\n\n" + exc.detail
+            item.state = "done"
+            item.cout_eur = float(model.spent)
+            return
         if tools.terminal is None or not tools.terminal.files:
             raise
         from services.orchestrator.file_results import render_files

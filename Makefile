@@ -209,3 +209,7 @@ m26-live: ## fresh public HTTP acceptance with real providers
 .PHONY: project-install
 project-install: ## provision project organization/admin and explicit legacy ownership
 	@python3 -m services.retrieval.project_install $(PROJECT_INSTALL_ARGS)
+
+.PHONY: test-project-browser
+test-project-browser: ## keyless project UI contracts; requires Playwright Chromium installed
+	@PYTHONPATH=.:tests:services/model-gateway python3 -m unittest discover -s tests -p 'project_composer_browser.py' -v
