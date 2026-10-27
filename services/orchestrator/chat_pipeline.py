@@ -704,6 +704,10 @@ class _RoutedStreamBuffer:
 async def _process_request(request: ChatRequest, item: Interaction) -> None:
     if await dispatch_project(request, item):
         return
+    from services.orchestrator.user_memory import prepare as prepare_user_memory
+
+    if await prepare_user_memory(request, item):
+        return
     if request.code_mode:
         from services.orchestrator.code_mode import process_code
 
