@@ -381,20 +381,130 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
             evidence["untrusted_exact_name_evidence"],
             [
                 {
+                    "source_number": 1,
                     "url": "https://example.test/profile",
                     "passages": ["Lorin Vasquel founded Northwind Studio and Bay OS."],
+                    "distinguishing_attributes": [
+                        "role:founder",
+                        "organisation:northwind studio",
+                    ],
                     "source_kind": "profile",
                 },
                 {
+                    "source_number": 2,
                     "url": "https://example.test/company",
                     "passages": [
                         "Lorin Vasquel is the founder of Bay OS and Harbor Devices."
+                    ],
+                    "distinguishing_attributes": [
+                        "role:founder",
+                        "organisation:bay os",
                     ],
                     "source_kind": "profile",
                 },
             ],
         )
         self.assertNotIn("What profession", item.reponse)
+
+    async def test_attribute_disjoint_sources_retry_then_list_separate_identities(
+        self,
+    ) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Pax Lorne?"}],
+                "lang": "en",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        response = {
+            "data": {
+                "results": [
+                    {
+                        "snippet": "Pax Lorne founded Ember Works.",
+                        "link": "https://example.test/founder",
+                    },
+                    {
+                        "snippet": (
+                            "Pax Lorne was a guest on Radio Current about marine ecology."
+                        ),
+                        "link": "https://example.test/radio",
+                    },
+                ]
+            }
+        }
+        conflated = Result(
+            "Pax Lorne founded Ember Works and was a radio guest about marine ecology "
+            "[1](https://example.test/founder) [2](https://example.test/radio)."
+        )
+        answer = AsyncMock(side_effect=[conflated, conflated])
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=self.model()),
+            ),
+            patch("services.orchestrator.person_lookup.run", new=answer),
+        ):
+            await lookup(request, item, tools, "Pax Lorne")
+        self.assertEqual(answer.await_count, 2)
+        self.assertIn("separate identities", item.reponse)
+        self.assertIn("Identity 1", item.reponse)
+        self.assertIn("Identity 2", item.reponse)
+        self.assertIn("which one do you mean", item.reponse)
+
+    async def test_sources_with_shared_birth_year_may_be_merged(self) -> None:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Result
+        from services.orchestrator.person_lookup import lookup
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Who is Neri Sol?"}],
+                "lang": "en",
+            }
+        )
+        item = Interaction()
+        tools = ChatTools(item, request.user_text, allow_image=False)
+        response = {
+            "data": {
+                "results": [
+                    {
+                        "snippet": "Neri Sol, born in 1974, founded Silver Harbor.",
+                        "link": "https://example.test/profile",
+                    },
+                    {
+                        "snippet": (
+                            "Neri Sol was born in 1974 and works as an engineer at Beacon Lab."
+                        ),
+                        "link": "https://example.test/interview",
+                    },
+                ]
+            }
+        }
+        answer = AsyncMock(
+            return_value=Result(
+                "Neri Sol, born in 1974, founded Silver Harbor and works at Beacon Lab "
+                "[1](https://example.test/profile) [2](https://example.test/interview)."
+            )
+        )
+        with (
+            patch.object(tools, "execute", AsyncMock(return_value=response)),
+            patch(
+                "services.orchestrator.person_lookup.GatewayModel.connect",
+                new=AsyncMock(return_value=self.model()),
+            ),
+            patch("services.orchestrator.person_lookup.run", new=answer),
+        ):
+            await lookup(request, item, tools, "Neri Sol")
+        self.assertEqual(answer.await_count, 1)
+        self.assertIn("founded Silver Harbor", item.reponse)
 
     async def test_person_answer_drops_fake_markdown_citation_and_claim(self) -> None:
         from services.orchestrator.chat_pipeline import ChatTools

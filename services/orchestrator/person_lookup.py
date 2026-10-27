@@ -29,6 +29,7 @@ class Evidence:
     url: str
     passages: tuple[str, ...]
     directory: bool
+    attributes: tuple[str, ...]
 
 
 _LANGUAGE_NAMES = {
@@ -41,14 +42,128 @@ _LANGUAGE_NAMES = {
 
 _SYNTHESIS_INSTRUCTION = (
     "Answer briefly using only the exact-name evidence below and cite its URLs. "
-    "First identify distinct people: differences in profession, field, period, or "
-    "place can mean separate identities. A directory or search listing alone is not "
-    "an identity. When two or more notable identities are supported, name each briefly "
-    "with sources, then ask which one is meant; if one is clearly dominant, answer about "
-    "it and mention the others in one line. A namesake is supported only when a passage "
-    "makes the asked full name, after case and accent folding, its subject; never infer a "
-    "namesake from a surname page or a passage about a different full name."
+    "First group the numbered sources into identities. Attribute a fact from a source "
+    "to an identity only when that source shares a listed distinguishing attribute with "
+    "that identity (the same birth year, organisation, role, or place), or when it is "
+    "that identity's own profile. A directory or search listing alone is not an identity. "
+    "When sources describe different activities and share no distinguishing attribute, "
+    "they are separate identities: say so and ask which one the user means. Never say "
+    "that they are probably the same person without a shared attribute. When two or more "
+    "identities are supported, name each briefly with its sources, then ask which one is "
+    "meant; if one is clearly dominant, answer about it and mention the others in one "
+    "line. A namesake is supported only when a passage makes the asked full name, after "
+    "case and accent folding, its subject; never infer a namesake from a surname page or "
+    "a passage about a different full name."
 )
+
+
+def _source_attributes(passages: tuple[str, ...]) -> tuple[str, ...]:
+    """Extract conservative identity attributes without asking the model to infer them."""
+    attributes: list[str] = []
+
+    def add(kind: str, value: str) -> None:
+        normalized_value = normalized(value).strip(" .,:;()")
+        attribute = f"{kind}:{normalized_value}"
+        if normalized_value and attribute not in attributes:
+            attributes.append(attribute)
+
+    for passage in passages:
+        folded = normalized(passage)
+        for year in re.findall(r"(?:born|b\.)\s*(?:in\s*)?((?:18|19|20)\d{2})", folded):
+            add("birth_year", year)
+        if re.search(r"\b(?:co)?founded\b", folded):
+            add("role", "cofounder" if "cofounded" in folded else "founder")
+        for role in re.findall(
+            r"\b(?:is|was|works as|served as)\s+(?:an?\s+|the\s+)?"
+            r"([a-z][a-z -]{2,40}?)(?:\s+(?:at|in|for|on|from)\b|[.,;])",
+            folded,
+        ):
+            if " of " not in role:
+                add("role", role)
+        for role in re.findall(
+            r"\b(founder|cofounder|radio guest|host|director|"
+            r"novelist|botanist|biologist|engineer|artist)\b",
+            folded,
+        ):
+            add("role", role)
+        for organisation in re.findall(
+            r"\b(?:founded|cofounded|founder of|works? at|joined|at)\s+"
+            r"([A-Z][A-Za-z0-9&'’-]*(?:\s+[A-Z][A-Za-z0-9&'’-]*){0,3})",
+            passage,
+        ):
+            add("organisation", organisation)
+        for place in re.findall(r"\b(?:in|from)\s+([A-Z][A-Za-z'’-]+)", passage):
+            add("place", place)
+    return tuple(attributes)
+
+
+def _identity_groups(evidence: list[Evidence]) -> list[list[int]]:
+    """Join only sources with an explicit shared deterministic attribute."""
+    groups: list[list[int]] = []
+    for index, source in enumerate(evidence):
+        if source.directory:
+            continue
+        matching = [
+            group
+            for group in groups
+            if any(
+                set(source.attributes) & set(evidence[member].attributes)
+                for member in group
+            )
+        ]
+        if not matching:
+            groups.append([index])
+            continue
+        merged = [index]
+        for group in matching:
+            merged.extend(group)
+            groups.remove(group)
+        groups.append(merged)
+    return groups
+
+
+def _answer_conflates_sources(text: str, evidence: list[Evidence]) -> bool:
+    """Detect unsupported merging of cited, attribute-disjoint source groups."""
+    cited = {index for index, source in enumerate(evidence) if source.url in text}
+    cited_groups = [
+        group for group in _identity_groups(evidence) if cited.intersection(group)
+    ]
+    if len(cited_groups) < 2:
+        return False
+    folded = normalized(text)
+    separation_markers = (
+        "different people",
+        "separate identities",
+        "two identities",
+        "which one",
+        "what profession",
+        "quel metier",
+        "welchen beruf",
+        "que profesion",
+        "quale professione",
+    )
+    return not any(marker in folded for marker in separation_markers)
+
+
+def _separate_identity_fallback(evidence: list[Evidence]) -> str:
+    """Return a citation-preserving answer when one repair cannot separate namesakes."""
+    groups = _identity_groups(evidence)
+    lines = [
+        "The retrieved sources support separate identities; which one do you mean?"
+    ]
+    for number, group in enumerate(groups, start=1):
+        sources = ", ".join(
+            f"[Source {index + 1}]({evidence[index].url})" for index in group
+        )
+        attributes = ", ".join(
+            attribute.replace("_", " ").replace(":", " ")
+            for index in group
+            for attribute in evidence[index].attributes
+        )
+        lines.append(
+            f"- Identity {number}: {attributes or 'distinct activity'} — {sources}"
+        )
+    return "\n".join(lines)
 
 
 def synthesis_instruction(language: str) -> str:
@@ -86,13 +201,15 @@ async def _answer_from_evidence(
                 {
                     "untrusted_exact_name_evidence": [
                         {
+                            "source_number": number,
                             "url": source.url,
                             "passages": list(source.passages),
+                            "distinguishing_attributes": list(source.attributes),
                             "source_kind": "directory"
                             if source.directory
                             else "profile",
                         }
-                        for source in evidence
+                        for number, source in enumerate(evidence, start=1)
                     ]
                 },
                 ensure_ascii=False,
@@ -100,23 +217,53 @@ async def _answer_from_evidence(
         }
     ]
     try:
+        limits = Limits(
+            profile=request.model,
+            tool_calls=0,
+            tokens=None,
+            cost=Decimal("0.10"),
+            wall_clock=max(0, request.timeout_seconds - (time.monotonic() - started)),
+        )
         result = await run(
             Query(question=request.user_text, lang=request.lang),
             model,
             tools,
             synthesis_instruction(request.lang),
-            Limits(
-                profile=request.model,
-                tool_calls=0,
-                tokens=None,
-                cost=Decimal("0.10"),
-                wall_clock=max(
-                    0, request.timeout_seconds - (time.monotonic() - started)
-                ),
-            ),
+            limits,
             history=history,
             retry_web=False,
         )
+        if _answer_conflates_sources(result.text, evidence):
+            conflict_history: list[dict[str, object]] = [
+                *history,
+                {
+                    "role": "user",
+                    "content": (
+                        "Conflict: the cited sources have no shared distinguishing "
+                        "attribute. Separate them into identities; do not merge their facts."
+                    ),
+                },
+            ]
+            repaired = await run(
+                Query(question=request.user_text, lang=request.lang),
+                model,
+                tools,
+                synthesis_instruction(request.lang),
+                Limits(
+                    profile=request.model,
+                    tool_calls=0,
+                    tokens=None,
+                    cost=Decimal("0.10"),
+                    wall_clock=max(
+                        0, request.timeout_seconds - (time.monotonic() - started)
+                    ),
+                ),
+                history=conflict_history,
+                retry_web=False,
+            )
+            result = repaired
+            if _answer_conflates_sources(result.text, evidence):
+                result.text = _separate_identity_fallback(evidence)
         item.reponse, item.state, item.task_type = (
             _person_answer(result.text, evidence),
             result.state,
@@ -445,7 +592,7 @@ async def lookup(
     }
     missing, _ambiguous, context, namesake, heading = labels[request.lang]
     exact_evidence = [
-        Evidence(url, tuple(passages), directory)
+        Evidence(url, tuple(passages), directory, _source_attributes(tuple(passages)))
         for url, (passages, directory) in evidence.items()
     ]
     if exact_evidence:
