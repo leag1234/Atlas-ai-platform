@@ -1,0 +1,9 @@
+text before the root
+<svg viewBox="0 0 400 300" width="400" width="400"><rect x="10" y="10" width="180" height="80"/><text x="20" y="50">Kitchen & dining < 70 m2</text></svg>
+text after the root
+
+--- truncated-closing-tag ---
+<svg viewBox="0 0 400 300"><g><rect x="10" y="10" width="180" height="80"/><text x="20" y="50">Bedroom</text></g></svg
+
+--- unclosed-elements-at-end ---
+<svg viewBox="0 0 400 300"><g><rect x="10" y="10" width="180" height="80"/><text x="20" y="50">Hallway</text>
