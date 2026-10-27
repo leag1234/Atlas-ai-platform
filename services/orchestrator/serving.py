@@ -205,6 +205,8 @@ def stable_webui_options() -> list[str]:
         "-e",
         "WEBUI_AUTH_TRUSTED_ROLE_HEADER=X-Atlas-User-Role",
         "-e",
+        "DEFAULT_LOCALE=",
+        "-e",
         "ENABLE_SIGNUP=False",
         "-e",
         "ENABLE_LOGIN_FORM=False",

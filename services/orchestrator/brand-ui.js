@@ -23,11 +23,20 @@
   }
 
   function replaceLogo(image) {
-    const path = new URL(image.src, location.href).pathname;
+    const url = new URL(image.src, location.href);
+    const path = url.pathname;
+    // Keep the native HTTP avatar URL: Open WebUI validates model image URLs.
+    // CSS paints the appropriate local SVG over the raster response in both sizes.
+    if (url.origin === location.origin && path === '/api/v1/models/model/profile/image' && ['atlas-qwen', 'atlas-glm', 'atlas-deepseek'].includes(url.searchParams.get('id'))) {
+      image.dataset.atlasBrand = 'model';
+      return;
+    }
+    if (image.dataset.atlasBrand === 'model') delete image.dataset.atlasBrand;
     const logotype = path === lightLogotype || path === darkLogotype || image.dataset.atlasBrand === 'logotype';
     if (!logotype && !sourcePaths.has(path) && image.dataset.atlasBrand !== 'symbol') return;
     image.dataset.atlasBrand = logotype ? 'logotype' : 'symbol';
-    image.src = logotype ? (isDark() ? darkLogotype : lightLogotype) : (isDark() ? dark : light);
+    const source = logotype ? (isDark() ? darkLogotype : lightLogotype) : (isDark() ? dark : light);
+    if (image.getAttribute('src') !== source) image.src = source;
     image.alt = 'Atlas';
   }
 
@@ -37,7 +46,7 @@
 
   new MutationObserver(refresh).observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['class'],
+    attributeFilter: ['class', 'src'],
     childList: true,
     subtree: true
   });
