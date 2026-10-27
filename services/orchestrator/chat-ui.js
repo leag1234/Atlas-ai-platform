@@ -114,6 +114,8 @@
     }
     if (url.origin === location.origin && /^\/(?:api\/(?:v1\/)?)?chat\/completions$|^\/v1\/chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
       const body = JSON.parse(options.body);
+      body.atlas_ui = true;
+      options = { ...options, body: JSON.stringify(body) };
       const message = body.user_message || [...(body.messages || [])].reverse().find(m => m.role === 'user');
       const text = typeof message?.content === 'string' ? message.content : (message?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
       if (!body.location && !body.code_mode && nearbyIntent(text)) {

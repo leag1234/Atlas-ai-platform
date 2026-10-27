@@ -33,6 +33,7 @@ def request(filename: str = "notes.pdf", file_id: str | None = FILE_ID) -> ChatR
                     ],
                 }
             ],
+            "atlas_ui": True,
             "stream": True,
         }
     )

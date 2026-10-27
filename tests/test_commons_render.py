@@ -178,7 +178,9 @@ class CommonsRenderTests(unittest.TestCase):
                     "content": "Explique le fonctionnement du moteur Stirling et le rôle de ses composants.",
                 }
             ]
-            first = client.post("/v1/chat/completions", json={"messages": messages})
+            first = client.post(
+                "/v1/chat/completions", json={"atlas_ui": True, "messages": messages}
+            )
             self.assertEqual(first.status_code, 200)
             answer = first.json()["choices"][0]["message"]["content"]
             self.assertIn("Piston", answer)
@@ -190,7 +192,12 @@ class CommonsRenderTests(unittest.TestCase):
             )
             second = client.post(
                 "/v1/chat/completions",
-                json={"messages": messages, "stream": stream, "ui_locale": "fr"},
+                json={
+                    "atlas_ui": True,
+                    "messages": messages,
+                    "stream": stream,
+                    "ui_locale": "fr",
+                },
             )
             self.assertEqual(second.status_code, 200)
             if stream:

@@ -102,6 +102,7 @@ class DocumentTests(unittest.TestCase):
 
             request = ChatRequest.model_validate(
                 {
+                    "atlas_ui": True,
                     "messages": [
                         {
                             "role": "user",
@@ -248,6 +249,7 @@ class DocumentTests(unittest.TestCase):
             reply = client.post(
                 "/v1/chat/completions",
                 json={
+                    "atlas_ui": True,
                     "messages": [
                         {
                             "role": "user",
@@ -257,7 +259,7 @@ class DocumentTests(unittest.TestCase):
                                 file_part("notes.txt", b"second attachment"),
                             ],
                         }
-                    ]
+                    ],
                 },
             )
             self.assertEqual(reply.status_code, 200, reply.text)
@@ -285,6 +287,7 @@ class ActivityTests(unittest.IsolatedAsyncioTestCase):
 
         request = ChatRequest.model_validate(
             {
+                "atlas_ui": True,
                 "stream": True,
                 "messages": [{"role": "user", "content": "Summarize this."}],
             }

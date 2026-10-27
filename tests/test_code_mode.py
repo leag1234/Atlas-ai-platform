@@ -97,6 +97,7 @@ class CodeTests(unittest.IsolatedAsyncioTestCase):
     def request(self, **updates: object) -> ChatRequest:
         return ChatRequest.model_validate(
             {
+                "atlas_ui": True,
                 "model": PROFILES[0],
                 "code_mode": True,
                 "code_session_id": self.session,
@@ -330,7 +331,10 @@ class CodeTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ValidationError):
                     self.request()
                 ordinary = ChatRequest.model_validate(
-                    {"messages": [{"role": "user", "content": "Hello"}]}
+                    {
+                        "atlas_ui": True,
+                        "messages": [{"role": "user", "content": "Hello"}],
+                    }
                 )
                 self.assertFalse(ordinary.code_mode)
                 self.assertEqual(ordinary.timeout_seconds, 120)

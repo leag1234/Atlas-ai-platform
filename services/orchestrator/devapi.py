@@ -42,6 +42,16 @@ async def authenticate(
             key = bearer[7:]
         request.state.developer = store.authenticate(key)
         request.state.store = store
+        if os.environ.get("ATLAS_API_KEY_PEPPER"):
+            from services.orchestrator.api_keys import configured_store
+            from services.orchestrator.api_key_edge import ModelAccounting, check_member
+
+            keys = configured_store()
+            if keys.has_legacy(key):
+                principal = keys.resolve(key)
+                await check_member(principal)
+                request.state.developer = principal.id
+                request.state.store = ModelAccounting(keys, principal)
     except PermissionError:
         return JSONResponse(
             {"error": {"type": "authentication_error", "message": "Unauthorized"}},

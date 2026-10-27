@@ -49,6 +49,7 @@ class ChatRequest(VisionInput):
     documents: list[Attachment] = Field(default_factory=list, max_length=8)
     org_id: str | None = None
     file_version_ids: list[str] = Field(default_factory=list)
+    _api_key_request: bool = PrivateAttr(default=False)
     _project_subject: str | None = PrivateAttr(default=None)
     _transcript_key: str | None = PrivateAttr(default=None)
     project_id: str | None = None
@@ -57,6 +58,7 @@ class ChatRequest(VisionInput):
     work_session_id: str | None = None
     code_mode: bool = False
     code_session_id: str | None = None
+    atlas_ui: bool = False
     stream: bool = False
     cancel_id: str | None = Field(
         default=None,

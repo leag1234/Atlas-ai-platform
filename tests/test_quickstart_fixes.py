@@ -266,7 +266,9 @@ class StatusLanguageTests(unittest.IsolatedAsyncioTestCase):
             )
             await sink({"delta": {"content": item.reponse}})
 
-        payload = ChatRequest.model_validate({"stream": True, "messages": messages})
+        payload = ChatRequest.model_validate(
+            {"atlas_ui": True, "stream": True, "messages": messages}
+        )
         with (
             tempfile.TemporaryDirectory() as root,
             patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
