@@ -435,6 +435,10 @@ def searxng() -> Iterator[None]:
 
 @contextmanager
 def stack(name: str = "atlas-chat", persistent: bool = True) -> Iterator[None]:
+    from packages.user_memory_auth import service_secret
+
+    if not service_secret():
+        os.environ["ATLAS_USER_MEMORY_SECRET"] = secrets.token_hex(32)
     ports = atlas_ports()
     name = ports.name(name)
     servers: list[uvicorn.Server] = []
