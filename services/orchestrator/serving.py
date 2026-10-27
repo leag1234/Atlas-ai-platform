@@ -207,6 +207,14 @@ def stable_webui_options() -> list[str]:
         "-e",
         "DEFAULT_LOCALE=",
         "-e",
+        "ENABLE_MEMORIES=False",
+        "-e",
+        "ENABLE_CALENDAR=False",
+        "-e",
+        "ENABLE_AUTOMATIONS=False",
+        "-e",
+        "ENABLE_EASTER_EGGS=False",
+        "-e",
         "ENABLE_SIGNUP=False",
         "-e",
         "ENABLE_LOGIN_FORM=False",
@@ -361,6 +369,12 @@ def webui(name: str, persistent: bool) -> None:
             "-v",
             str(Path("services/orchestrator/chat-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/chat-ui.js:ro",
+            "-v",
+            str(Path("services/orchestrator/settings-ui.js").resolve())
+            + ":/app/backend/open_webui/static/atlas/settings-ui.js:ro",
+            "-v",
+            str(Path("services/orchestrator/settings-locales.json").resolve())
+            + ":/app/backend/open_webui/static/atlas/settings-locales.json:ro",
             "-v",
             str(Path("services/orchestrator/brand-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/brand-ui.js:ro",

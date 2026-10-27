@@ -350,8 +350,6 @@
   settingsStyle.id = "atlas-guest-settings-style";
   settingsStyle.textContent = `
 /* Guest settings share the chat palette; native dialogs provide focus trapping. */
-.atlas-settings-entry { text-align:left; padding:10px 12px; border-radius:10px; color:var(--atlas-text); font:inherit; white-space:nowrap; }
-.atlas-settings-entry:hover { background:var(--atlas-surface); }
 .atlas-settings-dialog { margin:auto; width:min(560px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:24px; border:1px solid var(--atlas-border); border-radius:20px; background:var(--atlas-bg); color:var(--atlas-text); font:14px/1.6 var(--atlas-font); box-shadow:0 24px 80px #0004; }
 .atlas-settings-dialog::backdrop { background:#0006; backdrop-filter:blur(3px); }
 .atlas-settings-dialog header,.atlas-settings-dialog footer,.atlas-memory-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
@@ -363,6 +361,8 @@
 .atlas-settings-dialog :is(button,input,textarea):focus-visible { outline:2px solid var(--atlas-accent); outline-offset:3px; }
 .atlas-settings-description { margin:12px 0 24px; color:var(--atlas-muted); }
 .atlas-settings-dialog fieldset { margin:20px 0; }
+.atlas-settings-dialog .atlas-options { flex-wrap:wrap; }
+.atlas-settings-dialog .atlas-option { flex:1 0 auto; }
 .atlas-settings-dialog legend { margin-bottom:8px; color:var(--atlas-muted); }
 .atlas-settings-dialog .atlas-option[aria-pressed="true"],.atlas-settings-dialog .atlas-primary { background:var(--atlas-accent); color:var(--atlas-on-accent); }
 .atlas-memory-toggle { display:flex; justify-content:space-between; align-items:center; gap:16px; font-weight:600; padding-bottom:20px; }
@@ -383,7 +383,7 @@
 .atlas-settings-dialog .atlas-danger { color:#b53629; }
 html.dark .atlas-settings-dialog .atlas-danger { color:#ff9c91; }
 .atlas-memory-confirm { width:min(440px,calc(100vw - 32px)); }
-@media(max-width:640px) { .atlas-settings-dialog { padding:20px; } .atlas-settings-entry { padding:8px; } }
+@media(max-width:640px) { .atlas-settings-dialog { padding:20px; } }
 
 img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/atlas-symbol.svg'); background:#f2f2f0; padding:5px; object-fit:contain; }
 html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/atlas-symbol-dark.svg'); background:#1a1a18; }
@@ -402,22 +402,41 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     es: { appearance: "Apariencia", close: "Cerrar", revoke: "Revocar ubicación compartida", revoked: "Ubicación compartida revocada" },
     it: { appearance: "Aspetto", close: "Chiudi", revoke: "Revoca condivisione posizione", revoked: "Condivisione posizione revocata" }
   };
-  // Open WebUI 0.11.3 owns the settings navigation and its keyboard handling.
-  // Add ordinary buttons after its tabs; keep our dialogs outside Svelte's tree.
+  // Source: pinned Open WebUI 0.11.3 SettingsModal.svelte, tabButtonClass.
+  // Borrow the live native classes, including their active/hover variants.
+  const tabBase = "flex items-center gap-1.5 h-7 px-2 md:w-full shrink-0 rounded-lg text-xs text-left transition-colors duration-75 ";
+  const tabIdle = "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300";
+  const tabActive = "font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-white/[0.04]";
   const mountSettings = () => {
     const nav = document.getElementById("search-input-settings-modal")?.closest("nav");
     if (!nav) return;
-    for (const [id, entry] of settingsEntries) {
+    const nativeIdle = nav.querySelector('[role="tab"][aria-selected="false"]');
+    const nativeActive = nav.querySelector('[role="tab"][aria-selected="true"]');
+    let anchor = nav.querySelector('[aria-controls="tab-personalization"]') || nav.querySelector('[aria-controls="tab-audio"]')?.previousElementSibling;
+    for (const [id, entry] of [...settingsEntries].sort(([a], [b]) => a.localeCompare(b))) {
       let button = nav.querySelector(`[data-atlas-settings="${id}"]`);
       if (!button) {
         button = document.createElement("button"); button.type = "button";
-        button.dataset.atlasSettings = id; button.className = "atlas-settings-entry";
-        button.addEventListener("click", () => entry.open(button));
-        const personal = [...nav.querySelectorAll("button")].find(item => ["Personalization", "Personnalisation", "Personalisierung", "Personalización", "Personalizzazione"].includes(item.textContent.trim()));
-        if (personal) personal.after(button); else (nav.querySelector(".tabs") || nav).append(button);
+        button.dataset.atlasSettings = id;
+        button.setAttribute("aria-haspopup", "dialog");
+        button.setAttribute("aria-controls", `atlas-${id}-dialog`);
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("class", "size-3.5");
+        icon.setAttribute("fill", "none"); icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "2"); icon.setAttribute("aria-hidden", "true");
+        const path = document.createElementNS(icon.namespaceURI, "path");
+        path.setAttribute("d", id === "appearance" ? "M4 5h16M4 12h16M4 19h16M8 2v6m8 1v6M8 16v6" : "M8 3h8l4 4v14H4V3h4Zm0 0v6h8V3M8 14h8m-8 3h5");
+        icon.append(path); button.append(icon, document.createElement("span"));
+        button.addEventListener("click", () => { entry.open(button); mountSettings(); });
+        if (anchor) anchor.after(button); else (nav.querySelector(".tabs") || nav).append(button);
       }
-      const label = entry.label();
-      if (button.textContent !== label) button.textContent = label;
+      anchor = button;
+      const active = Boolean(document.getElementById(`atlas-${id}-dialog`)?.open);
+      const classes = (active ? nativeActive?.className : nativeIdle?.className) || tabBase + (active ? tabActive : tabIdle);
+      if (button.className !== classes) button.className = classes;
+      button.setAttribute("aria-expanded", String(active));
+      const label = entry.label(), span = button.querySelector("span");
+      if (span.textContent !== label) span.textContent = label;
     }
   };
   window.atlasSettings = { locale, register(id, entry) { settingsEntries.set(id, entry); mountSettings(); } };
@@ -439,7 +458,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         const option = (group, value) => `<button type="button" data-atlas-option="${group}" data-value="${value}" aria-pressed="${saved[group] === value}" class="atlas-option">${group === "size" ? `${value} px` : words[value]}</button>`;
         const dialog = document.createElement("dialog"); dialog.id = "atlas-appearance-dialog"; dialog.className = "atlas-settings-dialog";
         dialog.setAttribute("aria-labelledby", "atlas-appearance-title");
-        dialog.innerHTML = `<header><h2 id="atlas-appearance-title">${labels.appearance}</h2><button type="button" data-close aria-label="${labels.close}">×</button></header>${Object.keys(choices).map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}`;
+        dialog.innerHTML = `<header><h2 id="atlas-appearance-title">${labels.appearance}</h2><button type="button" data-close aria-label="${labels.close}">×</button></header>${Object.keys(choices).filter(group => group !== "mode").map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}`;
         dialog.querySelector("[data-close]").onclick = () => dialog.close();
         const revoke = document.createElement("button"); revoke.type = "button"; revoke.id = "atlas-location-revoke"; revoke.textContent = labels.revoke;
         revoke.onclick = async () => { await window.atlasLocation.revoke(); revoke.textContent = labels.revoked; }; dialog.append(revoke);
