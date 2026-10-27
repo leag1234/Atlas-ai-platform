@@ -82,7 +82,13 @@ async def subject_values(
         values.update(subject=email, budget_user=identifier)
         if os.environ.get("ATLAS_PROJECT_MODE") != "1":
             values.update(member_id=identifier)
-    elif require_login and os.environ.get("ATLAS_STABLE") == "1":
+    elif (
+        require_login
+        and os.environ.get("ATLAS_STABLE") == "1"
+        and os.environ.get("ATLAS_WEBUI_ADMIN_TOKEN")
+    ):
+        # Without a directory token the operator supplies the explicit identity
+        # (member, subject and budget user), read from the Open WebUI user record.
         raise SubjectError("login_required")
     if not all(values[field] for field in ("member_id", "subject", "budget_user")):
         raise SubjectError("subject_identity_required")

@@ -491,6 +491,7 @@ users. A missing login returns `user_never_signed_in` (404): ask the user to sig
 in once. An ambiguous local part returns 409: supply the full email. Inactive users
 return 403. Directory failures return 503 and never select a guessed budget bucket.
 Project mode retains org/member selection and can also resolve `login`.
+Without `ATLAS_WEBUI_ADMIN_TOKEN`, stable mode accepts an explicit identity instead of `login`: `--subject <email> --member-id <user id> --budget-user <user id>`, taken from the user's Open WebUI record (the user must have signed in once).
 
 Both `/api/atlas/v1/chat/completions` and plain `/v1/chat/completions` put only
 the final cited answer in `choices[].message.content` / `delta.content`. API SSE

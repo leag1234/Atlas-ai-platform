@@ -61,6 +61,7 @@ class SubjectTests(unittest.IsolatedAsyncioTestCase):
                     "ATLAS_STABLE": "1",
                     "ATLAS_PROJECT_MODE": "0",
                     "ATLAS_API_KEY_ADMIN_TOKEN": "admin-test-" * 4,
+                    "ATLAS_WEBUI_ADMIN_TOKEN": "directory-test",
                 },
             ),
             patch(
@@ -99,6 +100,37 @@ class SubjectTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response.status_code, 400)
             self.assertEqual(response.json()["error"], "login_required")
+
+    def test_stable_admin_without_directory_accepts_explicit_identity(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_STABLE": "1",
+                    "ATLAS_PROJECT_MODE": "0",
+                    "ATLAS_API_KEY_ADMIN_TOKEN": "admin-test-" * 4,
+                },
+            ),
+            patch("services.orchestrator.api_key_admin.configured_store") as store,
+            TestClient(app, client=("127.0.0.1", 1111)) as client,
+        ):
+            os.environ.pop("ATLAS_WEBUI_ADMIN_TOKEN", None)
+            store.return_value.create.return_value = ({"id": "one"}, "test-delivery")
+            response = client.post(
+                "/keys",
+                headers={"Authorization": "Bearer " + "admin-test-" * 4},
+                json={
+                    "name": "test",
+                    "scopes": ["assistant"],
+                    "subject": "tester@example.invalid",
+                    "member_id": "user-id",
+                    "budget_user": "user-id",
+                },
+            )
+            self.assertEqual(response.status_code, 201)
+            values = store.return_value.create.call_args.kwargs
+            self.assertEqual(values["budget_user"], "user-id")
+            self.assertEqual(values["subject"], "tester@example.invalid")
 
     def test_legacy_service_import_does_not_require_interactive_login(self) -> None:
         with (
