@@ -10159,6 +10159,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        ui_locale:
+          type: string
+          enum: [fr, en, de, es, it]
+          description: Interface locale for status messages; reply language follows the user question.
         model:
           type: string
           minLength: 1

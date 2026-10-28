@@ -91,5 +91,7 @@ def execute_forge(scope: Scope, data: dict[str, Any]) -> dict[str, Any]:
         )
     except ForgeUnknown:
         raise ProjectError(503, "dependency_unavailable") from None
-    except (ForgeError, ValueError):
-        raise ProjectError(409, "revision_conflict") from None
+    except ForgeError as exc:
+        raise ProjectError(409, "revision_conflict", str(exc)) from None
+    except ValueError:
+        raise ProjectError(422, "invalid_request") from None

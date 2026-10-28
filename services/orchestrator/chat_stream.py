@@ -556,6 +556,8 @@ def response(
                     logging.getLogger(__name__).error(
                         "Configuration failure; variables=%s", configuration_names(exc)
                     )
+                elif payload.project_id:
+                    detail = temporarily_unavailable(payload.lang)
                 else:
                     detail = (
                         "The request did not complete because of an unexpected failure "

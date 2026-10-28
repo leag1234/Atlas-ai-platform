@@ -12,6 +12,7 @@ class ContentModel(BaseModel):
 
 
 class Table(ContentModel):
+    formulas: bool = Field(default=False, strict=True)
     headers: tuple[Text, ...] = Field(min_length=1, max_length=8)
     rows: tuple[tuple[Text, ...], ...] = Field(min_length=1, max_length=50)
 

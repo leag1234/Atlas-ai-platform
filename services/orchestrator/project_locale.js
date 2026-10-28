@@ -473,6 +473,8 @@
   ]
 };
   for (const [key,values] of Object.entries(approvalLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
+  const resultLabels = {"not_run": ["Not run", "Non exécuté", "Nicht ausgeführt", "Sin ejecutar", "Non eseguito"], "added": ["Added", "Ajouté", "Hinzugefügt", "Añadido", "Aggiunto"], "modified": ["Modified", "Modifié", "Geändert", "Modificado", "Modificato"], "deleted": ["Deleted", "Supprimé", "Gelöscht", "Eliminado", "Eliminato"]};
+  for (const [key,values] of Object.entries(resultLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
   window.atlasProjectLocale = { keys, rows, language() {
     return (localStorage.getItem('locale') || localStorage.getItem('atlas-ui-language') || navigator.language || 'fr').replaceAll('"', '').split('-')[0];
   }, text(key) {

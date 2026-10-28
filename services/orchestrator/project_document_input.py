@@ -13,6 +13,7 @@ from packages.doc_render.schema import Content, PresentationOutline, Presentatio
 class DocumentInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    formulas: bool = False
     title: str | None = Field(default=None, min_length=1, max_length=4000)
     content: str | None = Field(default=None, min_length=1, max_length=220000)
     slides: list[PresentationSlide] | None = Field(
@@ -68,7 +69,9 @@ def markdown(text: str, title: str) -> Content:
             rows = []
             index += 2
             while index < len(lines) and "|" in lines[index] and lines[index].strip():
-                rows.append(cells(lines[index]))
+                # A deliberate empty Markdown cell is a visual placeholder;
+                # keep strict Content text and rectangularity validation intact.
+                rows.append([cell or "—" for cell in cells(lines[index])])
                 index += 1
             section["tables"].append(dict(headers=headers, rows=rows))
             continue
@@ -98,7 +101,7 @@ def normalize(value: dict[str, Any]) -> dict[str, Any]:
     simple = DocumentInput.model_validate(
         {
             key: result.pop(key)
-            for key in ("title", "content", "slides")
+            for key in ("title", "content", "slides", "formulas")
             if key in result
         }
     )
@@ -117,4 +120,10 @@ def normalize(value: dict[str, Any]) -> dict[str, Any]:
     else:
         raise ValueError("Use Markdown content for DOCX/PDF/XLSX or slides for PPTX")
     result["content"] = normalized.model_dump()
+    if simple.formulas:
+        if suffix != ".xlsx":
+            raise ValueError("Formulas require XLSX")
+        for section in result["content"]["sections"]:
+            for table in section["tables"]:
+                table["formulas"] = True
     return result

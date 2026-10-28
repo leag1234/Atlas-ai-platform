@@ -97,7 +97,6 @@ def exported_snapshot(raw: bytes, folder: str, limit: int) -> bytes:
 
 async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
     args = ForgeRequest.model_validate_json(arguments)
-    action = args.action()
     if args.kind == "publish_change":
         refusal = tools.verification.refusal()
         if refusal is not None:
@@ -114,6 +113,12 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
     repo = next((r for r in listing["items"] if r["id"] == repository_id), None)
     if repo is None:
         raise ProjectError(404, "not_found")
+    action = args.action()
+    if args.kind == "publish_change":
+        # Scratch git is a synthetic import, not the remote repository history.
+        # Bind the full snapshot to its stored remote source. Forge still checks
+        # that the target has not moved before both approval and execution.
+        action["base_commit"] = repo["base_commit"]
     data = dict(execution.fence(), operation="issue", action=action)
     if args.kind in {"commit", "publish_change"}:
         export = await tools.workspace.invoke(

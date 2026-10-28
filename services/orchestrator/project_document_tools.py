@@ -98,7 +98,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": "Create a durable DOCX, XLSX, PPTX or PDF in project deliverables with a verified text preview. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors; every selected text segment must appear in the output. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
+    "publish_document": "Create a durable DOCX, XLSX, PPTX or PDF in project deliverables with a verified text preview. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support SUM and SUMIF with exact criteria and bounded local cell/range references, including numbered sheets. Each section is a sheet named 1, 2, etc.; first sheet starts with title and section heading, other sheets with the heading; table headers follow any paragraphs/bullets. Numeric table cells are numbers. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
 }
 
 
@@ -153,12 +153,18 @@ async def execute(
     tools: Any, name: str, arguments: str, timeout: float
 ) -> dict[str, Any]:
     value = json.loads(arguments)
+    markdown_input = (
+        name == "publish_document"
+        and isinstance(value, dict)
+        and isinstance(value.get("content"), str)
+        and not value["content"].lstrip().startswith(("{", "["))
+    )
     if name == "publish_document":
         value = normalize(value)
     args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
     await tools.execution.check()
     if name == "publish_document":
-        return await publish(tools, args, timeout)
+        return await publish(tools, args, timeout, append_sources=markdown_input)
     if name == "organize_files":
         return dict(
             await tools.execution.broker.call(
@@ -177,7 +183,31 @@ async def execute(
     return dict(result)
 
 
-async def publish(tools: Any, args: dict[str, Any], timeout: float) -> dict[str, Any]:
+def include_sources(content: Content, texts: list[str]) -> Content:
+    """Keep cited source excerpts in an appendix without altering the synthesis."""
+    rendered = "".join("".join(content.texts()).split())
+    missing = [
+        " ".join(text.split())
+        for text in texts
+        if "".join(text.split()) not in rendered
+    ]
+    if not missing:
+        return content
+    from packages.doc_render.schema import Section
+
+    paragraphs = tuple(
+        part[i : i + 4000] for part in missing for i in range(0, len(part), 4000)
+    )
+    sections = tuple(
+        Section(heading="Sources", paragraphs=paragraphs[i : i + 50])
+        for i in range(0, len(paragraphs), 50)
+    )
+    return Content(title=content.title, sections=content.sections + sections)
+
+
+async def publish(
+    tools: Any, args: dict[str, Any], timeout: float, *, append_sources: bool = False
+) -> dict[str, Any]:
     from services.orchestrator.presentation_delivery import build_project_document
     from services.orchestrator.terminal_client import ProjectPublisher
     from services.orchestrator.file_results import project_deliverable_links
@@ -232,9 +262,12 @@ async def publish(tools: Any, args: dict[str, Any], timeout: float) -> dict[str,
         source_texts.extend(texts)
         versions.append(resolved["version"])
 
+    content = Content.model_validate(args["content"])
+    if append_sources:
+        content = include_sources(content, source_texts)
     document = await asyncio.to_thread(
         build_project_document,
-        Content.model_validate(args["content"]),
+        content,
         path.suffix,
         source_texts,
         max_bytes=16 * 1024 * 1024,

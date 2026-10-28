@@ -24,7 +24,7 @@
   function errorNotice(target, error, key = 'failure') {
     const message = [401,403,404].includes(error.status) ? 'accessFailure' : [413,429].includes(error.status) ? 'limitFailure' : error.status >= 500 ? 'serviceFailure' : key;
     target.replaceChildren(node('span', t(message)));
-    const details = node('details'); details.append(node('summary', t('details')), node('pre', error.message || t('unknown'))); target.append(details);
+
   }
   function failure(error) { if (error.name !== 'AbortError' && notice) errorNotice(notice, error); }
   function locator(value) {
@@ -131,7 +131,8 @@
       const tab = button(label, () => { projectTab = key; projectsPage(); }); tab.setAttribute('role','tab'); tab.setAttribute('aria-selected', String(key === projectTab)); tabs.append(tab);
     }
     const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects'); search.setAttribute('aria-label',t('searchProjects')); search.value = projectSearch;
-    const searchButton = iconButton('searchProjects', '⌕', () => { search.hidden = !search.hidden; if (!search.hidden) search.focus(); }); search.hidden = !projectSearch;
+
+    const searchButton = iconButton('searchProjects', '⌕', () => search.focus()); searchButton.className = 'atlas-project-search-button';
     search.addEventListener('input', () => { projectSearch = search.value; renderCards(); });
     const sort = node('select'); sort.setAttribute('aria-label', t('sortProjects')); sort.append(new Option(t('recentActivity'),'recent'), new Option(t('name'),'name')); sort.value = projectSort;
     sort.addEventListener('change', () => { projectSort = sort.value; renderCards(); });
@@ -246,7 +247,7 @@
     for (const turn of turns) {
       const article = node('article', null, 'atlas-project-turn'); article.dataset.turn = turn.id;
       article.append(node('small', `Atlas · ${t(turn.state)}`));
-      for (const ref of turn.content_refs) if (ref.text) article.append(prose(ref.text, ref.kind === 'question' ? 'question' : 'answer'));
+      for (const ref of turn.content_refs) if (ref.text) article.append(prose(ref.kind === 'question' ? ref.text : withoutFileLinks(ref.text), ref.kind === 'question' ? 'question' : 'answer'));
       const checked = [...events.values()].filter(e => e.request_id === turn.request_id && e.output?.verification).sort((a,b) => b.seq - a.seq)[0];
       if (checked) article.append(verificationBadge(checked.output.verification));
       if (turn.usage?.cost_eur != null) article.append(detail('cost', turn.usage.cost_eur));
@@ -260,6 +261,12 @@
       }
       transcript.append(article);
     }
+  }
+  function withoutFileLinks(text) {
+    const routes = new Set((panelData?.deliverables || []).flatMap(item => [item.download_route, item.download_route?.replace(/\/download$/, '/preview')]));
+    return text.replace(/\[([^\[\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
+      try { return routes.has(new URL(href,location.origin).pathname) ? '' : match; } catch { return match; }
+    }).replace(/^\s*·\s*$/gm,'').trim();
   }
   let markdownModule;
   function scopedLink(label, href) {
@@ -367,7 +374,7 @@
     renderEvents();
   }
   function verificationBadge(value) {
-    const badge = node('p', `${t('verification')}: ${value.status} · ${value.reason}`, 'atlas-project-verification');
+    const badge = node('p', `${t('verification')}: ${t(value.status)}`, 'atlas-project-verification');
     badge.dataset.verification = value.status;
     if (value.command) badge.append(node('span', ` · ${value.command} ${t('exited')} ${value.exit_code}`));
     return badge;
@@ -384,17 +391,18 @@
     const item = node(event.output?.approval || event.type === 'error' ? 'section' : 'details', null, 'atlas-project-event'); item.dataset.eventSeq = String(event.seq);
     item.append(node(item.tagName === 'DETAILS' ? 'summary' : 'small', `Atlas · ${t(event.status || event.state || 'running')}`));
     const out = event.output || {};
-    for (const text of [event.text, event.error?.message, out.text, out.detail]) if (text) item.append(prose(text));
+    if (event.type === 'error') item.append(node('p', t('serviceFailure')));
     if (out.verification) item.append(verificationBadge(out.verification));
-    if (out.tool_result) { const details = node('details'); details.append(node('summary', t('results')), node('pre', out.tool_result)); item.append(details); }
-    if (out.items) for (const step of out.items) item.append(node('p', `${step.status}: ${step.text || step.title || step.step || ''}`));
+
+
     if (out.measurement) item.append(node('p', `${out.measurement.measured} / ${out.measurement.limit} ${out.measurement.unit}`));
     if (out.cost_eur != null) item.append(node('p', `${t('cost')}: ${out.cost_eur}`));
     if (out.diff) item.append(button('preview', () => window.atlasSideView.open({ kind: 'diff', title: t('preview'), content: out.diff })));
     if (out.approval) {
       const value = out.approval;
-      if (value.decision !== 'pending') root.querySelectorAll('[data-approval]').forEach(card => { if (card.dataset.approval === value.id) card.replaceWith(approval(value)); });
-      item.append(approval(value));
+      const existing = [...root.querySelectorAll('[data-approval]')].find(card => card.dataset.approval === value.id);
+      if (existing) existing.replaceWith(approval(value));
+      else item.append(approval(value));
     }
     activity.insertBefore(item, [...activity.children].find(n => Number(n.dataset.eventSeq) > event.seq) || null);
   }
@@ -418,7 +426,7 @@
       const publication = value.publication;
       for (const [label, text] of [['Branch', publication.branch], ['Target', publication.target], ['Commit message', publication.message], ['PR title', publication.title], ['PR body', publication.body], ['Base commit', publication.base_commit]]) card.append(node('p', `${t(label)}: ${text}`));
       const changes = node('ul');
-      for (const change of publication.diff) changes.append(node('li', `${change.status}: ${change.path}`));
+      for (const change of publication.diff) changes.append(node('li', `${t(change.status)}: ${change.path}`));
       card.append(changes);
     }
     if (value.decision !== 'pending') { card.dataset.decided = 'true'; card.append(node('p', t(value.decision))); }
@@ -426,7 +434,7 @@
       const b = button(allow ? 'accept' : 'deny', async () => {
         root.querySelectorAll('[data-approval]').forEach(other => { if (other.dataset.approval === value.id) { other.dataset.decided = 'true'; other.querySelectorAll('button').forEach(control => { control.disabled = true; }); } });
         try { await api(base() + '/approvals/' + value.id + '/decision', 'POST', { allow, action_digest: value.action_digest, ...(value.remote ? { always_allow: allow && alwaysAllow.checked } : {}) }); card.append(node('p', t('approveRecorded'))); }
-        catch (error) { card.append(node('p', error.message)); throw error; }
+        catch (error) { card.append(node('p', t('failure'))); throw error; }
       });
       b.disabled = value.decision !== 'pending' || !(session?.pending_approvals || []).some(a => a.id === value.id && a.decision === 'pending' && Date.parse(a.expires_at) > Date.now()); card.append(b);
     }
@@ -488,7 +496,7 @@
       selected = new Set(versions);
       if (action === 'work' && (!session || ['failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
       const profile = action === 'work' ? (window.atlasProjectWorkProfile || window.atlasProjectProfile) : window.atlasProjectProfile;
-      const body = { model: profile, org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
+      const body = { model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });
       await consume(response, chunk => {
@@ -529,7 +537,7 @@
   }
   function fileCard(item) {
     const file = files.find(f => f.version_id === item.file_version_id), card = node('section', null, 'atlas-project-file-card'); card.dataset.deliverable = item.id;
-    const name = file?.relative_path || item.filename || t('files');
+    const name = (file?.relative_path || item.filename || t('files')).split('/').pop();
     card.append(node('span', name.split('.').pop().toUpperCase(), 'atlas-project-file-type'), node('strong',name));
     const actions = node('div'); const download = node('a',t('download')); download.href = projectURL(item.download_route); download.download = name;
     actions.append(button('preview', () => previewDeliverable(item)),download); card.append(actions); return card;

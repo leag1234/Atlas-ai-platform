@@ -155,6 +155,9 @@ class Verification:
 
     def conclusive(self, command: str) -> bool:
         """A shell exit is test evidence only when it cannot mask or skip the test."""
+        # A trailing stderr-to-stdout redirect preserves the terminal exit status.
+        # Normalize only this exact unquoted suffix; retain every control operator.
+        command = re.sub(r"\s+2>&1\s*$", "", inline_command(command))
         try:
             lexer = shlex.shlex(
                 inline_command(command), posix=True, punctuation_chars=";&|()\n"

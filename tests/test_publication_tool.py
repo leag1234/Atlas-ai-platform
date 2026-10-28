@@ -61,7 +61,18 @@ class PublicationToolTests(unittest.IsolatedAsyncioTestCase):
         execution.fence.return_value = {"session_id": "session", "generation": 1}
         execution.check = AsyncMock()
         execution.broker.public = AsyncMock(
-            return_value=(200, {"items": [{"id": "repository", "folder_id": "repo"}]})
+            return_value=(
+                200,
+                {
+                    "items": [
+                        {
+                            "id": "repository",
+                            "folder_id": "repo",
+                            "base_commit": "a" * 40,
+                        }
+                    ]
+                },
+            )
         )
         pending = dict(operation_id="operation", approval=dict(decision="pending"))
         allowed = dict(
@@ -98,7 +109,18 @@ class PublicationToolTests(unittest.IsolatedAsyncioTestCase):
         execution.fence.return_value = {"session_id": "session", "generation": 1}
         execution.check = AsyncMock()
         execution.broker.public = AsyncMock(
-            return_value=(200, {"items": [{"id": "repository", "folder_id": "repo"}]})
+            return_value=(
+                200,
+                {
+                    "items": [
+                        {
+                            "id": "repository",
+                            "folder_id": "repo",
+                            "base_commit": "a" * 40,
+                        }
+                    ]
+                },
+            )
         )
         execution.broker.call = AsyncMock(
             side_effect=[

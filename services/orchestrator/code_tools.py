@@ -551,10 +551,10 @@ class WorkTools(CodeTools):
             try:
                 result = await work_forge_tools.execute(self, call.arguments, timeout)
             except (ValueError, ProjectError) as exc:
-                result = dict(
-                    error=exc.body["error"]
+                result = (
+                    dict(exc.body)
                     if isinstance(exc, ProjectError)
-                    else "invalid_tool_arguments"
+                    else dict(error="invalid_tool_arguments")
                 )
             await self.emit(
                 "tool",

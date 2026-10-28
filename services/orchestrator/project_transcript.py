@@ -57,6 +57,54 @@ def answer_content(text: str) -> str:
     return text
 
 
+async def saved_memory_reply(
+    broker: Any, turn: dict[str, Any], question: str, language: str
+) -> str | None:
+    from packages.project_memory import explicit
+
+    text = explicit(question)
+    if text is None:
+        return None
+    status, response = await broker.public("GET", "memory")
+    if status != 200:
+        return None
+    saved = next(
+        (
+            entry
+            for entry in response["items"]
+            if entry.get("source_turn_id") == turn["id"]
+            and entry.get("text") == text
+            and entry.get("status") in {"active", "proposed"}
+        ),
+        None,
+    )
+    if saved is None:
+        return None
+    labels = {
+        "fr": (
+            "C’est enregistré dans la mémoire du projet : ",
+            "C’est proposé dans la mémoire du projet, en attente de confirmation : ",
+        ),
+        "en": (
+            "Saved in project memory: ",
+            "Proposed in project memory, awaiting confirmation: ",
+        ),
+        "de": (
+            "Im Projektgedächtnis gespeichert: ",
+            "Im Projektgedächtnis zur Bestätigung vorgeschlagen: ",
+        ),
+        "es": (
+            "Guardado en la memoria del proyecto: ",
+            "Propuesto en la memoria del proyecto, pendiente de confirmación: ",
+        ),
+        "it": (
+            "Salvato nella memoria del progetto: ",
+            "Proposto nella memoria del progetto, in attesa di conferma: ",
+        ),
+    }
+    return labels.get(language, labels["en"])[saved["status"] == "proposed"] + text
+
+
 async def authenticate_chat(
     request: Request, raw: Any
 ) -> tuple[str | None, str | None]:
@@ -400,7 +448,12 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     try:
         from services.orchestrator.location import location_dependent
 
-        if request.project_action != "work" and location_dependent(request.user_text):
+        memory_reply = await saved_memory_reply(
+            broker, turn, request.user_text, scoped.lang
+        )
+        if memory_reply is not None and request.project_action != "work":
+            item.reponse, item.state = memory_reply, "done"
+        elif request.project_action != "work" and location_dependent(request.user_text):
             from services.orchestrator.nearby_chat import process_nearby
 
             tool_calls = await process_nearby(
@@ -411,6 +464,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         elif request.project_action == "work":
             from services.orchestrator.code_mode import process_work
 
+            work_options: dict[str, Any] = (
+                {"saved_reply": memory_reply} if memory_reply is not None else {}
+            )
             dispatch_token = work_dispatch.set(events)
             try:
                 await process_work(
@@ -420,7 +476,12 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     org_id=request.org_id,
                     project_id=request.project_id,
                     session_id=str(request.work_session_id),
+                    **work_options,
                 )
+                if item.state == "failed" and scoped.lang == "fr":
+                    from packages.configuration import temporarily_unavailable
+
+                    item.reponse = temporarily_unavailable(scoped.lang)
             finally:
                 work_dispatch.reset(dispatch_token)
         else:
@@ -491,9 +552,14 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             item.reponse += "\n\n" + session_context.warning
         terminal = "completed" if item.state == "done" else "failed"
         if terminal == "failed":
-            error = ProjectError(
-                422, "invalid_request", "; ".join(item.erreurs) or item.state
-            ).body
+            from packages.configuration import temporarily_unavailable
+
+            if scoped.lang == "fr":
+                item.reponse = temporarily_unavailable(scoped.lang)
+                message = item.reponse
+            else:
+                message = "; ".join(item.erreurs) or item.state
+            error = ProjectError(422, "invalid_request", message).body
     except asyncio.CancelledError:
         terminal = "cancelled"
         error = ProjectError(422, "invalid_request", "Turn cancelled by request").body
@@ -501,6 +567,16 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     except ProjectError as exc:
         error = exc.body
         raise
+    except Exception as exc:
+        from packages.configuration import temporarily_unavailable
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "project_turn_failed kind=%s", type(exc).__name__
+        )
+        item.state = "failed"
+        item.reponse = temporarily_unavailable(scoped.lang)
+        error = ProjectError(503, "dependency_unavailable", item.reponse).body
     finally:
         unknown = terminal != "completed" or events.unknown
         usage = dict(

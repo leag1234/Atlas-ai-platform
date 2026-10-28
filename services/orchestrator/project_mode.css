@@ -154,3 +154,11 @@ body.atlas-project-open #atlas-ui-selector {display:none;}
 .atlas-project-turn .answer pre:has(code) {white-space:pre;overflow:auto;background:var(--project-hover);border-radius:10px;padding:16px;font:13px/1.6 ui-monospace,monospace;}
 .atlas-project-turn .answer table {display:block;overflow:auto;border-collapse:collapse;}
 .atlas-project-turn .answer :is(th,td) {border:1px solid var(--project-line);padding:8px 12px;}
+
+/* A single visible focus ring surrounds the composer, including keyboard focus. */
+.atlas-project .atlas-project-composer:focus-within {outline:2px solid var(--project-accent);outline-offset:2px;}
+.atlas-project .atlas-project-composer textarea:focus-visible {outline:none;box-shadow:none;}
+.atlas-project-list-toolbar input[type=search] {display:block;min-width:210px;flex:1;}
+#sidebar a[href="/"] {white-space:nowrap;}
+#sidebar a[href="/"] :is(span,div) {white-space:nowrap;}
+.atlas-project .atlas-project-search-button {width:44px;height:44px;font-size:24px;display:grid;place-items:center;padding:0;}
