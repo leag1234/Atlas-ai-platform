@@ -14,7 +14,7 @@ The guest instance as deployed on 2026-10-28.
 - API keys in the interface: every user creates, lists and revokes their own keys from the account menu; the secret is shown once with a copy button; administrators see and revoke all keys of the organization.
 - Private user memory for ordinary chats: remember, recall, edit and forget, with a settings dialog; it never enters a project.
 - Shared projects (back end): roles, private conversations by default, connector allowance per member.
-- MCP connectors and approved skills with turn-local procedures.
+- Approved skills with turn-local procedures.
 - Guest interface: settings, memory and appearance aligned with the native style and fully localized (French, English, German, Spanish, Italian); theme-aware logo; no floating text-size bubble; localized instance notice.
 - Fix: malformed generated SVG diagrams are repaired before display.
 
