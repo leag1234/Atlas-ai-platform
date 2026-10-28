@@ -55,6 +55,43 @@ class Store(DeveloperStore):
                 ).read_text()
             )
 
+    def policy(self, org_id: str) -> dict[str, Any]:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT * FROM api_key_policy WHERE org_id=?", (org_id,)
+            ).fetchone()
+        if row is not None:
+            return {k: v for k, v in dict(row).items() if k != "org_id"}
+        return dict(
+            mode=os.environ.get(
+                "ATLAS_API_KEY_POLICY",
+                "self_service"
+                if os.environ.get("ATLAS_STABLE") == "1"
+                else "admin_only",
+            ),
+            daily_requests=200,
+            daily_micro_eur=2000000,
+            max_lifetime_days=365,
+            active_key_limit=5,
+        )
+
+    def set_policy(self, org_id: str, values: dict[str, Any], actor: str) -> None:
+        with self.connection() as db:
+            db.execute(
+                "INSERT INTO api_key_policy VALUES (?,?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET "
+                "mode=excluded.mode,daily_requests=excluded.daily_requests,daily_micro_eur=excluded.daily_micro_eur,"
+                "max_lifetime_days=excluded.max_lifetime_days,active_key_limit=excluded.active_key_limit",
+                (
+                    org_id,
+                    values["mode"],
+                    values["daily_requests"],
+                    values["daily_micro_eur"],
+                    values["max_lifetime_days"],
+                    values["active_key_limit"],
+                ),
+            )
+        self.audit("policy", None, org_id=org_id, actor=actor, **values)
+
     def digest(self, key: str) -> str:
         return hmac.new(self.pepper, key.encode(), hashlib.sha256).hexdigest()
 
@@ -81,6 +118,8 @@ class Store(DeveloperStore):
         daily_requests: int = 20,
         daily_micro_eur: int = 1000000,
         lifetime_days: int = 90,
+        browser_policy: bool = False,
+        administrator: bool = False,
     ) -> tuple[dict[str, Any], str]:
         if (
             any(
@@ -100,6 +139,25 @@ class Store(DeveloperStore):
         key = prefix + "_" + secrets.token_urlsafe(32)
         identifier, now = secrets.token_hex(16), int(self.now())
         with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if browser_policy:
+                policy = self.policy(org_id)
+                if not administrator and policy["mode"] != "self_service":
+                    raise PermissionError("policy_denied")
+                if (
+                    lifetime_days not in {30, 90, 365}
+                    or lifetime_days > policy["max_lifetime_days"]
+                ):
+                    raise ValueError("expiry_exceeds_policy")
+                count = db.execute(
+                    "SELECT COUNT(*) FROM api_keys WHERE org_id=? AND member_id=? "
+                    "AND revoked_at IS NULL AND expires_at>?",
+                    (org_id, member_id, now),
+                ).fetchone()[0]
+                if count >= policy["active_key_limit"]:
+                    raise ValueError("active_key_limit")
+                daily_requests = policy["daily_requests"]
+                daily_micro_eur = policy["daily_micro_eur"]
             db.execute(
                 "INSERT INTO api_keys VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)",
                 (

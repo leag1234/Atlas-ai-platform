@@ -92,6 +92,8 @@ async def authenticate(
         principal = store.resolve(
             bearer[7:], request.client.host if request.client else ""
         )
+        if store.policy(principal.org_id)["mode"] == "off":
+            raise PermissionError("policy_denied")
         request.state.scoped_identity = await check_member(principal)
         request.state.api_key = principal
         request.state.key_store = store
