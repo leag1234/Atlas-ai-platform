@@ -785,7 +785,9 @@ async def process_work(
             )
             if collect_workspace is not None:
                 await collect_workspace(workspace)
-            item.reponse = result.text
+            from services.orchestrator.project_transcript import answer_content
+
+            item.reponse = answer_content(result.text)
             if request.lang == "fr" and "\n\nVerification:" in item.reponse:
                 item.reponse = (
                     item.reponse.split("\n\nVerification:", 1)[0]

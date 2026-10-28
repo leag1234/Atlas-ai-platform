@@ -69,10 +69,10 @@
     if (identity && scope) sessionStorage.setItem(storageKey(), JSON.stringify(scope));
   }
   function cleanup() {
-    generation++; sideResize?.disconnect(); lifecycle?.abort(); stream?.abort(); clearTimeout(polling);
+    generation++; sideResize?.disconnect(); hostResize?.disconnect(); observedHost = null; lifecycle?.abort(); stream?.abort(); clearTimeout(polling);
     window.atlasSideView?.close(); document.body.classList.remove('atlas-project-open');
     document.querySelector('[data-atlas-project-host-main]')?.removeAttribute('inert');
-    events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined;
+    projectSummaries.clear(); events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined;
   }
   function picker(key, values, selectedID, change) {
     const select = node('select'); select.append(new Option('—', ''));
@@ -90,6 +90,7 @@
     dialog.showModal(); name.focus();
   }
   function ordinary() {
+    const url = new URL(location.href); url.searchParams.delete('atlas_projects'); history.replaceState(null,'',url);
     cleanup(); scope = null; sessionStorage.removeItem(storageKey()); saveRoute(); root?.remove();
     if (owned) location.href = '/';
   }
@@ -148,13 +149,25 @@
         const card = node('button', null, 'atlas-project-card'); card.type = 'button'; card.dataset.projectCard = project.id;
         const top = node('div', null, 'atlas-project-card-top'), lock = node('span', '', 'atlas-project-lock'); lock.setAttribute('aria-label',t('privateProject')); lock.title = t('privateProject');
         top.append(node('h2', project.name), lock); card.append(top);
-        if (project.description) card.append(node('p', project.description));
+        const summary = node('p', (project.description || '').split('\n')[0], 'atlas-project-card-description'); card.append(summary);
+        const counts = node('p', '', 'atlas-project-card-counts'); card.append(counts);
+        loadProjectSummary(project, summary, counts);
         card.append(node('small', relativeTime(project.updated_at || project.created_at)));
         card.addEventListener('click', guarded(() => choose({org:scope.org,project:project.id}))); grid.append(card);
       }
       if (!values.length) { const empty = node('div', null, 'atlas-project-empty'); empty.append(node('h2', t(projectTab === 'shared' ? 'noSharedProjects' : 'noProjects')), node('p', t(projectSearch ? 'noSearchResults' : 'projectIntro'))); grid.append(empty); }
     }
     renderCards();
+  }
+  const projectSummaries = new Map();
+  async function loadProjectSummary(project, description, counts) {
+    const current = generation, path = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
+    try {
+      if (!projectSummaries.has(path)) projectSummaries.set(path, Promise.all([api(path + '/instructions'), list(path + '/files'), list(path + '/conversations')]));
+      const [instructions, projectFiles, projectConversations] = await projectSummaries.get(path); checkScope(current);
+      description.textContent = (project.description || instructions.text || '').trim().split('\n')[0];
+      counts.textContent = `${projectFiles.length} ${t('files').toLocaleLowerCase()} · ${projectConversations.length} ${t('conversations').toLocaleLowerCase()}`;
+    } catch(error) { projectSummaries.delete(path); if (error.name !== 'AbortError') errorNotice(counts,error); }
   }
   async function renameProject() {
     await nameDialog('renameProject', async name => {
@@ -275,10 +288,21 @@
     }
   }
   function withoutFileLinks(text) {
-    const routes = new Set((panelData?.deliverables || []).flatMap(item => [item.download_route, item.download_route?.replace(/\/download$/, '/preview')]));
-    return text.replace(/\[([^\[\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
-      try { return routes.has(new URL(href,location.origin).pathname) ? '' : match; } catch { return match; }
-    }).replace(/^\s*·\s*$/gm,'').trim();
+    const cards = panelData?.deliverables || [];
+    const routes = new Set(cards.flatMap(item => [item.download_route, item.download_route?.replace(/\/download$/, '/preview')]));
+    const ids = new Set(cards.map(item => item.id));
+    const names = cards.flatMap(item => [files.find(file => file.version_id === item.file_version_id)?.relative_path, item.filename]).filter(Boolean).map(name => name.split('/').pop().replace(/[*_`]/g,''));
+    return text.replace(/\bchunk\s+`?[a-f0-9]{32,64}`?\s*:\s*/gi, '').replace(/^.*(?:mémoire|memory|record|identifiant).*\b[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\b.*$/gim, '').replace(/\[([^\[\]]+)\]\(([^)]+)\)/g, (match, label, href) => {
+      try {
+        const path = new URL(href,location.origin).pathname, artifact = path.match(/\/deliverables\/([^/]+)\/(?:download|preview)$/);
+        return routes.has(path) || (artifact && ids.has(artifact[1])) ? '' : match;
+      } catch { return match; }
+    }).split('\n').filter(line => {
+      const plain = line.replace(/[*_`]/g,'').trim().replace(/^#{1,6}\s+/, '').replace(/^[-•]\s*/, '');
+      if (/^\s*(?:[#*_`]+\s*)?(?:La\s+)?(?:validation|vérification|verification)\b.*\b(?:package_readable|requested_content|source_coverage)\b/i.test(line)) return false;
+      if (cards.length && names.some(name => plain.startsWith(name) && /^[\s·|:—–-]*(?:\([\d\s]+ (?:octets|bytes)\))?[\s·|:—–-]*$/i.test(plain.slice(name.length)))) return false;
+      return !(/^(?:(?:Lien de )?(?:téléchargement|prévisualisation)|(?:Download|Preview)(?: link)?)\s*:\s*[·|—–-]*$/i.test(plain) || (cards.length && /^(?:Fichier produit|File produced)(?:\s*:|\s*$)/i.test(plain)) || (cards.length && /^(?:Fichier|File)(?:\s+(?:DOCX|XLSX|PDF|PPTX))?\s*:\s*[·|—–-]*$/i.test(plain)) || plain === '·');
+    }).join('\n').trim();
   }
   let markdownModule;
   function scopedLink(label, href) {
@@ -508,7 +532,7 @@
       }
     }
   }
-  let panelData, sideResize;
+  let panelData, sideResize, hostResize, observedHost;
   const detail = (key, value) => node('p', `${t(key)}: ${value == null ? t('unknown') : value}`, 'atlas-project-detail');
   async function panels() {
     const current = generation;
@@ -612,7 +636,14 @@
     if (document.title !== title) document.title = title;
     if (root?.isConnected && !owned) {
       const main = hostMain();
-      if (main) {const rect = main.getBoundingClientRect(); root.style.left = Math.max(0,rect.left) + 'px';}
+      if (main) {
+        const align = () => {if (root?.isConnected) root.style.left = Math.max(0,main.getBoundingClientRect().left) + 'px';};
+        if (observedHost !== main) {
+          hostResize?.disconnect(); observedHost = main;
+          hostResize = new ResizeObserver(align); hostResize.observe(main);
+        }
+        align();
+      }
     }
   }
   async function adminEntry() {
@@ -672,7 +703,7 @@
     if (booting) return; booting = true;
     try {
       const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
-      if (!me.ok) {if (owned || selections().has('project')) throw new Error(`${t('failure')} (${me.status})`); return;}
+      if (!me.ok) {if (owned || selections().has('project') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
       memberships = (await me.json()).memberships;
       const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
       if (!host.ok) {if (!owned && !selections().has('project')) return; throw new Error(t('signIn'));}
@@ -680,7 +711,7 @@
       document.getElementById('atlas-project-failure')?.remove();
       for (let i = sessionStorage.length - 1; i >= 0; i--) { const key = sessionStorage.key(i); if (key.startsWith('atlas-project:') && key !== storageKey()) sessionStorage.removeItem(key); }
       installNavigation();
-      if (owned || selections().has('project')) await mount();
+      if (owned || selections().has('project') || selections().has('atlas_projects')) await mount();
     } catch(error) {showFailure(error);} finally {booting = false;}
   }
   function showFailure(error) {
@@ -714,7 +745,7 @@
       if (/^\/(auth|admin)/.test(route)) { if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
     }
   });
-  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project')) guarded(mount)(); });
+  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('atlas_projects')) guarded(mount)(); });
   document.addEventListener('click', event => {const link = event.target.closest?.('#sidebar a, a#sidebar-new-chat-button, #pinned-menu-items-list a'); if (link && root?.isConnected) ordinary();});
   window.addEventListener('resize', installNavigation);
   window.addEventListener('pagehide', cleanup);

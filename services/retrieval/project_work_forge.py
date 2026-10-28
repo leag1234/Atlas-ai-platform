@@ -2,13 +2,43 @@
 
 import base64
 import hashlib
+import logging
 from typing import Any
 from uuid import uuid4
 
 from services.orchestrator.project_forge import ForgeError, ForgeUnknown, snapshot_files
+from services.retrieval import project_forge
 from services.retrieval.project_forge import RepositoryActions
 from services.retrieval.project_identity import ProjectError
 from services.retrieval.project_store import Scope
+from services.retrieval.project_work_contract import validate
+
+
+def bind_publication(
+    repository: dict[str, Any], action: dict[str, Any], adapter: Any
+) -> dict[str, Any]:
+    """Resolve scratch branch names before freezing the remotely checked approval."""
+    params = dict(action["parameters"])
+    refs = adapter.refs()
+    if params["target"] not in refs:
+        target = adapter.request("GET", "").get("default_branch")
+        if not isinstance(target, str) or target not in refs:
+            raise ForgeError("invalid_default_branch")
+        params["target"] = target
+    base = repository["base_commit"]
+    logging.getLogger(__name__).info(
+        "forge_binding supplied_base=%s stored_base=%s remote_base=%s target_remapped=%s branch_collision=%s",
+        action["base_commit"],
+        base,
+        refs[params["target"]],
+        params["target"] != action["parameters"]["target"],
+        params["branch"] in refs,
+    )
+    if refs[params["target"]] != base:
+        raise ForgeError("base_mismatch")
+    if params["branch"] in refs:
+        params["branch"] = params["branch"] + "-" + uuid4().hex[:12]
+    return dict(action, base_commit=base, parameters=params)
 
 
 def execute_forge(scope: Scope, data: dict[str, Any]) -> dict[str, Any]:
@@ -25,8 +55,14 @@ def execute_forge(scope: Scope, data: dict[str, Any]) -> dict[str, Any]:
             ):
                 raise ProjectError(422, "invalid_request")
             action = dict(data["action"])
+            validate("RepositoryAction", action)
             if "approval_id" in action:
                 raise ProjectError(422, "invalid_request")
+            if action["kind"] == "publish_change":
+                repository = broker.repository(repository_id)
+                action = bind_publication(
+                    repository, action, project_forge.configured_adapter(repository)
+                )
             if action["kind"] in {"commit", "publish_change"}:
                 repository = broker.repository(repository_id)
                 selected = {

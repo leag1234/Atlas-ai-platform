@@ -42,11 +42,13 @@ class TranscriptBroker(ExecutionBroker):
 
 
 def answer_content(text: str) -> str:
-    """Accept historical answer envelopes without requiring or trusting them."""
+    """Unwrap historical answers and omit internal record references."""
+    import re
+
     try:
         value = json.loads(text)
     except ValueError:
-        return text
+        value = None
     if (
         isinstance(value, dict)
         and set(value) == {"answer", "facts"}
@@ -54,8 +56,26 @@ def answer_content(text: str) -> str:
         and value["answer"].strip()
         and isinstance(value["facts"], list)
     ):
-        return str(value["answer"])
-    return text
+        text = value["answer"]
+    text = re.sub(r"\bchunk\s+`?[a-f0-9]{32,64}`?\s*:\s*", "", text, flags=re.I)
+    identifier = r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}"
+    lines = []
+    for line in text.splitlines():
+        if re.search(
+            r"^\s*(?:[#*_`]+\s*)?(?:La\s+)?(?:validation|vérification|verification)\b"
+            r".*\b(?:package_readable|requested_content|source_coverage)\b",
+            line,
+            re.I,
+        ):
+            continue
+        if re.search(r"mémoire|memoire|memory|record|identifiant|memoria", line, re.I):
+            line = re.sub(r"\([^()]*" + identifier + r"[^()]*\)", "", line, flags=re.I)
+            line = re.sub(
+                r"(?:ID|identifiant|record)?\s*" + identifier, "", line, flags=re.I
+            )
+            line = re.sub(r"[ \t]+([.,;])", r"\1", line)
+        lines.append(line.rstrip())
+    return "\n".join(lines).strip()
 
 
 async def saved_memory_reply(
@@ -445,6 +465,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             for r in turn["content_refs"]
             if r["kind"] == "answer" and r["text"]
         )
+        item.reponse = answer_content(item.reponse)
         item.state = "done"
         return
     from services.orchestrator.session_context import assemble, SessionContext
@@ -590,6 +611,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     coverage["warnings"][:8]
                 )
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
+        item.reponse = answer_content(item.reponse)
         if session_context.warning:
             item.reponse += "\n\n" + session_context.warning
         terminal = "completed" if item.state == "done" else "failed"

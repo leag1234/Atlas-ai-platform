@@ -118,17 +118,42 @@ def declarations() -> list[dict[str, object]]:
     ]
 
 
-async def resolve(execution: Any, value: dict[str, Any]) -> dict[str, Any]:
+async def resolve(
+    execution: Any, value: dict[str, Any], receipts: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     from pathlib import PurePosixPath
     from services.retrieval.project_identity import ProjectError
 
     file_id, version = str(UUID(value["file_id"])), str(UUID(value["version"]))
-    if (
-        dict(file_id=file_id, version_id=version)
-        not in execution.session["base_file_versions"]
+    if dict(file_id=file_id, version_id=version) not in execution.session[
+        "base_file_versions"
+    ] and not any(
+        receipt.get("file_version_id") == version
+        and receipt.get("turn_id") == execution.request_id
+        for receipt in (receipts or [])
     ):
         raise ProjectError(404, "not_found")
     await execution.check()
+    own_receipt = next(
+        (
+            receipt
+            for receipt in (receipts or [])
+            if receipt.get("id") == file_id
+            and receipt.get("file_version_id") == version
+            and receipt.get("turn_id") == execution.request_id
+        ),
+        None,
+    )
+    if own_receipt is not None:
+        status, listing = await execution.broker.public("GET", "files")
+        if status != 200:
+            raise ProjectError(status, "dependency_unavailable")
+        published = next(
+            (item for item in listing["items"] if item["version_id"] == version), None
+        )
+        if published is None:
+            raise ProjectError(404, "not_found")
+        file_id = published["id"]
     status, file = await execution.broker.public("GET", "files/" + file_id)
     if status != 200:
         raise ProjectError(status, str(file.get("error", "not_found")))
@@ -173,11 +198,23 @@ async def execute(
         )
     if name == "compare_documents":
         payload = dict(
-            left=await resolve(tools.execution, args["left"]),
-            right=await resolve(tools.execution, args["right"]),
+            left=await resolve(
+                tools.execution,
+                args["left"],
+                tools.deliverables if isinstance(tools.deliverables, list) else [],
+            ),
+            right=await resolve(
+                tools.execution,
+                args["right"],
+                tools.deliverables if isinstance(tools.deliverables, list) else [],
+            ),
         )
     else:
-        payload = await resolve(tools.execution, args)
+        payload = await resolve(
+            tools.execution,
+            args,
+            tools.deliverables if isinstance(tools.deliverables, list) else [],
+        )
     result = await tools.workspace.invoke(name, payload, timeout)
     await tools.execution.check()
     return dict(result)
@@ -222,6 +259,7 @@ async def publish(
         return seconds
 
     path = PurePosixPath(args["path"])
+    path = path.with_suffix(path.suffix.lower())
     if (
         path.is_absolute()
         or any(part in {"", ".", ".."} for part in args["path"].split("/"))
@@ -244,10 +282,15 @@ async def publish(
     if folder is None:
         raise ProjectError(404, "not_found")
 
+    source_sheets: list[list[dict[str, Any]]] = []
     source_texts: list[str] = []
     versions: list[str] = []
     for source in args["sources"]:
-        resolved = await resolve(execution, source)
+        resolved = await resolve(
+            execution,
+            source,
+            tools.deliverables if isinstance(tools.deliverables, list) else [],
+        )
         read = await tools.workspace.invoke("read_document", resolved, remaining())
         await execution.check()
         if read.get("error"):
@@ -259,6 +302,8 @@ async def publish(
         ]
         if not texts:
             raise ValueError("Source selection contains no verifiable text")
+        if resolved["extension"] == ".xlsx":
+            source_sheets.append(read["segments"])
         source_texts.extend(texts)
         versions.append(resolved["version"])
 
@@ -273,6 +318,12 @@ async def publish(
         max_bytes=16 * 1024 * 1024,
         timeout=remaining(),
     )
+    if path.suffix == ".xlsx" and any(
+        table.formulas for section in content.sections for table in section.tables
+    ):
+        from packages.doc_render.spreadsheet import validate_sources
+
+        validate_sources(document.content, source_sheets)
     receipt = await ProjectPublisher(execution).publish(
         document,
         str(path),
@@ -287,5 +338,8 @@ async def publish(
     )
     tools.deliverables.append(receipt)
     return dict(
-        deliverable=receipt, text=links, file_version_ids=[receipt["file_version_id"]]
+        deliverable=receipt,
+        text=links,
+        file_version_ids=[receipt["file_version_id"]],
+        read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
     )

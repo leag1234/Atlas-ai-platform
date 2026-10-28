@@ -92,6 +92,10 @@ def verify(
     paginated = unit in {"page", "slide"}
     if require_pagination and not paginated:
         raise VerificationError("office_layout_engine_required")
+    if expected and path.suffix == ".xlsx":
+        from .spreadsheet import bind_summaries
+
+        expected = bind_summaries(expected)
     if expected:
         units = ["".join(value.split()) for value in text]
         if paginated:

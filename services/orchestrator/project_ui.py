@@ -28,18 +28,30 @@ CSP = "default-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestor
 
 
 @router.get("/project-mode")
-def project_surface() -> Response:
+def project_surface(request: Request) -> Response:
     if not project_mode():
         return public_error(ProjectError(409, "feature_not_available"))
-    return HTMLResponse(
-        (ROOT / "project_mode.html").read_text(),
-        headers={"Cache-Control": "private, no-store", "Content-Security-Policy": CSP},
+    if not request.query_params:
+        return HTMLResponse(
+            (ROOT / "project_mode.html").read_text(),
+            headers={
+                "Cache-Control": "private, no-store",
+                "Content-Security-Policy": CSP,
+            },
+        )
+    from urllib.parse import urlencode
+
+    query = urlencode([("atlas_projects", "1"), *request.query_params.multi_items()])
+    return Response(
+        status_code=307,
+        headers={"Location": "/?" + query, "Cache-Control": "private, no-store"},
     )
 
 
 @router.get("/project-mode/{asset}")
 def project_asset(asset: str) -> Response:
     assets = {
+        "shell.js": ("project_shell.js", "text/javascript"),
         "client.js": ("project_mode.js", "text/javascript"),
         "locale.js": ("project_locale.js", "text/javascript"),
         "style.css": ("project_mode.css", "text/css"),

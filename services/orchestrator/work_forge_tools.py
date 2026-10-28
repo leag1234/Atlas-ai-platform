@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import io
+import logging
 import tarfile
 import time
 from pathlib import PurePosixPath
@@ -118,6 +119,11 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
         # Scratch git is a synthetic import, not the remote repository history.
         # Bind the full snapshot to its stored remote source. Forge still checks
         # that the target has not moved before both approval and execution.
+        logging.getLogger(__name__).info(
+            "forge_request supplied_base=%s canonical_base=%s",
+            args.base_commit,
+            repo["base_commit"],
+        )
         action["base_commit"] = repo["base_commit"]
     data = dict(execution.fence(), operation="issue", action=action)
     if args.kind in {"commit", "publish_change"}:

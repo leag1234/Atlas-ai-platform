@@ -242,6 +242,10 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
 def render(content: Content, path: Path, *, image_root: Path) -> Verification:
     """Build and verify atomically; destination must be chosen by trusted code."""
     content = Content.model_validate(content.model_dump())
+    if path.suffix == ".xlsx":
+        from .spreadsheet import bind_summaries
+
+        content = bind_summaries(content)
     # Apply identical font, image and layout bounds for every output format.
     pages(content, image_root)
     builders = {

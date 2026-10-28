@@ -181,3 +181,12 @@ body.atlas-project-open #atlas-ui-selector {display:none;}
 #atlas-project .atlas-project-steps {color:var(--project-muted);font-size:12px;margin:12px 0;}
 #atlas-project .atlas-project-steps summary {cursor:pointer;}
 #atlas-project .atlas-project-conversation span {overflow-wrap:normal;}
+
+/* Project summaries and deliverables share the host's spacing and link colour. */
+.atlas-project-card-description {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+#atlas-project .atlas-project-file-card {min-height:0;height:auto;align-content:start;align-self:start;}
+#atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#1f7534);font-weight:500;}
+html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8bd49a);}
+
+#atlas-project .atlas-project-right .atlas-project-file-card {grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:12px;}
+#atlas-project .atlas-project-file-card > [data-remove] {grid-column:3;grid-row:1;}
