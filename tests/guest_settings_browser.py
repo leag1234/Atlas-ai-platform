@@ -27,7 +27,7 @@ class GuestNavigationTests(unittest.TestCase):
                 <button role="tab" aria-controls="tab-general" aria-selected="true" class="{ACTIVE}">General</button>
                 <span>Préférences</span>
                 <button role="tab" aria-controls="tab-audio" aria-selected="false" class="{IDLE}">Audio</button>
-                </div></nav><select aria-label="Thème"><option>Clair</option></select></body></html>"""
+                </div></nav><select aria-label="Th\u00e8me"><option>Clair</option></select></body></html>"""
 
                 def respond(route: Route) -> None:
                     if "/api/atlas/user-memory" in route.request.url:
