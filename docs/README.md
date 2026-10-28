@@ -33,6 +33,7 @@ The default decision is therefore *not to host GPUs unless the load justifies it
 | `14-implementation-autonome.md` | Delegated control playbook: access, milestones, checkpoints | Human pilot + agents |
 | `16-models-and-inference-inventory.md` | Every model in use: purpose, serverless or dedicated inference, cost; the dedicated GPU | Arch / management |
 | `18-remote-runners.md` | Remote execution targets for project Work: SSH targets, permission modes, devices | Arch / backend |
+| `20-deployment-architectures-and-costs.md` | On-demand and on-premise (H100) architectures with gross costs and sizing | Arch / management |
 
 ## 2. Normative Conventions (RFC 2119)
 
