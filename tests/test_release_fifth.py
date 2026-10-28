@@ -473,6 +473,88 @@ class PresentationTests(unittest.TestCase):
         expect(card).to_contain_text("2 fichiers")
         expect(card).to_contain_text("1 conversation")
 
+    def test_project_counts_turn_labels_and_disclosures_are_discreet(self) -> None:
+        from playwright.sync_api import expect
+        from project_composer_browser import (
+            CONVERSATION,
+            ORG,
+            PROJECT,
+            SESSION,
+            VERSION,
+        )
+
+        f = self.fixture
+        project = str(f.project_items[0]["id"])
+        f.context.route(
+            "**/projects/" + project + "/instructions",
+            lambda route: route.fulfill(json={"text": "Budget"}),
+        )
+        f.context.route(
+            "**/projects/" + project + "/files",
+            lambda route: route.fulfill(json={"items": [{}], "next_cursor": None}),
+        )
+        f.context.route(
+            "**/projects/" + project + "/conversations",
+            lambda route: route.fulfill(json={"items": [], "next_cursor": None}),
+        )
+        f.open_projects()
+        card = f.page.locator("[data-project-card]").first
+        expect(card.locator(".atlas-project-card-counts")).to_have_text(
+            "1 fichier · 0 conversation"
+        )
+
+        f.turns = [
+            dict(
+                id=VERSION,
+                request_id=SESSION,
+                state="completed",
+                content_refs=[
+                    dict(kind="question", text="Ma question"),
+                    dict(kind="answer", text="La réponse d’Atlas"),
+                ],
+                usage={"context": {"layers": {"system": 1}}},
+            )
+        ]
+        f.events = [
+            dict(
+                org_id=ORG,
+                project_id=PROJECT,
+                version=1,
+                request_id=SESSION,
+                conversation_id=CONVERSATION,
+                seq=1,
+                type="tool",
+                status="completed",
+            )
+        ]
+        f.context.unroute("**/projects/" + project + "/conversations")
+        f.page.goto("http://127.0.0.1:18790/")
+        f.open_projects()
+        f.page.locator(f'[data-project-card="{project}"]').click()
+        f.page.locator("[data-conversation]").click()
+        expect(f.page.locator(".atlas-project-turn .question")).to_have_text(
+            "Ma question"
+        )
+        expect(f.page.locator(".atlas-project-turn .answer")).to_have_text(
+            "La réponse d’Atlas"
+        )
+        expect(
+            f.page.locator(".atlas-project-turn").filter(has_text="Ma question")
+        ).not_to_contain_text("Atlas ·")
+        expect(
+            f.page.locator(".atlas-project-turn").filter(has_text="La réponse d’Atlas")
+        ).to_contain_text("Atlas · Terminé")
+        disclosures = f.page.locator(".atlas-project-disclosure")
+        expect(disclosures).to_have_count(2)
+        self.assertEqual(
+            disclosures.nth(0).evaluate("n=>getComputedStyle(n).fontSize"),
+            disclosures.nth(1).evaluate("n=>getComputedStyle(n).fontSize"),
+        )
+        self.assertEqual(
+            disclosures.nth(0).evaluate("n=>getComputedStyle(n).fontWeight"),
+            disclosures.nth(1).evaluate("n=>getComputedStyle(n).fontWeight"),
+        )
+
 
 class ForgeBindingTests(unittest.TestCase):
     def test_scratch_target_and_sha_bind_to_remote_canonical_base(self) -> None:

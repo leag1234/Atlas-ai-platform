@@ -178,8 +178,8 @@ body.atlas-project-open #atlas-ui-selector {display:none;}
 #atlas-project .atlas-project-composer textarea:focus,
 #atlas-project .atlas-project-composer textarea:focus-visible {outline:none!important;box-shadow:none!important;border:0!important;}
 #atlas-project .atlas-project-composer {box-shadow:none;}
-#atlas-project .atlas-project-steps {color:var(--project-muted);font-size:12px;margin:12px 0;}
-#atlas-project .atlas-project-steps summary {cursor:pointer;}
+#atlas-project .atlas-project-disclosure {color:var(--project-muted);font-size:12px;font-weight:400;margin:12px 0;}
+#atlas-project .atlas-project-disclosure summary {cursor:pointer;font-weight:400;}
 #atlas-project .atlas-project-conversation span {overflow-wrap:normal;}
 
 /* Project summaries and deliverables share the host's spacing and link colour. */

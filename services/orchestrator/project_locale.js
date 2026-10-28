@@ -119,6 +119,20 @@
     "Reúne tus conversaciones y archivos en un proyecto.",
     "Riunisci conversazioni e file in un progetto."
   ],
+  "file": [
+    "File",
+    "Fichier",
+    "Datei",
+    "Archivo",
+    "File"
+  ],
+  "conversation": [
+    "Conversation",
+    "Conversation",
+    "Unterhaltung",
+    "Conversación",
+    "Conversazione"
+  ],
   "renameProject": [
     "Rename project",
     "Renommer le projet",

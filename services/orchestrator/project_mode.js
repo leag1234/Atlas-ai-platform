@@ -4,6 +4,11 @@
   if (window.atlasProjectMounted) return;
   window.atlasProjectMounted = true;
   const t = key => window.atlasProjectLocale.text(key);
+  const countLabel = (count, singular, plural) => {
+    const language = window.atlasProjectLocale.language();
+    const key = new Intl.PluralRules(language).select(count) === 'one' ? singular : plural;
+    return `${count} ${t(key).toLocaleLowerCase(language)}`;
+  };
   const node = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
   const uuid = value => /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value || '');
   const owned = location.pathname === '/project-mode';
@@ -166,7 +171,7 @@
       if (!projectSummaries.has(path)) projectSummaries.set(path, Promise.all([api(path + '/instructions'), list(path + '/files'), list(path + '/conversations')]));
       const [instructions, projectFiles, projectConversations] = await projectSummaries.get(path); checkScope(current);
       description.textContent = (project.description || instructions.text || '').trim().split('\n')[0];
-      counts.textContent = `${projectFiles.length} ${t('files').toLocaleLowerCase()} · ${projectConversations.length} ${t('conversations').toLocaleLowerCase()}`;
+      counts.textContent = `${countLabel(projectFiles.length, 'file', 'files')} · ${countLabel(projectConversations.length, 'conversation', 'conversations')}`;
     } catch(error) { projectSummaries.delete(path); if (error.name !== 'AbortError') errorNotice(counts,error); }
   }
   async function renameProject() {
@@ -264,12 +269,19 @@
   function renderTurns() {
     transcript.replaceChildren();
     for (const turn of turns) {
+      const questions = turn.content_refs.filter(ref => ref.kind === 'question' && ref.text);
+      if (questions.length) {
+        const userArticle = node('article', null, 'atlas-project-turn'); userArticle.dataset.turn = turn.id;
+        questions.forEach(ref => userArticle.append(prose(ref.text, 'question')));
+        transcript.append(userArticle);
+      }
       const article = node('article', null, 'atlas-project-turn'); article.dataset.turn = turn.id;
-      article.append(node('small', `Atlas · ${t(turn.state)}`));
-      for (const ref of turn.content_refs) if (ref.text) article.append(prose(ref.kind === 'question' ? ref.text : withoutFileLinks(ref.text), ref.kind === 'question' ? 'question' : 'answer'));
+      const answers = turn.content_refs.filter(ref => ref.kind !== 'question' && ref.text);
+      if (answers.length) article.append(node('small', `Atlas · ${t(turn.state)}`));
+      answers.forEach(ref => article.append(prose(withoutFileLinks(ref.text), 'answer')));
       const steps = [...events.values()].filter(e => e.version && e.request_id === turn.request_id && (!e.conversation_id || e.conversation_id === scope.conversation));
       if (steps.length) {
-        const group = node('details', null, 'atlas-project-steps'); group.dataset.steps = turn.request_id;
+        const group = node('details', null, 'atlas-project-disclosure'); group.dataset.steps = turn.request_id;
         group.append(node('summary', `${t('steps')} (${steps.length})`));
         const terminal = ['completed','failed','cancelled'].includes(turn.state);
         for (const step of steps.sort((a,b) => a.seq - b.seq)) {
@@ -281,7 +293,7 @@
       for (const item of panelData?.deliverables || []) if (item.turn_id === turn.request_id || item.request_id === turn.request_id || turn.content_refs.some(ref => ref.text?.includes(item.download_route))) article.append(fileCard(item));
       const lastContext = turn.usage?.context;
       if (lastContext?.layers) {
-        const used = node('details'); used.dataset.contextUsed = ''; used.append(node('summary',t('contextUsed')));
+        const used = node('details', null, 'atlas-project-disclosure'); used.dataset.contextUsed = ''; used.append(node('summary',t('contextUsed')));
         for (const [layer,count] of Object.entries(lastContext.layers)) used.append(detail(layer,count)); article.append(used);
       }
       transcript.append(article);
