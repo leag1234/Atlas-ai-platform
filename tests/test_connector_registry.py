@@ -77,6 +77,7 @@ class RegistryTests(unittest.TestCase):
                 files.new(),
                 title="Connector test",
                 owner_member_id=self.fixture.members["owner"],
+                visibility="shared",
             )
             files.put("conversation", conversation)
             self.conversation = conversation["id"]
@@ -344,6 +345,11 @@ class RegistryTests(unittest.TestCase):
                 )
                 self.assertEqual(row["data"]["conversation_id"], self.conversation)
                 self.assertEqual(row["data"]["source"]["ref"], self.personal)
+        with store(self.fixture.app_dsn).scope(
+            self.fixture.identity("editor", self.fixture.project),
+            self.fixture.org,
+            self.fixture.project,
+        ) as scope:
             files = ProjectFiles(scope)
             conversation = files.get("conversation", self.conversation)
             conversation.update(
