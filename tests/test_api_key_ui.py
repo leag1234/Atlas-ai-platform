@@ -20,6 +20,31 @@ from services.orchestrator.api_key_ui import router
 from services.orchestrator.api_keys import configured_store
 
 
+class KeyUiAssetTests(unittest.TestCase):
+    def test_revocation_row_has_quiet_action_and_localized_mobile_details(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "services/orchestrator/api-key-ui.js").read_text()
+        stylesheet = (root / "services/orchestrator/api-key-ui.css").read_text()
+
+        self.assertIn("atlas-key-revoke", script)
+        self.assertNotIn("status.textContent = t(48)", script)
+        self.assertIn("dateCell(54,key.created_at)", script)
+        self.assertIn("dateCell(55,key.last_used_at)", script)
+        self.assertIn("dateCell(56,key.expires_at)", script)
+        self.assertIn("'Cr\u00e9\u00e9e','Derni\u00e8re utilisation','Expire'", script)
+        for labels in (
+            "'Created','Last used','Expires'",
+            "'Erstellt','Zuletzt verwendet','L\u00e4uft ab'",
+            "'Creada','\u00daltimo uso','Caduca'",
+            "'Creata','Ultimo utilizzo','Scade'",
+        ):
+            self.assertIn(labels, script)
+        self.assertIn("sort((left, right) => Number(Boolean(left.revoked_at))", script)
+        self.assertIn(".atlas-key-revoke", stylesheet)
+        self.assertIn(".atlas-key-usage { display:block", stylesheet)
+        self.assertNotIn("td:nth-child(7) button { width:100%; }", stylesheet)
+
+
 @contextmanager
 def key_environment() -> Iterator[None]:
     class Session(BaseHTTPRequestHandler):
