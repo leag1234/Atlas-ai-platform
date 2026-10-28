@@ -27,7 +27,7 @@
     const path = url.pathname;
     // Keep the native HTTP avatar URL: Open WebUI validates model image URLs.
     // CSS paints the appropriate local SVG over the raster response in both sizes.
-    if (url.origin === location.origin && path === '/api/v1/models/model/profile/image' && ['atlas-qwen', 'atlas-glm', 'atlas-deepseek'].includes(url.searchParams.get('id'))) {
+    if (url.origin === location.origin && path === '/api/v1/models/model/profile/image' && /^atlas(-|$)/.test(url.searchParams.get('id') || '')) {
       image.dataset.atlasBrand = 'model';
       return;
     }
