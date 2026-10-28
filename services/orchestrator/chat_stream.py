@@ -54,11 +54,19 @@ def response(
 
         ceiling = str(settings().cost)
         display_deadline = settings().wall_clock
+    guest = os.environ.get("ATLAS_STABLE") == "1"
     language = payload.status_language
     labels = json.loads(Path("prompts/progress.json").read_text())
     progress = str(labels.get(language, labels["en"])).split(":", 1)[0].strip()
     activity_labels = json.loads(Path("prompts/activity-labels.json").read_text())
     activity_labels = activity_labels.get(language, activity_labels["en"])
+    if guest:
+        from services.orchestrator.guest_activity import ACTIVITIES, activity_label
+
+        activity_labels = {
+            key: activity_label(language, key)
+            for key in set(activity_labels) | set(ACTIVITIES)
+        }
 
     async def generate() -> AsyncIterator[str]:
         from services.orchestrator.narration import NarrationFilter, ProtocolFilter
@@ -89,13 +97,22 @@ def response(
             description = activity_description or str(
                 activity_labels.get("done" if done else activity, activity)
             )
-            if activity_urls:
+            if guest:
+                from services.orchestrator.guest_activity import activity_label
+
+                description = activity_label(language, "done" if done else activity)
+            if activity_urls and not guest:
                 description += " — " + ", ".join(activity_urls)
             return {
                 "type": "status",
                 "data": {
-                    "description": f"{description} ({elapsed:.1f}s / {display_deadline:.0f}s)",
-                    "deadline_seconds": display_deadline,
+                    "description": (
+                        description
+                        + (f" {elapsed:.0f} s" if elapsed >= 10 and not done else "")
+                        if guest
+                        else f"{description} ({elapsed:.1f}s / {display_deadline:.0f}s)"
+                    ),
+                    **({} if guest else {"deadline_seconds": display_deadline}),
                     "done": done,
                     "elapsed_seconds": elapsed,
                     "action": "atlas_activity",
@@ -358,7 +375,11 @@ def response(
                                     progress
                                     + ": "
                                     + ", ".join(
-                                        str(activity_labels.get(str(tool), tool))
+                                        str(
+                                            activity_labels.get(
+                                                str(tool), activity_labels["thinking"]
+                                            )
+                                        )
                                         for tool in named_tools
                                         if isinstance(tool, str)
                                     )
@@ -377,7 +398,11 @@ def response(
                             "delta": {
                                 "content": "\n\n<details>\n<summary>"
                                 + html.escape(
-                                    str(activity_labels.get(activity, activity))
+                                    str(
+                                        activity_labels.get(
+                                            activity, activity_labels["thinking"]
+                                        )
+                                    )
                                 )
                                 + "</summary>\n"
                                 + links

@@ -20,6 +20,7 @@ import aiohttp
 def status_language(messages: list[SimpleNamespace], locale: object) -> str:
     """Use ATLAS localization when mounted, with a native Open WebUI fallback."""
     try:
+        from packages.language import conversation_language
         from packages.language import status_language as atlas_status_language
     except ModuleNotFoundError as exc:
         if exc.name != "packages":
@@ -27,6 +28,13 @@ def status_language(messages: list[SimpleNamespace], locale: object) -> str:
         if isinstance(locale, str) and locale in {"fr", "de", "es", "it", "en"}:
             return locale
         return "en"
+    if os.environ.get("ATLAS_STABLE") == "1" and messages:
+        fallback = (
+            locale
+            if isinstance(locale, str) and locale in {"fr", "de", "es", "it", "en"}
+            else "en"
+        )
+        return conversation_language(messages, str(fallback))
     return atlas_status_language(messages, locale)
 
 
@@ -204,7 +212,8 @@ class Filter:
                 {
                     "type": "status",
                     "data": {
-                        "description": labels["thinking"] + " (0.0s)",
+                        "description": labels["thinking"]
+                        + ("" if os.environ.get("ATLAS_STABLE") == "1" else " (0.0s)"),
                         "done": False,
                         "action": "atlas_activity",
                     },

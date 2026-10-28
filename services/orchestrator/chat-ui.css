@@ -426,3 +426,45 @@ html[data-atlas-style="arrondi"] body.atlas-side-open div:has(> #sidebar) { padd
 @keyframes atlas-image-spin { to { transform:rotate(360deg); } }
 /* Respect the browser accessibility preference while preserving the status text. */
 @media (prefers-reduced-motion:reduce) { .atlas-image-spinner { animation:none; } }
+
+/* Guest stable chat: quiet neutral surfaces and predictable native controls. */
+html[data-atlas-guest] { --atlas-accent:#c2410c; --atlas-on-accent:#ffffff; --atlas-user-bg:#f1f0ed; }
+html.dark[data-atlas-guest] { --atlas-accent:#e05a2b; --atlas-on-accent:#1a1a18; --atlas-user-bg:#30302e; }
+html[data-atlas-guest] .user-message { background:var(--atlas-user-bg)!important; color:var(--atlas-text)!important; }
+html[data-atlas-guest] :is(button,a,input,textarea,[contenteditable]):focus-visible { outline:2px solid var(--atlas-accent)!important; outline-offset:3px!important; box-shadow:none!important; }
+html[data-atlas-guest] .atlas-file-chip { max-width:min(320px,100%)!important; min-width:0; }
+html[data-atlas-guest] .atlas-file-name { white-space:nowrap!important; overflow:hidden!important; text-overflow:ellipsis!important; min-width:0!important; }
+html[data-atlas-guest] .atlas-file-size { max-width:none!important; flex:none!important; overflow:visible!important; text-overflow:clip!important; white-space:nowrap!important; padding-left:8px; text-transform:none!important; }
+html[data-atlas-guest] .atlas-actions { overflow:visible!important; gap:4px; min-height:36px; }
+html[data-atlas-guest] .atlas-actions button { min-width:32px; min-height:32px; visibility:visible!important; }
+html[data-atlas-guest] .atlas-actions .atlas-overflow-action { display:none!important; }
+html[data-atlas-guest] .user-message .buttons { opacity:0!important; }
+html[data-atlas-guest] .user-message:is(:hover,:focus-within) .buttons { opacity:1!important; }
+@media (hover:hover) and (pointer:fine) {
+  html[data-atlas-guest] .atlas-actions { opacity:0; }
+  html[data-atlas-guest] [id^="message-"]:is(:hover,:focus-within) .atlas-actions { opacity:1; }
+}
+@media (hover:none), (pointer:coarse) { html[data-atlas-guest] .atlas-actions { opacity:1; } }
+.atlas-action-menu { position:fixed; margin:0; border:1px solid var(--atlas-border); border-radius:14px; background:var(--atlas-surface); color:var(--atlas-text); padding:8px; min-width:200px; }
+.atlas-action-menu::backdrop { background:transparent; }
+.atlas-action-menu button { display:block; text-align:left; padding:10px 16px; width:100%; border-radius:8px; }
+.atlas-action-menu button:hover { background:var(--atlas-user-bg); }
+.atlas-interruption { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 0; color:var(--atlas-muted); font-size:14px; }
+.atlas-interruption button { padding:6px 12px; border:1px solid var(--atlas-border); border-radius:8px; background:var(--atlas-surface); color:var(--atlas-text); }
+.atlas-interrupted button:has(.status-description),.atlas-interrupted :is(.animate-spin,.animate-pulse,.atlas-image-waiting,.atlas-stop-mark) { display:none!important; }
+
+html[data-atlas-guest] #chat-input [data-placeholder].is-empty::before { content:var(--atlas-composer-placeholder)!important; }
+html[data-atlas-guest] nav .truncate.text-left { flex:1; }
+html[data-atlas-guest] .user-message .atlas-user-copy-button { opacity:0!important; }
+html[data-atlas-guest] .user-message:is(:hover,:focus-within) .atlas-user-copy-button { opacity:1!important; }
+html[data-atlas-guest] .atlas-actions [id^="info-"] { display:none!important; }
+html[data-atlas-guest] .user-message :is(.edit-user-message-button,.atlas-user-native-copy) { opacity:0!important; }
+html[data-atlas-guest] .user-message:is(:hover,:focus-within) :is(.edit-user-message-button,.atlas-user-native-copy) { opacity:1!important; }
+html[data-atlas-guest] #message-input-container .atlas-file-chip { padding:8px 34px 8px 10px!important; min-height:38px; }
+html[data-atlas-guest] #message-input-container .atlas-file-chip { min-height:44px; padding-right:44px!important; }
+html[data-atlas-guest] .atlas-file-chip > .absolute { top:0!important; right:0!important; width:44px; height:44px; pointer-events:none; }
+html[data-atlas-guest] .atlas-file-chip > .absolute > button { pointer-events:auto; }
+html[data-atlas-guest] .atlas-actions button { opacity:1!important; }
+.atlas-release { text-align:center; color:var(--atlas-muted); font-size:11px; line-height:1.5; padding:6px 0 0; }
+html[data-atlas-guest] .chat-assistant .status-description .shimmer { animation:none!important; background:none!important; color:var(--atlas-muted)!important; -webkit-text-fill-color:var(--atlas-muted)!important; }
+html[data-atlas-guest] #chat-input [data-placeholder].is-empty::before { color:var(--atlas-muted)!important; opacity:1!important; }

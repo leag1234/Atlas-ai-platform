@@ -10,6 +10,7 @@ ATLAS_UI_TAGS = (
     b'<link rel="stylesheet" href="/static/atlas/chat-ui.css">'
     b'<script src="/static/atlas/brand-ui.js"></script>'
     b'<script src="/static/atlas/chat-ui.js"></script>'
+    b'<script src="/static/atlas/guest-chat.js"></script>'
     b'<script type="module" src="/static/atlas/settings-ui.js"></script>'
     b'<link rel="stylesheet" href="/project-mode/style.css">'
     b'<script defer src="/api/atlas/user-memory/client.js"></script>'
