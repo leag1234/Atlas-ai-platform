@@ -165,3 +165,152 @@ class ReleaseUITests(unittest.TestCase):
             )
         f.mount("&session=" + SESSION)
         expect(f.page.locator("[data-approval]")).to_have_count(1)
+
+    def test_finished_answer_has_one_closed_step_group_and_no_diagnostics(self) -> None:
+        from project_composer_browser import ORG, PROJECT, CONVERSATION, SESSION
+
+        f = self.fixture
+        f.turns.append(
+            dict(
+                id="turn",
+                request_id=SESSION,
+                action="work",
+                state="completed",
+                content_refs=[dict(kind="answer", text="Le fichier est prêt.")],
+                usage=dict(cost_eur=0, unknown_eur=0.01, reserved_eur=0.02),
+            )
+        )
+        for seq, status in enumerate(("running", "completed", "running"), 1):
+            f.events.append(
+                dict(
+                    org_id=ORG,
+                    project_id=PROJECT,
+                    conversation_id=CONVERSATION,
+                    request_id=SESSION,
+                    version=1,
+                    seq=seq,
+                    type="tool",
+                    status=status,
+                    output=dict(verification=dict(status="not_run"), cost_eur=0),
+                )
+            )
+        f.mount()
+        group = f.page.locator(".atlas-project-turn details[data-steps]")
+        expect(group).to_have_count(1)
+        expect(group.locator("summary")).to_have_text("Étapes (3)")
+        self.assertFalse(group.evaluate("n=>n.open"))
+        body = f.page.locator("#atlas-project").inner_text()
+        for diagnostic in ("Vérification", "Coût EUR", "Réserve pour", "En cours"):
+            self.assertNotIn(diagnostic, body)
+        group.locator("summary").click()
+        self.assertNotIn("En cours", group.inner_text())
+
+    def test_long_titles_and_file_names_keep_whole_words(self) -> None:
+        from project_composer_browser import BASE, CONVERSATION
+
+        f = self.fixture
+        title = "Prepare a detailed synthesis of the quarterly expenses and the budget by category"
+        f.context.route(
+            "**" + BASE + "/conversations",
+            lambda route: route.fulfill(
+                json=dict(items=[dict(id=CONVERSATION, title=title)], next_cursor=None)
+            ),
+        )
+        filename = "Note_Synthese_Quartz.docx"
+        f.file_items[0]["relative_path"] = filename
+        f.open_projects()
+        f.page.locator("[data-project-card]").first.click()
+        label = f.page.locator(".atlas-project-conversation span").inner_text()
+        self.assertLessEqual(len(label), 61)
+        self.assertTrue(label.endswith("…"))
+        self.assertIn(label[:-1], title)
+        self.assertEqual(title[len(label) - 1], " ")
+        file = f.page.locator(".atlas-project-file > button").first
+        expect(file).to_have_attribute("title", filename)
+        self.assertEqual(file.evaluate("n=>getComputedStyle(n).whiteSpace"), "nowrap")
+        self.assertEqual(
+            file.evaluate("n=>getComputedStyle(n).textOverflow"), "ellipsis"
+        )
+        remove = f.page.locator(".atlas-project-file [data-remove]")
+        expect(remove).to_have_count(1)
+        self.assertEqual(remove.evaluate("n=>getComputedStyle(n).opacity"), "0")
+        f.page.locator(".atlas-project-file").hover()
+        self.assertEqual(remove.evaluate("n=>getComputedStyle(n).opacity"), "1")
+
+    def test_project_load_error_replaces_loader_after_navigation(self) -> None:
+        from project_composer_browser import ORG
+
+        f = self.fixture
+        f.open_projects()
+        f.page.locator("[data-project-card]").first.click()
+        expect(f.page.locator("[data-send]")).to_be_enabled()
+        f.context.route(
+            "**/api/atlas/orgs/" + ORG + "/projects",
+            lambda route: route.fulfill(status=503, json=dict(error="internal_error")),
+        )
+        f.page.locator(".atlas-project-breadcrumb").first.click()
+        expect(f.page.locator(".atlas-project-notice")).not_to_have_text("Chargement…")
+        expect(f.page.locator(".atlas-project-notice")).to_contain_text("service")
+        self.assertNotIn(
+            "internal_error", f.page.locator("#atlas-project").inner_text()
+        )
+
+    def test_direct_phone_route_has_one_navigation_header(self) -> None:
+        from pathlib import Path
+
+        f = self.fixture
+        f.page.set_viewport_size({"width": 390, "height": 844})
+        f.mount()
+        f.page.add_style_tag(
+            content=Path("services/orchestrator/project_mode.css").read_text()
+        )
+        expect(f.page.locator(".atlas-project-mobile-header")).to_be_visible()
+        expect(f.page.locator(".atlas-project-left")).to_be_hidden()
+        self.assertEqual(
+            f.page.locator('#atlas-project img[alt="Atlas"]:visible').count(), 1
+        )
+
+    def test_deliverable_label_retains_space_next_to_download_controls(self) -> None:
+        from pathlib import Path
+        from project_composer_browser import BASE, SESSION, VERSION
+
+        f = self.fixture
+        filename = "Note_Synthese_Quartz.docx"
+        f.file_items[0]["relative_path"] = filename
+        f.deliverables = [
+            dict(
+                id=VERSION,
+                filename=filename,
+                file_version_id=VERSION,
+                request_id=SESSION,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                download_route=BASE + "/deliverables/" + VERSION + "/download",
+                validation={"status": "passed"},
+            )
+        ]
+        f.turns = [
+            dict(
+                id=VERSION,
+                request_id=SESSION,
+                action="work",
+                state="completed",
+                content_refs=[dict(kind="answer", text="Voici la synthèse.")],
+            )
+        ]
+        f.page.set_viewport_size({"width": 1440, "height": 1000})
+        f.mount()
+        f.page.add_style_tag(
+            content=Path("services/orchestrator/project_mode.css").read_text()
+        )
+        for selector, width, height in (
+            (".atlas-project-right", 1440, 1000),
+            (".atlas-project-transcript", 390, 844),
+        ):
+            with self.subTest(selector=selector):
+                f.page.set_viewport_size({"width": width, "height": height})
+                label = f.page.locator(selector + " [data-deliverable] strong")
+                expect(label).to_have_text(filename)
+                expect(label).to_have_attribute("title", filename)
+                bounds = label.bounding_box()
+                assert bounds is not None
+                self.assertGreaterEqual(bounds["width"], 80)

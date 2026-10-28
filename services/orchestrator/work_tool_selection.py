@@ -131,6 +131,7 @@ class WorkToolSelection:
         self.pending: str | None = None
         self.focus: str | None = None
         self.pending_focus: str | None = None
+        self.verified = False
         self.reopen_enabled = False
         self.memory_enabled = False
         self.skills_enabled = False
@@ -188,6 +189,11 @@ class WorkToolSelection:
             group = (*primary, *(name for name in group if name not in primary))
         if self.focus in group:
             group = (self.focus, *(name for name in group if name != self.focus))
+        if self.group == "code" and self.verified:
+            group = (
+                "forge_action",
+                *(name for name in group if name != "forge_action"),
+            )
         extra: tuple[str, ...] = ()
         if self.reopen_enabled:
             extra += ("reopen_result",)

@@ -56,7 +56,7 @@ def declaration() -> dict[str, object]:
         type="function",
         function=dict(
             name="forge_action",
-            description="Publish a verified change with one inline approval using kind=publish_change: base_commit, branch (new branch), target, message, title, body. Freezes the entire repository scratch snapshot and publishes branch, commit and pull request together. Separate actions are also available. kind=branch: base_commit, branch. kind=commit: base_commit, branch, message; freezes the entire repository scratch snapshot before approval. kind=pull_request: base_commit (target SHA), head, target, title, body. Omit irrelevant fields. Broker performs no remote write until approval; report only the returned state. The repository and base SHA are in code_workspace.",
+            description="After tests pass, use this tool instead of shell git commit/push/remote commands: the scratch workspace has no remote or credentials. Publish a verified change with one inline approval using kind=publish_change: base_commit, branch (new branch), target, message, title, body. Freezes the entire repository scratch snapshot and publishes branch, commit and pull request together. Separate actions are also available. kind=branch: base_commit, branch. kind=commit: base_commit, branch, message; freezes the entire repository scratch snapshot before approval. kind=pull_request: base_commit (target SHA), head, target, title, body. Omit irrelevant fields. Broker performs no remote write until approval; report only the returned state. The repository and base SHA are in code_workspace.",
             parameters=ForgeRequest.model_json_schema(),
         ),
     )

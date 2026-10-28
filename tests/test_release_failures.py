@@ -29,7 +29,14 @@ class PublicFailureTests(unittest.IsolatedAsyncioTestCase):
         state = dict(
             replay=False,
             events=[],
-            context={},
+            context=dict(
+                context_manifest=dict(
+                    sources=[],
+                    policy_revision=0,
+                    excluded_versions=[],
+                    coverage=dict(complete=True, warnings=[]),
+                )
+            ),
             turn=dict(
                 id=turn_id,
                 request_id=turn_id,

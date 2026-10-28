@@ -36,7 +36,7 @@
     if (value.kind === 'table_cell') return `${t('table')} ${value.table}, ${t('row')} ${value.row}, ${t('column')} ${value.column}`;
     return t('unknown');
   }
-  const guarded = fn => async event => { const current = generation; try { await fn(event); } catch (error) { if (current === generation) failure(error); } };
+  const guarded = fn => async event => { try { await fn(event); } catch (error) { if (error.name !== 'AbortError' && root?.isConnected) failure(error); } };
   function checkScope(current) { if (current !== generation) throw new DOMException('Scope changed', 'AbortError'); }
   function button(key, fn, cls) { const b = node('button', t(key), cls); b.type = 'button'; b.addEventListener('click', guarded(fn)); return b; }
   function field(key, control) { const label = node('label', t(key)); label.append(control); control.setAttribute('aria-label', t(key)); return label; }
@@ -45,7 +45,7 @@
     if (options.method && options.method !== 'GET') headers.set('Idempotency-Key', crypto.randomUUID());
     if (options.body && !(options.body instanceof FormData)) { headers.set('Content-Type', 'application/json'); options.body = JSON.stringify(options.body); }
     const current = generation;
-    const response = await fetch(path, { credentials: 'same-origin', signal: lifecycle?.signal, ...options, headers });
+    const response = await fetch(path, { credentials: 'same-origin', signal: lifecycle ? AbortSignal.any([lifecycle.signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000), ...options, headers });
     if (current !== generation) throw new DOMException('Scope changed', 'AbortError');
     if (!response.ok) {
       const error = await response.json().catch(() => ({})); checkScope(current);
@@ -111,7 +111,7 @@
     if (owned && memberships.length > 1) left.append(picker('organization', memberships, scope?.org, org => choose({org})));
   }
   function iconButton(key, symbol, fn) {
-    const value = button(key, fn); value.textContent = symbol; value.setAttribute('aria-label', t(key)); value.title = t(key); if (key === 'upload') value.dataset.uploadControl = ''; return value;
+    const value = button(key, fn); value.textContent = symbol; value.setAttribute('aria-label', t(key)); value.title = t(key); if (key === 'remove') value.dataset.remove = ''; if (key === 'upload') value.dataset.uploadControl = ''; return value;
   }
   function relativeTime(value) {
     const seconds = Math.round((Date.parse(value) - Date.now()) / 1000);
@@ -175,11 +175,17 @@
     }
     center.prepend(heading);
   }
+  function shortTitle(value) {
+    const text = (value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= 60) return text;
+    const prefix = text.slice(0, 60), end = prefix.lastIndexOf(' ');
+    return (end > 0 ? prefix.slice(0, end) : '') + '…';
+  }
   function conversationList() {
     const list = node('section', null, 'atlas-project-conversations'); list.append(node('h2', t('conversations')));
     for (const conversation of conversations) {
       const row = node('button', null, 'atlas-project-conversation'); row.type = 'button'; row.dataset.conversation = conversation.id;
-      row.append(node('span', conversation.title), node('small', relativeTime(conversation.updated_at || conversation.created_at)));
+      row.title = conversation.title; row.append(node('span', shortTitle(conversation.title)), node('small', relativeTime(conversation.updated_at || conversation.created_at)));
       row.addEventListener('click', guarded(() => choose({org:scope.org,project:scope.project,conversation:conversation.id}))); list.append(row);
     }
     if (!conversations.length) list.append(node('p',t('noConversations')));
@@ -248,11 +254,17 @@
       const article = node('article', null, 'atlas-project-turn'); article.dataset.turn = turn.id;
       article.append(node('small', `Atlas · ${t(turn.state)}`));
       for (const ref of turn.content_refs) if (ref.text) article.append(prose(ref.kind === 'question' ? ref.text : withoutFileLinks(ref.text), ref.kind === 'question' ? 'question' : 'answer'));
-      const checked = [...events.values()].filter(e => e.request_id === turn.request_id && e.output?.verification).sort((a,b) => b.seq - a.seq)[0];
-      if (checked) article.append(verificationBadge(checked.output.verification));
-      if (turn.usage?.cost_eur != null) article.append(detail('cost', turn.usage.cost_eur));
-      if (turn.usage?.unknown_eur) article.append(detail('unknownCost', turn.usage.unknown_eur));
-      if (turn.usage?.reserved_eur) article.append(detail('reservedCost', turn.usage.reserved_eur));
+      const steps = [...events.values()].filter(e => e.version && e.request_id === turn.request_id && (!e.conversation_id || e.conversation_id === scope.conversation));
+      if (steps.length) {
+        const group = node('details', null, 'atlas-project-steps'); group.dataset.steps = turn.request_id;
+        group.append(node('summary', `${t('steps')} (${steps.length})`));
+        const terminal = ['completed','failed','cancelled'].includes(turn.state);
+        for (const step of steps.sort((a,b) => a.seq - b.seq)) {
+          const state = step.status || step.state || 'running';
+          group.append(node('p', t(terminal && ['running','ready','awaiting_approval'].includes(state) ? turn.state : state)));
+        }
+        article.append(group);
+      }
       for (const item of panelData?.deliverables || []) if (item.turn_id === turn.request_id || item.request_id === turn.request_id || turn.content_refs.some(ref => ref.text?.includes(item.download_route))) article.append(fileCard(item));
       const lastContext = turn.usage?.context;
       if (lastContext?.layers) {
@@ -373,38 +385,18 @@
     events.set(event.seq, event);
     renderEvents();
   }
-  function verificationBadge(value) {
-    const badge = node('p', `${t('verification')}: ${t(value.status)}`, 'atlas-project-verification');
-    badge.dataset.verification = value.status;
-    if (value.command) badge.append(node('span', ` · ${value.command} ${t('exited')} ${value.exit_code}`));
-    return badge;
-  }
   function renderEvents() {
+    const opened = new Set([...transcript.querySelectorAll('details[data-steps][open]')].map(n => n.dataset.steps));
     renderTurns();
-    for (const event of [...events.values()].sort((a,b) => a.seq - b.seq)) renderEvent(event);
-  }
-  function renderEvent(event) {
-    if (!activity || activity.querySelector('[data-event-seq="' + event.seq + '"]')) return;
-    if (!turns.some(turn => turn.request_id === event.request_id) && !liveRequests.has(event.request_id)) return;
-    if (event.conversation_id && event.conversation_id !== scope.conversation) return;
-    if (!event.version) return;
-    const item = node(event.output?.approval || event.type === 'error' ? 'section' : 'details', null, 'atlas-project-event'); item.dataset.eventSeq = String(event.seq);
-    item.append(node(item.tagName === 'DETAILS' ? 'summary' : 'small', `Atlas · ${t(event.status || event.state || 'running')}`));
-    const out = event.output || {};
-    if (event.type === 'error') item.append(node('p', t('serviceFailure')));
-    if (out.verification) item.append(verificationBadge(out.verification));
-
-
-    if (out.measurement) item.append(node('p', `${out.measurement.measured} / ${out.measurement.limit} ${out.measurement.unit}`));
-    if (out.cost_eur != null) item.append(node('p', `${t('cost')}: ${out.cost_eur}`));
-    if (out.diff) item.append(button('preview', () => window.atlasSideView.open({ kind: 'diff', title: t('preview'), content: out.diff })));
-    if (out.approval) {
-      const value = out.approval;
-      const existing = [...root.querySelectorAll('[data-approval]')].find(card => card.dataset.approval === value.id);
-      if (existing) existing.replaceWith(approval(value));
-      else item.append(approval(value));
+    transcript.querySelectorAll('details[data-steps]').forEach(n => {n.open = opened.has(n.dataset.steps);});
+    activity.replaceChildren();
+    const approvals = new Map();
+    for (const event of [...events.values()].sort((a,b) => a.seq - b.seq)) {
+      if (!turns.some(turn => turn.request_id === event.request_id) && !liveRequests.has(event.request_id)) continue;
+      if (event.conversation_id && event.conversation_id !== scope.conversation) continue;
+      if (event.version && event.output?.approval) approvals.set(event.output.approval.id, event.output.approval);
     }
-    activity.insertBefore(item, [...activity.children].find(n => Number(n.dataset.eventSeq) > event.seq) || null);
+    for (const value of approvals.values()) activity.append(approval(value));
   }
   function refreshApprovals() {
     if (!root) return;
@@ -481,7 +473,7 @@
     const question = input.value.trim();
     if (!scope.conversation) {
       configuring = true; controls();
-      try { const conversation = await api(base() + '/conversations', 'POST', {title:question.slice(0,120)}); await choose({org:scope.org,project:scope.project,conversation:conversation.id}); input.value = question; }
+      try { const conversation = await api(base() + '/conversations', 'POST', {title:shortTitle(question)}); await choose({org:scope.org,project:scope.project,conversation:conversation.id}); input.value = question; }
       finally { configuring = false; controls(); }
     }
     const current = generation;
@@ -538,7 +530,7 @@
   function fileCard(item) {
     const file = files.find(f => f.version_id === item.file_version_id), card = node('section', null, 'atlas-project-file-card'); card.dataset.deliverable = item.id;
     const name = (file?.relative_path || item.filename || t('files')).split('/').pop();
-    card.append(node('span', name.split('.').pop().toUpperCase(), 'atlas-project-file-type'), node('strong',name));
+    card.append(node('span', name.split('.').pop().toUpperCase(), 'atlas-project-file-type'), node('strong',name)); card.querySelector('strong').title = name;
     const actions = node('div'); const download = node('a',t('download')); download.href = projectURL(item.download_route); download.download = name;
     actions.append(button('preview', () => previewDeliverable(item)),download); card.append(actions); return card;
   }
@@ -561,7 +553,7 @@
       const item = deliverables.find(d => d.file_version_id === file.version_id);
       if (item) {const card = fileCard(item); card.append(iconButton('remove','×',() => confirmChange('removeFile',{file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(card);continue;}
       const row = node('div',null,'atlas-project-file'); row.dataset.fileId = file.id;
-      const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(row);
+      const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; open.title = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(row);
     }
     for (const item of deliverables.filter(d => !files.some(f => f.version_id === d.file_version_id))) filePanel.append(fileCard(item));
     panels.append(filePanel);

@@ -109,7 +109,7 @@ html.dark .atlas-project {--project-bg:#242422;--project-card:#2c2c29;--project-
 @media(max-width:760px) {
   .atlas-project,.atlas-project[data-owned=true],.atlas-project[data-owned=true][data-view=projects] {left:0!important;top:56px;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;overflow:auto;display:block;}
   .atlas-project[data-owned=true] {top:0;}
-  .atlas-project[data-owned=true] > .atlas-project-left {display:flex;align-items:center;padding:10px 16px;gap:8px;border:0;}
+  .atlas-project[data-owned=true] > .atlas-project-left {display:none;}
   .atlas-project-left .atlas-project-logo {width:100px;height:32px;margin:0 auto 0 0;}
   .atlas-project-left > button {font-size:0;}
   .atlas-project-center,.atlas-project[data-view=projects] .atlas-project-center {overflow:visible;padding:28px 20px;}
@@ -162,3 +162,22 @@ body.atlas-project-open #atlas-ui-selector {display:none;}
 #sidebar a[href="/"] {white-space:nowrap;}
 #sidebar a[href="/"] :is(span,div) {white-space:nowrap;}
 .atlas-project .atlas-project-search-button {width:44px;height:44px;font-size:24px;display:grid;place-items:center;padding:0;}
+
+/* Owner release 0.7: compact file controls and a single composer focus. */
+#atlas-project .atlas-project-file > button:first-child,
+#atlas-project .atlas-project-file-card strong {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:normal;
+}
+#atlas-project .atlas-project-right .atlas-project-file-card {display:grid;grid-template-columns:auto minmax(0,1fr);}
+#atlas-project .atlas-project-right .atlas-project-file-card > div {grid-column:1/-1;justify-content:flex-end;}
+#atlas-project [data-remove] {border:0;padding:3px 6px;flex:none;font-size:18px;opacity:0;}
+#atlas-project :is(.atlas-project-file,.atlas-project-file-card,.atlas-project-memory):hover [data-remove],
+#atlas-project [data-remove]:focus-visible {opacity:1;}
+@media(hover:none) {#atlas-project [data-remove] {opacity:1;}}
+#atlas-project .atlas-project-composer textarea,
+#atlas-project .atlas-project-composer textarea:focus,
+#atlas-project .atlas-project-composer textarea:focus-visible {outline:none!important;box-shadow:none!important;border:0!important;}
+#atlas-project .atlas-project-composer {box-shadow:none;}
+#atlas-project .atlas-project-steps {color:var(--project-muted);font-size:12px;margin:12px 0;}
+#atlas-project .atlas-project-steps summary {cursor:pointer;}
+#atlas-project .atlas-project-conversation span {overflow-wrap:normal;}
