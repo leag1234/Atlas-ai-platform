@@ -152,6 +152,8 @@ async def oauth_callback(org: UUID, connector: UUID, request: Request) -> Respon
 
 
 async def authenticate(request: Request, payload: ChatRequest) -> None:
+    if payload._api_key_request:
+        return
     if os.environ.get("ATLAS_MCP_CONNECTORS") != "1":
         return
     browser_origin(request)
@@ -224,6 +226,10 @@ class Selection:
             self.groups[key] = tuple(names)
 
     def bind(self, model: Any) -> None:
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get():
+            return
         self.model = model
         self.base = [
             tool for tool in model.tools if tool["function"]["name"] != "mcp_call"
@@ -264,6 +270,10 @@ class Selection:
         self.model.tools = [switch, *selected[:7]]
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get():
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
         if call.name == "switch_connector_group":
             try:
                 data = json.loads(call.arguments)
@@ -316,6 +326,8 @@ class Selection:
 
 
 async def prepare(request: ChatRequest) -> Selection | None:
+    if request._api_key_request:
+        return None
     if not request._connector_scope:
         return None
     scope = request._connector_scope

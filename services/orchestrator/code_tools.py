@@ -381,6 +381,7 @@ class WorkTools(CodeTools):
         self.connectors: Any = None
         self.validation_failures: dict[str, str] = {}
         self.memory: Any = None
+        self.skills: Any = None
         self.nearby: Any = None
         self.remote_references: Any = None
 
@@ -446,6 +447,14 @@ class WorkTools(CodeTools):
 
     async def execute(self, call: Call, timeout: float) -> Message:
         await self.execution.check()
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get() and (
+            call.name == "mcp_call"
+            or call.name.startswith("mcp_")
+            or call.name == "switch_connector_group"
+        ):
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
         from services.orchestrator import project_document_tools
 
         if self.selection is not None and call.name not in self.selection.names:
@@ -456,6 +465,21 @@ class WorkTools(CodeTools):
             }
         if self.connectors is not None and call.name in self.connectors.targets:
             return dict(await self.connectors.execute(call, timeout))
+        if self.skills is not None:
+            if not await self.skills.authorized():
+                return {"error": "skill_authority_revoked"}
+            if call.name == "load_skill":
+                skill_result = await self.skills.execute(call, timeout)
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed" if skill_result.get("error") else "completed",
+                    output=skill_result,
+                )
+                return dict(skill_result)
+            if self.skills.blocks(call.name):
+                return {"error": "skill_action_not_permitted"}
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:

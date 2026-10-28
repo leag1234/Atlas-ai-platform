@@ -5,19 +5,71 @@ import os
 import sys
 import tempfile
 import unittest
+from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 from typing import Any
 
 from services.orchestrator.connectors import Client, Selection
+from services.orchestrator.api_key_edge import key_call
+from services.orchestrator.cache import Cache
 from services.orchestrator.loop import Call
 from services.orchestrator.mcp_transport import invoke
+from services.orchestrator.tools import Runtime
 from services.orchestrator.work_tool_selection import WorkToolSelection
 from services.retrieval.connector_service import check_references
 
 
 class SelectionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_key_call_cannot_declare_or_execute_connectors(self) -> None:
+        selection = Selection(
+            Client("member", str(uuid4())),
+            [
+                dict(
+                    id=str(uuid4()),
+                    name="Handbook",
+                    tools=[
+                        dict(
+                            name="read",
+                            description="Read the handbook",
+                            inputSchema=dict(type="object"),
+                        )
+                    ],
+                )
+            ],
+        )
+        model = SimpleNamespace(
+            tools=[dict(type="function", function=dict(name="mcp_call"))]
+        )
+        connector_tool = next(iter(selection.targets))
+        token = key_call.set(True)
+        try:
+            selection.bind(model)
+            self.assertEqual(
+                [tool["function"]["name"] for tool in model.tools], ["mcp_call"]
+            )
+            expected = {"error": "insufficient_scope", "missing_scope": "connectors"}
+            self.assertEqual(
+                await selection.execute(
+                    Call("switch", "switch_connector_group", "{}"), 1
+                ),
+                expected,
+            )
+            self.assertEqual(
+                await selection.execute(Call("tool", connector_tool, "{}"), 1), expected
+            )
+            with tempfile.TemporaryDirectory() as root:
+                runtime = Runtime(Cache(Path(root) / "cache.sqlite"), Decimal(0))
+                runtime.connectors = selection
+                for name in ("mcp_call", "switch_connector_group", connector_tool):
+                    self.assertEqual(
+                        await runtime.execute(Call(name, name, "{}"), 1), expected
+                    )
+        finally:
+            key_call.reset(token)
+
     async def test_approval_is_available_to_api_and_stream_without_model_copying(
         self,
     ) -> None:

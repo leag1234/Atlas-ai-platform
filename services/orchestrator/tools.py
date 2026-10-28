@@ -133,9 +133,12 @@ def declarations() -> list[Message]:
         }
         for name, schema in SCHEMAS.items()
     ]
+    from services.orchestrator.api_key_edge import key_call
+
     if (
         os.environ.get("ATLAS_MCP_CONFIG")
         and os.environ.get("ATLAS_MCP_CONNECTORS") != "1"
+        and not key_call.get()
     ):
         result.append(mcp_client.declaration())
     return result
@@ -516,6 +519,14 @@ class Runtime:
         return output
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get() and (
+            call.name == "mcp_call"
+            or call.name.startswith("mcp_")
+            or call.name == "switch_connector_group"
+        ):
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
         if self.connectors is not None and (
             call.name.startswith("mcp_") or call.name == "switch_connector_group"
         ):

@@ -230,7 +230,13 @@ async def complete_svg(
     )
 
     reasons: list[str] = []
-    if extract_svg(result.text, require_legend=require_legend, reasons=reasons):
+    parser_errors: list[str] = []
+    if extract_svg(
+        result.text,
+        require_legend=require_legend,
+        reasons=reasons,
+        parser_errors=parser_errors,
+    ):
         return
     # Never retry active content. A prose-only mechanical answer may intentionally
     # delegate illustration to Commons; avoid an extra model call on that route.
@@ -261,6 +267,7 @@ async def complete_svg(
             )
             + "\nCorrect the previous drawing. Validation category: "
             + reasons[-1]
+            + (". XML parser error: " + parser_errors[-1] if parser_errors else "")
             + ". Return a complete compact SVG and its explanation, with matching numbered legend when requested.",
             Limits(
                 profile=request.model,

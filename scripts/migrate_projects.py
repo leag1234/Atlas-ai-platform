@@ -1155,6 +1155,8 @@ def restore(
             schema += "\n" + (schema_root / "project_transcript_schema.sql").read_text()
         if "runner_targets" in exported:
             schema += "\n" + (schema_root / "project_runner_schema.sql").read_text()
+        if "transcript_progress" in exported:
+            schema += "\n" + (schema_root / "project_sharing_schema.sql").read_text()
         if "user_memory" in exported:
             schema += "\n" + (schema_root / "user_memory_schema.sql").read_text()
         (destination / "schema.sql").write_text(schema)
@@ -1214,6 +1216,13 @@ def restore_database(dsn: str, bundle: Path) -> dict[str, Any]:
         ).fetchone():
             raise ValueError("Restore requires an empty project database")
         db.execute((bundle / "schema.sql").read_text())
+        if "transcript_progress" in exported:
+            db.execute(
+                (
+                    Path(__file__).resolve().parents[1]
+                    / "services/retrieval/project_sharing_schema.sql"
+                ).read_text()
+            )
         if "runner_targets" in exported:
             # Older exporters may carry current rows with the base project
             # schema. Install the supported additive schema before restoring.

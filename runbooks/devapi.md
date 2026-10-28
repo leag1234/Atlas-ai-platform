@@ -85,3 +85,140 @@ configuration. The Codex bypass is limited to this container; the grader is a se
 container without keys with a read-only folder. Automatic cleanup on exit.
 Each client has 4 requests and 50,000 micro-EUR total; redacted proof in
 BRAIN/eval/devapi-clients.json, without real user content.
+
+## Atlas assistant keys (design 19 K-A)
+
+The public base URL is `https://atlas.indidea.org/api/atlas/v1`. It exposes
+`GET /models`, `POST /chat/completions` (JSON and SSE), and `GET /usage`.
+`atlas` selects the installation's default chat profile; configured profile IDs
+are explicit alternatives. These execute the same assistant pipeline, including
+search, citations, document inputs and image inputs. `atlas-code` selects the
+existing raw model API and requires `model`; assistant profiles require `assistant`.
+Project selection, Work, cancellation tickets, location tickets and connectors
+are not granted by either scope in K-A. Cookies and Origin headers are rejected
+on this prefix. The browser endpoint retains its Origin checks.
+
+An administrator must issue every key. Self-service is off. Default lifetime is
+90 days, maximum 365. Set these private environment variables in both the adapter
+and the administrator process: `ATLAS_API_KEYS_DB` (persistent private SQLite),
+`ATLAS_API_KEY_PEPPER` (at least 32 random bytes). The administrator process also
+requires `ATLAS_API_KEY_ADMIN_TOKEN` (a distinct random secret, at least 32 bytes)
+and `ATLAS_API_KEY_ADMIN_SUBJECT` (the operator's audit identity). Provision secrets
+with the installation's private environment manager; do not paste values into
+shell history. Losing/changing the pepper invalidates all new keys. Back up the
+SQLite database and pepper separately; directories must be private, database 0600.
+
+Run administration separately, bound to loopback, never behind a public proxy:
+
+```sh
+bash scripts/serve-api-key-admin.sh
+python -m services.orchestrator.api_key_admin create \
+  --login tester@example.invalid \
+  --name external-test --scope assistant --lifetime-days 90 \
+  --daily-requests 20 --daily-micro-eur 1000000 \
+  --key-file /private/tester.key
+python -m services.orchestrator.api_key_admin list
+python -m services.orchestrator.api_key_admin revoke --id KEY_ID
+```
+
+The CLI calls the loopback HTTP API (`POST/GET /keys`, `DELETE /keys/{id}`). Its
+administrator token comes from the environment. Only public metadata is printed;
+the credential is written once to an exclusive 0600 file, never stdout. Deliver
+that file privately. HTTP creation returns the credential once to the authenticated
+administrator; a future UI must handle that response as a secret. Never log it.
+Use `--admin-url http://127.0.0.1:PORT` for an isolated installation.
+
+`login` resolves through the authenticated WebUI directory to the exact forwarded
+user ID, placing API calls and UI calls in the same daily cost/search ledger. Keep `ATLAS_DATA_DIR` and the normal user/global
+budget settings identical for UI, API and legacy developer entry. In project mode,
+use real organization/member UUIDs: the identity broker checks current membership
+on every request. Stable single-organization mode has no membership service;
+revoking all keys for a departed tester is an administrator responsibility.
+
+A key adds its own daily request and micro-EUR ceilings. Reservations are atomic;
+unknown/cancelled costs retain their bound. Request counts are not refunded.
+Key days reset at UTC midnight; the existing member ledger retains Paris time.
+401 means missing/invalid/expired/revoked credentials; 403 names the missing scope;
+429 includes used/requested and quota values. Lists contain prefix, required expiry,
+creator, last use and truncated IP, never a hash or credential. SQLite audit records
+contain creation, revocation and authentication/scope/quota failures; daily summary
+rows contain counts and costs only, no request or response content.
+
+Example: read the key into curl's private configuration over stdin, without putting
+it in process arguments. Do not enable tracing or verbose HTTP logging.
+
+```sh
+python - <<'PY' | curl --silent --show-error --config - \
+  https://atlas.indidea.org/api/atlas/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  --data '{"model":"atlas","messages":[{"role":"user","content":"Find current space news and cite sources."}]}'
+from pathlib import Path
+key = Path('/private/tester.key').read_text().strip()
+print('header = "Authorization: Bearer ' + key + '"')
+PY
+```
+
+For the official Python client, initialize `OpenAI(api_key=Path(...).read_text().strip(),
+base_url="https://atlas.indidea.org/api/atlas/v1")` and call
+`client.chat.completions.create(model="atlas", messages=..., stream=True)` (or
+`stream=False`). Atlas keys are independent of Open WebUI keys. Preserve existing interim tester
+access until rotation; an owner can then disable Open WebUI key issuance.
+
+### Migration and downloads
+
+Stop the local developer listener before import to avoid concurrent writes. Give
+both services the same `ATLAS_DEVAPI_DB`, `ATLAS_API_KEYS_DB` and pepper, then run:
+
+```sh
+python -m services.orchestrator.api_key_admin import --id service-test \
+  --org-id INSTALLATION_ORG --member-id SERVICE_MEMBER_ID \
+  --subject service-test --budget-user SERVICE_BUDGET_ID --name imported-service
+```
+
+Import retains the SHA-256 hash, quotas, revocation state and existing reservations,
+and marks the key for rotation. Imported keys receive `model` only and a 90-day
+migration expiry. Restart the local developer listener with the key-store settings:
+its existing credential continues working at the local `/v1` entry, but all future
+usage and revocation use the imported store. The old operator revoke also remains
+effective at that entry. Do not remove the legacy database until rotation is complete.
+The public nginx edge accepts `atl_` keys only: issue a replacement with scope `model`
+and revoke the imported key before moving a legacy client to the public prefix.
+Reimport is idempotent. Do not run old binaries against an already migrated listener;
+that would bypass the new expiry and quotas. Rollback requires stopping that listener.
+
+**K-A download limitation:** an Atlas API key does not authorize generated file,
+image or local source-passage download URLs outside `/api/atlas/v1/`. Text answers
+and public web citations work; generated artifacts still require the corresponding
+browser session/basic authentication. In project mode some legacy artifact routes
+are disabled altogether. A key-only client must not treat those links as downloadable
+with its Bearer key. API artifact delivery and project-scoped downloads are not part
+of K-A; no public download bypass has been added.
+
+### Login resolution and clean API answers (K-A)
+
+In stable mode use `--login tester` or `--login tester@example.invalid` with
+`--name external --scope assistant --key-file /secure/delivery.key`; no internal
+WebUI identifier is needed. The admin HTTP body likewise accepts `login`, `name`
+and `scopes`. Configure `ATLAS_WEBUI_URL` (the private WebUI HTTP listener) and
+`ATLAS_WEBUI_ADMIN_TOKEN` (an administrator session token, injected securely).
+The administrator service reads `/api/v1/users/` with pagination and resolves the
+email to the exact forwarded user ID used by the budget ledger. It does not create
+users. A missing login returns `user_never_signed_in` (404): ask the user to sign
+in once. An ambiguous local part returns 409: supply the full email. Inactive users
+return 403. Directory failures return 503 and never select a guessed budget bucket.
+Project mode retains org/member selection and can also resolve `login`.
+
+Both `/api/atlas/v1/chat/completions` and plain `/v1/chat/completions` put only
+the final cited answer in `choices[].message.content` / `delta.content`. API SSE
+buffers answer text until the assistant finishes; progress remains available during
+execution in the extra `atlas.steps` field, and the final frame includes the complete
+`atlas.steps` and `atlas.sources` arrays. JSON responses include the same arrays.
+Sources are retrieved URLs; inline citations stay in answer content.
+Official OpenAI clients accept these extra fields. Browser code explicitly sets
+`atlas_ui: true` to retain existing progress rendering; this is a presentation flag,
+not authorization. The Atlas key edge always forces it off. No client header is
+used to infer the presentation.
+
+Legacy service-key imports retain their explicit service budget identity and do not
+require an interactive login. This exception only imports an existing developer
+credential as model scope; new stable keys still require a signed-in login.

@@ -118,6 +118,7 @@ class StreamingNetworkTests(unittest.IsolatedAsyncioTestCase):
                         async with client.post(
                             f"http://127.0.0.1:{port}/v1/chat/completions",
                             json={
+                                "atlas_ui": True,
                                 "stream": True,
                                 "messages": [{"role": "user", "content": "Bonjour"}],
                             },

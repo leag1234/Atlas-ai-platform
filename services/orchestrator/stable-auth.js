@@ -1,6 +1,16 @@
 /* Keep HTTP Basic authentication at nginx and use the UI's HttpOnly session cookie. */
 (() => {
-  const instanceNotice = document.currentScript?.dataset.instanceNotice || '';
+  const instanceNotice = (() => {
+    const raw = document.currentScript?.dataset.instanceNotice || '';
+    if (!raw.startsWith('{')) return raw;
+    try {
+      const texts = JSON.parse(raw);
+      let stored = '';
+      try { stored = localStorage.getItem('locale') || ''; } catch { stored = ''; }
+      const language = (stored || navigator.language || 'en').slice(0, 2).toLowerCase();
+      return texts[language] || texts.en || Object.values(texts)[0] || '';
+    } catch { return ''; }
+  })();
   document.addEventListener('DOMContentLoaded', () => {
     if (!instanceNotice) return;
     const notice = document.createElement('div');

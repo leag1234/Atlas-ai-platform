@@ -322,6 +322,8 @@ class Work:
         else:
             value, row = self.fence(data, cleanup=operation in {"release", "check"})
             if operation in {"check", "renew"}:
+                if not row["data"]["cleanup"] and not self.authority(row):
+                    raise ProjectError(403, "policy_denied")
                 if operation == "renew" or value["state"] != "cancelling":
                     self.fence(data)
                 if operation == "renew":
@@ -394,7 +396,26 @@ class Work:
 
     def cancel(self, identifier: str, data: dict[str, Any]) -> dict[str, Any]:
         validate("CancelRequest", data)
-        value = self.get(identifier)
+        try:
+            value = self.get(identifier)
+        except ProjectError as exc:
+            if exc.status != 404:
+                raise
+            row = self.db.execute(
+                "SELECT atlas_projects.cancel_private_work(%s,%s,%s) AS result",
+                (self.project, identifier, data["request_id"]),
+            ).fetchone()
+            if row is None or row["result"] == "not_found":
+                raise exc
+            if row["result"] != "ok":
+                raise ProjectError(409, "session_busy")
+            return dict(state="cancelling")
+        if (
+            value["initiator_member_id"] != self.scope.identity.member
+            and self.scope.role != "owner"
+            and self.scope.member["role"] != "admin"
+        ):
+            raise ProjectError(403, "permission_denied")
         row = self.lease(identifier)
         if (
             row

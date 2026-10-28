@@ -286,6 +286,49 @@ class ParserAndBudgetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.text, replacement)
         self.assertEqual(result.cost, Decimal("0.04"))
 
+    async def test_svg_retry_includes_exact_xml_parser_error(self) -> None:
+        from decimal import Decimal
+        import time
+        from unittest.mock import AsyncMock, Mock, patch
+        from services.orchestrator.chat_schema import ChatRequest
+        from services.orchestrator.diagram import complete_svg
+        from services.orchestrator.loop import Result
+        from services.orchestrator.model import GatewayModel
+
+        request = ChatRequest.model_validate(
+            {"messages": [{"role": "user", "content": "Draw a floor plan"}]}
+        )
+        result = Result(
+            text='<svg viewBox="0 0 400 300"><rect x="10"></svg>',
+            state="done",
+            cost=Decimal("0"),
+        )
+        replacement = '<svg viewBox="0 0 400 300"><rect width="20" height="20"/></svg>'
+        model = Mock(spec=GatewayModel)
+        model.produces_files = False
+        with patch(
+            "services.orchestrator.diagram.run",
+            AsyncMock(
+                return_value=Result(
+                    text=replacement, state="done", cost=Decimal("0.01")
+                )
+            ),
+        ) as run:
+            await complete_svg(
+                request,
+                result,
+                model,
+                Mock(),
+                time.monotonic(),
+                Decimal("0.10"),
+                120,
+                require_legend=False,
+            )
+        retry = run.call_args.args[3]
+        self.assertIn("XML parser error: ", retry)
+        self.assertIn("line 1, column", retry)
+        self.assertEqual(result.text, replacement)
+
     async def test_exhausted_diagram_budget_drops_failure_without_retry(self) -> None:
         from decimal import Decimal
         import time

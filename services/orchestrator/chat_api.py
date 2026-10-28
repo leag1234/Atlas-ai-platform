@@ -29,6 +29,8 @@ import html
 
 from services.orchestrator.chat_pipeline import process, source
 from services.orchestrator.chat_schema import ChatRequest
+from services.orchestrator.source_truth import visible_sources
+from services.orchestrator.stream_client import sink_context, metadata_only_context
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.chat_stream import response as stream_response
 from services.orchestrator.model import GatewayError
@@ -57,6 +59,15 @@ from services.orchestrator.image_store import router as image_router
 
 from services.orchestrator.app import app as harness_app
 from services.orchestrator.user_memory_ui import router as user_memory_router
+
+from services.orchestrator.api_key_edge import (
+    app as key_app,
+    principal as key_principal,
+    key_call,
+)
+from services.orchestrator.api_keys import KeyQuotaError
+from services.orchestrator.api_key_ui import router as key_ui_router
+
 
 app = FastAPI(title="ATLAS chat")
 app.add_middleware(ProjectGate)
@@ -104,7 +115,9 @@ async def remove_nearby_location(token: UUID, request: Request) -> Response:
     return Response(status_code=204)
 
 
+app.include_router(key_ui_router)
 app.include_router(user_memory_router)
+app.mount("/api/atlas/v1", key_app)
 app.include_router(project_router)
 
 
@@ -166,11 +179,31 @@ async def sources(key: str) -> Response:
     )
 
 
+async def process_request(payload: ChatRequest, item: Interaction) -> None:
+    token = key_call.set(payload._api_key_request)
+    downstream = sink_context.get()
+
+    async def collect(event: dict[str, object]) -> None:
+        if "phase" in event and event["phase"] != "generating":
+            item.steps.append(dict(event))
+        if downstream:
+            await downstream(event)
+
+    metadata_token = metadata_only_context.set(not payload.stream)
+    sink_token = sink_context.set(collect)
+    try:
+        await process(payload, item)
+    finally:
+        sink_context.reset(sink_token)
+        metadata_only_context.reset(metadata_token)
+        key_call.reset(token)
+
+
 async def execute(
     request: Request, payload: ChatRequest, item: Interaction, remaining: float
 ) -> None:
     async with request_deadline(remaining):
-        task = asyncio.create_task(process(payload, item))
+        task = asyncio.create_task(process_request(payload, item))
         try:
             while not task.done():
                 await asyncio.wait({task}, timeout=0.1)
@@ -185,7 +218,10 @@ async def execute(
 
 @app.post("/v1/chat/completions")
 async def chat(request: Request) -> Response:
-    if project_mode():
+    authenticated_key = key_principal(request)
+    if authenticated_key is not None:
+        pass  # Only the mounted Bearer edge can populate this server-side principal.
+    elif project_mode():
         try:
             browser_origin(request)
         except ProjectError as exc:
@@ -251,11 +287,17 @@ async def chat(request: Request) -> Response:
                     if isinstance(reference, str):
                         raw["location"] = location_tickets.take(reference)
                 payload = ChatRequest.model_validate(raw)
+                payload._api_key_request = authenticated_key is not None
                 payload._project_subject = scoped_subject
                 payload._transcript_key = scoped_key
                 from services.orchestrator.connectors import authenticate
 
-                await authenticate(request, payload)
+                if not payload._api_key_request:
+                    await authenticate(request, payload)
+                if not payload.org_id:
+                    from services.orchestrator.skill_catalog import ordinary_catalog
+
+                    payload._skill_catalog = await ordinary_catalog(request)
             except UploadError as exc:
                 status, code, detail = 413, exc.code, str(exc)
             except ValidationError as exc:
@@ -291,6 +333,28 @@ async def chat(request: Request) -> Response:
 
                 reserve = settings().cost
             reservation = ledger.reserve_cost(user, reserve, lang)
+            key_reservation = None
+            if authenticated_key is not None:
+                try:
+                    key_reservation = request.state.key_store.reserve(
+                        authenticated_key.id, int(reserve * 1000000)
+                    )
+                except (KeyQuotaError, PermissionError, ValueError):
+                    ledger.settle_cost(reservation, Decimal(0))
+                    raise
+
+            def settle(result: Interaction) -> None:
+                ledger.settle_cost(reservation, Decimal(str(result.cout_eur)))
+                if key_reservation is not None:
+                    request.state.key_store.finish(
+                        key_reservation,
+                        int(Decimal(str(result.cout_eur)) * 1000000)
+                        if result.state == "done"
+                        else None,
+                        result.tokens["in"],
+                        result.tokens["out"],
+                    )
+
             payload.__dict__["daily_ledger"] = ledger
             payload.__dict__["daily_user"] = user
             item.question = payload.user_text
@@ -299,9 +363,9 @@ async def chat(request: Request) -> Response:
 
                 async def budgeted(p: ChatRequest, result: Interaction) -> None:
                     try:
-                        await process(p, result)
+                        await process_request(p, result)
                     finally:
-                        ledger.settle_cost(reservation, Decimal(str(result.cout_eur)))
+                        settle(result)
 
                 return stream_response(payload, item, started, budgeted)
             try:
@@ -312,7 +376,7 @@ async def chat(request: Request) -> Response:
                     max(0, payload.timeout_seconds - (time.monotonic() - started)),
                 )
             finally:
-                ledger.settle_cost(reservation, Decimal(str(item.cout_eur)))
+                settle(item)
             if item.state != "done":
                 status = (
                     429
@@ -323,6 +387,14 @@ async def chat(request: Request) -> Response:
                 )
                 code = "cost_budget" if status == 429 else "request_stopped"
                 detail = item.reponse
+    except KeyQuotaError as exc:
+        from services.orchestrator.api_key_edge import error
+
+        return error(429, "quota_exceeded", **exc.values)
+    except PermissionError:
+        from services.orchestrator.api_key_edge import error
+
+        return error(401, "unauthorized")
     except ProjectError as exc:
         return public_error(exc)
     except asyncio.CancelledError:
@@ -437,6 +509,8 @@ async def chat(request: Request) -> Response:
             "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
             "usage": usage,
             "atlas": {
+                "steps": item.steps,
+                "sources": visible_sources(item),
                 "deadline_seconds": payload.timeout_seconds,
                 "attachment_ceiling_eur": float(reserve),
                 "hierarchical": any(
@@ -447,6 +521,7 @@ async def chat(request: Request) -> Response:
                 "context_manifest": item.context_manifest,
                 "images": item.images,
                 "files": item.files,
+                "skills_loaded": item.skills_loaded,
                 "terminal_commands": item.terminal_commands,
                 "terminal_failed_commands": item.terminal_failed_commands,
                 "uploaded_images": item.uploaded_images,

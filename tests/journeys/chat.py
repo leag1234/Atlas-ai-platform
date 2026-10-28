@@ -21,6 +21,7 @@ def ask(
         data=json.dumps(
             {
                 "model": "atlas-qwen",
+                "atlas_ui": True,
                 "messages": messages,
                 "stream": stream,
                 "ui_locale": ui_locale,

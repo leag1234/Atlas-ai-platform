@@ -5,6 +5,8 @@ import os
 import tempfile
 from xml.etree import ElementTree
 from unittest.mock import AsyncMock, patch
+from pathlib import Path
+import re
 
 from services.orchestrator.appearance import extract_svg
 from services.orchestrator.commons import allowed_url, find_drawing, parse_imageinfo
@@ -28,6 +30,22 @@ LEGEND = "\n1. Piston — oscillates.\n2. Rod — oscillates.\n3. Crank — rota
 
 
 class MechanicalDrawingTests(unittest.IsolatedAsyncioTestCase):
+    def test_recorded_malformed_svg_samples_are_repaired_before_validation(
+        self,
+    ) -> None:
+        fixture = Path("tests/fixtures/svg-malformed.xml").read_text()
+        for sample in re.split(r"\n--- [a-z-]+ ---\n", fixture):
+            with self.subTest(sample=sample[:30]):
+                repaired = extract_svg(sample)
+                self.assertIsNotNone(repaired)
+                assert repaired is not None
+                if "Kitchen" in sample:
+                    self.assertIn("Kitchen &amp; dining &lt; 70 m2", repaired)
+                elif "Bedroom" in sample:
+                    self.assertIn("Bedroom", repaired)
+                else:
+                    self.assertIn("Hallway", repaired)
+
     def test_svg_extraction_sanitizes_and_rejects_hostile_or_oversized_input(
         self,
     ) -> None:

@@ -176,6 +176,9 @@ async def execute_turn(
         limits,
         history=history,
         references=references,
+        skill_messages=tools.skills.instructions
+        if isinstance(tools, WorkTools) and tools.skills is not None
+        else None,
     )
     assert isinstance(result, CodeResult)
     if isinstance(tools, WorkTools):
@@ -721,9 +724,19 @@ async def process_work(
                 )
             from services.orchestrator.connectors import prepare as prepare_connectors
 
-            tools.connectors = await prepare_connectors(request)
+            if not request._api_key_request:
+                tools.connectors = await prepare_connectors(request)
             if tools.connectors is not None:
                 tools.selection.add_connectors(tools.connectors)
+            from services.orchestrator.skill_tools import SkillTools
+
+            if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":
+                tools.skills = await SkillTools.connect(
+                    broker, workspace, item.skills_loaded
+                )
+                if tools.skills.entries:
+                    tools.selection.skills_enabled = True
+                    tools.selection.catalog["load_skill"] = tools.skills.declaration()
             model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(

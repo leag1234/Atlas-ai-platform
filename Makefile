@@ -50,6 +50,10 @@ verify-m6: ## hardening + benchmark + report
 ingest: ## ingest corpus through gateway into Postgres/pgvector
 	@python3 -m services.retrieval.pipeline
 
+.PHONY: skills
+skills: ## administer the skills catalog; pass CLI options through ARGS
+	@python3 -m services.retrieval.skills_cli $(ARGS)
+
 .PHONY: eval-retrieval
 eval-retrieval: ## evaluate E1 and resolve citations in generated answers
 	@python3 -m services.retrieval.evaluate

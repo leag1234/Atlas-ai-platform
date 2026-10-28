@@ -12,6 +12,8 @@ from uuid import uuid4
 
 @dataclass
 class Interaction:
+    skills_loaded: list[dict[str, object]] = field(default_factory=list)
+    steps: list[dict[str, object]] = field(default_factory=list)
     verification: dict[str, object] | None = None
     location_used: str = ""
     nearby_source: str = ""

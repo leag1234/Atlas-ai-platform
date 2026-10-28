@@ -35,6 +35,7 @@ class TrialStatusLanguageTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(locale=locale, expected=expected):
                 body: dict[str, Any] = {
                     "model": "atlas-qwen",
+                    "atlas_ui": True,
                     "stream": True,
                     "messages": [{"role": "user", "content": question}],
                     **locale,

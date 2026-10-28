@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from pathlib import Path
 from time import monotonic
 from typing import Any
+from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
 import aiohttp
@@ -175,19 +176,43 @@ async def legacy_selection(
 
 
 class ContextTools:
-    def __init__(self, context: dict[str, Any], memory: Any = None) -> None:
+    def __init__(
+        self,
+        context: dict[str, Any],
+        memory: Any = None,
+        check: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self.context = context
         self.memory = memory
         self.connectors: Any = None
+        self.skills: Any = None
+        self.check = check
 
     def estimate(self, call: Call) -> Reservation:
         return Reservation(0, Decimal(0))
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get() and (
+            call.name == "mcp_call"
+            or call.name.startswith("mcp_")
+            or call.name == "switch_connector_group"
+        ):
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
         if self.connectors is not None and (
             call.name.startswith("mcp_") or call.name == "switch_connector_group"
         ):
             return dict(await self.connectors.execute(call, timeout))
+        if self.check is not None:
+            await self.check()
+        if self.skills is not None:
+            if not await self.skills.authorized():
+                return {"error": "skill_authority_revoked"}
+            if call.name == "load_skill":
+                return dict(await self.skills.execute(call, timeout))
+            if self.skills.blocks(call.name):
+                return {"error": "skill_action_not_permitted"}
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name != "rag_search":
@@ -405,6 +430,15 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     events = DispatchEvents(broker, state)
     events.session_context = session_context
     tool_calls = 0
+
+    async def check() -> None:
+        await broker.call(
+            "check",
+            dict(
+                conversation_id=turn["conversation_id"], request_id=turn["request_id"]
+            ),
+        )
+
     try:
         from services.orchestrator.location import location_dependent
 
@@ -415,6 +449,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 scoped,
                 item,
                 cost_limit=Decimal(str(turn["usage"]["reserved_eur"])),
+                check=check,
             )
         elif request.project_action == "work":
             from services.orchestrator.code_mode import process_work
@@ -462,10 +497,21 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             )
             from services.orchestrator.connectors import prepare as prepare_connectors
 
-            context_tools = ContextTools(context, MemoryTools(broker, state))
-            context_tools.connectors = await prepare_connectors(request)
+            context_tools = ContextTools(
+                context, MemoryTools(broker, state), check=check
+            )
+            if not request._api_key_request:
+                context_tools.connectors = await prepare_connectors(request)
             if context_tools.connectors is not None:
                 context_tools.connectors.bind(model)
+            from services.orchestrator.skill_tools import SkillTools
+
+            if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":
+                context_tools.skills = await SkillTools.connect(
+                    broker, telemetry=item.skills_loaded
+                )
+                if context_tools.skills.entries:
+                    model.tools.append(context_tools.skills.declaration())
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
@@ -482,6 +528,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 ),
                 history=[dict(role=m.role, content=m.text) for m in history[:-1]],
                 references=references,
+                skill_messages=context_tools.skills.instructions
+                if context_tools.skills is not None
+                else None,
             )
             tool_calls = result.tool_calls
             item.state, item.cout_eur = result.state, float(result.cost)

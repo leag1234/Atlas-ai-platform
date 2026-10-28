@@ -294,7 +294,8 @@ def main() -> None:
                         TestClient(app) as client,
                     ):
                         response = client.post(
-                            "/v1/chat/completions", json=case["request"]
+                            "/v1/chat/completions",
+                            json={**case["request"], "atlas_ui": True},
                         )
                         assert response.status_code == 200, (
                             name,

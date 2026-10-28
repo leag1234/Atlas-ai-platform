@@ -304,6 +304,7 @@ class ErrorTests(unittest.IsolatedAsyncioTestCase):
         for language in ("fr", "en", "de", "es", "it"):
             payload = ChatRequest.model_validate(
                 {
+                    "atlas_ui": True,
                     "stream": True,
                     "ui_locale": language,
                     "messages": [{"role": "user", "content": "Draw a green cube"}],
