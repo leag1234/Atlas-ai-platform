@@ -242,6 +242,9 @@ def response(
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
             nonlocal received_content
+            if event.get("phase") == "connector_approval":
+                await queue.put({"atlas": event})
+                return
             if not payload.atlas_ui and not isinstance(event.get("project"), dict):
                 # A tool turn cannot be distinguished from a final turn until it
                 # completes. Emit progress separately, then the canonical answer.
@@ -691,6 +694,11 @@ def response(
                             "terminal_commands": item.terminal_commands,
                             "terminal_failed_commands": item.terminal_failed_commands,
                             "uploaded_images": item.uploaded_images,
+                            **(
+                                {"connector_approvals": payload._connector_approvals}
+                                if payload._connector_approvals
+                                else {}
+                            ),
                             "cost_eur": item.cout_eur,
                             "provider_model": item.provider_model,
                             "reasoning_effort": payload.reasoning_effort,

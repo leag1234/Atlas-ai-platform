@@ -48,10 +48,13 @@ class ChatRequest(VisionInput):
     model: str = PROFILES[0]
     documents: list[Attachment] = Field(default_factory=list, max_length=8)
     org_id: str | None = None
+    connector_org_id: str | None = None
     file_version_ids: list[str] = Field(default_factory=list)
     _skill_catalog: Any = PrivateAttr(default=None)
     _api_key_request: bool = PrivateAttr(default=False)
     _project_subject: str | None = PrivateAttr(default=None)
+    _connector_scope: dict[str, str | None] = PrivateAttr(default_factory=dict)
+    _connector_approvals: list[dict[str, Any]] = PrivateAttr(default_factory=list)
     _transcript_key: str | None = PrivateAttr(default=None)
     project_id: str | None = None
     conversation_id: str | None = None

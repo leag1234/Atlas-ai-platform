@@ -184,6 +184,7 @@ class ContextTools:
     ) -> None:
         self.context = context
         self.memory = memory
+        self.connectors: Any = None
         self.skills: Any = None
         self.check = check
 
@@ -191,6 +192,18 @@ class ContextTools:
         return Reservation(0, Decimal(0))
 
     async def execute(self, call: Call, timeout: float) -> Message:
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get() and (
+            call.name == "mcp_call"
+            or call.name.startswith("mcp_")
+            or call.name == "switch_connector_group"
+        ):
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
+        if self.connectors is not None and (
+            call.name.startswith("mcp_") or call.name == "switch_connector_group"
+        ):
+            return dict(await self.connectors.execute(call, timeout))
         if self.check is not None:
             await self.check()
         if self.skills is not None:
@@ -383,6 +396,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         request._transcript_key,
     )
     turn, context = state["turn"], state["context"]
+    if request._connector_scope:
+        request._connector_scope["conversation"] = turn["conversation_id"]
     item.context_manifest = context["context_manifest"]
     item.request_id = "chatcmpl-" + turn["request_id"]
     sink = sink_context.get()
@@ -480,11 +495,17 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             references = ResultReferences(
                 broker, turn["conversation_id"], turn["request_id"]
             )
-            from services.orchestrator.skill_tools import SkillTools
+            from services.orchestrator.connectors import prepare as prepare_connectors
 
             context_tools = ContextTools(
                 context, MemoryTools(broker, state), check=check
             )
+            if not request._api_key_request:
+                context_tools.connectors = await prepare_connectors(request)
+            if context_tools.connectors is not None:
+                context_tools.connectors.bind(model)
+            from services.orchestrator.skill_tools import SkillTools
+
             if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":
                 context_tools.skills = await SkillTools.connect(
                     broker, telemetry=item.skills_loaded

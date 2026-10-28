@@ -378,6 +378,7 @@ class WorkTools(CodeTools):
         self.verification = Verification()
         self.deliverables: list[dict[str, Any]] = []
         self.selection: WorkToolSelection | None = None
+        self.connectors: Any = None
         self.validation_failures: dict[str, str] = {}
         self.memory: Any = None
         self.skills: Any = None
@@ -446,6 +447,14 @@ class WorkTools(CodeTools):
 
     async def execute(self, call: Call, timeout: float) -> Message:
         await self.execution.check()
+        from services.orchestrator.api_key_edge import key_call
+
+        if key_call.get() and (
+            call.name == "mcp_call"
+            or call.name.startswith("mcp_")
+            or call.name == "switch_connector_group"
+        ):
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
         from services.orchestrator import project_document_tools
 
         if self.selection is not None and call.name not in self.selection.names:
@@ -454,6 +463,8 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if self.connectors is not None and call.name in self.connectors.targets:
+            return dict(await self.connectors.execute(call, timeout))
         if self.skills is not None:
             if not await self.skills.authorized():
                 return {"error": "skill_authority_revoked"}
@@ -473,7 +484,6 @@ class WorkTools(CodeTools):
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:
             from services.orchestrator.work_tool_selection import (
-                GROUPS,
                 ToolSelectionError,
             )
 
@@ -487,7 +497,7 @@ class WorkTools(CodeTools):
                     "reason": "arguments must contain a known group and optional focus only",
                     "allowed_groups": [
                         group
-                        for group in GROUPS
+                        for group in self.selection.groups
                         if group != "remote" or self.selection.remote_enabled
                     ],
                     "next_step": "Use an allowed group; omit focus unless selecting a tool in that group.",
