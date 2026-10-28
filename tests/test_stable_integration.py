@@ -162,6 +162,31 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
             injected = inject_atlas_ui(shell, stable=True)
         self.assertNotIn(b"data-instance-notice", injected)
 
+    def test_instance_notice_accepts_localized_texts(self) -> None:
+        shell = b"<html><head></head></html>"
+        notice = '{"en": "Recorded.", "fr": "Enregistr\u00e9es."}'
+        with patch.dict(os.environ, {"ATLAS_INSTANCE_NOTICE": notice}, clear=True):
+            injected = inject_atlas_ui(shell, stable=True)
+        self.assertIn(
+            b'data-instance-notice="{&quot;en&quot;:&quot;Recorded.&quot;', injected
+        )
+        for invalid in (
+            '{"en": ""}',
+            '{"en": "' + "x" * 201 + '"}',
+            "{not json",
+            "{}",
+            '{"english": "x"}',
+        ):
+            with patch.dict(os.environ, {"ATLAS_INSTANCE_NOTICE": invalid}, clear=True):
+                self.assertNotIn(
+                    b"data-instance-notice", inject_atlas_ui(shell, stable=True)
+                )
+
+    def test_stable_auth_picks_the_notice_language(self) -> None:
+        script = Path("services/orchestrator/stable-auth.js").read_text()
+        self.assertIn("JSON.parse(raw)", script)
+        self.assertIn("texts[language] || texts.en", script)
+
     def test_stable_auth_keeps_cookie_fetch_bridge(self) -> None:
         script = Path("services/orchestrator/stable-auth.js").read_text()
         self.assertNotIn("Conversations are recorded to improve Atlas.", script)

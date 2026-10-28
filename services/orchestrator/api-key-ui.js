@@ -116,7 +116,7 @@
       const menu = controlled || trigger._tippy?.popper?.querySelector('.tippy-content') || [...document.querySelectorAll('[role="menu"], [data-tippy-root] .tippy-content')].find(node => node.getBoundingClientRect().height > 0);
       if (!menu || menu.querySelector('[data-atlas-api-keys]')) return;
       const entry = button(t(0),event => { event.preventDefault(); event.stopPropagation(); trigger.click(); open(trigger); },'atlas-key-menu-entry');
-      entry.dataset.atlasApiKeys = ''; entry.setAttribute('role','menuitem'); menu.append(entry);
+      entry.dataset.atlasApiKeys = ''; entry.setAttribute('role','menuitem'); (menu.querySelector('.app-dropdown-menu') || menu).append(entry);
     });
   };
   const start = async () => {
