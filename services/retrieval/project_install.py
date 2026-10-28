@@ -50,6 +50,8 @@ def install(
         db.execute(
             Path(__file__).with_name("project_transcript_schema.sql").read_text()
         )
+        db.execute(Path(__file__).with_name("project_sharing_schema.sql").read_text())
+        db.execute(Path(__file__).with_name("user_memory_schema.sql").read_text())
         provision(db, org, admin, name, subject, policy)
         db.execute(
             "INSERT INTO atlas_projects.installation(initial_org,initial_admin,ceilings) VALUES(%s,%s,%s)",
@@ -101,6 +103,8 @@ def upgrade_work(dsn: str) -> None:
         db.execute(
             Path(__file__).with_name("project_transcript_schema.sql").read_text()
         )
+        db.execute(Path(__file__).with_name("project_sharing_schema.sql").read_text())
+        db.execute(Path(__file__).with_name("user_memory_schema.sql").read_text())
 
 
 def provision(

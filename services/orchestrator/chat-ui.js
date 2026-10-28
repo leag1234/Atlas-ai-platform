@@ -2,6 +2,13 @@
   "use strict";
   // Open WebUI stores its selected interface language in "locale" (v0.11.3).
   // Keep this in the shared overlay so the trial and host launcher agree.
+  // Set the first-visit language before Open WebUI initializes its i18n store.
+  // An explicit user selection always wins over the browser preference.
+  if (!localStorage.getItem("locale")) {
+    const supported = { fr: "fr-FR", en: "en-US", de: "de-DE", es: "es-ES", it: "it-IT" };
+    const preferred = (navigator.languages || [navigator.language]).find(value => supported[value.split("-")[0]]);
+    if (preferred) localStorage.setItem("locale", supported[preferred.split("-")[0]]);
+  }
   const nativeFetch = window.fetch.bind(window);
   const nearbyIntent = text => {
     const value = text.replace(/<attached_files>[\s\S]*?<\/attached_files>/g, '').replace(/^\[Attachment: [^\n]*\]$/gm, '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -114,6 +121,8 @@
     }
     if (url.origin === location.origin && /^\/(?:api\/(?:v1\/)?)?chat\/completions$|^\/v1\/chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
       const body = JSON.parse(options.body);
+      body.atlas_ui = true;
+      options = { ...options, body: JSON.stringify(body) };
       const message = body.user_message || [...(body.messages || [])].reverse().find(m => m.role === 'user');
       const text = typeof message?.content === 'string' ? message.content : (message?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
       if (!body.location && !body.code_mode && nearbyIntent(text)) {
@@ -166,7 +175,7 @@
   const persist = value => { Object.assign(saved, value); localStorage.setItem(key, JSON.stringify(saved)); apply(saved); };
   const locale = () => {
     // The interface locale (including document.documentElement.lang) is independent.
-    const stored = localStorage.getItem("atlas-ui-language");
+    const stored = localStorage.getItem("locale") || localStorage.getItem("atlas-ui-language");
     const candidate = stored || navigator.language || "en";
     const language = candidate.toLowerCase().split("-")[0];
     return translations[language] ? language : "en";
@@ -335,27 +344,146 @@
     window.addEventListener("resize", schedule);
     schedule();
   };
-  const mount = () => {
-    if (document.getElementById("atlas-ui-selector")) return;
-    const words = translations[locale()];
-    const option = (group, value) => `<button type="button" data-atlas-option="${group}" data-value="${value}" aria-label="${group === "size" ? `${value} px` : words[value]}" title="${group === "size" ? `${value} px` : words[value]}" aria-pressed="${saved[group] === value}" class="atlas-option">${group === "size" ? `${value} px` : words[value]}</button>`;
-    const root = document.createElement("div"); root.id = "atlas-ui-selector";
-    root.innerHTML = `<button id="atlas-ui-toggle" type="button" aria-label="${words.title}" aria-expanded="false">Aa</button><section id="atlas-ui-popover" aria-label="${words.title}" hidden><h2>${words.title}</h2>${Object.keys(choices).map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options" data-atlas-group="${group}">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}</section>`;
-    // Keep the control clear of the composer's Send/Stop button on phones and left of
-    // Open WebUI's top-right header buttons. Inline so the recorded M24 stylesheet is unchanged.
-    Object.assign(root.style, { top: "max(12px, env(safe-area-inset-top))", bottom: "auto", right: "132px" });
-    document.body.append(root);
-    const toggle = root.querySelector("#atlas-ui-toggle"), popover = root.querySelector("#atlas-ui-popover");
-    Object.assign(popover.style, { top: "52px", bottom: "auto" });
-    const revoke = document.createElement('button'); revoke.type = 'button'; revoke.id = 'atlas-location-revoke';
-    revoke.textContent = (localStorage.getItem('locale') || '').startsWith('fr') ? 'Révoquer le partage de position' : 'Revoke location sharing';
-    revoke.addEventListener('click', async () => { await window.atlasLocation.revoke(); revoke.textContent = 'Location sharing revoked'; }); popover.append(revoke);
+  // Keep the recorded base chat stylesheet intact; these rules own only the
+  // guest settings dialogs and theme-aware model images verified by our browser tests.
+  const settingsStyle = document.createElement("style");
+  settingsStyle.id = "atlas-guest-settings-style";
+  settingsStyle.textContent = `
+/* Guest settings share the chat palette; native dialogs provide focus trapping. */
+.atlas-settings-dialog { margin:auto; width:min(560px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:24px; border:1px solid var(--atlas-border); border-radius:20px; background:var(--atlas-bg); color:var(--atlas-text); font:14px/1.6 var(--atlas-font); box-shadow:0 24px 80px #0004; }
+.atlas-settings-dialog::backdrop { background:#0006; backdrop-filter:blur(3px); }
+.atlas-settings-dialog header,.atlas-settings-dialog footer,.atlas-memory-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.atlas-settings-dialog h2 { font-size:22px; font-weight:600; margin:0; }
+.atlas-settings-dialog button { min-height:40px; padding:8px 12px; border:1px solid var(--atlas-border); border-radius:10px; background:var(--atlas-bg); color:var(--atlas-text); font:inherit; cursor:pointer; }
+.atlas-settings-dialog header button { border:0; font-size:24px; }
+.atlas-settings-dialog button:hover { background:var(--atlas-surface); }
+.atlas-settings-dialog button:disabled { opacity:.45; cursor:default; }
+.atlas-settings-dialog :is(button,input,textarea):focus-visible { outline:2px solid var(--atlas-accent); outline-offset:3px; }
+.atlas-settings-description { margin:12px 0 24px; color:var(--atlas-muted); }
+.atlas-settings-dialog fieldset { margin:20px 0; }
+.atlas-settings-dialog .atlas-options { flex-wrap:wrap; }
+.atlas-settings-dialog .atlas-option { flex:1 0 auto; }
+.atlas-settings-dialog legend { margin-bottom:8px; color:var(--atlas-muted); }
+.atlas-settings-dialog .atlas-option[aria-pressed="true"],.atlas-settings-dialog .atlas-primary { background:var(--atlas-accent); color:var(--atlas-on-accent); }
+.atlas-memory-toggle { display:flex; justify-content:space-between; align-items:center; gap:16px; font-weight:600; padding-bottom:20px; }
+.atlas-memory-toggle input { appearance:none; flex-shrink:0; width:42px; height:24px; padding:3px; background:var(--atlas-muted); border-radius:20px; cursor:pointer; }
+.atlas-memory-toggle input::before { content:""; display:block; width:18px; height:18px; background:white; border-radius:50%; transition:transform .15s; }
+.atlas-memory-toggle input:checked { background:var(--atlas-accent); }
+.atlas-memory-toggle input:checked::before { transform:translateX(18px); }
+.atlas-memory-toggle input:disabled { opacity:.45; cursor:default; }
+.atlas-memory-list { margin:0; padding:0; list-style:none; }
+.atlas-memory-list li { padding:16px 0; border-top:1px solid var(--atlas-border); }
+.atlas-memory-list p { white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 10px; }
+.atlas-memory-actions { justify-content:flex-end; }
+.atlas-memory-list textarea { width:100%; min-height:90px; resize:vertical; padding:12px; background:var(--atlas-surface); color:var(--atlas-text); border:1px solid var(--atlas-border); border-radius:10px; font:inherit; }
+.atlas-memory-empty { padding:32px 12px; text-align:center; border-top:1px solid var(--atlas-border); }
+.atlas-memory-empty p + p { color:var(--atlas-muted); margin-top:8px; }
+.atlas-memory-status:empty { display:none; }
+.atlas-settings-dialog footer { margin-top:20px; padding-top:16px; border-top:1px solid var(--atlas-border); }
+.atlas-settings-dialog .atlas-danger { color:#b53629; }
+html.dark .atlas-settings-dialog .atlas-danger { color:#ff9c91; }
+.atlas-memory-confirm { width:min(440px,calc(100vw - 32px)); }
+@media(max-width:640px) { .atlas-settings-dialog { padding:20px; } }
 
-    const close = () => { popover.hidden = true; toggle.setAttribute("aria-expanded", "false"); toggle.focus(); };
-    toggle.addEventListener("click", () => { popover.hidden = !popover.hidden; toggle.setAttribute("aria-expanded", String(!popover.hidden)); if (!popover.hidden) popover.querySelector("button").focus(); });
-    root.addEventListener("click", event => { const button = event.target.closest("[data-atlas-option]"); if (!button) return; const group = button.dataset.atlasOption; persist({ [group]: button.dataset.value }); root.querySelectorAll(`[data-atlas-option="${group}"]`).forEach(item => item.setAttribute("aria-pressed", String(item === button))); if (group === "mode") { const theme = button.dataset.value; localStorage.setItem("theme", theme); document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)); window.dispatchEvent(new Event("atlas-theme-change")); } });
-    document.addEventListener("keydown", event => { if (event.key === "Escape" && !popover.hidden) { event.preventDefault(); event.stopImmediatePropagation(); close(); } }, true);
+img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/atlas-symbol.svg'); background:#f2f2f0; padding:5px; object-fit:contain; }
+html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/atlas-symbol-dark.svg'); background:#1a1a18; }
+/* Global composer form rules must not reshape the memory editor. */
+.atlas-settings-dialog form:has(textarea) { border-radius:10px!important; background:transparent; }
+.atlas-settings-dialog header { background:transparent!important; }
+.atlas-memory-toggle input[type="checkbox"] { background-image:none!important; border:0; box-shadow:none; }
+.atlas-memory-toggle input[type="checkbox"]::after { content:none!important; }
+`;
+  document.head.append(settingsStyle);
+  const settingsEntries = new Map();
+  const settingsWords = {
+    en: { appearance: "Appearance", close: "Close", revoke: "Revoke location sharing", revoked: "Location sharing revoked" },
+    fr: { appearance: "Apparence", close: "Fermer", revoke: "Révoquer le partage de position", revoked: "Partage de position révoqué" },
+    de: { appearance: "Darstellung", close: "Schließen", revoke: "Standortfreigabe widerrufen", revoked: "Standortfreigabe widerrufen" },
+    es: { appearance: "Apariencia", close: "Cerrar", revoke: "Revocar ubicación compartida", revoked: "Ubicación compartida revocada" },
+    it: { appearance: "Aspetto", close: "Chiudi", revoke: "Revoca condivisione posizione", revoked: "Condivisione posizione revocata" }
   };
+  // Source: pinned Open WebUI 0.11.3 SettingsModal.svelte, tabButtonClass.
+  // Borrow the live native classes, including their active/hover variants.
+  const tabBase = "flex items-center gap-1.5 h-7 px-2 md:w-full shrink-0 rounded-lg text-xs text-left transition-colors duration-75 ";
+  const tabIdle = "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300";
+  const tabActive = "font-medium text-gray-900 dark:text-white bg-gray-50 dark:bg-white/[0.04]";
+  const mountSettings = () => {
+    const nav = document.getElementById("search-input-settings-modal")?.closest("nav");
+    if (!nav) return;
+    const nativeIdle = nav.querySelector('[role="tab"][aria-selected="false"]');
+    const nativeActive = nav.querySelector('[role="tab"][aria-selected="true"]');
+    let anchor = nav.querySelector('[aria-controls="tab-personalization"]') || nav.querySelector('[aria-controls="tab-audio"]')?.previousElementSibling;
+    for (const [id, entry] of [...settingsEntries].sort(([a], [b]) => a.localeCompare(b))) {
+      let button = nav.querySelector(`[data-atlas-settings="${id}"]`);
+      if (!button) {
+        button = document.createElement("button"); button.type = "button";
+        button.dataset.atlasSettings = id;
+        button.setAttribute("aria-haspopup", "dialog");
+        button.setAttribute("aria-controls", `atlas-${id}-dialog`);
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("class", "size-3.5");
+        icon.setAttribute("fill", "none"); icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "2"); icon.setAttribute("aria-hidden", "true");
+        const path = document.createElementNS(icon.namespaceURI, "path");
+        path.setAttribute("d", id === "appearance" ? "M4 5h16M4 12h16M4 19h16M8 2v6m8 1v6M8 16v6" : "M8 3h8l4 4v14H4V3h4Zm0 0v6h8V3M8 14h8m-8 3h5");
+        icon.append(path); button.append(icon, document.createElement("span"));
+        button.addEventListener("click", () => { entry.open(button); mountSettings(); });
+        if (anchor) anchor.after(button); else (nav.querySelector(".tabs") || nav).append(button);
+      }
+      anchor = button;
+      const active = Boolean(document.getElementById(`atlas-${id}-dialog`)?.open);
+      const classes = (active ? nativeActive?.className : nativeIdle?.className) || tabBase + (active ? tabActive : tabIdle);
+      if (button.className !== classes) button.className = classes;
+      button.setAttribute("aria-expanded", String(active));
+      const label = entry.label(), span = button.querySelector("span");
+      if (span.textContent !== label) span.textContent = label;
+    }
+  };
+  window.atlasSettings = { locale, register(id, entry) { settingsEntries.set(id, entry); mountSettings(); } };
+  new MutationObserver(mountSettings).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  // The host handles Escape globally and prevents the native dialog default.
+  // Close only the top Atlas dialog, preserving its underlying Settings screen.
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    const dialog = [...document.querySelectorAll("dialog.atlas-settings-dialog[open]")].at(-1);
+    if (!dialog) return;
+    event.preventDefault(); event.stopImmediatePropagation(); dialog.close();
+  }, true);
+  const mount = () => {
+    window.atlasSettings.register("appearance", {
+      label: () => settingsWords[locale()].appearance,
+      open: trigger => {
+        const words = translations[locale()], labels = settingsWords[locale()];
+        saved.mode = localStorage.getItem("theme") || "system";
+        const option = (group, value) => `<button type="button" data-atlas-option="${group}" data-value="${value}" aria-pressed="${saved[group] === value}" class="atlas-option">${group === "size" ? `${value} px` : words[value]}</button>`;
+        const dialog = document.createElement("dialog"); dialog.id = "atlas-appearance-dialog"; dialog.className = "atlas-settings-dialog";
+        dialog.setAttribute("aria-labelledby", "atlas-appearance-title");
+        dialog.innerHTML = `<header><h2 id="atlas-appearance-title">${labels.appearance}</h2><button type="button" data-close aria-label="${labels.close}">×</button></header>${Object.keys(choices).filter(group => group !== "mode").map(group => `<fieldset><legend>${words[group]}</legend><div class="atlas-options">${choices[group].map(value => option(group, value)).join("")}</div></fieldset>`).join("")}`;
+        dialog.querySelector("[data-close]").onclick = () => dialog.close();
+        const revoke = document.createElement("button"); revoke.type = "button"; revoke.id = "atlas-location-revoke"; revoke.textContent = labels.revoke;
+        revoke.onclick = async () => { await window.atlasLocation.revoke(); revoke.textContent = labels.revoked; }; dialog.append(revoke);
+        dialog.addEventListener("click", event => {
+          const button = event.target.closest("[data-atlas-option]"); if (!button) return;
+          const group = button.dataset.atlasOption; persist({ [group]: button.dataset.value });
+          dialog.querySelectorAll(`[data-atlas-option="${group}"]`).forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+          if (group === "mode") {
+            const theme = button.dataset.value; localStorage.setItem("theme", theme);
+            document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches));
+            document.documentElement.classList.toggle("light", !document.documentElement.classList.contains("dark"));
+            window.dispatchEvent(new Event("atlas-theme-change"));
+          }
+        });
+        dialog.addEventListener("close", () => { dialog.remove(); if (trigger.isConnected) trigger.focus(); });
+        document.body.append(dialog); dialog.showModal();
+      }
+    });
+  };
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", event => {
+    if (localStorage.getItem("theme") !== "system") return;
+    document.documentElement.classList.toggle("dark", event.matches);
+    document.documentElement.classList.toggle("light", !event.matches);
+    window.dispatchEvent(new Event("atlas-theme-change"));
+  });
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", mount, { once: true }) : mount();
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", observeMessages, { once: true }) : observeMessages();
 })();

@@ -78,8 +78,32 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ]
             # The production front door has one more proxy location: the image route.
             # Both have the Stop cancel route.
-            self.assertEqual(len(blocks), 5 if name == "atlas.indidea.org.conf" else 4)
+            self.assertEqual(len(blocks), 6 if name == "atlas.indidea.org.conf" else 4)
+            prefix = "atlas" if name == "atlas.indidea.org.conf" else "atlas_test"
             for block in blocks:
+                if block.startswith("^~ /api/atlas/v1/"):
+                    self.assertIn("auth_basic off;", block)
+                    self.assertIn(
+                        'if ($http_authorization !~ "^Bearer atl_[A-Za-z0-9_-]+$") { return 401; }',
+                        block,
+                    )
+                    self.assertIn(
+                        "proxy_set_header Authorization $http_authorization;", block
+                    )
+                    for header in (
+                        "X-Atlas-User",
+                        "X-Atlas-User-Role",
+                        "X-Atlas-Proxy-Secret",
+                        "X-OpenWebUI-User-Id",
+                        "X-OpenWebUI-User-Email",
+                        "X-Atlas-Project-Identity",
+                        "X-Atlas-Identity-Secret",
+                    ):
+                        self.assertIn(f'proxy_set_header {header} "";', block)
+                    self.assertNotIn(
+                        "include /etc/nginx/atlas-proxy-secret.conf;", block
+                    )
+                    continue
                 self.assertIn("include /etc/nginx/atlas-proxy-secret.conf;", block)
                 self.assertIn('proxy_set_header X-Atlas-User "$remote_user@', block)
                 self.assertIn("proxy_set_header X-Atlas-User-Role user;", block)
@@ -87,10 +111,20 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     "~ ^/api/(chat/completions|v1/chat/completions|models)$"
                 ):
                     # Only an Open WebUI key (Bearer sk-) passes; basic credentials never do.
-                    self.assertIn("auth_basic $", block)
-                    self.assertIn("proxy_set_header Authorization $", block)
+                    self.assertIn(f"auth_basic ${prefix}_key_realm;", block)
+                    self.assertIn(
+                        f"proxy_set_header Authorization ${prefix}_upstream_authorization;",
+                        block,
+                    )
                 else:
                     self.assertIn('proxy_set_header Authorization "";', block)
+            authorization_map = text.split(
+                f"map $http_authorization ${prefix}_upstream_authorization {{", 1
+            )[1].split("}", 1)[0]
+            self.assertEqual(
+                [line.strip() for line in authorization_map.strip().splitlines()],
+                ['"~^Bearer (sk-[A-Za-z0-9_-]+)$" "Bearer $1";', 'default "";'],
+            )
             self.assertIn('"~^Bearer (sk-[A-Za-z0-9_-]+)$" "Bearer $1";', text)
             self.assertIn('"~^Bearer sk-" off;', text)
 

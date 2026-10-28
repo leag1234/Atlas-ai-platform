@@ -380,6 +380,7 @@ class WorkTools(CodeTools):
         self.selection: WorkToolSelection | None = None
         self.validation_failures: dict[str, str] = {}
         self.memory: Any = None
+        self.skills: Any = None
         self.nearby: Any = None
         self.remote_references: Any = None
 
@@ -453,6 +454,21 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if self.skills is not None:
+            if not await self.skills.authorized():
+                return {"error": "skill_authority_revoked"}
+            if call.name == "load_skill":
+                skill_result = await self.skills.execute(call, timeout)
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed" if skill_result.get("error") else "completed",
+                    output=skill_result,
+                )
+                return dict(skill_result)
+            if self.skills.blocks(call.name):
+                return {"error": "skill_action_not_permitted"}
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:

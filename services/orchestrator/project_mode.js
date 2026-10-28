@@ -496,7 +496,7 @@
       selected = new Set(versions);
       if (action === 'work' && (!session || ['failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
       const profile = action === 'work' ? (window.atlasProjectWorkProfile || window.atlasProjectProfile) : window.atlasProjectProfile;
-      const body = { model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
+      const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });
       await consume(response, chunk => {

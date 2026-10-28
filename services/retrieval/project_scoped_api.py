@@ -95,13 +95,23 @@ def guard(scope: Scope, method: str, tail: list[str]) -> None:
         scope.authorize(method, tail)
         if scope.member["role"] == "admin":
             scope.event("administrative_access", str(scope.project["id"]))
-    elif tail and tail[0] in ("members", "policy"):
+    elif tail and tail[0] in (
+        "members",
+        "policy",
+        "project-grants",
+        "project-ownership",
+    ):
         scope.admin()
 
 
 def execute(
     scope: Scope, method: str, tail: list[str], body: bytes, expected: str | None
 ) -> tuple[int, Any]:
+    from services.retrieval.project_sharing import execute as sharing
+
+    shared_result = sharing(scope, method, tail, body, expected)
+    if shared_result is not None:
+        return shared_result
     org, member = scope.identity.org, scope.identity.member
     if scope.project is None:
         if tail == ["members"] and method == "POST":
@@ -204,7 +214,12 @@ def execute(
                 value["updated_at"] = entity(member, org)["updated_at"]
                 scope.db.execute(
                     "UPDATE atlas_projects.projects SET data=%s,state=%s,revision=revision+1 WHERE org_id=%s AND id=%s",
-                    (Jsonb(value), value["state"], org, project),
+                    (
+                        Jsonb({**scope.project_data, **value}),
+                        value["state"],
+                        org,
+                        project,
+                    ),
                 )
                 scope.event("project_changed", project)
                 return 200, value
@@ -359,6 +374,25 @@ def dispatch(
     path = "/".join(segments)
     with store(dsn).scope(identity, org, project) as scope:
         guard(scope, method, tail)
+        if tail and tail[0] == "skills":
+            from services.retrieval.project_skills import api, authorize
+
+            authorize(scope, method, tail)
+            if query:
+                raise ProjectError(422, "invalid_request")
+            key = headers.get("idempotency-key", "")
+            if method != "GET":
+                if not key or len(key) > 200:
+                    raise ProjectError(
+                        422, "invalid_request", "Idempotency-Key is required"
+                    )
+                replay = scope.replay(method, path, key, body)
+                if replay is not None:
+                    return replay
+            skill_result = api(scope, method, tail, body, headers.get("if-match"))
+            if method != "GET":
+                scope.remember(method, path, key, body, skill_result)
+            return skill_result
         if tail and tail[0] == "runner-targets":
             from services.retrieval.project_runners import admin_api
 
@@ -623,6 +657,12 @@ def ingress(identity: Identity, method: str, path: str) -> int:
         query = check_query(
             method, tail, parse_qs(parsed.query, keep_blank_values=True)
         )
+        if tail and tail[0] == "skills":
+            from packages.skills import ZIP_BYTES
+            from services.retrieval.project_skills import authorize
+
+            authorize(scope, method, tail)
+            return ZIP_BYTES if method == "POST" and project is None else 160000
         return preflight(scope, method, tail, query) if project else 160000
 
 
@@ -1155,6 +1195,7 @@ def transcript_dispatch(
     identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
 ) -> tuple[int, Any]:
     schemas = {
+        "check": "SessionStateRead",
         "memory": "TranscriptMemory",
         "state-events": "TranscriptEvents",
         "state-read": "SessionStateRead",
@@ -1177,6 +1218,10 @@ def transcript_dispatch(
         if operation == "begin":
             return transcript.begin(data, key)
         bound_turn, bound_private = transcript.bound(data)
+        if operation == "check":
+            if bound_turn["state"] != "running":
+                raise ProjectError(409, "session_busy", "Turn is no longer running")
+            return 200, {"state": "running"}
         if operation in {"state-read", "state-write", "state-events", "compact"}:
             from services.retrieval.project_session_state import SessionStates
 

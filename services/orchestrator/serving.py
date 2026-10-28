@@ -205,6 +205,16 @@ def stable_webui_options() -> list[str]:
         "-e",
         "WEBUI_AUTH_TRUSTED_ROLE_HEADER=X-Atlas-User-Role",
         "-e",
+        "DEFAULT_LOCALE=",
+        "-e",
+        "ENABLE_MEMORIES=False",
+        "-e",
+        "ENABLE_CALENDAR=False",
+        "-e",
+        "ENABLE_AUTOMATIONS=False",
+        "-e",
+        "ENABLE_EASTER_EGGS=False",
+        "-e",
         "ENABLE_SIGNUP=False",
         "-e",
         "ENABLE_LOGIN_FORM=False",
@@ -360,6 +370,12 @@ def webui(name: str, persistent: bool) -> None:
             str(Path("services/orchestrator/chat-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/chat-ui.js:ro",
             "-v",
+            str(Path("services/orchestrator/settings-ui.js").resolve())
+            + ":/app/backend/open_webui/static/atlas/settings-ui.js:ro",
+            "-v",
+            str(Path("services/orchestrator/settings-locales.json").resolve())
+            + ":/app/backend/open_webui/static/atlas/settings-locales.json:ro",
+            "-v",
             str(Path("services/orchestrator/brand-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/brand-ui.js:ro",
             "-v",
@@ -435,6 +451,10 @@ def searxng() -> Iterator[None]:
 
 @contextmanager
 def stack(name: str = "atlas-chat", persistent: bool = True) -> Iterator[None]:
+    from packages.user_memory_auth import service_secret
+
+    if not service_secret():
+        os.environ["ATLAS_USER_MEMORY_SECRET"] = secrets.token_hex(32)
     ports = atlas_ports()
     name = ports.name(name)
     servers: list[uvicorn.Server] = []

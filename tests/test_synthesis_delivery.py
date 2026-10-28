@@ -23,6 +23,7 @@ from services.orchestrator.terminal_client import TerminalClient
 def synthesis_request(question: str) -> ChatRequest:
     normalized, _, _ = prepare_uploads(
         {
+            "atlas_ui": True,
             "messages": [
                 {
                     "role": "user",
@@ -42,7 +43,7 @@ def synthesis_request(question: str) -> ChatRequest:
                         ),
                     ],
                 }
-            ]
+            ],
         }
     )
     return ChatRequest.model_validate(normalized)

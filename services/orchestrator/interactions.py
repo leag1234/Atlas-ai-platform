@@ -12,9 +12,12 @@ from uuid import uuid4
 
 @dataclass
 class Interaction:
+    skills_loaded: list[dict[str, object]] = field(default_factory=list)
+    steps: list[dict[str, object]] = field(default_factory=list)
     verification: dict[str, object] | None = None
     location_used: str = ""
     nearby_source: str = ""
+    context_manifest: dict[str, object] = field(default_factory=lambda: {"sources": []})
     context_samples: list[dict[str, object]] = field(default_factory=list)
     provider_retries: int = 0
     commons_requests: list[dict[str, object]] = field(default_factory=list)

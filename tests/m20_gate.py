@@ -285,6 +285,7 @@ def main() -> None:
                 [{"type": "text", "text": prompt}, *images] if images else prompt
             )
             data = {
+                "atlas_ui": True,
                 "messages": [{"role": "user", "content": content}],
                 "ui_locale": lang,
                 "stream": stream,

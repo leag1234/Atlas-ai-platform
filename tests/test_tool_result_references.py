@@ -282,6 +282,15 @@ class ProjectResultTests(conversations.ProjectConversationTests):
         from services.retrieval.project_scoped_api import store
         from services.retrieval.project_work import Work
 
+        # The creator must explicitly share before another member starts Work.
+        shared = self.request(
+            "POST",
+            self.project_path() + f"/conversations/{self.conversation}/share",
+            "viewer",
+            {"confirm": True},
+            match=0,
+        )
+        self.assertEqual(shared.status_code, 200, shared.text)
         sessions = []
         original_id = ""
         for index in range(2):
@@ -388,6 +397,10 @@ class ProjectResultTests(conversations.ProjectConversationTests):
                         cleanup_confirmed=True,
                     )
                 )
+            # Releasing a worker lease is separate from committing its transcript.
+            # Complete this turn before exercising the next session's isolation.
+            finished = self.broker("finish", self.finish_body(), role="editor")
+            self.assertEqual(finished.status_code, 200, finished.text)
 
 
 class ReplayBroker:

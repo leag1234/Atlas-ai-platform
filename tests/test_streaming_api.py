@@ -82,6 +82,7 @@ class StreamingAPITests(unittest.IsolatedAsyncioTestCase):
         key, foreign = "a" * 64, "b" * 64
         request = ChatRequest.model_validate(
             {
+                "atlas_ui": True,
                 "messages": [{"role": "user", "content": "Question"}],
                 "project_id": "c" * 32,
                 "conversation_id": "d" * 32,
