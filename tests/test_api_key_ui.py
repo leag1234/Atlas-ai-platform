@@ -52,7 +52,7 @@ def key_environment() -> Iterator[None]:
     thread.start()
     try:
         with (
-            tempfile.TemporaryDirectory(dir="BRAIN") as directory,
+            tempfile.TemporaryDirectory() as directory,
             patch.dict(
                 os.environ,
                 {
