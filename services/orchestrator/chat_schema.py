@@ -3,9 +3,10 @@
 from packages.profiles import PROFILES, context_window
 from packages.file_intent import produces_file
 from packages.evidence import estimated_tokens
-from packages.language import LANGUAGES, status_language
+from packages.language import LANGUAGES, conversation_language, status_language
 from pydantic_core import PydanticCustomError
 
+import os
 import re
 
 from typing import Any, Literal, Self
@@ -159,6 +160,8 @@ class ChatRequest(VisionInput):
     def status_language(self) -> str:
         # The legacy answer-language hint is not evidence of a known UI locale.
         locale = self.ui_locale if "ui_locale" in self.model_fields_set else None
+        if os.environ.get("ATLAS_STABLE") == "1":
+            return conversation_language(self.conversation_messages, locale or "en")
         return status_language(self.conversation_messages, locale)
 
     @property
