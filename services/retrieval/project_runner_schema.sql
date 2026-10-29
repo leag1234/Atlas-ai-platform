@@ -37,9 +37,12 @@ DO $$ DECLARE t text; BEGIN
  EXECUTE format('DROP POLICY IF EXISTS scoped_read ON atlas_projects.%I',t);
  EXECUTE format('DROP POLICY IF EXISTS scoped_insert ON atlas_projects.%I',t);
  EXECUTE format('DROP POLICY IF EXISTS scoped_edit ON atlas_projects.%I',t);
+ EXECUTE format('DROP POLICY IF EXISTS scoped_delete ON atlas_projects.%I',t);
  EXECUTE format('CREATE POLICY scoped_read ON atlas_projects.%I FOR SELECT USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'',''editor'',''viewer'']))',t);
  EXECUTE format('CREATE POLICY scoped_insert ON atlas_projects.%I FOR INSERT WITH CHECK(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'',''editor'']))',t);
  EXECUTE format('CREATE POLICY scoped_edit ON atlas_projects.%I FOR UPDATE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'',''editor'']))',t);
+ EXECUTE format('CREATE POLICY scoped_delete ON atlas_projects.%I FOR DELETE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'']))',t);
+ EXECUTE format('GRANT DELETE ON atlas_projects.%I TO atlas_project_app',t);
  EXECUTE format('GRANT SELECT,INSERT,UPDATE ON atlas_projects.%I TO atlas_project_app',t);
  END LOOP;
 END $$;

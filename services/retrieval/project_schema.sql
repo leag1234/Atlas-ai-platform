@@ -133,9 +133,10 @@ CREATE POLICY org_edit ON atlas_projects.organizations FOR UPDATE USING(org_id=a
 CREATE POLICY member_read ON atlas_projects.members FOR SELECT USING(org_id=atlas_projects.org() AND atlas_projects.active());
 CREATE POLICY member_insert ON atlas_projects.members FOR INSERT WITH CHECK(org_id=atlas_projects.org() AND atlas_projects.admin());
 CREATE POLICY member_edit ON atlas_projects.members FOR UPDATE USING(org_id=atlas_projects.org() AND atlas_projects.admin());
-CREATE POLICY project_read ON atlas_projects.projects FOR SELECT USING(org_id=atlas_projects.org() AND atlas_projects.access(id,ARRAY['owner','editor','viewer']));
+CREATE POLICY project_read ON atlas_projects.projects FOR SELECT USING(org_id=atlas_projects.org() AND (atlas_projects.access(id,ARRAY['owner','editor','viewer']) OR (current_setting('atlas.deleting',true)='true' AND owner_member_id=atlas_projects.member())));
 CREATE POLICY project_insert ON atlas_projects.projects FOR INSERT WITH CHECK(org_id=atlas_projects.org() AND atlas_projects.active() AND owner_member_id=atlas_projects.member() AND nullif(current_setting('atlas.project',true),'') IS NULL);
 CREATE POLICY project_edit ON atlas_projects.projects FOR UPDATE USING(org_id=atlas_projects.org() AND atlas_projects.access(id,ARRAY['owner']));
+CREATE POLICY project_delete ON atlas_projects.projects FOR DELETE USING(org_id=atlas_projects.org() AND owner_member_id=atlas_projects.member() AND atlas_projects.active());
 CREATE POLICY grant_read ON atlas_projects.grants FOR SELECT USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner','editor','viewer']));
 CREATE POLICY grant_insert ON atlas_projects.grants FOR INSERT WITH CHECK(org_id=atlas_projects.org() AND
  (atlas_projects.access(project_id,ARRAY['owner']) OR (atlas_projects.founder(project_id) AND member_id=atlas_projects.member() AND role='owner')));
@@ -219,6 +220,14 @@ DO $$ DECLARE t text; BEGIN
 END $$;
 GRANT SELECT,INSERT,UPDATE ON atlas_projects.resources,atlas_projects.resource_sources TO atlas_project_app;
 GRANT SELECT,UPDATE(consumed_at) ON atlas_projects.file_approvals TO atlas_project_app;
+DO $$ DECLARE t text; BEGIN
+ FOREACH t IN ARRAY ARRAY['legacy_rows','reservations','requests','audit','ledger_events','outbox','resources','resource_sources','file_approvals'] LOOP
+ EXECUTE format('CREATE POLICY scoped_delete ON atlas_projects.%I FOR DELETE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'']))',t);
+ END LOOP;
+END $$;
+GRANT DELETE ON atlas_projects.legacy_rows,atlas_projects.reservations,atlas_projects.requests,
+ atlas_projects.audit,atlas_projects.ledger_events,atlas_projects.outbox,atlas_projects.resources,
+ atlas_projects.resource_sources,atlas_projects.file_approvals TO atlas_project_app;
 CREATE FUNCTION atlas_projects.advance_memory() RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 DECLARE p uuid := nullif(current_setting('atlas.project',true),'')::uuid; result bigint;
 BEGIN

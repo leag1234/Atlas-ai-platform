@@ -102,8 +102,15 @@
   async function createProject() {
     if (!root?.isConnected) await mount();
     return nameDialog('newProject', async name => {
-      const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', { name, instructions: '', default_action: 'chat' });
-      await choose({ org: scope.org, project: project.id });
+      try {
+        const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', { name, instructions: '', default_action: 'chat' });
+        await choose({ org: scope.org, project: project.id });
+      } catch (error) {
+        if (error.status !== 429) throw error;
+        const advice = node('p', t('quotaProjectAdvice'));
+        const grid = button('viewProjects', () => choose({org:scope.org}));
+        root.append(advice, grid);
+      }
     });
   }
   function navigation() {
@@ -153,7 +160,7 @@
     const header = node('div', null, 'atlas-project-page-heading');
     header.append(node('h1', t('projects')), button('newProject', createProject, 'atlas-project-primary')); center.append(header);
     const toolbar = node('div', null, 'atlas-project-list-toolbar'), tabs = node('div', null, 'atlas-project-tabs'); tabs.setAttribute('role','tablist');
-    const available = [['mine','yourProjects'],['shared','sharedProjects']];
+    const available = [['mine','yourProjects'],['shared','sharedProjects'],['archived','archived']];
     if (projects.some(p => p.visibility === 'organization')) available.push(['organization','organization']);
     if (!available.some(([key]) => key === projectTab)) projectTab = 'mine';
     for (const [key,label] of available) {
@@ -171,7 +178,7 @@
     const grid = node('div', null, 'atlas-project-grid'); grid.setAttribute('role','tabpanel'); center.append(grid);
     function renderCards() {
       grid.replaceChildren();
-      const values = projects.filter(p => (projectTab === 'organization' ? p.visibility === 'organization' : projectTab === 'shared' ? p.shared_with_me === true : p.shared_with_me !== true && p.visibility !== 'organization') && (p.name + ' ' + (p.description || '')).toLocaleLowerCase().includes(projectSearch.toLocaleLowerCase()));
+      const values = projects.filter(p => (projectTab === 'archived' ? p.state === 'archived' : p.state !== 'archived' && (projectTab === 'organization' ? p.visibility === 'organization' : projectTab === 'shared' ? p.shared_with_me === true : p.shared_with_me !== true && p.visibility !== 'organization')) && (p.name + ' ' + (p.description || '')).toLocaleLowerCase().includes(projectSearch.toLocaleLowerCase()));
       values.sort((a,b) => projectSort === 'name' ? a.name.localeCompare(b.name) : (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0));
       for (const project of values) {
         const card = node('button', null, 'atlas-project-card'); card.type = 'button'; card.dataset.projectCard = project.id;
@@ -181,7 +188,11 @@
         const counts = node('p', '', 'atlas-project-card-counts'); card.append(counts);
         loadProjectSummary(project, summary, counts);
         card.append(node('small', relativeTime(project.updated_at || project.created_at)));
-        card.addEventListener('click', guarded(() => choose({org:scope.org,project:project.id}))); grid.append(card);
+        const menu = node('span', null, 'atlas-project-card-menu');
+        if (project.role === 'owner' || !project.role) {
+          menu.append(button(project.state === 'archived' ? 'restore' : 'archive', event => { event.stopPropagation(); projectAction(project, project.state === 'archived' ? 'active' : 'archived'); }), button('deleteProject', event => { event.stopPropagation(); deleteProject(project); }));
+        }
+        card.append(menu); card.addEventListener('click', guarded(() => choose({org:scope.org,project:project.id}))); grid.append(card);
       }
       if (!values.length) { const empty = node('div', null, 'atlas-project-empty'); empty.append(node('h2', t(projectTab === 'shared' ? 'noSharedProjects' : 'noProjects')), node('p', t(projectSearch ? 'noSearchResults' : 'projectIntro'))); grid.append(empty); }
     }
@@ -203,6 +214,19 @@
       projects = projects.map(p => p.id === scope.project ? projectInfo : p); projectHeading(); navigation();
     }, projectInfo.name);
   }
+  async function projectAction(project, state) {
+    const message = `${state === 'archived' ? t('confirmArchiveProject') : t('restore')} ${project.name}?`;
+    if (!window.confirm(message)) return;
+    const value = await jsonResponse(await request(`/api/atlas/orgs/${scope.org}/projects/${project.id}`, {method:'PATCH', headers:{'If-Match':`"${project.revision}"`}, body:{state}}), generation);
+    projects = projects.map(item => item.id === project.id ? value : item); navigation();
+    if (scope.project === project.id && state === 'archived') await choose({org:scope.org}); else projectsPage();
+  }
+  async function deleteProject(project) {
+    if (!window.confirm(`${t('confirmDeleteProject')}\n\n${project.name}`)) return;
+    await request(`/api/atlas/orgs/${scope.org}/projects/${project.id}`, {method:'DELETE', headers:{'If-Match':`"${project.revision}"`}});
+    projects = projects.filter(item => item.id !== project.id); projectSummaries.clear();
+    await choose({org:scope.org});
+  }
   function projectHeading() {
     center.querySelector('.atlas-project-heading')?.remove();
     const heading = node('div', null, 'atlas-project-heading');
@@ -211,7 +235,9 @@
       heading.append(node('span', ' / '), button('project', () => choose({org:scope.org,project:scope.project}), 'atlas-project-breadcrumb'));
       heading.lastChild.textContent = projectInfo.name;
     } else {
-      const title = node('div', null, 'atlas-project-page-heading'); title.append(node('h1',projectInfo.name), iconButton('renameProject','✎',renameProject)); heading.append(title);
+      const title = node('div', null, 'atlas-project-page-heading'); title.append(node('h1',projectInfo.name), iconButton('renameProject','✎',renameProject));
+      if (projectInfo.role === 'owner' || !projectInfo.role) title.append(button(projectInfo.state === 'archived' ? 'restore' : 'archive', () => projectAction(projectInfo, projectInfo.state === 'archived' ? 'active' : 'archived')), button('deleteProject', () => deleteProject(projectInfo)));
+      heading.append(title);
       if (projectInfo.description) heading.append(node('p', projectInfo.description, 'atlas-project-description'));
     }
     center.prepend(heading);

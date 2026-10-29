@@ -74,6 +74,9 @@ END $$;
 CREATE OR REPLACE FUNCTION atlas_projects.sharing_revoked() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
 BEGIN
+ IF current_setting('atlas.deleting',true)='true' THEN
+  RETURN NULL;
+ END IF;
  IF TG_TABLE_NAME='grants' THEN
   IF TG_OP='DELETE' OR NEW.role IS DISTINCT FROM OLD.role THEN
    PERFORM atlas_projects.invalidate_member_work(OLD.org_id,OLD.project_id,OLD.member_id);

@@ -25,6 +25,7 @@ DROP POLICY IF EXISTS scoped_read ON atlas_projects.transcript_progress;
 CREATE POLICY scoped_read ON atlas_projects.transcript_progress FOR SELECT USING
 (org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner','editor','viewer']));
 DROP POLICY IF EXISTS scoped_insert ON atlas_projects.transcript_progress;
+DROP POLICY IF EXISTS scoped_delete ON atlas_projects.transcript_progress;
 CREATE POLICY scoped_insert ON atlas_projects.transcript_progress FOR INSERT WITH CHECK
 (org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner','editor','viewer']) AND EXISTS
  (SELECT 1 FROM atlas_projects.resources r WHERE r.org_id=transcript_progress.org_id
@@ -32,6 +33,8 @@ CREATE POLICY scoped_insert ON atlas_projects.transcript_progress FOR INSERT WIT
  AND r.data->>'created_by_member_id'=atlas_projects.member()::text
  AND (r.data->>'action'='chat' OR atlas_projects.access(project_id,ARRAY['owner','editor']))));
 GRANT SELECT,INSERT ON atlas_projects.transcript_progress TO atlas_project_app;
+CREATE POLICY scoped_delete ON atlas_projects.transcript_progress FOR DELETE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner']));
+GRANT DELETE ON atlas_projects.transcript_progress TO atlas_project_app;
 DROP POLICY IF EXISTS transcript_ledger_insert ON atlas_projects.ledger_events;
 CREATE POLICY transcript_ledger_insert ON atlas_projects.ledger_events FOR INSERT WITH CHECK
 (org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['viewer'])
