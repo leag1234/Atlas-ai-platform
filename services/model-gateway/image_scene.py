@@ -962,17 +962,16 @@ class Scene(BaseModel):
                 pass
         if key == "action":
             return self.action
-        for prefix, values in (
-            ("character_", self.characters),
-            ("attribute_", self.characters),
-            ("element_", self.elements),
-        ):
+        for prefix in ("character_", "attribute_", "element_"):
             if key.startswith(prefix):
                 try:
-                    value = values[int(key.rsplit("_", 1)[1])]
+                    index = int(key.rsplit("_", 1)[1])
+                    if prefix == "element_":
+                        return self.elements[index]
+                    character = self.characters[index]
                     if prefix == "attribute_":
-                        return ", ".join(value.attributes)
-                    return value.name if prefix == "character_" else value
+                        return ", ".join(character.attributes)
+                    return character.name
                 except (IndexError, ValueError):
                     pass
         if key == "setting":
