@@ -201,7 +201,9 @@ class Workspace:
             ],
             cleanup_source,
             b"",
-            30,
+            # A cold container start on a loaded host can exceed 30 s; the turn
+            # waits for the workspace to be erased, so allow a bounded 120 s.
+            120,
         )
         import shutil
 
