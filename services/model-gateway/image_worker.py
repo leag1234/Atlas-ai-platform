@@ -23,11 +23,11 @@ def config_path(profile: str | None = None) -> Path:
     selected: str = (
         profile
         if profile is not None
-        else os.environ.get("ATLAS_IMAGE_PROFILE", "klein")
+        else os.environ.get("ATLAS_IMAGE_PROFILE", "flux1-schnell")
     )
     config_name = {
-        "klein": "image-model.json",
-        "flux1-schnell": "image-flux1-schnell.json",
+        "flux1-schnell": "image-model.json",
+        "klein": "image-klein.json",
     }.get(selected)
     if config_name is None:
         raise ValueError("unsupported_image_profile")
