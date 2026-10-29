@@ -6,6 +6,12 @@ Atlas follows `0.x.y` versions until 1.0: `x` for a release with new capabilitie
 
 - 0.7: project mode for testers, integrated in the Atlas interface.
 
+## 0.6.1 (2026-10-29)
+
+- Guest chat: progress line in the conversation language without internal deadlines; interrupted answers show a retry button instead of a frozen spinner; composer and file chips localized, file sizes with units; fewer message actions; neutral user bubble; Atlas version under the composer.
+- MCP connectors code (shared and personal connectors, per-member OAuth, three-layer allowance, approval of writes and personal calls in shared projects); not enabled on the guest instance and without interface yet (planned for 0.8). API-key calls never reach connectors.
+- Operations: deployments wait until no conversation is running; the health watch no longer calls the model.
+
 ## 0.6.0 (2026-10-28)
 
 The guest instance as deployed on 2026-10-28.
