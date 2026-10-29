@@ -231,6 +231,13 @@ async def chat(request: Request) -> Response:
     return await assistant_chat(request)
 
 
+@app.post("/responses")
+async def responses(request: Request) -> Response:
+    from services.orchestrator.api_key_responses import respond
+
+    return await respond(request)
+
+
 def raw_model_ids() -> list[str]:
     from dev_gateway import raw_models
 

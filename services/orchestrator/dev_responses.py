@@ -26,7 +26,7 @@ class Wire:
             "id": str(self.output.base["id"]).replace("chatcmpl-", "resp_"),
             "object": "response",
             "created_at": self.output.base["created"],
-            "model": "atlas-code",
+            "model": self.output.base["model"],
             "status": status,
             "output": self.items,
             "error": None,
