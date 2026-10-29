@@ -242,7 +242,8 @@ class Workspace:
             + self.key
             + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)",
             b"",
-            30,
+            # Same bounded allowance as cleanup: a cold container start can exceed 30 s.
+            120,
         )
 
     async def invoke(
