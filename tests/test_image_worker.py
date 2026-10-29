@@ -2,6 +2,7 @@
 
 import json
 import importlib
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread
 import unittest
@@ -33,6 +34,7 @@ class WorkerTests(unittest.TestCase):
             return result
 
         with (
+            patch.dict(os.environ, {"ATLAS_IMAGE_PROFILE": "flux1-schnell"}),
             patch.object(importlib, "import_module", return_value=modules),
             patch.object(image_worker, "ThreadingHTTPServer", side_effect=server),
         ):

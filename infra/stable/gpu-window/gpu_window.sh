@@ -112,8 +112,8 @@ if ! health; then
   if [[ "$booted" == 1 ]] && ! "${remote[@]}" 'docker inspect atlas-imagegen' >/dev/null 2>&1; then
     log "owned server has no worker: deploying container"
     python3 infra/gpu.py check >/dev/null
-    scp -q -i /root/.ssh/atlas_m1 -o UserKnownHostsFile="$known_hosts" services/model-gateway/image_worker.py services/model-gateway/image-model.json "root@$address:/root/"
-    "${remote[@]}" "docker run -d --restart unless-stopped --gpus all --name atlas-imagegen -p $image_port:8000 -v /mnt/weights:/root/.cache/huggingface -v /root/image_worker.py:/app/image_worker.py:ro -v /root/image-model.json:/app/image-model.json:ro --entrypoint /bin/bash pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385 -c 'pip install --quiet transformers==4.55.2 diffusers==0.35.1 accelerate==1.10.1 sentencepiece==0.2.1 protobuf==6.32.0 && python /app/image_worker.py'" || log "worker deployment failed; starting recovery"
+    scp -q -i /root/.ssh/atlas_m1 -o UserKnownHostsFile="$known_hosts" services/model-gateway/image_worker.py services/model-gateway/image-model.json services/model-gateway/image-klein.json services/model-gateway/requirements-image-klein.txt "root@$address:/root/"
+    "${remote[@]}" "docker run -d --restart unless-stopped --gpus all --name atlas-imagegen -p $image_port:8000 -e ATLAS_IMAGE_PROFILE=\"${ATLAS_IMAGE_PROFILE:-klein}\" -e HF_HOME=/root/.cache/huggingface -v /mnt/weights:/root/.cache/huggingface -v /root/image_worker.py:/app/image_worker.py:ro -v /root/image-model.json:/app/image-model.json:ro -v /root/image-klein.json:/app/image-klein.json:ro -v /root/requirements-image-klein.txt:/app/requirements-image-klein.txt:ro --entrypoint /bin/bash pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385 -c 'pip install --quiet -r /app/requirements-image-klein.txt && python /app/image_worker.py'" || log "worker deployment failed; starting recovery"
   fi
   health || recover || exit 1
 fi
