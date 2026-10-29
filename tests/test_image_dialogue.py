@@ -55,6 +55,43 @@ def vision_reply(answers: object) -> dict[str, object]:
 
 
 class SceneDialogueTests(unittest.IsolatedAsyncioTestCase):
+    def test_counts_bind_to_subjects_and_animals_are_not_people(self) -> None:
+        sheep = Scene(elements=["eight legs"])
+        sheep.apply(
+            ScenePatch(
+                characters=[Character(name="sheep", sex="person", age_group="adult")]
+            )
+        )
+        sheep.add_count_constraints("Crée un mouton avec huit pattes sur fond blanc.")
+        rendered = sheep.render()
+        self.assertFalse(sheep.characters[0].is_human())
+        self.assertIn("Subjects: sheep with exactly eight (8) pattes", rendered)
+        self.assertNotIn("Other elements: eight legs", rendered)
+        self.assertNotIn("Anatomy:", rendered)
+        for source, expected in (
+            ("three apples on a table", "exactly three (3) apples"),
+            ("deux chiens dans un parc", "exactly two (2) chiens"),
+        ):
+            with self.subTest(source=source):
+                scene = Scene()
+                scene.add_count_constraints(source)
+                self.assertIn(expected, scene.render())
+
+    def test_followup_retains_style_when_the_turn_does_not_change_it(self) -> None:
+        scene = image_prompt.scene_from_text(
+            json.dumps(
+                {
+                    "updates": [
+                        {"style": "line illustration", "elements": ["a sheep"]},
+                        {"style": "photograph", "elements": ["a red hat"]},
+                    ]
+                }
+            ),
+            ["Draw a sheep as a line illustration", "Same thing but with a red hat"],
+        )
+        self.assertEqual(scene.style, "line illustration")
+        self.assertIn("a red hat", scene.elements)
+
     async def test_count_verification_retries_with_explicit_layout_and_reports_miss(
         self,
     ) -> None:
@@ -110,12 +147,18 @@ class SceneDialogueTests(unittest.IsolatedAsyncioTestCase):
         verification = cast(dict[str, object], result["verification"])
         self.assertEqual(verification["failed"], ["count_0"])
         self.assertIn(
-            "exactly the requested image",
+            "eight legs",
             verification_note(verification, "en"),
         )
 
     async def test_image_response_body_limit_is_shared_at_both_boundaries(self) -> None:
-        accepted_payload = {"image": png(), "seed": 1, "steps": 1, "padding": ""}
+        accepted_payload = {
+            "image": png(),
+            "seed": 1,
+            "steps": 1,
+            "model": "fixture-worker-model",
+            "padding": "",
+        }
         accepted_payload["padding"] = "x" * (
             4_300_000 - len(json.dumps(accepted_payload).encode())
         )
@@ -508,26 +551,29 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
             checked = await verify(png(), scene, 5)
         self.assertTrue(checked.unknown)
 
-    def test_style_or_setting_miss_does_not_add_a_failure_note(self) -> None:
-        for verification in (
-            {
-                "failed": ["style", "setting"],
-                "failed_details": ["the requested detail", "the requested detail"],
-                "failure_note_suppressed": True,
-                "unknown": False,
-            },
-            {
-                "failed": [],
-                "failed_details": [],
-                "failure_note_suppressed": True,
-                "unknown": True,
-            },
-        ):
-            for language in ("en", "fr", "de", "es", "it"):
-                with self.subTest(verification=verification, language=language):
-                    self.assertEqual(verification_note(verification, language), "")
+    def test_requested_style_or_setting_miss_adds_a_failure_note(self) -> None:
+        verification = {
+            "failed": ["style", "setting"],
+            "failed_details": ["impressionist painting", "Venice market at dawn"],
+            "unknown": False,
+        }
+        for language in ("en", "fr", "de", "es", "it"):
+            with self.subTest(language=language):
+                self.assertTrue(verification_note(verification, language))
+        self.assertEqual(
+            verification_note(
+                {
+                    "failed": [],
+                    "failed_details": [],
+                    "failure_note_suppressed": True,
+                    "unknown": True,
+                },
+                "en",
+            ),
+            "",
+        )
 
-    async def test_scripted_style_and_dawn_misses_retry_without_failure_note(
+    async def test_scripted_style_and_dawn_misses_retry_with_failure_note(
         self,
     ) -> None:
         scene = Scene(
@@ -574,8 +620,8 @@ class VerificationTests(unittest.IsolatedAsyncioTestCase):
         verification = cast(dict[str, object], result["verification"])
         self.assertEqual(worker.await_count, 2)
         self.assertEqual(verification["failed"], ["setting", "style"])
-        self.assertTrue(verification["failure_note_suppressed"])
-        self.assertEqual(verification_note(verification, "it"), "")
+        self.assertNotIn("failure_note_suppressed", verification)
+        self.assertTrue(verification_note(verification, "it"))
 
     async def test_retry_configuration_and_remaining_budget_bound_calls(self) -> None:
         scene = anchored_scene(ORIGINAL)
