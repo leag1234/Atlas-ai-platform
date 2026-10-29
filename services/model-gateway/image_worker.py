@@ -19,6 +19,21 @@ class WorkerLimit(ValueError):
         super().__init__(f"Image input: {measured} {unit}; limit {limit} {unit}")
 
 
+def config_path(profile: str | None = None) -> Path:
+    selected: str = (
+        profile
+        if profile is not None
+        else os.environ.get("ATLAS_IMAGE_PROFILE", "klein")
+    )
+    config_name = {
+        "klein": "image-model.json",
+        "flux1-schnell": "image-flux1-schnell.json",
+    }.get(selected)
+    if config_name is None:
+        raise ValueError("unsupported_image_profile")
+    return Path(__file__).with_name(config_name)
+
+
 def place_pipeline(pipeline: Any, memory_bytes: int) -> None:
     # BF16 weights plus encoders exceed a single L4's usable VRAM.
     if memory_bytes < 40 * 1024**3:
@@ -29,7 +44,7 @@ def place_pipeline(pipeline: Any, memory_bytes: int) -> None:
 
 def main() -> None:
     torch = importlib.import_module("torch")
-    config = json.loads(Path(__file__).with_name("image-model.json").read_text())
+    config = json.loads(config_path().read_text())
     kind = config.get("pipeline", "flux")
     if kind not in ("flux", "flux2-klein"):
         raise ValueError("unsupported_image_pipeline")

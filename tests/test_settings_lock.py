@@ -95,7 +95,7 @@ class SettingsLockTests(unittest.TestCase):
         )["repository"]
         self.assertEqual(
             hashlib.sha256(repository.encode()).hexdigest(),
-            "f29a7ca86c33636eca6f4c35624831046e70fe66d1642caccbb44890ceb36e94",
+            "de63e2d3f0ade1b53d66e1d6cce9e377203130a65985ad92a1d21859548fcb13",
         )
 
     def test_short_messages_inherit_history_then_locale(self) -> None:

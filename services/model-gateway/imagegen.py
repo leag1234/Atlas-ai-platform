@@ -26,6 +26,7 @@ from image_prompt import (
 )
 from image_scene import anchored_scene
 from image_verify import Verification, audit, reserve as verification_reserve, verify
+from image_worker import config_path
 
 
 class ImageWorkerFailure(RuntimeError):
@@ -270,9 +271,7 @@ async def pixels(
     if type(seed) is not int or not 0 <= seed < 2**32:
         raise ValueError("invalid_provider_seed")
     return {
-        "model": json.loads(Path(__file__).with_name("image-model.json").read_text())[
-            "repository"
-        ],
+        "model": json.loads(config_path().read_text())["repository"],
         "seed": seed,
         "rewritten_prompt": rewritten,
         "width": 1024,
