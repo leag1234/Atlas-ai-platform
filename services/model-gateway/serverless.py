@@ -73,7 +73,7 @@ class Plan:
 
 
 class ServerlessPolicy:
-    def __init__(self) -> None:
+    def __init__(self, *, allow_unpriced: bool = False) -> None:
         root = Path(__file__).parent
         routing = yaml.safe_load((root / "routing.yaml").read_text())
         self.config = routing["serverless"]
@@ -90,7 +90,13 @@ class ServerlessPolicy:
             if os.environ.get("ATLAS_PROVIDER") and not model:
                 model = entry["model"]
             if model not in self.prices:
-                raise ValueError("missing_price")
+                if not allow_unpriced:
+                    raise ValueError("missing_price")
+                self.prices[model] = {
+                    "input_eur_per_mtok": "0",
+                    "output_eur_per_mtok": "0",
+                    "unpriced": True,
+                }
             if model not in entry["capabilities"]:
                 raise ValueError("missing_capabilities")
             for key in ("input_eur_per_mtok", "output_eur_per_mtok"):
