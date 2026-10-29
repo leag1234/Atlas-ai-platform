@@ -84,8 +84,6 @@ async def process_image(
     budget: Decimal = Decimal("0.05"),
     timeout: float = 118,
 ) -> None:
-    if dialogue:
-        prompt = " ".join(" ".join(turn.splitlines()) for turn in dialogue)
     started = time.monotonic()
     operation_timeout = timeout
     retry_cost = Decimal(0)

@@ -7,7 +7,9 @@ from services.orchestrator.chat_schema import ChatMessage, ChatRequest
 from services.orchestrator.followup import (
     image_iteration,
     image_dialogue,
+    visual_image_prompt,
 )
+from services.orchestrator.image_tool import GenerateImage
 from services.orchestrator.chat_pipeline import _process
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.model import GatewayModel
@@ -54,12 +56,43 @@ def conversation(
 
 
 class FollowupFidelityTests(unittest.IsolatedAsyncioTestCase):
+    def test_confirmation_uses_a_visual_prompt_not_chat_text(self) -> None:
+        messages = [
+            ChatMessage(role="user", content="Draw a sheep with 8 legs."),
+            ChatMessage(
+                role="assistant",
+                content="I can retry with a detailed description. Would you like that?",
+            ),
+            ChatMessage(role="user", content="oui - propose cette description"),
+        ]
+        self.assertIsNotNone(image_iteration(messages))
+        prompt = visual_image_prompt(image_dialogue(messages))
+        self.assertIn("sheep with eight legs", prompt)
+        self.assertIn("four pairs", prompt)
+        self.assertIn("No text", prompt)
+        self.assertNotIn("oui", prompt.lower())
+        self.assertNotIn("would you like", prompt.lower())
+
+    def test_conversational_tool_prompt_is_rejected(self) -> None:
+        prose = (
+            "I am sorry that the earlier result was wrong. I cannot guarantee the requested "
+            "count. Would you like me to try again? Could you confirm that you want one last "
+            "try with a detailed description? "
+        ) * 3
+        with self.assertRaisesRegex(ValueError, "image_prompt_conversational"):
+            GenerateImage(prompt=prose)
+
     async def test_corrections_act_with_original_scene_in_five_languages(self) -> None:
         for correction in CORRECTIONS:
             with (
                 self.subTest(correction=correction),
                 patch.dict(
-                    "os.environ", {"ATLAS_STABLE": "0", "ATLAS_IMAGE_ON_DEMAND": "0"}
+                    "os.environ",
+                    {
+                        "ATLAS_STABLE": "0",
+                        "ATLAS_DEV_GPU": "1",
+                        "ATLAS_IMAGE_ON_DEMAND": "0",
+                    },
                 ),
                 patch.object(GatewayModel, "connect", AsyncMock()) as chat,
                 patch.object(
@@ -72,9 +105,8 @@ class FollowupFidelityTests(unittest.IsolatedAsyncioTestCase):
                 await _process(ChatRequest(messages=conversation(correction)), item)
                 chat.assert_not_awaited()
                 post.assert_awaited_once()
-                self.assertEqual(
-                    post.call_args.args[1]["prompt"], ORIGINAL + " " + correction
-                )
+                self.assertIn("Visual image only", post.call_args.args[1]["prompt"])
+                self.assertIn(correction, post.call_args.args[1]["prompt"])
                 self.assertTrue(item.images)
                 self.assertIn("![", item.reponse)
 
@@ -138,7 +170,7 @@ class FollowupFidelityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_followup_hard_limit_still_prevents_transport(self) -> None:
         with (
-            patch.dict("os.environ", {"ATLAS_STABLE": "0"}),
+            patch.dict("os.environ", {"ATLAS_STABLE": "0", "ATLAS_DEV_GPU": "1"}),
             patch.object(GatewayModel, "post", AsyncMock()) as post,
         ):
             item = Interaction()

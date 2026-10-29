@@ -102,8 +102,9 @@ async def generate(request: object) -> dict[str, object]:
         )
         reserved = rewrite_budget.reserved
         scene = rewrite_budget.scene or anchored_scene(prompt.prompt)
-        if not scene.render():
-            scene.setting = rewritten
+    scene.add_count_constraints(prompt.prompt)
+    if not scene.render():
+        scene.setting = rewritten
     retries = max(0, min(2, int(os.environ.get("ATLAS_IMAGE_VERIFY_RETRIES", "2"))))
     spent = reserved
     best: dict[str, object] | None = None

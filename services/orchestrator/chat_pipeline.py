@@ -34,6 +34,8 @@ from services.orchestrator.followup import (
     image_iteration,
     image_dialogue,
     image_explanation,
+    image_retry_confirmation,
+    visual_image_prompt,
 )
 from services.orchestrator.imagegen import process_image
 from services.orchestrator import diagram
@@ -1027,11 +1029,13 @@ async def _process(
         succeeded = False
         try:
             await process_image(
-                " ".join(dialogue),
+                visual_image_prompt(dialogue),
                 item,
                 request.seed,
                 language=request.lang,
-                dialogue=dialogue,
+                dialogue=None
+                if image_retry_confirmation(request.messages)
+                else dialogue,
                 timeout=min(118, request.timeout_seconds),
             )
             succeeded = True
