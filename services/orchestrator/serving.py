@@ -215,6 +215,8 @@ def stable_webui_options() -> list[str]:
         "-e",
         "ENABLE_AUTOMATIONS=False",
         "-e",
+        "ENABLE_NOTES=False",
+        "-e",
         "ENABLE_EASTER_EGGS=False",
         "-e",
         "ENABLE_SIGNUP=False",
