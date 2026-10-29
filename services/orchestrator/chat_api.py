@@ -224,9 +224,11 @@ async def chat(request: Request) -> Response:
     elif project_mode() and (
         request.headers.get("origin") is not None
         or request.headers.get("sec-fetch-site") is not None
+        or request.headers.get("authorization", "").startswith("Bearer atl_")
     ):
-        # Browser calls keep the strict project origin check; the chat UI backend
-        # calls this endpoint server to server, without browser fetch metadata.
+        # Browser calls and Atlas API keys keep the strict project origin check
+        # (keys must go through the key edge); the chat UI backend calls this
+        # endpoint server to server, without browser fetch metadata.
         try:
             browser_origin(request)
         except ProjectError as exc:
