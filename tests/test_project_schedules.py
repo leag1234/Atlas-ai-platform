@@ -20,7 +20,7 @@ class ScheduledTaskTests(ProjectIsolationTests):
         import os
         import tempfile
 
-        root = tempfile.TemporaryDirectory(dir="BRAIN")
+        root = tempfile.TemporaryDirectory()
         self.addCleanup(root.cleanup)
         environment = patch.dict(os.environ, {"ATLAS_DATA_ROOT": root.name})
         environment.start()
@@ -263,7 +263,7 @@ class ScheduledTaskTests(ProjectIsolationTests):
         task = response.json()
         versions = []
         with (
-            tempfile.TemporaryDirectory(dir="BRAIN") as directory,
+            tempfile.TemporaryDirectory() as directory,
             patch.dict(
                 os.environ,
                 dict(
@@ -435,7 +435,7 @@ class ScheduledTaskTests(ProjectIsolationTests):
         self.due(task)
         job = take_due()
         with (
-            tempfile.TemporaryDirectory(dir="BRAIN") as directory,
+            tempfile.TemporaryDirectory() as directory,
             patch.dict(
                 os.environ,
                 dict(
