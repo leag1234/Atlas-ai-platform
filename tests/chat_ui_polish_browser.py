@@ -254,7 +254,13 @@ def snapshot(page: Page, name: str) -> None:
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), name
     assert " / 120s" not in page.locator("body").inner_text(), name
     assert "Thinking" not in page.locator("body").inner_text(), name
-    assert page.locator("[data-atlas-footer]").inner_text() == "Atlas 0.6.0", name
+    assert (
+        page.locator("[data-atlas-footer]").inner_text()
+        == "Atlas "
+        + json.loads(
+            Path("services/orchestrator/static/atlas-version.json").read_text()
+        )["version"]
+    ), name
 
 
 def main() -> None:
