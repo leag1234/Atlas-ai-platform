@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import imagegen
 import image_prompt
 from image_scene import Character, Scene, ScenePatch, anchored_scene
-from image_verify import instructions, verify
+from image_verify import Verification, instructions, verify
 from vision import VisionProvider
 from services.orchestrator.chat_pipeline import _process
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
@@ -55,6 +55,65 @@ def vision_reply(answers: object) -> dict[str, object]:
 
 
 class SceneDialogueTests(unittest.IsolatedAsyncioTestCase):
+    async def test_count_verification_retries_with_explicit_layout_and_reports_miss(
+        self,
+    ) -> None:
+        scene = anchored_scene("A sheep with eight legs")
+        first = dict.fromkeys(scene.expected_answers(), True)
+        # The gateway adds count constraints after the scene rewrite.
+        first["count_0"] = False
+        calls: list[str] = []
+
+        async def worker(
+            address: str,
+            prompt: str,
+            seed: int | None,
+            timeout: float,
+            rate: Decimal,
+            reserved: Decimal,
+        ) -> dict[str, object]:
+            calls.append(prompt)
+            return {"image": png(), "seed": seed or 1, "cost_eur": "0.001"}
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "ATLAS_IMAGE_GPU_IP": "127.0.0.2",
+                    "ATLAS_IMAGE_GPU_EUR_H": "1",
+                    "ATLAS_IMAGE_VERIFY_RETRIES": "1",
+                },
+            ),
+            patch.object(
+                imagegen,
+                "rewrite",
+                AsyncMock(
+                    return_value="Subjects: a sheep\nAttributes: eight legs\nScene: plain background\nStyle: photograph"
+                ),
+            ),
+            patch.object(imagegen, "reservation", return_value=Decimal("0.001")),
+            patch.object(imagegen, "pixels", AsyncMock(side_effect=worker)),
+            patch.object(
+                imagegen,
+                "verify",
+                AsyncMock(
+                    side_effect=[
+                        Verification(first, Decimal("0.001")),
+                        Verification(first, Decimal("0.001")),
+                    ]
+                ),
+            ),
+        ):
+            result = await imagegen.generate({"prompt": "A sheep with eight legs"})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("four pairs", calls[1])
+        verification = cast(dict[str, object], result["verification"])
+        self.assertEqual(verification["failed"], ["count_0"])
+        self.assertIn(
+            "exactly the requested image",
+            verification_note(verification, "en"),
+        )
+
     async def test_image_response_body_limit_is_shared_at_both_boundaries(self) -> None:
         accepted_payload = {"image": png(), "seed": 1, "steps": 1, "padding": ""}
         accepted_payload["padding"] = "x" * (
@@ -284,7 +343,7 @@ class SceneDialogueTests(unittest.IsolatedAsyncioTestCase):
         for complaint in complaints:
             with (
                 self.subTest(complaint=complaint),
-                patch.dict("os.environ", {"ATLAS_STABLE": "0"}),
+                patch.dict("os.environ", {"ATLAS_STABLE": "0", "ATLAS_DEV_GPU": "1"}),
                 patch(
                     "services.orchestrator.chat_pipeline.process_image", AsyncMock()
                 ) as generate,

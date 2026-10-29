@@ -104,6 +104,7 @@ class ImageThreadEntryTests(unittest.TestCase):
                     "ATLAS_INTERACTION_DIR": root,
                     "ATLAS_IMAGE_DIR": root,
                     "ATLAS_STABLE": "0",
+                    "ATLAS_DEV_GPU": "1",
                     "ATLAS_IMAGE_ON_DEMAND": "0",
                     "ATLAS_IMAGE_GPU_IP": "127.0.0.2",
                     "ATLAS_IMAGE_GPU_EUR_H": "1",
@@ -150,7 +151,8 @@ class ImageThreadEntryTests(unittest.TestCase):
             self.assertEqual(decision.await_count, 0 if direct else 1)
             self.assertEqual(len(payloads), 2)
             self.assertEqual(payloads[1]["dialogue"], [ORIGINAL, followup])
-            self.assertEqual(payloads[1]["prompt"], ORIGINAL + " " + followup)
+            self.assertIn("Visual image only", str(payloads[1]["prompt"]))
+            self.assertIn(followup, str(payloads[1]["prompt"]))
             self.assertNotIn("a man and a woman", str(payloads[1]))
             reply = second.json()["choices"][0]["message"]["content"]
             self.assertIn("/images/", reply)
@@ -265,6 +267,7 @@ class ImageThreadEntryTests(unittest.TestCase):
                     "ATLAS_INTERACTION_DIR": root,
                     "ATLAS_IMAGE_DIR": root,
                     "ATLAS_STABLE": "0",
+                    "ATLAS_DEV_GPU": "1",
                     "ATLAS_IMAGE_ON_DEMAND": "0",
                 },
             ),

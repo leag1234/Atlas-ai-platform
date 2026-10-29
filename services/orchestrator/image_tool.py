@@ -10,7 +10,11 @@ from time import monotonic
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from packages.imagegen import ImagePrompt
 from services.orchestrator.chat_schema import ChatRequest
-from services.orchestrator.followup import image_dialogue, image_explanation
+from services.orchestrator.followup import (
+    image_dialogue,
+    image_explanation,
+    visual_image_prompt,
+)
 from services.orchestrator.imagegen import process_image
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Message, Result
@@ -154,12 +158,22 @@ def simple_drawing_copy(language: str) -> tuple[str, str, str, str, str]:
 
 class GenerateImage(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+    # This public tool declaration is recorded in the chat cassettes.  The
+    # follow-up renderer has its own tighter bound; do not change this contract.
     prompt: str = Field(min_length=1, max_length=2000, pattern=r"\S")
 
     @field_validator("prompt")
     @classmethod
     def validate_prompt(cls, value: str) -> str:
-        return ImagePrompt(prompt=value).prompt
+        prompt = ImagePrompt(prompt=value).prompt
+        conversational = re.compile(
+            r"\b(?:sorry|apologi[sz]e|cannot|can['’]t|would you|could you|"
+            r"do you want|try again|r[eé]essa(?:i|y)|pouvez-vous)\b|\?",
+            re.IGNORECASE,
+        )
+        if len(prompt) > 280 and len(conversational.findall(prompt)) >= 2:
+            raise ValueError("image_prompt_conversational")
+        return prompt
 
 
 def declaration() -> Message:
@@ -183,7 +197,14 @@ async def finish(
         item.cout_eur += float(result.cost)
         return
     dialogue = image_dialogue(request.messages)
-    prompt = " ".join(dialogue)
+    # A first request is already the user's image instruction.  Rewriting it as a
+    # visual-only prompt is reserved for an established image dialogue, where the
+    # renderer must combine the original scene with a correction or retry.
+    prompt = (
+        request.messages[-1].text
+        if len(dialogue) == 1
+        else visual_image_prompt(dialogue)
+    )
     try:
         await process_image(
             prompt,

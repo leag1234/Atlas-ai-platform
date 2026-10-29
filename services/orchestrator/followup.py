@@ -61,10 +61,58 @@ _IMAGE_CORRECTION = re.compile(
     r"das ist nicht|nicht w[aä]hrend|no es durante|non [eè] durante)\b",
     re.IGNORECASE,
 )
+_IMAGE_RETRY_PROPOSAL = re.compile(
+    r"\b(?:retry|try again|one last try|refine|detailed description|"
+    r"r[eé]essa(?:i|y)|nouvelle tentative|description d[eé]taill[eé]e|"
+    r"noch einmal|erneut|int[eé]ntalo de nuevo)\b",
+    re.IGNORECASE,
+)
+_IMAGE_CONFIRMATION = re.compile(
+    r"(?is)^\s*(?:yes|yeah|yep|oui|si|ja|s[iì]|d'accord|ok|okay|"
+    r"propose(?:-moi)?(?: cette)? description)\b.*$",
+)
+_ANAPHORIC_ITERATION = re.compile(
+    r"(?is)^\s*same\s+but\b",
+)
+_IMAGE_LEAD_IN = re.compile(
+    r"(?is)^\s*(?:please\s+)?(?:generate|create|make|draw|paint|"
+    r"g[eé]n[eè]re|cr[eé]e|dessine|fais|erzeuge|generiere|zeichne|"
+    r"genera|crea|dibuja|disegna)\s+(?:me\s+)?(?:an?\s+|une?\s+|un\s+)?"
+)
+_NUMBER_WORDS = {
+    "0": "zero",
+    "1": "one",
+    "2": "two",
+    "3": "three",
+    "4": "four",
+    "5": "five",
+    "6": "six",
+    "7": "seven",
+    "8": "eight",
+    "9": "nine",
+    "10": "ten",
+    "11": "eleven",
+    "12": "twelve",
+}
 
 
 def image_correction(text: str) -> bool:
     return bool(_IMAGE_CORRECTION.search(text) and not _IMAGE_EXPLANATION.search(text))
+
+
+def image_retry_confirmation(messages: list[ChatMessage]) -> bool:
+    """Recognize agreement to the assistant's offered image retry, not bare assent."""
+    return bool(
+        len(messages) >= 2
+        and messages[-2].role == "assistant"
+        and _IMAGE_CONFIRMATION.fullmatch(messages[-1].text.strip())
+        and _IMAGE_RETRY_PROPOSAL.search(messages[-2].text)
+    )
+
+
+def raw_scene_continuation(messages: list[ChatMessage]) -> bool:
+    """Keep the established gateway input for a terse inherited-scene edit."""
+    return bool(messages and _ANAPHORIC_ITERATION.match(messages[-1].text.strip()))
 
 
 def image_explanation(text: str) -> bool:
@@ -81,7 +129,9 @@ def image_dialogue(messages: list[ChatMessage]) -> list[str]:
         previous = messages[candidate - 2]
         if previous.role != "user":
             break
-        if _IMAGE_CONTEXT.search(messages[candidate - 1].text):
+        if _IMAGE_CONTEXT.search(
+            messages[candidate - 1].text
+        ) or _IMAGE_RETRY_PROPOSAL.search(messages[candidate - 1].text):
             start = candidate - 2
         elif not image_explanation(previous.text):
             break
@@ -102,7 +152,49 @@ def image_dialogue(messages: list[ChatMessage]) -> list[str]:
 
 def image_iteration(messages: list[ChatMessage]) -> str | None:
     """A direct-route hint; never the gate for carrying image history."""
-    if not messages or not image_correction(messages[-1].text):
+    if not messages or not (
+        image_correction(messages[-1].text) or image_retry_confirmation(messages)
+    ):
         return None
     turns = image_dialogue(messages)
     return "\n".join(turns) if len(turns) > 1 else None
+
+
+def visual_image_prompt(dialogue: list[str]) -> str:
+    """Turn user-owned scene requests into a bounded prompt for an image model.
+
+    The confirmation itself and every assistant turn are deliberately excluded: image
+    workers render visual instructions, never a conversation transcript.
+    """
+    if not dialogue:
+        raise ValueError("image_prompt_missing")
+    source = _IMAGE_LEAD_IN.sub("", dialogue[0]).strip(" .:!?") or dialogue[0].strip()
+    refinements = [
+        turn.strip(" .:!?")
+        for turn in dialogue[1:]
+        if turn.strip() and not _IMAGE_CONFIRMATION.fullmatch(turn.strip())
+    ]
+    source = re.sub(
+        r"\b(\d{1,2})\b",
+        lambda match: _NUMBER_WORDS.get(match.group(1), match.group(1)),
+        source,
+    )
+    parts = [
+        "Visual image only.",
+        "Subject and required details: " + source + ".",
+    ]
+    if refinements:
+        parts.append("Agreed visual refinements: " + "; ".join(refinements) + ".")
+    legs = re.search(r"\b(?:eight|8)\s+legs\b", source, re.IGNORECASE)
+    if legs:
+        parts.append("Layout: four pairs of legs clearly visible.")
+    parts.extend(
+        (
+            "Composition: make every requested subject and quantity clearly visible.",
+            "No text, lettering, icons, interface elements, or app-like layout.",
+        )
+    )
+    prompt = " ".join(parts)
+    if len(prompt) > 1200:
+        raise ValueError("image_prompt_too_long")
+    return prompt

@@ -32,6 +32,36 @@ class ActionBinding(BaseModel):
         return f"{self.subject} {self.action} {self.object}"
 
 
+class CountConstraint(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    count: int = Field(ge=0, le=99)
+    subject: str = Field(min_length=1, max_length=100)
+
+    def render(self) -> str:
+        names = {
+            0: "zero",
+            1: "one",
+            2: "two",
+            3: "three",
+            4: "four",
+            5: "five",
+            6: "six",
+            7: "seven",
+            8: "eight",
+            9: "nine",
+            10: "ten",
+            11: "eleven",
+            12: "twelve",
+        }
+        written = names.get(self.count, str(self.count))
+        pairs = (
+            f", arranged as {names.get(self.count // 2, str(self.count // 2))} pairs"
+            if self.subject == "legs" and self.count % 2 == 0
+            else ""
+        )
+        return f"exactly {written} {self.subject}{pairs}, all clearly visible"
+
+
 class ScenePatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     relation: Literal["edit", "new"] = "edit"
@@ -84,6 +114,39 @@ class Scene(BaseModel):
     birth_moment: str = ""
     artistic_style: bool = False
     requested_iconography: list[str] = Field(default_factory=list)
+    count_constraints: list[CountConstraint] = Field(default_factory=list)
+
+    def add_count_constraints(self, source: str) -> None:
+        words = {
+            "zero": 0,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+            "eleven": 11,
+            "twelve": 12,
+        }
+        pattern = re.compile(
+            r"\b(" + "|".join([*words, r"\d{1,2}"]) + r")\s+([a-z][a-z-]{1,80})\b", re.I
+        )
+        known = {
+            (constraint.count, constraint.subject)
+            for constraint in self.count_constraints
+        }
+        for value, subject in pattern.findall(source):
+            count = words.get(value.lower(), int(value) if value.isdigit() else -1)
+            subject = subject.lower()
+            if count >= 0 and (count, subject) not in known:
+                self.count_constraints.append(
+                    CountConstraint(count=count, subject=subject)
+                )
+                known.add((count, subject))
 
     def apply(self, patch: ScenePatch) -> None:
         if patch.action and (
@@ -470,6 +533,12 @@ class Scene(BaseModel):
                     "Anatomy: each person has anatomically plausible limbs, at most two hands, each attached to that person's arms."
                     if self.characters and self.anatomy
                     else "",
+                    "Counts: "
+                    + "; ".join(
+                        constraint.render() for constraint in self.count_constraints
+                    )
+                    if self.count_constraints
+                    else "",
                 ),
             )
         )
@@ -642,7 +711,11 @@ class Scene(BaseModel):
         for key, question in self.checks():
             if key not in failed:
                 continue
-            if key in {"birth_delivery", "iconography"}:
+            if key.startswith("count_"):
+                details.append(
+                    self.count_constraints[int(key.removeprefix("count_"))].render()
+                )
+            elif key in {"birth_delivery", "iconography"}:
                 details.append(
                     "Visible delivery in progress, wet newborn with attached umbilical cord, mother's physical effort."
                 )
@@ -735,6 +808,13 @@ class Scene(BaseModel):
         if self.setting:
             checks.append(("setting", f"Is this setting visible: {self.setting}?"))
         checks.extend(
+            (
+                f"count_{index}",
+                f"Are exactly {constraint.count} {constraint.subject} visibly present? Answer true only if the exact count is {constraint.count}.",
+            )
+            for index, constraint in enumerate(self.count_constraints)
+        )
+        checks.extend(
             (f"element_{i}", f"Is {element} visible?")
             for i, element in enumerate(self.elements)
         )
@@ -778,7 +858,7 @@ class Scene(BaseModel):
             "adult_women_count",
             "action",
             "birth_delivery",
-        } or key.startswith(("character_", "action_binding_"))
+        } or key.startswith(("character_", "action_binding_", "count_"))
 
 
 def retain_anchors(scene: Scene, anchors: Scene) -> None:

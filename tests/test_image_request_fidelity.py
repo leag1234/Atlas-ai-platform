@@ -28,8 +28,9 @@ class ImageFidelityTests(unittest.IsolatedAsyncioTestCase):
             "services.orchestrator.image_tool.process_image", new_callable=AsyncMock
         ) as generate:
             await finish(request, Interaction(), result, "A blue bird", monotonic())
-        self.assertEqual(
-            generate.call_args.args[0],
-            "Draw a tree beside a red house. Add a blue bird.",
-        )
+        generated = generate.call_args.args[0]
+        self.assertIn("tree beside a red house", generated)
+        self.assertIn("Add a blue bird", generated)
+        self.assertIn("No text", generated)
+        self.assertNotIn("![image]", generated)
         self.assertEqual(generate.call_args.kwargs["budget"], Decimal("0.05"))
