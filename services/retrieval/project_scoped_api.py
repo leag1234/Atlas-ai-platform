@@ -223,6 +223,8 @@ def execute(
                 )
                 scope.event("project_changed", project)
                 return 200, value
+            if method == "DELETE":
+                return 202, scope.delete_project(expected)
         if tail == ["grants"] and method == "GET":
             rows = scope.db.execute(
                 "SELECT * FROM atlas_projects.grants WHERE org_id=%s AND project_id=%s ORDER BY data->>'created_at',member_id",

@@ -26,6 +26,7 @@ DO $$ DECLARE t text; BEGIN
  EXECUTE format('DROP POLICY IF EXISTS scoped_read ON atlas_projects.%I',t);
  EXECUTE format('DROP POLICY IF EXISTS scoped_insert ON atlas_projects.%I',t);
  EXECUTE format('DROP POLICY IF EXISTS scoped_edit ON atlas_projects.%I',t);
+ EXECUTE format('DROP POLICY IF EXISTS scoped_delete ON atlas_projects.%I',t);
  EXECUTE format('CREATE POLICY scoped_read ON atlas_projects.%I FOR SELECT USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'',''editor'',''viewer'']))',t);
  EXECUTE format('CREATE POLICY scoped_insert ON atlas_projects.%I FOR INSERT WITH CHECK(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'',''editor'']))',t);
  EXECUTE format('CREATE POLICY scoped_edit ON atlas_projects.%I FOR UPDATE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY[''owner'',''editor'']))',t);
@@ -33,6 +34,9 @@ DO $$ DECLARE t text; BEGIN
 END $$;
 GRANT SELECT,INSERT,UPDATE ON atlas_projects.work_leases TO atlas_project_app;
 GRANT SELECT,INSERT ON atlas_projects.work_progress TO atlas_project_app;
+CREATE POLICY scoped_delete ON atlas_projects.work_leases FOR DELETE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner']));
+CREATE POLICY scoped_delete ON atlas_projects.work_progress FOR DELETE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner']));
+GRANT DELETE ON atlas_projects.work_leases,atlas_projects.work_progress TO atlas_project_app;
 
 CREATE TABLE IF NOT EXISTS atlas_projects.forge_operations (
  org_id uuid NOT NULL, project_id uuid NOT NULL, id uuid NOT NULL,
@@ -45,6 +49,7 @@ ALTER TABLE atlas_projects.forge_operations FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS scoped_read ON atlas_projects.forge_operations;
 DROP POLICY IF EXISTS scoped_insert ON atlas_projects.forge_operations;
 DROP POLICY IF EXISTS scoped_edit ON atlas_projects.forge_operations;
+DROP POLICY IF EXISTS scoped_delete ON atlas_projects.forge_operations;
 CREATE POLICY scoped_read ON atlas_projects.forge_operations FOR SELECT
  USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner','editor','viewer']));
 CREATE POLICY scoped_insert ON atlas_projects.forge_operations FOR INSERT
@@ -52,3 +57,5 @@ CREATE POLICY scoped_insert ON atlas_projects.forge_operations FOR INSERT
 CREATE POLICY scoped_edit ON atlas_projects.forge_operations FOR UPDATE
  USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner','editor']));
 GRANT SELECT,INSERT,UPDATE ON atlas_projects.forge_operations TO atlas_project_app;
+CREATE POLICY scoped_delete ON atlas_projects.forge_operations FOR DELETE USING(org_id=atlas_projects.org() AND atlas_projects.access(project_id,ARRAY['owner']));
+GRANT DELETE ON atlas_projects.forge_operations TO atlas_project_app;

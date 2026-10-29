@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -478,6 +480,62 @@ class Scope:
         ProjectFiles(self).initialize(data["instructions"])
         self.event("project_created", value["id"])
         return value
+
+    def delete_project(self, expected: str | None) -> dict[str, Any]:
+        """Erase every scoped record before removing the project itself.
+
+        The project tables deliberately use restrictive foreign keys: an owner
+        must not be able to leave a conversation, grant, or forge operation
+        behind when removing its project.  Optional P1 tables are absent on a
+        P0 installation, hence the catalogue check.
+        """
+        if self.project is None or self.role != "owner":
+            raise ProjectError(403, "permission_denied")
+        self.match(self.project, expected)
+        org, project = self.identity.org, self.project_id
+        self.db.execute("SELECT set_config('atlas.deleting','true',true)")
+        tables = (
+            "runner_commands",
+            "runner_sessions",
+            "runner_grants",
+            "forge_operations",
+            "work_progress",
+            "work_leases",
+            "transcript_progress",
+            "outbox",
+            "ledger_events",
+            "resource_sources",
+            "file_approvals",
+            "legacy_rows",
+            "reservations",
+            "requests",
+            "resources",
+            "audit",
+            "grants",
+        )
+        for table in tables:
+            exists = self.db.execute(
+                "SELECT to_regclass(%s) AS value", ("atlas_projects." + table,)
+            ).fetchone()
+            if exists and exists["value"] is not None:
+                self.db.execute(
+                    f"DELETE FROM atlas_projects.{table} WHERE org_id=%s AND project_id=%s",
+                    (org, project),
+                )
+        self.db.execute(
+            "DELETE FROM atlas_projects.projects WHERE org_id=%s AND id=%s",
+            (org, project),
+        )
+        # The durable audit record has no dangling project FK but retains actor/org.
+        self.event("project_deleted")
+        # The dispatcher persists a successful mutating response after execute()
+        # returns.  The deletion receipt cannot retain the removed project's FK.
+        self.project = None
+        root = Path(os.environ.get("ATLAS_DATA_ROOT", "BRAIN/project-data")).resolve()
+        path = root / "orgs" / org / "projects" / project
+        if path.is_relative_to(root):
+            shutil.rmtree(path, ignore_errors=True)
+        return {"job_id": str(uuid4()), "purge_at": None}
 
     def grant_write(
         self, member_id: str, role: str | None, expected: str | None
