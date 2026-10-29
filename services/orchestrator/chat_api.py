@@ -221,7 +221,12 @@ async def chat(request: Request) -> Response:
     authenticated_key = key_principal(request)
     if authenticated_key is not None:
         pass  # Only the mounted Bearer edge can populate this server-side principal.
-    elif project_mode():
+    elif project_mode() and (
+        request.headers.get("origin") is not None
+        or request.headers.get("sec-fetch-site") is not None
+    ):
+        # Browser calls keep the strict project origin check; the chat UI backend
+        # calls this endpoint server to server, without browser fetch metadata.
         try:
             browser_origin(request)
         except ProjectError as exc:
