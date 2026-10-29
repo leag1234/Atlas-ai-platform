@@ -99,6 +99,7 @@ def upgrade_work(dsn: str) -> None:
         ).fetchone()
         if not role or not role[0]:
             raise ValueError("Work migration requires the database operator")
+        db.execute(Path(__file__).with_name("project_lifecycle_schema.sql").read_text())
         db.execute(Path(__file__).with_name("project_work_schema.sql").read_text())
         db.execute(Path(__file__).with_name("project_runner_schema.sql").read_text())
         db.execute(

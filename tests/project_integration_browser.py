@@ -279,6 +279,15 @@ class ProjectIntegrationTests(unittest.TestCase):
         self.page.get_by_role("button", name="Enregistrer", exact=True).click()
         expect(self.page.get_by_role("heading", name="Revised report")).to_be_visible()
 
+    def test_owner_can_archive_from_card_and_find_it_in_archived_filter(self) -> None:
+        self.open_projects()
+        card = self.page.locator(f'[data-project-card="{PROJECT}"]')
+        card.get_by_role("button", name="Archiver", exact=True).click()
+        expect(self.page.locator("[data-project-card]")).to_have_count(3)
+        self.page.get_by_role("tab", name="Archivés", exact=True).click()
+        expect(self.page.locator(f'[data-project-card="{PROJECT}"]')).to_have_count(1)
+        self.assertIn((BASE, "PATCH", {"state": "archived"}), self.calls)
+
     def test_file_cards_scoped_download_and_preview(self) -> None:
         self.deliverables = [
             dict(

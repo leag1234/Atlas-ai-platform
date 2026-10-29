@@ -40,6 +40,8 @@
 .atlas-project .atlas-project-card:hover {border-color:var(--project-muted);box-shadow:0 5px 18px #00000006;}
 .atlas-project-card-top {display:flex;justify-content:space-between;gap:12px;width:100%;}
 .atlas-project-card h2 {font-size:18px;letter-spacing:-.2px;overflow-wrap:anywhere;}
+.atlas-project-card-menu {display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;}
+.atlas-project-card-menu button {font-size:12px;padding:6px 9px;}
 .atlas-project-card p {font-size:14px;color:var(--project-muted);margin:0;}
 .atlas-project-card small {color:var(--project-muted);margin-top:auto;font-size:12px;}
 .atlas-project-lock {width:14px;height:12px;border:1.5px solid currentColor;border-radius:3px;font-size:0;position:relative;margin-top:7px;color:var(--project-muted);flex-shrink:0;}
