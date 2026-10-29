@@ -768,6 +768,7 @@ class Smoke:
                 "project produced fewer than two downloadable deliverables"
             )
         xlsx_bytes = b""
+        downloaded_names = ["fictional-word.docx", "fictional-total.xlsx"]
         downloaded = 0
         for url in urls:
             target = url if url.startswith("http") else self.base + url
@@ -778,25 +779,35 @@ class Smoke:
                     xlsx_bytes = response.content
         if downloaded < 2 or not xlsx_bytes:
             raise SmokeFailure("could not download both Word and XLSX deliverables")
-        output = self.tempdir / "deliverable.xlsx"
+        output = self.tempdir / downloaded_names[1]
         output.write_bytes(xlsx_bytes)
         formulas = load_workbook(output, data_only=False)
         values = load_workbook(output, data_only=True)
-        has_formula = any(
-            isinstance(cell.value, str) and cell.value.startswith("=")
+        formula_cells = [
+            (sheet_.title, cell.coordinate)
             for sheet_ in formulas
             for row in sheet_.iter_rows()
             for cell in row
-        )
-        cached_totals = [
-            cell.value
-            for sheet_ in values
-            for row in sheet_.iter_rows()
-            for cell in row
-            if isinstance(cell.value, (int, float))
+            if isinstance(cell.value, str) and cell.value.startswith("=")
         ]
-        if not has_formula or not cached_totals:
-            raise SmokeFailure("XLSX lacks a formula or cached numeric total")
+        cached_formula_values = [
+            values[sheet_name][coordinate].value
+            for sheet_name, coordinate in formula_cells
+            if values[sheet_name][coordinate].value is not None
+        ]
+        numeric_totals = [
+            value for value in cached_formula_values if isinstance(value, (int, float))
+        ]
+        if not formula_cells:
+            reason = "no formula cell"
+        elif not cached_formula_values:
+            reason = "formula present but no cached value"
+        else:
+            reason = "no numeric total"
+        if not formula_cells or not numeric_totals:
+            raise SmokeFailure(
+                f"XLSX validation failed for {', '.join(downloaded_names)}: {reason}"
+            )
         return "Word and XLSX downloaded; XLSX formula and cached values found"
 
     def project_memory(self) -> str:

@@ -41,6 +41,14 @@ def startup_failure(
             "es": f"tiempo de espera agotado después de {timeout_seconds} segundos",
             "it": f"timeout dopo {timeout_seconds} secondi",
         }
+    elif code == "image_unavailable":
+        reason = {
+            "fr": "le service d’image est indisponible pour le moment",
+            "en": "the image service is unavailable right now",
+            "de": "der Bilddienst derzeit nicht verfügbar ist",
+            "es": "el servicio de imágenes no está disponible ahora",
+            "it": "il servizio immagini non è disponibile al momento",
+        }
     else:
         http = f" (HTTP {status})" if status is not None else ""
         reason = {
