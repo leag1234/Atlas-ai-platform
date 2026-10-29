@@ -654,14 +654,89 @@ class ProjectFiles:
             session_id=session["id"],
             conversation_id=session["conversation_id"],
         )
-        file = self.create_file(
-            folder_id,
-            metadata["path"],
-            content,
-            metadata["expected_parent_revision"],
-            origin="work",
-            verified_mime=PUBLICATION_MIMES[suffix],
-        )
+        from services.retrieval.project_schedules import Schedules
+
+        schedules = Schedules(self.scope)
+        scheduled = schedules.binding(session["id"])
+        if scheduled is not None and scheduled["data"]["target_file"]:
+            target = scheduled["data"]
+            metadata["path"] = target["target_file"]
+            if Path(metadata["path"]).suffix.lower() != suffix:
+                raise ProjectError(
+                    422, "invalid_request", "Scheduled target format mismatch"
+                )
+            if scheduled["run_data"].get("published"):
+                raise ProjectError(
+                    409, "revision_conflict", "Task target already published"
+                )
+            matches = [
+                f
+                for f in self.listing("file")
+                if f["relative_path"] == target["target_file"]
+            ]
+            if target["target_file_id"]:
+                file = self.get("file", target["target_file_id"])
+            elif len(matches) > 1:
+                raise ProjectError(
+                    409, "revision_conflict", "Ambiguous scheduled target"
+                )
+            else:
+                file = matches[0] if matches else {}
+            if file:
+                base = next(
+                    (
+                        b
+                        for b in session["base_file_versions"]
+                        if b["file_id"] == file["id"]
+                    ),
+                    None,
+                )
+                if base is None or base["version_id"] != file["version_id"]:
+                    raise ProjectError(409, "revision_conflict")
+                version = self.add_version(
+                    file,
+                    content,
+                    origin="work",
+                    verified_mime=PUBLICATION_MIMES[suffix],
+                )
+                file.update(
+                    {
+                        k: version[k]
+                        for k in (
+                            "mime",
+                            "size_bytes",
+                            "sha256",
+                            "origin",
+                            "availability",
+                            "source_locator",
+                            "index_status",
+                        )
+                    },
+                    version_id=version["id"],
+                )
+                self.save(file)
+                self.emit("file_uploaded", [file["id"], version["id"]], len(content))
+            else:
+                file = self.create_file(
+                    folder_id,
+                    metadata["path"],
+                    content,
+                    metadata["expected_parent_revision"],
+                    origin="work",
+                    verified_mime=PUBLICATION_MIMES[suffix],
+                )
+            target["target_file_id"] = file["id"]
+            scheduled["run_data"]["published"] = file["version_id"]
+            schedules.save(scheduled)
+        else:
+            file = self.create_file(
+                folder_id,
+                metadata["path"],
+                content,
+                metadata["expected_parent_revision"],
+                origin="work",
+                verified_mime=PUBLICATION_MIMES[suffix],
+            )
         value = dict(
             self.new(),
             file_version_id=file["version_id"],

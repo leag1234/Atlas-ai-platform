@@ -109,6 +109,10 @@ def execute(
 ) -> tuple[int, Any]:
     from services.retrieval.project_sharing import execute as sharing
 
+    if scope.project is not None and tail and tail[0] == "scheduled-tasks":
+        from services.retrieval.project_schedules import Schedules
+
+        return Schedules(scope).execute(method, tail[1:], body, expected)
     shared_result = sharing(scope, method, tail, body, expected)
     if shared_result is not None:
         return shared_result
@@ -606,6 +610,12 @@ def dispatch(
                     os.environ.get("ATLAS_PROJECT_SIGNING_KEY", "").encode(),
                 ),
             )
+        if (
+            method == "GET"
+            and tail == ["scheduled-tasks"]
+            and isinstance(result[1], dict)
+        ):
+            result[1]["can_manage"] = scope.role in {"owner", "editor"}
         if method != "GET":
             scope.remember(method, path, key, body, result)
         return result
@@ -959,6 +969,33 @@ EXECUTION_SCHEMAS = {
 def execution_dispatch(
     identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
 ) -> tuple[int, Any]:
+    if operation == "scheduled-publish":
+        from services.retrieval.project_schedules import Schedules
+
+        raw = json.loads(body)
+        if (
+            set(raw) != {"session_id", "request_id", "generation", "content"}
+            or not isinstance(raw["content"], str)
+            or not 0 < len(raw["content"]) <= 200000
+        ):
+            raise ProjectError(422, "invalid_request")
+        with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+            identity, identity.org, identity.project
+        ) as scope:
+            Work(scope).fence(raw)
+            replay = scope.replay(
+                "POST", "/internal/atlas/execution/scheduled-publish", key, body
+            )
+            if replay is not None:
+                return replay
+            result = (
+                200,
+                Schedules(scope).publish_text(raw["session_id"], raw["content"]),
+            )
+            scope.remember(
+                "POST", "/internal/atlas/execution/scheduled-publish", key, body, result
+            )
+            return result
     if operation not in EXECUTION_SCHEMAS:
         raise ProjectError(404, "not_found")
     package = publication_parts(body, content_type) if operation == "publish" else None
@@ -1188,12 +1225,38 @@ def execution_ingress(
                 int(scope.policy["quotas"]["upload_bytes"]) + 160000 + 1048576 + 65536
             )
         Work(scope).grant_stamp(identity.member)
-        return 160000
+        return 1200000 if operation == "scheduled-publish" else 160000
 
 
 def transcript_dispatch(
     identity: Identity, operation: str, body: bytes, key: str, content_type: str = ""
 ) -> tuple[int, Any]:
+    if operation == "schedule-propose":
+        from services.retrieval.project_schedules import TaskInput, Schedules
+
+        raw = json.loads(body)
+        if set(raw) != {"conversation_id", "request_id", "task"}:
+            raise ProjectError(422, "invalid_request")
+        task = TaskInput.model_validate(raw["task"])
+        with store(os.environ.get("ATLAS_PROJECT_DSN", "")).scope(
+            identity, identity.org, identity.project
+        ) as scope:
+            turn, _ = Transcript(scope).bound(raw)
+            if turn["state"] != "running":
+                raise ProjectError(409, "session_busy")
+            scope.authorize("POST", ["scheduled-tasks"])
+            path = "/internal/atlas/transcript/schedule-propose/" + turn["id"]
+            replay = scope.replay("POST", path, key, body)
+            if replay is not None:
+                return replay
+            result = (
+                201,
+                Schedules(scope).create(
+                    task, proposal=True, conversation=turn["conversation_id"]
+                ),
+            )
+            scope.remember("POST", path, key, body, result)
+            return result
     schemas = {
         "check": "SessionStateRead",
         "memory": "TranscriptMemory",

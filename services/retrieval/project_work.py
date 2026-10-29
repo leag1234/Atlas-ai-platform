@@ -94,6 +94,16 @@ class Work:
             file, version = self.files.version(base["file_id"], base["version_id"])
             self.folder(file["folder_id"])
             if file["version_id"] != version["id"]:
+                from services.retrieval.project_schedules import Schedules
+
+                scheduled = Schedules(self.scope).binding(value["id"])
+                if (
+                    scheduled is not None
+                    and scheduled["run_data"].get("published") == file["version_id"]
+                ):
+                    current = self.files.get("version", file["version_id"])
+                    if current["parent_version_id"] == version["id"]:
+                        continue
                 raise ProjectError(409, "revision_conflict", revision=file["revision"])
 
     def folder(self, identifier: str) -> None:
@@ -205,7 +215,15 @@ class Work:
             raise ProjectError(409, "session_busy")
         self.scope.match(value, f'"{data["expected_revision"]}"')
         self.bases(value)
-        limits = self.scope.policy["quotas"]["per_turn"]
+        limits = dict(self.scope.policy["quotas"]["per_turn"])
+        from services.retrieval.project_schedules import Schedules
+
+        scheduled = Schedules(self.scope).binding(value["id"])
+        if scheduled is not None:
+            limits["cost_eur"] = min(
+                limits["cost_eur"], scheduled["run_data"]["reserved_eur"]
+            )
+            limits["per_call_eur"] = min(limits["per_call_eur"], limits["cost_eur"])
         snapshot_bytes = sum(
             self.files.get("version", base["version_id"])["size_bytes"]
             for base in value["base_file_versions"]
@@ -276,6 +294,9 @@ class Work:
         ):
             raise ProjectError(409, "session_busy")
         if not cleanup:
+            from services.retrieval.project_schedules import Schedules
+
+            Schedules(self.scope).binding(value["id"])
             self.scope.authorize("POST", ["work-sessions"])
             if (
                 row["expires_at"] <= now()

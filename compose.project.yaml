@@ -21,6 +21,7 @@ services:
     image: atlas-project-runtime:local
     environment:
       ATLAS_PROJECT_MODE: '1'
+      ATLAS_SCHEDULED_TASKS: '1'
       ATLAS_REMOTE_RUNNERS: '1'
       ATLAS_PROJECT_ORIGIN: ${ATLAS_PUBLIC_URL:?Set the public HTTPS origin}
       ATLAS_PROJECT_IDENTITY_SECRET: ${ATLAS_PROJECT_IDENTITY_SECRET:?Required}

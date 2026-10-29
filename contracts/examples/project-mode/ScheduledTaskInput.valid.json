@@ -1,0 +1,16 @@
+{
+  "name": "Fictional orchard summary",
+  "instruction": "Refresh the fictional orchard report.",
+  "schedule": {
+    "frequency": "every",
+    "time": "09:00",
+    "timezone": "Europe/Paris",
+    "days": 3,
+    "weekday": 0,
+    "anchor": "2026-10-29"
+  },
+  "target_file": "Orchard.md",
+  "daily_cap_eur": 0.5,
+  "locale": "en",
+  "enabled": true
+}

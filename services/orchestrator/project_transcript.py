@@ -254,6 +254,7 @@ class ContextTools:
         self.memory = memory
         self.connectors: Any = None
         self.skills: Any = None
+        self.schedules: Any = None
         self.check = check
 
     def estimate(self, call: Call) -> Reservation:
@@ -281,6 +282,8 @@ class ContextTools:
                 return dict(await self.skills.execute(call, timeout))
             if self.skills.blocks(call.name):
                 return {"error": "skill_action_not_permitted"}
+        if call.name == "propose_scheduled_task" and self.schedules is not None:
+            return dict(await self.schedules.execute(call))
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name != "rag_search":
@@ -583,6 +586,13 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 context, MemoryTools(broker, state), check=check
             )
             if not request._api_key_request:
+                from services.orchestrator.schedule_tools import ScheduleTools
+
+                context_tools.schedules = ScheduleTools(
+                    broker, turn, request.ui_timezone, scoped.lang
+                )
+                model.tools.append(context_tools.schedules.declaration())
+            if not request._api_key_request:
                 context_tools.connectors = await prepare_connectors(request)
             if context_tools.connectors is not None:
                 context_tools.connectors.bind(model)
@@ -716,7 +726,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     and event.get("turn_id") == turn["id"]
                 ):
                     await sink({"project": event})
-        if completed["turn"]["state"] == "completed":
+        if completed["turn"]["state"] == "completed" and not request._scheduled_run:
             from services.orchestrator.session_updates import schedule
 
             schedule(broker, completed)
