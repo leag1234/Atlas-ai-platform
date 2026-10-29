@@ -88,7 +88,7 @@ BRAIN/eval/devapi-clients.json, without real user content.
 
 ## Atlas assistant keys (design 19 K-A)
 
-The public base URL is `https://atlas.indidea.org/api/atlas/v1`. It exposes
+The public base URL is `https://atlas.eu.com/api/atlas/v1`. It exposes
 `GET /models`, `POST /chat/completions` (JSON and SSE), and `GET /usage`.
 `atlas` selects the installation's default chat profile; configured profile IDs
 are explicit alternatives. These execute the same assistant pipeline, including
@@ -149,7 +149,7 @@ it in process arguments. Do not enable tracing or verbose HTTP logging.
 
 ```sh
 python - <<'PY' | curl --silent --show-error --config - \
-  https://atlas.indidea.org/api/atlas/v1/chat/completions \
+  https://atlas.eu.com/api/atlas/v1/chat/completions \
   -H 'Content-Type: application/json' \
   --data '{"model":"atlas","messages":[{"role":"user","content":"Find current space news and cite sources."}]}'
 from pathlib import Path
@@ -159,7 +159,7 @@ PY
 ```
 
 For the official Python client, initialize `OpenAI(api_key=Path(...).read_text().strip(),
-base_url="https://atlas.indidea.org/api/atlas/v1")` and call
+base_url="https://atlas.eu.com/api/atlas/v1")` and call
 `client.chat.completions.create(model="atlas", messages=..., stream=True)` (or
 `stream=False`). Atlas keys are independent of Open WebUI keys. Preserve existing interim tester
 access until rotation; an owner can then disable Open WebUI key issuance.

@@ -44,6 +44,8 @@ class TranscriptBroker(ExecutionBroker):
 
 def answer_content(text: str) -> str:
     """Unwrap historical answers and omit internal record references."""
+    import re
+
     try:
         value = json.loads(text)
     except ValueError:

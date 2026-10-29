@@ -200,7 +200,7 @@
   async function renameProject() {
     await nameDialog('renameProject', async name => {
       projectInfo = await jsonResponse(await request(base(), {method:'PATCH', headers:{'If-Match':`"${projectInfo.revision}"`},body:{name}}), generation);
-      projects = projects.map(p => p.id === scope.project ? projectInfo : p); projectHeading();
+      projects = projects.map(p => p.id === scope.project ? projectInfo : p); projectHeading(); navigation();
     }, projectInfo.name);
   }
   function projectHeading() {
@@ -314,6 +314,11 @@
         article.append(group);
       }
       for (const item of panelData?.deliverables || []) if (item.turn_id === turn.request_id || item.request_id === turn.request_id || turn.content_refs.some(ref => ref.text?.includes(item.download_route))) article.append(fileCard(item));
+      if (turn.usage) {
+        for (const [key, label] of [['cost_eur', 'cost'], ['unknown_eur', 'unknownCost'], ['reserved_eur', 'reservedCost']]) {
+          if (turn.usage[key] != null && Number(turn.usage[key]) !== 0) article.append(detail(label, turn.usage[key]));
+        }
+      }
       const lastContext = turn.usage?.context;
       if (lastContext?.layers) {
         const used = node('details', null, 'atlas-project-disclosure'); used.dataset.contextUsed = ''; used.append(node('summary',t('contextUsed')));
@@ -535,6 +540,7 @@
       try { const conversation = await api(base() + '/conversations', 'POST', {title:shortTitle(question)}); await choose({org:scope.org,project:scope.project,conversation:conversation.id}); input.value = question; }
       finally { configuring = false; controls(); }
     }
+    input.value = '';
     const current = generation;
     sending = true; sessionLabel.textContent = t('running'); controls(); stream = new AbortController();
     const pending = node('article', null, 'atlas-project-turn atlas-project-turn-running'); const answer = node('pre', '', 'answer');
@@ -555,7 +561,6 @@
       const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });
-      input.value = '';
       await consume(response, chunk => {
         if (current !== generation) return;
         if (chunk.project_id) { liveRequests.add(chunk.request_id); eventRecord(chunk); }
