@@ -661,6 +661,70 @@
     if (main) main.dataset.atlasProjectHostMain = '';
     return main;
   }
+  const moveLabels = {
+    en:{move:'Move to project',newProject:'+ New project',confirm:'This conversation has files. Move it?',failed:'The conversation was not moved; the original was kept.',choose:'Choose a project'},
+    fr:{move:'Déplacer vers un projet',newProject:'+ Nouveau projet',confirm:'Cette conversation contient des fichiers. La déplacer ?',failed:'La conversation n’a pas été déplacée ; l’original est conservé.',choose:'Choisissez un projet'},
+    de:{move:'In Projekt verschieben',newProject:'+ Neues Projekt',confirm:'Diese Unterhaltung enthält Dateien. Verschieben?',failed:'Die Unterhaltung wurde nicht verschoben; das Original bleibt erhalten.',choose:'Projekt auswählen'},
+    es:{move:'Mover al proyecto',newProject:'+ Nuevo proyecto',confirm:'Esta conversación tiene archivos. ¿Moverla?',failed:'La conversación no se movió; se conserva el original.',choose:'Elige un proyecto'},
+    it:{move:'Sposta nel progetto',newProject:'+ Nuovo progetto',confirm:'Questa conversazione contiene file. Spostarla?',failed:'La conversazione non è stata spostata; l’originale è conservato.',choose:'Scegli un progetto'}
+  };
+  const moveText = key => (moveLabels[(window.atlasProjectLocale.language() || 'en').slice(0,2)] || moveLabels.en)[key];
+  const nativeChatId = () => (location.pathname.match(/^\/c\/([^/?#]+)$/) || [])[1] || null;
+  function nativeBranch(chat) {
+    const history = chat?.chat?.history || chat?.history || {};
+    const messages = history.messages || {};
+    let current = history.currentId || chat?.chat?.history?.currentId;
+    const branch = [];
+    while (current && messages[current]) { branch.unshift(messages[current]); current = messages[current].parentId; }
+    return branch.filter(message => ['user','assistant','system'].includes(message.role) && typeof message.content === 'string' && message.content.trim());
+  }
+  function nativeFiles(message, chat) {
+    const values = [...(message.files || []), ...(chat.files || [])];
+    return [...new Set(values.map(value => typeof value === 'string' ? value : value?.id).filter(value => typeof value === 'string'))];
+  }
+  async function importNativeChat(project, chatId) {
+    const original = await fetch('/api/v1/chats/' + encodeURIComponent(chatId), {credentials:'same-origin'});
+    if (!original.ok) throw Object.assign(new Error('native_chat'), {status:original.status});
+    const chat = await original.json(), branch = nativeBranch(chat);
+    if (!branch.length || branch.length > 500) throw new Error('native_chat_shape');
+    const allFiles = [...new Set(branch.flatMap(message => nativeFiles(message, chat)))];
+    if (allFiles.length && !window.confirm(moveText('confirm'))) return;
+    const projectBase = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
+    let folders = await list(projectBase + '/folders');
+    let folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id);
+    if (!folder) { await api(projectBase + '/folders','POST',{name:t('files'),locality:'server',model_use:'allow'}); folders = await list(projectBase + '/folders'); folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id); }
+    if (!folder) throw new Error('project_folder');
+    const transferred = new Map();
+    for (const id of allFiles) {
+      const content = await fetch('/api/v1/files/' + encodeURIComponent(id) + '/content',{credentials:'same-origin'});
+      if (!content.ok) throw Object.assign(new Error('native_file'), {status:content.status});
+      const blob = await content.blob();
+      folder = (await list(projectBase + '/folders')).find(value => value.id === folder.id);
+      const data = new FormData(); data.append('file', blob, 'attachment-' + id); data.append('path','attachment-' + id); data.append('expected_parent_revision',String(folder.revision));
+      const uploaded = await jsonResponse(await request(projectBase + '/files?folder_id=' + folder.id,{method:'POST',body:data}),generation);
+      transferred.set(id,uploaded.file.id);
+    }
+    const messages = branch.map((message,index) => ({role:message.role,content:message.content.trim(),created_at:new Date(message.timestamp || message.created_at || Date.now() + index).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)}));
+    const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
+    const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
+    if (!deleted.ok) throw Object.assign(new Error('native_delete'), {status:deleted.status});
+    location.assign(`/?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(project.id)}&conversation=${encodeURIComponent(imported.id)}`);
+  }
+  async function moveMenu() {
+    const chatId = nativeChatId(); if (!chatId) return;
+    projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
+    const editable = projects.filter(project => !project.shared_with_me || project.role === 'owner' || project.role === 'editor');
+    const dialog = node('dialog',null,'atlas-project-dialog'), form = node('form'); form.append(node('h2',moveText('choose')));
+    if (editable.length > 8) { const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects'); form.append(search); }
+    for (const project of editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0))) form.append(button(project.name,() => importNativeChat(project,chatId)));
+    form.append(button('newProject',async () => { const name = window.prompt(t('newProject')); if (!name?.trim()) return; const project = await api(`/api/atlas/orgs/${scope.org}/projects`,'POST',{name:name.trim(),instructions:'',default_action:'chat'}); await importNativeChat(project,chatId); }),button('cancel',() => dialog.close()));
+    dialog.append(form); document.body.append(dialog); dialog.showModal();
+  }
+  function installMoveActions() {
+    if (owned || !scope?.org || !nativeChatId() || document.querySelector('[data-atlas-move-project]')) return;
+    const trigger = node('button',moveText('move'),'atlas-project-move'); trigger.type='button'; trigger.dataset.atlasMoveProject=''; trigger.addEventListener('click',guarded(moveMenu));
+    const title = document.querySelector('header, #chat-container'); (title || document.body).append(trigger);
+  }
   function installNavigation() {
     if (owned || !identity || /^\/(auth|admin)/.test(location.pathname)) return;
     const sidebar = document.querySelector('#pinned-menu-items-list') || document.querySelector('#sidebar');
@@ -698,6 +762,7 @@
     document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {control.parentElement.hidden = true;});
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
+    installMoveActions();
     if (root?.isConnected && !owned) {
       const main = hostMain();
       if (main) {
@@ -769,6 +834,7 @@
       const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
       if (!me.ok) {if (owned || selections().has('project') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
       memberships = (await me.json()).memberships;
+      if (!scope && memberships[0]?.org_id) scope = {org: memberships[0].org_id};
       const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
       if (!host.ok) {if (!owned && !selections().has('project')) return; throw new Error(t('signIn'));}
       identity = (await host.json()).id; if (!identity) throw new Error(t('signIn'));
