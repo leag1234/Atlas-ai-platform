@@ -375,8 +375,10 @@ class Work:
                     self.scope.reconcile(reservation, resource, amount)
                     if unknown:
                         self.scope.reconcile(reservation, resource, None)
-                for resource in ("concurrent_jobs", "stored_bytes", "temporary_bytes"):
-                    self.scope.reconcile(reservation, resource, 0)
+                self.db.execute(
+                    "SELECT atlas_projects.release_work_reservations(%s,%s,%s)",
+                    (self.org, self.project, reservation),
+                )
                 value["usage"] = usage or dict(
                     value["usage"],
                     unknown_eur=row["data"]["reserved_eur"],

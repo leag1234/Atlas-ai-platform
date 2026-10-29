@@ -34,6 +34,8 @@ class Completion(BaseModel):
 def take_due() -> dict[str, Any]:
     repository = store(os.environ.get("ATLAS_PROJECT_DSN", ""))
     with repository.pool.connection() as db:
+        db.execute("SELECT atlas_projects.recover_expired_work_leases(NULL)")
+    with repository.pool.connection() as db:
         candidates = db.execute(
             "SELECT * FROM atlas_projects.scheduled_candidates()"
         ).fetchall()
