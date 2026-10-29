@@ -54,6 +54,11 @@ def settings() -> Limits:
     )
 
 
+def workspace_startup_timeout(limits: Limits) -> float:
+    """Allow a cold isolated workspace to start without exceeding its turn budget."""
+    return min(120.0, limits.wall_clock)
+
+
 class CodeModel(GatewayModel):
     """Keep gateway per-call ceilings, while the loop owns the larger turn budget."""
 
@@ -803,7 +808,9 @@ async def process_work(
                 dict(
                     root="/workspace",
                     repository=repository,
-                    listing=await workspace.invoke("list_dir", {"path": "."}, 10),
+                    listing=await workspace.invoke(
+                        "list_dir", {"path": "."}, workspace_startup_timeout(limits)
+                    ),
                     files=[
                         dict(
                             file_id=file["id"],
