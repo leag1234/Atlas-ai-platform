@@ -131,9 +131,23 @@ def prepare(request: Request) -> Plan:
         reserved = plan.charge(incoming, request.max_tokens)
         if request.validate_output:
             reserved += plan.charge(incoming + retry_margin, request.max_tokens)
-    if reserved > 50000 or (not preset and reserved <= 0):
-        raise LimitError("cost_budget", reserved, 50000, "microEUR")
+    if reserved > call_cap() or (not preset and reserved <= 0):
+        raise LimitError("cost_budget", reserved, call_cap(), "microEUR")
     return replace(plan, reserved=reserved, fallback=fallback)
+
+
+def call_cap() -> int:
+    """Per-call reservation ceiling in microEUR (default 0.05 EUR).
+
+    Coding clients such as Codex send large first requests; operators may raise
+    the ceiling with ATLAS_RAW_CALL_MAX_MICRO_EUR (bounded to 5 EUR). Key, user
+    and instance budgets still apply on top of it.
+    """
+    try:
+        value = int(os.environ.get("ATLAS_RAW_CALL_MAX_MICRO_EUR", "50000"))
+    except ValueError:
+        return 50000
+    return min(max(value, 1), 5000000)
 
 
 def raw_models() -> dict[str, str]:
@@ -199,8 +213,8 @@ def prepare_raw(request: Any) -> Plan:
         Decimal(str(price["output_eur_per_mtok"])),
     )
     reserved = plan.charge(incoming, request.max_tokens)
-    if reserved <= 0 or reserved > 50000:
-        raise LimitError("cost_budget", reserved, 50000, "microEUR")
+    if reserved <= 0 or reserved > call_cap():
+        raise LimitError("cost_budget", reserved, call_cap(), "microEUR")
     return replace(plan, reserved=reserved, attempt_bound=reserved)
 
 

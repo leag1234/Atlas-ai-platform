@@ -144,3 +144,17 @@ class DevGatewayTests(unittest.IsolatedAsyncioTestCase):
             Request.model_validate({"messages": messages[:1], "tools": [tool]})
         with self.assertRaises(ValueError):
             Request.model_validate({"messages": messages, "tools": [tool, tool]})
+
+
+class RawCallCapTests(unittest.TestCase):
+    def test_call_cap_defaults_and_is_bounded(self) -> None:
+        import dev_gateway
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(dev_gateway.call_cap(), 50000)
+        with patch.dict(os.environ, {"ATLAS_RAW_CALL_MAX_MICRO_EUR": "1000000"}):
+            self.assertEqual(dev_gateway.call_cap(), 1000000)
+        with patch.dict(os.environ, {"ATLAS_RAW_CALL_MAX_MICRO_EUR": "99999999"}):
+            self.assertEqual(dev_gateway.call_cap(), 5000000)
+        with patch.dict(os.environ, {"ATLAS_RAW_CALL_MAX_MICRO_EUR": "invalid"}):
+            self.assertEqual(dev_gateway.call_cap(), 50000)
