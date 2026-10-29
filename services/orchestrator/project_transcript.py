@@ -694,8 +694,16 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         from packages.configuration import temporarily_unavailable
         import logging
 
+        import traceback
+
+        frames = traceback.extract_tb(exc.__traceback__)[-3:]
         logging.getLogger(__name__).warning(
-            "project_turn_failed kind=%s", type(exc).__name__
+            "project_turn_failed kind=%s at=%s",
+            type(exc).__name__,
+            " < ".join(
+                f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+                for frame in reversed(frames)
+            ),
         )
         item.state = "failed"
         item.reponse = temporarily_unavailable(scoped.lang)
