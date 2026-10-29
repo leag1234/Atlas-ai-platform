@@ -366,21 +366,16 @@ class Transcript:
         remembered = explicit(request["messages"][0]["content"])
         if remembered is not None:
             self.scope.authorize("POST", ["memory"])
-            refs = []
-            for version_id in request["file_version_ids"]:
-                version = self.files.get("version", version_id)
-                refs.append(
-                    dict(
-                        file_id=version["file_id"], version_id=version_id, locator=None
-                    )
-                )
+            # The fact is the member's own typed words, not document content: the
+            # project files the UI attaches to every turn do not make it a document
+            # proposal. Model-proposed memory still waits for confirmation.
             fact: dict[str, Any] = dict(
                 text=remembered,
                 kind="fact",
-                status="proposed" if refs else "active",
+                status="active",
                 # Explicit user memory belongs in every turn's bounded prefix.
-                pinned=not refs,
-                source_refs=refs,
+                pinned=True,
+                source_refs=[],
             )
             provenance = dict(
                 source_conversation_id=request["conversation_id"],
