@@ -132,6 +132,7 @@ def main() -> None:
                         + base64.b64encode(output.getvalue()).decode(),
                         "seed": seed,
                         "steps": steps,
+                        "model": config["repository"],
                         "max_sequence_length": 512,
                         "seconds": monotonic() - started,
                     }

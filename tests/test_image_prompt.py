@@ -147,7 +147,14 @@ class ImageRewriteTests(unittest.IsolatedAsyncioTestCase):
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(
-                    json.dumps({"image": png(), "seed": 7, "steps": 4}).encode()
+                    json.dumps(
+                        {
+                            "image": png(),
+                            "seed": 7,
+                            "steps": 4,
+                            "model": "fixture-worker-model",
+                        }
+                    ).encode()
                 )
 
         with ThreadingHTTPServer(

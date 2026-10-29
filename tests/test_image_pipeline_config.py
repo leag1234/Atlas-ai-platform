@@ -57,6 +57,7 @@ class PipelineConfigTests(unittest.TestCase):
                     result = json.load(response)
                 self.assertEqual(result["seed"], 42)
                 self.assertEqual(result["steps"], 4)
+                self.assertEqual(result["model"], "fixture")
                 self.assertTrue(result["image"].startswith("data:image/png;base64,"))
                 modules.Flux2KleinPipeline.from_pretrained.assert_called_once_with(
                     "fixture", revision="pinned", torch_dtype=modules.bfloat16

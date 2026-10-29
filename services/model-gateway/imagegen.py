@@ -26,7 +26,6 @@ from image_prompt import (
 )
 from image_scene import anchored_scene
 from image_verify import Verification, audit, reserve as verification_reserve, verify
-from image_worker import config_path
 
 
 class ImageWorkerFailure(RuntimeError):
@@ -102,8 +101,14 @@ async def generate(request: object) -> dict[str, object]:
         )
         reserved = rewrite_budget.reserved
         scene = rewrite_budget.scene or anchored_scene(prompt.prompt)
-    scene.add_count_constraints(prompt.prompt)
-    if not scene.render():
+    for source in [*prompt.dialogue, prompt.prompt]:
+        scene.add_count_constraints(source)
+    # The scene gains source-bound counts after structured extraction. Re-render
+    # before the first worker call so retry-only emphasis is never the first time
+    # the model sees an explicit count.
+    if scene.count_constraints:
+        rewritten = ImagePrompt(prompt=scene.render()).prompt
+    elif not scene.render():
         scene.setting = rewritten
     retries = max(0, min(2, int(os.environ.get("ATLAS_IMAGE_VERIFY_RETRIES", "2"))))
     spent = reserved
@@ -189,18 +194,9 @@ async def generate(request: object) -> dict[str, object]:
                 "failed_details": [
                     scene.failure_detail(key) for key in best_check.failed
                 ],
-                **(
-                    {"failure_note_suppressed": True}
-                    if best_check.unknown
-                    or (
-                        bool(best_check.failed)
-                        and not any(
-                            scene.failure_note_eligible(key)
-                            for key in best_check.failed
-                        )
-                    )
-                    else {}
-                ),
+                # Suppression is reserved for an unavailable/malformed verifier:
+                # it has no trustworthy requested-detail finding to disclose.
+                **({"failure_note_suppressed": True} if best_check.unknown else {}),
                 "unknown": best_check.unknown,
             },
         }
@@ -271,8 +267,11 @@ async def pixels(
     seed = data.get("seed")
     if type(seed) is not int or not 0 <= seed < 2**32:
         raise ValueError("invalid_provider_seed")
+    model = data.get("model")
+    if not isinstance(model, str) or not model:
+        raise ValueError("invalid_provider_model")
     return {
-        "model": json.loads(config_path().read_text())["repository"],
+        "model": model,
         "seed": seed,
         "rewritten_prompt": rewritten,
         "width": 1024,

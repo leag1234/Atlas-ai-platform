@@ -51,6 +51,7 @@ class WorkerTests(unittest.TestCase):
                     result = json.load(response)
                 self.assertTrue(result["image"].startswith("data:image/png;base64,"))
                 self.assertIs(type(result["seed"]), int)
+                self.assertEqual(result["model"], "unsloth/FLUX.1-schnell")
                 pipeline = (
                     modules.FluxPipeline.from_pretrained.return_value.to.return_value
                 )

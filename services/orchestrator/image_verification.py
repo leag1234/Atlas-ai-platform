@@ -25,13 +25,24 @@ def verification_note(verification: object, language: str) -> str:
         )
     if details:
         templates = {
+            "en": "The result does not satisfy: {details}. Here is the best image obtained.",
+            "fr": "Le résultat ne respecte pas : {details}. Voici la meilleure image obtenue.",
+            "de": "Das Ergebnis erfüllt nicht: {details}. Hier ist das beste erhaltene Bild.",
+            "es": "El resultado no cumple: {details}. Esta es la mejor imagen obtenida.",
+            "it": "Il risultato non soddisfa: {details}. Ecco la migliore immagine ottenuta.",
+        }
+        if any(str(key).startswith("count_") for key in failed):
+            return templates.get(language, templates["en"]).format(
+                details=", ".join(details)
+            )
+        legacy_templates = {
             "en": "I could not obtain an image where {details}.",
             "fr": "Je n’ai pas réussi à obtenir une image où {details}.",
             "de": "Ich konnte kein Bild erhalten, auf dem {details}.",
             "es": "No logré obtener una imagen en la que {details}.",
             "it": "Non sono riuscito a ottenere un’immagine in cui {details}.",
         }
-        return templates.get(language, templates["en"]).format(
+        return legacy_templates.get(language, legacy_templates["en"]).format(
             details=", ".join(details)
         )
     generic = {
@@ -49,7 +60,15 @@ def _localized_detail(key: str, detail: str, language: str) -> str:
         r"(.+?) holds (.+?)'s (?:own )?hand(?: with his hand)?", detail
     )
     if not match:
-        return ""
+        # Count details preserve the requester's own wording in the gateway scene.
+        # Other scene fields are English, so only expose them as-is for English.
+        return (
+            detail
+            if language == "en"
+            and detail.strip()
+            and detail not in {"the requested detail", key}
+            else ""
+        )
     subject, object_ = match.groups()
     localized_object = "Marie" if language == "fr" and object_ == "Mary" else object_
     return {

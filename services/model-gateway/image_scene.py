@@ -19,6 +19,17 @@ class Character(BaseModel):
     attributes: list[str] = Field(default_factory=list, max_length=12)
     visual_description: str = Field(default="", max_length=200)
 
+    def is_human(self) -> bool:
+        """Formatter output sometimes mislabels an animal as a generic person."""
+        return not bool(
+            re.search(
+                r"\b(?:animal|sheep|lamb|dog|cat|horse|cow|goat|bird|fish|"
+                r"mouton|chien|chat|cheval|vache|chevre|oiseau|poisson)\b",
+                " ".join((self.name, self.role, self.visual_description)),
+                re.I,
+            )
+        )
+
 
 class ActionBinding(BaseModel):
     """A visible relation whose participants remain explicit after corrections."""
@@ -36,6 +47,8 @@ class CountConstraint(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     count: int = Field(ge=0, le=99)
     subject: str = Field(min_length=1, max_length=100)
+    owner: str = Field(default="", max_length=100)
+    requested_detail: str = Field(default="", max_length=100)
 
     def render(self) -> str:
         names = {
@@ -59,7 +72,12 @@ class CountConstraint(BaseModel):
             if self.subject == "legs" and self.count % 2 == 0
             else ""
         )
-        return f"exactly {written} {self.subject}{pairs}, all clearly visible"
+        constraint = f"exactly {written} ({self.count}) {self.subject}{pairs}, all clearly visible"
+        return f"{self.owner} with {constraint}" if self.owner else constraint
+
+    def disclosure(self) -> str:
+        """Keep a verification miss in the language and terms the user chose."""
+        return self.requested_detail or f"{self.count} {self.subject}"
 
 
 class ScenePatch(BaseModel):
@@ -104,6 +122,7 @@ class ScenePatch(BaseModel):
 class Scene(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     characters: list[Character] = Field(default_factory=list)
+    subjects: list[str] = Field(default_factory=list)
     action: str = ""
     setting: str = ""
     elements: list[str] = Field(default_factory=list)
@@ -131,22 +150,99 @@ class Scene(BaseModel):
             "ten": 10,
             "eleven": 11,
             "twelve": 12,
+            "deux": 2,
+            "trois": 3,
+            "quatre": 4,
+            "cinq": 5,
+            "sept": 7,
+            "huit": 8,
+            "neuf": 9,
+            "dix": 10,
         }
         pattern = re.compile(
-            r"\b(" + "|".join([*words, r"\d{1,2}"]) + r")\s+([a-z][a-z-]{1,80})\b", re.I
+            r"\b(" + "|".join([*words, r"\d{1,2}"]) + r")\s+([^\W\d_][\w-]{1,80})\b",
+            re.I,
         )
+        animal_characters = [
+            character.name for character in self.characters if not character.is_human()
+        ]
         known = {
-            (constraint.count, constraint.subject)
+            (constraint.count, constraint.subject, constraint.owner)
             for constraint in self.count_constraints
         }
         for value, subject in pattern.findall(source):
             count = words.get(value.lower(), int(value) if value.isdigit() else -1)
-            subject = subject.lower()
-            if count >= 0 and (count, subject) not in known:
+            requested_subject = subject
+            subject = normalized(subject)
+            bound_owner = (
+                animal_characters[0]
+                if len(animal_characters) == 1
+                and subject
+                in {
+                    "leg",
+                    "legs",
+                    "arm",
+                    "arms",
+                    "head",
+                    "heads",
+                    "hand",
+                    "hands",
+                    "patte",
+                    "pattes",
+                    "bras",
+                    "tete",
+                    "tetes",
+                    "main",
+                    "mains",
+                }
+                else ""
+            )
+            key = (count, subject, bound_owner)
+            if count >= 0 and key not in known:
                 self.count_constraints.append(
-                    CountConstraint(count=count, subject=subject)
+                    CountConstraint(
+                        count=count,
+                        subject=subject,
+                        owner=bound_owner,
+                        requested_detail=f"{value} {requested_subject}",
+                    )
                 )
-                known.add((count, subject))
+                known.add(key)
+                if not bound_owner and subject not in self.subjects:
+                    self.subjects.append(subject)
+        # A formatter may have placed the literal count in Other elements. It is a
+        # subject constraint, never background decoration.
+        self.elements = [
+            element
+            for element in self.elements
+            if not any(
+                self._element_restates_count(element, constraint)
+                for constraint in self.count_constraints
+            )
+        ]
+
+    @staticmethod
+    def _element_restates_count(element: str, constraint: CountConstraint) -> bool:
+        """A formatted count belongs to its subject, never to scene decoration."""
+        element_words = normalized(element).split()
+        number_words = {
+            "zero": 0,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+            "eleven": 11,
+            "twelve": 12,
+        }
+        return str(constraint.count) in element_words or any(
+            number_words.get(word) == constraint.count for word in element_words
+        )
 
     def apply(self, patch: ScenePatch) -> None:
         if patch.action and (
@@ -515,11 +611,17 @@ class Scene(BaseModel):
             )
             for c in self.characters
         )
+        subject_constraints = [
+            constraint.render()
+            for constraint in self.count_constraints
+            if constraint.owner or constraint.subject in self.subjects
+        ]
+        subjects = "; ".join([*self.subjects, *subject_constraints, people])
         rendered = "\n".join(
             filter(
                 None,
                 (
-                    "Subjects: " + people if people else "",
+                    "Subjects: " + subjects if subjects else "",
                     "Action: "
                     + "; ".join(binding.render() for binding in self.action_bindings)
                     if self.action_bindings
@@ -530,8 +632,9 @@ class Scene(BaseModel):
                     if self.elements
                     else "",
                     "Style: " + self.style if self.style else "",
-                    "Anatomy: each person has anatomically plausible limbs, at most two hands, each attached to that person's arms."
-                    if self.characters and self.anatomy
+                    "Anatomy: each human character has anatomically plausible limbs, at most two hands, each attached to that human character's arms."
+                    if any(character.is_human() for character in self.characters)
+                    and self.anatomy
                     else "",
                     "Counts: "
                     + "; ".join(
@@ -739,7 +842,11 @@ class Scene(BaseModel):
                         f"Are these attributes visibly bound to {person.name} only: {', '.join(person.attributes)}?",
                     )
                 )
-            if self.anatomy:
+            if (
+                self.anatomy
+                and person.is_human()
+                and not self.has_nonstandard_anatomy()
+            ):
                 checks.append(
                     (
                         f"anatomy_{index}",
@@ -841,6 +948,13 @@ class Scene(BaseModel):
         return expected
 
     def failure_detail(self, key: str) -> str:
+        if key.startswith("count_"):
+            try:
+                return self.count_constraints[
+                    int(key.removeprefix("count_"))
+                ].disclosure()
+            except (IndexError, ValueError):
+                pass
         if key.startswith("action_binding_"):
             try:
                 return self.action_bindings[int(key.rsplit("_", 1)[1])].render()
@@ -848,17 +962,51 @@ class Scene(BaseModel):
                 pass
         if key == "action":
             return self.action
+        for prefix in ("character_", "attribute_", "element_"):
+            if key.startswith(prefix):
+                try:
+                    index = int(key.rsplit("_", 1)[1])
+                    if prefix == "element_":
+                        return self.elements[index]
+                    character = self.characters[index]
+                    if prefix == "attribute_":
+                        return ", ".join(character.attributes)
+                    return character.name
+                except (IndexError, ValueError):
+                    pass
+        if key == "setting":
+            return self.setting
+        if key == "style":
+            return self.style
         return "the requested detail"
 
     @staticmethod
     def failure_note_eligible(key: str) -> bool:
-        """Keep subjective verification misses out of the user-facing outcome."""
-        return key in {
-            "adult_man",
-            "adult_women_count",
-            "action",
-            "birth_delivery",
-        } or key.startswith(("character_", "action_binding_", "count_"))
+        """Every requested, verified detail belongs in the user-facing outcome."""
+        return True
+
+    def has_nonstandard_anatomy(self) -> bool:
+        return any(
+            constraint.subject
+            in {
+                "leg",
+                "legs",
+                "arm",
+                "arms",
+                "head",
+                "heads",
+                "hand",
+                "hands",
+                "patte",
+                "pattes",
+                "bras",
+                "tete",
+                "tetes",
+                "main",
+                "mains",
+            }
+            for constraint in self.count_constraints
+        )
 
 
 def retain_anchors(scene: Scene, anchors: Scene) -> None:
@@ -867,6 +1015,7 @@ def retain_anchors(scene: Scene, anchors: Scene) -> None:
     scene.characters.extend(
         c for c in anchors.characters if character_key(c.name) not in keys
     )
+    scene.subjects = list(dict.fromkeys([*scene.subjects, *anchors.subjects]))
     for field in ("action", "setting", "style"):
         required = getattr(anchors, field)
         actual = getattr(scene, field)

@@ -75,7 +75,13 @@ class ImageTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_http_png_boundary(self) -> None:
         import json
 
-        payload = {"image": png(), "seconds": 0.1, "seed": 123, "steps": 4}
+        payload = {
+            "image": png(),
+            "seconds": 0.1,
+            "seed": 123,
+            "steps": 4,
+            "model": "fixture-worker-model",
+        }
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format: str, *args: object) -> None:
