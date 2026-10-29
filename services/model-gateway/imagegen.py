@@ -217,47 +217,50 @@ async def pixels(
     reserved: Decimal,
 ) -> dict[str, object]:
     gpu_started = monotonic()
-    async with aiohttp.ClientSession(
-        timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
-    ) as client:
-        async with client.post(
-            atlas_ports().url("terminal", address) + "/generate",
-            json={"prompt": rewritten, "seed": seed},
-            allow_redirects=False,
-        ) as response:
-            if response.status == 413:
-                limits = json.loads(await response.content.read(512))
-                if (
-                    isinstance(limits, dict)
-                    and all(
-                        type(limits.get(k)) is int and limits[k] >= 0
-                        for k in ("measured", "limit")
-                    )
-                    and limits.get("unit") in {"bytes", "characters", "tokens"}
-                ):
-                    raise LimitError(
-                        "image_input_limit",
-                        limits["measured"],
-                        limits["limit"],
-                        limits["unit"],
-                    )
-            if response.status != 200:
-                code = {
-                    409: "gpu_busy",
-                    503: "worker_starting",
-                    429: "quota_exceeded",
-                }.get(response.status, "provider_error")
-                raise ImageWorkerFailure(code, response.status, reserved)
-            body = bytearray()
-            async for chunk in response.content.iter_chunked(65536):
-                body.extend(chunk)
-                if len(body) > IMAGE_RESPONSE_BODY_LIMIT:
-                    raise ProviderLimitError(
-                        "image_response_limit",
-                        len(body),
-                        IMAGE_RESPONSE_BODY_LIMIT,
-                        "bytes",
-                    )
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
+        ) as client:
+            async with client.post(
+                atlas_ports().url("terminal", address) + "/generate",
+                json={"prompt": rewritten, "seed": seed},
+                allow_redirects=False,
+            ) as response:
+                if response.status == 413:
+                    limits = json.loads(await response.content.read(512))
+                    if (
+                        isinstance(limits, dict)
+                        and all(
+                            type(limits.get(k)) is int and limits[k] >= 0
+                            for k in ("measured", "limit")
+                        )
+                        and limits.get("unit") in {"bytes", "characters", "tokens"}
+                    ):
+                        raise LimitError(
+                            "image_input_limit",
+                            limits["measured"],
+                            limits["limit"],
+                            limits["unit"],
+                        )
+                if response.status != 200:
+                    code = {
+                        409: "gpu_busy",
+                        503: "worker_starting",
+                        429: "quota_exceeded",
+                    }.get(response.status, "provider_error")
+                    raise ImageWorkerFailure(code, response.status, reserved)
+                body = bytearray()
+                async for chunk in response.content.iter_chunked(65536):
+                    body.extend(chunk)
+                    if len(body) > IMAGE_RESPONSE_BODY_LIMIT:
+                        raise ProviderLimitError(
+                            "image_response_limit",
+                            len(body),
+                            IMAGE_RESPONSE_BODY_LIMIT,
+                            "bytes",
+                        )
+    except (aiohttp.ClientConnectionError, aiohttp.ServerTimeoutError) as exc:
+        raise ImageWorkerFailure("image_unavailable", 503, reserved) from exc
     data = json.loads(body)
     if not isinstance(data, dict) or not isinstance(data.get("image"), str):
         raise ValueError("invalid_provider_image")

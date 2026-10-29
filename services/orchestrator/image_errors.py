@@ -20,6 +20,7 @@ _CODES = {
     "deadline": "timeout",
     "image_deadline": "timeout",
     "configuration_missing": "configuration_missing",
+    "image_unavailable": "image_unavailable",
     "invalid_input": "invalid_input",
     "context_exceeded": "context_exceeded",
     "provider_error": "provider_error",
@@ -151,6 +152,15 @@ def failure_message(
     language: str, code: str, status: int, data: dict[str, object]
 ) -> str:
     words = _REASONS.get(language, _REASONS["en"])
+    if code == "image_unavailable":
+        unavailable = {
+            "fr": "Le service d’image est indisponible pour le moment",
+            "en": "The image service is unavailable right now",
+            "de": "Der Bilddienst ist derzeit nicht verfügbar",
+            "es": "El servicio de imágenes no está disponible ahora",
+            "it": "Il servizio immagini non è disponibile al momento",
+        }
+        return unavailable.get(language, unavailable["en"]) + f" (HTTP {status})."
     index = {
         "gpu_busy": 0,
         "worker_starting": 1,
