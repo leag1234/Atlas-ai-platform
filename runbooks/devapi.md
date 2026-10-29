@@ -94,6 +94,12 @@ The public base URL is `https://atlas.eu.com/api/atlas/v1`. It exposes
 are explicit alternatives. These execute the same assistant pipeline, including
 search, citations, document inputs and image inputs. `atlas-code` selects the
 existing raw model API and requires `model`; assistant profiles require `assistant`.
+The `model` scope also lists each configured chat route/fallback as
+`raw/<provider-model-id>`. These direct calls preserve OpenAI chat messages,
+tools/tool calls, streaming, usage and vision image content, without the Atlas
+pipeline. Embeddings are not listed because this API has no embeddings route.
+Each raw model must have a configured EUR price: an unpriced model returns 400
+`unpriced_model` before provider I/O, rather than becoming free or unmetered.
 Project selection, Work, cancellation tickets, location tickets and connectors
 are not granted by either scope in K-A. Cookies and Origin headers are rejected
 on this prefix. The browser endpoint retains its Origin checks.

@@ -141,7 +141,7 @@ def require(request: Request, scope: str) -> Response | None:
 def models(request: Request) -> dict[str, object]:
     principal: Principal = request.state.api_key
     names = (["atlas", *PROFILES] if "assistant" in principal.scopes else []) + (
-        ["atlas-code"] if "model" in principal.scopes else []
+        ["atlas-code", *raw_model_ids()] if "model" in principal.scopes else []
     )
     return {
         "object": "list",
@@ -196,17 +196,18 @@ async def chat(request: Request) -> Response:
         )
         return error(403, "insufficient_scope", missing_scope="project")
     name = raw.get("model", "atlas")
-    if name not in ("atlas", "atlas-code", *PROFILES):
+    if name not in ("atlas", "atlas-code", *PROFILES, *raw_model_ids()):
         return error(400, "invalid_model")
-    missing = require(request, "model" if name == "atlas-code" else "assistant")
+    raw_model = name == "atlas-code" or name.startswith("raw/")
+    missing = require(request, "model" if raw_model else "assistant")
     if missing is not None:
         return missing
     if name == "atlas":
         raw["model"] = PROFILES[0]
-    if name != "atlas-code":
+    if not raw_model:
         raw["atlas_ui"] = False
     request._body = json.dumps(raw).encode()
-    if name == "atlas-code":
+    if raw_model:
         from services.orchestrator.dev_inference import chat as raw_chat
 
         request.state.store = ModelAccounting(
@@ -214,7 +215,9 @@ async def chat(request: Request) -> Response:
         )
         request.state.developer = request.state.api_key.id
         try:
-            return await raw_chat(request)
+            return await raw_chat(
+                request, raw_model=name if name.startswith("raw/") else None
+            )
         except BudgetRefusal as exc:
             return error(
                 429,
@@ -226,6 +229,12 @@ async def chat(request: Request) -> Response:
     from services.orchestrator.chat_api import chat as assistant_chat
 
     return await assistant_chat(request)
+
+
+def raw_model_ids() -> list[str]:
+    from dev_gateway import raw_models
+
+    return list(raw_models())
 
 
 class ModelAccounting:

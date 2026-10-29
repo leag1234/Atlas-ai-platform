@@ -350,7 +350,9 @@ class KeyTests(unittest.TestCase):
             ),
         ):
             models = client.get("/api/atlas/v1/models", headers=headers).json()
-            self.assertEqual([m["id"] for m in models["data"]], ["atlas-code"])
+            ids = [m["id"] for m in models["data"]]
+            self.assertEqual(ids[0], "atlas-code")
+            self.assertTrue(all(name.startswith("raw/") for name in ids[1:]))
             rejected = client.post(
                 "/api/atlas/v1/chat/completions",
                 headers=headers,
@@ -377,6 +379,101 @@ class KeyTests(unittest.TestCase):
             self.assertEqual(reply.json()["error"]["daily_requests"], 2)
         self.assertEqual(self.store.usage(row["id"])["charged_micro_eur"], 24)
         self.assertEqual(DailyLedger().summary()[0]["measured_eur"], 0.000024)
+
+    def test_raw_configured_model_preserves_images_tools_and_streaming(self) -> None:
+        from dev_gateway import Plan
+        from services.orchestrator.api_key_edge import raw_model_ids
+
+        _, key = self.create(scopes=["model"], daily_requests=3)
+        raw_model = raw_model_ids()[0]
+        plan = Plan("{}", "https://example.invalid/v1", 1000, Decimal(1), Decimal(1))
+        seen: list[Any] = []
+
+        def prepare_raw(request: Any) -> Plan:
+            seen.append(request)
+            return plan
+
+        async def frames(plan: Plan) -> AsyncIterator[dict[str, Any]]:
+            yield {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "fictional-call",
+                                    "function": {"name": "describe", "arguments": "{}"},
+                                }
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ]
+            }
+            yield {
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]
+            }
+            yield {
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                "cost_micro_eur": 12,
+            }
+
+        body = {
+            "model": raw_model,
+            "stream": True,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe this fictional image"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "https://example.invalid/fictional.png"
+                            },
+                        },
+                    ],
+                }
+            ],
+            "tools": [
+                {"type": "function", "function": {"name": "describe", "parameters": {}}}
+            ],
+        }
+        with (
+            TestClient(app) as client,
+            patch(
+                "services.orchestrator.dev_inference.gateway.prepare_raw",
+                side_effect=prepare_raw,
+            ),
+            patch(
+                "services.orchestrator.dev_inference.gateway.events", side_effect=frames
+            ),
+        ):
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key},
+                json=body,
+            )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertIn("fictional-call", reply.text)
+        self.assertEqual(seen[0].messages[0].content[1]["type"], "image_url")
+        self.assertEqual(seen[0].tools[0].function.name, "describe")
+
+    def test_unknown_raw_model_is_rejected_before_dispatch(self) -> None:
+        _, key = self.create(scopes=["model"])
+        with TestClient(app) as client:
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key},
+                json={
+                    "model": "raw/fictional-unknown",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                },
+            )
+        self.assertEqual(reply.status_code, 400, reply.text)
+        self.assertEqual(reply.json()["error"]["code"], "invalid_model")
 
     def test_existing_user_search_limit_applies_to_key_requests(self) -> None:
         _, key = self.create()

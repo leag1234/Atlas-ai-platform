@@ -136,6 +136,61 @@ def prepare(request: Request) -> Plan:
     return replace(plan, reserved=reserved, fallback=fallback)
 
 
+def raw_models() -> dict[str, str]:
+    """Public raw IDs for configured chat roles; embeddings have no chat endpoint."""
+    policy = ServerlessPolicy(allow_unpriced=True)
+    return {
+        "raw/" + model: role
+        for role, model in policy.models.items()
+        if role != "embedding"
+        and "context" in policy.config[role]["capabilities"][model]
+    }
+
+
+def prepare_raw(request: Any) -> Plan:
+    """Prepare a direct configured-model request without an Atlas prompt or fallback."""
+    policy = ServerlessPolicy(allow_unpriced=True)
+    roles = raw_models()
+    role = roles.get(request.model)
+    if role is None:
+        raise ValueError("invalid_model")
+    model = policy.models[role]
+    price = policy.prices.get(model)
+    if price is None or price.get("unpriced", False):
+        raise LimitError("unpriced_model", 0, 0, "microEUR")
+    body = request.model_dump(exclude_none=True, by_alias=True)
+    body.update(model=model, stream=True, stream_options={"include_usage": True})
+    incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
+    images = sum(
+        1
+        for message in body["messages"]
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+        if isinstance(part, dict) and part.get("type") == "image_url"
+    )
+    incoming += images * 16384
+    if images and not policy.config[role]["capabilities"][model].get("vision"):
+        raise ValueError("missing_capabilities")
+    context = policy.config[role]["capabilities"][model]["context"]
+    if incoming + request.max_tokens > context:
+        raise LimitError(
+            "context_exceeded", incoming + request.max_tokens, context, "tokens"
+        )
+    plan = Plan(
+        json.dumps(body, ensure_ascii=False),
+        provider_settings.endpoint()
+        if os.environ.get("ATLAS_PROVIDER")
+        else os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/"),
+        0,
+        Decimal(str(price["input_eur_per_mtok"])),
+        Decimal(str(price["output_eur_per_mtok"])),
+    )
+    reserved = plan.charge(incoming, request.max_tokens)
+    if reserved <= 0 or reserved > 50000:
+        raise LimitError("cost_budget", reserved, 50000, "microEUR")
+    return replace(plan, reserved=reserved, attempt_bound=reserved)
+
+
 def retry(plan: Plan, error: str, remaining: int) -> Plan:
     body = json.loads(plan.body)
     body["messages"].append(
