@@ -197,7 +197,14 @@ async def finish(
         item.cout_eur += float(result.cost)
         return
     dialogue = image_dialogue(request.messages)
-    prompt = visual_image_prompt(dialogue)
+    # A first request is already the user's image instruction.  Rewriting it as a
+    # visual-only prompt is reserved for an established image dialogue, where the
+    # renderer must combine the original scene with a correction or retry.
+    prompt = (
+        request.messages[-1].text
+        if len(dialogue) == 1
+        else visual_image_prompt(dialogue)
+    )
     try:
         await process_image(
             prompt,
