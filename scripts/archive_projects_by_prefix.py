@@ -1,7 +1,7 @@
 """Archive matching active projects through the public Atlas API.
 
 The account JSON stays outside the repository.  It may provide ``base_url``,
-``org_id`` and either a bearer ``token`` or a ``headers`` object.  No credential
+``org_id`` and email/password or an existing browser session. No credential
 or project content is printed; output is only aggregate counts.
 """
 
@@ -13,15 +13,23 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 
 def request(
-    url: str, method: str, headers: dict[str, str], payload: dict[str, Any] | None = None
+    url: str,
+    method: str,
+    headers: dict[str, str],
+    payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = json.dumps(payload).encode() if payload is not None else None
     headers = {**headers, "Content-Type": "application/json"}
+    if method not in {"GET", "HEAD"}:
+        headers.setdefault("Idempotency-Key", str(uuid4()))
     try:
-        with urlopen(Request(url, data=body, method=method, headers=headers), timeout=30) as response:
+        with urlopen(
+            Request(url, data=body, method=method, headers=headers), timeout=30
+        ) as response:
             value = json.loads(response.read())
     except HTTPError as exc:
         raise RuntimeError(f"HTTP {exc.code}") from None
@@ -32,21 +40,26 @@ def request(
 
 def authenticate(base: str, account: dict[str, Any]) -> dict[str, str]:
     headers = dict(account.get("headers", {}))
-    token = account.get("token")
-    if token and "Authorization" not in headers:
-        headers["Authorization"] = "Bearer " + str(token)
-    if headers:
-        return headers
     email, password = account.get("email"), account.get("password")
-    if not isinstance(email, str) or not isinstance(password, str):
-        raise SystemExit("account_file_requires_auth")
-    signed_in = request(
-        base + "/api/v1/auths/signin", "POST", {}, {"email": email, "password": password}
-    )
-    token = signed_in.get("token")
-    if not isinstance(token, str):
-        raise SystemExit("signin_failed")
-    return {"Authorization": "Bearer " + token}
+    token = account.get("token")
+    if isinstance(email, str) and email and isinstance(password, str) and password:
+        signed_in = request(
+            base + "/api/v1/auths/signin",
+            "POST",
+            headers,
+            {"email": email, "password": password},
+        )
+        token = signed_in.get("token")
+        if not isinstance(token, str) or not token:
+            raise SystemExit("signin_failed")
+    if isinstance(token, str) and token:
+        headers["Authorization"] = "Bearer " + token
+        headers["Cookie"] = "token=" + token
+    if not headers.get("Cookie"):
+        raise SystemExit("account_file_requires_browser_session")
+    headers["Origin"] = base
+    headers["Sec-Fetch-Site"] = "same-origin"
+    return headers
 
 
 def main() -> None:
@@ -54,14 +67,22 @@ def main() -> None:
     parser.add_argument("--account-file", type=Path, required=True)
     parser.add_argument("--prefix", required=True)
     args = parser.parse_args()
+    if args.account_file.stat().st_mode & 0o077:
+        raise SystemExit("account_file_requires_mode_600")
     account = json.loads(args.account_file.read_text())
     if not isinstance(account, dict):
         raise SystemExit("invalid_account_file")
-    base = str(account.get("base_url") or account.get("url") or "https://test-atlas.indidea.org:10443").rstrip("/")
+    base = str(
+        account.get("base_url")
+        or account.get("url")
+        or "https://test-atlas.indidea.org:10443"
+    ).rstrip("/")
     headers = authenticate(base, account)
     org = str(account.get("org_id") or account.get("org") or "")
     if not org:
-        memberships = request(base + "/api/atlas/me", "GET", headers).get("memberships", [])
+        memberships = request(base + "/api/atlas/me", "GET", headers).get(
+            "memberships", []
+        )
         if not isinstance(memberships, list) or len(memberships) != 1:
             raise SystemExit("account_file_requires_org_id")
         org = str(memberships[0].get("org_id", ""))
@@ -79,7 +100,8 @@ def main() -> None:
         if not isinstance(identifier, str) or not isinstance(revision, int):
             raise SystemExit("invalid_project_response")
         result = request(
-            f"{collection}/{identifier}", "PATCH",
+            f"{collection}/{identifier}",
+            "PATCH",
             {**headers, "If-Match": f'"{revision}"'},
             {"state": "archived"},
         )

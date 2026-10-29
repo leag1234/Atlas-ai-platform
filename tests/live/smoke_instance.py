@@ -595,7 +595,7 @@ class Smoke:
         return file if isinstance(file, dict) else body
 
     def project_chat(
-        self, project: tuple[str, str], prompt: str, *, work: bool = False
+        self, project: tuple[str, str], prompt: str, *, work: bool = True
     ) -> tuple[str, dict[str, Any]]:
         """Use the same scoped conversation/session sequence as project_mode.js."""
         org, project_id = project
@@ -629,10 +629,26 @@ class Smoke:
                 raise SmokeFailure(
                     f"project file list returned HTTP {files.status_code}"
                 )
+            details = self.request("GET", base)
+            folder_list = self.request("GET", base + "/folders")
+            if details.status_code != 200 or folder_list.status_code != 200:
+                raise SmokeFailure("project file-selection metadata unavailable")
+            instructions = self._json(details).get("instructions_file_id")
+            allowed_folders = {
+                folder["id"]
+                for folder in self._json(folder_list).get("items", [])
+                if isinstance(folder, dict) and folder.get("model_use") == "allow"
+            }
+            # Match eligibleFiles() in project_mode.js. Selecting instructions as
+            # an attachment turns an explicit user fact into a document proposal.
             selected = [
                 item
                 for item in self._json(files).get("items", [])
                 if isinstance(item, dict)
+                and item.get("id") != instructions
+                and item.get("locality") != "local_only"
+                and item.get("availability") != "not_retained"
+                and item.get("folder_id") in allowed_folders
             ]
             folders = list(
                 dict.fromkeys(
@@ -798,13 +814,26 @@ class Smoke:
 
     def move_to_project(self) -> str:
         project = self.create_project(uuid4().hex[:8])
+        message_id = str(uuid4())
         response = self.request(
             "POST",
             "/api/v1/chats/new",
             json={
                 "chat": {
                     "title": "Quartz ordinary smoke",
-                    "history": {"messages": {}, "currentId": None},
+                    "history": {
+                        "messages": {
+                            message_id: {
+                                "id": message_id,
+                                "parentId": None,
+                                "childrenIds": [],
+                                "role": "user",
+                                "content": "The fictional Quartz code is amber-47.",
+                                "timestamp": int(time.time() * 1000),
+                            }
+                        },
+                        "currentId": message_id,
+                    },
                 }
             },
         )
@@ -819,20 +848,77 @@ class Smoke:
             raise SmokeFailure("ordinary-chat creation returned no id")
         self.created_chats.append(chat_id)
         org, project_id = project
+        original = self.request("GET", f"/api/v1/chats/{chat_id}")
+        if original.status_code != 200:
+            raise SmokeFailure(
+                f"ordinary-chat read returned HTTP {original.status_code}"
+            )
+        chat = self._json(original).get("chat", {})
+        history = chat.get("history", {})
+        stored = history.get("messages", {})
+        current = history.get("currentId")
+        branch: list[dict[str, Any]] = []
+        while current and current in stored:
+            message = stored[current]
+            branch.insert(0, message)
+            current = message.get("parentId")
+        messages = [
+            {
+                "role": message["role"],
+                "content": message["content"].strip(),
+                "created_at": datetime.fromtimestamp(
+                    message.get("timestamp", time.time() * 1000) / 1000, timezone.utc
+                )
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "attachment_file_ids": [],
+            }
+            for message in branch
+            if message.get("role") in {"user", "assistant", "system"}
+            and isinstance(message.get("content"), str)
+            and message["content"].strip()
+        ]
+        if not messages:
+            raise SmokeFailure("ordinary chat has no importable messages")
+        base = f"/api/atlas/orgs/{org}/projects/{project_id}/conversations"
         move = self.request(
             "POST",
-            f"/api/atlas/orgs/{org}/projects/{project_id}/conversations/move",
-            json={"chat_id": chat_id},
+            base + "/import",
+            json={
+                "title": chat.get("title", "Quartz ordinary smoke"),
+                "messages": messages,
+            },
         )
         if move.status_code in OPTIONAL_STATUS:
             raise Skip("move-to-project endpoint absent")
-        if move.status_code != 200:
-            raise SmokeFailure(f"move-to-project returned HTTP {move.status_code}")
-        listing = self.request(
-            "GET", f"/api/atlas/orgs/{org}/projects/{project_id}/conversations"
-        )
-        if listing.status_code != 200 or chat_id not in listing.text:
+        if move.status_code != 201:
+            raise SmokeFailure(
+                f"move-to-project returned HTTP {move.status_code}: {self.one_line(move.text)}"
+            )
+        imported_id = self._id(self._json(move))
+        listing = self.request("GET", base)
+        if (
+            listing.status_code != 200
+            or not imported_id
+            or imported_id not in listing.text
+        ):
             raise SmokeFailure("moved chat is absent from project conversation list")
+        turns = self.request("GET", base + f"/{imported_id}/turns")
+        if turns.status_code != 200:
+            raise SmokeFailure("imported conversation turns are unavailable")
+        texts = [
+            ref.get("text")
+            for turn in self._json(turns).get("items", [])
+            for ref in turn.get("content_refs", [])
+        ]
+        if texts != [message["content"] for message in messages]:
+            raise SmokeFailure("imported conversation did not preserve the messages")
+        removed = self.request("DELETE", f"/api/v1/chats/{chat_id}")
+        if removed.status_code != 200:
+            raise SmokeFailure(
+                f"ordinary-chat deletion returned HTTP {removed.status_code}"
+            )
+        self.created_chats.remove(chat_id)
         ordinary = self.request("GET", "/api/v1/chats/")
         if ordinary.status_code == 200 and chat_id in ordinary.text:
             raise SmokeFailure("moved chat remains in ordinary chat list")
@@ -920,6 +1006,14 @@ class Smoke:
                 browser.close()
         return "French home and project pages contain no deny-list string"
 
+    def cleanup_revision(self, path: str) -> dict[str, str]:
+        current = self.request("GET", path)
+        if current.status_code == 200:
+            revision = self._json(current).get("revision")
+            if isinstance(revision, int):
+                return {"If-Match": f'"{revision}"'}
+        return {}
+
     def cleanup(self) -> list[str]:
         notes: list[str] = []
         for org, project, task in reversed(self.created_tasks):
@@ -934,15 +1028,15 @@ class Smoke:
                 if kind == "ordinary"
                 else f"/api/atlas/orgs/{org}/projects/{file_id.rsplit('/', 1)[0]}/files/{file_id.rsplit('/', 1)[1]}"
             )
-            response = self.request("DELETE", path)
+            headers = self.cleanup_revision(path) if kind != "ordinary" else {}
+            response = self.request("DELETE", path, headers=headers)
             notes.append(f"file delete HTTP {response.status_code}")
         for chat_id in reversed(self.created_chats):
             response = self.request("DELETE", f"/api/v1/chats/{chat_id}")
             notes.append(f"chat delete HTTP {response.status_code}")
         for org, project in reversed(self.created_projects):
-            response = self.request(
-                "DELETE", f"/api/atlas/orgs/{org}/projects/{project}"
-            )
+            path = f"/api/atlas/orgs/{org}/projects/{project}"
+            response = self.request("DELETE", path, headers=self.cleanup_revision(path))
             notes.append(f"project delete HTTP {response.status_code}")
             if response.status_code in OPTIONAL_STATUS | {409}:
                 renamed = self.request(
