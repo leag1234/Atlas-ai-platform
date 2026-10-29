@@ -192,6 +192,9 @@ html:root body #sidebar { background:var(--atlas-side)!important; color:var(--at
 #sidebar .sidebar { background:transparent; }
 #sidebar a[href^="/c/"] { height:34px; padding:0 10px!important; align-items:center; font-size:var(--atlas-ui-size)!important; border-radius:9px; }
 #sidebar a.selected { background:var(--atlas-accent)!important; color:var(--atlas-on-accent)!important; }
+/* The native conversation overflow control keeps its own dark utility colour; inherit the row foreground when selected. */
+#sidebar a[href^="/c/"] button { color:var(--atlas-muted)!important; }
+#sidebar a[href^="/c/"].selected button { color:inherit!important; }
 @media (min-width:768px) {
   div:has(> #sidebar) { position:relative; padding:0; gap:0; background:var(--atlas-bg)!important; overflow:hidden!important; }
   #main-content { display:block; flex:1; min-width:0; height:100%; }

@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import cast, Any
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -49,6 +49,97 @@ class ProjectConversationTests(ProjectIsolationTests):
             file_version_ids=[],
             **changes,
         )
+
+    def test_imported_conversation_is_private_ordered_and_editor_only(self) -> None:
+        body = {
+            "title": "Fictional briefing",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What is the fictional budget?",
+                    "created_at": "2026-10-29T09:00:00Z",
+                    "attachment_file_ids": [],
+                },
+                {
+                    "role": "assistant",
+                    "content": "The fictional budget is twelve units.",
+                    "created_at": "2026-10-29T09:01:00Z",
+                    "attachment_file_ids": [],
+                },
+            ],
+        }
+        path = self.project_path() + "/conversations/import"
+        self.error(self.request("POST", path, "viewer", body), 403, "permission_denied")
+        response = self.request("POST", path, "editor", body)
+        self.assertEqual(response.status_code, 201, response.text)
+        conversation = response.json()
+        self.assertEqual(conversation["visibility"], "private")
+        turns = self.request(
+            "GET",
+            path.rsplit("/import", 1)[0] + "/" + conversation["id"] + "/turns",
+            "editor",
+        ).json()["items"]
+        self.assertEqual(
+            [turn["content_refs"][0]["text"] for turn in turns],
+            [item["content"] for item in cast(list[dict[str, str]], body["messages"])],
+        )
+
+    def test_import_rejects_more_than_bounded_messages(self) -> None:
+        response = self.request(
+            "POST",
+            self.project_path() + "/conversations/import",
+            "editor",
+            {
+                "title": "Bounded",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "x",
+                        "created_at": "2026-10-29T09:00:00Z",
+                        "attachment_file_ids": [],
+                    }
+                ]
+                * 501,
+            },
+        )
+        self.error(response, 422, "invalid_request")
+
+    def test_import_links_uploaded_project_file(self) -> None:
+        from services.retrieval.project_files import ProjectFiles
+
+        with store(self.app_dsn).scope(
+            self.identity("editor", self.project), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            folder = files.folder(
+                {"name": "Imported", "locality": "server", "model_use": "allow"}
+            )
+            attached = files.create_file(
+                folder["id"], "brief.txt", b"fictional attachment", folder["revision"]
+            )
+        response = self.request(
+            "POST",
+            self.project_path() + "/conversations/import",
+            "editor",
+            {
+                "title": "With file",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Read the fictional brief.",
+                        "created_at": "2026-10-29T09:00:00Z",
+                        "attachment_file_ids": [attached["id"]],
+                    }
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        conversation = response.json()
+        with store(self.app_dsn).scope(
+            self.identity("editor", self.project), self.org, self.project
+        ) as scope:
+            turn = ProjectFiles(scope).listing("turn", conversation["id"])[0]
+            self.assertEqual(turn["file_version_ids"], [attached["version_id"]])
 
     def broker(
         self,

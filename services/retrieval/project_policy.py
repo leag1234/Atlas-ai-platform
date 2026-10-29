@@ -1,6 +1,7 @@
 """Closed task-B inputs, monotone policy and measured quota failures."""
 
 from typing import Annotated, Any, Literal
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from uuid import UUID
@@ -118,6 +119,36 @@ class ProjectPatch(Closed):
     name: Name | None = None
     default_action: Literal["chat", "work"] | None = None
     state: Literal["active", "archived"] | None = None
+
+
+class ImportedMessage(Closed):
+    role: Literal["user", "assistant", "system"]
+    content: Annotated[str, Field(min_length=1, max_length=32000, pattern=r"\S")]
+    created_at: Annotated[str, Field(min_length=20, max_length=40, pattern=r"Z$")]
+    attachment_file_ids: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("attachment_file_ids")
+    @classmethod
+    def attachment_ids_are_uuids(cls, value: list[str]) -> list[str]:
+        for identifier in value:
+            UUID(identifier)
+        if len(value) != len(set(value)):
+            raise ValueError("duplicate attachment")
+        return value
+
+
+class ConversationImport(Closed):
+    title: Name
+    messages: list[ImportedMessage] = Field(min_length=1, max_length=500)
+
+    @field_validator("messages")
+    @classmethod
+    def imported_timestamps_are_utc(
+        cls, value: list[ImportedMessage]
+    ) -> list[ImportedMessage]:
+        for message in value:
+            datetime.fromisoformat(message.created_at.replace("Z", "+00:00"))
+        return value
 
 
 class GrantPut(Closed):
