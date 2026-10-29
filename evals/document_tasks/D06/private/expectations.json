@@ -1,0 +1,46 @@
+{
+  "checks": [
+    {
+      "kind": "xlsx",
+      "path": "artifacts/table.xlsx",
+      "sheets": {
+        "Register": [
+          [
+            "Code",
+            "Quantity",
+            "Price",
+            "Source page"
+          ],
+          [
+            "A-01",
+            2,
+            12.5,
+            2
+          ],
+          [
+            "B-02",
+            3,
+            7,
+            2
+          ],
+          [
+            "C-03",
+            null,
+            4.25,
+            2
+          ]
+        ]
+      }
+    }
+  ],
+  "expected_publications": [
+    "table.xlsx"
+  ],
+  "id": "D06",
+  "input_hashes": {
+    "response-contract.json": "6e32e285ada94c236a9bbe7ad16bd9d29b939bd0692148ea04ded68217e60f25",
+    "schema.csv": "7a9953e82490eba8e1ffe73a056fca2fc41b87f828016e397ca9751decda52fc",
+    "table.pdf": "0cf50f82d673b70ce3764567a460ca8b37fa34676fe321d6ee2be59cea15c142"
+  },
+  "scenario": null
+}

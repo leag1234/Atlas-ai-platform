@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "0d5be48b5419a24aea5dc492afc7f665445a9f6e44f2ee32ed3ad07d6b085b60",
+  "expected_artifacts": [],
+  "id": "D04",
+  "input_manifest": [
+    {
+      "path": "broken.pdf",
+      "sha256": "1f0e4a94f702d6682e4ee7752bcdc6ef0a6497a568a893113eb3ee40e7a8b7e9",
+      "size_bytes": 35
+    },
+    {
+      "path": "locked.pdf",
+      "sha256": "3a26827913a163ca4eb10ce3e4af0ba11cbe52847b3fa2d2527c8245b913687f",
+      "size_bytes": 1372
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "a070517ed8b0704fc6a34ecab0a17c8ec9ddd5aa0a1b3868b73ed66927f0e3db",
+      "size_bytes": 737
+    }
+  ],
+  "language": "es",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Intenta leer locked.pdf y broken.pdf. Responde en JSON refusals, con file y error para cada archivo ilegible. No inventes contenido ni publiques un documento.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Read an encrypted/broken PDF",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Explique por qué no puede leerse cada entrada ilegible."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Solo rechazos precisos",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Intenta leer locked.pdf y broken.pdf. Responde en JSON refusals, con file y error para cada archivo ilegible. No inventes contenido ni publiques un documento.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "INTENTA LEER LOCKED.PDF Y BROKEN.PDF. RESPONDE EN JSON REFUSALS, CON FILE Y ERROR PARA CADA ARCHIVO ILEGIBLE. NO INVENTES CONTENIDO NI PUBLIQUES UN DOCUMENTO.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Tell me why each unreadable input cannot be read."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Tell me why each unreadable input cannot be read. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D04/verifier.py",
+  "verifier_timeout_seconds": 120
+}

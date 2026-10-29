@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "f2c19eaabec6b325959f74eb0c9760023b9ce2bc51f8d656eaf25e8f06036ed2",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "path": "joined.xlsx"
+    }
+  ],
+  "id": "D15",
+  "input_manifest": [
+    {
+      "path": "customers.xlsx",
+      "sha256": "693c495aecee0f32ab50aafbd28b6e9367eb105eb809eda582f92552d263deaa",
+      "size_bytes": 5054
+    },
+    {
+      "path": "orders.xlsx",
+      "sha256": "aff6ccbadf292fcbe94094c109069f968e2ed9a05f32231707f1f1b07b5875ec",
+      "size_bytes": 5092
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "37f1c65056187e31f778afc5c93733b5634f1400aec4ae6d07c0e72bbb8f265d",
+      "size_bytes": 807
+    }
+  ],
+  "language": "it",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Unisci orders.xlsx e customers.xlsx per CustomerID. Crea joined.xlsx con fogli Matches e Unmatched. Mantieni l'ordine degli ordini, includi ordini e clienti senza corrispondenza e non inventare valori.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Join two spreadsheets",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Abbinate clienti e ordini e indicate ogni record senza corrispondenza."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Unisci per identificativo",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Unisci orders.xlsx e customers.xlsx per CustomerID. Crea joined.xlsx con fogli Matches e Unmatched. Mantieni l'ordine degli ordini, includi ordini e clienti senza corrispondenza e non inventare valori.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "UNISCI ORDERS.XLSX E CUSTOMERS.XLSX PER CUSTOMERID. CREA JOINED.XLSX CON FOGLI MATCHES E UNMATCHED. MANTIENI L'ORDINE DEGLI ORDINI, INCLUDI ORDINI E CLIENTI SENZA CORRISPONDENZA E NON INVENTARE VALORI.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Match customers to orders and list every unmatched record."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Match customers to orders and list every unmatched record. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D15/verifier.py",
+  "verifier_timeout_seconds": 120
+}

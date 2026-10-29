@@ -1,0 +1,27 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "resources": [
+          "file",
+          "citation",
+          "session",
+          "ledger",
+          "download"
+        ],
+        "status": "denied"
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D27",
+  "input_hashes": {
+    "request.txt": "68ffc3840b35d8322bdf3094beea156b04c6d7d9dac89e327c956f158cf564f5",
+    "response-contract.json": "d3acb830ef9dccd9e3a30f4e7c4d9e4fe1f08d312fbea131770c1fb67e73b9aa",
+    "scenario.json": "908a714ee40e1c1d62b7cb8511950ae4b5867a5c819c0a31ce0cc26f1329dbb3"
+  },
+  "no_publication": true,
+  "scenario": "cross_org"
+}

@@ -1,0 +1,34 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "moves": [
+          {
+            "destination": "texts/brief.docx",
+            "source": "inbox/brief.docx"
+          },
+          {
+            "destination": "data/figures.xlsx",
+            "source": "inbox/figures.xlsx"
+          },
+          {
+            "destination": "texts/notice.pdf",
+            "source": "inbox/notice.pdf"
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D21",
+  "input_hashes": {
+    "inbox/brief.docx": "e47a56810d3abb3f2ebb5a9d625617c1cd2d54de6c06dc9937ac09869d56fa68",
+    "inbox/figures.xlsx": "ec720402b7ad284791b0e1c5d33a3af05c5beba267c20d1abe6952edd473f831",
+    "inbox/notice.pdf": "2cd23bd2571aaa39d1e43bd177306d395817b005b868b427e9b4a2cd9245bc84",
+    "plan.csv": "186735ed182dec6d71e70a67709e3cebe70490426c58331f85f58ee7c7c5dc0e",
+    "response-contract.json": "b3d476335430ca75fc3df81d707d9b38a5f81cccbc6b65a571f6357408b6bf8a"
+  },
+  "scenario": "organize"
+}

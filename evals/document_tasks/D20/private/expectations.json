@@ -1,0 +1,60 @@
+{
+  "checks": [
+    {
+      "kind": "pptx",
+      "path": "artifacts/slides.pptx",
+      "slides": [
+        [
+          "Scope",
+          "Cedar pilot: 12 sites.",
+          "facts.docx#paragraph=2"
+        ],
+        [
+          "Budget",
+          "Approved budget: EUR 18400.",
+          "figures.pdf#page=1"
+        ],
+        [
+          "Timing",
+          "Launch: 2031-10-12.",
+          "facts.docx#paragraph=3"
+        ]
+      ]
+    },
+    {
+      "contains": [
+        "Scope",
+        "Cedar pilot: 12 sites.",
+        "facts.docx#paragraph=2",
+        "Budget",
+        "Approved budget: EUR 18400.",
+        "figures.pdf#page=1",
+        "Timing",
+        "Launch: 2031-10-12.",
+        "facts.docx#paragraph=3"
+      ],
+      "kind": "pdf",
+      "pages": [
+        3,
+        3
+      ],
+      "path": "artifacts/slides.pdf"
+    },
+    {
+      "kind": "matching_slides",
+      "other": "artifacts/slides.pdf",
+      "path": "artifacts/slides.pptx"
+    }
+  ],
+  "expected_publications": [
+    "slides.pptx",
+    "slides.pdf"
+  ],
+  "id": "D20",
+  "input_hashes": {
+    "changes.txt": "48c1773a019b347c0b822152c564969ad4cbe5b379159e3d7010082899876ca3",
+    "draft.pptx": "6c22a9ab9b8fc7d9482751fb766db522744cce8c700cc1f8f26ead28ab648db4",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214"
+  },
+  "scenario": null
+}

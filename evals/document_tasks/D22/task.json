@@ -1,0 +1,82 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "81a6635e1c5e5ed6e7f288b6f7f8207ed244c94f9ea7065d670a0da8b6d2d230",
+  "expected_artifacts": [],
+  "id": "D22",
+  "input_manifest": [
+    {
+      "path": "archive/report.docx",
+      "sha256": "abf27bee74df8c40282165fb77ea477e1fb466d0d439c620221a9c2251cd8bd5",
+      "size_bytes": 36577
+    },
+    {
+      "path": "incoming/report.docx",
+      "sha256": "58267b15e3c6e8e1f391647e1ab541f9627738a06178d679128edd17eb2208a5",
+      "size_bytes": 36576
+    },
+    {
+      "path": "request.txt",
+      "sha256": "e6513f846b78b28133c4306fb16720caf62c6dd93f31ce0d946b55930db22ff4",
+      "size_bytes": 79
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "1057d10ecdbca890eed5a458d383f50fab29e1109c36caa1bce6dcbed4cbbe01",
+      "size_bytes": 640
+    }
+  ],
+  "language": "fr",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Renommez incoming/report.docx vers archive/report.docx selon request.txt. Si le nom existe déjà, signalez le conflit en JSON error, source et destination; ne remplacez ni ne supprimez rien.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Rename colliding files",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Traitez la destination existante sans perdre aucun original."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Signalez la collision",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Renommez incoming/report.docx vers archive/report.docx selon request.txt. Si le nom existe deja, signalez le conflit en JSON error, source et destination; ne remplacez ni ne supprimez rien.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "RENOMMEZ INCOMING/REPORT.DOCX VERS ARCHIVE/REPORT.DOCX SELON REQUEST.TXT. SI LE NOM EXISTE DÉJÀ, SIGNALEZ LE CONFLIT EN JSON ERROR, SOURCE ET DESTINATION; NE REMPLACEZ NI NE SUPPRIMEZ RIEN.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Handle the existing destination without losing either original."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Handle the existing destination without losing either original. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D22/verifier.py",
+  "verifier_timeout_seconds": 120
+}

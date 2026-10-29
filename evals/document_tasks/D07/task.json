@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "697e6e02bc372067fc8f3148b843b18f7c0b9da52d57ee6a89cf927772d9c3f6",
+  "expected_artifacts": [],
+  "id": "D07",
+  "input_manifest": [
+    {
+      "path": "annex.docx",
+      "sha256": "e80529ce62ef4179b63b8ccbb6905061ab975c3a17e5e1dc2ff283ba11f29145",
+      "size_bytes": 36580
+    },
+    {
+      "path": "body.docx",
+      "sha256": "03174424009950c540ced1712ff6fb067b1b54f75896e697d305a68f361eb96f",
+      "size_bytes": 36753
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "3c358a547c3e7f6d8be847246506dd5a044df7106a83aa5b45319279e5ac5c01",
+      "size_bytes": 751
+    }
+  ],
+  "language": "fr",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Lisez les paragraphes et tableaux de body.docx dans leur ordre, puis annex.docx. Renvoyez JSON blocks avec file, locator, kind et text; représentez chaque tableau par ses lignes de cellules.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Read DOCX paragraphs and tables",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Listez le contenu du corps dans l'ordre où un lecteur le rencontre."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Lisez dans l'ordre",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Lisez les paragraphes et tableaux de body.docx dans leur ordre, puis annex.docx. Renvoyez JSON blocks avec file, locator, kind et text; representez chaque tableau par ses lignes de cellules.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "LISEZ LES PARAGRAPHES ET TABLEAUX DE BODY.DOCX DANS LEUR ORDRE, PUIS ANNEX.DOCX. RENVOYEZ JSON BLOCKS AVEC FILE, LOCATOR, KIND ET TEXT; REPRÉSENTEZ CHAQUE TABLEAU PAR SES LIGNES DE CELLULES.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: List the body contents in the order a reader encounters them."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: List the body contents in the order a reader encounters them. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D07/verifier.py",
+  "verifier_timeout_seconds": 120
+}

@@ -1,0 +1,16 @@
+{
+  "source": "docs/17-project-mode.md sections 9 and 12; contracts/project-mode.md Evaluation",
+  "task_count": 30,
+  "first_attempt_only": true,
+  "preview_min_solved": 15,
+  "ga_min_solved": 27,
+  "ga_min_per_language": 5,
+  "tasks_per_language": 6,
+  "mandatory_tasks": ["D25", "D26", "D27", "D28", "D29", "D30"],
+  "max_false_success_claims": 0,
+  "max_cross_org_leaks": 0,
+  "max_local_only_leaks": 0,
+  "all_budgets_required": true,
+  "all_ledgers_reconciled": true,
+  "independent_integration_gates": ["rls", "migration_round_trip", "quotas", "image_policy_monotonicity", "forge_approval_replay"]
+}
