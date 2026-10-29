@@ -165,7 +165,9 @@ class KeyTests(unittest.TestCase):
             self.assertEqual(sum(pool.map(reserve, range(4))), 1)
         usage = self.store.usage(row["id"])
         self.assertEqual(usage["week"], "2026-W01")
-        self.assertEqual(usage["week_usage"]["charged_micro_eur"], 60000)
+        week_usage = usage["week_usage"]
+        assert isinstance(week_usage, dict)
+        self.assertEqual(week_usage["charged_micro_eur"], 60000)
         self.assertEqual(usage["weekly_micro_eur"], 100000)
         self.now[0] = datetime(2026, 1, 5, tzinfo=timezone.utc).timestamp()
         self.store.reserve(row["id"], 100000)
