@@ -71,6 +71,9 @@ _IMAGE_CONFIRMATION = re.compile(
     r"(?is)^\s*(?:yes|yeah|yep|oui|si|ja|s[iì]|d'accord|ok|okay|"
     r"propose(?:-moi)?(?: cette)? description)\b.*$",
 )
+_ANAPHORIC_ITERATION = re.compile(
+    r"(?is)^\s*same\s+but\b",
+)
 _IMAGE_LEAD_IN = re.compile(
     r"(?is)^\s*(?:please\s+)?(?:generate|create|make|draw|paint|"
     r"g[eé]n[eè]re|cr[eé]e|dessine|fais|erzeuge|generiere|zeichne|"
@@ -105,6 +108,11 @@ def image_retry_confirmation(messages: list[ChatMessage]) -> bool:
         and _IMAGE_CONFIRMATION.fullmatch(messages[-1].text.strip())
         and _IMAGE_RETRY_PROPOSAL.search(messages[-2].text)
     )
+
+
+def raw_scene_continuation(messages: list[ChatMessage]) -> bool:
+    """Keep the established gateway input for a terse inherited-scene edit."""
+    return bool(messages and _ANAPHORIC_ITERATION.match(messages[-1].text.strip()))
 
 
 def image_explanation(text: str) -> bool:

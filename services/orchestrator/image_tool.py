@@ -158,7 +158,9 @@ def simple_drawing_copy(language: str) -> tuple[str, str, str, str, str]:
 
 class GenerateImage(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    prompt: str = Field(min_length=1, max_length=1200, pattern=r"\S")
+    # This public tool declaration is recorded in the chat cassettes.  The
+    # follow-up renderer has its own tighter bound; do not change this contract.
+    prompt: str = Field(min_length=1, max_length=2000, pattern=r"\S")
 
     @field_validator("prompt")
     @classmethod
