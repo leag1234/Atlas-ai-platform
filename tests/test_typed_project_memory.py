@@ -289,7 +289,7 @@ class TypedMemoryTests(unittest.TestCase):
             )
             self.assertIn(fact, messages[-2].text)
 
-    def test_explicit_document_memory_stays_proposed_until_confirmed(self) -> None:
+    def test_explicit_memory_with_attached_files_is_active_and_pinned(self) -> None:
         f = self.fixture
         file = f.uploaded(f.folder(), b"Fictional sentinel Quartz-17", "sentinel.txt")
         with self.scope() as scope:
@@ -300,10 +300,14 @@ class TypedMemoryTests(unittest.TestCase):
             request["request"]["file_version_ids"] = [file["version_id"]]
             transcript.begin(request, request["request_id"])
             entry = transcript.files.listing("memory")[0]
-            self.assertEqual(entry["status"], "proposed")
-            self.assertIsNone(entry["confirmed_by"])
-            self.assertEqual(entry["source_file_version_ids"], [file["version_id"]])
-            self.assertEqual(transcript.files.context()["memory"], [])
+            self.assertEqual(entry["text"], "Quartz-17=amber-47")
+            self.assertEqual(entry["status"], "active")
+            self.assertTrue(entry["pinned"])
+            self.assertEqual(entry["source_file_version_ids"], [])
+            self.assertEqual(
+                [m["text"] for m in transcript.files.context()["memory"]],
+                ["Quartz-17=amber-47"],
+            )
 
     def test_kinds_pins_cap_and_supersession_over_http(self) -> None:
         f = self.fixture
