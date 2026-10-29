@@ -59,6 +59,7 @@ class HttpError(RuntimeError):
 class HttpResponse:
     status_code: int
     content: bytes
+    headers: dict[str, str]
 
     @property
     def text(self) -> str:
@@ -139,9 +140,11 @@ class HttpClient:
         request = Request(url, data=payload, headers=actual_headers, method=method)
         try:
             with self.opener.open(request, timeout=timeout) as reply:
-                return HttpResponse(reply.status, reply.read())
+                return HttpResponse(
+                    reply.status, reply.read(), dict(reply.headers.items())
+                )
         except HTTPError as error:
-            return HttpResponse(error.code, error.read())
+            return HttpResponse(error.code, error.read(), dict(error.headers.items()))
         except URLError as error:
             raise HttpError(str(error.reason)) from error
 
@@ -161,7 +164,11 @@ class Smoke:
         self.http.headers["Accept"] = "application/json"
         self.token = ""
         self.model = ""
+        self.work_profile = ""
         self.org = ""
+        self.project: tuple[str, str] | None = None
+        self.project_error: str | None = None
+        self.project_revisions: dict[tuple[str, str], int] = {}
         self.created_chats: list[str] = []
         self.created_projects: list[tuple[str, str]] = []
         self.created_files: list[tuple[str, str, str]] = []
@@ -310,7 +317,7 @@ class Smoke:
 
     def chat_web(self) -> str:
         answer, body = self.chat(
-            "Quelle est la date actuelle et cite une source web consultée pour répondre ?"
+            "Quelles sont les principales actualités scientifiques de cette semaine sur l'énergie solaire ? Cite tes sources."
         )
         lowered = answer.lower()
         metadata = json.dumps(body, ensure_ascii=False)
@@ -376,7 +383,7 @@ class Smoke:
             "Dans les deux documents fictifs, où se trouve la balise de quartz et quand inspecte-t-on la boussole ambrée ?",
             uploaded,
         )
-        if "47" not in answer or "Tuesday" not in answer:
+        if "47" not in answer or not re.search(r"(?i)tuesday|mardi", answer):
             raise SmokeFailure("answer did not contain both fictional document facts")
         return "PDF and DOCX facts recovered: " + self.one_line(answer[:80])
 
@@ -387,7 +394,10 @@ class Smoke:
         )
         evidence = answer + " " + json.dumps(body, ensure_ascii=False)
         if not re.search(r"!\[[^]]*\]\([^)]*\)|https?://\S+|data:image/", evidence):
-            raise SmokeFailure("no image URL or image markdown in assistant response")
+            raise SmokeFailure(
+                "no image URL or image markdown; response: "
+                + self.one_line(answer[:80])
+            )
         elapsed = time.monotonic() - started
         if elapsed > 180:
             raise SmokeFailure(f"image response took {elapsed:.1f}s, limit is 180s")
@@ -465,20 +475,68 @@ class Smoke:
         return self.org, ""
 
     def create_project(self, suffix: str) -> tuple[str, str]:
+        if self.project is not None:
+            return self.project
+        if self.project_error is not None:
+            raise SmokeFailure(self.project_error)
         org, _ = self.project_context()
-        response = self.request(
-            "POST",
-            f"/api/atlas/orgs/{org}/projects",
-            json={"name": f"Quartz smoke {suffix}", "instructions": ""},
-        )
+        for attempt in range(3):
+            response = self.request(
+                "POST",
+                f"/api/atlas/orgs/{org}/projects",
+                json={
+                    "name": f"Quartz smoke {suffix}",
+                    "instructions": "",
+                    "default_action": "chat",
+                },
+            )
+            if response.status_code != 429:
+                break
+            retry_after = response.headers.get("Retry-After", "60")
+            try:
+                wait_seconds = max(1, min(60, int(retry_after)))
+            except ValueError:
+                wait_seconds = 1
+            if attempt == 2:
+                break
+            time.sleep(wait_seconds)
         if response.status_code not in (200, 201):
-            raise SmokeFailure(f"create project returned HTTP {response.status_code}")
-        project = self._id(self._json(response))
+            self.project_error = f"create project returned HTTP {response.status_code} after paced retries"
+            raise SmokeFailure(self.project_error)
+        created = self._json(response)
+        project = self._id(created)
         if not project:
             raise SmokeFailure("create project returned no project id")
         pair = (org, project)
+        revision = created.get("revision")
+        if isinstance(revision, int):
+            self.project_revisions[pair] = revision
         self.created_projects.append(pair)
+        self.project = pair
         return pair
+
+    def project_profile(self) -> str:
+        """Read the exact work profile injected into the browser project UI."""
+        if self.work_profile:
+            return self.work_profile
+        response = self.request("GET", "/project-mode/client.js")
+        if response.status_code != 200:
+            raise SmokeFailure(
+                f"project UI profile returned HTTP {response.status_code}"
+            )
+        match = re.search(
+            r"window\.atlasProjectWorkProfile\s*=\s*([^;]+);", response.text
+        )
+        if match is None:
+            raise SmokeFailure("project UI did not inject a work profile")
+        try:
+            profile = json.loads(match.group(1))
+        except json.JSONDecodeError as exc:
+            raise SmokeFailure("project UI work profile is not JSON") from exc
+        if not isinstance(profile, str) or not profile:
+            raise SmokeFailure("project UI work profile is empty")
+        self.work_profile = profile
+        return profile
 
     def project_upload(self, project: tuple[str, str], path: Path) -> dict[str, Any]:
         org, project_id = project
@@ -554,7 +612,9 @@ class Smoke:
             raise SmokeFailure("project conversation creation returned no id")
         body: dict[str, Any] = {
             "atlas_ui": True,
-            "model": self.model or self.choose_model(),
+            "model": self.project_profile()
+            if work
+            else (self.model or self.choose_model()),
             "ui_locale": "fr",
             "org_id": org,
             "project_id": project_id,
@@ -670,18 +730,31 @@ class Smoke:
             "À partir du tableur fictif, produis une synthèse Word et un tableur avec une formule TOTAL des montants.",
             work=True,
         )
-        urls = re.findall(
-            r"https?://[^\s)\]>]+|/api/[^\s)\]>]+", answer + " " + json.dumps(body)
+        org, project_id = project
+        deliverables = self.request(
+            "GET", f"/api/atlas/orgs/{org}/projects/{project_id}/deliverables"
         )
+        if deliverables.status_code != 200:
+            raise SmokeFailure(
+                f"deliverable list returned HTTP {deliverables.status_code}"
+            )
+        items = self._json(deliverables).get("items", [])
+        if not isinstance(items, list):
+            raise SmokeFailure("deliverable list has unexpected shape")
+        urls = [
+            str(item.get("download_route", ""))
+            for item in items
+            if isinstance(item, dict) and item.get("download_route")
+        ]
         if len(urls) < 2:
-            raise SmokeFailure("response did not expose two downloadable deliverables")
+            raise SmokeFailure(
+                "project produced fewer than two downloadable deliverables"
+            )
         xlsx_bytes = b""
         downloaded = 0
         for url in urls:
             target = url if url.startswith("http") else self.base + url
-            response = self.http.get(
-                target, headers={"Authorization": f"Bearer {self.token}"}, timeout=60
-            )
+            response = self.request("GET", target.removeprefix(self.base), timeout=60)
             if response.status_code == 200 and response.content:
                 downloaded += 1
                 if response.content[:2] == b"PK":
@@ -871,6 +944,16 @@ class Smoke:
                 "DELETE", f"/api/atlas/orgs/{org}/projects/{project}"
             )
             notes.append(f"project delete HTTP {response.status_code}")
+            if response.status_code in OPTIONAL_STATUS | {409}:
+                renamed = self.request(
+                    "PATCH",
+                    f"/api/atlas/orgs/{org}/projects/{project}",
+                    headers={"If-Match": f'"{self.project_revisions[(org, project)]}"'}
+                    if (org, project) in self.project_revisions
+                    else {},
+                    json={"name": f"smoke-{datetime.now(timezone.utc):%Y-%m-%d}-done"},
+                )
+                notes.append(f"project rename HTTP {renamed.status_code}")
         shutil.rmtree(self.tempdir, ignore_errors=True)
         return notes
 
@@ -937,6 +1020,8 @@ def main() -> int:
     unknown = selected - {name for name, _, _ in checks}
     if unknown:
         parser.error("unknown check(s): " + ", ".join(sorted(unknown)))
+    if selected - {"login"}:
+        selected.add("login")
     outcomes: list[Outcome] = []
     try:
         for name, check, applicable in checks:
