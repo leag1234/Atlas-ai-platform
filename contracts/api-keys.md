@@ -27,6 +27,33 @@ Scope errors are HTTP 403 with `missing_scope`. Quota reservation and settlement
 integer micro EUR and transactions; uncertain outcomes retain the reserved amount.
 No project, Work or connector permission is implied by `assistant`.
 
+### Public Messages compatibility (owner task 2026-10-29)
+
+REQ-KEY-03/04, REQ-DEV-003/004: model-scope keys also authorize POST `/messages`
+and `/v1/messages`, plus `/messages/count_tokens` and `/v1/messages/count_tokens`.
+All paths are relative to `/api/atlas/v1`. Claude Code uses
+`ANTHROPIC_BASE_URL=https://atlas.eu.com/api/atlas/v1`, appending `/v1/messages`.
+Accept a single `x-api-key` when Authorization is absent; Authorization takes
+precedence. Duplicate credential headers, Cookies and Origin remain rejected.
+The `anthropic-version` header is accepted; the supported text/function subset is
+the existing developer Messages adapter, with thinking disabled.
+
+Messages preserves JSON and Anthropic SSE, text/tool_use/tool_result, tool choice,
+token usage and stop reasons. Authentication (401), scope (403), quota/budget (429)
+and validation/provider errors use `{type: error, error: {type, message, ...}}`.
+Every inference reserves and settles through ModelAccounting exactly once.
+Known `raw/` IDs select that configured model; every other client model string
+uses `ATLAS_API_DEFAULT_RAW_MODEL`, defaulting to the gateway code role's raw ID.
+A misconfigured default is a server configuration error, never a client-model error.
+The raw path adds no assistant prompt or tools. Request bodies are bounded to 1MiB.
+
+Token counting validates the same text/function input, without max_tokens required,
+and returns a conservative UTF-8 serialized input size plus 512 protocol tokens.
+It is a local estimate, not a provider tokenizer or billable inference: no model
+call, reservation or request-quota increment. Key validity and model scope still apply.
+Tests cover both aliases, JSON/SSE tool round trips, usage/settlement, error envelopes,
+expiry/revocation, header precedence and count_tokens without provider I/O.
+
 ### Public Responses (REQ-KEY-03/04, REQ-DEV-003/004)
 
 `/responses` reuses the M15 input/output and SSE contract with key-edge identity,

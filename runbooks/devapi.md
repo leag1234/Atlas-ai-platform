@@ -88,6 +88,10 @@ BRAIN/eval/devapi-clients.json, without real user content.
 
 ## Atlas assistant keys (design 19 K-A)
 
+For public Claude Code, Codex and Aider setup, see [coding tools](api-key-coding-tools.md).
+Messages and token-count aliases use the same key boundary and model-scope accounting.
+The public Responses route is supplied by the companion Responses change.
+
 The public base URL is `https://atlas.eu.com/api/atlas/v1`. It exposes
 `GET /models`, `POST /chat/completions` (JSON and SSE), and `GET /usage`.
 `atlas` selects the installation's default chat profile; configured profile IDs

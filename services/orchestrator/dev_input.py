@@ -245,7 +245,8 @@ def messages(value: dict[str, Any]) -> ChatInput:
             )
     tools = []
     for tool in value.get("tools", []):
-        fields(tool, "name description input_schema")
+        fields(tool, "name description input_schema cache_control")
+        cache_hint(tool)
         tools.append(
             {
                 "type": "function",

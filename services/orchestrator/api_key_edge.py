@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from packages.profiles import PROFILES
+from services.orchestrator.api_key_messages import install as install_messages
 from services.orchestrator.api_keys import (
     Principal,
     Store,
@@ -78,8 +79,13 @@ async def authenticate(
     principal: Principal | None = None
     try:
         bearer = request.headers.get("authorization", "")
+        if "authorization" not in request.headers:
+            bearer = "Bearer " + request.headers.get("x-api-key", "")
         if (
-            len(request.headers.getlist("authorization")) != 1
+            any(
+                len(request.headers.getlist(header)) > 1
+                for header in ("authorization", "x-api-key")
+            )
             or not bearer.startswith("Bearer atl_")
             or "cookie" in request.headers
             or "origin" in request.headers
@@ -281,3 +287,6 @@ class ModelAccounting:
 def principal(request: Request) -> Principal | None:
     value = getattr(request.state, "api_key", None)
     return value if isinstance(value, Principal) else None
+
+
+install_messages(app)
