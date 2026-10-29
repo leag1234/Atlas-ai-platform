@@ -219,3 +219,18 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 .atlas-project-task-dialog label { display: grid; gap: 5px; min-width: 0; margin: 0; }
 .atlas-project-task-dialog label[hidden] { display: none; }
 .atlas-project-task-dialog input, .atlas-project-task-dialog select, .atlas-project-task-dialog textarea { width: 100%; box-sizing: border-box; min-width: 0; margin: 0; }
+
+/* Global scheduled tasks use the same compact card rhythm as project cards. */
+#atlas-project[data-view=tasks] {grid-template-columns:minmax(0,1fr);}
+#atlas-project[data-view=tasks] > .atlas-project-right {display:none;}
+.atlas-project-task-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+.atlas-project-task-card {min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:20px;border:1px solid var(--project-line);border-radius:14px;background:var(--project-card);}
+.atlas-project-task-card h2 {font-size:17px;overflow-wrap:anywhere;}
+.atlas-project-task-card p {margin:0;}
+.atlas-project-task-title {border:0!important;padding:0!important;font-size:17px;font-weight:650;overflow-wrap:anywhere;}
+.atlas-project-task-project {max-width:100%;padding:3px 8px;border-radius:999px;background:var(--project-hover);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.atlas-project-task-excerpt {display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;color:var(--project-muted);line-height:1.45;}
+.atlas-project-task-card .atlas-project-task-actions {margin-top:auto;}
+.atlas-project-task-dot {display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:var(--project-accent);vertical-align:middle;}
+.atlas-project-task-banner {padding:10px 14px;border:1px solid var(--project-line);border-radius:10px;background:var(--project-hover);font-size:13px;}
+@media(max-width:760px) {.atlas-project-task-grid {grid-template-columns:minmax(0,1fr);}}

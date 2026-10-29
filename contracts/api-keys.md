@@ -11,6 +11,7 @@ header, with no Cookie or Origin. Unknown, missing, expired and revoked keys ret
 | --- | --- |
 | GET `/models` | OpenAI list of permitted aliases: `atlas`, configured profile IDs, `atlas-code`, and configuration-derived `raw/<provider-model-id>` IDs |
 | POST `/chat/completions` | Existing ChatRequest for assistant; raw configured models use OpenAI Chat Completions request/response and JSON or SSE |
+| POST `/responses` | Model scope only; stateless text/function Responses JSON or SSE using the existing developer adapter and raw accounting |
 | GET `/usage` | Current key's UTC day, request count, charged/unknown micro EUR and both daily limits |
 
 The `atlas` alias maps to the default configured chat profile. Key scopes and project
@@ -53,7 +54,20 @@ call, reservation or request-quota increment. Key validity and model scope still
 Tests cover both aliases, JSON/SSE tool round trips, usage/settlement, error envelopes,
 expiry/revocation, header precedence and count_tokens without provider I/O.
 
-### Raw configured model selection
+### Public Responses (REQ-KEY-03/04, REQ-DEV-003/004)
+
+`/responses` reuses the M15 input/output and SSE contract with key-edge identity,
+expiry, revocation, scope checks, per-key quotas and the user's shared budget.
+`atlas-code` selects the raw code-role model; listed raw IDs select that model.
+Unknown client model names map to `ATLAS_API_RESPONSES_MODEL` (default `atlas-code`),
+which must resolve to a configured, priced raw model. The response reports its raw
+model ID. This fallback applies only to Responses. All request options retain
+the existing adapter validation. Reasoning input items are accepted as inert
+history metadata; function calls and correlated results retain their semantics.
+Storage and previous-response lookup remain unsupported. No new key permissions
+or provider credentials are implied. Setup: `runbooks/codex-api.md`.
+
+### Raw configured models
 
 `model` scope lists every configured gateway chat role and fallback as a stable
 `raw/<provider-model-id>` identifier. The compatibility alias `atlas-code` remains

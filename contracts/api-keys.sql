@@ -5,19 +5,22 @@ CREATE TABLE IF NOT EXISTS api_keys (
  prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE,
  hash_kind TEXT NOT NULL CHECK(hash_kind IN ('hmac-sha256','sha256-legacy')),
  scopes TEXT NOT NULL, expires_at INTEGER NOT NULL,
- daily_requests INTEGER NOT NULL CHECK(daily_requests > 0),
- daily_micro_eur INTEGER NOT NULL CHECK(daily_micro_eur > 0),
+ daily_requests INTEGER CHECK(daily_requests > 0),
+ daily_micro_eur INTEGER CHECK(daily_micro_eur > 0),
+ weekly_micro_eur INTEGER CHECK(weekly_micro_eur > 0),
+ own_budget INTEGER NOT NULL DEFAULT 0 CHECK(own_budget IN (0,1)),
  created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
  last_used_at INTEGER, last_used_ip_prefix TEXT, revoked_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS api_key_requests (
  id TEXT PRIMARY KEY, key_id TEXT NOT NULL REFERENCES api_keys(id),
- day TEXT NOT NULL, reserved INTEGER NOT NULL CHECK(reserved >= 0),
+ day TEXT NOT NULL, week TEXT NOT NULL, reserved INTEGER NOT NULL CHECK(reserved >= 0),
  charged INTEGER NOT NULL CHECK(charged >= 0),
  input_tokens INTEGER, output_tokens INTEGER,
  state TEXT NOT NULL CHECK(state IN ('reserved','complete','unknown'))
 );
 CREATE INDEX IF NOT EXISTS api_key_daily ON api_key_requests(key_id, day);
+CREATE INDEX IF NOT EXISTS api_key_weekly ON api_key_requests(key_id, week);
 CREATE TABLE IF NOT EXISTS api_key_audit (
  id INTEGER PRIMARY KEY, event TEXT NOT NULL, key_id TEXT, timestamp INTEGER NOT NULL,
  detail TEXT NOT NULL

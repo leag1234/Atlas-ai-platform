@@ -101,6 +101,13 @@ def responses(value: dict[str, Any]) -> ChatInput:
                     "content": item["output"],
                 }
             )
+        elif kind == "reasoning":
+            # Stateless raw providers cannot consume another provider's opaque state.
+            fields(item, "type id summary content encrypted_content status")
+            if not isinstance(item.get("summary", []), list) or not isinstance(
+                item.get("encrypted_content", ""), (str, type(None))
+            ):
+                raise ValueError("invalid_reasoning_item")
         else:
             raise ValueError("unsupported_input_type")
     tools = []

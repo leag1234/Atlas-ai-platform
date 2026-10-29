@@ -109,6 +109,10 @@ def execute(
 ) -> tuple[int, Any]:
     from services.retrieval.project_sharing import execute as sharing
 
+    if scope.project is None and tail == ["scheduled-tasks"] and method == "GET":
+        from services.retrieval.project_schedules import Schedules
+
+        return 200, {"items": Schedules.visible(scope), "next_cursor": None}
     if scope.project is not None and tail and tail[0] == "scheduled-tasks":
         from services.retrieval.project_schedules import Schedules
 
