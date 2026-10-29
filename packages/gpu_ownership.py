@@ -38,7 +38,12 @@ def gpu_allowed() -> bool:
 def image_worker_address() -> str:
     """Configured workers are usable without permission to manage infrastructure."""
     if os.environ.get("ATLAS_TRIAL") == "1":
-        return ""
+        # Trials never use a worker unless the operator explicitly delegates one
+        # (for example a private relay to an existing worker); they still never
+        # discover, start or manage GPU infrastructure (gpu_allowed stays false).
+        if os.environ.get("ATLAS_TRIAL_IMAGE_WORKER") != "1":
+            return ""
+        return os.environ.get("ATLAS_IMAGE_GPU_IP", "")
     if address := os.environ.get("ATLAS_IMAGE_GPU_IP"):
         return address
     try:

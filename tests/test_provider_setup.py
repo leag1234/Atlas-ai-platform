@@ -157,6 +157,27 @@ class TrialBoundaryTests(unittest.TestCase):
             self.assertFalse(gpu_allowed())
             self.assertEqual(image_worker_address(), "")
 
+    def test_trial_uses_only_an_explicitly_delegated_worker(self) -> None:
+        from packages.gpu_ownership import gpu_allowed, image_worker_address
+
+        with patch.dict(
+            os.environ,
+            {
+                "ATLAS_TRIAL": "1",
+                "ATLAS_TRIAL_IMAGE_WORKER": "1",
+                "ATLAS_IMAGE_GPU_IP": "relay-host",
+            },
+            clear=True,
+        ):
+            self.assertFalse(gpu_allowed())
+            self.assertEqual(image_worker_address(), "relay-host")
+        with patch.dict(
+            os.environ,
+            {"ATLAS_TRIAL": "1", "ATLAS_TRIAL_IMAGE_WORKER": "1"},
+            clear=True,
+        ):
+            self.assertEqual(image_worker_address(), "")
+
     def test_compose_only_publishes_trial_ports(self) -> None:
         import yaml
 
