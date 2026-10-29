@@ -10,6 +10,88 @@ import project_composer_browser as fixture
 
 
 class ScheduledPanelTests(unittest.TestCase):
+    def test_global_page_templates_filters_and_project_picker(self) -> None:
+        view = fixture.ProjectComposerTests()
+        view.setUp()
+        self.addCleanup(view.tearDown)
+        tasks: list[dict[str, Any]] = [
+            {
+                "id": "60000000-0000-4000-8000-000000000001",
+                "project_id": fixture.PROJECT,
+                "project_name": "Example",
+                "project_role": "editor",
+                "name": "Orchard digest",
+                "instruction": "Summarize fictional orchard news for the week.",
+                "schedule": {
+                    "frequency": "weekly",
+                    "weekday": 0,
+                    "time": "08:00",
+                    "timezone": "UTC",
+                },
+                "enabled": True,
+                "revision": 0,
+                "next_run": "2026-11-02T08:00:00Z",
+                "last_result": None,
+            }
+        ]
+
+        def scheduled(route: Route) -> None:
+            path = urlsplit(route.request.url).path
+            if route.request.method == "GET" and path.endswith("/scheduled-tasks"):
+                route.fulfill(json={"items": tasks, "next_cursor": None})
+                return
+            if route.request.method == "POST" and path.endswith("/scheduled-tasks"):
+                body = route.request.post_data_json
+                assert isinstance(body, dict)
+                tasks.append(
+                    dict(
+                        body,
+                        id="60000000-0000-4000-8000-000000000002",
+                        project_id=fixture.PROJECT,
+                        project_name="Example",
+                        project_role="editor",
+                        revision=0,
+                        next_run="2026-11-02T08:00:00Z",
+                        last_result=None,
+                    )
+                )
+                route.fulfill(json=tasks[-1])
+                return
+            route.fulfill(json=tasks[0])
+
+        view.context.route("**/scheduled-tasks**", scheduled)
+        view.page.goto(
+            f"http://127.0.0.1:18790/project-mode?org={fixture.ORG}&tasks=true"
+        )
+        expect(
+            view.page.get_by_role("heading", name="Scheduled tasks", exact=True)
+        ).to_be_visible()
+        view.page.get_by_role("searchbox", name="Search tasks", exact=True).fill(
+            "absent"
+        )
+        expect(
+            view.page.get_by_text("No scheduled tasks yet.", exact=True)
+        ).to_be_visible()
+        view.page.get_by_role("searchbox", name="Search tasks", exact=True).fill("")
+        view.page.get_by_role("combobox", name="Status", exact=True).select_option(
+            "paused"
+        )
+        expect(
+            view.page.get_by_text("No scheduled tasks yet.", exact=True)
+        ).to_be_visible()
+        view.page.get_by_role("combobox", name="Status", exact=True).select_option("")
+        view.page.get_by_role("tab", name="Templates", exact=True).click()
+        expect(view.page.get_by_text("Weekly news digest", exact=True)).to_be_visible()
+        view.page.locator(".atlas-project-task-card").first.get_by_role(
+            "button", name="New task", exact=True
+        ).click()
+        dialog = view.page.locator("[data-task-dialog]")
+        expect(dialog.get_by_label("Project", exact=True)).to_have_value(
+            fixture.PROJECT
+        )
+        dialog.get_by_role("button", name="Create", exact=True).click()
+        expect(view.page.get_by_text("Weekly news digest", exact=True)).to_be_visible()
+
     def test_panel_create_pause_run_delete_and_mobile(self) -> None:
         view = fixture.ProjectComposerTests()
         view.setUp()

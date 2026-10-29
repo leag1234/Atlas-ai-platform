@@ -70,6 +70,35 @@ class Schedules:
             raise ProjectError(404, "not_found")
         return row
 
+    @staticmethod
+    def visible(scope: Scope) -> list[dict[str, Any]]:
+        """Return task summaries for every project readable by this member.
+
+        The query intentionally runs with no selected project.  RLS applies the
+        caller's grants to both tables, so this cannot reveal a task or project
+        outside the member's readable projects.
+        """
+        if scope.project is not None:
+            raise ProjectError(404, "not_found")
+        rows = scope.db.execute(
+            "SELECT t.data,t.project_id,p.data AS project_data,g.role AS project_role "
+            "FROM atlas_projects.scheduled_tasks t "
+            "JOIN atlas_projects.projects p ON p.org_id=t.org_id AND p.id=t.project_id "
+            "JOIN atlas_projects.grants g ON g.org_id=t.org_id AND g.project_id=t.project_id "
+            "AND g.member_id=%s "
+            "WHERE t.org_id=%s ORDER BY t.next_run,t.id",
+            (scope.identity.member, scope.identity.org),
+        ).fetchall()
+        return [
+            dict(
+                row["data"],
+                project_id=str(row["project_id"]),
+                project_name=row["project_data"]["name"],
+                project_role=row["project_role"],
+            )
+            for row in rows
+        ]
+
     def save(self, row: dict[str, Any]) -> None:
         row["data"]["revision"] += 1
         row["data"]["enabled"] = row["enabled"]
