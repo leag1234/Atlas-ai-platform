@@ -218,6 +218,53 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(
             upgraded.usage("old")["week"], upgraded.week_for_day("2025-12-31")
         )
+        self.assert_key_references_intact(path)
+
+    def test_store_repairs_requests_pointing_at_dropped_upgrade_table(self) -> None:
+        path = self.root / "broken-keys.sqlite"
+        Store(path, "test-pepper-" * 4, lambda: self.now[0])
+        db = sqlite3.connect(path)
+        try:
+            db.executescript(
+                "DROP TABLE api_key_requests;"
+                'CREATE TABLE api_key_requests (id TEXT PRIMARY KEY, key_id TEXT NOT NULL REFERENCES "api_keys_before_optional_caps"(id), day TEXT NOT NULL, week TEXT NOT NULL, reserved INTEGER NOT NULL, charged INTEGER NOT NULL, input_tokens INTEGER, output_tokens INTEGER, state TEXT NOT NULL);'
+                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,created_by,created_at) VALUES ('old','org','member','subject','user','old','atl_old','hash','hmac-sha256','[\"model\"]',1900000000,'operator',1800000000);"
+                "INSERT INTO api_key_requests VALUES ('request','old','2025-12-31','2026-W01',1,1,NULL,NULL,'complete');"
+            )
+        finally:
+            db.close()
+        Store(path, "test-pepper-" * 4, lambda: self.now[0])
+        self.assert_key_references_intact(path)
+        db = sqlite3.connect(path)
+        try:
+            self.assertEqual(
+                db.execute("SELECT id FROM api_key_requests").fetchall(), [("request",)]
+            )
+        finally:
+            db.close()
+
+    def assert_key_references_intact(self, path: Path) -> None:
+        db = sqlite3.connect(path)
+        try:
+            db.execute("PRAGMA foreign_keys=ON")
+            schema = " ".join(
+                str(r[0])
+                for r in db.execute(
+                    "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL"
+                )
+            )
+            self.assertNotIn("api_keys_before_optional_caps", schema)
+            self.assertIn("api_key_daily", schema)
+            self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+            db.execute(
+                "INSERT INTO api_key_requests (id,key_id,day,week,reserved,charged,state) VALUES ('new','old','2026-01-01','2026-W01',1,0,'reserved')"
+            )
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute(
+                    "INSERT INTO api_key_requests (id,key_id,day,week,reserved,charged,state) VALUES ('orphan','missing','2026-01-01','2026-W01',1,0,'reserved')"
+                )
+        finally:
+            db.close()
 
     def test_legacy_import_and_both_entries_share_revoke_and_usage(self) -> None:
         legacy = DeveloperStore(self.root / "legacy.sqlite")
