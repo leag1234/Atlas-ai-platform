@@ -374,19 +374,25 @@ class Transcript:
                         file_id=version["file_id"], version_id=version_id, locator=None
                     )
                 )
-            create(
-                self.files,
-                dict(
-                    text=remembered,
-                    kind="fact",
-                    status="proposed" if refs else "active",
-                    source_refs=refs,
-                ),
-                provenance=dict(
-                    source_conversation_id=request["conversation_id"],
-                    source_turn_id=data["request_id"],
-                ),
+            fact: dict[str, Any] = dict(
+                text=remembered,
+                kind="fact",
+                status="proposed" if refs else "active",
+                # Explicit user memory belongs in every turn's bounded prefix.
+                pinned=not refs,
+                source_refs=refs,
             )
+            provenance = dict(
+                source_conversation_id=request["conversation_id"],
+                source_turn_id=data["request_id"],
+            )
+            try:
+                create(self.files, fact, provenance=provenance)
+            except ProjectError as exc:
+                # A full pin budget keeps the fact, unpinned, instead of failing the turn.
+                if not fact["pinned"] or exc.status != 429:
+                    raise
+                create(self.files, dict(fact, pinned=False), provenance=provenance)
         context = self.context(
             request["conversation_id"],
             request["messages"][0]["content"],
