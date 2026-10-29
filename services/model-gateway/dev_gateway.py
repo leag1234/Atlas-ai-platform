@@ -147,6 +147,19 @@ def raw_models() -> dict[str, str]:
     }
 
 
+def client_raw_model(name: str) -> str:
+    """Resolve client aliases without allowing arbitrary provider model selection."""
+    configured = raw_models()
+    if name in configured:
+        return name
+    default = os.environ.get("ATLAS_API_DEFAULT_RAW_MODEL") or (
+        "raw/" + ServerlessPolicy(allow_unpriced=True).models["code"]
+    )
+    if default not in configured:
+        raise ValueError("invalid_default_raw_model")
+    return default
+
+
 def prepare_raw(request: Any) -> Plan:
     """Prepare a direct configured-model request without an Atlas prompt or fallback."""
     policy = ServerlessPolicy(allow_unpriced=True)

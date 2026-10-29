@@ -38,7 +38,7 @@ class Wire:
             "id": "msg_" + str(self.output.base["id"]),
             "type": "message",
             "role": "assistant",
-            "model": "atlas-code",
+            "model": self.output.base["model"],
             "content": content,
             "stop_reason": {
                 "stop": "end_turn",
