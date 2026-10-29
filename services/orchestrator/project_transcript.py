@@ -618,9 +618,10 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     model.tools.append(context_tools.skills.declaration())
             guidance = recurring_guidance(request.user_text, scoped.lang)
             skill_messages = (
-                (context_tools.skills.instructions if context_tools.skills is not None else [])
-                + ([{"role": "system", "content": guidance}] if guidance else [])
-            )
+                context_tools.skills.instructions
+                if context_tools.skills is not None
+                else []
+            ) + ([{"role": "system", "content": guidance}] if guidance else [])
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,

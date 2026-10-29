@@ -51,7 +51,9 @@ class ProjectChatTests(unittest.IsolatedAsyncioTestCase):
     def test_recurring_project_request_uses_turn_local_localized_guidance(self) -> None:
         from services.orchestrator.project_transcript import recurring_guidance
 
-        notice = recurring_guidance("Mettre à jour le budget fictif chaque semaine", "fr")
+        notice = recurring_guidance(
+            "Mettre à jour le budget fictif chaque semaine", "fr"
+        )
         self.assertIsNotNone(notice)
         self.assertIn("automatiques", notice or "")
         self.assertIsNone(recurring_guidance("Résumer le budget fictif", "fr"))

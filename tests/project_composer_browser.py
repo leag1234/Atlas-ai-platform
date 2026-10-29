@@ -377,7 +377,9 @@ class ProjectComposerTests(unittest.TestCase):
         self.page.locator("[data-send]").click()
         self.page.wait_for_function("Boolean(window.releaseProjectReply)")
         self.assertEqual(message.input_value(), "")
-        self.assertIn("Atlas is thinking", self.page.locator("[data-running]").inner_text())
+        self.assertIn(
+            "Atlas is thinking", self.page.locator("[data-running]").inner_text()
+        )
         self.assertTrue(self.page.locator("[data-stop]:not([hidden])").is_visible())
         self.page.evaluate("window.releaseProjectReply()")
         self.page.locator("[data-send]:not([disabled])").wait_for()
@@ -385,7 +387,9 @@ class ProjectComposerTests(unittest.TestCase):
     def test_project_locale_follows_host_locale_and_browser_fallback(self) -> None:
         self.context.add_init_script("localStorage.setItem('locale','fr-FR');")
         self.mount()
-        self.assertEqual(self.page.get_by_role("button", name="Envoyer", exact=True).count(), 1)
+        self.assertEqual(
+            self.page.get_by_role("button", name="Envoyer", exact=True).count(), 1
+        )
 
     def test_send_waits_for_canonical_transcript_finalization(self) -> None:
         self.mount()
