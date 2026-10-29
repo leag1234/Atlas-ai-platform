@@ -69,7 +69,7 @@
   }
   function saveRoute() {
     const url = new URL(location.href);
-    for (const key of ['org', 'project', 'conversation', 'session']) scope?.[key] ? url.searchParams.set(key, scope[key]) : url.searchParams.delete(key);
+    for (const key of ['org', 'project', 'conversation', 'session', 'tasks']) scope?.[key] ? url.searchParams.set(key, scope[key]) : url.searchParams.delete(key);
     history.replaceState(null, '', url);
     if (identity && scope) sessionStorage.setItem(storageKey(), JSON.stringify(scope));
   }
@@ -120,6 +120,9 @@
       left.append(logo, button('ordinary', ordinary));
       const row = node('div', null, 'atlas-project-nav-row');
       row.append(button('projects', () => choose({org:scope.org})), iconButton('newProject', '+', createProject)); left.append(row);
+      const scheduled = button('taskHeading', () => choose({org:scope.org,tasks:true}), 'atlas-project-sidebar-row');
+      if (scope?.tasks) scheduled.setAttribute('aria-current', 'page');
+      left.append(scheduled);
     }
     if (owned && memberships.length > 1) left.append(picker('organization', memberships, scope?.org, org => choose({org})));
     if (owned && scope?.org) {
@@ -198,6 +201,44 @@
     }
     renderCards();
   }
+  const taskPath = value => `/api/atlas/orgs/${scope.org}/projects/${value.project_id}/scheduled-tasks/${value.id}`;
+  const taskTemplates = () => [
+    {name:t('taskTemplateDigest'),instruction:t('taskTemplateDigestInstruction'),schedule:{frequency:'weekly',weekday:0,time:'08:00'}},
+    {name:t('taskTemplateReport'),instruction:t('taskTemplateReportInstruction'),schedule:{frequency:'weekly',weekday:4,time:'09:00'}},
+    {name:t('taskTemplateFiles'),instruction:t('taskTemplateFilesInstruction'),schedule:{frequency:'daily',time:'09:00'}}
+  ];
+  function taskScheduleWords(value) {
+    const schedule = value.schedule, weekday = new Intl.DateTimeFormat(window.atlasProjectLocale.language(), {weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2026,0,5+(schedule.weekday || 0))));
+    const cadence = schedule.frequency === 'daily' ? t('taskDaily') : schedule.frequency === 'weekly' ? t('taskWeekly').replace('{day}',weekday) : t('taskEvery').replace('{n}',schedule.days);
+    return `${cadence} · ${schedule.time}`;
+  }
+  function globalTaskDialog(value, template) {
+    const dialog=node('dialog',null,'atlas-project-dialog atlas-project-task-dialog'), form=node('form'); dialog.dataset.taskDialog='';
+    const project=node('select'), name=node('input'), instruction=node('textarea'), frequency=node('select'), days=node('input'), time=node('input'), zone=node('input'), weekday=node('select'), target=node('input'), cap=node('input');
+    for (const item of projects.filter(item => item.role !== 'viewer')) project.append(new Option(item.name,item.id)); project.required=true; project.value=value?.project_id || projects.find(item => item.role !== 'viewer')?.id || '';
+    project.disabled=Boolean(value); name.required=true;name.maxLength=120;name.value=value?.name || template?.name || '';
+    instruction.required=true;instruction.maxLength=8000;instruction.rows=4;instruction.value=value?.instruction || template?.instruction || '';
+    for (const key of ['daily','every','weekly']) frequency.append(new Option(t('taskFrequency_'+key),key));frequency.value=value?.schedule.frequency || template?.schedule.frequency || 'daily';
+    days.type='number';days.min='1';days.max='365';days.value=value?.schedule.days || template?.schedule.days || 3;
+    time.type='time';time.required=true;time.value=value?.schedule.time || template?.schedule.time || '09:00'; zone.required=true;zone.value=value?.schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for(let i=0;i<7;i++) weekday.append(new Option(new Intl.DateTimeFormat(window.atlasProjectLocale.language(),{weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2026,0,5+i))),i));weekday.value=value?.schedule.weekday ?? template?.schedule.weekday ?? 0;
+    target.maxLength=240;target.value=value?.target_file || '';cap.type='number';cap.min='0.01';cap.max='2';cap.step='0.01';cap.required=true;cap.value=value?.daily_cap_eur ?? .5;
+    const daysField=field('taskDays',days), weekdayField=field('taskWeekday',weekday); function cadence(){daysField.hidden=frequency.value!=='every';weekdayField.hidden=frequency.value!=='weekly';} frequency.addEventListener('change',cadence);cadence();
+    const submit=node('button',t(value?'save':'create'));submit.type='submit'; const actions=node('div',null,'atlas-project-task-actions');actions.append(submit,button('cancel',()=>dialog.close()));
+    form.append(node('h2',t(value?'taskEdit':'taskNew')),field('taskChooseProject',project),field('name',name),field('taskInstruction',instruction),field('taskFrequency',frequency),daysField,weekdayField,field('taskTime',time),field('taskZone',zone),field('taskTarget',target),field('taskCap',cap),actions);
+    form.addEventListener('submit',guarded(async event=>{event.preventDefault();submit.disabled=true;try { const body={name:name.value.trim(),instruction:instruction.value.trim(),schedule:{frequency:frequency.value,days:Number(days.value),weekday:Number(weekday.value),time:time.value,timezone:zone.value,anchor:value?.schedule.anchor || null},target_file:target.value.trim()||null,enabled:value?.enabled ?? true,daily_cap_eur:Number(cap.value),locale:window.atlasProjectLocale.language()}; const path=`/api/atlas/orgs/${scope.org}/projects/${project.value}/scheduled-tasks`; if(value) await request(taskPath(value),{method:'PUT',headers:{'If-Match':`"${value.revision}"`},body});else await api(path,'POST',body); dialog.close(); tasksPage();} finally {submit.disabled=false;}}));
+    dialog.append(form);root.append(dialog);dialog.addEventListener('close',()=>dialog.remove(),{once:true});dialog.showModal();name.focus();
+  }
+  async function tasksPage() {
+    root.dataset.view='tasks'; right.replaceChildren(); center.replaceChildren();
+    const result=await api(`/api/atlas/orgs/${scope.org}/scheduled-tasks?limit=100`), items=result.items;
+    const header=node('div',null,'atlas-project-page-heading');header.append(node('h1',t('taskHeading')),button('taskNew',()=>globalTaskDialog(),'atlas-project-primary'));center.append(header);
+    const tabs=node('div',null,'atlas-project-tabs');tabs.setAttribute('role','tablist');let tab='yours';
+    const toolbar=node('div',null,'atlas-project-list-toolbar'), search=node('input'), project=node('select'), status=node('select'), sort=node('select'); search.type='search';search.placeholder=t('taskSearch');search.setAttribute('aria-label',t('taskSearch')); project.setAttribute('aria-label',t('taskFilterProject'));status.setAttribute('aria-label',t('taskFilterStatus'));sort.setAttribute('aria-label',t('taskSort'));
+    project.append(new Option(t('taskAll'),''),...projects.map(item=>new Option(item.name,item.id))); status.append(new Option(t('taskAll'),''),new Option(t('taskActive'),'active'),new Option(t('taskPaused'),'paused'),new Option(t('taskFailing'),'failing'));sort.append(new Option(t('taskSortNext'),'next'),new Option(t('taskSortName'),'name'),new Option(t('taskSortLast'),'last'));
+    const grid=node('div',null,'atlas-project-grid atlas-project-task-grid'); const render=()=>{grid.replaceChildren();if(tab==='templates'){for(const template of taskTemplates()){const card=node('article',null,'atlas-project-task-card');card.append(node('h2',template.name),node('p',template.instruction),node('p',taskScheduleWords(template),'atlas-project-detail'),button('taskNew',()=>globalTaskDialog(null,template)));grid.append(card);}return;} let values=items.filter(item=>(item.name+' '+item.instruction+' '+item.project_name).toLocaleLowerCase().includes(search.value.toLocaleLowerCase())&&(!project.value||item.project_id===project.value)&&(!status.value||(status.value==='active'?item.enabled:status.value==='paused'?!item.enabled:['failed','budget_cap'].includes(item.last_result?.status))));values.sort((a,b)=>sort.value==='name'?a.name.localeCompare(b.name):sort.value==='last'?Date.parse(b.last_result?.at||0)-Date.parse(a.last_result?.at||0):Date.parse(a.next_run)-Date.parse(b.next_run));for(const item of values){const card=node('article',null,'atlas-project-task-card');card.dataset.taskId=item.id;const seen=Number(localStorage.getItem(`atlas-task-seen:${item.id}`)||0), fresh=Date.parse(item.last_result?.at||0)>seen;const title=node('button',item.name);title.className='atlas-project-task-title';title.addEventListener('click',guarded(()=>globalTaskDialog(item)));const chip=node('span',item.project_name,'atlas-project-task-project');card.append(title,chip,node('p',item.instruction,'atlas-project-task-excerpt'));const footer=node('p',`${item.enabled?t('taskActive'):t('taskPaused')} · ${taskScheduleWords(item)}`,'atlas-project-detail');if(fresh){const dot=node('span','', 'atlas-project-task-dot');dot.title=t('taskNewOutput');footer.prepend(dot);}card.append(footer);const actions=node('div',null,'atlas-project-task-actions');if(item.project_role!=='viewer'){actions.append(button('taskEdit',()=>globalTaskDialog(item)),button(item.enabled?'taskPause':'taskResume',async()=>{await request(taskPath(item),{method:'PUT',headers:{'If-Match':`"${item.revision}"`},body:{...taskInput(item),enabled:!item.enabled}});tasksPage();}),button('taskRun',async()=>{await api(taskPath(item)+'/run','POST',{});tasksPage();}),button('remove',async()=>{if(window.confirm(t('taskDelete'))){await request(taskPath(item),{method:'DELETE',headers:{'If-Match':`"${item.revision}"`}});tasksPage();}}));}if(item.last_result?.conversation_id)actions.append(button('taskConversation',()=>choose({org:scope.org,project:item.project_id,conversation:item.last_result.conversation_id})));card.append(actions);grid.append(card);}if(!values.length)grid.append(node('p',t('taskEmpty'),'atlas-project-empty'));for(const item of items) localStorage.setItem(`atlas-task-seen:${item.id}`,String(Date.now()));};
+    for(const [key,label] of [['yours','taskYours'],['templates','taskTemplates']]){const control=button(label,()=>{tab=key;render();});control.setAttribute('role','tab');control.setAttribute('aria-selected',String(key===tab));tabs.append(control);} search.addEventListener('input',render);project.addEventListener('change',render);status.addEventListener('change',render);sort.addEventListener('change',render);toolbar.append(tabs,search,project,status,sort);center.append(toolbar);if(items.some(item=>!item.enabled&&item.pause_reason==='three_failures'))center.append(node('p',t('taskPausedBanner'),'atlas-project-task-banner'));center.append(grid);render();
+  }
   const projectSummaries = new Map();
   async function loadProjectSummary(project, description, counts) {
     const current = generation, path = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
@@ -262,6 +303,7 @@
     cleanup(); lifecycle = new AbortController(); const current = generation;
     scope = value; projects = []; conversations = []; files = []; folders = []; center.replaceChildren(); right.replaceChildren(); say(t('loading'));
     for (const key of ['org', 'project', 'conversation', 'session']) if (value[key] && !uuid(value[key])) throw new Error(t('selectionError'));
+    if (value.tasks && value.project) throw new Error(t('selectionError'));
     if (value.org && !memberships.some(m => m.org_id === value.org)) throw new Error(t('selectionError'));
     if (value.org) projects = await list(`/api/atlas/orgs/${value.org}/projects`);
     if (current !== generation) return;
@@ -277,7 +319,7 @@
     document.body.classList.add('atlas-project-open');
     hostMain()?.setAttribute('inert', '');
     say('');
-    if (value.project) await mountConversation(current); else projectsPage();
+    if (value.project) await mountConversation(current); else if (value.tasks) await tasksPage(); else projectsPage();
   }
   const eligibleFiles = () => files.filter(f => f.locality !== 'local_only' && f.availability !== 'not_retained' && f.id !== projectInfo.instructions_file_id && folders.some(folder => folder.id === f.folder_id && folder.model_use === 'allow'));
   async function mountConversation(current) {
@@ -351,6 +393,13 @@
         for (const [layer,count] of Object.entries(lastContext.layers)) used.append(detail(layer,count)); article.append(used);
       }
       transcript.append(article);
+    }
+    for (const task of panelData?.scheduled?.items || []) if (task.proposal && task.conversation_id === scope.conversation) {
+      const card=node('section',null,'atlas-project-approval');card.dataset.scheduleProposal=task.id;
+      card.append(node('h3',task.name),node('p',task.instruction),node('p',scheduleWords(task)),detail('taskCap',task.daily_cap_eur));
+      if(task.target_file) card.append(detail('taskTarget',task.target_file));
+      if(panelData.scheduled.can_manage && task.can_confirm !== false) card.append(button('taskConfirm',async () => {await api(base()+'/scheduled-tasks/'+task.id+'/confirm','POST',{});await panels();}));
+      transcript.append(card);
     }
   }
   function withoutFileLinks(text) {
@@ -546,6 +595,9 @@
         await replay(); await restoreSession();
         if (session) { const id = session.id, value = await api(base() + '/work-sessions/' + id); if (session?.id === id) { session = value; controls(); } }
         await refreshTurns();
+        if(panelData && !root.querySelector('dialog[open]') && (!panelData.scheduledAt || Date.now()-panelData.scheduledAt>15000)) {
+          panelData.scheduled=await api(base()+'/scheduled-tasks?limit=100');panelData.scheduledAt=Date.now();renderPanels();renderTurns();
+        }
       } catch (error) { if (current === generation) failure(error); }
       if (current === generation) schedule(current);
     }, 1500);
@@ -584,7 +636,7 @@
       selected = new Set(versions);
       if (action === 'work' && (!session || ['failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
       const profile = action === 'work' ? (window.atlasProjectWorkProfile || window.atlasProjectProfile) : window.atlasProjectProfile;
-      const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
+      const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), ui_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });
       await consume(response, chunk => {
@@ -609,8 +661,8 @@
   const detail = (key, value) => node('p', `${t(key)}: ${value == null ? t('unknown') : value}`, 'atlas-project-detail');
   async function panels() {
     const current = generation;
-    const [instructions, memory, deliverables] = await Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables')]);
-    checkScope(current); panelData = {instructions,memory,deliverables}; renderPanels(); renderTurns();
+    const [instructions, memory, deliverables, scheduled] = await Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables'),api(base()+'/scheduled-tasks?limit=100')]);
+    checkScope(current); panelData = {instructions,memory,deliverables,scheduled}; renderPanels(); renderTurns();
   }
   async function requestChange(key, value) {
     const conversation = await api(base() + '/conversations', 'POST', {title:t(key)});
@@ -631,6 +683,82 @@
     const actions = node('div'); const download = node('a',t('download')); download.href = projectURL(item.download_route); download.download = name;
     actions.append(button('preview', () => previewDeliverable(item)),download); card.append(actions); return card;
   }
+  function scheduleWords(value) {
+    const s = value.schedule, weekday = new Intl.DateTimeFormat(window.atlasProjectLocale.language(), {weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2026,0,5+s.weekday)));
+    const cadence = s.frequency === 'daily' ? t('taskDaily') : s.frequency === 'weekly' ? t('taskWeekly').replace('{day}',weekday) : t('taskEvery').replace('{n}',s.days);
+    return `${cadence} · ${s.time} (${s.timezone})`;
+  }
+  function taskInput(value) {
+    return Object.fromEntries(['name','instruction','schedule','target_file','enabled','daily_cap_eur','locale'].map(key => [key,value[key]]));
+  }
+  async function changeTask(value, enabled) {
+    await apiTask(value, 'PUT', {...taskInput(value),enabled}); await panels();
+  }
+  async function apiTask(value, method, body) {
+    const current = generation;
+    return jsonResponse(await request(base()+'/scheduled-tasks/'+value.id,{method,body,headers:{'If-Match':`"${value.revision}"`}}),current);
+  }
+  function scheduledPanel(data) {
+    const panel = node('section',null,'atlas-project-panel'); panel.dataset.panel = 'scheduled';
+    const heading = node('div',null,'atlas-project-panel-heading'); heading.append(node('h2',t('taskHeading')));
+    if (data.can_manage) heading.append(iconButton('taskCreate','+',() => taskDialog()));
+    panel.append(heading);
+    if (!data.items.length) panel.append(node('p',t('taskEmpty'),'atlas-project-detail'));
+    for (const value of data.items) {
+      const row = node('article',null,'atlas-project-scheduled-task'); row.dataset.taskId=value.id;
+      row.append(node('strong',value.name),node('p',scheduleWords(value),'atlas-project-detail'));
+      const next = value.enabled ? new Intl.DateTimeFormat(window.atlasProjectLocale.language(),{dateStyle:'medium',timeStyle:'short',timeZone:value.schedule.timezone}).format(new Date(value.next_run)) : t(value.proposal ? 'proposed' : 'taskPaused');
+      row.append(node('p',`${t('taskNext')}: ${next}`,'atlas-project-detail'));
+      if (value.pause_reason) row.append(node('p',t('taskReason_'+value.pause_reason),'atlas-project-detail'));
+      if (value.last_result) {
+        const result = value.last_result, label = t('taskLast')+': '+t(result.status === 'budget_cap' ? 'taskCapReached' : result.status);
+        if (result.conversation_id) {
+          const link = node('a',label); link.href = `?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(scope.project)}&conversation=${encodeURIComponent(result.conversation_id)}`;
+          link.addEventListener('click',guarded(async event => {event.preventDefault();await choose({org:scope.org,project:scope.project,conversation:result.conversation_id});})); row.append(link);
+        } else row.append(node('p',label,'atlas-project-detail'));
+      }
+      if (data.can_manage) {
+        const actions = node('div',null,'atlas-project-task-actions');
+        if (value.proposal && value.can_confirm !== false) actions.append(button('taskConfirm',async () => {await api(base()+'/scheduled-tasks/'+value.id+'/confirm','POST',{});await panels();}));
+        else if (!value.proposal) actions.append(button(value.enabled ? 'taskPause' : 'taskResume',() => changeTask(value,!value.enabled)));
+        actions.append(button('taskEdit',() => taskDialog(value)));
+        if (value.enabled && value.last_result?.status !== 'running') actions.append(button('taskRun',async () => {await api(base()+'/scheduled-tasks/'+value.id+'/run','POST',{});await panels();}));
+        actions.append(button('remove',() => deleteTask(value))); row.append(actions);
+      }
+      panel.append(row);
+    }
+    return panel;
+  }
+  function deleteTask(value) {
+    const dialog=node('dialog',null,'atlas-project-dialog'); dialog.dataset.taskDelete='';
+    dialog.append(node('h2',t('taskDelete')),node('p',value.name),button('remove',async () => {await apiTask(value,'DELETE');dialog.close();await panels();}),button('cancel',() => dialog.close()));
+    dialog.addEventListener('close',() => dialog.remove(),{once:true});root.append(dialog);dialog.showModal();
+  }
+  function taskDialog(value) {
+    const dialog=node('dialog',null,'atlas-project-dialog atlas-project-task-dialog'), form=node('form'); dialog.dataset.taskDialog='';
+    const name=node('input'), instruction=node('textarea'), frequency=node('select'), days=node('input'), time=node('input'), zone=node('input'), weekday=node('select'), target=node('input'), cap=node('input');
+    name.required=true; name.maxLength=120; name.value=value?.name || '';
+    instruction.required=true;instruction.maxLength=8000;instruction.rows=4;instruction.value=value?.instruction || '';
+    for (const key of ['daily','every','weekly']) frequency.append(new Option(t('taskFrequency_'+key),key));frequency.value=value?.schedule.frequency || 'daily';
+    days.type='number';days.min='1';days.max='365';days.value=value?.schedule.days || 3;
+    time.type='time';time.required=true;time.value=value?.schedule.time || '09:00';
+    zone.required=true;zone.value=value?.schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (let i=0;i<7;i++) weekday.append(new Option(new Intl.DateTimeFormat(window.atlasProjectLocale.language(),{weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2026,0,5+i))),i));weekday.value=value?.schedule.weekday ?? 0;
+    target.maxLength=240;target.value=value?.target_file || '';target.placeholder='Summary.docx';
+    cap.type='number';cap.min='0.01';cap.max='2';cap.step='0.01';cap.required=true;cap.value=value?.daily_cap_eur ?? 0.5;
+    const daysField=field('taskDays',days), weekdayField=field('taskWeekday',weekday);
+    function cadence() {daysField.hidden=frequency.value!=='every';weekdayField.hidden=frequency.value!=='weekly';}frequency.addEventListener('change',cadence);cadence();
+    const submit=node('button',t(value ? 'save' : 'create'));submit.type='submit';
+    const actions=node('div',null,'atlas-project-task-actions');actions.append(submit,button('cancel',() => dialog.close()));
+    form.append(node('h2',t(value ? 'taskEdit' : 'taskCreate')),field('name',name),field('taskInstruction',instruction),field('taskFrequency',frequency),daysField,weekdayField,field('taskTime',time),field('taskZone',zone),field('taskTarget',target),field('taskCap',cap),actions);
+    form.addEventListener('submit',guarded(async event => {event.preventDefault();submit.disabled=true;try {
+      const body={name:name.value.trim(),instruction:instruction.value.trim(),schedule:{frequency:frequency.value,days:Number(days.value),weekday:Number(weekday.value),time:time.value,timezone:zone.value,anchor:value?.schedule.anchor || null},target_file:target.value.trim() || null,enabled:value?.enabled ?? true,daily_cap_eur:Number(cap.value),locale:window.atlasProjectLocale.language()};
+      if(value) await apiTask(value,'PUT',body);else await api(base()+'/scheduled-tasks','POST',body);
+      dialog.close();await panels();
+    } finally {submit.disabled=false;}}));
+    dialog.append(form);root.append(dialog);dialog.addEventListener('close',() => dialog.remove(),{once:true});dialog.showModal();name.focus();
+  }
+
   function renderPanels() {
     if (!panelData) return;
     const {instructions,memory,deliverables} = panelData; right.replaceChildren();
@@ -653,7 +781,7 @@
       const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; open.title = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(row);
     }
     for (const item of deliverables.filter(d => !files.some(f => f.version_id === d.file_version_id))) filePanel.append(fileCard(item));
-    panels.append(filePanel);
+    panels.append(filePanel, scheduledPanel(panelData.scheduled));
     if (memory.length) {
       const memoryPanel = node('section',null,'atlas-project-panel'); memoryPanel.dataset.panel = 'memory'; memoryPanel.append(node('h2',t('memory')));
       for (const entry of memory) { const row = node('div',null,'atlas-project-memory'); row.append(node('p',entry.text),iconButton('remove','×',() => confirmChange('removeMemory',{memory_id:entry.id,text:entry.text,revision:entry.revision}))); memoryPanel.append(row); } panels.append(memoryPanel);
@@ -758,7 +886,7 @@
     if (!document.getElementById('atlas-project-entry')) {
       const row = node('div',null,'atlas-project-nav-row'); row.id = 'atlas-project-navigation';
       const entry = button('projects',async () => {await mount(); await choose({org:scope?.org || memberships[0]?.org_id});}); entry.id = 'atlas-project-entry';
-      row.append(entry,iconButton('newProject','+',createProject));
+      row.append(entry,iconButton('newProject','+',createProject),button('taskHeading',async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id,tasks:true});}));
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
@@ -858,7 +986,7 @@
     if (booting) return; booting = true;
     try {
       const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
-      if (!me.ok) {if (owned || selections().has('project') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
+      if (!me.ok) {if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
       memberships = (await me.json()).memberships;
       if (!scope && memberships[0]?.org_id) scope = {org: memberships[0].org_id};
       const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
@@ -867,7 +995,7 @@
       document.getElementById('atlas-project-failure')?.remove();
       for (let i = sessionStorage.length - 1; i >= 0; i--) { const key = sessionStorage.key(i); if (key.startsWith('atlas-project:') && key !== storageKey()) sessionStorage.removeItem(key); }
       installNavigation();
-      if (owned || selections().has('project') || selections().has('atlas_projects')) await mount();
+      if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) await mount();
     } catch(error) {showFailure(error);} finally {booting = false;}
   }
   function showFailure(error) {
@@ -887,7 +1015,7 @@
     root.append(mobile,left,center,right,notice); document.body.append(root);
     const side = document.getElementById('atlas-side-view');
     if (side) {sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width',side.getBoundingClientRect().width+'px')); sideResize.observe(side);}
-    const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session')};
+    const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session'),tasks:q.get('tasks') === 'true'};
     try {await choose(value); installNavigation();} catch(error) {if (error.name !== 'AbortError') showFailure(error);}
   }
   let route = location.pathname;
@@ -901,7 +1029,7 @@
       if (/^\/(auth|admin)/.test(route)) { if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
     }
   });
-  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('atlas_projects')) guarded(mount)(); });
+  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) guarded(mount)(); });
   document.addEventListener('click', event => {const link = event.target.closest?.('#sidebar a, a#sidebar-new-chat-button, #pinned-menu-items-list a'); if (link && root?.isConnected) ordinary();});
   window.addEventListener('resize', installNavigation);
   window.addEventListener('pagehide', cleanup);

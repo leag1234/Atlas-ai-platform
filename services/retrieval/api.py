@@ -13,6 +13,7 @@ from services.retrieval.tool import Request
 from services.retrieval.project_api import router
 from services.retrieval.connector_api import router as connector_router
 from services.retrieval.user_memory_api import router as memory_router
+from services.retrieval.project_schedule_api import router as schedule_router
 
 app = FastAPI(title="ATLAS retrieval")
 app.include_router(router)
@@ -54,3 +55,6 @@ def source(chunk_id: str) -> dict[str, object]:
         raise HTTPException(404, "chunk_not_found") from None
     except (OSError, DatabaseError):
         raise HTTPException(503, "retrieval_unavailable") from None
+
+
+app.include_router(schedule_router)

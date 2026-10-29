@@ -11,7 +11,7 @@ import re
 
 from typing import Any, Literal, Self
 from uuid import UUID
-from pydantic import ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import ConfigDict, Field, PrivateAttr, model_validator, field_validator
 from packages.images import VisionInput, VisionMessage
 
 from services.orchestrator.documents import Attachment
@@ -53,6 +53,8 @@ class ChatRequest(VisionInput):
     file_version_ids: list[str] = Field(default_factory=list)
     _skill_catalog: Any = PrivateAttr(default=None)
     _api_key_request: bool = PrivateAttr(default=False)
+    _scheduled_run: bool = PrivateAttr(default=False)
+    _scheduled_target: str | None = PrivateAttr(default=None)
     _project_subject: str | None = PrivateAttr(default=None)
     _connector_scope: dict[str, str | None] = PrivateAttr(default_factory=dict)
     _connector_approvals: list[dict[str, Any]] = PrivateAttr(default_factory=list)
@@ -74,6 +76,19 @@ class ChatRequest(VisionInput):
     max_tokens: int = Field(default=6000, ge=1, le=16000)
     seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
     ui_locale: Literal["fr", "de", "es", "it", "en", "nl"] = "fr"
+    ui_timezone: str = Field(default="UTC", max_length=80)
+
+    @field_validator("ui_timezone")
+    @classmethod
+    def valid_timezone(cls, value: str) -> str:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Unknown IANA time zone") from exc
+        return value
+
     lang: Literal["fr", "de", "es", "it", "en"] = "fr"
     continuation: bool = Field(default=False, exclude=True)
 

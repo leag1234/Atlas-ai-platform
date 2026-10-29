@@ -1,8 +1,7 @@
-"""REQ-PROJ-01/02/06/07 P0 locality and unavailable-capability boundary.
+"""REQ-PROJ-01/02/06/07 locality and project-capability boundary.
 
-This module deliberately contains no device, skill, scheduler, or model dispatch.
-It keeps their P0 refusals and the organization-ceiling check at one boundary so a
-future implementation cannot accidentally treat metadata as authority.
+Capability discovery grants no dispatch authority. Device and skill execution
+remain unavailable; scheduled Work uses the scoped project authorization path.
 """
 
 from __future__ import annotations
@@ -26,11 +25,11 @@ def reject_local_only_egress(locality: str) -> None:
 
 
 def p0_capabilities(work: bool) -> dict[str, bool]:
-    """Return the fixed P0 capability report; unavailable features stay explicit."""
+    """Report project capabilities; unavailable features stay explicit."""
     return {
         "chat": True,
         "work": work,
-        "scheduled_tasks": False,
+        "scheduled_tasks": True,
         "skills_execute": False,
         "local_reads": False,
         "sync": False,

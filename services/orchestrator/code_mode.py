@@ -54,6 +54,11 @@ def settings() -> Limits:
     )
 
 
+def workspace_startup_timeout(limits: Limits) -> float:
+    """Allow a cold isolated workspace to start without exceeding its turn budget."""
+    return min(120.0, limits.wall_clock)
+
+
 class CodeModel(GatewayModel):
     """Keep gateway per-call ceilings, while the loop owns the larger turn budget."""
 
@@ -764,6 +769,35 @@ async def process_work(
                 if tools.skills.entries:
                     tools.selection.skills_enabled = True
                     tools.selection.catalog["load_skill"] = tools.skills.declaration()
+            if (
+                dispatch is not None
+                and not request._api_key_request
+                and not request._scheduled_run
+            ):
+                from services.orchestrator.schedule_tools import ScheduleTools
+
+                tools.schedules = ScheduleTools(
+                    dispatch.broker,
+                    dispatch.state["turn"],
+                    request.ui_timezone,
+                    request.lang,
+                )
+                tools.selection.schedules_enabled = True
+                tools.selection.catalog["propose_scheduled_task"] = (
+                    tools.schedules.declaration()
+                )
+            if (
+                request._scheduled_run
+                and request._scheduled_target
+                and Path(request._scheduled_target).suffix.lower()
+                not in {".docx", ".pptx", ".xlsx", ".pdf"}
+            ):
+                from services.orchestrator.schedule_tools import publish_declaration
+
+                tools.selection.scheduled_publication = True
+                tools.selection.catalog["publish_scheduled_file"] = (
+                    publish_declaration()
+                )
             model.work_tools = tools.selection.declarations
             model.sink = None
             result = await execute_turn(
@@ -774,7 +808,9 @@ async def process_work(
                 dict(
                     root="/workspace",
                     repository=repository,
-                    listing=await workspace.invoke("list_dir", {"path": "."}, 10),
+                    listing=await workspace.invoke(
+                        "list_dir", {"path": "."}, workspace_startup_timeout(limits)
+                    ),
                     files=[
                         dict(
                             file_id=file["id"],

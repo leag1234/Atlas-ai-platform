@@ -382,6 +382,7 @@ class WorkTools(CodeTools):
         self.validation_failures: dict[str, str] = {}
         self.memory: Any = None
         self.skills: Any = None
+        self.schedules: Any = None
         self.nearby: Any = None
         self.remote_references: Any = None
 
@@ -463,6 +464,13 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if call.name == "publish_scheduled_file":
+            arguments = json.loads(call.arguments)
+            return dict(
+                await self.execution.broker.call(
+                    "scheduled-publish", dict(self.execution.fence(), **arguments)
+                )
+            )
         if self.connectors is not None and call.name in self.connectors.targets:
             return dict(await self.connectors.execute(call, timeout))
         if self.skills is not None:
@@ -480,6 +488,8 @@ class WorkTools(CodeTools):
                 return dict(skill_result)
             if self.skills.blocks(call.name):
                 return {"error": "skill_action_not_permitted"}
+        if call.name == "propose_scheduled_task" and self.schedules is not None:
+            return dict(await self.schedules.execute(call))
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name == "switch_tool_group" and self.selection is not None:
