@@ -41,6 +41,20 @@ def explicit(text: str) -> str | None:
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    if match and match[1].strip() and 0 < len(match[1]) <= 500:
-        return match[1]
+    if match:
+        fact = re.sub(
+            r"^(?:"
+            r"this fact(?: for (?:this|the) project)?|this for (?:this|the) project"
+            r"|ce fait(?: pour (?:ce|le) projet)?|(?:ceci|cela|ça) pour (?:ce|le) projet"
+            r"|diese Tatsache(?: f(?:ü|ue)r (?:dieses|das) Projekt)?|(?:dies|das) f(?:ü|ue)r (?:dieses|das) Projekt"
+            r"|este (?:hecho|dato)(?: para (?:este|el) proyecto)?|esto para (?:este|el) proyecto"
+            r"|questo fatto(?: per (?:questo|il) progetto)?|questo per (?:questo|il) progetto"
+            r")\s*[:：]\s*",
+            "",
+            match[1],
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if fact.strip() and 0 < len(fact) <= 500:
+            return fact
     return None

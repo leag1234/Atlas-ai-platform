@@ -26,6 +26,64 @@ import test_project_files as fixtures
 
 
 class MemoryIntentTests(unittest.TestCase):
+    def test_colon_lead_ins_preserve_the_fictional_fact_verbatim(self) -> None:
+        fact = "Quartz-17: amber-47.\nKeep THIS punctuation!"
+        for command, lead_ins in (
+            (
+                "Remember",
+                ("this fact", "this fact for this project", "this for the project"),
+            ),
+            ("Retiens", ("ce fait", "ce fait pour ce projet", "ceci pour le projet")),
+            (
+                "Merke dir",
+                (
+                    "diese Tatsache",
+                    "diese Tatsache für dieses Projekt",
+                    "dies für das Projekt",
+                ),
+            ),
+            (
+                "Recuerda",
+                (
+                    "este hecho",
+                    "este hecho para este proyecto",
+                    "esto para el proyecto",
+                ),
+            ),
+            (
+                "Ricorda",
+                (
+                    "questo fatto",
+                    "questo fatto per questo progetto",
+                    "questo per il progetto",
+                ),
+            ),
+        ):
+            for lead_in in lead_ins:
+                for colon in (":", "："):
+                    with self.subTest(command=command, lead_in=lead_in, colon=colon):
+                        self.assertEqual(
+                            explicit(f"{command} {lead_in}{colon} {fact}"), fact
+                        )
+        self.assertEqual(
+            explicit("REMEMBER THIS FACT: Quartz-17=amber-47"), "Quartz-17=amber-47"
+        )
+        self.assertEqual(
+            explicit("Merke dir dies fuer das Projekt: amber-47"), "amber-47"
+        )
+        self.assertEqual(explicit("Remember this fact: " + "x" * 500), "x" * 500)
+        for phrase in ("Remember this fact:   ", "Remember this fact: " + "x" * 501):
+            self.assertIsNone(explicit(phrase))
+        for text in (
+            "this fact has no colon",
+            "Quartz-17: amber-47",
+            "this factory: Quartz-17",
+            "this fact: Quartz-17: amber-47",
+        ):
+            expected = "Quartz-17: amber-47" if text.startswith("this fact:") else text
+            self.assertEqual(explicit("Remember " + text), expected)
+        self.assertIsNone(explicit("Do not remember this fact: Quartz-17=amber-47"))
+
     def test_multilingual_explicit_user_intent_and_negatives(self) -> None:
         for phrase in (
             "Remember that launch is Friday",
@@ -82,6 +140,170 @@ class TypedMemoryTests(unittest.TestCase):
     def scope(self) -> Any:
         f = self.fixture
         return store(f.app_dsn).scope(f.identity("editor"), f.org, f.project)
+
+    def remember_request(self, transcript: Transcript, text: str) -> dict[str, Any]:
+        chat = transcript.create(dict(title="Fictional sentinel"))
+        return dict(
+            request_id=str(uuid4()),
+            request=dict(
+                model="atlas",
+                org_id=self.fixture.org,
+                project_id=self.fixture.project,
+                conversation_id=chat["id"],
+                project_action="chat",
+                file_version_ids=[],
+                messages=[dict(role="user", content=text)],
+                stream=True,
+            ),
+        )
+
+    def test_owner_2026_10_29_immediate_recall_in_every_conversation(self) -> None:
+        from services.orchestrator.chat_schema import ChatMessage
+        from services.orchestrator.session_context import assemble
+
+        fact = "La sentinelle Quartz-17 est fictive et son code est ambre-47."
+        configured = self.fixture.request(
+            "PATCH",
+            self.fixture.project_path(),
+            "owner",
+            dict(pinned_memory_tokens=900),
+            match=0,
+        )
+        self.assertEqual(configured.status_code, 200, configured.text)
+        with self.scope() as scope:
+            transcript = Transcript(scope)
+            request = self.remember_request(
+                transcript, "Retiens ce fait pour ce projet: " + fact
+            )
+            transcript.begin(request, request["request_id"])
+            transcript.begin(request, request["request_id"])
+            self.assertEqual(len(transcript.files.listing("memory")), 1)
+        # Separate transactions, no sleep, no source-conversation history or tool call.
+        for question in (
+            "Dans cette autre conversation du projet, quel est le code de la sentinelle Quartz-17 ?",
+            "Quartz-17 code?",
+            "Which token did I give you?",
+        ):
+            with (
+                self.subTest(question=question),
+                self.scope() as scope,
+                patch.dict(os.environ, ATLAS_GATEWAY_URL="http://127.0.0.1:49010"),
+                patch(
+                    "services.retrieval.search.Gateway.post",
+                    side_effect=AssertionError(
+                        "Explicit recall must not require indexing"
+                    ),
+                ),
+            ):
+                transcript = Transcript(scope)
+                chat = transcript.create(dict(title="Another conversation"))
+                context = transcript.context(chat["id"], question, [])
+                self.assertEqual([v["text"] for v in context["facts"]], [fact])
+                entry = context["facts"][0]
+                self.assertTrue(entry["pinned"])
+                self.assertEqual(entry["status"], "active")
+                self.assertEqual(entry["kind"], "fact")
+                self.assertEqual(entry["source_turn_id"], request["request_id"])
+                self.assertEqual(context["history"], [])
+                messages, _ = assemble(
+                    context, ChatMessage(role="user", content=question)
+                )
+                self.assertEqual(
+                    json.loads(messages[1].text)["pinned_memory"][0]["text"], fact
+                )
+                self.assertLessEqual(
+                    pin_tokens(context["facts"]),
+                    scope.project_data["pinned_memory_tokens"],
+                )
+
+    def test_remembered_fact_survives_retrieval_competition_and_large_index(
+        self,
+    ) -> None:
+        from services.orchestrator.chat_schema import ChatMessage
+        from services.orchestrator.session_context import assemble
+
+        fact = "The fictional sentinel Quartz-17 uses amber-47."
+        with self.scope() as scope:
+            transcript = Transcript(scope)
+            request = self.remember_request(transcript, "Remember " + fact)
+            transcript.begin(request, request["request_id"])
+            for index in range(21):
+                transcript.files.memory(
+                    dict(
+                        text=f"Earlier saved code for fictional distraction {index}.",
+                        status="active",
+                        source_refs=[],
+                    )
+                )
+        with self.scope() as scope:
+            transcript = Transcript(scope)
+            chat = transcript.create(dict(title="Recall without matching terms"))
+            question = "Earlier saved code?"
+            context = transcript.context(chat["id"], question, [])
+            self.assertEqual(context["memory_index"], [])
+            self.assertEqual(len(context["retrieved_memory"]), 8)
+            self.assertNotIn(fact, [v["text"] for v in context["retrieved_memory"]])
+            messages, _ = assemble(context, ChatMessage(role="user", content=question))
+            self.assertIn(fact, "\n".join(message.text for message in messages))
+
+    def test_explicit_save_keeps_fact_unpinned_when_pins_are_full(self) -> None:
+        with self.scope() as scope:
+            transcript = Transcript(scope)
+            request = self.remember_request(transcript, "Remember Quartz-17=amber-47")
+            scope.project_data["pinned_memory_tokens"] = 1
+            transcript.begin(request, request["request_id"])
+            memory = transcript.files.listing("memory")
+            self.assertEqual(len(memory), 1)
+            self.assertEqual(memory[0]["text"], "Quartz-17=amber-47")
+            self.assertEqual(memory[0]["status"], "active")
+            self.assertFalse(memory[0]["pinned"])
+            self.assertEqual(len(transcript.files.listing("turn")), 1)
+
+    def test_single_unpinned_fact_has_no_indexing_lag_or_score_cutoff(self) -> None:
+        from services.retrieval.search import Gateway
+        from services.orchestrator.chat_schema import ChatMessage
+        from services.orchestrator.session_context import assemble
+
+        fact = "ce fait pour ce projet: La sentinelle Quartz-17 est fictive et son code est ambre-47."
+        with self.scope() as scope:
+            transcript = Transcript(scope)
+            saved = transcript.files.memory(
+                dict(text=fact, status="active", source_refs=[])
+            )
+            chat = transcript.create(dict(title="Diagnose existing unpinned memory"))
+            key = __import__("hashlib").sha256(saved["id"].encode()).hexdigest()
+            with (
+                patch.dict(os.environ, ATLAS_GATEWAY_URL="http://127.0.0.1:49010"),
+                patch.object(
+                    Gateway, "embed", return_value=([[1.0, 0.0]], "test")
+                ) as embed,
+                patch.object(Gateway, "scores", return_value={key: -100.0}),
+            ):
+                context = transcript.context(chat["id"], "Quartz-17 code?", [])
+            self.assertEqual(embed.call_count, 2)
+            self.assertEqual(context["facts"], [])
+            self.assertEqual(context["retrieved_memory"], [saved])
+            self.assertIn(fact, context["memory_index"][0])
+            messages, _ = assemble(
+                context, ChatMessage(role="user", content="Quartz-17 code?")
+            )
+            self.assertIn(fact, messages[-2].text)
+
+    def test_explicit_document_memory_stays_proposed_until_confirmed(self) -> None:
+        f = self.fixture
+        file = f.uploaded(f.folder(), b"Fictional sentinel Quartz-17", "sentinel.txt")
+        with self.scope() as scope:
+            transcript = Transcript(scope)
+            request = self.remember_request(
+                transcript, "Remember this fact: Quartz-17=amber-47"
+            )
+            request["request"]["file_version_ids"] = [file["version_id"]]
+            transcript.begin(request, request["request_id"])
+            entry = transcript.files.listing("memory")[0]
+            self.assertEqual(entry["status"], "proposed")
+            self.assertIsNone(entry["confirmed_by"])
+            self.assertEqual(entry["source_file_version_ids"], [file["version_id"]])
+            self.assertEqual(transcript.files.context()["memory"], [])
 
     def test_kinds_pins_cap_and_supersession_over_http(self) -> None:
         f = self.fixture
