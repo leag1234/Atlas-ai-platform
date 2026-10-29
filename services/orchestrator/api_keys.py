@@ -69,10 +69,12 @@ class Store(DeveloperStore):
         """Upgrade existing private key stores without changing their credentials."""
         keys = self._columns(db, "api_keys")
         if keys["daily_requests"]["notnull"] or keys["daily_micro_eur"]["notnull"]:
+            # SQLite rewrites child foreign keys when a parent table is renamed, so
+            # build the new table first and rename it onto the original name.
+            db.commit()
             db.execute("PRAGMA foreign_keys=OFF")
-            db.execute("ALTER TABLE api_keys RENAME TO api_keys_before_optional_caps")
             db.execute(
-                "CREATE TABLE api_keys ("
+                "CREATE TABLE api_keys_optional_caps ("
                 "id TEXT PRIMARY KEY, org_id TEXT NOT NULL, member_id TEXT NOT NULL, "
                 "subject TEXT NOT NULL, budget_user TEXT NOT NULL, name TEXT NOT NULL, "
                 "prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, "
@@ -86,12 +88,15 @@ class Store(DeveloperStore):
                 "last_used_at INTEGER, last_used_ip_prefix TEXT, revoked_at INTEGER)"
             )
             db.execute(
-                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at) "
-                "SELECT id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at FROM api_keys_before_optional_caps"
+                "INSERT INTO api_keys_optional_caps (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at) "
+                "SELECT id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at FROM api_keys"
             )
-            db.execute("DROP TABLE api_keys_before_optional_caps")
+            db.execute("DROP TABLE api_keys")
+            db.execute("ALTER TABLE api_keys_optional_caps RENAME TO api_keys")
+            db.commit()
             db.execute("PRAGMA foreign_keys=ON")
             keys = self._columns(db, "api_keys")
+        self._repair_key_references(db)
         if "weekly_micro_eur" not in keys:
             db.execute("ALTER TABLE api_keys ADD COLUMN weekly_micro_eur INTEGER")
         if "own_budget" not in keys:
@@ -107,8 +112,32 @@ class Store(DeveloperStore):
                     (self.week_for_day(str(day)), str(request_id)),
                 )
         db.execute(
+            "CREATE INDEX IF NOT EXISTS api_key_daily ON api_key_requests(key_id, day)"
+        )
+        db.execute(
             "CREATE INDEX IF NOT EXISTS api_key_weekly ON api_key_requests(key_id, week)"
         )
+
+    @staticmethod
+    def _repair_key_references(db: Any) -> None:
+        """Rebuild tables whose foreign keys point at the dropped pre-upgrade table."""
+        stale = "api_keys_before_optional_caps"
+        rows = db.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE ?",
+            (f"%{stale}%",),
+        ).fetchall()
+        for name, sql in rows:
+            name = str(name)
+            fixed = (
+                str(sql).replace(f'"{stale}"', "api_keys").replace(stale, "api_keys")
+            )
+            fixed = fixed.replace(
+                f"CREATE TABLE {name}", f"CREATE TABLE {name}_repair", 1
+            )
+            db.execute(fixed)
+            db.execute(f"INSERT INTO {name}_repair SELECT * FROM {name}")
+            db.execute(f"DROP TABLE {name}")
+            db.execute(f"ALTER TABLE {name}_repair RENAME TO {name}")
 
     def policy(self, org_id: str) -> dict[str, Any]:
         with self.connection() as db:
