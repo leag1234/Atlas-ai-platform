@@ -2,10 +2,12 @@
 
 import concurrent.futures
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from decimal import Decimal
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -18,7 +20,7 @@ from services.orchestrator.api_key_edge import key_call, ModelAccounting
 from services.orchestrator.api_key_admin import app as admin_app
 from services.orchestrator.chat_api import app
 from services.orchestrator.chat_schema import ChatRequest
-from services.orchestrator.daily_budget import DailyLedger
+from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
 from services.orchestrator.dev_auth import Store as DeveloperStore, provision
 from services.orchestrator.devapi import app as dev_app
 from services.orchestrator.interactions import Interaction
@@ -145,6 +147,77 @@ class KeyTests(unittest.TestCase):
         with self.assertRaises(KeyQuotaError) as caught:
             self.store.reserve(row["id"], 100000)
         self.assertEqual(caught.exception.values["daily_micro_eur"], 99999)
+
+    def test_weekly_money_cap_is_atomic_resets_in_utc_and_reports_usage(self) -> None:
+        self.now[0] = datetime(2026, 1, 4, 23, 59, tzinfo=timezone.utc).timestamp()
+        row, _ = self.create(
+            daily_requests=None, daily_micro_eur=None, weekly_micro_eur=100000
+        )
+
+        def reserve(_: int) -> bool:
+            try:
+                self.store.reserve(row["id"], 60000)
+                return True
+            except KeyQuotaError:
+                return False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            self.assertEqual(sum(pool.map(reserve, range(4))), 1)
+        usage = self.store.usage(row["id"])
+        self.assertEqual(usage["week"], "2026-W01")
+        week_usage = usage["week_usage"]
+        assert isinstance(week_usage, dict)
+        self.assertEqual(week_usage["charged_micro_eur"], 60000)
+        self.assertEqual(usage["weekly_micro_eur"], 100000)
+        self.now[0] = datetime(2026, 1, 5, tzinfo=timezone.utc).timestamp()
+        self.store.reserve(row["id"], 100000)
+
+    def test_own_budget_bypasses_owner_monthly_cap_not_global_monthly_cap(self) -> None:
+        own, secret = self.create(own_budget=True, weekly_micro_eur=1000000)
+        principal = self.store.resolve(secret)
+        self.assertNotEqual(principal.budget_user, "webui-test-id")
+        with patch.dict(
+            os.environ,
+            {"ATLAS_USER_MONTHLY_EUR": "1", "ATLAS_GLOBAL_MONTHLY_EUR": "2"},
+        ):
+            spent = DailyLedger().reserve_cost("webui-test-id", Decimal("0.90"), "en")
+            DailyLedger().settle_cost(spent, Decimal("0.90"))
+            ModelAccounting(self.store, principal).reserve(own["id"], 200000)
+        with patch.dict(
+            os.environ,
+            {"ATLAS_USER_MONTHLY_EUR": "1", "ATLAS_GLOBAL_MONTHLY_EUR": "1"},
+        ):
+            with self.assertRaises(BudgetRefusal) as caught:
+                ModelAccounting(self.store, principal).reserve(own["id"], 1)
+        self.assertEqual(caught.exception.category, "global_monthly_cost")
+
+    def test_existing_key_store_upgrades_without_changing_existing_caps(self) -> None:
+        path = self.root / "old-keys.sqlite"
+        db = sqlite3.connect(path)
+        try:
+            db.executescript(
+                "CREATE TABLE api_keys (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, member_id TEXT NOT NULL, subject TEXT NOT NULL, budget_user TEXT NOT NULL, name TEXT NOT NULL, prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, hash_kind TEXT NOT NULL, scopes TEXT NOT NULL, expires_at INTEGER NOT NULL, daily_requests INTEGER NOT NULL, daily_micro_eur INTEGER NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER, last_used_ip_prefix TEXT, revoked_at INTEGER);"
+                "CREATE TABLE api_key_requests (id TEXT PRIMARY KEY, key_id TEXT NOT NULL REFERENCES api_keys(id), day TEXT NOT NULL, reserved INTEGER NOT NULL, charged INTEGER NOT NULL, input_tokens INTEGER, output_tokens INTEGER, state TEXT NOT NULL);"
+            )
+            db.execute(
+                "INSERT INTO api_keys VALUES ('old','org','member','subject','user','old','atl_old','hash','hmac-sha256','[\"assistant\"]',1900000000,3,400000,'operator',1800000000,NULL,NULL,NULL)"
+            )
+            db.execute(
+                "INSERT INTO api_key_requests VALUES ('request','old','2025-12-31',1,1,NULL,NULL,'complete')"
+            )
+            db.commit()
+        finally:
+            db.close()
+        path.chmod(0o600)
+        self.now[0] = datetime(2025, 12, 31, tzinfo=timezone.utc).timestamp()
+        upgraded = Store(path, "test-pepper-" * 4, lambda: self.now[0])
+        old = upgraded.get("old")
+        self.assertEqual((old["daily_requests"], old["daily_micro_eur"]), (3, 400000))
+        self.assertIsNone(old["weekly_micro_eur"])
+        self.assertFalse(old["own_budget"])
+        self.assertEqual(
+            upgraded.usage("old")["week"], upgraded.week_for_day("2025-12-31")
+        )
 
     def test_legacy_import_and_both_entries_share_revoke_and_usage(self) -> None:
         legacy = DeveloperStore(self.root / "legacy.sqlite")

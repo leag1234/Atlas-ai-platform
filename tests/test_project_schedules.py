@@ -86,6 +86,25 @@ class ScheduledTaskTests(ProjectIsolationTests):
         self.assertEqual(result.status_code, 200, result.text)
         self.assertFalse(result.json()["enabled"])
 
+    def test_organization_listing_includes_only_readable_project_tasks(self) -> None:
+        visible = self.create_task()
+        hidden = self.request(
+            "POST",
+            self.project_path(self.second_project) + "/scheduled-tasks",
+            "admin",
+            self.payload(),
+        )
+        self.assertEqual(hidden.status_code, 201, hidden.text)
+        path = f"/api/atlas/orgs/{self.org}/scheduled-tasks"
+        result = self.request("GET", path, "viewer")
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(
+            [(item["id"], item["project_id"]) for item in result.json()["items"]],
+            [(visible["id"], self.project)],
+        )
+        self.assertEqual(result.json()["items"][0]["project_name"], "Shared workspace")
+        self.assertEqual(self.request("GET", path, "ungranted").json()["items"], [])
+
     def test_claim_once_and_missed_slots(self) -> None:
         task = self.create_task()
         self.due(task)

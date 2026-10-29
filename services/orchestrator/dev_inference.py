@@ -215,7 +215,9 @@ async def chat(
         raw = json.loads(body)
         try:
             parsed = (
-                responses(raw)
+                responses(
+                    dict(raw, model="atlas-code") if raw_model is not None else raw
+                )
                 if protocol == "responses"
                 else messages(raw)
                 if protocol == "messages"
@@ -226,6 +228,11 @@ async def chat(
         except KeyError:
             # Missing client fields are not missing provider configuration.
             return error("invalid_request", 400)
+        if protocol == "responses" and raw_model is not None:
+            parsed = RawChatInput.model_validate(
+                parsed.model_dump(exclude_none=True, by_alias=True)
+                | {"model": raw_model}
+            )
         plan = (
             gateway.prepare_raw(parsed)
             if raw_model is not None
