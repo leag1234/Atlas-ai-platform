@@ -48,8 +48,449 @@
   for (const language of Object.keys(rows)) rows[language].push(...contextLabels[language]);
   keys.push('contextCleared');
   for (const language of Object.keys(rows)) rows[language].push({en:'Tool results cleared',fr:'Résultats des outils allégés',de:'Werkzeugergebnisse gekürzt',es:'Resultados de herramientas reducidos',it:'Risultati degli strumenti ridotti'}[language]);
+  const projectLabels = {
+  "yourProjects": [
+    "Your projects",
+    "Vos projets",
+    "Ihre Projekte",
+    "Tus proyectos",
+    "I tuoi progetti"
+  ],
+  "sharedProjects": [
+    "Shared with you",
+    "Partagé avec vous",
+    "Mit Ihnen geteilt",
+    "Compartidos contigo",
+    "Condivisi con te"
+  ],
+  "searchProjects": [
+    "Search projects",
+    "Rechercher un projet",
+    "Projekte suchen",
+    "Buscar proyectos",
+    "Cerca progetti"
+  ],
+  "sortProjects": [
+    "Sort projects",
+    "Trier les projets",
+    "Projekte sortieren",
+    "Ordenar proyectos",
+    "Ordina progetti"
+  ],
+  "recentActivity": [
+    "Recent activity",
+    "Activité récente",
+    "Letzte Aktivität",
+    "Actividad reciente",
+    "Attività recente"
+  ],
+  "privateProject": [
+    "Private project",
+    "Projet privé",
+    "Privates Projekt",
+    "Proyecto privado",
+    "Progetto privato"
+  ],
+  "noSharedProjects": [
+    "No shared projects yet",
+    "Aucun projet partagé pour le moment",
+    "Noch keine geteilten Projekte",
+    "Todavía no hay proyectos compartidos",
+    "Nessun progetto condiviso per ora"
+  ],
+  "noProjects": [
+    "Your projects start here",
+    "Vos projets commencent ici",
+    "Hier beginnen Ihre Projekte",
+    "Tus proyectos empiezan aquí",
+    "I tuoi progetti iniziano qui"
+  ],
+  "noSearchResults": [
+    "Try another name.",
+    "Essayez un autre nom.",
+    "Versuchen Sie einen anderen Namen.",
+    "Prueba con otro nombre.",
+    "Prova un altro nome."
+  ],
+  "projectIntro": [
+    "Bring your conversations and files together in a project.",
+    "Réunissez vos conversations et vos fichiers dans un projet.",
+    "Bündeln Sie Unterhaltungen und Dateien in einem Projekt.",
+    "Reúne tus conversaciones y archivos en un proyecto.",
+    "Riunisci conversazioni e file in un progetto."
+  ],
+  "file": [
+    "File",
+    "Fichier",
+    "Datei",
+    "Archivo",
+    "File"
+  ],
+  "conversation": [
+    "Conversation",
+    "Conversation",
+    "Unterhaltung",
+    "Conversación",
+    "Conversazione"
+  ],
+  "renameProject": [
+    "Rename project",
+    "Renommer le projet",
+    "Projekt umbenennen",
+    "Renombrar proyecto",
+    "Rinomina progetto"
+  ],
+  "noConversations": [
+    "Start your first conversation above.",
+    "Commencez votre première conversation ci-dessus.",
+    "Beginnen Sie oben Ihre erste Unterhaltung.",
+    "Inicia tu primera conversación arriba.",
+    "Inizia la prima conversazione qui sopra."
+  ],
+  "composerPlaceholder": [
+    "How can Atlas help with this project?",
+    "Comment Atlas peut-il vous aider sur ce projet ?",
+    "Wie kann Atlas bei diesem Projekt helfen?",
+    "¿Cómo puede Atlas ayudarte con este proyecto?",
+    "Come può Atlas aiutarti con questo progetto?"
+  ],
+  "instructionsPlaceholder": [
+    "Add context and preferences for Atlas.",
+    "Ajoutez le contexte et vos préférences pour Atlas.",
+    "Kontext und Präferenzen für Atlas hinzufügen.",
+    "Añade contexto y preferencias para Atlas.",
+    "Aggiungi contesto e preferenze per Atlas."
+  ],
+  "dropFiles": [
+    "Drop files here or choose files",
+    "Déposez des fichiers ici ou sélectionnez-les",
+    "Dateien hier ablegen oder auswählen",
+    "Arrastra archivos aquí o selecciónalos",
+    "Trascina i file qui o selezionali"
+  ],
+  "editInConversation": [
+    "Request change",
+    "Demander la modification",
+    "Änderung anfordern",
+    "Solicitar cambio",
+    "Richiedi modifica"
+  ],
+  "save": [
+    "Save",
+    "Enregistrer",
+    "Speichern",
+    "Guardar",
+    "Salva"
+  ],
+  "remove": [
+    "Remove",
+    "Retirer",
+    "Entfernen",
+    "Quitar",
+    "Rimuovi"
+  ],
+  "confirmRemove": [
+    "Remove this item?",
+    "Retirer cet élément ?",
+    "Diesen Eintrag entfernen?",
+    "¿Quitar este elemento?",
+    "Rimuovere questo elemento?"
+  ]
+};
+  for (const [key, values] of Object.entries(projectLabels)) { keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index])); }
+  for (const [key, values] of Object.entries({instructions:['Instructions','Instructions','Anweisungen','Instrucciones','Istruzioni'],upload:['Add files','Ajouter des fichiers','Dateien hinzufügen','Añadir archivos','Aggiungi file'],ordinary:['New chat','Nouvelle discussion','Neuer Chat','Nuevo chat','Nuova chat']})) Object.keys(rows).forEach((language,index) => rows[language][keys.indexOf(key)] = values[index]);
+  const changeLabels = {"changeInstructions": ["Update the project instructions", "Modifier les instructions du projet", "Projektanweisungen ändern", "Modificar las instrucciones del proyecto", "Modifica le istruzioni del progetto"], "removeFile": ["Remove this project file", "Retirer ce fichier du projet", "Diese Projektdatei entfernen", "Quitar este archivo del proyecto", "Rimuovi questo file dal progetto"], "removeMemory": ["Delete this project memory entry", "Supprimer cette entrée de mémoire du projet", "Diesen Projektspeichereintrag löschen", "Eliminar esta entrada de memoria del proyecto", "Elimina questa voce di memoria del progetto"], "changeApproval": ["Request approval before changing the original.", "Demander mon approbation avant de modifier l’original.", "Vor Änderung des Originals meine Genehmigung einholen.", "Pedir mi aprobación antes de modificar el original.", "Chiedi la mia approvazione prima di modificare l’originale."]};
+  for (const [key,values] of Object.entries(changeLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
+  const adminLabels = {
+  "Remote targets": [
+    "Remote targets",
+    "Cibles distantes",
+    "Remote-Ziele",
+    "Destinos remotos",
+    "Destinazioni remote"
+  ],
+  "Remote execution targets": [
+    "Remote execution targets",
+    "Exécution à distance",
+    "Remote-Ausführung",
+    "Ejecución remota",
+    "Esecuzione remota"
+  ],
+  "Register a dedicated Linux or macOS account. Host key fingerprints must be verified independently. Private keys stay in the runner broker.": [
+    "Register a dedicated Linux or macOS account. Verify the host key independently. Private keys stay in the runner broker.",
+    "Enregistrez un compte Linux ou macOS dédié. Vérifiez la clé de l’hôte séparément. Les clés privées restent dans le service d’exécution.",
+    "Registrieren Sie ein dediziertes Linux- oder macOS-Konto. Prüfen Sie den Hostschlüssel unabhängig. Private Schlüssel bleiben im Ausführungsdienst.",
+    "Registra una cuenta Linux o macOS dedicada. Verifica la clave del host por separado. Las claves privadas permanecen en el servicio de ejecución.",
+    "Registra un account Linux o macOS dedicato. Verifica la chiave host separatamente. Le chiavi private restano nel servizio di esecuzione."
+  ],
+  "Probe": [
+    "Check connection",
+    "Tester la connexion",
+    "Verbindung prüfen",
+    "Probar conexión",
+    "Verifica connessione"
+  ],
+  "Grant to this project": [
+    "Grant to this project",
+    "Autoriser pour ce projet",
+    "Für dieses Projekt erlauben",
+    "Autorizar para este proyecto",
+    "Autorizza per questo progetto"
+  ],
+  "Revoke from this project": [
+    "Revoke from this project",
+    "Révoquer pour ce projet",
+    "Für dieses Projekt widerrufen",
+    "Revocar para este proyecto",
+    "Revoca per questo progetto"
+  ],
+  "Command audit": [
+    "Command history",
+    "Historique des commandes",
+    "Befehlsverlauf",
+    "Historial de comandos",
+    "Cronologia comandi"
+  ],
+  "Target granted to this project.": [
+    "Target granted to this project.",
+    "Cible autorisée pour ce projet.",
+    "Ziel für dieses Projekt erlaubt.",
+    "Destino autorizado para este proyecto.",
+    "Destinazione autorizzata per questo progetto."
+  ],
+  "Grant and egress permission revoked.": [
+    "Grant and transfer permission revoked.",
+    "Autorisations d’accès et de transfert révoquées.",
+    "Zugriffs- und Übertragungsrechte widerrufen.",
+    "Permisos de acceso y transferencia revocados.",
+    "Permessi di accesso e trasferimento revocati."
+  ],
+  "Name": [
+    "Name",
+    "Nom",
+    "Name",
+    "Nombre",
+    "Nome"
+  ],
+  "Host": [
+    "Host",
+    "Hôte",
+    "Host",
+    "Host",
+    "Host"
+  ],
+  "SSH port": [
+    "SSH port",
+    "Port SSH",
+    "SSH-Port",
+    "Puerto SSH",
+    "Porta SSH"
+  ],
+  "SSH user": [
+    "SSH user",
+    "Utilisateur SSH",
+    "SSH-Benutzer",
+    "Usuario SSH",
+    "Utente SSH"
+  ],
+  "Working root": [
+    "Working root",
+    "Répertoire de travail",
+    "Arbeitsverzeichnis",
+    "Directorio de trabajo",
+    "Directory di lavoro"
+  ],
+  "Pinned host key SHA256 fingerprints (one per line)": [
+    "Host key SHA256 fingerprints (one per line)",
+    "Empreintes SHA256 des clés hôtes (une par ligne)",
+    "SHA256-Hostschlüssel (einer pro Zeile)",
+    "Huellas SHA256 de claves host (una por línea)",
+    "Impronte SHA256 delle chiavi host (una per riga)"
+  ],
+  "Credential reference": [
+    "Credential reference",
+    "Référence des identifiants",
+    "Zugangsdatenreferenz",
+    "Referencia de credenciales",
+    "Riferimento credenziali"
+  ],
+  "Credential public key fingerprint": [
+    "Public key fingerprint",
+    "Empreinte de clé publique",
+    "Fingerabdruck des öffentlichen Schlüssels",
+    "Huella de clave pública",
+    "Impronta della chiave pubblica"
+  ],
+  "Allow command rules (one per line)": [
+    "Allowed commands (one per line)",
+    "Commandes autorisées (une par ligne)",
+    "Erlaubte Befehle (einer pro Zeile)",
+    "Comandos permitidos (uno por línea)",
+    "Comandi consentiti (uno per riga)"
+  ],
+  "Deny command rules (one per line)": [
+    "Denied commands (one per line)",
+    "Commandes interdites (une par ligne)",
+    "Verbotene Befehle (einer pro Zeile)",
+    "Comandos prohibidos (uno por línea)",
+    "Comandi vietati (uno per riga)"
+  ],
+  "Target operating system": [
+    "Operating system",
+    "Système d’exploitation",
+    "Betriebssystem",
+    "Sistema operativo",
+    "Sistema operativo"
+  ],
+  "Permission mode": [
+    "Permission mode",
+    "Mode d’autorisation",
+    "Berechtigungsmodus",
+    "Modo de permisos",
+    "Modalità autorizzazioni"
+  ],
+  "Generate a key pair": [
+    "Generate a key pair",
+    "Générer une paire de clés",
+    "Schlüsselpaar erzeugen",
+    "Generar un par de claves",
+    "Genera una coppia di chiavi"
+  ],
+  "Register target": [
+    "Register target",
+    "Enregistrer la cible",
+    "Ziel registrieren",
+    "Registrar destino",
+    "Registra destinazione"
+  ],
+  "Install this public key in the target account. It is shown once:": [
+    "Install this public key in the target account. It is shown once:",
+    "Installez cette clé publique sur le compte cible. Elle ne sera affichée qu’une fois :",
+    "Installieren Sie diesen öffentlichen Schlüssel im Zielkonto. Er wird nur einmal angezeigt:",
+    "Instala esta clave pública en la cuenta de destino. Solo se muestra una vez:",
+    "Installa questa chiave pubblica nell’account di destinazione. Viene mostrata una sola volta:"
+  ]
+};
+  for (const [key,values] of Object.entries(adminLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
+  const approvalLabels = {
+  "verification": [
+    "Verification",
+    "Vérification",
+    "Prüfung",
+    "Verificación",
+    "Verifica"
+  ],
+  "exited": [
+    "exited",
+    "code de sortie",
+    "Beendigungscode",
+    "código de salida",
+    "codice di uscita"
+  ],
+  "directory": [
+    "Directory",
+    "Répertoire",
+    "Verzeichnis",
+    "Directorio",
+    "Directory"
+  ],
+  "target": [
+    "Target",
+    "Cible",
+    "Ziel",
+    "Destino",
+    "Destinazione"
+  ],
+  "codeDigest": [
+    "Code digest",
+    "Empreinte du code",
+    "Code-Prüfsumme",
+    "Huella del código",
+    "Impronta del codice"
+  ],
+  "timeout": [
+    "timeout",
+    "délai",
+    "Zeitlimit",
+    "tiempo límite",
+    "tempo limite"
+  ],
+  "codeTransfer": [
+    "This sends the selected workspace to this target. Approval permits code transfer for this project.",
+    "L’espace de travail sélectionné sera envoyé à cette cible. L’approbation autorise le transfert du code pour ce projet.",
+    "Der ausgewählte Arbeitsbereich wird an dieses Ziel gesendet. Die Genehmigung erlaubt den Codetransfer für dieses Projekt.",
+    "El espacio seleccionado se enviará a este destino. La aprobación permite transferir código para este proyecto.",
+    "Lo spazio selezionato verrà inviato a questa destinazione. L’approvazione consente il trasferimento del codice per questo progetto."
+  ],
+  "alwaysAllow": [
+    "Always allow commands starting with this command and its arguments (project rule)",
+    "Toujours autoriser les commandes commençant par cette commande et ses arguments (règle du projet)",
+    "Befehle mit diesem Befehl und diesen Argumenten immer erlauben (Projektregel)",
+    "Permitir siempre comandos que empiecen por este comando y sus argumentos (regla del proyecto)",
+    "Consenti sempre i comandi che iniziano con questo comando e i suoi argomenti (regola del progetto)"
+  ],
+  "Branch": [
+    "Branch",
+    "Branche",
+    "Branch",
+    "Rama",
+    "Ramo"
+  ],
+  "Target": [
+    "Target",
+    "Cible",
+    "Ziel",
+    "Destino",
+    "Destinazione"
+  ],
+  "Commit message": [
+    "Commit message",
+    "Message de commit",
+    "Commit-Nachricht",
+    "Mensaje de commit",
+    "Messaggio di commit"
+  ],
+  "PR title": [
+    "PR title",
+    "Titre de la PR",
+    "PR-Titel",
+    "Título de la PR",
+    "Titolo della PR"
+  ],
+  "PR body": [
+    "PR description",
+    "Description de la PR",
+    "PR-Beschreibung",
+    "Descripción de la PR",
+    "Descrizione della PR"
+  ],
+  "Base commit": [
+    "Base commit",
+    "Commit de base",
+    "Basis-Commit",
+    "Commit base",
+    "Commit di base"
+  ],
+  "rules": [
+    "Rules",
+    "Règles",
+    "Regeln",
+    "Reglas",
+    "Regole"
+  ],
+  "auto": [
+    "Automatic",
+    "Automatique",
+    "Automatisch",
+    "Automático",
+    "Automatico"
+  ]
+};
+  for (const [key,values] of Object.entries(approvalLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
+  const resultLabels = {"steps": ["Steps", "Étapes", "Schritte", "Pasos", "Passaggi"],"not_run": ["Not run", "Non exécuté", "Nicht ausgeführt", "Sin ejecutar", "Non eseguito"], "added": ["Added", "Ajouté", "Hinzugefügt", "Añadido", "Aggiunto"], "modified": ["Modified", "Modifié", "Geändert", "Modificado", "Modificato"], "deleted": ["Deleted", "Supprimé", "Gelöscht", "Eliminado", "Eliminato"]};
+  for (const [key,values] of Object.entries(resultLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
   window.atlasProjectLocale = { keys, rows, language() {
-    return (localStorage.getItem('locale') || localStorage.getItem('atlas-ui-language') || document.documentElement.lang || navigator.language || 'en').replaceAll('"', '').split('-')[0];
+    return (localStorage.getItem('locale') || localStorage.getItem('atlas-ui-language') || navigator.language || 'fr').replaceAll('"', '').split('-')[0];
   }, text(key) {
     const index = keys.indexOf(key), row = rows[this.language()] || rows.en;
     return index < 0 ? key : row[index];

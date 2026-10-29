@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import io
+import logging
 import tarfile
 import time
 from pathlib import PurePosixPath
@@ -56,7 +57,7 @@ def declaration() -> dict[str, object]:
         type="function",
         function=dict(
             name="forge_action",
-            description="Publish a verified change with one inline approval using kind=publish_change: base_commit, branch (new branch), target, message, title, body. Freezes the entire repository scratch snapshot and publishes branch, commit and pull request together. Separate actions are also available. kind=branch: base_commit, branch. kind=commit: base_commit, branch, message; freezes the entire repository scratch snapshot before approval. kind=pull_request: base_commit (target SHA), head, target, title, body. Omit irrelevant fields. Broker performs no remote write until approval; report only the returned state. The repository and base SHA are in code_workspace.",
+            description="After tests pass, use this tool instead of shell git commit/push/remote commands: the scratch workspace has no remote or credentials. Publish a verified change with one inline approval using kind=publish_change: base_commit, branch (new branch), target, message, title, body. Freezes the entire repository scratch snapshot and publishes branch, commit and pull request together. Separate actions are also available. kind=branch: base_commit, branch. kind=commit: base_commit, branch, message; freezes the entire repository scratch snapshot before approval. kind=pull_request: base_commit (target SHA), head, target, title, body. Omit irrelevant fields. Broker performs no remote write until approval; report only the returned state. The repository and base SHA are in code_workspace.",
             parameters=ForgeRequest.model_json_schema(),
         ),
     )
@@ -97,7 +98,6 @@ def exported_snapshot(raw: bytes, folder: str, limit: int) -> bytes:
 
 async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
     args = ForgeRequest.model_validate_json(arguments)
-    action = args.action()
     if args.kind == "publish_change":
         refusal = tools.verification.refusal()
         if refusal is not None:
@@ -114,6 +114,17 @@ async def execute(tools: Any, arguments: str, timeout: float) -> dict[str, Any]:
     repo = next((r for r in listing["items"] if r["id"] == repository_id), None)
     if repo is None:
         raise ProjectError(404, "not_found")
+    action = args.action()
+    if args.kind == "publish_change":
+        # Scratch git is a synthetic import, not the remote repository history.
+        # Bind the full snapshot to its stored remote source. Forge still checks
+        # that the target has not moved before both approval and execution.
+        logging.getLogger(__name__).info(
+            "forge_request supplied_base=%s canonical_base=%s",
+            args.base_commit,
+            repo["base_commit"],
+        )
+        action["base_commit"] = repo["base_commit"]
     data = dict(execution.fence(), operation="issue", action=action)
     if args.kind in {"commit", "publish_change"}:
         export = await tools.workspace.invoke(

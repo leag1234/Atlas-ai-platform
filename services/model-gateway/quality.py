@@ -153,7 +153,9 @@ def input_bound(
 
 
 async def complete(provider: AgentProvider, request: AgentRequest) -> dict[str, object]:
-    async with aclosing(stream_quality(provider, request)) as events:
+    async with aclosing(
+        stream_quality(provider, request, complete_response=True)
+    ) as events:
         async for event in events:
             result = event.get("result")
             if isinstance(result, dict):
@@ -162,7 +164,7 @@ async def complete(provider: AgentProvider, request: AgentRequest) -> dict[str, 
 
 
 async def stream_quality(
-    provider: AgentProvider, request: AgentRequest
+    provider: AgentProvider, request: AgentRequest, *, complete_response: bool = False
 ) -> AsyncGenerator[dict[str, object], None]:
     from stream_transport import attempt, response_window
 
@@ -404,7 +406,9 @@ async def stream_quality(
         partial_reasoning = ""
         result: dict[str, object] | None = None
         # Reserve time for recovery, still under the original request deadline.
-        allotted = remaining * 0.8 if index == 0 else remaining
+        allotted = (
+            remaining * (0.5 if complete_response else 0.8) if index == 0 else remaining
+        )
         full_deadline = asyncio.get_running_loop().time() + remaining
         try:
             async with (
@@ -436,7 +440,8 @@ async def stream_quality(
                             # Visible answers cannot be retried. Let this attempt
                             # use the original deadline instead of cancelling it
                             # early to reserve time for an ineligible recovery.
-                            deadline.reschedule(full_deadline)
+                            if not complete_response:
+                                deadline.reschedule(full_deadline)
                             for pending_event in buffered:
                                 if current.tools and not answer_emitted:
                                     held_content.append(pending_event)
@@ -539,7 +544,7 @@ async def stream_quality(
             )
             if (
                 index
-                or answer_started
+                or (answer_started and not complete_response)
                 or (
                     bool(os.environ.get("ATLAS_PROVIDER"))
                     and model == policy.models[fallback_role]

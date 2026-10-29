@@ -577,10 +577,10 @@ class WorkTools(CodeTools):
             try:
                 result = await work_forge_tools.execute(self, call.arguments, timeout)
             except (ValueError, ProjectError) as exc:
-                result = dict(
-                    error=exc.body["error"]
+                result = (
+                    dict(exc.body)
                     if isinstance(exc, ProjectError)
-                    else "invalid_tool_arguments"
+                    else dict(error="invalid_tool_arguments")
                 )
             await self.emit(
                 "tool",
@@ -700,4 +700,12 @@ class WorkTools(CodeTools):
             from dataclasses import replace
 
             call = replace(call, arguments=json.dumps(args))
-        return await super().execute(call, timeout)
+        result = await super().execute(call, timeout)
+        if self.selection is not None:
+            self.selection.verified = self.verification.status().status == "passed"
+        if call.name == "run_command" and self.verification.status().status == "passed":
+            result = dict(
+                result,
+                next_step="Tests passed. To publish, call forge_action with kind=publish_change for one approval and a Forgejo pull request. The scratch workspace has no Git remote or network credentials.",
+            )
+        return result

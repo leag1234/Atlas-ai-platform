@@ -143,6 +143,8 @@ async def execute_turn(
     workspace_context: dict[str, Any] | None = None,
     references: ResultReferences | None = None,
 ) -> CodeResult:
+    from packages.language import language_instruction
+
     history: list[Message] = [
         {"role": m.role, "content": redact(m.text)} for m in request.messages[:-1]
     ]
@@ -172,7 +174,8 @@ async def execute_turn(
         model,
         tools,
         Path("prompts/chat.txt").read_text()
-        + Path("prompts/chat-agent.txt").read_text(),
+        + Path("prompts/chat-agent.txt").read_text()
+        + (language_instruction(request.lang) if isinstance(tools, WorkTools) else ""),
         limits,
         history=history,
         references=references,
@@ -183,7 +186,15 @@ async def execute_turn(
     assert isinstance(result, CodeResult)
     if isinstance(tools, WorkTools):
         result.verification = tools.verification.status()
-        result.text, replaced = annotate(redact(result.text), result.verification)
+        if (
+            workspace_context is not None
+            and not workspace_context.get("repository")
+            and not tools.verification.runs
+            and not tools.verification.edited
+        ):
+            result.text, replaced = redact(result.text), False
+        else:
+            result.text, replaced = annotate(redact(result.text), result.verification)
     else:
         result.text, replaced = honest(
             redact(result.text), tools.test_evidence, request.lang
@@ -521,6 +532,7 @@ async def process_work(
     project_id: str,
     session_id: str,
     collect_workspace: Callable[[Workspace], Awaitable[None]] | None = None,
+    saved_reply: str | None = None,
 ) -> None:
     """Task-G handoff after verified identity and scoped conversation/context selection.
 
@@ -594,6 +606,21 @@ async def process_work(
         async with asyncio.timeout(limits.wall_clock):
             await workspace.prepare()
             await execution.snapshot(workspace)
+            if saved_reply is not None:
+                item.reponse, item.state, terminal = saved_reply, "done", "completed"
+                nearby_usage = dict(
+                    tool_calls=0,
+                    model_calls=0,
+                    elapsed_seconds=time.monotonic() - started,
+                    cost_eur=0,
+                    reserved_eur=0,
+                    unknown_eur=0,
+                    stored_bytes=0,
+                    input_tokens=0,
+                    output_tokens=0,
+                    tokens_estimated=False,
+                )
+                return
             from services.orchestrator.location import location_dependent
 
             if location_dependent(request.user_text) and (
@@ -748,6 +775,15 @@ async def process_work(
                     root="/workspace",
                     repository=repository,
                     listing=await workspace.invoke("list_dir", {"path": "."}, 10),
+                    files=[
+                        dict(
+                            file_id=file["id"],
+                            version=file["version_id"],
+                            path=file["folder_id"] + "/" + file["relative_path"],
+                            mime=file["mime"],
+                        )
+                        for file in selected_files
+                    ],
                     environment=execution.session["environment"],
                     plan=execution.session.get("plan", []),
                 ),
@@ -755,7 +791,15 @@ async def process_work(
             )
             if collect_workspace is not None:
                 await collect_workspace(workspace)
-            item.reponse = result.text
+            from services.orchestrator.project_transcript import answer_content
+
+            item.reponse = answer_content(result.text)
+            if request.lang == "fr" and "\n\nVerification:" in item.reponse:
+                item.reponse = (
+                    item.reponse.split("\n\nVerification:", 1)[0]
+                    + "\n\n"
+                    + CORRECTION["fr"]
+                )
             item.tool_urls.extend(getattr(result, "tool_urls", set()))
             item.verification = result.verification.model_dump()
             if tools.nearby is not None and tools.nearby.result:

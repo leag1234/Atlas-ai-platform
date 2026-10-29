@@ -17,6 +17,7 @@ _PRODUCT_URL_KEYS = frozenset(
         "download_route",
         "preview_url",
         "preview_route",
+        "pr_url",
         "content_url",
         "file_url",
         "reference",

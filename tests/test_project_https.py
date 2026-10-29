@@ -60,6 +60,12 @@ class ProjectHttpsTests(unittest.TestCase):
                 self.assertEqual(
                     json.loads(bytes(response.body))["error"], "origin_rejected"
                 )
+            # The chat UI backend calls server to server, without browser metadata.
+            response = asyncio.run(chat_api.chat(self.request(None, None)))
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(
+                json.loads(bytes(response.body))["error"]["code"], "invalid_request"
+            )
 
 
 if __name__ == "__main__":

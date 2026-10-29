@@ -54,7 +54,7 @@ PATTERNS = {
     "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
     "presentations": r"\b(pptx|slides?|presentation|presentacion|prasentation|diaporama)\b",
     "spreadsheets": r"\b(xlsx|csv|spreadsheet|workbook|excel|tableur|tabellen|foglio|hoja)\b",
-    "documents": r"\b(docx|pdf|document|memo|report|rapport|bericht|informe|relazione)\b",
+    "documents": r"\b(docx|pdf|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
     "code": r"\b(code|repository|repo|git|bug|function|python|javascript|fonction|codigo)\b",
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
 }
@@ -132,6 +132,7 @@ class WorkToolSelection:
         self.pending: str | None = None
         self.focus: str | None = None
         self.pending_focus: str | None = None
+        self.verified = False
         self.reopen_enabled = False
         self.memory_enabled = False
         self.skills_enabled = False
@@ -187,8 +188,26 @@ class WorkToolSelection:
     @property
     def names(self) -> tuple[str, ...]:
         group = self.groups[self.group]
+        # Memory consumes another declaration slot. Keep document read/publish
+        # reachable there while preserving the catalog order for older sessions.
+        if self.memory_enabled and self.group in {
+            "documents",
+            "spreadsheets",
+            "presentations",
+        }:
+            primary = (
+                "read_document",
+                "publish_document",
+                "read_file" if self.group == "documents" else "run_command",
+            )
+            group = (*primary, *(name for name in group if name not in primary))
         if self.focus in group:
             group = (self.focus, *(name for name in group if name != self.focus))
+        if self.group == "code" and self.verified:
+            group = (
+                "forge_action",
+                *(name for name in group if name != "forge_action"),
+            )
         extra: tuple[str, ...] = ()
         if self.reopen_enabled:
             extra += ("reopen_result",)

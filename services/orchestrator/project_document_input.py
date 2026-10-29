@@ -13,6 +13,7 @@ from packages.doc_render.schema import Content, PresentationOutline, Presentatio
 class DocumentInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    formulas: bool = False
     title: str | None = Field(default=None, min_length=1, max_length=4000)
     content: str | None = Field(default=None, min_length=1, max_length=220000)
     slides: list[PresentationSlide] | None = Field(
@@ -68,7 +69,9 @@ def markdown(text: str, title: str) -> Content:
             rows = []
             index += 2
             while index < len(lines) and "|" in lines[index] and lines[index].strip():
-                rows.append(cells(lines[index]))
+                # A deliberate empty Markdown cell is a visual placeholder;
+                # keep strict Content text and rectangularity validation intact.
+                rows.append([cell or "—" for cell in cells(lines[index])])
                 index += 1
             section["tables"].append(dict(headers=headers, rows=rows))
             continue
@@ -90,19 +93,30 @@ def normalize(value: dict[str, Any]) -> dict[str, Any]:
     content = result.get("content")
     if isinstance(content, str) and len(content) > 220000:
         raise ValueError("Document content exceeds 220000 characters")
-    if isinstance(content, dict):
-        return result
+    suffix = PurePosixPath(str(result.get("path", ""))).suffix.lower()
     if isinstance(content, str) and content.lstrip().startswith(("{", "[")):
-        result["content"] = Content.model_validate(json.loads(content)).model_dump()
+        content = json.loads(content)
+    if isinstance(content, dict):
+        normalized_content = Content.model_validate(content).model_dump()
+        formulas = result.pop("formulas", False)
+        if not isinstance(formulas, bool):
+            raise ValueError("Formulas must be a boolean")
+        if formulas:
+            if suffix != ".xlsx":
+                raise ValueError("Formulas require XLSX")
+            for section in normalized_content["sections"]:
+                for table in section["tables"]:
+                    table["formulas"] = True
+        result["content"] = normalized_content
         return result
     simple = DocumentInput.model_validate(
         {
             key: result.pop(key)
-            for key in ("title", "content", "slides")
+            for key in ("title", "content", "slides", "formulas")
             if key in result
         }
     )
-    suffix = PurePosixPath(str(result.get("path", ""))).suffix
+    suffix = PurePosixPath(str(result.get("path", ""))).suffix.lower()
     title = simple.title or PurePosixPath(str(result.get("path", ""))).stem
     if suffix == ".pptx" and simple.slides is not None and simple.content is None:
         normalized = PresentationOutline(
@@ -117,4 +131,10 @@ def normalize(value: dict[str, Any]) -> dict[str, Any]:
     else:
         raise ValueError("Use Markdown content for DOCX/PDF/XLSX or slides for PPTX")
     result["content"] = normalized.model_dump()
+    if simple.formulas:
+        if suffix != ".xlsx":
+            raise ValueError("Formulas require XLSX")
+        for section in result["content"]["sections"]:
+            for table in section["tables"]:
+                table["formulas"] = True
     return result

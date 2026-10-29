@@ -275,8 +275,24 @@ def build_project_document(
     except subprocess.TimeoutExpired:
         raise ValueError("Document verification timed out") from None
     if result.returncode != 0:
+        # Return only recognized validation codes, never subprocess diagnostics.
+        diagnostic = result.stderr.decode("utf-8", errors="replace")
+        reasons = (
+            "unsupported_formula_function",
+            "unsupported_formula_reference",
+            "unknown_formula_sheet",
+            "formula_range_limit",
+            "formula_requires_numeric_cells",
+            "circular_or_deep_formula",
+            "unsupported_sumif_criteria",
+            "formula_cache_verification_failed",
+            "missing_expected_text",
+            "Source coverage verification failed",
+        )
+        reason = next((code for code in reasons if code in diagnostic), "")
         raise ValueError(
             "Document rendering or requested-content/source verification failed"
+            + (": " + reason if reason else "")
         )
     value = json.loads(result.stdout)
     raw = base64.b64decode(value["content"], validate=True)

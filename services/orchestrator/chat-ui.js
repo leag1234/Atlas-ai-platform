@@ -500,9 +500,229 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       es: ["Abrir en vista lateral", "Abrir en el navegador", "No se pudo confirmar que esta página se pueda mostrar aquí. Si está vacía o bloqueada, ábrala en el navegador."],
       it: ["Apri nella vista laterale", "Apri nel browser", "Non è possibile confermare la visualizzazione di questa pagina. Se è vuota o bloccata, aprila nel browser."]
     };
-    const text = index => (words[(localStorage.getItem("atlas-ui-language") || navigator.language || "en").split("-")[0]] || words.en)[index];
+    const text = index => (words[(localStorage.getItem("locale") || localStorage.getItem("atlas-ui-language") || navigator.language || "fr").split("-")[0]] || words.fr)[index];
+    const sideLabels = {
+  "Side view": [
+    "Side view",
+    "Vue latérale",
+    "Seitenansicht",
+    "Vista lateral",
+    "Vista laterale"
+  ],
+  "Download": [
+    "Download",
+    "Télécharger",
+    "Herunterladen",
+    "Descargar",
+    "Scarica"
+  ],
+  "Resize side view": [
+    "Resize side view",
+    "Redimensionner la vue latérale",
+    "Seitenansicht skalieren",
+    "Redimensionar vista lateral",
+    "Ridimensiona vista laterale"
+  ],
+  "Resize split": [
+    "Resize split",
+    "Redimensionner la séparation",
+    "Teilung skalieren",
+    "Redimensionar división",
+    "Ridimensiona divisione"
+  ],
+  "Top view": [
+    "Top view",
+    "Vue du haut",
+    "Obere Ansicht",
+    "Vista superior",
+    "Vista superiore"
+  ],
+  "Bottom view": [
+    "Bottom view",
+    "Vue du bas",
+    "Untere Ansicht",
+    "Vista inferior",
+    "Vista inferiore"
+  ],
+  "Close slot": [
+    "Close slot",
+    "Fermer cette vue",
+    "Diese Ansicht schließen",
+    "Cerrar esta vista",
+    "Chiudi questa vista"
+  ],
+  "Top": [
+    "Top",
+    "Haut",
+    "Oben",
+    "Arriba",
+    "Sopra"
+  ],
+  "Bottom": [
+    "Bottom",
+    "Bas",
+    "Unten",
+    "Abajo",
+    "Sotto"
+  ],
+  "Split": [
+    "Split",
+    "Diviser",
+    "Teilen",
+    "Dividir",
+    "Dividi"
+  ],
+  "Fullscreen": [
+    "Fullscreen",
+    "Plein écran",
+    "Vollbild",
+    "Pantalla completa",
+    "Schermo intero"
+  ],
+  "Close side view": [
+    "Close side view",
+    "Fermer la vue latérale",
+    "Seitenansicht schließen",
+    "Cerrar vista lateral",
+    "Chiudi vista laterale"
+  ],
+  "Markdown source": [
+    "Markdown source",
+    "Source Markdown",
+    "Markdown-Quelle",
+    "Fuente Markdown",
+    "Sorgente Markdown"
+  ],
+  "Edit": [
+    "Edit",
+    "Modifier",
+    "Bearbeiten",
+    "Editar",
+    "Modifica"
+  ],
+  "Preview": [
+    "Preview",
+    "Aperçu",
+    "Vorschau",
+    "Vista previa",
+    "Anteprima"
+  ],
+  "Both": [
+    "Both",
+    "Les deux",
+    "Beide",
+    "Ambas",
+    "Entrambe"
+  ],
+  "Download .md": [
+    "Download .md",
+    "Télécharger .md",
+    "Herunterladen .md",
+    "Descargar .md",
+    "Scarica .md"
+  ],
+  "Save": [
+    "Save",
+    "Enregistrer",
+    "Speichern",
+    "Guardar",
+    "Salva"
+  ],
+  "Saving…": [
+    "Saving…",
+    "Enregistrement…",
+    "Wird gespeichert…",
+    "Guardando…",
+    "Salvataggio…"
+  ],
+  "Saved extracted text; original download unchanged.": [
+    "Saved extracted text; original download unchanged.",
+    "Texte extrait enregistré ; le fichier original est inchangé.",
+    "Extrahierter Text gespeichert; Originaldatei unverändert.",
+    "Texto extraído guardado; archivo original sin cambios.",
+    "Testo estratto salvato; file originale invariato."
+  ],
+  "Save failed. Download .md to keep your edits.": [
+    "Save failed. Download .md to keep your edits.",
+    "Échec de l’enregistrement. Téléchargez le fichier .md pour conserver vos modifications.",
+    "Speichern fehlgeschlagen. Laden Sie .md herunter, um Änderungen zu behalten.",
+    "No se pudo guardar. Descarga .md para conservar tus cambios.",
+    "Salvataggio non riuscito. Scarica .md per conservare le modifiche."
+  ],
+  "PDF page": [
+    "PDF page",
+    "Page PDF",
+    "PDF-Seite",
+    "Página PDF",
+    "Pagina PDF"
+  ],
+  "Page": [
+    "Page",
+    "Page",
+    "Seite",
+    "Página",
+    "Pagina"
+  ],
+  "PDF rendering failed": [
+    "PDF rendering failed",
+    "Échec de l’affichage du PDF",
+    "PDF-Darstellung fehlgeschlagen",
+    "No se pudo mostrar el PDF",
+    "Visualizzazione PDF non riuscita"
+  ],
+  "Previous page": [
+    "Previous page",
+    "Page précédente",
+    "Vorherige Seite",
+    "Página anterior",
+    "Pagina precedente"
+  ],
+  "Next page": [
+    "Next page",
+    "Page suivante",
+    "Nächste Seite",
+    "Página siguiente",
+    "Pagina successiva"
+  ],
+  "Fit width": [
+    "Fit width",
+    "Ajuster à la largeur",
+    "An Breite anpassen",
+    "Ajustar al ancho",
+    "Adatta alla larghezza"
+  ],
+  "Changes": [
+    "Changes",
+    "Modifications",
+    "Änderungen",
+    "Cambios",
+    "Modifiche"
+  ],
+  "No changes in this diff.": [
+    "No changes in this diff.",
+    "Aucune modification dans cette comparaison.",
+    "Keine Änderungen in diesem Vergleich.",
+    "No hay cambios en esta comparación.",
+    "Nessuna modifica in questo confronto."
+  ],
+  "− Before / + After · unchanged lines provide context": [
+    "− Before / + After · unchanged lines provide context",
+    "− Avant / + Après · les lignes inchangées donnent le contexte",
+    "− Vorher / + Nachher · unveränderte Zeilen zeigen den Kontext",
+    "− Antes / + Después · las líneas sin cambios aportan contexto",
+    "− Prima / + Dopo · le righe invariate danno contesto"
+  ],
+  "Unable to open view": [
+    "Unable to open view",
+    "Impossible d’ouvrir la vue",
+    "Ansicht kann nicht geöffnet werden",
+    "No se puede abrir la vista",
+    "Impossibile aprire la vista"
+  ]
+};
+    const label = value => sideLabels[value]?.[Math.max(0,["en","fr","de","es","it"].indexOf((localStorage.getItem("locale") || localStorage.getItem("atlas-ui-language") || navigator.language || "fr").split("-")[0]))] || value;
     const element = (tag, cls, value) => { const node = document.createElement(tag); if (cls) node.className = cls; if (value) node.textContent = value; return node; };
-    const button = (label, action) => { const node = element("button", "atlas-side-button", label); node.type = "button"; node.addEventListener("click", action); return node; };
+    const button = (value, action) => { const node = element("button", "atlas-side-button", label(value)); node.type = "button"; node.addEventListener("click", action); return node; };
     const safeURL = (value, sameOrigin = false) => {
       const url = new URL(value, location.href);
       if (!/^https?:$/.test(url.protocol) || url.username || url.password || (sameOrigin && url.origin !== location.origin)) throw new Error("Unsupported source URL");
@@ -515,8 +735,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     const app = [...document.body.children].find(node => node.tagName === "DIV" && node.style.display === "contents") || document.querySelector(".atlas-project-host");
     if (!app) return;
     app.classList.add("atlas-app-root");
-    const pane = element("aside", "atlas-side-pane"); pane.id = "atlas-side-view"; pane.hidden = true; pane.setAttribute("aria-label", "Side view");
-    const grip = element("div", "atlas-side-grip"), header = element("header", "atlas-side-header"), title = element("strong", "atlas-side-title", "Side view"), slotsHost = element("div", "atlas-side-slots");
+    const pane = element("aside", "atlas-side-pane"); pane.id = "atlas-side-view"; pane.hidden = true; pane.setAttribute("aria-label", label("Side view"));
+    const grip = element("div", "atlas-side-grip"), header = element("header", "atlas-side-header"), title = element("strong", "atlas-side-title", label("Side view")), slotsHost = element("div", "atlas-side-slots");
     const slots = new Map(); let active = "top", priorFocus = null;
     const stored = Number(localStorage.getItem("atlas-side-width"));
     let desktopWidth = stored || innerWidth * .45;
@@ -524,8 +744,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     const setWidth = width => { desktopWidth = Math.max(320, width); pane.style.width = `${Math.min(innerWidth, desktopWidth)}px`; };
     setWidth(stored || innerWidth * .45);
     const browser = button(text(1), () => { const src = slots.get(active)?.descriptor?.src; if (src) window.open(safeURL(src), "_blank", "noopener,noreferrer"); });
-    const saving = button("Download", () => slots.get(active)?.download?.());
-    const refresh = () => { const slot = slots.get(active); title.textContent = slot?.descriptor?.title || "Side view"; browser.hidden = !slot?.descriptor?.src; saving.hidden = !slot?.download; header.querySelectorAll("[data-slot-select]").forEach(node => node.setAttribute("aria-pressed", String(node.dataset.slotSelect === active))); };
+    const saving = button(label("Download"), () => slots.get(active)?.download?.());
+    const refresh = () => { const slot = slots.get(active); title.textContent = slot?.descriptor?.title || label("Side view"); browser.hidden = !slot?.descriptor?.src; saving.hidden = !slot?.download; header.querySelectorAll("[data-slot-select]").forEach(node => node.setAttribute("aria-pressed", String(node.dataset.slotSelect === active))); };
     const remove = name => {
       const slot = slots.get(name); if (!slot) return;
       slot.disposed = true; slot.cleanup.forEach(fn => fn()); slot.node.remove(); slots.delete(name);
@@ -536,7 +756,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     };
     const close = () => [...slots.keys()].forEach(remove);
     const drag = (node, vertical, move) => {
-      node.tabIndex = 0; node.setAttribute("role", "separator"); node.setAttribute("aria-orientation", vertical ? "vertical" : "horizontal"); node.setAttribute("aria-label", vertical ? "Resize side view" : "Resize split");
+      node.tabIndex = 0; node.setAttribute("role", "separator"); node.setAttribute("aria-orientation", vertical ? "vertical" : "horizontal"); node.setAttribute("aria-label", vertical ? label("Resize side view") : label("Resize split"));
       node.addEventListener("pointerdown", event => { node.setPointerCapture(event.pointerId); document.body.classList.add("atlas-side-dragging"); });
       node.addEventListener("pointermove", event => { if (node.hasPointerCapture(event.pointerId)) move(vertical ? event.clientX : event.clientY); });
       const finish = () => { document.body.classList.remove("atlas-side-dragging"); localStorage.setItem("atlas-side-width", String(pane.getBoundingClientRect().width)); };
@@ -545,8 +765,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     };
     const ensure = name => {
       if (slots.has(name)) return slots.get(name);
-      const node = element("section", "atlas-side-slot"), toolbar = element("div", "atlas-side-toolbar"), caption = element("span", "atlas-side-caption", name === "top" ? "Top view" : "Bottom view"), content = element("div", "atlas-side-content");
-      node.dataset.slot = name; toolbar.append(caption, button("Close slot", () => remove(name))); node.append(toolbar, content);
+      const node = element("section", "atlas-side-slot"), toolbar = element("div", "atlas-side-toolbar"), caption = element("span", "atlas-side-caption", name === "top" ? label("Top view") : label("Bottom view")), content = element("div", "atlas-side-content");
+      node.dataset.slot = name; toolbar.append(caption, button(label("Close slot"), () => remove(name))); node.append(toolbar, content);
       if (name === "top") slotsHost.prepend(node); else slotsHost.append(node);
       const slot = { node, toolbar, caption, content, cleanup: [], disposed: false, descriptor: null, download: null };
       node.addEventListener("pointerdown", () => { active = name; refresh(); }); node.addEventListener("focusin", () => { active = name; refresh(); });
@@ -557,7 +777,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       }
       return slot;
     };
-    const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || "Side view"; node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; slot.content.append(node); return node; };
+    const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; slot.content.append(node); return node; };
     // Marked is only a parser. Rebuild its output from an allowlist in an inert document.
     const sanitize = html => {
       const parsed = new DOMParser().parseFromString(html, "text/html"), result = document.createDocumentFragment();
@@ -570,16 +790,16 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         const source = descriptor.content ?? (descriptor.src ? await fetchText(descriptor.src, slot) : "");
         if (slot.disposed) return;
         const view = element("div", "atlas-side-diff");
-        view.append(element("p", "atlas-side-diff-key", "− Before / + After · unchanged lines provide context"));
+        view.append(element("p", "atlas-side-diff-key", label("− Before / + After · unchanged lines provide context")));
         for (const section of source.split(/(?=^diff --git )/m)) {
           if (!section) continue;
           const file = element("section", "atlas-diff-file"), pre = element("pre");
-          const heading = section.match(/^\+\+\+ (?:b\/)?(.+)$/m)?.[1] || descriptor.title || "Changes";
+          const heading = section.match(/^\+\+\+ (?:b\/)?(.+)$/m)?.[1] || descriptor.title || label("Changes");
           file.append(element("h3", "", heading));
           for (const line of section.split("\n")) pre.append(element("span", line.startsWith("+") ? "atlas-diff-add" : line.startsWith("-") ? "atlas-diff-remove" : "", line + "\n"));
           file.append(pre); view.append(file);
         }
-        if (!source.trim()) view.append(element("p", "", "No changes in this diff."));
+        if (!source.trim()) view.append(element("p", "", label("No changes in this diff.")));
         slot.content.append(view); slot.download = () => download(source, "changes.patch", "text/plain");
       } },
       html: { async open(slot, descriptor) {
@@ -600,19 +820,20 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         const source = descriptor.content ?? (descriptor.src ? await fetchText(descriptor.src, slot) : "");
         if (slot.disposed) return;
         const editor = element("textarea", "atlas-side-editor"), preview = element("div", "atlas-side-preview"), layout = element("div", "atlas-side-markdown"), status = element("span", "atlas-side-save-status");
-        editor.setAttribute("aria-label", "Markdown source"); editor.spellcheck = false; editor.value = source; status.setAttribute("role", "status");
+        editor.setAttribute("aria-label", label("Markdown source")); editor.spellcheck = false; editor.value = source; status.setAttribute("role", "status");
         const render = () => { const renderer = new marked.Renderer(); renderer.html = () => ""; renderer.image = () => ""; preview.replaceChildren(sanitize(marked.parse(editor.value, { renderer, async: false }))); };
         editor.addEventListener("input", render); render(); layout.append(editor, preview); slot.content.append(layout);
+        if (descriptor.readOnly) { editor.hidden = true; layout.style.gridTemplateColumns = "minmax(0,1fr)"; return; }
         for (const mode of ["Edit", "Preview", "Both"]) slot.toolbar.append(button(mode, () => { editor.hidden = mode === "Preview"; preview.hidden = mode === "Edit"; }));
         slot.download = () => download(editor.value, "document.md", "text/markdown;charset=utf-8");
-        slot.toolbar.append(button("Download .md", slot.download));
+        slot.toolbar.append(button(label("Download .md"), slot.download));
         if (descriptor.saveTarget) {
           const target = safeURL(descriptor.saveTarget, true);
           if (!/^\/api\/v1\/files\/[a-f0-9-]+\/data\/content\/update$/i.test(new URL(target).pathname)) throw new Error("Unsupported save target");
-          slot.toolbar.append(button("Save", async () => {
-            status.textContent = "Saving…";
-            try { const response = await fetch(target, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: editor.value }) }); const result = await response.json(); if (!response.ok || result.content !== editor.value) throw new Error("Content was not saved"); status.textContent = "Saved extracted text; original download unchanged."; }
-            catch { status.textContent = "Save failed. Download .md to keep your edits."; }
+          slot.toolbar.append(button(label("Save"), async () => {
+            status.textContent = label("Saving…");
+            try { const response = await fetch(target, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: editor.value }) }); const result = await response.json(); if (!response.ok || result.content !== editor.value) throw new Error("Content was not saved"); status.textContent = label("Saved extracted text; original download unchanged."); }
+            catch { status.textContent = label("Save failed. Download .md to keep your edits."); }
           }), status);
         }
       } },
@@ -623,9 +844,9 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.cleanup.push(() => { loading.destroy(); });
         const pdf = await loading.promise; if (slot.disposed) return;
         const pages = element("div", "atlas-side-pdf-pages"), count = element("span", "atlas-side-page-count"), input = element("input", "atlas-side-page-input");
-        input.type = "number"; input.min = "1"; input.max = String(pdf.numPages); input.value = "1"; input.setAttribute("aria-label", "PDF page"); count.textContent = `/ ${pdf.numPages}`;
+        input.type = "number"; input.min = "1"; input.max = String(pdf.numPages); input.value = "1"; input.setAttribute("aria-label", label("PDF page")); count.textContent = `/ ${pdf.numPages}`;
         let scale = 1, epoch = 0;
-        const canvases = Array.from({ length: pdf.numPages }, (_, index) => { const canvas = element("canvas"); canvas.setAttribute("aria-label", `Page ${index + 1}`); canvas.dataset.page = String(index + 1); pages.append(canvas); return canvas; });
+        const canvases = Array.from({ length: pdf.numPages }, (_, index) => { const canvas = element("canvas"); canvas.setAttribute("aria-label", `${label("Page")} ${index + 1}`); canvas.dataset.page = String(index + 1); pages.append(canvas); return canvas; });
         const tasks = new Set();
         const render = async () => {
           const current = ++epoch; tasks.forEach(task => task.cancel());
@@ -639,8 +860,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         };
         const navigate = step => { input.value = String(Math.max(1, Math.min(pdf.numPages, Number(input.value) + step))); canvases[Number(input.value) - 1].scrollIntoView({ block: "start" }); };
         input.addEventListener("change", () => navigate(0));
-        const rerender = () => render().catch(() => { if (!slot.disposed) count.textContent = "PDF rendering failed"; });
-        slot.toolbar.append(button("Previous page", () => navigate(-1)), input, count, button("Next page", () => navigate(1)), button("−", () => { scale = Math.max(.25, scale / 1.25); rerender(); }), button("+", () => { scale = Math.min(4, scale * 1.25); rerender(); }), button("Fit width", () => { scale = 1; rerender(); }));
+        const rerender = () => render().catch(() => { if (!slot.disposed) count.textContent = label("PDF rendering failed"); });
+        slot.toolbar.append(button(label("Previous page"), () => navigate(-1)), input, count, button(label("Next page"), () => navigate(1)), button("−", () => { scale = Math.max(.25, scale / 1.25); rerender(); }), button("+", () => { scale = Math.min(4, scale * 1.25); rerender(); }), button(label("Fit width"), () => { scale = 1; rerender(); }));
         slot.content.append(pages);
         slot.download = () => { const link = element("a"); link.href = source; link.download = descriptor.title || "document.pdf"; link.click(); };
         let timer; const observer = new ResizeObserver(() => { clearTimeout(timer); timer = setTimeout(rerender, 150); }); observer.observe(slot.content);
@@ -664,12 +885,12 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       slot.content.replaceChildren(); while (slot.toolbar.children.length > 2) slot.toolbar.lastChild.remove();
       slot.caption.textContent = descriptor.title || descriptor.kind; pane.hidden = false; document.body.classList.add("atlas-side-open"); active = name; refresh();
       try { await views[descriptor.kind].open(slot, descriptor); }
-      catch (error) { if (!slot.disposed) slot.content.append(element("p", "atlas-side-error", `Unable to open view: ${error.message}`)); }
+      catch (error) { if (!slot.disposed) slot.content.append(element("p", "atlas-side-error", `${label("Unable to open view")}: ${error.message}`)); }
       if (!slot.disposed) refresh();
     };
     header.append(title);
-    for (const name of ["top", "bottom"]) { const control = button(name === "top" ? "Top" : "Bottom", () => { ensure(name); active = name; refresh(); }); control.dataset.slotSelect = name; header.append(control); }
-    header.append(button("Split", () => { ensure("top"); ensure("bottom"); }), browser, saving, button("Fullscreen", async () => { if (document.fullscreenElement === pane) await document.exitFullscreen(); else await pane.requestFullscreen(); }), button("Close side view", close));
+    for (const name of ["top", "bottom"]) { const control = button(name === "top" ? label("Top") : label("Bottom"), () => { ensure(name); active = name; refresh(); }); control.dataset.slotSelect = name; header.append(control); }
+    header.append(button(label("Split"), () => { ensure("top"); ensure("bottom"); }), browser, saving, button(label("Fullscreen"), async () => { if (document.fullscreenElement === pane) await document.exitFullscreen(); else await pane.requestFullscreen(); }), button(label("Close side view"), close));
     pane.append(grip, header, slotsHost); document.body.append(pane);
     drag(grip, true, x => setWidth(innerWidth - x)); window.addEventListener("resize", () => setWidth(desktopWidth));
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !pane.hidden) { close(); event.preventDefault(); } });

@@ -199,12 +199,27 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
                 *((text,) for text in section.bullets),
             ]
         )
+        formula_rows: set[int] = set()
         for table in section.tables:
+            if table.formulas:
+                formula_rows.update(
+                    range(len(rows) + 2, len(rows) + 2 + len(table.rows))
+                )
             rows.extend((table.headers, *table.rows))
         for row_index, row in enumerate(rows, 1):
             for column, value in enumerate(row, 1):
                 cell = sheet.cell(row_index, column, value)
                 cell.data_type = "s"
+                if row_index in formula_rows:
+                    if value.startswith("="):
+                        cell.data_type = "f"
+                    else:
+                        import re
+
+                        if re.fullmatch(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", value):
+                            numeric = float(value) if "." in value else int(value)
+                            if str(numeric) == value:
+                                cell.value = numeric
                 cell.font = Font(name="Bitstream Vera Sans", size=11)
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
                 sheet.column_dimensions[cell.column_letter].width = 32
@@ -218,11 +233,19 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
             image_row += 15
     workbook.save(path)
     workbook.close()
+    if any(table.formulas for section in content.sections for table in section.tables):
+        from .formulas import cache_formulas
+
+        cache_formulas(path)
 
 
 def render(content: Content, path: Path, *, image_root: Path) -> Verification:
     """Build and verify atomically; destination must be chosen by trusted code."""
     content = Content.model_validate(content.model_dump())
+    if path.suffix == ".xlsx":
+        from .spreadsheet import bind_summaries
+
+        content = bind_summaries(content)
     # Apply identical font, image and layout bounds for every output format.
     pages(content, image_root)
     builders = {

@@ -10589,6 +10589,14 @@ components:
       type: object
       additionalProperties: false
       properties:
+        atlas_ui:
+          type: boolean
+          default: false
+          description: Native interface presentation marker; grants no project authority.
+        ui_locale:
+          type: string
+          enum: [fr, en, de, es, it]
+          description: Interface locale for status messages; reply language follows the user question.
         model:
           type: string
           minLength: 1

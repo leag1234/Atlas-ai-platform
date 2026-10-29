@@ -1,4 +1,8 @@
 (() => {
+  if (!localStorage.getItem('locale')) {
+    const language = (navigator.language || 'fr').split('-')[0];
+    localStorage.setItem('locale', ['fr','en','de','es','it'].includes(language) ? language : 'fr');
+  }
   const sourcePaths = new Set([
     '/favicon.png',
     '/static/favicon.png',
@@ -40,8 +44,30 @@
     image.alt = 'Atlas';
   }
 
+  let accountName = '';
+  async function loadAccountName() {
+    try {
+      const response = await fetch('/api/v1/auths/', {credentials:'same-origin'});
+      if (response.ok) {
+        const account = await response.json();
+        accountName = typeof account.name === 'string' ? account.name : '';
+        refresh();
+      }
+    } catch { /* The host owns sign-in and account error handling. */ }
+  }
+
   function refresh() {
     document.querySelectorAll('img').forEach(replaceLogo);
+    const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
+    if (document.title !== title) document.title = title;
+    for (const container of document.querySelectorAll('nav, header, [role=dialog], #sidebar, #pinned-menu-items-list, #sidebar-webui-name')) {
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const text = walker.currentNode;
+        if (accountName && text.textContent.trim() === 'User' && container.matches('#sidebar, nav')) text.textContent = accountName;
+        if (text.textContent.includes('Atlas (Open WebUI)')) text.textContent = text.textContent.replaceAll('Atlas (Open WebUI)','Atlas');
+      }
+    }
   }
 
   new MutationObserver(refresh).observe(document.documentElement, {
@@ -56,5 +82,6 @@
     if (event.key === 'theme') refresh();
   });
   systemDark.addEventListener('change', refresh);
+  loadAccountName();
   refresh();
 })();
