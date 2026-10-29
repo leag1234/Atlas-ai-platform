@@ -159,6 +159,7 @@ def guest_shell() -> Iterator[None]:
         "DEFAULT_LOCALE": "",
         "ENABLE_MEMORIES": "False",
         "ENABLE_AUTOMATIONS": "False",
+        "ENABLE_NOTES": "False",
         "ENABLE_EASTER_EGGS": "False",
         "ENABLE_CALENDAR": "False",
         "ENABLE_PERSISTENT_CONFIG": "False",
