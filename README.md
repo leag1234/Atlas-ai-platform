@@ -165,7 +165,8 @@ image generation starts an ephemeral GPU.
 
 See the [installation guide](docs/installation.md), [MCP guide](docs/mcp.md) and
 [API compatibility guide](docs/api-compatibility.md) for configuration and supported
-interfaces.
+interfaces. [Deployment architectures and costs](docs/20-deployment-architectures-and-costs.md)
+compares on-demand inference with dedicated H100 servers, with gross cost figures.
 
 ## Models and inference
 
