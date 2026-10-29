@@ -8,7 +8,7 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(viewport={"width": 1280, "height": 900}, http_credentials={"username": user, "password": pw})
     pg = ctx.new_page()
-    pg.goto("https://atlas.indidea.org/", wait_until="domcontentloaded")
+    pg.goto("https://atlas.eu.com/", wait_until="domcontentloaded")
     pg.wait_for_selector("#chat-input", timeout=90000)
     try:
         pg.get_by_role("button", name=re.compile("Okay", re.I)).click(timeout=4000)

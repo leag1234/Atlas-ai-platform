@@ -88,7 +88,7 @@ are privileged access, not a guest isolation boundary.
        ATLAS_WEB_CACHE='/var/lib/atlas-stable/web.sqlite',
        ATLAS_IMAGE_DIR='/var/lib/atlas-stable/images',
        ATLAS_PROJECT_DB='/var/lib/atlas-stable/projects.sqlite',
-       ATLAS_PUBLIC_URL='https://atlas.indidea.org')
+       ATLAS_PUBLIC_URL='https://atlas.eu.com')
    fd = os.open('stable.env', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
    with os.fdopen(fd, 'w') as output:
        output.writelines(key + '=' + shlex.quote(value) + '\n' for key, value in values.items())
@@ -338,9 +338,9 @@ are privileged access, not a guest isolation boundary.
     ss -ltn | grep -E ':(3100|8100|8110|8111|8120)\b'
     # Web server, owner
     curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3100/
-    curl -s -o /dev/null -w '%{http_code}\n' https://atlas.indidea.org/
-    curl --user alice -s -o /dev/null -w '%{http_code}\n' https://atlas.indidea.org/
-    curl --user alice -s -D - -o /dev/null https://atlas.indidea.org/ | grep -i x-robots-tag
+    curl -s -o /dev/null -w '%{http_code}\n' https://atlas.eu.com/
+    curl --user alice -s -o /dev/null -w '%{http_code}\n' https://atlas.eu.com/
+    curl --user alice -s -D - -o /dev/null https://atlas.eu.com/ | grep -i x-robots-tag
     ```
 
     Expected: health succeeds, direct VM and tunneled unsigned requests return
@@ -529,3 +529,8 @@ the existing authenticated `/api/atlas/` relay serves the dialog and management 
 The browser's Origin must match `ATLAS_PROJECT_ORIGIN` when the external scheme
 or host differs from the adapter's request URL. A secret is shown only on creation,
 kept only in that dialog, and discarded on close; copy it to a secure destination.
+
+## Public domain (2026-10-29)
+
+The guest instance is served at https://atlas.eu.com (certificate `/etc/letsencrypt/live/atlas.eu.com`, site `/etc/nginx/sites-available/atlas.eu.com`, a copy of the `atlas.indidea.org` site with only the server name and certificate changed; `www.atlas.eu.com` redirects to it). `ATLAS_PUBLIC_URL=https://atlas.eu.com`.
+`atlas.indidea.org` stays served during the transition so that existing API clients keep working. The identity header suffix stays `@atlas.indidea.org` on both names: it is an account identifier, not a URL, and changing it would create new empty accounts.
