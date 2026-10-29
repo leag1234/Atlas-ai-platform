@@ -48,6 +48,14 @@ class ProjectChatTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn("Answer in French.", str(calls[0]["messages"]))
 
+    def test_recurring_project_request_uses_turn_local_localized_guidance(self) -> None:
+        from services.orchestrator.project_transcript import recurring_guidance
+
+        notice = recurring_guidance("Mettre à jour le budget fictif chaque semaine", "fr")
+        self.assertIsNotNone(notice)
+        self.assertIn("automatiques", notice or "")
+        self.assertIsNone(recurring_guidance("Résumer le budget fictif", "fr"))
+
     def conversation(self, project: str) -> str:
         return str(
             self.client.post(

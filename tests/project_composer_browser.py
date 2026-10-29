@@ -360,6 +360,33 @@ class ProjectComposerTests(unittest.TestCase):
         parsed = ChatRequest.model_validate(request)
         self.assertEqual(parsed.project_id, PROJECT)
 
+    def test_running_turn_clears_composer_and_keeps_visible_activity(self) -> None:
+        self.mount()
+        self.page.evaluate("""() => {
+          const original = window.fetch;
+          window.fetch = async (...args) => {
+            const response = await original(...args);
+            if (String(args[0]) === '/v1/chat/completions') {
+              await new Promise(resolve => window.releaseProjectReply = resolve);
+            }
+            return response;
+          };
+        }""")
+        message = self.page.get_by_role("textbox", name="Message", exact=True)
+        message.fill("Prepare the fictional budget summary")
+        self.page.locator("[data-send]").click()
+        self.page.wait_for_function("Boolean(window.releaseProjectReply)")
+        self.assertEqual(message.input_value(), "")
+        self.assertIn("Atlas is thinking", self.page.locator("[data-running]").inner_text())
+        self.assertTrue(self.page.locator("[data-stop]:not([hidden])").is_visible())
+        self.page.evaluate("window.releaseProjectReply()")
+        self.page.locator("[data-send]:not([disabled])").wait_for()
+
+    def test_project_locale_follows_host_locale_and_browser_fallback(self) -> None:
+        self.context.add_init_script("localStorage.setItem('locale','fr-FR');")
+        self.mount()
+        self.assertEqual(self.page.get_by_role("button", name="Envoyer", exact=True).count(), 1)
+
     def test_send_waits_for_canonical_transcript_finalization(self) -> None:
         self.mount()
         self.page.evaluate("""() => {

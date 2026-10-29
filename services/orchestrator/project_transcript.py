@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from decimal import Decimal
 from contextvars import ContextVar
 from pathlib import Path
@@ -43,8 +44,6 @@ class TranscriptBroker(ExecutionBroker):
 
 def answer_content(text: str) -> str:
     """Unwrap historical answers and omit internal record references."""
-    import re
-
     try:
         value = json.loads(text)
     except ValueError:
@@ -76,6 +75,29 @@ def answer_content(text: str) -> str:
             line = re.sub(r"[ \t]+([.,;])", r"\1", line)
         lines.append(line.rstrip())
     return "\n".join(lines).strip()
+
+
+def recurring_guidance(question: str, language: str) -> str | None:
+    """Return turn-local capability guidance without changing the shared prompt."""
+    recurring = re.search(
+        r"\b(?:every|each)\s+(?:day|week|month|year)|\b(?:weekly|daily|monthly|schedule[ds]?|recurr(?:ing|ent))\b"
+        r"|\b(?:chaque|tous les)\s+(?:jour|semaine|mois|an)|\b(?:hebdomadaire|quotidien|planifi)"
+        r"|\b(?:cada|todos los)\s+(?:día|semana|mes)|\b(?:semanal|programad)"
+        r"|\b(?:jede[nsr]?|wöchentlich|täglich|monatlich|geplant)\b"
+        r"|\b(?:ogni|settimanale|giornaliero|pianificat)\b",
+        question,
+        re.IGNORECASE,
+    )
+    if not recurring:
+        return None
+    notices = {
+        "fr": "Faites la partie demandée maintenant. Dites clairement que les mises à jour périodiques automatiques ne sont pas encore disponibles et expliquez comment relancer cette demande manuellement.",
+        "de": "Erledige den einmaligen Teil jetzt. Sage klar, dass automatische regelmäßige Aktualisierungen noch nicht verfügbar sind, und erkläre, wie die Anfrage manuell erneut gestartet wird.",
+        "es": "Haz ahora la parte puntual solicitada. Indica claramente que las actualizaciones periódicas automáticas aún no están disponibles y explica cómo volver a ejecutar la solicitud manualmente.",
+        "it": "Completa ora la parte richiesta una tantum. Spiega chiaramente che gli aggiornamenti periodici automatici non sono ancora disponibili e come rieseguire manualmente la richiesta.",
+        "en": "Complete the requested one-off work now. State plainly that automatic periodic updates are not available yet and explain how to run this request again manually.",
+    }
+    return notices.get(language, notices["en"])
 
 
 async def saved_memory_reply(
@@ -594,6 +616,11 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 )
                 if context_tools.skills.entries:
                     model.tools.append(context_tools.skills.declaration())
+            guidance = recurring_guidance(request.user_text, scoped.lang)
+            skill_messages = (
+                (context_tools.skills.instructions if context_tools.skills is not None else [])
+                + ([{"role": "system", "content": guidance}] if guidance else [])
+            )
             result = await run(
                 Query(question=request.user_text, lang=scoped.lang),
                 model,
@@ -610,9 +637,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 ),
                 history=[dict(role=m.role, content=m.text) for m in history[:-1]],
                 references=references,
-                skill_messages=context_tools.skills.instructions
-                if context_tools.skills is not None
-                else None,
+                skill_messages=skill_messages or None,
             )
             tool_calls = result.tool_calls
             item.state, item.cout_eur = result.state, float(result.cost)

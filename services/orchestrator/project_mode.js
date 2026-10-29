@@ -115,6 +115,29 @@
       row.append(button('projects', () => choose({org:scope.org})), iconButton('newProject', '+', createProject)); left.append(row);
     }
     if (owned && memberships.length > 1) left.append(picker('organization', memberships, scope?.org, org => choose({org})));
+    if (owned && scope?.org) {
+      const projectList = node('section', null, 'atlas-project-sidebar-projects');
+      projectList.append(node('h2', t('projects')));
+      const recent = [...projects].sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0, 8);
+      for (const value of recent) {
+        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button'; row.dataset.sidebarProject = value.id;
+        if (value.id === scope.project) row.setAttribute('aria-current', 'page');
+        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id})));
+        projectList.append(row);
+        if (value.id === scope.project && conversations.length) {
+          const chats = node('div', null, 'atlas-project-sidebar-conversations');
+          for (const conversation of conversations) {
+            const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row'); chat.type = 'button'; chat.dataset.sidebarConversation = conversation.id;
+            if (conversation.id === scope.conversation) chat.setAttribute('aria-current', 'page');
+            chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id})));
+            chats.append(chat);
+          }
+          projectList.append(chats);
+        }
+      }
+      const all = button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all');
+      projectList.append(all); left.append(projectList);
+    }
   }
   function iconButton(key, symbol, fn) {
     const value = button(key, fn); value.textContent = symbol; value.setAttribute('aria-label', t(key)); value.title = t(key); if (key === 'remove') value.dataset.remove = ''; if (key === 'upload') value.dataset.uploadControl = ''; return value;
@@ -514,7 +537,12 @@
     }
     const current = generation;
     sending = true; sessionLabel.textContent = t('running'); controls(); stream = new AbortController();
-    const pending = node('article', null, 'atlas-project-turn'); const answer = node('pre', '', 'answer'); pending.append(node('pre', question, 'question'), answer); transcript.append(pending);
+    const pending = node('article', null, 'atlas-project-turn atlas-project-turn-running'); const answer = node('pre', '', 'answer');
+    const thinking = node('div', null, 'atlas-project-thinking'); thinking.dataset.running = '';
+    const elapsed = node('span', '', 'atlas-project-elapsed'); const started = Date.now();
+    thinking.append(node('strong', 'Atlas'), node('span', t('thinking')), elapsed);
+    const timer = setInterval(() => { const seconds = Math.floor((Date.now() - started) / 1000); elapsed.textContent = seconds >= 10 ? ` · ${seconds} ${t('seconds')}` : ''; }, 1000);
+    pending.append(node('pre', question, 'question'), thinking, answer); transcript.append(pending);
     try {
       // The scoped agent can answer directly or call tools; no user mode selection.
       action = 'work';
@@ -527,6 +555,7 @@
       const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });
+      input.value = '';
       await consume(response, chunk => {
         if (current !== generation) return;
         if (chunk.project_id) { liveRequests.add(chunk.request_id); eventRecord(chunk); }
@@ -534,9 +563,10 @@
         if (delta) answer.textContent += delta;
         if (chunk.error) throw new Error(typeof chunk.error === 'string' ? chunk.error : chunk.error.message);
       });
-      checkScope(current); input.value = '';
+      checkScope(current);
     } catch (error) { if (current === generation) failure(error); }
     finally {
+      clearInterval(timer); thinking.remove(); pending.classList.remove('atlas-project-turn-running');
       if (current === generation) {
         sending = false; configuring = true; controls();
         try { await refreshTurns(); await replay(); if (session) session = await api(base() + '/work-sessions/' + session.id); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); }
@@ -636,6 +666,23 @@
       row.append(entry,iconButton('newProject','+',createProject));
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
+    }
+    const previous = document.getElementById('atlas-project-sidebar-list'); previous?.remove();
+    if (scope?.org && projects.length) {
+      const list = node('section', null, 'atlas-project-host-projects'); list.id = 'atlas-project-sidebar-list';
+      list.append(node('h2', t('projects')));
+      for (const value of [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8)) {
+        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button';
+        if (value.id === scope.project) row.setAttribute('aria-current','page');
+        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); list.append(row);
+        if (value.id === scope.project) for (const conversation of conversations) {
+          const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row atlas-project-host-conversation'); chat.type = 'button';
+          if (conversation.id === scope.conversation) chat.setAttribute('aria-current','page');
+          chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id}))); list.append(chat);
+        }
+      }
+      list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
+      document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
     }
     document.body.classList.add('atlas-project-enabled');
     const rail = document.querySelector('#sidebar');
