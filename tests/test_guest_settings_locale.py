@@ -66,7 +66,7 @@ class GuestLocaleTests(unittest.TestCase):
                 self.assertNotEqual(data[locale][key], key)
         self.assertEqual(data["fr-FR"]["WebUI Settings"], "Réglages d’Atlas")
 
-    def test_stable_disables_unused_native_features_not_atlas_memory_or_notes(
+    def test_stable_disables_unused_native_features_and_notes_not_atlas_memory(
         self,
     ) -> None:
         with patch.dict(
@@ -76,5 +76,5 @@ class GuestLocaleTests(unittest.TestCase):
             options = stable_webui_options()
         for feature in ("MEMORIES", "CALENDAR", "AUTOMATIONS", "EASTER_EGGS"):
             self.assertIn(f"ENABLE_{feature}=False", options)
-        self.assertNotIn("ENABLE_NOTES=False", options)
+        self.assertIn("ENABLE_NOTES=False", options)  # owner decision 2026-10-29
         self.assertNotIn("ATLAS_USER_MEMORY_ENABLED=0", options)
