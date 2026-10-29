@@ -30,12 +30,24 @@ def place_pipeline(pipeline: Any, memory_bytes: int) -> None:
 def main() -> None:
     torch = importlib.import_module("torch")
     config = json.loads(Path(__file__).with_name("image-model.json").read_text())
-    pipeline = importlib.import_module("diffusers").FluxPipeline.from_pretrained(
+    kind = config.get("pipeline", "flux")
+    if kind not in ("flux", "flux2-klein"):
+        raise ValueError("unsupported_image_pipeline")
+    diffusers = importlib.import_module("diffusers")
+    pipeline_class = (
+        diffusers.Flux2KleinPipeline
+        if kind == "flux2-klein"
+        else diffusers.FluxPipeline
+    )
+    pipeline = pipeline_class.from_pretrained(
         config["repository"],
         revision=config["revision"],
         torch_dtype=torch.bfloat16,
     )
-    place_pipeline(pipeline, torch.cuda.get_device_properties(0).total_memory)
+    if kind == "flux2-klein":
+        pipeline.to("cuda")
+    else:
+        place_pipeline(pipeline, torch.cuda.get_device_properties(0).total_memory)
     lock = Lock()
 
     class Handler(BaseHTTPRequestHandler):
@@ -72,18 +84,27 @@ def main() -> None:
                 steps = data.get("steps", 4)
                 if steps not in (4, 8):
                     raise ValueError("invalid_steps")
-                tokens = len(
-                    pipeline.tokenizer_2(prompt, truncation=False)["input_ids"]
-                )
+                if kind == "flux2-klein":
+                    # Count the same framing the pipeline adds before truncation.
+                    tokenizer = pipeline.tokenizer
+                    text = tokenizer.apply_chat_template(
+                        [{"role": "user", "content": prompt}],
+                        tokenize=False,
+                        add_generation_prompt=True,
+                        enable_thinking=False,
+                    )
+                else:
+                    tokenizer, text = pipeline.tokenizer_2, prompt
+                tokens = len(tokenizer(text, truncation=False)["input_ids"])
                 if tokens > 512:
                     raise WorkerLimit(tokens, 512, "tokens")
                 started = monotonic()
                 timer.start()  # Kill CUDA work too, even if a client disconnects.
                 result = pipeline(
-                    prompt,
+                    prompt=prompt,
                     height=1024,
                     width=1024,
-                    guidance_scale=0.0,
+                    guidance_scale=1.0 if kind == "flux2-klein" else 0.0,
                     num_inference_steps=steps,
                     max_sequence_length=512,
                     generator=torch.Generator("cuda").manual_seed(seed),
