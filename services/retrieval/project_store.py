@@ -286,6 +286,11 @@ class Scope:
             raise ProjectError(404, "not_found")
         if not amounts:
             raise ProjectError(422, "invalid_request")
+        if "concurrent_jobs" in amounts:
+            self.db.execute(
+                "SELECT atlas_projects.recover_expired_work_leases(%s)",
+                (self.identity.org,),
+            )
         import math
 
         for resource, amount in amounts.items():
