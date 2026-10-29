@@ -352,6 +352,13 @@
       }
       transcript.append(article);
     }
+    for (const task of panelData?.scheduled?.items || []) if (task.proposal && task.conversation_id === scope.conversation) {
+      const card=node('section',null,'atlas-project-approval');card.dataset.scheduleProposal=task.id;
+      card.append(node('h3',task.name),node('p',task.instruction),node('p',scheduleWords(task)),detail('taskCap',task.daily_cap_eur));
+      if(task.target_file) card.append(detail('taskTarget',task.target_file));
+      if(panelData.scheduled.can_manage && task.can_confirm !== false) card.append(button('taskConfirm',async () => {await api(base()+'/scheduled-tasks/'+task.id+'/confirm','POST',{});await panels();}));
+      transcript.append(card);
+    }
   }
   function withoutFileLinks(text) {
     const cards = panelData?.deliverables || [];
@@ -546,6 +553,9 @@
         await replay(); await restoreSession();
         if (session) { const id = session.id, value = await api(base() + '/work-sessions/' + id); if (session?.id === id) { session = value; controls(); } }
         await refreshTurns();
+        if(panelData && !root.querySelector('dialog[open]') && (!panelData.scheduledAt || Date.now()-panelData.scheduledAt>15000)) {
+          panelData.scheduled=await api(base()+'/scheduled-tasks?limit=100');panelData.scheduledAt=Date.now();renderPanels();renderTurns();
+        }
       } catch (error) { if (current === generation) failure(error); }
       if (current === generation) schedule(current);
     }, 1500);
@@ -584,7 +594,7 @@
       selected = new Set(versions);
       if (action === 'work' && (!session || ['failed','cancelled'].includes(session.state))) { session = null; await setAction(); }
       const profile = action === 'work' ? (window.atlasProjectWorkProfile || window.atlasProjectProfile) : window.atlasProjectProfile;
-      const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
+      const body = { atlas_ui: true, model: profile, ui_locale: window.atlasProjectLocale.language(), ui_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, org_id: scope.org, project_id: scope.project, conversation_id: scope.conversation, project_action: action, file_version_ids: [...selected], messages: [{ role: 'user', content: question }], stream: true };
       if (action === 'work') body.work_session_id = session.id;
       const response = await request('/v1/chat/completions', { method: 'POST', body, signal: stream.signal });
       await consume(response, chunk => {
@@ -609,8 +619,8 @@
   const detail = (key, value) => node('p', `${t(key)}: ${value == null ? t('unknown') : value}`, 'atlas-project-detail');
   async function panels() {
     const current = generation;
-    const [instructions, memory, deliverables] = await Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables')]);
-    checkScope(current); panelData = {instructions,memory,deliverables}; renderPanels(); renderTurns();
+    const [instructions, memory, deliverables, scheduled] = await Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables'),api(base()+'/scheduled-tasks?limit=100')]);
+    checkScope(current); panelData = {instructions,memory,deliverables,scheduled}; renderPanels(); renderTurns();
   }
   async function requestChange(key, value) {
     const conversation = await api(base() + '/conversations', 'POST', {title:t(key)});
@@ -631,6 +641,82 @@
     const actions = node('div'); const download = node('a',t('download')); download.href = projectURL(item.download_route); download.download = name;
     actions.append(button('preview', () => previewDeliverable(item)),download); card.append(actions); return card;
   }
+  function scheduleWords(value) {
+    const s = value.schedule, weekday = new Intl.DateTimeFormat(window.atlasProjectLocale.language(), {weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2026,0,5+s.weekday)));
+    const cadence = s.frequency === 'daily' ? t('taskDaily') : s.frequency === 'weekly' ? t('taskWeekly').replace('{day}',weekday) : t('taskEvery').replace('{n}',s.days);
+    return `${cadence} · ${s.time} (${s.timezone})`;
+  }
+  function taskInput(value) {
+    return Object.fromEntries(['name','instruction','schedule','target_file','enabled','daily_cap_eur','locale'].map(key => [key,value[key]]));
+  }
+  async function changeTask(value, enabled) {
+    await apiTask(value, 'PUT', {...taskInput(value),enabled}); await panels();
+  }
+  async function apiTask(value, method, body) {
+    const current = generation;
+    return jsonResponse(await request(base()+'/scheduled-tasks/'+value.id,{method,body,headers:{'If-Match':`"${value.revision}"`}}),current);
+  }
+  function scheduledPanel(data) {
+    const panel = node('section',null,'atlas-project-panel'); panel.dataset.panel = 'scheduled';
+    const heading = node('div',null,'atlas-project-panel-heading'); heading.append(node('h2',t('taskHeading')));
+    if (data.can_manage) heading.append(iconButton('taskCreate','+',() => taskDialog()));
+    panel.append(heading);
+    if (!data.items.length) panel.append(node('p',t('taskEmpty'),'atlas-project-detail'));
+    for (const value of data.items) {
+      const row = node('article',null,'atlas-project-scheduled-task'); row.dataset.taskId=value.id;
+      row.append(node('strong',value.name),node('p',scheduleWords(value),'atlas-project-detail'));
+      const next = value.enabled ? new Intl.DateTimeFormat(window.atlasProjectLocale.language(),{dateStyle:'medium',timeStyle:'short',timeZone:value.schedule.timezone}).format(new Date(value.next_run)) : t(value.proposal ? 'proposed' : 'taskPaused');
+      row.append(node('p',`${t('taskNext')}: ${next}`,'atlas-project-detail'));
+      if (value.pause_reason) row.append(node('p',t('taskReason_'+value.pause_reason),'atlas-project-detail'));
+      if (value.last_result) {
+        const result = value.last_result, label = t('taskLast')+': '+t(result.status === 'budget_cap' ? 'taskCapReached' : result.status);
+        if (result.conversation_id) {
+          const link = node('a',label); link.href = `?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(scope.project)}&conversation=${encodeURIComponent(result.conversation_id)}`;
+          link.addEventListener('click',guarded(async event => {event.preventDefault();await choose({org:scope.org,project:scope.project,conversation:result.conversation_id});})); row.append(link);
+        } else row.append(node('p',label,'atlas-project-detail'));
+      }
+      if (data.can_manage) {
+        const actions = node('div',null,'atlas-project-task-actions');
+        if (value.proposal && value.can_confirm !== false) actions.append(button('taskConfirm',async () => {await api(base()+'/scheduled-tasks/'+value.id+'/confirm','POST',{});await panels();}));
+        else if (!value.proposal) actions.append(button(value.enabled ? 'taskPause' : 'taskResume',() => changeTask(value,!value.enabled)));
+        actions.append(button('taskEdit',() => taskDialog(value)));
+        if (value.enabled && value.last_result?.status !== 'running') actions.append(button('taskRun',async () => {await api(base()+'/scheduled-tasks/'+value.id+'/run','POST',{});await panels();}));
+        actions.append(button('remove',() => deleteTask(value))); row.append(actions);
+      }
+      panel.append(row);
+    }
+    return panel;
+  }
+  function deleteTask(value) {
+    const dialog=node('dialog',null,'atlas-project-dialog'); dialog.dataset.taskDelete='';
+    dialog.append(node('h2',t('taskDelete')),node('p',value.name),button('remove',async () => {await apiTask(value,'DELETE');dialog.close();await panels();}),button('cancel',() => dialog.close()));
+    dialog.addEventListener('close',() => dialog.remove(),{once:true});root.append(dialog);dialog.showModal();
+  }
+  function taskDialog(value) {
+    const dialog=node('dialog',null,'atlas-project-dialog atlas-project-task-dialog'), form=node('form'); dialog.dataset.taskDialog='';
+    const name=node('input'), instruction=node('textarea'), frequency=node('select'), days=node('input'), time=node('input'), zone=node('input'), weekday=node('select'), target=node('input'), cap=node('input');
+    name.required=true; name.maxLength=120; name.value=value?.name || '';
+    instruction.required=true;instruction.maxLength=8000;instruction.rows=4;instruction.value=value?.instruction || '';
+    for (const key of ['daily','every','weekly']) frequency.append(new Option(t('taskFrequency_'+key),key));frequency.value=value?.schedule.frequency || 'daily';
+    days.type='number';days.min='1';days.max='365';days.value=value?.schedule.days || 3;
+    time.type='time';time.required=true;time.value=value?.schedule.time || '09:00';
+    zone.required=true;zone.value=value?.schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (let i=0;i<7;i++) weekday.append(new Option(new Intl.DateTimeFormat(window.atlasProjectLocale.language(),{weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2026,0,5+i))),i));weekday.value=value?.schedule.weekday ?? 0;
+    target.maxLength=240;target.value=value?.target_file || '';target.placeholder='Summary.docx';
+    cap.type='number';cap.min='0.01';cap.max='2';cap.step='0.01';cap.required=true;cap.value=value?.daily_cap_eur ?? 0.5;
+    const daysField=field('taskDays',days), weekdayField=field('taskWeekday',weekday);
+    function cadence() {daysField.hidden=frequency.value!=='every';weekdayField.hidden=frequency.value!=='weekly';}frequency.addEventListener('change',cadence);cadence();
+    const submit=node('button',t(value ? 'save' : 'create'));submit.type='submit';
+    const actions=node('div',null,'atlas-project-task-actions');actions.append(submit,button('cancel',() => dialog.close()));
+    form.append(node('h2',t(value ? 'taskEdit' : 'taskCreate')),field('name',name),field('taskInstruction',instruction),field('taskFrequency',frequency),daysField,weekdayField,field('taskTime',time),field('taskZone',zone),field('taskTarget',target),field('taskCap',cap),actions);
+    form.addEventListener('submit',guarded(async event => {event.preventDefault();submit.disabled=true;try {
+      const body={name:name.value.trim(),instruction:instruction.value.trim(),schedule:{frequency:frequency.value,days:Number(days.value),weekday:Number(weekday.value),time:time.value,timezone:zone.value,anchor:value?.schedule.anchor || null},target_file:target.value.trim() || null,enabled:value?.enabled ?? true,daily_cap_eur:Number(cap.value),locale:window.atlasProjectLocale.language()};
+      if(value) await apiTask(value,'PUT',body);else await api(base()+'/scheduled-tasks','POST',body);
+      dialog.close();await panels();
+    } finally {submit.disabled=false;}}));
+    dialog.append(form);root.append(dialog);dialog.addEventListener('close',() => dialog.remove(),{once:true});dialog.showModal();name.focus();
+  }
+
   function renderPanels() {
     if (!panelData) return;
     const {instructions,memory,deliverables} = panelData; right.replaceChildren();
@@ -653,7 +739,7 @@
       const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; open.title = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(row);
     }
     for (const item of deliverables.filter(d => !files.some(f => f.version_id === d.file_version_id))) filePanel.append(fileCard(item));
-    panels.append(filePanel);
+    panels.append(filePanel, scheduledPanel(panelData.scheduled));
     if (memory.length) {
       const memoryPanel = node('section',null,'atlas-project-panel'); memoryPanel.dataset.panel = 'memory'; memoryPanel.append(node('h2',t('memory')));
       for (const entry of memory) { const row = node('div',null,'atlas-project-memory'); row.append(node('p',entry.text),iconButton('remove','×',() => confirmChange('removeMemory',{memory_id:entry.id,text:entry.text,revision:entry.revision}))); memoryPanel.append(row); } panels.append(memoryPanel);

@@ -60,13 +60,13 @@ class ProjectLocalityTests(ProjectIsolationTests):
         widened["quotas"]["active_projects"] = ceiling["quotas"]["active_projects"] + 1
         self.assertFalse(policy_only_tightens(widened, ceiling, intersect))
 
-    def test_skills_and_scheduler_report_unavailable_in_p0(self) -> None:
+    def test_scheduler_available_and_skills_reserved(self) -> None:
         capabilities = self.request("GET", "/api/atlas/me", "editor")
         self.assertEqual(capabilities.status_code, 200, capabilities.text)
         self.validator.validate(
             capabilities.json(), self.contract["components"]["schemas"]["Me"]
         )
-        self.assertFalse(capabilities.json()["capabilities"]["scheduled_tasks"])
+        self.assertTrue(capabilities.json()["capabilities"]["scheduled_tasks"])
         self.assertFalse(capabilities.json()["capabilities"]["skills_execute"])
         path = self.project_path() + "/skill-references"
         references = self.request("GET", path, "viewer")

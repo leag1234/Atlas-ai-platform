@@ -70,6 +70,17 @@ class FakeModel:
 
 
 class CodeTests(unittest.IsolatedAsyncioTestCase):
+    def test_workspace_startup_uses_bounded_turn_budget(self) -> None:
+        from dataclasses import replace
+
+        self.assertEqual(code_mode.workspace_startup_timeout(code_mode.settings()), 120)
+        self.assertEqual(
+            code_mode.workspace_startup_timeout(
+                replace(code_mode.settings(), wall_clock=7)
+            ),
+            7,
+        )
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / "workspace"

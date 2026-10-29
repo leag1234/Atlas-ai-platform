@@ -1,7 +1,7 @@
 {
   "chat": true,
   "work": false,
-  "scheduled_tasks": false,
+  "scheduled_tasks": true,
   "skills_execute": false,
   "local_reads": true,
   "sync": false

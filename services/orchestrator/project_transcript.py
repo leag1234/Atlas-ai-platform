@@ -278,6 +278,7 @@ class ContextTools:
         self.memory = memory
         self.connectors: Any = None
         self.skills: Any = None
+        self.schedules: Any = None
         self.check = check
 
     def estimate(self, call: Call) -> Reservation:
@@ -305,6 +306,8 @@ class ContextTools:
                 return dict(await self.skills.execute(call, timeout))
             if self.skills.blocks(call.name):
                 return {"error": "skill_action_not_permitted"}
+        if call.name == "propose_scheduled_task" and self.schedules is not None:
+            return dict(await self.schedules.execute(call))
         if call.name == "project_memory" and self.memory is not None:
             return dict(await self.memory.execute(call))
         if call.name != "rag_search":
@@ -607,6 +610,13 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 context, MemoryTools(broker, state), check=check
             )
             if not request._api_key_request:
+                from services.orchestrator.schedule_tools import ScheduleTools
+
+                context_tools.schedules = ScheduleTools(
+                    broker, turn, request.ui_timezone, scoped.lang
+                )
+                model.tools.append(context_tools.schedules.declaration())
+            if not request._api_key_request:
                 context_tools.connectors = await prepare_connectors(request)
             if context_tools.connectors is not None:
                 context_tools.connectors.bind(model)
@@ -684,8 +694,16 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         from packages.configuration import temporarily_unavailable
         import logging
 
+        import traceback
+
+        frames = traceback.extract_tb(exc.__traceback__)[-3:]
         logging.getLogger(__name__).warning(
-            "project_turn_failed kind=%s", type(exc).__name__
+            "project_turn_failed kind=%s at=%s",
+            type(exc).__name__,
+            " < ".join(
+                f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+                for frame in reversed(frames)
+            ),
         )
         item.state = "failed"
         item.reponse = temporarily_unavailable(scoped.lang)
@@ -744,7 +762,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     and event.get("turn_id") == turn["id"]
                 ):
                     await sink({"project": event})
-        if completed["turn"]["state"] == "completed":
+        if completed["turn"]["state"] == "completed" and not request._scheduled_run:
             from services.orchestrator.session_updates import schedule
 
             schedule(broker, completed)

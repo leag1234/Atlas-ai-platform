@@ -1,0 +1,24 @@
+{
+  "name": "Fictional orchard summary",
+  "instruction": "Refresh the fictional orchard report.",
+  "schedule": {
+    "frequency": "every",
+    "time": "09:00",
+    "timezone": "Europe/Paris",
+    "days": 3,
+    "weekday": 0,
+    "anchor": "2026-10-29"
+  },
+  "target_file": "Orchard.md",
+  "daily_cap_eur": 0.5,
+  "locale": "en",
+  "enabled": true,
+  "id": "60000000-0000-4000-8000-000000000001",
+  "project_id": "20000000-0000-4000-8000-000000000001",
+  "owner_member_id": "70000000-0000-4000-8000-000000000001",
+  "next_run": "2026-11-01T08:00:00Z",
+  "last_result": null,
+  "revision": 0,
+  "proposal": false,
+  "conversation_id": null
+}

@@ -1,0 +1,8 @@
+{
+  "frequency": "every",
+  "time": "09:00",
+  "timezone": "Europe/Paris",
+  "days": 3,
+  "weekday": 0,
+  "anchor": "2026-10-29"
+}

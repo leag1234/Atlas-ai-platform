@@ -69,7 +69,9 @@ from services.orchestrator.api_keys import KeyQuotaError
 from services.orchestrator.api_key_ui import router as key_ui_router
 
 
-app = FastAPI(title="ATLAS chat")
+from services.orchestrator.project_scheduler import lifespan as scheduler_lifespan
+
+app = FastAPI(title="ATLAS chat", lifespan=scheduler_lifespan)
 app.add_middleware(ProjectGate)
 app.mount("/harness", harness_app)
 
@@ -332,6 +334,8 @@ async def chat(request: Request) -> Response:
             ):
                 raise BudgetRefusal("maintenance", 0, 0, lang)
             user, ledger = user_from_headers(request.headers), DailyLedger()
+            if payload._project_subject:
+                user = payload._project_subject
             reserve = Decimal("0.30" if payload.has_attachments else "0.10")
             if payload.code_mode and project_mode():
                 return public_error(ProjectError(409, "feature_not_available"))

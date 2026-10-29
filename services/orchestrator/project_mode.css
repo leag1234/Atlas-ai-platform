@@ -206,3 +206,16 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 
 #atlas-project .atlas-project-right .atlas-project-file-card {grid-template-columns:auto minmax(0,1fr) auto;gap:8px;padding:12px;}
 #atlas-project .atlas-project-file-card > [data-remove] {grid-column:3;grid-row:1;}
+
+/* Scheduled tasks retain the panel's compact mobile flow. */
+.atlas-project-scheduled-task { padding: 12px 0; border-top: 1px solid var(--project-line); overflow-wrap: anywhere; }
+.atlas-project-task-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.atlas-project-task-actions button { min-height: 36px; }
+.atlas-project-task-dialog { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; box-sizing: border-box; }
+.atlas-project-task-dialog form { display: grid; gap: 12px; margin: 0; padding: 0; background: transparent; }
+.atlas-project-task-dialog h2 { margin: 0 0 4px; font-size: 18px; }
+.atlas-project-scheduled-task a { color: var(--project-accent); }
+.atlas-project-task-dialog button[type=submit] { background: var(--project-ink); color: var(--project-bg); }
+.atlas-project-task-dialog label { display: grid; gap: 5px; min-width: 0; margin: 0; }
+.atlas-project-task-dialog label[hidden] { display: none; }
+.atlas-project-task-dialog input, .atlas-project-task-dialog select, .atlas-project-task-dialog textarea { width: 100%; box-sizing: border-box; min-width: 0; margin: 0; }

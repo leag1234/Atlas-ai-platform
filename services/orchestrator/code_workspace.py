@@ -201,7 +201,9 @@ class Workspace:
             ],
             cleanup_source,
             b"",
-            30,
+            # A cold container start on a loaded host can exceed 30 s; the turn
+            # waits for the workspace to be erased, so allow a bounded 120 s.
+            120,
         )
         import shutil
 
@@ -240,7 +242,8 @@ class Workspace:
             + self.key
             + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)",
             b"",
-            30,
+            # Same bounded allowance as cleanup: a cold container start can exceed 30 s.
+            120,
         )
 
     async def invoke(

@@ -275,6 +275,10 @@ async def scoped_proxy(request: Request, path: str) -> Response:
     reply: aiohttp.ClientResponse | None = None
     try:
         browser_origin(request)
+        if "scheduled-tasks" in path.split("/") and request.headers.get(
+            "authorization"
+        ):
+            raise ProjectError(403, "permission_denied")
         subject = await verified_subject(request, client)
         if path == "me" and request.method != "GET":
             raise ProjectError(404, "not_found")
@@ -288,7 +292,7 @@ async def scoped_proxy(request: Request, path: str) -> Response:
                     capabilities=dict(
                         chat=True,
                         work=True,
-                        scheduled_tasks=False,
+                        scheduled_tasks=True,
                         skills_execute=False,
                         local_reads=False,
                         sync=False,

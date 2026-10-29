@@ -136,6 +136,8 @@ class WorkToolSelection:
         self.reopen_enabled = False
         self.memory_enabled = False
         self.skills_enabled = False
+        self.schedules_enabled = False
+        self.scheduled_publication = False
         self.catalog = {
             str(t["function"]["name"]): t
             for t in declarations(scoped=True)
@@ -215,6 +217,10 @@ class WorkToolSelection:
             extra += ("project_memory",)
         if self.skills_enabled:
             extra += ("load_skill",)
+        if self.schedules_enabled:
+            extra += ("propose_scheduled_task",)
+        if self.scheduled_publication:
+            extra += ("publish_scheduled_file",)
         return (*CORE, *extra, *group[: 5 - len(extra)])
 
     def declarations(self) -> list[dict[str, object]]:
