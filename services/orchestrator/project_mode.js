@@ -115,6 +115,29 @@
       row.append(button('projects', () => choose({org:scope.org})), iconButton('newProject', '+', createProject)); left.append(row);
     }
     if (owned && memberships.length > 1) left.append(picker('organization', memberships, scope?.org, org => choose({org})));
+    if (owned && scope?.org) {
+      const projectList = node('section', null, 'atlas-project-sidebar-projects');
+      projectList.append(node('h2', t('projects')));
+      const recent = [...projects].sort((a, b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0, 8);
+      for (const value of recent) {
+        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button'; row.dataset.sidebarProject = value.id;
+        if (value.id === scope.project) row.setAttribute('aria-current', 'page');
+        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id})));
+        projectList.append(row);
+        if (value.id === scope.project && conversations.length) {
+          const chats = node('div', null, 'atlas-project-sidebar-conversations');
+          for (const conversation of conversations) {
+            const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row'); chat.type = 'button'; chat.dataset.sidebarConversation = conversation.id;
+            if (conversation.id === scope.conversation) chat.setAttribute('aria-current', 'page');
+            chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id})));
+            chats.append(chat);
+          }
+          projectList.append(chats);
+        }
+      }
+      const all = button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all');
+      projectList.append(all); left.append(projectList);
+    }
   }
   function iconButton(key, symbol, fn) {
     const value = button(key, fn); value.textContent = symbol; value.setAttribute('aria-label', t(key)); value.title = t(key); if (key === 'remove') value.dataset.remove = ''; if (key === 'upload') value.dataset.uploadControl = ''; return value;
@@ -177,7 +200,7 @@
   async function renameProject() {
     await nameDialog('renameProject', async name => {
       projectInfo = await jsonResponse(await request(base(), {method:'PATCH', headers:{'If-Match':`"${projectInfo.revision}"`},body:{name}}), generation);
-      projects = projects.map(p => p.id === scope.project ? projectInfo : p); projectHeading();
+      projects = projects.map(p => p.id === scope.project ? projectInfo : p); projectHeading(); navigation();
     }, projectInfo.name);
   }
   function projectHeading() {
@@ -291,6 +314,11 @@
         article.append(group);
       }
       for (const item of panelData?.deliverables || []) if (item.turn_id === turn.request_id || item.request_id === turn.request_id || turn.content_refs.some(ref => ref.text?.includes(item.download_route))) article.append(fileCard(item));
+      if (turn.usage) {
+        for (const [key, label] of [['cost_eur', 'cost'], ['unknown_eur', 'unknownCost'], ['reserved_eur', 'reservedCost']]) {
+          if (turn.usage[key] != null && Number(turn.usage[key]) !== 0) article.append(detail(label, turn.usage[key]));
+        }
+      }
       const lastContext = turn.usage?.context;
       if (lastContext?.layers) {
         const used = node('details', null, 'atlas-project-disclosure'); used.dataset.contextUsed = ''; used.append(node('summary',t('contextUsed')));
@@ -512,9 +540,15 @@
       try { const conversation = await api(base() + '/conversations', 'POST', {title:shortTitle(question)}); await choose({org:scope.org,project:scope.project,conversation:conversation.id}); input.value = question; }
       finally { configuring = false; controls(); }
     }
+    input.value = '';
     const current = generation;
     sending = true; sessionLabel.textContent = t('running'); controls(); stream = new AbortController();
-    const pending = node('article', null, 'atlas-project-turn'); const answer = node('pre', '', 'answer'); pending.append(node('pre', question, 'question'), answer); transcript.append(pending);
+    const pending = node('article', null, 'atlas-project-turn atlas-project-turn-running'); const answer = node('pre', '', 'answer');
+    const thinking = node('div', null, 'atlas-project-thinking'); thinking.dataset.running = '';
+    const elapsed = node('span', '', 'atlas-project-elapsed'); const started = Date.now();
+    thinking.append(node('strong', 'Atlas'), node('span', t('thinking')), elapsed);
+    const timer = setInterval(() => { const seconds = Math.floor((Date.now() - started) / 1000); elapsed.textContent = seconds >= 10 ? ` · ${seconds} ${t('seconds')}` : ''; }, 1000);
+    pending.append(node('pre', question, 'question'), thinking, answer); transcript.append(pending);
     try {
       // The scoped agent can answer directly or call tools; no user mode selection.
       action = 'work';
@@ -534,9 +568,10 @@
         if (delta) answer.textContent += delta;
         if (chunk.error) throw new Error(typeof chunk.error === 'string' ? chunk.error : chunk.error.message);
       });
-      checkScope(current); input.value = '';
+      checkScope(current);
     } catch (error) { if (current === generation) failure(error); }
     finally {
+      clearInterval(timer); thinking.remove(); pending.classList.remove('atlas-project-turn-running');
       if (current === generation) {
         sending = false; configuring = true; controls();
         try { await refreshTurns(); await replay(); if (session) session = await api(base() + '/work-sessions/' + session.id); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); }
@@ -626,6 +661,70 @@
     if (main) main.dataset.atlasProjectHostMain = '';
     return main;
   }
+  const moveLabels = {
+    en:{move:'Move to project',newProject:'+ New project',confirm:'This conversation has files. Move it?',failed:'The conversation was not moved; the original was kept.',choose:'Choose a project'},
+    fr:{move:'Déplacer vers un projet',newProject:'+ Nouveau projet',confirm:'Cette conversation contient des fichiers. La déplacer ?',failed:'La conversation n’a pas été déplacée ; l’original est conservé.',choose:'Choisissez un projet'},
+    de:{move:'In Projekt verschieben',newProject:'+ Neues Projekt',confirm:'Diese Unterhaltung enthält Dateien. Verschieben?',failed:'Die Unterhaltung wurde nicht verschoben; das Original bleibt erhalten.',choose:'Projekt auswählen'},
+    es:{move:'Mover al proyecto',newProject:'+ Nuevo proyecto',confirm:'Esta conversación tiene archivos. ¿Moverla?',failed:'La conversación no se movió; se conserva el original.',choose:'Elige un proyecto'},
+    it:{move:'Sposta nel progetto',newProject:'+ Nuovo progetto',confirm:'Questa conversazione contiene file. Spostarla?',failed:'La conversazione non è stata spostata; l’originale è conservato.',choose:'Scegli un progetto'}
+  };
+  const moveText = key => (moveLabels[(window.atlasProjectLocale.language() || 'en').slice(0,2)] || moveLabels.en)[key];
+  const nativeChatId = () => (location.pathname.match(/^\/c\/([^/?#]+)$/) || [])[1] || null;
+  function nativeBranch(chat) {
+    const history = chat?.chat?.history || chat?.history || {};
+    const messages = history.messages || {};
+    let current = history.currentId || chat?.chat?.history?.currentId;
+    const branch = [];
+    while (current && messages[current]) { branch.unshift(messages[current]); current = messages[current].parentId; }
+    return branch.filter(message => ['user','assistant','system'].includes(message.role) && typeof message.content === 'string' && message.content.trim());
+  }
+  function nativeFiles(message, chat) {
+    const values = [...(message.files || []), ...(chat.files || [])];
+    return [...new Set(values.map(value => typeof value === 'string' ? value : value?.id).filter(value => typeof value === 'string'))];
+  }
+  async function importNativeChat(project, chatId) {
+    const original = await fetch('/api/v1/chats/' + encodeURIComponent(chatId), {credentials:'same-origin'});
+    if (!original.ok) throw Object.assign(new Error('native_chat'), {status:original.status});
+    const chat = await original.json(), branch = nativeBranch(chat);
+    if (!branch.length || branch.length > 500) throw new Error('native_chat_shape');
+    const allFiles = [...new Set(branch.flatMap(message => nativeFiles(message, chat)))];
+    if (allFiles.length && !window.confirm(moveText('confirm'))) return;
+    const projectBase = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
+    let folders = await list(projectBase + '/folders');
+    let folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id);
+    if (!folder) { await api(projectBase + '/folders','POST',{name:t('files'),locality:'server',model_use:'allow'}); folders = await list(projectBase + '/folders'); folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id); }
+    if (!folder) throw new Error('project_folder');
+    const transferred = new Map();
+    for (const id of allFiles) {
+      const content = await fetch('/api/v1/files/' + encodeURIComponent(id) + '/content',{credentials:'same-origin'});
+      if (!content.ok) throw Object.assign(new Error('native_file'), {status:content.status});
+      const blob = await content.blob();
+      folder = (await list(projectBase + '/folders')).find(value => value.id === folder.id);
+      const data = new FormData(); data.append('file', blob, 'attachment-' + id); data.append('path','attachment-' + id); data.append('expected_parent_revision',String(folder.revision));
+      const uploaded = await jsonResponse(await request(projectBase + '/files?folder_id=' + folder.id,{method:'POST',body:data}),generation);
+      transferred.set(id,uploaded.file.id);
+    }
+    const messages = branch.map((message,index) => ({role:message.role,content:message.content.trim(),created_at:new Date(message.timestamp || message.created_at || Date.now() + index).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)}));
+    const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
+    const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
+    if (!deleted.ok) throw Object.assign(new Error('native_delete'), {status:deleted.status});
+    location.assign(`/?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(project.id)}&conversation=${encodeURIComponent(imported.id)}`);
+  }
+  async function moveMenu() {
+    const chatId = nativeChatId(); if (!chatId) return;
+    projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
+    const editable = projects.filter(project => !project.shared_with_me || project.role === 'owner' || project.role === 'editor');
+    const dialog = node('dialog',null,'atlas-project-dialog'), form = node('form'); form.append(node('h2',moveText('choose')));
+    if (editable.length > 8) { const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects'); form.append(search); }
+    for (const project of editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0))) form.append(button(project.name,() => importNativeChat(project,chatId)));
+    form.append(button('newProject',async () => { const name = window.prompt(t('newProject')); if (!name?.trim()) return; const project = await api(`/api/atlas/orgs/${scope.org}/projects`,'POST',{name:name.trim(),instructions:'',default_action:'chat'}); await importNativeChat(project,chatId); }),button('cancel',() => dialog.close()));
+    dialog.append(form); document.body.append(dialog); dialog.showModal();
+  }
+  function installMoveActions() {
+    if (owned || !scope?.org || !nativeChatId() || document.querySelector('[data-atlas-move-project]')) return;
+    const trigger = node('button',moveText('move'),'atlas-project-move'); trigger.type='button'; trigger.dataset.atlasMoveProject=''; trigger.addEventListener('click',guarded(moveMenu));
+    const title = document.querySelector('header, #chat-container'); (title || document.body).append(trigger);
+  }
   function installNavigation() {
     if (owned || !identity || /^\/(auth|admin)/.test(location.pathname)) return;
     const sidebar = document.querySelector('#pinned-menu-items-list') || document.querySelector('#sidebar');
@@ -637,6 +736,23 @@
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
+    const previous = document.getElementById('atlas-project-sidebar-list'); previous?.remove();
+    if (scope?.org && projects.length) {
+      const list = node('section', null, 'atlas-project-host-projects'); list.id = 'atlas-project-sidebar-list';
+      list.append(node('h2', t('projects')));
+      for (const value of [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8)) {
+        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button';
+        if (value.id === scope.project) row.setAttribute('aria-current','page');
+        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); list.append(row);
+        if (value.id === scope.project) for (const conversation of conversations) {
+          const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row atlas-project-host-conversation'); chat.type = 'button';
+          if (conversation.id === scope.conversation) chat.setAttribute('aria-current','page');
+          chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id}))); list.append(chat);
+        }
+      }
+      list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
+      document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
+    }
     document.body.classList.add('atlas-project-enabled');
     const rail = document.querySelector('#sidebar');
     if (sidebar.id === 'pinned-menu-items-list' && rail && !rail.querySelector('[data-project-rail]')) {
@@ -646,6 +762,7 @@
     document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {control.parentElement.hidden = true;});
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
+    installMoveActions();
     if (root?.isConnected && !owned) {
       const main = hostMain();
       if (main) {
@@ -717,6 +834,7 @@
       const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
       if (!me.ok) {if (owned || selections().has('project') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
       memberships = (await me.json()).memberships;
+      if (!scope && memberships[0]?.org_id) scope = {org: memberships[0].org_id};
       const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
       if (!host.ok) {if (!owned && !selections().has('project')) return; throw new Error(t('signIn'));}
       identity = (await host.json()).id; if (!identity) throw new Error(t('signIn'));

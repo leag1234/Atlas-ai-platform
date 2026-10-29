@@ -248,6 +248,8 @@ def execute(
                 return 200, dict(
                     items=transcript.files.listing("conversation"), next_cursor=None
                 )
+        if tail == ["conversations", "import"] and method == "POST":
+            return 201, transcript.import_conversation(json.loads(body))
         if (
             len(tail) == 3
             and tail[0] == "conversations"
