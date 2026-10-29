@@ -27,6 +27,7 @@ class KeyUiAssetTests(unittest.TestCase):
         stylesheet = (root / "services/orchestrator/api-key-ui.css").read_text()
 
         self.assertIn("atlas-key-revoke", script)
+        self.assertIn("weeklyCap", script)
         self.assertNotIn("status.textContent = t(48)", script)
         self.assertIn("dateCell(54,key.created_at)", script)
         self.assertIn("dateCell(55,key.last_used_at)", script)

@@ -27,7 +27,8 @@
   const select = pairs => { const node = el('select'); pairs.forEach(([value, label]) => { const option = el('option', label); option.value = value; node.append(option); }); return node; };
   const date = value => value ? new Date(value * 1000).toLocaleDateString(locale()) : t(20);
   const euro = value => new Intl.NumberFormat(locale(), { style: 'currency', currency: 'EUR' }).format(value / 1000000);
-  const quota = key => `${key.daily_requests} ${t(49)} ${euro(key.daily_micro_eur)} ${t(50)}`;
+  const weeklyCap = { en: 'Weekly cap', fr: 'Plafond hebdomadaire', de: 'Wöchentliches Limit', es: 'Límite semanal', it: 'Limite settimanale' };
+  const quota = key => [key.daily_requests === null ? '' : `${key.daily_requests} ${t(49)}`, key.daily_micro_eur === null ? '' : `${euro(key.daily_micro_eur)} ${t(50)}`, key.weekly_micro_eur === null ? '' : `${weeklyCap[locale()] || weeklyCap.en}: ${euro(key.weekly_micro_eur)}`].filter(Boolean).join(' · ');
   const usage = key => `${t(19)} : ${key.usage.requests} ${locale() === 'fr' ? 'requêtes' : 'requests'}, ${euro(key.usage.charged_micro_eur)}`;
   const reload = async () => { state = await request(all ? '?all=true' : ''); render(); };
   const secretBox = value => {

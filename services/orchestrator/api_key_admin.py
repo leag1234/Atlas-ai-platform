@@ -33,8 +33,10 @@ class CreateKey(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     scopes: list[Literal["assistant", "model"]] = Field(min_length=1)
     lifetime_days: int = Field(default=90, ge=1, le=365)
-    daily_requests: int = Field(default=20, ge=1)
-    daily_micro_eur: int = Field(default=1000000, ge=1)
+    daily_requests: int | None = Field(default=None, ge=1)
+    daily_micro_eur: int | None = Field(default=None, ge=1)
+    weekly_micro_eur: int | None = Field(default=100000000, ge=1)
+    own_budget: bool = False
 
 
 @app.middleware("http")
@@ -151,8 +153,10 @@ def main() -> None:
         parser.add_argument("--" + field)
     parser.add_argument("--scope", action="append", choices=("assistant", "model"))
     parser.add_argument("--lifetime-days", type=int, default=90)
-    parser.add_argument("--daily-requests", type=int, default=20)
-    parser.add_argument("--daily-micro-eur", type=int, default=1000000)
+    parser.add_argument("--daily-requests", type=int)
+    parser.add_argument("--daily-micro-eur", type=int)
+    parser.add_argument("--weekly-micro-eur", type=int, default=100000000)
+    parser.add_argument("--own-budget", action="store_true")
     args = parser.parse_args()
     url = urlsplit(args.admin_url)
     if (
@@ -180,6 +184,8 @@ def main() -> None:
                 "lifetime_days",
                 "daily_requests",
                 "daily_micro_eur",
+                "weekly_micro_eur",
+                "own_budget",
             )
         }
         values = {k: v for k, v in values.items() if v is not None}

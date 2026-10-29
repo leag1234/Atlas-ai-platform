@@ -79,6 +79,7 @@ class AdminHTTPTests(unittest.TestCase):
                 "external",
                 "--scope",
                 "assistant",
+                "--own-budget",
                 "--key-file",
                 str(keyfile),
             ]
@@ -91,6 +92,10 @@ class AdminHTTPTests(unittest.TestCase):
             self.assertEqual(
                 metadata["expires_at"] - metadata["created_at"], 90 * 86400
             )
+            self.assertIsNone(metadata["daily_requests"])
+            self.assertIsNone(metadata["daily_micro_eur"])
+            self.assertEqual(metadata["weekly_micro_eur"], 100000000)
+            self.assertTrue(metadata["own_budget"])
             listed = subprocess.run(
                 command + ["list", *common], capture_output=True, text=True
             )

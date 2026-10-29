@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import hmac
 import ipaddress
@@ -50,10 +50,65 @@ class Store(DeveloperStore):
             os.close(fd)
         with self.connection() as db:
             db.executescript(
-                (
-                    Path(__file__).resolve().parents[2] / "contracts/api-keys.sql"
-                ).read_text()
+                (Path(__file__).resolve().parents[2] / "contracts/api-keys.sql")
+                .read_text()
+                .replace(
+                    "CREATE INDEX IF NOT EXISTS api_key_weekly ON api_key_requests(key_id, week);",
+                    "",
+                )
             )
+            self._upgrade_schema(db)
+
+    @staticmethod
+    def _columns(db: Any, table: str) -> dict[str, Any]:
+        return {
+            str(row["name"]): row for row in db.execute(f"PRAGMA table_info({table})")
+        }
+
+    def _upgrade_schema(self, db: Any) -> None:
+        """Upgrade existing private key stores without changing their credentials."""
+        keys = self._columns(db, "api_keys")
+        if keys["daily_requests"]["notnull"] or keys["daily_micro_eur"]["notnull"]:
+            db.execute("PRAGMA foreign_keys=OFF")
+            db.execute("ALTER TABLE api_keys RENAME TO api_keys_before_optional_caps")
+            db.execute(
+                "CREATE TABLE api_keys ("
+                "id TEXT PRIMARY KEY, org_id TEXT NOT NULL, member_id TEXT NOT NULL, "
+                "subject TEXT NOT NULL, budget_user TEXT NOT NULL, name TEXT NOT NULL, "
+                "prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, "
+                "hash_kind TEXT NOT NULL CHECK(hash_kind IN ('hmac-sha256','sha256-legacy')), "
+                "scopes TEXT NOT NULL, expires_at INTEGER NOT NULL, "
+                "daily_requests INTEGER CHECK(daily_requests > 0), "
+                "daily_micro_eur INTEGER CHECK(daily_micro_eur > 0), "
+                "weekly_micro_eur INTEGER CHECK(weekly_micro_eur > 0), "
+                "own_budget INTEGER NOT NULL DEFAULT 0 CHECK(own_budget IN (0,1)), "
+                "created_by TEXT NOT NULL, created_at INTEGER NOT NULL, "
+                "last_used_at INTEGER, last_used_ip_prefix TEXT, revoked_at INTEGER)"
+            )
+            db.execute(
+                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at) "
+                "SELECT id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at FROM api_keys_before_optional_caps"
+            )
+            db.execute("DROP TABLE api_keys_before_optional_caps")
+            db.execute("PRAGMA foreign_keys=ON")
+            keys = self._columns(db, "api_keys")
+        if "weekly_micro_eur" not in keys:
+            db.execute("ALTER TABLE api_keys ADD COLUMN weekly_micro_eur INTEGER")
+        if "own_budget" not in keys:
+            db.execute(
+                "ALTER TABLE api_keys ADD COLUMN own_budget INTEGER NOT NULL DEFAULT 0 CHECK(own_budget IN (0,1))"
+            )
+        requests = self._columns(db, "api_key_requests")
+        if "week" not in requests:
+            db.execute("ALTER TABLE api_key_requests ADD COLUMN week TEXT")
+            for request_id, day in db.execute("SELECT id,day FROM api_key_requests"):
+                db.execute(
+                    "UPDATE api_key_requests SET week=? WHERE id=?",
+                    (self.week_for_day(str(day)), str(request_id)),
+                )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS api_key_weekly ON api_key_requests(key_id, week)"
+        )
 
     def policy(self, org_id: str) -> dict[str, Any]:
         with self.connection() as db:
@@ -98,6 +153,14 @@ class Store(DeveloperStore):
     def day(self) -> str:
         return datetime.fromtimestamp(self.now(), timezone.utc).date().isoformat()
 
+    @staticmethod
+    def week_for_day(day: str) -> str:
+        year, week, _ = date.fromisoformat(day).isocalendar()
+        return f"{year}-W{week:02d}"
+
+    def week(self) -> str:
+        return self.week_for_day(self.day())
+
     def audit(self, event: str, key_id: str | None, **detail: object) -> None:
         with self.connection() as db:
             db.execute(
@@ -115,8 +178,10 @@ class Store(DeveloperStore):
         name: str,
         scopes: list[str],
         created_by: str,
-        daily_requests: int = 20,
-        daily_micro_eur: int = 1000000,
+        daily_requests: int | None = None,
+        daily_micro_eur: int | None = None,
+        weekly_micro_eur: int | None = 100000000,
+        own_budget: bool = False,
         lifetime_days: int = 90,
         browser_policy: bool = False,
         administrator: bool = False,
@@ -131,8 +196,10 @@ class Store(DeveloperStore):
             or type(lifetime_days) is not int
             or not 1 <= lifetime_days <= 365
             or any(
-                type(v) is not int or v <= 0 for v in (daily_requests, daily_micro_eur)
+                v is not None and (type(v) is not int or v <= 0)
+                for v in (daily_requests, daily_micro_eur, weekly_micro_eur)
             )
+            or type(own_budget) is not bool
         ):
             raise ValueError("invalid_key_policy")
         prefix = "atl_" + secrets.token_hex(4)
@@ -159,7 +226,7 @@ class Store(DeveloperStore):
                 daily_requests = policy["daily_requests"]
                 daily_micro_eur = policy["daily_micro_eur"]
             db.execute(
-                "INSERT INTO api_keys VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL)",
+                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,weekly_micro_eur,own_budget,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identifier,
                     org_id,
@@ -174,6 +241,8 @@ class Store(DeveloperStore):
                     now + lifetime_days * 86400,
                     daily_requests,
                     daily_micro_eur,
+                    weekly_micro_eur,
+                    int(own_budget),
                     created_by,
                     now,
                 ),
@@ -242,7 +311,7 @@ class Store(DeveloperStore):
             str(row["org_id"]),
             str(row["member_id"]),
             str(row["subject"]),
-            str(row["budget_user"]),
+            (f"api-key:{row['id']}" if row["own_budget"] else str(row["budget_user"])),
             tuple(json.loads(row["scopes"])),
         )
 
@@ -269,6 +338,7 @@ class Store(DeveloperStore):
 
     def usage(self, developer: str) -> dict[str, object]:
         owner = self.get(developer)
+        day, week = self.day(), self.week()
         with self.connection() as db:
             row = db.execute(
                 "SELECT COUNT(*) requests, COALESCE(SUM(charged),0) charged_micro_eur, "
@@ -276,19 +346,28 @@ class Store(DeveloperStore):
                 "FROM api_key_requests WHERE key_id=? AND day=?",
                 (developer, self.day()),
             ).fetchone()
+            weekly = db.execute(
+                "SELECT COUNT(*) requests, COALESCE(SUM(charged),0) charged_micro_eur, "
+                "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) unknown_micro_eur "
+                "FROM api_key_requests WHERE key_id=? AND week=?",
+                (developer, week),
+            ).fetchone()
         return dict(
             key_id=developer,
-            day=self.day(),
+            day=day,
             **dict(row),
             daily_requests=owner["daily_requests"],
             daily_micro_eur=owner["daily_micro_eur"],
+            week=week,
+            week_usage=dict(weekly),
+            weekly_micro_eur=owner["weekly_micro_eur"],
         )
 
     def reserve(self, developer: str, amount: int, *, monetary: bool = True) -> str:
         # Same atomic reserve/settle algorithm as dev_auth, with the assistant ceiling.
         if type(amount) is not int or not 0 <= amount <= 300000:
             raise ValueError("invalid_reservation")
-        identifier, day = secrets.token_hex(16), self.day()
+        identifier, day, week = secrets.token_hex(16), self.day(), self.week()
         failure: dict[str, object] | None = None
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -305,9 +384,25 @@ class Store(DeveloperStore):
                 "SELECT COUNT(*),COALESCE(SUM(charged),0) FROM api_key_requests WHERE key_id=? AND day=?",
                 (developer, day),
             ).fetchone()
+            weekly_charged = db.execute(
+                "SELECT COALESCE(SUM(charged),0) FROM api_key_requests WHERE key_id=? AND week=?",
+                (developer, week),
+            ).fetchone()[0]
             if (
-                count >= owner["daily_requests"]
-                or charged + amount > owner["daily_micro_eur"]
+                (
+                    owner["daily_requests"] is not None
+                    and count >= owner["daily_requests"]
+                )
+                or (
+                    monetary
+                    and owner["daily_micro_eur"] is not None
+                    and charged + amount > owner["daily_micro_eur"]
+                )
+                or (
+                    monetary
+                    and owner["weekly_micro_eur"] is not None
+                    and weekly_charged + amount > owner["weekly_micro_eur"]
+                )
             ):
                 failure = dict(
                     requests=count,
@@ -315,11 +410,14 @@ class Store(DeveloperStore):
                     charged_micro_eur=charged,
                     reserved_micro_eur=amount,
                     daily_micro_eur=owner["daily_micro_eur"],
+                    week=week,
+                    weekly_charged_micro_eur=weekly_charged,
+                    weekly_micro_eur=owner["weekly_micro_eur"],
                 )
             else:
                 db.execute(
-                    "INSERT INTO api_key_requests VALUES (?,?,?,?,?,NULL,NULL,'reserved')",
-                    (identifier, developer, day, amount, amount),
+                    "INSERT INTO api_key_requests (id,key_id,day,week,reserved,charged,state) VALUES (?,?,?,?,?,?,?)",
+                    (identifier, developer, day, week, amount, amount, "reserved"),
                 )
         if failure is not None:
             self.audit("failure", developer, reason="quota", **failure)
@@ -398,7 +496,7 @@ class Store(DeveloperStore):
             ).fetchone():
                 return self.get(identifier)
             db.execute(
-                "INSERT INTO api_keys VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,created_by,created_at,last_used_at,last_used_ip_prefix,revoked_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identifier,
                     org_id,
@@ -422,11 +520,12 @@ class Store(DeveloperStore):
             )
             for row in requests:
                 db.execute(
-                    "INSERT INTO api_key_requests VALUES (?,?,?,?,?,?,?,?)",
+                    "INSERT INTO api_key_requests (id,key_id,day,week,reserved,charged,input_tokens,output_tokens,state) VALUES (?,?,?,?,?,?,?,?,?)",
                     (
                         row["id"],
                         identifier,
                         row["day"],
+                        self.week_for_day(str(row["day"])),
                         row["reserved"],
                         row["charged"],
                         row["input_tokens"],
