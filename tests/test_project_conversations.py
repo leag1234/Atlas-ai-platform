@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import cast, Any
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -81,7 +81,7 @@ class ProjectConversationTests(ProjectIsolationTests):
         ).json()["items"]
         self.assertEqual(
             [turn["content_refs"][0]["text"] for turn in turns],
-            [item["content"] for item in body["messages"]],
+            [item["content"] for item in cast(list[dict[str, str]], body["messages"])],
         )
 
     def test_import_rejects_more_than_bounded_messages(self) -> None:
