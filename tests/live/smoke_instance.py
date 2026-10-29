@@ -177,11 +177,12 @@ class Smoke:
 
     def request(self, method: str, path: str, **kwargs: Any) -> HttpResponse:
         headers = dict(kwargs.pop("headers", {}))
-        if self.token:
-            headers.setdefault("Authorization", f"Bearer {self.token}")
         # Project-mode routes are deliberately browser-only: the BFF verifies
         # the Open WebUI session cookie and rejects state-changing cross-origin
-        # requests.  Match fetch(..., {credentials: 'same-origin'}).
+        # requests; scheduled tasks refuse any Authorization header.  Match
+        # fetch(..., {credentials: 'same-origin'}), which sends only the cookie.
+        if self.token and not path.startswith("/api/atlas/"):
+            headers.setdefault("Authorization", f"Bearer {self.token}")
         if path.startswith("/api/atlas/"):
             headers.setdefault("Origin", self.base)
             headers.setdefault("Sec-Fetch-Site", "same-origin")
@@ -806,9 +807,13 @@ class Smoke:
             project,
             "Dans cette autre conversation du projet, quel est le code de la sentinelle Quartz-17 ?",
         )
-        if "ambre-47" not in answer.lower():
+        normalized = answer.lower()
+        for dash in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"):
+            normalized = normalized.replace(dash, "-")
+        if "ambre-47" not in normalized:
             raise SmokeFailure(
-                "project memory was not recalled in a second conversation"
+                "project memory was not recalled in a second conversation: "
+                + self.one_line(answer[:120])
             )
         return "project fact recalled in a separate conversation"
 
@@ -927,15 +932,20 @@ class Smoke:
     def scheduled_task(self) -> str:
         project = self.create_project(uuid4().hex[:8])
         org, project_id = project
-        due = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+        due = datetime.now(timezone.utc) + timedelta(minutes=2)
         response = self.request(
             "POST",
             f"/api/atlas/orgs/{org}/projects/{project_id}/scheduled-tasks",
             json={
                 "name": "Quartz smoke scheduled task",
-                "schedule_at": due,
+                "instruction": "Write one line saying the fictional Quartz beacon is green.",
+                "schedule": {
+                    "frequency": "daily",
+                    "time": due.strftime("%H:%M"),
+                    "timezone": "UTC",
+                },
                 "target_file": "scheduled-quartz.txt",
-                "prompt": "Create the fictional target file.",
+                "locale": "en",
             },
         )
         if response.status_code in OPTIONAL_STATUS:
@@ -949,6 +959,7 @@ class Smoke:
             raise SmokeFailure("scheduled task returned no id")
         self.created_tasks.append((org, project_id, task_id))
         deadline = time.monotonic() + 360
+        text = ""
         while time.monotonic() < deadline:
             status = self.request(
                 "GET",
@@ -966,7 +977,10 @@ class Smoke:
                         )
             time.sleep(10)
         raise SmokeFailure(
-            "scheduled task did not complete once with a target file in 6 minutes"
+            "scheduled task did not complete once with a target file in 6 minutes: "
+            + self.one_line(
+                text[:200] if status.status_code == 200 else str(status.status_code)
+            )
         )
 
     def ui_locale(self) -> str:
