@@ -4,8 +4,19 @@ Atlas follows `0.x.y` versions until 1.0: `x` for a release with new capabilitie
 
 ## Unreleased
 
-- 0.6: Atlas API keys (admin-issued, scopes, expiry, per-key quotas), clean API answers, private user memory for ordinary chats.
 - 0.7: project mode for testers, integrated in the Atlas interface.
+
+## 0.6.0 (2026-10-28)
+
+The guest instance as deployed on 2026-10-28.
+
+- Atlas API keys: OpenAI-compatible endpoint `/api/atlas/v1` with the `atlas` assistant model and the raw model profiles, scopes, expiry, per-key daily request and spending caps, usage endpoint. Clean API answers: steps and sources travel in a separate `atlas` field.
+- API keys in the interface: every user creates, lists and revokes their own keys from the account menu; the secret is shown once with a copy button; administrators see and revoke all keys of the organization.
+- Private user memory for ordinary chats: remember, recall, edit and forget, with a settings dialog; it never enters a project.
+- Shared projects (back end): roles, private conversations by default, connector allowance per member.
+- Approved skills with turn-local procedures.
+- Guest interface: settings, memory and appearance aligned with the native style and fully localized (French, English, German, Spanish, Italian); theme-aware logo; no floating text-size bubble; localized instance notice.
+- Fix: malformed generated SVG diagrams are repaired before display.
 
 ## 0.5.0 (2026-10-27)
 

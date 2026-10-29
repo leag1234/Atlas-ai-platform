@@ -19,6 +19,42 @@ for Hetzner, Mistral, OVHcloud and Scaleway, and an experimental local Ollama op
 
 Gaël Duval
 
+## More than an interface to an open-weight model
+
+Atlas is not a thin chat window over one open-weight model. Most of its work happens
+between the question and the model, with two goals: get the best answer an open model
+can give, and carry real work with AI beyond a single conversation.
+
+**Strategies that raise answer quality**
+
+- **Routing by task.** A model gateway assigns a model to each role (conversation,
+  code, image understanding, judging) and switches to an alternate model when the
+  primary one fails or times out.
+- **Grounded answers.** Web answers are built from fetched pages, not from search
+  snippets alone. A source is cited only if it was actually retrieved in the
+  conversation, and a quota or budget refusal is reported as such, never disguised
+  as a provider outage.
+- **Checks before delivery.** Generated files and diagrams are validated before they
+  reach the user (for example, malformed SVG is repaired). In Code mode, a change
+  counts as done only when its tests actually ran and passed.
+- **Procedures and memory.** Approved skills bring task-specific procedures into a
+  turn. User memory keeps stated preferences across conversations and never enters
+  a project.
+- **Measured, not assumed.** Multilingual golden suites, truthfulness cases, a
+  private held-out set and recorded journeys track quality from one release to the
+  next.
+
+**Managing projects that use AI**
+
+- Projects gather documents, instructions and conversations in one place, with
+  roles for sharing inside an organization and private conversations by default.
+- Project work runs multi-step tasks over the project's files and produces
+  deliverables (documents, spreadsheets, presentations) with the sources they used.
+- In Code mode, Atlas works in a disposable workspace and proposes changes that you
+  approve before a pull request is opened.
+- Spending is capped per user and per day; API keys carry their own scopes and
+  daily limits.
+
 ## Features
 
 ✅ available · 🟡 partial or in progress · 🔜 planned · ❌ not offered.

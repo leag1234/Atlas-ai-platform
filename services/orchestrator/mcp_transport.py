@@ -20,6 +20,8 @@ async def invoke(
     tool: str,
     arguments: dict[str, object],
     timeout: float,
+    *,
+    method: str = "tools/call",
 ) -> dict[str, object]:
     process = await asyncio.create_subprocess_exec(
         command,
@@ -108,6 +110,24 @@ async def invoke(
             ):
                 raise ValueError("mcp_capabilities")
             await send({"method": "notifications/initialized"})
+            if method == "tools/list":
+                discovered: list[object] = []
+                params: dict[str, object] = {}
+                for page in range(2, 10):
+                    result = await ask(page, method, params)
+                    values = result.get("tools")
+                    if not isinstance(values, list):
+                        raise ValueError("mcp_tools_invalid")
+                    discovered.extend(values)
+                    if len(discovered) > 128:
+                        raise ValueError("mcp_discovery_limit")
+                    cursor = result.get("nextCursor")
+                    if cursor is None:
+                        return {"tools": discovered}
+                    if not isinstance(cursor, str) or len(cursor) > 1024:
+                        raise ValueError("mcp_cursor_invalid")
+                    params = {"cursor": cursor}
+                raise ValueError("mcp_discovery_limit")
             result = await ask(2, "tools/call", {"name": tool, "arguments": arguments})
             content = result.get("content")
             if (

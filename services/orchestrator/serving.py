@@ -193,6 +193,8 @@ def stable_webui_options() -> list[str]:
     api_keys = os.environ.get("ATLAS_OPENWEBUI_API_KEYS") == "1"
     return [
         "-e",
+        "ATLAS_STABLE=1",
+        "-e",
         "ENABLE_API_KEYS=" + str(api_keys),
         "-e",
         "ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS=True",
@@ -366,6 +368,12 @@ def webui(name: str, persistent: bool) -> None:
             "-v",
             str(Path("services/orchestrator/chat-ui.css").resolve())
             + ":/app/backend/open_webui/static/atlas/chat-ui.css:ro",
+            "-v",
+            str(Path("services/orchestrator/static/atlas-version.json").resolve())
+            + ":/app/backend/open_webui/static/atlas/atlas-version.json:ro",
+            "-v",
+            str(Path("services/orchestrator/guest-chat.js").resolve())
+            + ":/app/backend/open_webui/static/atlas/guest-chat.js:ro",
             "-v",
             str(Path("services/orchestrator/chat-ui.js").resolve())
             + ":/app/backend/open_webui/static/atlas/chat-ui.js:ro",

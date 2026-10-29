@@ -11,7 +11,10 @@ import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from services.orchestrator.connectors import Selection
 
 import aiohttp
 from packages.validation import describe_validation
@@ -132,7 +135,11 @@ def declarations() -> list[Message]:
     ]
     from services.orchestrator.api_key_edge import key_call
 
-    if os.environ.get("ATLAS_MCP_CONFIG") and not key_call.get():
+    if (
+        os.environ.get("ATLAS_MCP_CONFIG")
+        and os.environ.get("ATLAS_MCP_CONNECTORS") != "1"
+        and not key_call.get()
+    ):
         result.append(mcp_client.declaration())
     return result
 
@@ -143,6 +150,7 @@ class Runtime:
         Reservation(0, search_cost)
         self.web = Web()
         self.question = question
+        self.connectors: Selection | None = None
         self._last_search_attempts: list[Message] = []
         self.daily_lang = "en"
         self.search_language: str | None = None
@@ -511,11 +519,21 @@ class Runtime:
         return output
 
     async def execute(self, call: Call, timeout: float) -> Message:
-        if call.name == "mcp_call":
-            from services.orchestrator.api_key_edge import key_call
+        from services.orchestrator.api_key_edge import key_call
 
-            if key_call.get():
-                return {"error": "insufficient_scope", "missing_scope": "connectors"}
+        if key_call.get() and (
+            call.name == "mcp_call"
+            or call.name.startswith("mcp_")
+            or call.name == "switch_connector_group"
+        ):
+            return {"error": "insufficient_scope", "missing_scope": "connectors"}
+        if self.connectors is not None and (
+            call.name.startswith("mcp_") or call.name == "switch_connector_group"
+        ):
+            return await self.connectors.execute(call, timeout)
+        if call.name == "mcp_call":
+            if os.environ.get("ATLAS_MCP_CONNECTORS") == "1":
+                return {"error": "legacy_connector_disabled"}
             return await mcp_client.execute(call.arguments, timeout)
         from services.orchestrator.visual_tools import (
             VISUAL_SCHEMAS,

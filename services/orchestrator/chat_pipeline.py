@@ -1298,6 +1298,12 @@ async def _process(
     tools.search_language = search_language(
         request.conversation_messages, request.ui_locale
     )
+    from services.orchestrator.connectors import prepare as prepare_connectors
+
+    if not request._api_key_request:
+        tools.connectors = await prepare_connectors(request)
+    if tools.connectors is not None:
+        tools.connectors.bind(model)
     from services.orchestrator.skill_tools import SkillTools, offer
 
     if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":

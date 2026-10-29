@@ -1,6 +1,7 @@
 """Pure HTML-shell injection contract for the owned Open WebUI overlay."""
 
 import html as html_module
+import json
 import os
 
 ATLAS_UI_TAGS = (
@@ -9,6 +10,7 @@ ATLAS_UI_TAGS = (
     b'<link rel="stylesheet" href="/static/atlas/chat-ui.css">'
     b'<script src="/static/atlas/brand-ui.js"></script>'
     b'<script src="/static/atlas/chat-ui.js"></script>'
+    b'<script src="/static/atlas/guest-chat.js"></script>'
     b'<script type="module" src="/static/atlas/settings-ui.js"></script>'
     b'<link rel="stylesheet" href="/project-mode/style.css">'
     b'<script defer src="/api/atlas/user-memory/client.js"></script>'
@@ -18,9 +20,33 @@ ATLAS_UI_TAGS = (
 
 
 def instance_notice() -> str:
-    """Return the bounded operator notice, or no notice when it is invalid."""
+    """Return the bounded operator notice, or no notice when it is invalid.
+
+    The value is either one plain text or a JSON object mapping language codes
+    to texts (for example {"en": "...", "fr": "..."}); the browser picks the
+    user's language and falls back to English.
+    """
     notice = os.environ.get("ATLAS_INSTANCE_NOTICE", "")
-    return notice if len(notice) <= 200 else ""
+    if not notice.lstrip().startswith("{"):
+        return notice if len(notice) <= 200 else ""
+    try:
+        texts = json.loads(notice)
+    except ValueError:
+        return ""
+    if (
+        not isinstance(texts, dict)
+        or not texts
+        or len(texts) > 8
+        or not all(
+            isinstance(key, str)
+            and 2 <= len(key) <= 5
+            and isinstance(value, str)
+            and 0 < len(value) <= 200
+            for key, value in texts.items()
+        )
+    ):
+        return ""
+    return json.dumps(texts, ensure_ascii=False, separators=(",", ":"))
 
 
 def inject_atlas_ui(

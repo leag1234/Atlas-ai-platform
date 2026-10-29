@@ -219,6 +219,7 @@ def append(
     timestamp: str | None = None,
     cleanup: bool = False,
     transcript: bool = False,
+    connector: bool = False,
 ) -> Json:
     """Append once and queue the exact payload in the caller's authorized transaction."""
     if scope.project is None:
@@ -231,7 +232,15 @@ def append(
         "unknown",
     }:
         raise ProjectError(422, "invalid_request")
-    if transcript:
+    if connector:
+        if (
+            kind not in {"approval_requested", "approval_decided", "tool_completed"}
+            or not conversation_id
+            or source.get("kind") != "connector"
+        ):
+            raise ProjectError(403, "permission_denied")
+        scope.authorize("POST", ["conversations"])
+    elif transcript:
         if (
             kind not in MODEL_KINDS | {"context_selected", "location_used"}
             or not conversation_id

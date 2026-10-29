@@ -34,3 +34,10 @@ opening-hours-py==2.1.4
 # Nearby presentation: locale dates and country-aware phone formatting.
 Babel==2.18.0
 phonenumberslite==9.0.41
+
+# AEAD encryption for the per-member MCP credential broker.
+cryptography==46.0.3
+# Validate arbitrary discovered MCP JSON schemas before exposing/calling tools.
+jsonschema==4.25.1
+
+types-jsonschema==4.26.0.20261006

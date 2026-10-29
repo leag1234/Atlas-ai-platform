@@ -749,6 +749,12 @@ async def process_work(
                 tools.memory = MemoryTools(
                     dispatch.broker, dispatch.state, dispatch.generation
                 )
+            from services.orchestrator.connectors import prepare as prepare_connectors
+
+            if not request._api_key_request:
+                tools.connectors = await prepare_connectors(request)
+            if tools.connectors is not None:
+                tools.selection.add_connectors(tools.connectors)
             from services.orchestrator.skill_tools import SkillTools
 
             if os.environ.get("ATLAS_SKILLS_ENABLED") == "1":

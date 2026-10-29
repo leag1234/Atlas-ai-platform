@@ -72,7 +72,7 @@ class ToolSelectionError(ValueError):
 
 class Switch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    group: Group
+    group: str
     focus: str | None = None
 
 
@@ -126,6 +126,7 @@ class WorkToolSelection:
     def __init__(self, group: str) -> None:
         if group not in GROUPS:
             raise ValueError("Unknown Work tool group")
+        self.groups = dict(GROUPS)
         self.remote_enabled = group == "remote"
         self.group = group
         self.pending: str | None = None
@@ -141,7 +142,9 @@ class WorkToolSelection:
             if isinstance(t["function"], dict)
         }
         switch_schema = Switch.model_json_schema()
-        switch_schema["properties"]["group"]["enum"].remove("remote")
+        switch_schema["properties"]["group"]["enum"] = [
+            g for g in self.groups if g != "remote"
+        ]
         from packages.tool_results import declaration
 
         self.catalog["reopen_result"] = declaration()
@@ -165,15 +168,26 @@ class WorkToolSelection:
         switch = self.catalog["switch_tool_group"]["function"]
         if not isinstance(switch, dict):
             raise ValueError("Invalid switch declaration")
-        switch["parameters"] = Switch.model_json_schema()
+        switch["parameters"]["properties"]["group"]["enum"] = list(self.groups)
         switch["description"] = switch["description"].replace(
             "files (list/read/search/write/organize).",
             "files (list/read/search/write/organize), remote (list targets/run/status/fetch on a granted machine).",
         )
 
+    def add_connectors(self, selection: Any) -> None:
+        self.groups.update(selection.groups)
+        self.catalog.update(selection.catalog)
+        switch = self.catalog["switch_tool_group"]["function"]
+        if not isinstance(switch, dict):
+            raise ValueError("Invalid switch declaration")
+        switch["parameters"]["properties"]["group"]["enum"] = [
+            g for g in self.groups if g != "remote" or self.remote_enabled
+        ]
+        switch["description"] += " Connector groups: " + str(selection.labels)
+
     @property
     def names(self) -> tuple[str, ...]:
-        group = GROUPS[self.group]
+        group = self.groups[self.group]
         # Memory consumes another declaration slot. Keep document read/publish
         # reachable there while preserving the catalog order for older sessions.
         if self.memory_enabled and self.group in {
@@ -213,19 +227,24 @@ class WorkToolSelection:
 
     def switch(self, arguments: str) -> dict[str, Any]:
         selected = Switch.model_validate_json(arguments)
+        if selected.group not in self.groups:
+            raise ValueError("Unknown Work tool group")
         if selected.group == "remote" and not self.remote_enabled:
             raise ToolSelectionError(
                 "no granted target for this project",
                 error="remote_unavailable",
                 next_step="Ask an administrator to grant a target to this project, then start a new turn.",
             )
-        if selected.focus is not None and selected.focus not in GROUPS[selected.group]:
+        if (
+            selected.focus is not None
+            and selected.focus not in self.groups[selected.group]
+        ):
             raise ToolSelectionError(
                 "focus must name a tool in the selected group",
                 error="invalid_tool_focus",
                 group=selected.group,
-                allowed_tools=list(GROUPS[selected.group]),
+                allowed_tools=list(self.groups[selected.group]),
                 next_step="Use one of allowed_tools as focus, or omit focus.",
             )
         self.pending, self.pending_focus = selected.group, selected.focus
-        return dict(group=self.pending, tools=list((*CORE, *GROUPS[self.pending])))
+        return dict(group=self.pending, tools=list((*CORE, *self.groups[self.pending])))
