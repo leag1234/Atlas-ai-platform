@@ -11,6 +11,8 @@ from time import monotonic
 from image_scene import Scene
 
 from agent_provider import AgentProvider, AgentRequest
+from packages.configuration import MissingConfiguration
+import provider_settings
 from serverless import ServerlessPolicy
 from image_constraints import extract_constraints, missing_constraints
 from packages.imagegen import ImagePrompt, positive_image_prompt
@@ -52,11 +54,50 @@ def messages(
     ]
 
 
+def rewrite_plan() -> tuple[ServerlessPolicy, str, str, str, str, bool]:
+    """Use the same selected-provider configuration as ordinary text completion."""
+    try:
+        policy = ServerlessPolicy()
+        role = rewrite_role()
+        model = policy.models[role]
+        endpoint = provider_settings.endpoint()
+        api_key = provider_settings.api_key()
+        capabilities = policy.config[role]["capabilities"][model]
+    except KeyError as exc:
+        raise MissingConfiguration((str(exc).strip("'"),)) from exc
+    except ValueError as exc:
+        raise MissingConfiguration(()) from exc
+    return (
+        policy,
+        role,
+        model,
+        endpoint,
+        api_key,
+        role != "vision" or bool(capabilities.get("vision")),
+    )
+
+
+def log_usage(role: str, usage: object, fallback: str | None = None) -> None:
+    event: dict[str, object] = {
+        "event": "image_rewrite_usage",
+        "role": role,
+        "usage": usage,
+    }
+    if fallback is not None:
+        event["fallback"] = fallback
+    logging.getLogger(__name__).info(json.dumps(event))
+
+
 def reservation(
     prompt: str, language: str = "", *, retry: bool = False, structured: bool = False
 ) -> Decimal:
-    policy = ServerlessPolicy()
-    model = policy.models[rewrite_role()]
+    if os.environ.get("ATLAS_PROVIDER"):
+        policy, _, model, _, _, available = rewrite_plan()
+        if not available:
+            return Decimal(0)
+    else:
+        policy = ServerlessPolicy()
+        model = policy.models[rewrite_role()]
     incoming = len(json.dumps(messages(prompt, language, retry=retry)).encode()) + 256
     if structured:
         incoming = max(
@@ -75,29 +116,22 @@ def rewrite_role() -> str:
 class ImageRewriteProvider(AgentProvider):
     async def serverless_complete(self, request: AgentRequest) -> dict[str, object]:
         # Image formatting has its own measured role; no uncounted model fallback.
-        policy = ServerlessPolicy()
-        role = rewrite_role()
-        model = policy.models[role]
-        endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
-        if not endpoint.startswith("https://"):
-            raise ValueError("provider_configuration")
+        _, role, model, endpoint, api_key, available = rewrite_plan()
+        if not available:
+            raise RewriteRoleUnavailable(role)
         answer = await self._complete(
             request,
             endpoint,
             model,
-            os.environ["SCW_GENERATIVE_API_KEY"],
+            api_key,
             request.timeout,
         )
-        logging.getLogger(__name__).info(
-            json.dumps(
-                {
-                    "event": "image_rewrite_usage",
-                    "role": role,
-                    "usage": answer.get("usage"),
-                }
-            )
-        )
+        log_usage(role, answer.get("usage"))
         return answer
+
+
+class RewriteRoleUnavailable(RuntimeError):
+    pass
 
 
 def candidates(text: object) -> tuple[str, str]:
@@ -166,6 +200,11 @@ async def rewrite(
     original = ImagePrompt(prompt=prompt).prompt
     if budget is None:
         budget = RewriteBudget(Decimal("0.05"), reservation(prompt, language))
+    if os.environ.get("ATLAS_PROVIDER"):
+        _, role, _, _, _, available = rewrite_plan()
+        if not available:
+            log_usage(role, None, "role_unavailable")
+            return bind_roles(original, positive_image_prompt(original), budget)
     started = monotonic()
     for retry in (False, True):
         remaining = timeout - (monotonic() - started)
@@ -262,9 +301,15 @@ def scene_messages(turns: list[str]) -> list[dict[str, object]]:
 
 
 def scene_reservation(turns: list[str]) -> Decimal:
-    policy = ServerlessPolicy()
+    if os.environ.get("ATLAS_PROVIDER"):
+        policy, _, model, _, _, available = rewrite_plan()
+        if not available:
+            return Decimal(0)
+    else:
+        policy = ServerlessPolicy()
+        model = policy.models[rewrite_role()]
     return policy.cost(
-        policy.models[rewrite_role()],
+        model,
         len(json.dumps(scene_messages(turns)).encode()) + 256,
         2048,
     )
@@ -326,6 +371,16 @@ async def rewrite_scene(turns: list[str], timeout: float) -> "Scene":
 
     # The caller reserves this single extraction before transport. Scene updates
     # are rebuilt from user turns, so no server-side conversation identity leaks.
+    if os.environ.get("ATLAS_PROVIDER"):
+        _, role, _, _, _, available = rewrite_plan()
+        if not available:
+            scene = anchored_scene(turns[0])
+            if not scene.setting:
+                scene.setting = " ".join(turns)
+            for turn in turns:
+                scene.apply_user_correction(turn)
+            log_usage(role, None, "role_unavailable")
+            return scene
     result = await ImageRewriteProvider().complete(
         {
             "messages": scene_messages(turns),

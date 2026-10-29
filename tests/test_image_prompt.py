@@ -6,12 +6,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import os
 from threading import Thread
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import image_prompt
 from agent_provider import AgentProvider
 import imagegen
+from gateway_cpu import CPUModels
+from http_gateway import serve
+from packages.configuration import MissingConfiguration
 from packages.ports import atlas_ports
+from services.orchestrator.model import GatewayError, GatewayModel
+from serverless import ServerlessPolicy
 from test_imagegen import png
 
 
@@ -28,11 +33,11 @@ class ImageRewriteTests(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         # The reservation looks up the serverless catalogue, which needs the owner environment.
-        reserve = patch.object(
+        self.reserve = patch.object(
             image_prompt, "reservation", return_value=Decimal("0.01")
         )
-        reserve.start()
-        self.addCleanup(reserve.stop)
+        self.reserve.start()
+        self.addCleanup(self.reserve.stop)
 
     async def test_valid_first_rewrite_has_no_retry(self) -> None:
         budget = image_prompt.RewriteBudget(Decimal("0.05"), Decimal("0.01"))
@@ -186,3 +191,135 @@ class ImageRewriteTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 server.shutdown()
                 thread.join()
+
+    async def test_preset_rewrite_uses_preset_endpoint_model_and_price(self) -> None:
+        self.reserve.stop()
+        environment = {
+            "ATLAS_PROVIDER": "hetzner",
+            "ATLAS_PROVIDER_API_KEY": "test-token",
+        }
+        request = {
+            "messages": image_prompt.messages("a lighthouse"),
+            "tools": [],
+            "local_enabled": False,
+            "timeout": 20,
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(
+                AgentProvider,
+                "_complete",
+                AsyncMock(return_value={"text": FORMATTED, "usage": {}}),
+            ) as complete,
+        ):
+            policy = ServerlessPolicy()
+            self.assertEqual(
+                image_prompt.reservation("a lighthouse"),
+                policy.cost(
+                    policy.models["vision"],
+                    len(json.dumps(image_prompt.messages("a lighthouse")).encode())
+                    + 256,
+                    2048,
+                ),
+            )
+            await image_prompt.ImageRewriteProvider().complete(request)
+        assert complete.await_args is not None
+        self.assertEqual(
+            complete.await_args.args[1], "https://inference.hetzner.com/api/v1"
+        )
+        self.assertEqual(complete.await_args.args[2], policy.models["vision"])
+        self.assertEqual(complete.await_args.args[3], "test-token")
+
+    async def test_role_unavailable_uses_anchored_scene_without_a_provider_call(
+        self,
+    ) -> None:
+        self.reserve.stop()
+        prompt = "a young woman holding a copper fox beneath a cedar tree"
+        budget = image_prompt.RewriteBudget(
+            Decimal("0.05"), Decimal(0), structured=True
+        )
+        with (
+            patch.dict(
+                os.environ,
+                {"ATLAS_PROVIDER": "mistral", "ATLAS_USD_TO_EUR": "0.9"},
+                clear=True,
+            ),
+            patch.object(AgentProvider, "complete", AsyncMock()) as complete,
+            self.assertLogs("image_prompt", level="INFO") as logs,
+        ):
+            self.assertEqual(
+                image_prompt.reservation(prompt, structured=True), Decimal(0)
+            )
+            self.assertEqual(image_prompt.scene_reservation([prompt]), Decimal(0))
+            result = await image_prompt.rewrite(prompt, 20, budget=budget)
+            scene = await image_prompt.rewrite_scene([prompt], 20)
+        complete.assert_not_awaited()
+        self.assertEqual(result, prompt)
+        self.assertIn(prompt, scene.render())
+        event = json.loads(logs.output[-1].partition("image_prompt:")[2])
+        self.assertEqual(event["event"], "image_rewrite_usage")
+        self.assertEqual(event["fallback"], "role_unavailable")
+
+    async def test_scaleway_rewrite_keeps_legacy_configuration(self) -> None:
+        environment = {
+            "SCW_GENERATIVE_BASE_URL": "https://legacy.example/v1",
+            "SCW_GENERATIVE_API_KEY": "test-token",
+            "ESCALATION_MODEL": "qwen3.5-397b-a17b",
+        }
+        request = {
+            "messages": image_prompt.messages("a lighthouse"),
+            "tools": [],
+            "local_enabled": False,
+            "timeout": 20,
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(
+                AgentProvider,
+                "_complete",
+                AsyncMock(return_value={"text": FORMATTED, "usage": {}}),
+            ) as complete,
+        ):
+            policy = ServerlessPolicy()
+            await image_prompt.ImageRewriteProvider().complete(request)
+        assert complete.await_args is not None
+        self.assertEqual(
+            complete.await_args.args[1], environment["SCW_GENERATIVE_BASE_URL"]
+        )
+        self.assertEqual(complete.await_args.args[2], policy.models["vision"])
+        self.assertEqual(
+            complete.await_args.args[3], environment["SCW_GENERATIVE_API_KEY"]
+        )
+
+    async def test_configuration_error_is_not_reported_as_provider_failure(
+        self,
+    ) -> None:
+        self.reserve.stop()
+        with patch.dict(os.environ, {"ATLAS_PROVIDER": "other"}, clear=True):
+            with self.assertRaises(MissingConfiguration):
+                image_prompt.rewrite_plan()
+        server = serve(Mock(spec=CPUModels), 0)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with (
+                patch.object(
+                    imagegen,
+                    "complete",
+                    AsyncMock(
+                        side_effect=MissingConfiguration(("ATLAS_PROVIDER_BASE_URL",))
+                    ),
+                ),
+                self.assertRaises(GatewayError) as raised,
+            ):
+                await GatewayModel.post(
+                    f"http://127.0.0.1:{server.server_port}/images/generate",
+                    {"prompt": "a lighthouse"},
+                    5,
+                )
+            self.assertEqual(raised.exception.code, "configuration_missing")
+            self.assertEqual(raised.exception.status, 503)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
