@@ -6,7 +6,7 @@ import json
 import time
 from typing import Any, Literal
 from pydantic import Field, model_validator
-from packages.dev_request import Request, Strict
+from packages.dev_request import Call, Request, ResponseFormat, Strict, Tool
 from packages.dev_format import validate_json
 
 
@@ -47,11 +47,48 @@ class ChatInput(Request):
         return value
 
 
+class RawMessage(Strict):
+    """Provider-compatible message content, including vision content parts."""
+
+    role: Literal["system", "user", "assistant", "tool", "developer"]
+    content: Any = None
+    tool_calls: list[Call] = Field(default_factory=list, max_length=64)
+    tool_call_id: str | None = None
+    name: str | None = Field(default=None, max_length=64)
+
+
+class RawChatInput(Strict):
+    """Raw gateway request: retain OpenAI content parts instead of normalizing them."""
+
+    model: str = Field(pattern=r"^raw/.+$")
+    messages: list[RawMessage] = Field(min_length=1, max_length=1024)
+    tools: list[Tool] = Field(default_factory=list, max_length=64)
+    response_format: ResponseFormat = Field(
+        default_factory=lambda: ResponseFormat(type="text")
+    )
+    max_tokens: int = Field(default=512, ge=1, le=8192)
+    temperature: float = Field(default=0, ge=0, le=2)
+    stream: bool = False
+    stream_options: StreamOptions = StreamOptions()
+    tool_choice: str | dict[str, Any] = "auto"
+    parallel_tool_calls: bool = True
+    reasoning_effort: Literal["none", "low"] = "none"
+
+    @property
+    def validate_output(self) -> bool:
+        return False
+
+
 class Output:
-    def __init__(self, request_id: str, request: Request) -> None:
+    def __init__(
+        self,
+        request_id: str,
+        request: Request | RawChatInput,
+        model: str = "atlas-code",
+    ) -> None:
         self.base = {
             "id": "chatcmpl-" + request_id,
-            "model": "atlas-code",
+            "model": model,
             "created": int(time.time()),
         }
         self.request = request

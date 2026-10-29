@@ -1,0 +1,11 @@
+{
+  "title": "Fictional briefing",
+  "messages": [
+    {
+      "role": "user",
+      "content": "What is the fictional budget?",
+      "created_at": "2026-10-29T09:00:00Z",
+      "attachment_file_ids": []
+    }
+  ]
+}

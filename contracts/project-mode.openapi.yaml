@@ -3193,6 +3193,40 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ConversationCreate'
+  /api/atlas/orgs/{org}/projects/{project}/conversations/import:
+    post:
+      operationId: importProjectConversation
+      summary: Import a browser-read ordinary conversation into an editable project
+      x-roles: [owner, editor]
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: project
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConversationImport'}
+      responses:
+        '201':
+          description: Imported private conversation
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Conversation'}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '413': {$ref: '#/components/responses/Error413'}
+        '422': {$ref: '#/components/responses/Error422'}
+        '429': {$ref: '#/components/responses/Error429'}
+        '503': {$ref: '#/components/responses/Error503'}
   /api/atlas/orgs/{org}/projects/{project}/conversations/{conversation}/turns:
     get:
       operationId: get_api_atlas_orgs_org_projects_project_conversations_conversation_turns
@@ -10577,6 +10611,33 @@ components:
           pattern: \S
       required:
       - title
+    ConversationImport:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: \S
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              role: {type: string, enum: [user, assistant, system]}
+              content: {type: string, minLength: 1, maxLength: 32000, pattern: \S}
+              created_at: {type: string, format: date-time, pattern: Z$}
+              attachment_file_ids:
+                type: array
+                maxItems: 20
+                uniqueItems: true
+                items: {type: string, format: uuid}
+            required: [role, content, created_at, attachment_file_ids]
+      required: [title, messages]
     ContextRequest:
       type: object
       additionalProperties: false

@@ -1,0 +1,7 @@
+# Opt-in image profile on the existing PyTorch 2.8.0 / CUDA 12.8 runtime.
+# Diffusers 0.37 adds the compact pipeline; the default deployment stays pinned.
+diffusers==0.37.0
+transformers==4.57.6
+accelerate==1.10.1
+sentencepiece==0.2.1
+protobuf==6.32.0

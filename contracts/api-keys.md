@@ -9,8 +9,8 @@ header, with no Cookie or Origin. Unknown, missing, expired and revoked keys ret
 
 | Method and path | Contract |
 | --- | --- |
-| GET `/models` | OpenAI list of permitted aliases: `atlas`, configured profile IDs, `atlas-code` |
-| POST `/chat/completions` | Existing ChatRequest for assistant; existing ChatInput for raw model; JSON or SSE |
+| GET `/models` | OpenAI list of permitted aliases: `atlas`, configured profile IDs, `atlas-code`, and configuration-derived `raw/<provider-model-id>` IDs |
+| POST `/chat/completions` | Existing ChatRequest for assistant; raw configured models use OpenAI Chat Completions request/response and JSON or SSE |
 | GET `/usage` | Current key's UTC day, request count, charged/unknown micro EUR and both daily limits |
 
 The `atlas` alias maps to the default configured chat profile. Key scopes and project
@@ -25,6 +25,22 @@ Quota errors are OpenAI error envelopes, HTTP 429, containing `requests`,
 Scope errors are HTTP 403 with `missing_scope`. Quota reservation and settlement use
 integer micro EUR and transactions; uncertain outcomes retain the reserved amount.
 No project, Work or connector permission is implied by `assistant`.
+
+### Raw configured models
+
+`model` scope lists every configured gateway chat role and fallback as a stable
+`raw/<provider-model-id>` identifier. The compatibility alias `atlas-code` remains
+the code role. Embedding-only models are excluded because this prefix has no
+`/embeddings` route. Raw calls bypass the Atlas assistant pipeline and retain
+OpenAI-compatible messages, tools/tool calls, SSE, usage, and image content for a
+vision-capable configured model. The public ID is derived from routing configuration;
+it is never a service-code model-name allowlist.
+
+Every raw call reserves and settles that selected model's configured token price
+against both the key's daily request/money caps and the bound user's daily budget.
+A configured model without a EUR price is refused as `unpriced_model` before any
+provider I/O; it is never treated as zero-cost or unmetered. Unknown raw IDs return
+`invalid_model` (400). An `assistant`-only key cannot list or call raw models.
 
 The separate administrator HTTP service binds to loopback and also requires a
 dedicated administrator Bearer secret. Forwarded, cookie and browser requests fail

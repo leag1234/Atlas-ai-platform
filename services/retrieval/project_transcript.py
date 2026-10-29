@@ -15,6 +15,7 @@ from services.retrieval.project_ledger import BYTE_KEYS, MODEL_KINDS, append
 from services.retrieval.project_store import Scope
 from services.retrieval.project_work import Work, empty_usage
 from services.retrieval.project_work_contract import validate
+from services.retrieval.project_policy import ConversationImport
 
 
 def canonical(value: Any) -> bytes:
@@ -40,6 +41,67 @@ class Transcript:
         self.files.put("conversation", value)
         self.scope.event("conversation_created", self.project)
         return value
+
+    def import_conversation(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Persist browser-normalized native chat content without reading WebUI storage."""
+        incoming = ConversationImport.model_validate(data)
+        # Import is intentionally more restrictive than ordinary chat creation:
+        # it changes the user's native-chat lifecycle and must land in an editable project.
+        if self.scope.role not in {"owner", "editor"}:
+            raise ProjectError(403, "permission_denied")
+        messages = incoming.messages
+        total = sum(len(message.content.encode("utf-8")) for message in messages)
+        limit = min(int(self.scope.policy["quotas"]["upload_bytes"]), 4 * 1024 * 1024)
+        if total > limit:
+            raise ProjectError(
+                413,
+                "size_limit",
+                f"import: measured {total} bytes; limit {limit} bytes",
+                measurements=[dict(measured=total, limit=limit, unit="bytes")],
+            )
+        conversation = self.create({"title": incoming.title})
+        conversation["created_at"] = messages[0].created_at
+        conversation["updated_at"] = messages[-1].created_at
+        self.files.save(conversation)
+        instructions = self.files.instructions()["version"]
+        for ordinal, message in enumerate(messages):
+            attachments = []
+            for file_id in message.attachment_file_ids:
+                file = self.files.get("file", str(file_id))
+                attachments.append(file["version_id"])
+            refs = sorted(set(attachments + [instructions]))
+            self.check_sources(refs)
+            turn = dict(
+                self.files.new(),
+                conversation_id=conversation["id"],
+                member_id=self.scope.identity.member,
+                action="chat",
+                request_id=self.files.new()["id"],
+                content_refs=[
+                    dict(
+                        kind="question" if message.role == "user" else "answer",
+                        text=message.content,
+                        file_version_id=None,
+                    )
+                ],
+                file_version_ids=attachments,
+                context_revision=0,
+                state="completed",
+                usage=empty_usage(),
+                persistability="content",
+                created_at=message.created_at,
+                updated_at=message.created_at,
+                imported_role=message.role,
+                imported_ordinal=ordinal,
+            )
+            self.files.put(
+                "turn",
+                turn,
+                conversation["id"],
+                private={"sources": refs, "imported": True},
+            )
+        self.scope.event("conversation_imported", self.project)
+        return conversation
 
     def authorize(self, request: dict[str, Any]) -> None:
         if request["org_id"] != self.org or request["project_id"] != self.project:

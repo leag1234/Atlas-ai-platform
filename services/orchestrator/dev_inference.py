@@ -9,14 +9,14 @@ from contextlib import aclosing
 import json
 import logging
 from time import monotonic
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 import dev_gateway as gateway
 from services.orchestrator.dev_auth import QuotaError, Store
-from services.orchestrator.dev_chat import ChatInput, Output
+from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
 from services.orchestrator.dev_input import responses, messages
 from services.orchestrator.dev_messages import Wire as MessagesWire
 from services.orchestrator.dev_responses import Wire
@@ -201,7 +201,9 @@ async def drive(
         )
 
 
-async def chat(request: Request, protocol: str = "chat") -> Response:
+async def chat(
+    request: Request, protocol: str = "chat", *, raw_model: str | None = None
+) -> Response:
     deadline = monotonic() + 120
     try:
         body = bytearray()
@@ -217,12 +219,18 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
                 if protocol == "responses"
                 else messages(raw)
                 if protocol == "messages"
+                else RawChatInput.model_validate(raw)
+                if raw_model is not None
                 else ChatInput.model_validate(raw)
             )
         except KeyError:
             # Missing client fields are not missing provider configuration.
             return error("invalid_request", 400)
-        plan = gateway.prepare(parsed)
+        plan = (
+            gateway.prepare_raw(parsed)
+            if raw_model is not None
+            else gateway.prepare(cast(ChatInput, parsed))
+        )
         store, developer = request.state.store, request.state.developer
         request_id = store.reserve(
             developer, plan.reserved, monetary=plan.reserved > 0 and not plan.unpriced
@@ -255,7 +263,7 @@ async def chat(request: Request, protocol: str = "chat") -> Response:
         return error(code, 400)
     except (TimeoutError, KeyError):
         return error("unavailable", 503)
-    output = Output(request_id, parsed)
+    output = Output(request_id, parsed, raw_model or "atlas-code")
     wire = (
         Wire(output, raw)
         if protocol == "responses"

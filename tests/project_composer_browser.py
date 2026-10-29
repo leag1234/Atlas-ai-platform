@@ -25,6 +25,7 @@ class ProjectComposerTests(unittest.TestCase):
         self.context = self.browser.new_context()
         self.page = self.context.new_page()
         self.calls: list[tuple[str, str, Any]] = []
+        self.projects: list[dict[str, str]] = [{"id": PROJECT, "name": "Example"}]
         self.turns: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
         self.approvals: list[dict[str, Any]] = []
@@ -32,7 +33,7 @@ class ProjectComposerTests(unittest.TestCase):
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         self.context.route("**/*", self.respond)
         self.context.add_init_script(
-            "localStorage.setItem('locale','en');"
+            "if (!localStorage.getItem('locale')) localStorage.setItem('locale','en');"
             "window.atlasSideView={close(){},open(value){window.preview=value;}};"
         )
 
@@ -80,7 +81,17 @@ class ProjectComposerTests(unittest.TestCase):
         elif path == "/api/v1/auths/":
             value = {"id": "synthetic-browser-user"}
         elif path == f"/api/atlas/orgs/{ORG}/projects":
-            value["items"] = [{"id": PROJECT, "name": "Example"}]
+            if method == "POST":
+                assert isinstance(body, dict)
+                created = {
+                    "id": "20000000-0000-4000-8000-000000000002",
+                    "name": body["name"],
+                    "updated_at": "2026-10-29T10:00:00Z",
+                }
+                self.projects.append(created)
+                value = created
+            else:
+                value["items"] = self.projects
         elif path == BASE:
             value = {"id": PROJECT, "default_action": "chat"}
         elif path == BASE + "/conversations":
@@ -360,6 +371,55 @@ class ProjectComposerTests(unittest.TestCase):
         parsed = ChatRequest.model_validate(request)
         self.assertEqual(parsed.project_id, PROJECT)
 
+    def test_running_turn_clears_composer_and_keeps_visible_activity(self) -> None:
+        self.mount()
+        self.page.evaluate("""() => {
+          const original = window.fetch;
+          window.fetch = async (...args) => {
+            const response = await original(...args);
+            if (String(args[0]) === '/v1/chat/completions') {
+              await new Promise(resolve => window.releaseProjectReply = resolve);
+            }
+            return response;
+          };
+        }""")
+        message = self.page.get_by_role("textbox", name="Message", exact=True)
+        message.fill("Prepare the fictional budget summary")
+        self.page.locator("[data-send]").click()
+        self.page.wait_for_function("Boolean(window.releaseProjectReply)")
+        self.assertEqual(message.input_value(), "")
+        self.assertIn(
+            "Atlas is thinking", self.page.locator("[data-running]").inner_text()
+        )
+        self.assertTrue(self.page.locator("[data-stop]:not([hidden])").is_visible())
+        self.page.evaluate("window.releaseProjectReply()")
+        self.page.locator("[data-send]:not([disabled])").wait_for()
+
+    def test_project_locale_follows_host_locale_and_browser_fallback(self) -> None:
+        self.context.add_init_script("localStorage.setItem('locale','fr-FR');")
+        self.mount()
+        self.assertEqual(
+            self.page.get_by_role("button", name="Envoyer", exact=True).count(), 1
+        )
+
+    def test_new_project_dialog_is_centered_and_keyboard_operable(self) -> None:
+        self.mount()
+        self.page.get_by_role("button", name="New project", exact=True).click()
+        dialog = self.page.get_by_role("dialog")
+        self.assertTrue(
+            dialog.evaluate("node => getComputedStyle(node).position === 'fixed'")
+        )
+        dialog.get_by_role("textbox", name="Name", exact=True).fill("Quartz")
+        dialog.get_by_role("textbox", name="Name", exact=True).press("Escape")
+        self.assertEqual(self.page.get_by_role("dialog").count(), 0)
+        self.page.get_by_role("button", name="New project", exact=True).click()
+        self.page.get_by_role("textbox", name="Name", exact=True).fill("Quartz")
+        self.page.get_by_role("textbox", name="Name", exact=True).press("Enter")
+        self.page.get_by_role("dialog").wait_for(state="detached")
+        self.assertEqual(
+            self.page.locator("[data-sidebar-project]").first.inner_text(), "Quartz"
+        )
+
     def test_send_waits_for_canonical_transcript_finalization(self) -> None:
         self.mount()
         self.page.evaluate("""() => {
@@ -604,9 +664,7 @@ class ProjectComposerTests(unittest.TestCase):
             self.page.evaluate(
                 "language => localStorage.setItem('locale', language)", language
             )
-            self.page.evaluate(
-                "document.getElementById('atlas-project').remove(); document.getElementById('atlas-project-entry').click()"
-            )
+            self.page.reload()
             self.page.locator("[data-send]:not([disabled])").wait_for()
             self.assertEqual(self.page.locator("[data-send]").inner_text(), label)
 
