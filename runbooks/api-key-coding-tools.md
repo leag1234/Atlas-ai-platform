@@ -45,12 +45,14 @@ on supported text/result blocks and tool definitions are accepted without a cach
 If the normal initial context exceeds the request budget, use a smaller task/context
 and output limit; the bridge never silently truncates input.
 
-`atlas-code` and unrecognized client model strings, including `claude-*` and `gpt-*`,
-select the configured default raw model on Messages routes. Operators may set
-`ATLAS_API_DEFAULT_RAW_MODEL=raw/<configured-provider-model-id>` on the adapter;
-when unset, it selects the gateway code role. Explicit configured `raw/` IDs from
-`GET /models` override that default. The response identifies the selected raw ID.
-This routing does not imply the requested vendor model is actually served.
+The public names are `atlas-code` (coding agents and tools) and `atlas-chat`
+(general conversation without the Atlas assistant prompt). The dated aliases
+`atlas-code-2026-10-30` and `atlas-chat-2026-10-30` pin this routing version.
+Unrecognized client model strings, including `claude-*` and `gpt-*`, select
+`atlas-code` on all three public wires. `raw/...` IDs are internal-only and are
+rejected at the public edge. `GET /models` lists the public usages and accepted
+reasoning efforts. Every completed response reports `served_by` and the
+`X-Atlas-Served-By` header so the effective provider route is visible.
 
 Every inference uses the same key request/money ceilings and user cost ledger as
 raw Chat Completions. Expired/revoked keys return 401, missing scope 403 and quota
@@ -102,6 +104,6 @@ aider --model openai/atlas-code
 ```
 
 Aider sends `/chat/completions`; its `openai/` prefix selects the client provider.
-This route already supports `atlas-code` and advertised configured raw IDs; the
-Messages unknown-name fallback does not change Chat Completions validation.
+This route accepts the public usage names above. Unknown client model strings also
+fall back to `atlas-code`; public `raw/...` IDs are rejected.
 Source: [Aider OpenAI-compatible setup](https://aider.chat/docs/llms/openai-compat.html).

@@ -62,6 +62,21 @@ def api_key() -> str:
     return os.environ.get("ATLAS_PROVIDER_API_KEY", "")
 
 
+def api_key_for(provider: str) -> str:
+    """Key of a routed provider, named by its preset (never hardcoded here)."""
+    preset = presets().get(provider)
+    if not preset or not preset.get("api_key_env"):
+        raise ValueError("unknown_provider")
+    return os.environ.get(str(preset["api_key_env"]), "")
+
+
+def preset_value(provider: str, key: str) -> Any:
+    preset = presets().get(provider)
+    if not preset:
+        raise ValueError("unknown_provider")
+    return preset.get(key)
+
+
 def json_options(response_format: object) -> dict[str, Any]:
     # Internal state requests fall back to instructions on unverified providers.
     # Explicit developer-API response_format continues to pass through unchanged.

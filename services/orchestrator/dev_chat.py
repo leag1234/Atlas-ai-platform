@@ -95,7 +95,8 @@ class Output:
         self.text = ""
         self.calls: dict[int, dict[str, Any]] = {}
         self.reason: str | None = None
-        self.usage: dict[str, int] | None = None
+        self.usage: dict[str, Any] | None = None
+        self.served_by: str | None = None
 
     def feed(self, frame: dict[str, Any]) -> dict[str, Any]:
         chunk: dict[str, Any] = dict(
@@ -108,6 +109,9 @@ class Output:
                 self.usage["prompt_tokens"] + self.usage["completion_tokens"]
             )
             chunk["usage"] = self.usage
+            if frame.get("served_by"):
+                self.served_by = str(frame["served_by"])
+                chunk["served_by"] = self.served_by
         for choice in frame["choices"]:
             delta = choice["delta"]
             clean: dict[str, Any] = {}
@@ -233,9 +237,12 @@ class Output:
         message: dict[str, Any] = {"role": "assistant", "content": self.text or None}
         if self.calls:
             message["tool_calls"] = list(self.calls.values())
-        return dict(
+        result = dict(
             self.base,
             object="chat.completion",
             usage=self.usage,
             choices=[{"index": 0, "message": message, "finish_reason": self.reason}],
         )
+        if self.served_by:
+            result["served_by"] = self.served_by
+        return result

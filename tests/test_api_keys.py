@@ -14,18 +14,13 @@ from unittest.mock import patch
 from typing import Any
 
 from fastapi.testclient import TestClient
-from packages.profiles import PROFILES
 from services.orchestrator.api_keys import Store, KeyQuotaError
 from services.orchestrator.api_key_edge import key_call, ModelAccounting
 from services.orchestrator.api_key_admin import app as admin_app
 from services.orchestrator.chat_api import app
-from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
 from services.orchestrator.dev_auth import Store as DeveloperStore, provision
 from services.orchestrator.devapi import app as dev_app
-from services.orchestrator.interactions import Interaction
-from services.orchestrator.stream_client import sink_context
-from services.orchestrator.tools import declarations
 
 
 class KeyTests(unittest.TestCase):
@@ -339,35 +334,50 @@ class KeyTests(unittest.TestCase):
                 204,
             )
 
-    def test_edge_assistant_streams_scope_origin_identity_and_member_budget(
+    def test_edge_public_model_streams_scope_origin_identity_and_member_budget(
         self,
     ) -> None:
-        row, secret = self.create(daily_requests=2)
+        from dev_gateway import Plan
+
+        row, secret = self.create(scopes=["model"], daily_requests=2)
         headers = {
             "Authorization": "Bearer " + secret,
             "X-OpenWebUI-User-Id": "forged",
             "X-Atlas-User": "forged",
         }
 
-        async def respond(payload: ChatRequest, item: Interaction) -> None:
-            self.assertEqual(payload.model, PROFILES[0])
-            self.assertFalse(payload.atlas_ui)
-            self.assertEqual(payload.__dict__["daily_user"], "webui-test-id")
-            self.assertTrue(key_call.get())
-            self.assertNotIn("mcp_call", json.dumps(declarations()))
-            item.reponse, item.state, item.cout_eur = "7 times 8 is 56.", "done", 0.001
-            sink = sink_context.get()
-            if sink:
-                await sink({"delta": {"content": item.reponse}})
+        plan = Plan("{}", "https://example.invalid/v1", 1000, Decimal(1), Decimal(1))
+
+        async def frames(_: Plan) -> AsyncIterator[dict[str, Any]]:
+            yield {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": "7 times 8 is 56."},
+                        "finish_reason": None,
+                    }
+                ]
+            }
+            yield {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+            yield {
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                "cost_micro_eur": 1000,
+            }
 
         body = dict(
-            model="atlas",
-            atlas_ui=True,
+            model="atlas-code",
             messages=[dict(role="user", content="Calculate 7 times 8")],
         )
         with (
             TestClient(app) as client,
-            patch("services.orchestrator.chat_api.process", side_effect=respond),
+            patch(
+                "services.orchestrator.dev_inference.gateway.prepare_api",
+                return_value=plan,
+            ),
+            patch(
+                "services.orchestrator.dev_inference.gateway.events", side_effect=frames
+            ),
             patch.dict(
                 os.environ, {"ATLAS_MCP_CONFIG": "unused", "ATLAS_PROJECT_MODE": "1"}
             ),
@@ -391,11 +401,12 @@ class KeyTests(unittest.TestCase):
             )
             reply = client.get("/api/atlas/v1/models", headers=headers)
             self.assertEqual(reply.status_code, 200)
-            self.assertIn("atlas", [m["id"] for m in reply.json()["data"]])
+            self.assertIn("atlas-code", [m["id"] for m in reply.json()["data"]])
+            _, assistant = self.create(scopes=["assistant"])
             reply = client.post(
                 "/api/atlas/v1/chat/completions",
-                headers=headers,
-                json=body | {"model": "atlas-code"},
+                headers={"Authorization": "Bearer " + assistant},
+                json=body,
             )
             self.assertEqual(reply.status_code, 403)
             self.assertEqual(reply.json()["error"]["missing_scope"], "model")
@@ -436,7 +447,9 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(Decimal(str(ledger[0]["measured_eur"])), Decimal("0.002"))
         self.assertFalse(key_call.get())
 
-    def test_raw_model_scope_and_reservations_use_the_same_member_ledger(self) -> None:
+    def test_public_model_scope_and_reservations_use_the_same_member_ledger(
+        self,
+    ) -> None:
         from dev_gateway import Plan
 
         row, key = self.create(scopes=["model"], daily_requests=2)
@@ -463,7 +476,8 @@ class KeyTests(unittest.TestCase):
         with (
             TestClient(app) as client,
             patch(
-                "services.orchestrator.dev_inference.gateway.prepare", return_value=plan
+                "services.orchestrator.dev_inference.gateway.prepare_api",
+                return_value=plan,
             ),
             patch(
                 "services.orchestrator.dev_inference.gateway.events", side_effect=frames
@@ -471,15 +485,23 @@ class KeyTests(unittest.TestCase):
         ):
             models = client.get("/api/atlas/v1/models", headers=headers).json()
             ids = [m["id"] for m in models["data"]]
-            self.assertEqual(ids[0], "atlas-code")
-            self.assertTrue(all(name.startswith("raw/") for name in ids[1:]))
+            self.assertEqual(
+                ids,
+                [
+                    "atlas-code",
+                    "atlas-chat",
+                    "atlas-code-2026-10-30",
+                    "atlas-chat-2026-10-30",
+                ],
+            )
+            _, assistant = self.create(scopes=["assistant"])
             rejected = client.post(
                 "/api/atlas/v1/chat/completions",
-                headers=headers,
-                json=body | {"model": "atlas"},
+                headers={"Authorization": "Bearer " + assistant},
+                json=body,
             )
             self.assertEqual(rejected.status_code, 403)
-            self.assertEqual(rejected.json()["error"]["missing_scope"], "assistant")
+            self.assertEqual(rejected.json()["error"]["missing_scope"], "model")
             reply = client.post(
                 "/api/atlas/v1/chat/completions", headers=headers, json=body
             )
@@ -500,16 +522,14 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(self.store.usage(row["id"])["charged_micro_eur"], 24)
         self.assertEqual(DailyLedger().summary()[0]["measured_eur"], 0.000024)
 
-    def test_raw_configured_model_preserves_images_tools_and_streaming(self) -> None:
+    def test_public_usage_model_preserves_images_tools_and_streaming(self) -> None:
         from dev_gateway import Plan
-        from services.orchestrator.api_key_edge import raw_model_ids
 
         _, key = self.create(scopes=["model"], daily_requests=3)
-        raw_model = raw_model_ids()[0]
         plan = Plan("{}", "https://example.invalid/v1", 1000, Decimal(1), Decimal(1))
         seen: list[Any] = []
 
-        def prepare_raw(request: Any) -> Plan:
+        def prepare_public(request: Any, *_: str) -> Plan:
             seen.append(request)
             return plan
 
@@ -541,7 +561,7 @@ class KeyTests(unittest.TestCase):
             }
 
         body = {
-            "model": raw_model,
+            "model": "atlas-code",
             "stream": True,
             "messages": [
                 {
@@ -564,8 +584,8 @@ class KeyTests(unittest.TestCase):
         with (
             TestClient(app) as client,
             patch(
-                "services.orchestrator.dev_inference.gateway.prepare_raw",
-                side_effect=prepare_raw,
+                "services.orchestrator.dev_inference.gateway.prepare_api",
+                side_effect=prepare_public,
             ),
             patch(
                 "services.orchestrator.dev_inference.gateway.events", side_effect=frames
@@ -595,51 +615,46 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 400, reply.text)
         self.assertEqual(reply.json()["error"]["code"], "invalid_model")
 
-    def test_existing_user_search_limit_applies_to_key_requests(self) -> None:
-        _, key = self.create()
-
-        async def respond(payload: ChatRequest, item: Interaction) -> None:
-            payload.__dict__["daily_ledger"].reserve_search(
-                payload.__dict__["daily_user"], "en", "tavily"
-            )
-            self.fail("A second search must be refused before a provider call")
-
-        with (
-            patch.dict(os.environ, {"ATLAS_USER_DAILY_SEARCHES": "1"}),
-            TestClient(app) as client,
-            patch("services.orchestrator.chat_api.process", side_effect=respond),
-        ):
-            DailyLedger().reserve_search("webui-test-id", "en", "tavily")
+    def test_assistant_scope_does_not_grant_public_model_access(self) -> None:
+        _, key = self.create(scopes=["assistant"])
+        with TestClient(app) as client:
             reply = client.post(
                 "/api/atlas/v1/chat/completions",
                 headers={"Authorization": "Bearer " + key},
                 json={
-                    "model": "atlas",
+                    "model": "atlas-code",
                     "messages": [{"role": "user", "content": "Find current news"}],
                 },
             )
-            self.assertEqual(reply.status_code, 429, reply.text)
-            self.assertIn("2 searches", reply.json()["error"]["message"])
-            self.assertIn("1 searches", reply.json()["error"]["message"])
+        self.assertEqual(reply.status_code, 403, reply.text)
+        self.assertEqual(reply.json()["error"]["missing_scope"], "model")
 
     def test_http_expired_revoked_invalid_and_quota_before_provider(self) -> None:
-        row, key = self.create(daily_micro_eur=1)
+        from dev_gateway import Plan
+
+        row, key = self.create(scopes=["model"], daily_micro_eur=1)
         headers = {"Authorization": "Bearer " + key}
         with (
             TestClient(app) as client,
-            patch("services.orchestrator.chat_api.process") as process,
+            patch(
+                "services.orchestrator.dev_inference.gateway.prepare_api",
+                return_value=Plan(
+                    "{}", "https://example.invalid/v1", 2, Decimal(1), Decimal(1)
+                ),
+            ),
+            patch("services.orchestrator.dev_inference.gateway.events") as events,
         ):
             reply = client.post(
                 "/api/atlas/v1/chat/completions",
                 headers=headers,
                 json={
-                    "model": "atlas",
+                    "model": "atlas-code",
                     "messages": [{"role": "user", "content": "Hello"}],
                 },
             )
             self.assertEqual(reply.status_code, 429)
             self.assertEqual(reply.json()["error"]["daily_micro_eur"], 1)
-            process.assert_not_called()
+            events.assert_not_called()
             for auth in (
                 {},
                 {"Authorization": "Bearer invalid"},

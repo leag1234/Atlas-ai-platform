@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from dev_gateway import Plan, prepare_raw as real_prepare, events as real_events
+from dev_gateway import Plan, prepare_api as real_prepare, events as real_events
 from services.orchestrator.api_keys import Store
 from services.orchestrator.chat_api import app
 from services.orchestrator.daily_budget import DailyLedger
@@ -62,7 +62,7 @@ class MessagesTests(unittest.TestCase):
         self.prepared: list[Any] = []
         self.prepare = self.enterContext(
             patch(
-                "services.orchestrator.dev_inference.gateway.prepare_raw",
+                "services.orchestrator.dev_inference.gateway.prepare_api",
                 side_effect=self.plan,
             )
         )
@@ -86,9 +86,17 @@ class MessagesTests(unittest.TestCase):
         )
         return self.store.create(**(defaults | values))
 
-    def plan(self, request: Any) -> Plan:
+    def plan(self, request: Any, usage: str, api_key_id: str) -> Plan:
         self.prepared.append(request)
-        return Plan("{}", "https://example.invalid/v1", 1000, Decimal(1), Decimal(1))
+        return Plan(
+            "{}",
+            "https://example.invalid/v1",
+            1000,
+            Decimal(1),
+            Decimal(1),
+            provider="mistral",
+            model="fictional-model",
+        )
 
     async def frames(self, plan: Plan) -> AsyncIterator[dict[str, Any]]:
         if self.prepared[-1].messages[-1].role == "tool":
@@ -130,6 +138,7 @@ class MessagesTests(unittest.TestCase):
             "choices": [],
             "usage": {"prompt_tokens": 10, "completion_tokens": 2},
             "cost_micro_eur": 12,
+            "served_by": "mistral/fictional-model",
         }
 
     def post(self, path: str = "/messages", **kwargs: Any) -> Any:
@@ -150,6 +159,7 @@ class MessagesTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 200, reply.text)
         value = reply.json()
         self.assertEqual(value["stop_reason"], "tool_use")
+        self.assertEqual(value["served_by"], "mistral/fictional-model")
         self.assertEqual(value["usage"], {"input_tokens": 10, "output_tokens": 2})
         self.assertEqual(
             value["content"],
@@ -215,6 +225,7 @@ class MessagesTests(unittest.TestCase):
         )
         self.assertEqual(block["input"], {"value": 56})
         self.assertEqual(events[-2]["delta"]["stop_reason"], "tool_use")
+        self.assertEqual(events[-1]["served_by"], "mistral/fictional-model")
         history = self.body["messages"] + [
             {"role": "assistant", "content": [block]},
             {
@@ -325,34 +336,23 @@ class MessagesTests(unittest.TestCase):
         self.assert_error(self.post(json=[]), 400, "invalid_request_error")
         self.assert_error(self.post(content=b"{"), 400, "invalid_request_error")
 
-    def test_models_resolve_to_configured_raw_routes(self) -> None:
-        from dev_gateway import raw_models
-        from serverless import ServerlessPolicy
-
-        default = "raw/" + ServerlessPolicy(allow_unpriced=True).models["code"]
-        for name in (
-            "atlas-code",
-            "claude-fictional-client",
-            "gpt-fictional-client",
-            "raw/unknown",
+    def test_models_resolve_to_public_usage_routes(self) -> None:
+        for name, expected in (
+            ("atlas-code", "atlas-code"),
+            ("atlas-chat", "atlas-chat"),
+            ("claude-fictional-client", "atlas-code"),
+            ("gpt-fictional-client", "atlas-code"),
         ):
             reply = self.post(json=self.body | {"model": name})
             self.assertEqual(reply.status_code, 200, reply.text)
-            self.assertEqual(self.prepared[-1].model, default)
-            self.assertEqual(reply.json()["model"], default)
-        configured = list(raw_models())
-        alternate = next(name for name in configured if name != default)
-        with patch.dict(os.environ, {"ATLAS_API_DEFAULT_RAW_MODEL": alternate}):
-            self.assertEqual(self.post().status_code, 200)
-            self.assertEqual(self.prepared[-1].model, alternate)
-            self.assertEqual(
-                self.post(json=self.body | {"model": default}).status_code, 200
-            )
-            self.assertEqual(self.prepared[-1].model, default)
-        with patch.dict(os.environ, {"ATLAS_API_DEFAULT_RAW_MODEL": "raw/unknown"}):
-            self.assert_error(self.post(), 503, "api_error")
+            self.assertEqual(reply.json()["model"], expected)
+        self.assert_error(
+            self.post(json=self.body | {"model": "raw/unknown"}),
+            400,
+            "invalid_request_error",
+        )
 
-    def test_actual_raw_plan_with_recorded_provider_stream(self) -> None:
+    def test_actual_public_plan_with_recorded_provider_stream(self) -> None:
         raw = json.loads(Path("tests/fixtures/devapi-streams.json").read_text())[
             "named"
         ].encode()
@@ -389,7 +389,8 @@ class MessagesTests(unittest.TestCase):
             sent["messages"],
             [{"role": "user", "content": "Calculate 7 times 8", "tool_calls": []}],
         )
-        self.assertEqual("raw/" + sent["model"], reply.json()["model"])
+        self.assertEqual(sent["model"], "zai-glm-5-3-flash")
+        self.assertEqual(reply.json()["model"], "atlas-code")
         usage = self.store.usage(self.row["id"])
         self.assertEqual(usage["requests"], 1)
         self.assertEqual(usage["charged_micro_eur"], plans[0].charge(166, 7))

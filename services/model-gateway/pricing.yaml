@@ -29,6 +29,15 @@ models:
   deepseek-v4-flash-0731:
     input_eur_per_mtok: 0.40
     output_eur_per_mtok: 0.80
+  # Source: owner-read Mistral price page, 2026-10-30.
+  zai-glm-5-3:
+    input_eur_per_mtok: 1.19
+    cached_input_eur_per_mtok: 0.119
+    output_eur_per_mtok: 3.74
+  zai-glm-5-3-flash:
+    input_eur_per_mtok: 0.1275
+    cached_input_eur_per_mtok: 0.0255
+    output_eur_per_mtok: 0.425
   local:                  # Qwen3-30B served on a rented L40S GPU
     input_eur_per_mtok: 0.0
     output_eur_per_mtok: 0.0

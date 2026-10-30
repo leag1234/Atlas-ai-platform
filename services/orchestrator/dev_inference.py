@@ -96,6 +96,11 @@ async def validated_drive(
                         "completion_tokens": outgoing,
                         "total_tokens": incoming + outgoing,
                     }
+                    if candidate.usage is not None:
+                        details = candidate.usage.get("prompt_tokens_details")
+                        if details is not None:
+                            output.usage["prompt_tokens_details"] = details
+                    output.served_by = candidate.served_by
                     for chunk in pending:
                         if "usage" in chunk:
                             chunk["usage"] = output.usage
@@ -202,7 +207,11 @@ async def drive(
 
 
 async def chat(
-    request: Request, protocol: str = "chat", *, raw_model: str | None = None
+    request: Request,
+    protocol: str = "chat",
+    *,
+    raw_model: str | None = None,
+    public_model: str | None = None,
 ) -> Response:
     deadline = monotonic() + 120
     try:
@@ -234,7 +243,9 @@ async def chat(
                 | {"model": raw_model}
             )
         plan = (
-            gateway.prepare_raw(parsed)
+            gateway.prepare_api(parsed, public_model, request.state.api_key.id)
+            if public_model is not None
+            else gateway.prepare_raw(parsed)
             if raw_model is not None
             else gateway.prepare(cast(ChatInput, parsed))
         )
@@ -270,7 +281,7 @@ async def chat(
         return error(code, 400)
     except (TimeoutError, KeyError):
         return error("unavailable", 503)
-    output = Output(request_id, parsed, raw_model or "atlas-code")
+    output = Output(request_id, parsed, public_model or raw_model or "atlas-code")
     wire = (
         Wire(output, raw)
         if protocol == "responses"
@@ -310,10 +321,13 @@ async def chat(
             yield "data: [DONE]\n\n"
 
     if parsed.stream:
+        headers = {"X-Accel-Buffering": "no"}
+        if plan.provider:
+            headers["X-Atlas-Served-By"] = plan.provider + "/" + plan.model
         return StreamingResponse(
             chunks(),
             media_type="text/event-stream",
-            headers={"X-Accel-Buffering": "no"},
+            headers=headers,
         )
     async with aclosing(
         drive(store, developer, request_id, plan, output, deadline)
@@ -326,4 +340,6 @@ async def chat(
                     wire.feed(frame)
                 except (ValueError, TypeError, KeyError):
                     return error("provider_error", 502)
-    return JSONResponse(wire.result() if wire else output.result())
+    result = wire.result() if wire else output.result()
+    headers = {"X-Atlas-Served-By": output.served_by} if output.served_by else {}
+    return JSONResponse(result, headers=headers)

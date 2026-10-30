@@ -34,7 +34,7 @@ class Wire:
                     }
                 )
         usage = self.output.usage or {"prompt_tokens": 0, "completion_tokens": 0}
-        return {
+        result = {
             "id": "msg_" + str(self.output.base["id"]),
             "type": "message",
             "role": "assistant",
@@ -51,6 +51,9 @@ class Wire:
                 "output_tokens": usage["completion_tokens"],
             },
         }
+        if self.output.served_by:
+            result["served_by"] = self.output.served_by
+        return result
 
     def start(self) -> list[dict[str, Any]]:
         return [{"type": "message_start", "message": self.result()}]
@@ -116,6 +119,13 @@ class Wire:
                         },
                         "usage": result["usage"],
                     },
-                    {"type": "message_stop"},
+                    {
+                        "type": "message_stop",
+                        **(
+                            {"served_by": self.output.served_by}
+                            if self.output.served_by
+                            else {}
+                        ),
+                    },
                 ]
         return events

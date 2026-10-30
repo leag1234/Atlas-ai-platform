@@ -63,7 +63,7 @@ async def errors(
 
 
 async def messages(request: Request) -> Response:
-    from dev_gateway import client_raw_model
+    from api_routing import select_public_model
     from services.orchestrator.api_key_edge import ModelAccounting, require
     from services.orchestrator.dev_inference import chat
 
@@ -106,9 +106,9 @@ async def messages(request: Request) -> Response:
             )
             return error(403, "insufficient_scope", missing_scope="project")
         try:
-            model = client_raw_model(raw["model"])
+            model = select_public_model(raw["model"])
         except (KeyError, ValueError):
-            return error(503, "model_configuration_error")
+            return error(400, "invalid_model")
         if request.url.path.endswith("/count_tokens"):
             parsed = parse_messages(
                 dict(raw, model="atlas-code", max_tokens=raw.get("max_tokens", 1))
@@ -122,12 +122,18 @@ async def messages(request: Request) -> Response:
                     + 512
                 }
             )
+        raw["model"] = "raw/public-routing"
         request._body = json.dumps(raw).encode()
         request.state.store = ModelAccounting(
             request.state.key_store, request.state.api_key
         )
         request.state.developer = request.state.api_key.id
-        return await chat(request, "messages", raw_model=model)
+        return await chat(
+            request,
+            "messages",
+            raw_model="raw/public-routing",
+            public_model=model,
+        )
     except BudgetRefusal as exc:
         return error(
             429,

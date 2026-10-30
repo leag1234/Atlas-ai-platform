@@ -30,7 +30,7 @@ class Wire:
             "incomplete" if self.output.reason == "length" else "completed"
         )
         usage = self.output.usage
-        return {
+        result = {
             "id": str(self.output.base["id"]).replace("chatcmpl-", "resp_"),
             "object": "response",
             "created_at": self.output.base["created"],
@@ -54,12 +54,19 @@ class Wire:
                 "input_tokens": usage["prompt_tokens"],
                 "output_tokens": usage["completion_tokens"],
                 "total_tokens": usage["total_tokens"],
-                "input_tokens_details": {"cached_tokens": 0},
+                "input_tokens_details": {
+                    "cached_tokens": (usage.get("prompt_tokens_details") or {}).get(
+                        "cached_tokens", 0
+                    )
+                },
                 # Responses clients (Codex) require the field. Report the provider's
                 # count when it gives one; providers that hide reasoning give 0.
                 "output_tokens_details": {"reasoning_tokens": reasoning_tokens(usage)},
             },
         }
+        if self.output.served_by:
+            result["served_by"] = self.output.served_by
+        return result
 
     def start(self) -> list[dict[str, Any]]:
         return [

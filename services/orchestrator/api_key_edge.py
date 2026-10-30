@@ -145,14 +145,27 @@ def require(request: Request, scope: str) -> Response | None:
 
 @app.get("/models")
 def models(request: Request) -> dict[str, object]:
-    principal: Principal = request.state.api_key
-    names = (["atlas", *PROFILES] if "assistant" in principal.scopes else []) + (
-        ["atlas-code", *raw_model_ids()] if "model" in principal.scopes else []
+    from api_routing import EFFORTS, PUBLIC_MODELS
+
+    scopes = request.state.api_key.scopes
+    # Assistant names keep the full Atlas assistant (tools, search, memory).
+    names = (["atlas", *PROFILES] if "assistant" in scopes else []) + (
+        list(PUBLIC_MODELS) if "model" in scopes else []
     )
     return {
         "object": "list",
         "data": [
-            {"id": name, "object": "model", "created": 0, "owned_by": "atlas"}
+            {
+                "id": name,
+                "object": "model",
+                "created": 0,
+                "owned_by": "atlas",
+                **(
+                    {"reasoning_efforts": list(EFFORTS)}
+                    if name in PUBLIC_MODELS
+                    else {}
+                ),
+            }
             for name in names
         ],
     }
@@ -201,40 +214,51 @@ async def chat(request: Request) -> Response:
             "failure", request.state.api_key.id, reason="scope", missing_scope="project"
         )
         return error(403, "insufficient_scope", missing_scope="project")
-    name = raw.get("model", "atlas")
-    if name not in ("atlas", "atlas-code", *PROFILES, *raw_model_ids()):
+    from api_routing import select_public_model
+    from services.orchestrator.dev_inference import chat as raw_chat
+
+    # Without a model, an assistant-scoped key keeps the assistant (as before).
+    default = "atlas" if "assistant" in request.state.api_key.scopes else "atlas-code"
+    name = raw.get("model", default)
+    if not isinstance(name, str):
         return error(400, "invalid_model")
-    raw_model = name == "atlas-code" or name.startswith("raw/")
-    missing = require(request, "model" if raw_model else "assistant")
+    if name == "atlas" or name in PROFILES:
+        # The Atlas assistant itself is not a routed usage: keep its own path.
+        missing = require(request, "assistant")
+        if missing is not None:
+            return missing
+        if name == "atlas":
+            raw["model"] = PROFILES[0]
+        raw["atlas_ui"] = False
+        request._body = json.dumps(raw).encode()
+        from services.orchestrator.chat_api import chat as assistant_chat
+
+        return await assistant_chat(request)
+    try:
+        public_model = select_public_model(name)
+    except ValueError:
+        return error(400, "invalid_model")
+    missing = require(request, "model")
     if missing is not None:
         return missing
-    if name == "atlas":
-        raw["model"] = PROFILES[0]
-    if not raw_model:
-        raw["atlas_ui"] = False
+    raw["model"] = "raw/public-routing"
     request._body = json.dumps(raw).encode()
-    if raw_model:
-        from services.orchestrator.dev_inference import chat as raw_chat
-
-        request.state.store = ModelAccounting(
-            request.state.key_store, request.state.api_key
+    request.state.store = ModelAccounting(
+        request.state.key_store, request.state.api_key
+    )
+    request.state.developer = request.state.api_key.id
+    try:
+        return await raw_chat(
+            request, raw_model="raw/public-routing", public_model=public_model
         )
-        request.state.developer = request.state.api_key.id
-        try:
-            return await raw_chat(
-                request, raw_model=name if name.startswith("raw/") else None
-            )
-        except BudgetRefusal as exc:
-            return error(
-                429,
-                "budget_limit",
-                used=str(exc.used),
-                limit=str(exc.limit),
-                category=exc.category,
-            )
-    from services.orchestrator.chat_api import chat as assistant_chat
-
-    return await assistant_chat(request)
+    except BudgetRefusal as exc:
+        return error(
+            429,
+            "budget_limit",
+            used=str(exc.used),
+            limit=str(exc.limit),
+            category=exc.category,
+        )
 
 
 @app.post("/responses")
