@@ -77,18 +77,16 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
     def one(target: Target) -> Plan:
         prices = ServerlessPolicy(allow_unpriced=True).prices
         price = prices[target.model]
-        endpoint = (
-            "https://api.mistral.ai/v1"
-            if target.provider == "mistral"
-            else "https://api.scaleway.ai/v1"
-        )
+        endpoint = str(
+            provider_settings.preset_value(target.provider, "base_url")
+        ).rstrip("/")
         payload = dict(
             body,
             model=target.model,
             stream=True,
             stream_options={"include_usage": True},
         )
-        if target.provider == "mistral":
+        if provider_settings.preset_value(target.provider, "prompt_cache_key"):
             payload["prompt_cache_key"] = _cache_key(api_key_id, payload)
         return Plan(
             json.dumps(payload, ensure_ascii=False),

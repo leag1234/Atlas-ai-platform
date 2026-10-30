@@ -22,7 +22,7 @@
   "scaleway": {
     "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
-    "name": "Scaleway", "base_url": "https://api.scaleway.ai/v1",
+    "name": "Scaleway", "api_key_env": "SCW_GENERATIVE_API_KEY", "base_url": "https://api.scaleway.ai/v1",
     "text_model": "qwen3.5-397b-a17b", "vision_model": "gemma-4-26b-a4b-it",
     "context": 262144,
     "price": {"currency": "EUR", "input": 0.60, "output": 3.60},
@@ -34,6 +34,7 @@
     "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
+    "api_key_env": "MISTRAL_API_KEY", "prompt_cache_key": true,
     "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
     "context": 262144,
     "price": {"currency": "USD", "input": 0.15, "output": 0.60},

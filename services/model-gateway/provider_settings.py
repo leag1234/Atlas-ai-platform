@@ -63,11 +63,18 @@ def api_key() -> str:
 
 
 def api_key_for(provider: str) -> str:
-    if provider == "mistral":
-        return os.environ.get("MISTRAL_API_KEY", "")
-    if provider == "scaleway":
-        return os.environ.get("SCW_GENERATIVE_API_KEY", "")
-    raise ValueError("unknown_provider")
+    """Key of a routed provider, named by its preset (never hardcoded here)."""
+    preset = presets().get(provider)
+    if not preset or not preset.get("api_key_env"):
+        raise ValueError("unknown_provider")
+    return os.environ.get(str(preset["api_key_env"]), "")
+
+
+def preset_value(provider: str, key: str) -> Any:
+    preset = presets().get(provider)
+    if not preset:
+        raise ValueError("unknown_provider")
+    return preset.get(key)
 
 
 def json_options(response_format: object) -> dict[str, Any]:
