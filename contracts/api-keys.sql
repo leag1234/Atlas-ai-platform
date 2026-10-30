@@ -31,8 +31,9 @@ CREATE TABLE IF NOT EXISTS api_key_daily_summary (
 );
 CREATE TABLE IF NOT EXISTS api_key_policy (
  org_id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('off','admin_only','self_service')),
- daily_requests INTEGER NOT NULL CHECK(daily_requests > 0),
- daily_micro_eur INTEGER NOT NULL CHECK(daily_micro_eur > 0),
- max_lifetime_days INTEGER NOT NULL CHECK(max_lifetime_days BETWEEN 30 AND 365),
+ daily_requests INTEGER CHECK(daily_requests > 0),
+ daily_micro_eur INTEGER CHECK(daily_micro_eur > 0),
+ weekly_micro_eur INTEGER CHECK(weekly_micro_eur > 0),
+ max_lifetime_days INTEGER NOT NULL CHECK(max_lifetime_days BETWEEN 7 AND 365),
  active_key_limit INTEGER NOT NULL CHECK(active_key_limit > 0)
 );
