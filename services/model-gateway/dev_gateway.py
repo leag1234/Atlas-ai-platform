@@ -134,8 +134,8 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
         ),
         0,
     )
-    if bound > routed_call_cap():
-        raise LimitError("cost_budget", bound, routed_call_cap(), "microEUR")
+    if bound > call_cap():
+        raise LimitError("cost_budget", bound, call_cap(), "microEUR")
     primary = replace(
         plans[0],
         reserved=bound,
@@ -264,11 +264,6 @@ def call_cap() -> int:
     except ValueError:
         return 50000
     return min(max(value, 1), 5000000)
-
-
-def routed_call_cap() -> int:
-    """Per-call ceiling for routed public models, sized to their contexts."""
-    return max(call_cap(), 5000000)
 
 
 def raw_models() -> dict[str, str]:

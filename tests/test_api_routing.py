@@ -67,10 +67,14 @@ class RoutedContextTests(unittest.TestCase):
         )
         with patch.dict(
             os.environ,
-            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+            {
+                "MISTRAL_API_KEY": "test-only",
+                "SCW_GENERATIVE_API_KEY": "test-only",
+                "ATLAS_RAW_CALL_MAX_MICRO_EUR": "5000000",
+            },
         ):
             plan = dev_gateway.prepare_api(request, "atlas-code", "key-test")
-        self.assertLessEqual(plan.reserved, dev_gateway.routed_call_cap())
+            self.assertLessEqual(plan.reserved, dev_gateway.call_cap())
         self.assertIsNone(plan.fallback)
         self.assertEqual(_json.loads(plan.body)["model"], "zai-glm-5-3")
 

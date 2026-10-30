@@ -219,7 +219,9 @@ class KeyResponsesTests(unittest.TestCase):
             "stream": True,
             "input": "fictional-" * 262144,
         }
-        reply = self.post(payload)
+        # Production sets the per-call cap to 5 EUR; a 3 MiB turn reserves above the 0.05 EUR default.
+        with patch.dict(os.environ, {"ATLAS_RAW_CALL_MAX_MICRO_EUR": "5000000"}):
+            reply = self.post(payload)
         self.assertEqual(reply.status_code, 200, reply.text)
         events = [
             json.loads(line[6:])

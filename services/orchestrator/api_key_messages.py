@@ -72,7 +72,7 @@ async def messages(request: Request) -> Response:
         return missing
     try:
         body = bytearray()
-        async with asyncio.timeout(5):
+        async with asyncio.timeout(60):
             async for chunk in request.stream():
                 body.extend(chunk)
                 if len(body) > 8388608:
