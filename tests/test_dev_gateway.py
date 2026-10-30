@@ -132,7 +132,8 @@ class DevGatewayTests(unittest.IsolatedAsyncioTestCase):
             plan.fallback.model if plan.fallback else None, "deepseek-v4-flash-0731"
         )
         self.assertIsInstance(body["prompt_cache_key"], str)
-        self.assertEqual(body["reasoning_effort"], "none")
+        # The routed provider receives the mapped level it accepts.
+        self.assertEqual(body["reasoning_effort"], "low")
         full = plan.charge(1000, 0)
         cached = plan.charge(1000, 0, 1000)
         self.assertLess(cached, full)

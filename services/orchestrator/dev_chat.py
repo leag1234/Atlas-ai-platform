@@ -94,6 +94,8 @@ class Output:
         self.request = request
         self.text = ""
         self.calls: dict[int, dict[str, Any]] = {}
+        # Provider index -> Atlas index, for providers that reuse index 0.
+        self.call_slots: dict[int, int] = {}
         self.reason: str | None = None
         self.usage: dict[str, Any] | None = None
         self.served_by: str | None = None
@@ -128,11 +130,23 @@ class Output:
             changes = []
             for call in delta.get("tool_calls") or []:
                 index = call["index"]
+                if type(index) is not int or not 0 <= index < 64:
+                    raise ValueError("invalid_call_index")
+                # Some providers stream every complete call at index 0 with a new
+                # id: a new id on a slot already holding another call opens a call.
+                slot = self.call_slots.get(index, index)
+                new_id = call.get("id")
                 if (
-                    type(index) is not int
-                    or not 0 <= index < 64
-                    or index > len(self.calls)
+                    isinstance(new_id, str)
+                    and new_id
+                    and slot in self.calls
+                    and self.calls[slot]["id"]
+                    and new_id != self.calls[slot]["id"]
                 ):
+                    slot = len(self.calls)
+                self.call_slots[index] = slot
+                index = slot
+                if index > len(self.calls) or index >= 64:
                     raise ValueError("invalid_call_index")
                 target = self.calls.setdefault(
                     index,
@@ -152,7 +166,8 @@ class Output:
                     (call["function"], target["function"], "name"),
                 ):
                     value = source.get(field)
-                    if value is not None:
+                    # Continuation chunks may repeat the id or name as "": no change.
+                    if value is not None and value != "":
                         if (
                             not isinstance(value, str)
                             or len(value) > 200

@@ -96,6 +96,9 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
             stream=True,
             stream_options={"include_usage": True},
         )
+        if target.effort is not None:
+            # Measured 2026-10-30: some routed models accept only low, high and max.
+            payload["reasoning_effort"] = target.effort
         if provider_settings.preset_value(target.provider, "prompt_cache_key"):
             payload["prompt_cache_key"] = _cache_key(api_key_id, payload)
         return Plan(
@@ -429,7 +432,11 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                     if finished:
                         raise ValueError("delta_after_finish")
                     finished = choice.finish_reason is not None
-                    if os.environ.get("ATLAS_PROVIDER") and "content" in choice.delta:
+                    # Routed and preset providers may stream typed content parts
+                    # (text, reasoning, references); keep only the answer text.
+                    if (
+                        os.environ.get("ATLAS_PROVIDER") or plan.provider
+                    ) and "content" in choice.delta:
                         choice.delta["content"] = Delta.text_content(
                             choice.delta["content"]
                         )

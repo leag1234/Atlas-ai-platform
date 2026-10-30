@@ -19,6 +19,8 @@ EFFORTS = ("none", "low", "medium", "high")
 class Target:
     provider: str
     model: str
+    # Provider-specific value sent for the requested level (None: forward as is).
+    effort: str | None = None
 
 
 def config() -> dict[str, Any]:
@@ -46,7 +48,12 @@ def targets(name: str, effort: str) -> tuple[str, tuple[Target, ...]]:
     if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
         raise ValueError("invalid_model")
     selected = tuple(
-        Target(str(item["provider"]), str(item["model"])) for item in entries
+        Target(
+            str(item["provider"]),
+            str(item["model"]),
+            str(item["effort"]) if item.get("effort") else None,
+        )
+        for item in entries
     )
     if not selected or effort not in EFFORTS:
         raise ValueError("invalid_model")
