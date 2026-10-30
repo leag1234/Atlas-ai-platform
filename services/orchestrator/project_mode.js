@@ -890,22 +890,26 @@
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
-    const previous = document.getElementById('atlas-project-sidebar-list'); previous?.remove();
-    if (scope?.org && projects.length) {
-      const list = node('section', null, 'atlas-project-host-projects'); list.id = 'atlas-project-sidebar-list';
-      list.append(node('h2', t('projects')));
-      for (const value of [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8)) {
-        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button';
-        if (value.id === scope.project) row.setAttribute('aria-current','page');
-        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); list.append(row);
-        if (value.id === scope.project) for (const conversation of conversations) {
-          const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row atlas-project-host-conversation'); chat.type = 'button';
-          if (conversation.id === scope.conversation) chat.setAttribute('aria-current','page');
-          chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id}))); list.append(chat);
+    const sidebarState = JSON.stringify([scope?.org,scope?.project,scope?.conversation,t('projects'),t('allProjects'),projects.map(value => [value.id,value.name,value.updated_at]),conversations.map(value => [value.id,value.title])]);
+    const previous = document.getElementById('atlas-project-sidebar-list');
+    if (previous?.dataset.projectSidebarState !== sidebarState) {
+      previous?.remove();
+      if (scope?.org && projects.length) {
+        const list = node('section', null, 'atlas-project-host-projects'); list.id = 'atlas-project-sidebar-list'; list.dataset.projectSidebarState = sidebarState;
+        list.append(node('h2', t('projects')));
+        for (const value of [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8)) {
+          const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button';
+          if (value.id === scope.project) row.setAttribute('aria-current','page');
+          row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); list.append(row);
+          if (value.id === scope.project) for (const conversation of conversations) {
+            const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row atlas-project-host-conversation'); chat.type = 'button';
+            if (conversation.id === scope.conversation) chat.setAttribute('aria-current','page');
+            chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id}))); list.append(chat);
+          }
         }
+        list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
+        document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
       }
-      list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
-      document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
     }
     document.body.classList.add('atlas-project-enabled');
     const rail = document.querySelector('#sidebar');
