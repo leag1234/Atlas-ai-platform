@@ -59,6 +59,10 @@ fi
                 "TRACE": str(trace),
                 "FAIL_UNITS": "1" if fail else "0",
             }
+            # The CI workflow runs this suite inside a shard; the simulated
+            # run must exercise the complete, unsharded gate.
+            for name in ("ATLAS_CI_SHARD", "ATLAS_CI_MILESTONES"):
+                environment.pop(name, None)
             result = subprocess.run(
                 ["bash", str(script)], cwd=root, env=environment, capture_output=True
             )
