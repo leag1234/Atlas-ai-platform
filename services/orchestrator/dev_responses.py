@@ -47,9 +47,16 @@ class Wire:
                 "output_tokens": usage["completion_tokens"],
                 "total_tokens": usage["total_tokens"],
                 "input_tokens_details": {"cached_tokens": 0},
-                "output_tokens_details": {"reasoning_tokens": 0}
-                if self.output.request.reasoning_effort == "none"
-                else {},
+                # Responses clients (Codex) require the field. Report the provider's
+                # count when it gives one; providers that hide reasoning give 0.
+                "output_tokens_details": {
+                    "reasoning_tokens": int(
+                        (usage.get("completion_tokens_details") or {}).get(
+                            "reasoning_tokens"
+                        )
+                        or 0
+                    )
+                },
             },
         }
 

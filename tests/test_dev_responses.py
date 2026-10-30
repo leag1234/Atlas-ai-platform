@@ -19,6 +19,38 @@ PAYLOAD: dict[str, Any] = {
 
 
 class DevResponsesTests(unittest.TestCase):
+    def test_reasoning_effort_levels_report_reasoning_tokens(self) -> None:
+        # Codex rejects a completed response without usage reasoning_tokens.
+        for effort, usage, expected in (
+            ("low", {"completion_tokens_details": {"reasoning_tokens": 5}}, 5),
+            ("medium", {}, 0),
+            ("high", {"completion_tokens_details": {"reasoning_tokens": 9}}, 9),
+            ("none", {}, 0),
+        ):
+            payload = dict(PAYLOAD, reasoning={"effort": effort})
+            output = Output("test", responses(payload))
+            self.assertEqual(output.request.reasoning_effort, effort)
+            wire = Wire(output, payload)
+            wire.start()
+            wire.feed(
+                output.feed(
+                    {"choices": [{"delta": {"content": "ok"}, "finish_reason": None}]}
+                )
+            )
+            wire.feed(
+                output.feed({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+            )
+            wire.feed(
+                output.feed(
+                    {
+                        "choices": [],
+                        "usage": {"prompt_tokens": 2, "completion_tokens": 3, **usage},
+                    }
+                )
+            )
+            details = wire.result()["usage"]["output_tokens_details"]
+            self.assertEqual(details, {"reasoning_tokens": expected})
+
     def test_http_json_and_incremental_sse(self) -> None:
         env = Environment()
         self.addCleanup(env.close)
