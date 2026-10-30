@@ -271,6 +271,10 @@ async def pixels(
     if type(seed) is not int or not 0 <= seed < 2**32:
         raise ValueError("invalid_provider_seed")
     model = data.get("model")
+    if model is None:
+        # Workers deployed before model reporting still return valid images; the
+        # GPU window redeploys the worker only once a day.
+        model = "unreported"
     if not isinstance(model, str) or not model:
         raise ValueError("invalid_provider_model")
     return {
