@@ -398,6 +398,13 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                 },
                 allow_redirects=False,
             ) as response:
+                if response.status == 402:
+                    # Provider account out of credit: try the fallback target, and if
+                    # none is left report a credit refusal, never a provider failure.
+                    logging.getLogger(__name__).warning(
+                        "devapi_provider_credit", extra={"provider": plan.provider}
+                    )
+                    raise TransientProviderError("provider_quota")
                 if response.status == 429 or response.status >= 500:
                     raise TransientProviderError("provider_error")
                 if response.status != 200:

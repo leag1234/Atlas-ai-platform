@@ -122,8 +122,15 @@ async def validated_drive(
                 current = gateway.retry(plan, problem, plan.reserved - charged)
     except LimitError as exc:
         yield {"error": {"type": exc.code, "message": exc.detail}}
-    except (ValueError, RuntimeError, TimeoutError, OSError, KeyError, TypeError):
-        yield {"error": {"type": "provider_error", "message": "provider_error"}}
+    except (
+        ValueError,
+        RuntimeError,
+        TimeoutError,
+        OSError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        yield provider_failure(exc)
     finally:
         if not settled:
             store.finish(request_id, charged if known else None, incoming, outgoing)
@@ -142,6 +149,18 @@ async def validated_drive(
                 }
             )
         )
+
+
+def provider_failure(exc: BaseException) -> dict[str, dict[str, str]]:
+    """D5: a provider credit refusal is reported as such, not as a provider failure."""
+    if str(exc) == "provider_quota":
+        return {
+            "error": {
+                "type": "provider_quota",
+                "message": "The model provider refused the request: account credit exhausted.",
+            }
+        }
+    return {"error": {"type": "provider_error", "message": "provider_error"}}
 
 
 async def drive(
@@ -185,8 +204,15 @@ async def drive(
                 yield chunk
     except LimitError as exc:
         yield {"error": {"type": exc.code, "message": exc.detail}}
-    except (ValueError, RuntimeError, TimeoutError, OSError, KeyError, TypeError):
-        yield {"error": {"type": "provider_error", "message": "provider_error"}}
+    except (
+        ValueError,
+        RuntimeError,
+        TimeoutError,
+        OSError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        yield provider_failure(exc)
     finally:
         if not settled:
             store.finish(request_id, None)
@@ -347,7 +373,8 @@ async def chat(
     ) as frames:
         async for frame in frames:
             if "error" in frame:
-                return error(frame["error"]["type"], 502, frame["error"]["message"])
+                status = 503 if frame["error"]["type"] == "provider_quota" else 502
+                return error(frame["error"]["type"], status, frame["error"]["message"])
             if wire:
                 try:
                     wire.feed(frame)

@@ -415,7 +415,7 @@ class ProviderTransportTests(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import MagicMock
         import aiohttp
 
-        for status in (200, 401, 429, 503):
+        for status in (200, 401, 402, 429, 503):
             with patch.dict(
                 os.environ,
                 {
@@ -455,8 +455,12 @@ class ProviderTransportTests(unittest.IsolatedAsyncioTestCase):
                             caught.exception, TransientProviderError
                         )
                     else:
-                        with self.assertRaises(TransientProviderError):
+                        with self.assertRaises(TransientProviderError) as transient:
                             _ = [piece async for piece in gateway.transport(plan)]
+                        self.assertEqual(
+                            str(transient.exception),
+                            "provider_quota" if status == 402 else "provider_error",
+                        )
                     self.assertEqual(
                         session.post.call_args.args[0],
                         "https://chosen.invalid/v1/chat/completions",
