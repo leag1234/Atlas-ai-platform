@@ -34,13 +34,22 @@ class KeyUiAssetTests(unittest.TestCase):
             for array in re.findall(rf"\n    {locale}: \[(.*?)\]", words.group("body"))
         ]
         self.assertEqual(len(parsed), 5)
-        self.assertEqual({len(array) for array in parsed}, {58})
+        self.assertEqual({len(array) for array in parsed}, {60})
         self.assertIn("button(t(36))", script)
         self.assertEqual(parsed[0][36], "Save policy")
         self.assertIn("t(50)", script)
         self.assertEqual(parsed[0][50], "per day")
         self.assertEqual(parsed[0][57], "Weekly cap (EUR)")
         self.assertTrue(all(array[57] for array in parsed))
+        self.assertEqual(parsed[0][58], "This week")
+        self.assertEqual(parsed[1][58], "Cette semaine")
+        self.assertEqual(parsed[0][59], "of")
+        self.assertEqual(parsed[1][59], "sur")
+        self.assertIn("key.usage.week_usage.charged_micro_eur", script)
+        self.assertIn(
+            "key.weekly_micro_eur === null ? '' : ` ${t(59)} ${euro(key.weekly_micro_eur)}`",
+            script,
+        )
         self.assertIn("'Mis claves'", script)
         self.assertNotIn("'Mis clés'", script)
         self.assertIn("['weekly_micro_eur',57,0.000001,1000]", script)
@@ -56,7 +65,7 @@ class KeyUiAssetTests(unittest.TestCase):
         stylesheet = (root / "services/orchestrator/api-key-ui.css").read_text()
 
         self.assertIn("atlas-key-revoke", script)
-        self.assertIn("weeklyCap", script)
+        self.assertNotIn("weeklyCap", script)
         self.assertNotIn("status.textContent = t(48)", script)
         self.assertIn("dateCell(54,key.created_at)", script)
         self.assertIn("dateCell(55,key.last_used_at)", script)
