@@ -14,7 +14,7 @@ from unittest.mock import patch
 from typing import Any
 
 from fastapi.testclient import TestClient
-from services.orchestrator.api_keys import Store, KeyQuotaError
+from services.orchestrator.api_keys import MAX_CALL_RESERVATION, Store, KeyQuotaError
 from services.orchestrator.api_key_edge import key_call, ModelAccounting
 from services.orchestrator.api_key_admin import app as admin_app
 from services.orchestrator.chat_api import app
@@ -166,6 +166,18 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(usage["weekly_micro_eur"], 100000)
         self.now[0] = datetime(2026, 1, 5, tzinfo=timezone.utc).timestamp()
         self.store.reserve(row["id"], 100000)
+
+    def test_reservation_bound_follows_the_operator_call_cap(self) -> None:
+        # A long coding-agent turn reserved 300550 microEUR and was refused as a bare
+        # invalid_request; the ledger bound is the highest cap an operator may set.
+        row, _ = self.create(
+            daily_requests=None, daily_micro_eur=None, weekly_micro_eur=None
+        )
+        self.store.finish(self.store.reserve(row["id"], 300550), 300550)
+        self.store.finish(self.store.reserve(row["id"], MAX_CALL_RESERVATION), 0)
+        with self.assertRaisesRegex(ValueError, "invalid_reservation"):
+            self.store.reserve(row["id"], MAX_CALL_RESERVATION + 1)
+        self.assertEqual(self.store.usage(row["id"])["charged_micro_eur"], 300550)
 
     def test_own_budget_bypasses_owner_monthly_cap_not_global_monthly_cap(self) -> None:
         own, secret = self.create(own_budget=True, weekly_micro_eur=1000000)
