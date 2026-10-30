@@ -70,6 +70,16 @@ def _cache_key(api_key_id: str, body: dict[str, Any]) -> str:
 def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
     """Freeze a public usage route; raw IDs never enter this decision."""
     body = request.model_dump(exclude_none=True, by_alias=True)
+    # Same wire cleanup as prepare(): strict providers reject empty tool_calls,
+    # empty tool lists and an unrequested response_format with HTTP 422.
+    if "response_format" not in request.model_fields_set:
+        body.pop("response_format", None)
+    for message in body["messages"]:
+        if not message.get("tool_calls"):
+            message.pop("tool_calls", None)
+    if not request.tools or request.tool_choice == "none":
+        for key in ("tools", "tool_choice", "parallel_tool_calls"):
+            body.pop(key, None)
     effort = str(body.get("reasoning_effort", "none"))
     _, entries = targets(usage, effort)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512

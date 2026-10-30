@@ -387,7 +387,7 @@ class MessagesTests(unittest.TestCase):
         sent = json.loads(plans[0].body)
         self.assertEqual(
             sent["messages"],
-            [{"role": "user", "content": "Calculate 7 times 8", "tool_calls": []}],
+            [{"role": "user", "content": "Calculate 7 times 8"}],
         )
         self.assertEqual(sent["model"], "zai-glm-5-3-flash")
         self.assertEqual(reply.json()["model"], "atlas-code")
