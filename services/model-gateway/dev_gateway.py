@@ -490,43 +490,60 @@ def _settle(
 async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
-    frames: list[dict[str, Any]] = []
     attempts: list[tuple[Plan, Usage]] = []
     try:
         for current in (plan, plan):
+            held: list[dict[str, Any]] = []
+            visible = False
             async with aclosing(attempt_events(current)) as attempt:
                 async for frame in attempt:
-                    frames.append(frame)
-            terminal = frames[-1]
-            usage = Usage.model_validate(terminal["usage"])
-            if any(_has_visible_content(frame) for frame in frames[:-1]):
-                for frame in frames:
-                    yield frame
-                if attempts:
-                    _settle(frames[-1], attempts)
+                    if visible:
+                        if "cost_micro_eur" in frame:
+                            _settle(frame, attempts)
+                        yield frame
+                        continue
+                    held.append(frame)
+                    if _has_visible_content(frame):
+                        visible = True
+                        for held_frame in held:
+                            if "cost_micro_eur" in held_frame:
+                                _settle(held_frame, attempts)
+                            yield held_frame
+            if visible:
                 return
+            terminal = held[-1]
+            usage = Usage.model_validate(terminal["usage"])
             if usage.completion_tokens == 0:
                 raise ValueError("empty_completion")
             attempts.append((current, usage))
-            frames.clear()
             logging.getLogger(__name__).warning(
                 "devapi_retry",
                 extra={"reason": "reasoning_only_answer", "attempt": len(attempts)},
             )
         if plan.fallback is None:
             raise ValueError("reasoning_only_answer")
+        held = []
+        visible = False
         async with aclosing(attempt_events(plan.fallback)) as attempt:
             async for frame in attempt:
-                frames.append(frame)
-        if any(_has_visible_content(frame) for frame in frames[:-1]):
-            for frame in frames:
-                yield frame
-            _settle(frames[-1], attempts)
+                if visible:
+                    if "cost_micro_eur" in frame:
+                        _settle(frame, attempts)
+                    yield frame
+                    continue
+                held.append(frame)
+                if _has_visible_content(frame):
+                    visible = True
+                    for held_frame in held:
+                        if "cost_micro_eur" in held_frame:
+                            _settle(held_frame, attempts)
+                        yield held_frame
+        if visible:
             return
-        yield _settle(frames[-1], attempts)
+        yield _settle(held[-1], attempts)
         return
     except TransientProviderError:
-        if frames or plan.fallback is None:
+        if plan.fallback is None:
             raise
     logging.getLogger(__name__).warning("devapi_transient_fallback")
     async with aclosing(attempt_events(plan.fallback)) as attempt:

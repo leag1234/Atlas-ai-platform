@@ -322,6 +322,84 @@ class RoutedReasoningOnlyRetryTests(unittest.TestCase):
         assert isinstance(usage, dict)
         self.assertEqual(usage["completion_tokens"], 2)
 
+    def test_streaming_starts_at_first_visible_frame_and_stays_live(self) -> None:
+        import asyncio
+        import json as _json
+
+        plan = self._plan()
+        pulls: list[str] = []
+        deliveries: list[str] = []
+
+        async def fake_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            frames = [
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"reasoning_content": "fictional reasoning"},
+                        }
+                    ]
+                },
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": "OK"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                },
+                {
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 20,
+                        "completion_tokens": 2,
+                        "total_tokens": 22,
+                    },
+                },
+            ]
+            for frame, label in zip(frames, ("reasoning", "OK", "usage")):
+                pulls.append(label)
+                yield b"data: " + _json.dumps(frame).encode() + b"\n\n"
+            yield b"data: [DONE]\n\n"
+
+        async def collect() -> None:
+            with patch.object(dev_gateway, "transport", fake_transport):
+                async for event in dev_gateway.events(plan):
+                    if event.get("choices"):
+                        delta = event["choices"][0]["delta"]
+                        deliveries.append(
+                            delta.get("content", delta.get("reasoning_content"))
+                        )
+                    else:
+                        deliveries.append("terminal")
+
+        asyncio.run(collect())
+        self.assertEqual(pulls, ["reasoning", "OK", "usage"])
+        self.assertEqual(deliveries, ["fictional reasoning", "OK", "terminal"])
+        self.assertLess(
+            deliveries.index("OK"), pulls.index("usage"), "terminal frame was buffered"
+        )
+
+    def test_retry_terminal_is_settled_before_consumer_receives_it(self) -> None:
+        import asyncio
+
+        plan = self._plan()
+        streams = iter([self._reasoning_only(), self._answer()])
+        terminal_costs: list[object] = []
+
+        async def fake_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            yield next(streams)
+
+        async def collect() -> None:
+            with patch.object(dev_gateway, "transport", fake_transport):
+                async for event in dev_gateway.events(plan):
+                    if not event.get("choices"):
+                        terminal_costs.append(event["cost_micro_eur"])
+
+        asyncio.run(collect())
+        self.assertEqual(terminal_costs, [plan.charge(10, 4) + plan.charge(20, 2)])
+
 
 class ReusedCallIndexTests(unittest.TestCase):
     def test_new_call_id_on_reused_index_opens_a_new_call(self) -> None:
