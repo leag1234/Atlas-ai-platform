@@ -366,6 +366,7 @@ def retry(plan: Plan, error: str, remaining: int) -> Plan:
 class Usage(BaseModel):
     prompt_tokens: int = Field(ge=0, le=1048576, strict=True)
     completion_tokens: int = Field(ge=0, le=8192, strict=True)
+    total_tokens: int | None = Field(default=None, ge=0, strict=True)
     prompt_tokens_details: dict[str, int] | None = None
 
 
@@ -433,8 +434,10 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                 if frame.usage is not None:
                     if os.environ.get("ATLAS_PROVIDER"):
                         validate_usage(
-                            frame.usage.model_dump(),
-                            usage.model_dump() if usage is not None else None,
+                            frame.usage.model_dump(exclude_none=True),
+                            usage.model_dump(exclude_none=True)
+                            if usage is not None
+                            else None,
                         )
                         maximum = json.loads(plan.body)["max_tokens"]
                         if frame.usage.completion_tokens > maximum:
@@ -475,23 +478,116 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     }
 
 
+def _has_visible_content(frame: dict[str, Any]) -> bool:
+    return any(
+        bool(choice.get("delta", {}).get("content"))
+        or choice.get("delta", {}).get("tool_calls")
+        for frame_choices in (frame.get("choices", []),)
+        for choice in frame_choices
+        if isinstance(choice, dict)
+    )
+
+
+def _settle(
+    frame: dict[str, Any], attempts: list[tuple[Plan, Usage]]
+) -> dict[str, Any]:
+    if not attempts:
+        return frame
+    usage = Usage.model_validate(frame["usage"])
+    for prior_plan, prior_usage in attempts:
+        usage.prompt_tokens += prior_usage.prompt_tokens
+        usage.completion_tokens += prior_usage.completion_tokens
+        if usage.total_tokens is not None and prior_usage.total_tokens is not None:
+            usage.total_tokens += prior_usage.total_tokens
+        frame["cost_micro_eur"] += prior_plan.charge(
+            prior_usage.prompt_tokens,
+            prior_usage.completion_tokens,
+            (prior_usage.prompt_tokens_details or {}).get("cached_tokens", 0),
+        )
+    frame["usage"] = usage.model_dump(exclude_none=True)
+    return frame
+
+
 async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
+    attempts: list[tuple[Plan, Usage]] = []
     emitted = False
+    held: list[dict[str, Any]] = []
     try:
-        async with aclosing(attempt_events(plan)) as frames:
-            async for frame in frames:
-                emitted = True
-                yield frame
+        for current in (plan, plan):
+            held = []
+            visible = False
+            async with aclosing(attempt_events(current)) as attempt:
+                async for frame in attempt:
+                    if visible:
+                        if "cost_micro_eur" in frame:
+                            _settle(frame, attempts)
+                        emitted = True
+                        yield frame
+                        continue
+                    held.append(frame)
+                    if _has_visible_content(frame):
+                        visible = True
+                        for held_frame in held:
+                            if "cost_micro_eur" in held_frame:
+                                _settle(held_frame, attempts)
+                            emitted = True
+                            yield held_frame
+            if visible:
+                return
+            terminal = held[-1]
+            usage = Usage.model_validate(terminal["usage"])
+            if usage.completion_tokens == 0:
+                raise ValueError("empty_completion")
+            attempts.append((current, usage))
+            logging.getLogger(__name__).warning(
+                "devapi_retry",
+                extra={"reason": "reasoning_only_answer", "attempt": len(attempts)},
+            )
+        if plan.fallback is None:
+            raise ValueError("reasoning_only_answer")
+        held = []
+        visible = False
+        async with aclosing(attempt_events(plan.fallback)) as attempt:
+            async for frame in attempt:
+                if visible:
+                    if "cost_micro_eur" in frame:
+                        _settle(frame, attempts)
+                    emitted = True
+                    yield frame
+                    continue
+                held.append(frame)
+                if _has_visible_content(frame):
+                    visible = True
+                    for held_frame in held:
+                        if "cost_micro_eur" in held_frame:
+                            _settle(held_frame, attempts)
+                        emitted = True
+                        yield held_frame
+        if visible:
+            return
+        emitted = True
+        yield _settle(held[-1], attempts)
         return
     except TransientProviderError:
+        # Never append a second answer to frames the client already received.
         if emitted or plan.fallback is None:
+            for frame in held if not emitted else []:
+                yield frame
             raise
+    except Exception:
+        # Keep the stream shape of a failed attempt: frames held back while
+        # waiting for visible content still reach the client before the error.
+        if not emitted:
+            for frame in held:
+                yield frame
+        raise
     logging.getLogger(__name__).warning("devapi_transient_fallback")
-    async with aclosing(attempt_events(plan.fallback)) as frames:
-        async for frame in frames:
+    async with aclosing(attempt_events(plan.fallback)) as attempt:
+        async for frame in attempt:
             if "cost_micro_eur" in frame:
                 # Failed primary usage is unknown: keep its conservative bound.
                 frame["cost_micro_eur"] += plan.attempt_bound
+                _settle(frame, attempts)
             yield frame
