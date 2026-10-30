@@ -287,7 +287,10 @@ class ModelAccounting:
 
     def reserve(self, developer: str, amount: int, *, monetary: bool = True) -> str:
         reservation = self.ledger.reserve_cost(
-            self.principal.budget_user, Decimal(amount) / 1000000, "en"
+            self.principal.budget_user,
+            Decimal(amount) / 1000000,
+            "en",
+            user_limits=not self.principal.budget_user.startswith("api-key:"),
         )
         try:
             identifier = self.store.reserve(developer, amount, monetary=monetary)

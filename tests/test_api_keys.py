@@ -236,6 +236,31 @@ class KeyTests(unittest.TestCase):
                 ModelAccounting(self.store, principal).reserve(own["id"], 1)
         self.assertEqual(caught.exception.category, "global_monthly_cost")
 
+    def test_own_budget_key_is_not_held_to_the_per_user_monthly_cap(self) -> None:
+        # Measured 2026-10-30: an own-budget worker key was refused at 30 EUR this
+        # month by ATLAS_USER_MONTHLY_EUR although its weekly key cap was 100 EUR.
+        own, secret = self.create(own_budget=True, weekly_micro_eur=100000000)
+        shared, shared_secret = self.create(own_budget=False)
+        principal = self.store.resolve(secret)
+        with patch.dict(
+            os.environ,
+            {"ATLAS_USER_MONTHLY_EUR": "1", "ATLAS_GLOBAL_MONTHLY_EUR": "100"},
+        ):
+            accounting = ModelAccounting(self.store, principal)
+            for _ in range(3):
+                request_id = accounting.reserve(own["id"], 900000)
+                accounting.finish(request_id, 900000)
+            shared_principal = self.store.resolve(shared_secret)
+            spent = DailyLedger().reserve_cost(
+                shared_principal.budget_user, Decimal("0.95"), "en"
+            )
+            DailyLedger().settle_cost(spent, Decimal("0.95"))
+            with self.assertRaises(BudgetRefusal) as caught:
+                ModelAccounting(self.store, shared_principal).reserve(
+                    shared["id"], 100000
+                )
+        self.assertEqual(caught.exception.category, "monthly_cost")
+
     def test_existing_key_store_upgrades_without_changing_existing_caps(self) -> None:
         path = self.root / "old-keys.sqlite"
         db = sqlite3.connect(path)
