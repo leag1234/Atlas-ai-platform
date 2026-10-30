@@ -10,6 +10,7 @@ from unittest.mock import patch, MagicMock
 from collections.abc import AsyncIterator
 
 from packages.dev_request import Request
+from services.orchestrator.dev_chat import RawChatInput
 import dev_gateway as gateway
 
 
@@ -114,6 +115,27 @@ class DevGatewayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     session.post.call_args.kwargs["data"], plan.body.encode()
                 )
+
+    def test_public_usage_route_cache_key_fallback_and_cached_settlement(self) -> None:
+        request = RawChatInput.model_validate(
+            {
+                "model": "raw/public-routing",
+                "messages": [{"role": "user", "content": "Repeat this prefix"}],
+                "reasoning_effort": "none",
+            }
+        )
+        plan = gateway.prepare_api(request, "atlas-code", "key-fictional")
+        body = json.loads(plan.body)
+        self.assertEqual(plan.provider, "mistral")
+        self.assertEqual(plan.model, "zai-glm-5-3-flash")
+        self.assertEqual(
+            plan.fallback.model if plan.fallback else None, "deepseek-v4-flash-0731"
+        )
+        self.assertIsInstance(body["prompt_cache_key"], str)
+        self.assertEqual(body["reasoning_effort"], "none")
+        full = plan.charge(1000, 0)
+        cached = plan.charge(1000, 0, 1000)
+        self.assertLess(cached, full)
 
     def test_correlated_tool_history_and_named_choice(self) -> None:
         tool = {

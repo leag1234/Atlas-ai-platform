@@ -1,0 +1,21 @@
+{
+  "version": "2026-10-30",
+  "aliases": {
+    "atlas-code-2026-10-30": "atlas-code",
+    "atlas-chat-2026-10-30": "atlas-chat"
+  },
+  "usages": {
+    "atlas-code": {
+      "none": [{"provider": "mistral", "model": "zai-glm-5-3-flash"}, {"provider": "scaleway", "model": "deepseek-v4-flash-0731"}],
+      "low": [{"provider": "mistral", "model": "zai-glm-5-3"}, {"provider": "scaleway", "model": "deepseek-v4-flash-0731"}],
+      "medium": [{"provider": "mistral", "model": "zai-glm-5-3"}, {"provider": "scaleway", "model": "deepseek-v4-flash-0731"}],
+      "high": [{"provider": "mistral", "model": "zai-glm-5-3"}, {"provider": "scaleway", "model": "deepseek-v4-flash-0731"}]
+    },
+    "atlas-chat": {
+      "none": [{"provider": "mistral", "model": "zai-glm-5-3-flash"}, {"provider": "scaleway", "model": "glm-5.2"}],
+      "low": [{"provider": "mistral", "model": "zai-glm-5-3"}, {"provider": "scaleway", "model": "glm-5.2"}],
+      "medium": [{"provider": "mistral", "model": "zai-glm-5-3"}, {"provider": "scaleway", "model": "glm-5.2"}],
+      "high": [{"provider": "mistral", "model": "zai-glm-5-3"}, {"provider": "scaleway", "model": "glm-5.2"}]
+    }
+  }
+}

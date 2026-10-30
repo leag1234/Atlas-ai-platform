@@ -130,8 +130,13 @@ class KeyResponsesTests(unittest.TestCase):
     def result(self, reply: Any, stream: bool) -> dict[str, Any]:
         self.assertEqual(reply.status_code, 200, reply.text)
         self.assertEqual(reply.headers["cache-control"], "no-store")
+        self.assertEqual(
+            reply.headers["x-atlas-served-by"], "mistral/zai-glm-5-3-flash"
+        )
         if not stream:
-            return dict(reply.json())
+            result = dict(reply.json())
+            self.assertEqual(result["served_by"], "mistral/zai-glm-5-3-flash")
+            return result
         self.assertEqual(reply.headers["x-accel-buffering"], "no")
         events = [
             json.loads(line[6:])
@@ -141,6 +146,9 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(events[0]["type"], "response.created")
         self.assertEqual(events[0]["response"]["output"], [])
         self.assertEqual(events[-1]["type"], "response.completed")
+        self.assertEqual(
+            events[-1]["response"]["served_by"], "mistral/zai-glm-5-3-flash"
+        )
         self.assertEqual(
             [event["sequence_number"] for event in events], list(range(len(events)))
         )
@@ -206,23 +214,42 @@ class KeyResponsesTests(unittest.TestCase):
             Decimal(usage["charged_micro_eur"]) / 1000000,
         )
 
-    def test_model_alias_and_configured_default(self) -> None:
-        models = list(gateway.raw_models())
-        code = "raw/" + ServerlessPolicy().models["code"]
+    def test_model_aliases_default_to_code_and_refuse_raw_ids(self) -> None:
         for name, selected in [
-            ("gpt-fictional-client", code),
-            ("raw/unknown-client", code),
-            (models[0], models[0]),
+            ("gpt-fictional-client", "atlas-code"),
+            ("atlas-chat", "atlas-chat"),
+            ("atlas-code-2026-10-30", "atlas-code"),
         ]:
             with self.subTest(model=name):
                 result = self.result(self.post(self.payload | {"model": name}), False)
                 self.assertEqual(result["model"], selected)
-                self.assertEqual(
-                    self.inputs[-1]["model"], selected.removeprefix("raw/")
-                )
-        with patch.dict(os.environ, {"ATLAS_API_RESPONSES_MODEL": models[-1]}):
-            self.result(self.post(self.payload | {"model": "unknown-client"}), False)
-            self.assertEqual(self.inputs[-1]["model"], models[-1].removeprefix("raw/"))
+        reply = self.post(self.payload | {"model": "raw/internal-only"})
+        self.assertEqual(reply.status_code, 404)
+
+    def test_chat_completions_reports_public_usage_and_provider(self) -> None:
+        reply = self.client.post(
+            "/api/atlas/v1/chat/completions",
+            headers=self.headers,
+            json={
+                "model": "gpt-fictional-client",
+                "messages": [{"role": "user", "content": "Save seven"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "save_value",
+                            "parameters": {"type": "object"},
+                        },
+                    }
+                ],
+            },
+        )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertEqual(reply.json()["model"], "atlas-code")
+        self.assertEqual(reply.json()["served_by"], "mistral/zai-glm-5-3-flash")
+        self.assertEqual(
+            reply.headers["x-atlas-served-by"], "mistral/zai-glm-5-3-flash"
+        )
 
     def test_auth_scope_quota_expiry_revocation_before_transport(self) -> None:
         for stream in (False, True):
@@ -246,17 +273,12 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(self.post(self.payload).status_code, 401)
         self.assertEqual(self.inputs, [])
 
-    def test_bad_default_and_unpriced_model_fail_before_transport(self) -> None:
-        with patch.dict(os.environ, {"ATLAS_API_RESPONSES_MODEL": "raw/missing"}):
-            reply = self.post(self.payload | {"model": "client-default"})
-            self.assertEqual(reply.status_code, 503)
-            self.assertEqual(reply.json()["error"]["code"], "invalid_default_model")
+    def test_missing_public_route_price_fails_before_transport(self) -> None:
         policy = ServerlessPolicy(allow_unpriced=True)
-        policy.prices.pop(policy.models["code"])
+        policy.prices.pop("zai-glm-5-3-flash")
         with patch.object(gateway, "ServerlessPolicy", return_value=policy):
             reply = self.post(self.payload)
-            self.assertEqual(reply.status_code, 400)
-            self.assertEqual(reply.json()["error"]["type"], "unpriced_model")
+            self.assertEqual(reply.status_code, 503)
         self.assertEqual(self.inputs, [])
         self.assertEqual(self.store.usage(self.row["id"])["requests"], 0)
 

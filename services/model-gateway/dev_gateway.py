@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_CEILING
 import json
 import os
 import logging
+import hashlib
 from pathlib import Path
 from typing import Any, Literal
 
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 from packages.dev_request import Request
 from serverless import ServerlessPolicy
 import provider_settings
+from api_routing import Target, targets
 from provider_retry import TransientProviderError
 from streaming import Delta
 from stream_usage import validate_usage
@@ -28,16 +30,100 @@ class Plan:
     reserved: int
     input_rate: Decimal
     output_rate: Decimal
+    provider: str = ""
+    model: str = ""
+    api_key: str = ""
+    prompt_cache_key: str | None = None
+    cached_input_rate: Decimal | None = None
     unpriced: bool = False
     fallback: "Plan | None" = None
     attempt_bound: int = 0
 
-    def charge(self, incoming: int, outgoing: int) -> int:
+    def charge(self, incoming: int, outgoing: int, cached: int = 0) -> int:
+        cached = min(max(cached, 0), incoming)
+        input_rate = self.input_rate
+        if self.cached_input_rate is not None:
+            input_rate = (
+                incoming - cached
+            ) * self.input_rate + cached * self.cached_input_rate
+            return int(
+                (input_rate + outgoing * self.output_rate).to_integral_value(
+                    rounding=ROUND_CEILING
+                )
+            )
         return int(
             (
                 incoming * self.input_rate + outgoing * self.output_rate
             ).to_integral_value(rounding=ROUND_CEILING)
         )
+
+
+def _cache_key(api_key_id: str, body: dict[str, Any]) -> str:
+    messages = body.get("messages")
+    first = messages[0] if isinstance(messages, list) and messages else {}
+    digest = hashlib.sha256(
+        json.dumps(first, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
+    return hashlib.sha256((api_key_id + ":" + digest).encode()).hexdigest()
+
+
+def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
+    """Freeze a public usage route; raw IDs never enter this decision."""
+    body = request.model_dump(exclude_none=True, by_alias=True)
+    effort = str(body.get("reasoning_effort", "none"))
+    _, entries = targets(usage, effort)
+    incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
+
+    def one(target: Target) -> Plan:
+        prices = ServerlessPolicy(allow_unpriced=True).prices
+        price = prices[target.model]
+        endpoint = (
+            "https://api.mistral.ai/v1"
+            if target.provider == "mistral"
+            else "https://api.scaleway.ai/v1"
+        )
+        payload = dict(
+            body,
+            model=target.model,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+        if target.provider == "mistral":
+            payload["prompt_cache_key"] = _cache_key(api_key_id, payload)
+        return Plan(
+            json.dumps(payload, ensure_ascii=False),
+            endpoint,
+            0,
+            Decimal(str(price["input_eur_per_mtok"])),
+            Decimal(str(price["output_eur_per_mtok"])),
+            provider=target.provider,
+            model=target.model,
+            api_key=provider_settings.api_key_for(target.provider),
+            prompt_cache_key=payload.get("prompt_cache_key"),
+            cached_input_rate=(
+                Decimal(str(price["cached_input_eur_per_mtok"]))
+                if price.get("cached_input_eur_per_mtok") is not None
+                else None
+            ),
+        )
+
+    plans = [one(entry) for entry in entries]
+    bound = sum((plan.charge(incoming, request.max_tokens) for plan in plans), 0)
+    if bound > call_cap():
+        raise LimitError("cost_budget", bound, call_cap(), "microEUR")
+    primary = replace(
+        plans[0],
+        reserved=bound,
+        attempt_bound=plans[0].charge(incoming, request.max_tokens),
+    )
+    if len(plans) > 1:
+        primary = replace(
+            primary,
+            fallback=replace(
+                plans[1], attempt_bound=plans[1].charge(incoming, request.max_tokens)
+            ),
+        )
+    return primary
 
 
 def prepare(request: Request) -> Plan:
@@ -250,6 +336,7 @@ def retry(plan: Plan, error: str, remaining: int) -> Plan:
 class Usage(BaseModel):
     prompt_tokens: int = Field(ge=0, le=1048576, strict=True)
     completion_tokens: int = Field(ge=0, le=8192, strict=True)
+    prompt_tokens_details: dict[str, int] | None = None
 
 
 class Choice(BaseModel):
@@ -275,7 +362,8 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                 data=plan.body.encode(),
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer " + provider_settings.api_key(),
+                    "Authorization": "Bearer "
+                    + (plan.api_key or provider_settings.api_key()),
                 },
                 allow_redirects=False,
             ) as response:
@@ -343,8 +431,13 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
         raise ValueError("incomplete_provider_stream")
     yield {
         "choices": [],
-        "usage": usage.model_dump(),
-        "cost_micro_eur": plan.charge(usage.prompt_tokens, usage.completion_tokens),
+        "usage": usage.model_dump(exclude_none=True),
+        "cost_micro_eur": plan.charge(
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            (usage.prompt_tokens_details or {}).get("cached_tokens", 0),
+        ),
+        "served_by": plan.provider + "/" + plan.model if plan.provider else None,
     }
 
 

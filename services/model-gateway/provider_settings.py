@@ -62,6 +62,14 @@ def api_key() -> str:
     return os.environ.get("ATLAS_PROVIDER_API_KEY", "")
 
 
+def api_key_for(provider: str) -> str:
+    if provider == "mistral":
+        return os.environ.get("MISTRAL_API_KEY", "")
+    if provider == "scaleway":
+        return os.environ.get("SCW_GENERATIVE_API_KEY", "")
+    raise ValueError("unknown_provider")
+
+
 def json_options(response_format: object) -> dict[str, Any]:
     # Internal state requests fall back to instructions on unverified providers.
     # Explicit developer-API response_format continues to pass through unchanged.
