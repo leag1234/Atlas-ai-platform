@@ -154,3 +154,31 @@ class DevInputTests(unittest.TestCase):
             .content,
             "hi",
         )
+
+
+class NullOptionalFieldTests(unittest.TestCase):
+    def test_null_optional_fields_are_absent(self) -> None:
+        # Shape sent by Codex CLI 0.98: unset optional fields arrive as null.
+        chat = responses(
+            {
+                "model": "atlas-code",
+                "input": [
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": "Fictional task."}],
+                    }
+                ],
+                "reasoning": None,
+                "prompt_cache_key": None,
+                "tool_choice": "auto",
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "exec_command",
+                        "parameters": {"type": "object", "properties": {}},
+                    }
+                ],
+            }
+        )
+        self.assertEqual([t.function.name for t in chat.tools], ["exec_command"])
