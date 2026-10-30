@@ -491,6 +491,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
     attempts: list[tuple[Plan, Usage]] = []
+    emitted = False
     try:
         for current in (plan, plan):
             held: list[dict[str, Any]] = []
@@ -500,6 +501,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                     if visible:
                         if "cost_micro_eur" in frame:
                             _settle(frame, attempts)
+                        emitted = True
                         yield frame
                         continue
                     held.append(frame)
@@ -508,6 +510,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                         for held_frame in held:
                             if "cost_micro_eur" in held_frame:
                                 _settle(held_frame, attempts)
+                            emitted = True
                             yield held_frame
             if visible:
                 return
@@ -529,6 +532,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                 if visible:
                     if "cost_micro_eur" in frame:
                         _settle(frame, attempts)
+                    emitted = True
                     yield frame
                     continue
                 held.append(frame)
@@ -537,13 +541,16 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                     for held_frame in held:
                         if "cost_micro_eur" in held_frame:
                             _settle(held_frame, attempts)
+                        emitted = True
                         yield held_frame
         if visible:
             return
+        emitted = True
         yield _settle(held[-1], attempts)
         return
     except TransientProviderError:
-        if plan.fallback is None:
+        # Never append a second answer to frames the client already received.
+        if emitted or plan.fallback is None:
             raise
     logging.getLogger(__name__).warning("devapi_transient_fallback")
     async with aclosing(attempt_events(plan.fallback)) as attempt:

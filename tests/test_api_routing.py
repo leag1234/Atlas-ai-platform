@@ -322,6 +322,34 @@ class RoutedReasoningOnlyRetryTests(unittest.TestCase):
         assert isinstance(usage, dict)
         self.assertEqual(usage["completion_tokens"], 2)
 
+    def test_transient_error_after_visible_frames_never_appends_fallback(self) -> None:
+        import asyncio
+        import json as _json
+
+        from provider_retry import TransientProviderError
+
+        plan = self._plan()
+        calls = 0
+
+        async def fake_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            nonlocal calls
+            calls += 1
+            frame = {"choices": [{"index": 0, "delta": {"content": "Part"}}]}
+            yield b"data: " + _json.dumps(frame).encode() + b"\n\n"
+            raise TransientProviderError("fictional reset")
+
+        received: list[dict[str, object]] = []
+
+        async def collect() -> None:
+            with patch.object(dev_gateway, "transport", fake_transport):
+                async for event in dev_gateway.events(plan):
+                    received.append(event)
+
+        with self.assertRaises(TransientProviderError):
+            asyncio.run(collect())
+        self.assertEqual(calls, 1)
+        self.assertEqual(len(received), 1)
+
     def test_streaming_starts_at_first_visible_frame_and_stays_live(self) -> None:
         import asyncio
         import json as _json
