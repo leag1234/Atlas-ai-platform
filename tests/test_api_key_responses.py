@@ -331,3 +331,186 @@ class KeyResponsesTests(unittest.TestCase):
             self.assertIn(reply.status_code, (400, 403, 413), reply.text)
             self.assertIn("error", reply.json())
         self.assertEqual(self.inputs, [])
+
+    def test_codex_160_tools_json_and_streaming(self) -> None:
+        """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""
+
+        async def codex_transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            deltas: list[dict[str, Any]]
+            reason: str
+            if body["messages"][-1]["role"] == "tool":
+                deltas, reason = [{"content": "tool result received"}], "stop"
+            else:
+                function = body["tools"][0]["function"]
+                name = function["name"]
+                arguments = (
+                    '{"input":"*** Begin Patch\\n*** End Patch"}'
+                    if name == "apply_patch"
+                    else '{"command":["pwd"],"workdir":"/tmp","timeout_ms":1000,"env":{"LANG":"C"}}'
+                    if name == "local_shell"
+                    else '{"task":"delegate"}'
+                )
+                deltas = [
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_codex",
+                                "type": "function",
+                                "function": {
+                                    "name": name,
+                                    "arguments": arguments[:12],
+                                },
+                            }
+                        ]
+                    },
+                    {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": arguments[12:]}}
+                        ]
+                    },
+                ]
+                reason = "tool_calls"
+            for delta in deltas:
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "choices": [
+                                {"index": 0, "delta": delta, "finish_reason": None}
+                            ]
+                        }
+                    )
+                    + "\n\n"
+                ).encode()
+            yield (
+                "data: "
+                + json.dumps(
+                    {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]}
+                )
+                + "\n\n"
+            ).encode()
+            yield b'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
+
+        bodies = {
+            "custom": {
+                "type": "custom",
+                "name": "apply_patch",
+                "description": "Apply a patch.",
+                "format": {"type": "grammar", "syntax": "lark", "definition": "patch"},
+            },
+            "local_shell": {"type": "local_shell"},
+            "namespace": {
+                "type": "namespace",
+                "name": "multi_agent_v1",
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "delegate",
+                        "parameters": {"type": "object"},
+                    }
+                ],
+            },
+        }
+
+        def codex_result(reply: Any, stream: bool) -> dict[str, Any]:
+            self.assertEqual(reply.status_code, 200, reply.text)
+            if not stream:
+                return dict(reply.json())
+            frames = [
+                json.loads(line[6:])
+                for line in reply.text.splitlines()
+                if line.startswith("data: ")
+            ]
+            self.assertEqual(frames[-1]["type"], "response.completed")
+            return dict(frames[-1]["response"])
+
+        with patch.object(gateway, "transport", codex_transport):
+            for label, tool in bodies.items():
+                for stream in (False, True):
+                    with self.subTest(label=label, stream=stream):
+                        request = {
+                            "model": "atlas-code",
+                            "input": "fictional task",
+                            "store": False,
+                            "stream": stream,
+                            "text": {"verbosity": "high"},
+                            "reasoning": {"effort": "medium", "summary": "auto"},
+                            "tools": [tool],
+                            "codex_optional_field": {"fictional": True},
+                        }
+                        reply = self.post(request)
+                        result = codex_result(reply, stream)
+                        call = result["output"][0]
+                        expected = {
+                            "custom": "custom_tool_call",
+                            "local_shell": "local_shell_call",
+                            "namespace": "function_call",
+                        }[label]
+                        self.assertEqual(call["type"], expected)
+                        if label == "custom":
+                            self.assertEqual(
+                                call["input"], "*** Begin Patch\n*** End Patch"
+                            )
+                            if stream:
+                                self.assertIn(
+                                    "response.custom_tool_call_input.done", reply.text
+                                )
+                        if label == "local_shell":
+                            self.assertEqual(call["action"]["command"], ["pwd"])
+                        if label == "namespace":
+                            self.assertEqual(call["name"], "multi_agent_v1__delegate")
+                        sent = self.inputs[-1]
+                        self.assertNotIn("codex_optional_field", sent)
+                        if label == "custom":
+                            self.assertEqual(
+                                sent["tools"][0]["function"]["parameters"]["required"],
+                                ["input"],
+                            )
+                        if label == "local_shell":
+                            self.assertEqual(
+                                sent["tools"][0]["function"]["name"], "local_shell"
+                            )
+                        if label == "namespace":
+                            self.assertEqual(
+                                sent["tools"][0]["function"]["name"],
+                                "multi_agent_v1__delegate",
+                            )
+            for label, output_type in (
+                ("custom", "custom_tool_call_output"),
+                ("local_shell", "local_shell_call_output"),
+            ):
+                tool = bodies[label]
+                first = codex_result(
+                    self.post(
+                        {
+                            "model": "atlas-code",
+                            "input": "fictional",
+                            "store": False,
+                            "tools": [tool],
+                        }
+                    ),
+                    False,
+                )
+                call = first["output"][0]
+                reply = self.post(
+                    {
+                        "model": "atlas-code",
+                        "input": [
+                            *first["output"],
+                            {
+                                "type": output_type,
+                                "call_id": call["call_id"],
+                                "output": "fictional output",
+                            },
+                        ],
+                        "store": False,
+                        "tools": [tool],
+                    }
+                )
+                self.assertEqual(
+                    codex_result(reply, False)["output"][0]["content"][0]["text"],
+                    "tool result received",
+                )

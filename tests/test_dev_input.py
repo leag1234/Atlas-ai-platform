@@ -42,16 +42,40 @@ class DevInputTests(unittest.TestCase):
         for extra in (
             {"store": True},
             {"previous_response_id": "private"},
-            {"reasoning": {"summary": "auto"}},
             {"include": ["other"]},
-            {"tools": [{"type": "web_search"}]},
-            {"input": [{"type": "image"}]},
         ):
             with self.assertRaises(ValueError):
                 responses(payload | extra)
         self.assertEqual(
             responses({"model": "atlas-code", "input": "short"}).messages[0].content,
             "short",
+        )
+        self.assertEqual(
+            responses(payload | {"reasoning": {"summary": "auto"}}).reasoning_effort,
+            "none",
+        )
+
+    def test_responses_drops_unknown_tools_and_invalid_namespaces(self) -> None:
+        payload: dict[str, Any] = {
+            "model": "atlas-code",
+            "input": "fictional",
+            "tools": [{"type": "web_search", "fictional_option": True}],
+        }
+        self.assertEqual(responses(payload).tools, [])
+        self.assertEqual(
+            responses(
+                payload
+                | {
+                    "tools": [
+                        {
+                            "type": "namespace",
+                            "name": "multi_agent_v1",
+                            "tools": [{"type": "custom", "name": "not_a_function"}],
+                        }
+                    ]
+                }
+            ).tools,
+            [],
         )
 
     def test_messages_history_errors_and_cache_hints(self) -> None:

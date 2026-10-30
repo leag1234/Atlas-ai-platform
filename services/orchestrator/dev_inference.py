@@ -17,7 +17,7 @@ from pydantic import ValidationError
 import dev_gateway as gateway
 from services.orchestrator.dev_auth import QuotaError, Store
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
-from services.orchestrator.dev_input import responses, messages
+from services.orchestrator.dev_input import SemanticFieldError, responses, messages
 from services.orchestrator.dev_messages import Wire as MessagesWire
 from services.orchestrator.dev_responses import Wire
 
@@ -255,6 +255,8 @@ async def chat(
         )
     except LimitError as exc:
         return error(exc.code, 400, exc.detail)
+    except SemanticFieldError as exc:
+        return error("invalid_request", 400, str(exc))
     except ValidationError as exc:
         return error("invalid_request", 400, describe_validation(exc))
     except QuotaError as exc:
