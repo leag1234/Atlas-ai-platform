@@ -255,7 +255,12 @@ class KeyResponsesTests(unittest.TestCase):
         for stream in (False, True):
             body = self.payload | {"stream": stream}
             _, assistant = self.key(scopes=["assistant"])
-            _, limited = self.key(daily_micro_eur=1)
+            _, limited = self.key(
+                daily_requests=None,
+                daily_micro_eur=None,
+                weekly_micro_eur=1,
+                own_budget=True,
+            )
             for headers, status in [
                 ({}, 401),
                 ({"Authorization": "Bearer invalid"}, 401),
@@ -266,6 +271,9 @@ class KeyResponsesTests(unittest.TestCase):
                 self.assertEqual(reply.status_code, status, reply.text)
                 self.assertIsInstance(reply.json()["error"]["type"], str)
                 self.assertIsInstance(reply.json()["error"]["message"], str)
+                if headers is limited:
+                    self.assertEqual(reply.json()["error"]["code"], "quota_exceeded")
+                    self.assertEqual(reply.json()["error"]["weekly_micro_eur"], 1)
             self.now[0] = float(self.row["expires_at"])
             self.assertEqual(self.post(body).status_code, 401)
             self.now[0] -= 1

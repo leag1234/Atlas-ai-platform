@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/atlas/keys")
 class Create(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str = Field(min_length=1, max_length=100)
-    lifetime_days: Literal[30, 90, 365] = 90
+    lifetime_days: Literal[7, 21, 30, 90, 365] = 90
     scopes: list[Literal["assistant", "model"]] = Field(
         default=["assistant"], min_length=1
     )
@@ -32,9 +32,10 @@ class Create(BaseModel):
 class Policy(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     mode: Literal["off", "admin_only", "self_service"]
-    daily_requests: int = Field(ge=1, le=1000000)
-    daily_micro_eur: int = Field(ge=1, le=1000000000)
-    max_lifetime_days: int = Field(ge=30, le=365)
+    daily_requests: int | None = Field(default=None, ge=1, le=1000000)
+    daily_micro_eur: int | None = Field(default=None, ge=1, le=1000000000)
+    weekly_micro_eur: int | None = Field(default=None, ge=1, le=1000000000)
+    max_lifetime_days: int = Field(ge=7, le=365)
     active_key_limit: int = Field(ge=1, le=100)
 
 

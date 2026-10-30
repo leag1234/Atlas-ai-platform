@@ -119,6 +119,35 @@ class Store(DeveloperStore):
         db.execute(
             "CREATE INDEX IF NOT EXISTS api_key_weekly ON api_key_requests(key_id, week)"
         )
+        policy = self._columns(db, "api_key_policy")
+        if (
+            policy["daily_requests"]["notnull"]
+            or policy["daily_micro_eur"]["notnull"]
+            or "weekly_micro_eur" not in policy
+        ):
+            db.commit()
+            db.execute("PRAGMA foreign_keys=OFF")
+            db.execute(
+                "CREATE TABLE api_key_policy_optional_caps ("
+                "org_id TEXT PRIMARY KEY, mode TEXT NOT NULL CHECK(mode IN ('off','admin_only','self_service')), "
+                "daily_requests INTEGER CHECK(daily_requests > 0), "
+                "daily_micro_eur INTEGER CHECK(daily_micro_eur > 0), "
+                "weekly_micro_eur INTEGER CHECK(weekly_micro_eur > 0), "
+                "max_lifetime_days INTEGER NOT NULL CHECK(max_lifetime_days BETWEEN 7 AND 365), "
+                "active_key_limit INTEGER NOT NULL CHECK(active_key_limit > 0))"
+            )
+            db.execute(
+                "INSERT INTO api_key_policy_optional_caps "
+                "(org_id,mode,daily_requests,daily_micro_eur,weekly_micro_eur,max_lifetime_days,active_key_limit) "
+                "SELECT org_id,mode,daily_requests,daily_micro_eur,NULL,max_lifetime_days,active_key_limit "
+                "FROM api_key_policy"
+            )
+            db.execute("DROP TABLE api_key_policy")
+            db.execute(
+                "ALTER TABLE api_key_policy_optional_caps RENAME TO api_key_policy"
+            )
+            db.commit()
+            db.execute("PRAGMA foreign_keys=ON")
 
     @staticmethod
     def _repair_key_references(db: Any) -> None:
@@ -148,30 +177,32 @@ class Store(DeveloperStore):
             ).fetchone()
         if row is not None:
             return {k: v for k, v in dict(row).items() if k != "org_id"}
+        stable = os.environ.get("ATLAS_STABLE") == "1"
         return dict(
             mode=os.environ.get(
                 "ATLAS_API_KEY_POLICY",
-                "self_service"
-                if os.environ.get("ATLAS_STABLE") == "1"
-                else "admin_only",
+                "self_service" if stable else "admin_only",
             ),
-            daily_requests=200,
-            daily_micro_eur=2000000,
-            max_lifetime_days=365,
+            daily_requests=None if stable else 200,
+            daily_micro_eur=None if stable else 2000000,
+            weekly_micro_eur=100000000 if stable else None,
+            max_lifetime_days=90 if stable else 365,
             active_key_limit=5,
         )
 
     def set_policy(self, org_id: str, values: dict[str, Any], actor: str) -> None:
         with self.connection() as db:
             db.execute(
-                "INSERT INTO api_key_policy VALUES (?,?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET "
+                "INSERT INTO api_key_policy VALUES (?,?,?,?,?,?,?) ON CONFLICT(org_id) DO UPDATE SET "
                 "mode=excluded.mode,daily_requests=excluded.daily_requests,daily_micro_eur=excluded.daily_micro_eur,"
-                "max_lifetime_days=excluded.max_lifetime_days,active_key_limit=excluded.active_key_limit",
+                "weekly_micro_eur=excluded.weekly_micro_eur,max_lifetime_days=excluded.max_lifetime_days,"
+                "active_key_limit=excluded.active_key_limit",
                 (
                     org_id,
                     values["mode"],
                     values["daily_requests"],
                     values["daily_micro_eur"],
+                    values["weekly_micro_eur"],
                     values["max_lifetime_days"],
                     values["active_key_limit"],
                 ),
@@ -242,8 +273,13 @@ class Store(DeveloperStore):
                 policy = self.policy(org_id)
                 if not administrator and policy["mode"] != "self_service":
                     raise PermissionError("policy_denied")
+                allowed = (
+                    {7, 21, 30, 90}
+                    if os.environ.get("ATLAS_STABLE") == "1"
+                    else {30, 90, 365}
+                )
                 if (
-                    lifetime_days not in {30, 90, 365}
+                    lifetime_days not in allowed
                     or lifetime_days > policy["max_lifetime_days"]
                 ):
                     raise ValueError("expiry_exceeds_policy")
@@ -256,6 +292,8 @@ class Store(DeveloperStore):
                     raise ValueError("active_key_limit")
                 daily_requests = policy["daily_requests"]
                 daily_micro_eur = policy["daily_micro_eur"]
+                weekly_micro_eur = policy["weekly_micro_eur"]
+                own_budget = policy["weekly_micro_eur"] is not None
             db.execute(
                 "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,weekly_micro_eur,own_budget,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (

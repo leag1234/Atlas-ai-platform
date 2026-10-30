@@ -75,6 +75,44 @@ class KeyTests(unittest.TestCase):
             )
         )
 
+    def test_policy_defaults_by_instance_type(self) -> None:
+        self.assertEqual(
+            self.store.policy("test-org"),
+            {
+                "mode": "admin_only",
+                "daily_requests": 200,
+                "daily_micro_eur": 2000000,
+                "weekly_micro_eur": None,
+                "max_lifetime_days": 365,
+                "active_key_limit": 5,
+            },
+        )
+        with patch.dict(os.environ, {"ATLAS_STABLE": "1"}):
+            self.assertEqual(
+                self.store.policy("test-org"),
+                {
+                    "mode": "self_service",
+                    "daily_requests": None,
+                    "daily_micro_eur": None,
+                    "weekly_micro_eur": 100000000,
+                    "max_lifetime_days": 90,
+                    "active_key_limit": 5,
+                },
+            )
+
+    def test_stable_self_service_key_uses_weekly_own_budget(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_STABLE": "1"}):
+            row, _ = self.create(
+                browser_policy=True,
+                lifetime_days=21,
+                administrator=False,
+            )
+        self.assertIsNone(row["daily_requests"])
+        self.assertIsNone(row["daily_micro_eur"])
+        self.assertEqual(row["weekly_micro_eur"], 100000000)
+        self.assertTrue(row["own_budget"])
+        self.assertEqual(row["expires_at"] - row["created_at"], 21 * 86400)
+
     def test_hash_expiry_revocation_metadata_and_permissions(self) -> None:
         row, key = self.create()
         self.assertRegex(row["prefix"], r"^atl_[0-9a-f]{8}$")
@@ -226,6 +264,36 @@ class KeyTests(unittest.TestCase):
             upgraded.usage("old")["week"], upgraded.week_for_day("2025-12-31")
         )
         self.assert_key_references_intact(path)
+
+    def test_existing_policy_store_upgrades_without_changing_existing_caps(
+        self,
+    ) -> None:
+        path = self.root / "old-policy.sqlite"
+        db = sqlite3.connect(path)
+        try:
+            db.executescript(
+                "CREATE TABLE api_keys (id TEXT PRIMARY KEY, org_id TEXT NOT NULL, member_id TEXT NOT NULL, subject TEXT NOT NULL, budget_user TEXT NOT NULL, name TEXT NOT NULL, prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, hash_kind TEXT NOT NULL, scopes TEXT NOT NULL, expires_at INTEGER NOT NULL, daily_requests INTEGER, daily_micro_eur INTEGER, weekly_micro_eur INTEGER, own_budget INTEGER NOT NULL DEFAULT 0, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER, last_used_ip_prefix TEXT, revoked_at INTEGER);"
+                "CREATE TABLE api_key_policy (org_id TEXT PRIMARY KEY, mode TEXT NOT NULL, daily_requests INTEGER NOT NULL, daily_micro_eur INTEGER NOT NULL, max_lifetime_days INTEGER NOT NULL, active_key_limit INTEGER NOT NULL);"
+            )
+            db.execute(
+                "INSERT INTO api_key_policy VALUES ('org','self_service',7,500000,90,3)"
+            )
+            db.commit()
+        finally:
+            db.close()
+        path.chmod(0o600)
+        upgraded = Store(path, "test-pepper-" * 4, lambda: self.now[0])
+        self.assertEqual(
+            upgraded.policy("org"),
+            {
+                "mode": "self_service",
+                "daily_requests": 7,
+                "daily_micro_eur": 500000,
+                "weekly_micro_eur": None,
+                "max_lifetime_days": 90,
+                "active_key_limit": 3,
+            },
+        )
 
     def test_store_repairs_requests_pointing_at_dropped_upgrade_table(self) -> None:
         path = self.root / "broken-keys.sqlite"
