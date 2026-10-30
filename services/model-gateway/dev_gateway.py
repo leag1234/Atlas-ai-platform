@@ -415,8 +415,10 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                 if frame.usage is not None:
                     if os.environ.get("ATLAS_PROVIDER"):
                         validate_usage(
-                            frame.usage.model_dump(),
-                            usage.model_dump() if usage is not None else None,
+                            frame.usage.model_dump(exclude_none=True),
+                            usage.model_dump(exclude_none=True)
+                            if usage is not None
+                            else None,
                         )
                         maximum = json.loads(plan.body)["max_tokens"]
                         if frame.usage.completion_tokens > maximum:
@@ -492,9 +494,10 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
 
     attempts: list[tuple[Plan, Usage]] = []
     emitted = False
+    held: list[dict[str, Any]] = []
     try:
         for current in (plan, plan):
-            held: list[dict[str, Any]] = []
+            held = []
             visible = False
             async with aclosing(attempt_events(current)) as attempt:
                 async for frame in attempt:
@@ -551,7 +554,16 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     except TransientProviderError:
         # Never append a second answer to frames the client already received.
         if emitted or plan.fallback is None:
+            for frame in held if not emitted else []:
+                yield frame
             raise
+    except Exception:
+        # Keep the stream shape of a failed attempt: frames held back while
+        # waiting for visible content still reach the client before the error.
+        if not emitted:
+            for frame in held:
+                yield frame
+        raise
     logging.getLogger(__name__).warning("devapi_transient_fallback")
     async with aclosing(attempt_events(plan.fallback)) as attempt:
         async for frame in attempt:
