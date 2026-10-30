@@ -223,9 +223,9 @@ def responses(value: dict[str, Any]) -> ChatInput:
             dropped("input", {"type:" + str(kind)})
     tools = []
     for tool in value.get("tools", []):
-        if not isinstance(tool, dict):
-            dropped("tools", {"non_object"})
-            continue
+        if not isinstance(tool, dict) or not isinstance(tool.get("type"), str):
+            # A malformed tool is a client error; only unknown typed tools are dropped.
+            raise ValueError("invalid_tool")
         kind = tool.get("type")
         if kind == "function":
             response_fields(
