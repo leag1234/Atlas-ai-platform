@@ -21,8 +21,8 @@ async def respond(request: Request) -> Response:
         async with asyncio.timeout(5):
             async for chunk in request.stream():
                 body.extend(chunk)
-                if len(body) > 1048576:
-                    return error(413, "body_limit", measured=len(body), limit=1048576)
+                if len(body) > 8388608:
+                    return error(413, "body_limit", measured=len(body), limit=8388608)
         raw = json.loads(body)
         if not isinstance(raw, dict) or not isinstance(raw.get("model"), str):
             return error(400, "invalid_request")

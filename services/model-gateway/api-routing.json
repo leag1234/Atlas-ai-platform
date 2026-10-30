@@ -10,44 +10,52 @@
         {
           "provider": "mistral",
           "model": "zai-glm-5-3-flash",
-          "effort": "low"
+          "effort": "low",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "deepseek-v4-flash-0731"
+          "model": "deepseek-v4-flash-0731",
+          "context": 256000
         }
       ],
       "low": [
         {
           "provider": "mistral",
           "model": "zai-glm-5-3",
-          "effort": "low"
+          "effort": "low",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "deepseek-v4-flash-0731"
+          "model": "deepseek-v4-flash-0731",
+          "context": 256000
         }
       ],
       "medium": [
         {
           "provider": "mistral",
           "model": "zai-glm-5-3",
-          "effort": "high"
+          "effort": "high",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "deepseek-v4-flash-0731"
+          "model": "deepseek-v4-flash-0731",
+          "context": 256000
         }
       ],
       "high": [
         {
           "provider": "mistral",
           "model": "zai-glm-5-3",
-          "effort": "high"
+          "effort": "high",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "deepseek-v4-flash-0731"
+          "model": "deepseek-v4-flash-0731",
+          "context": 256000
         }
       ]
     },
@@ -56,44 +64,52 @@
         {
           "provider": "mistral",
           "model": "zai-glm-5-3-flash",
-          "effort": "low"
+          "effort": "low",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "glm-5.2"
+          "model": "glm-5.2",
+          "context": 256000
         }
       ],
       "low": [
         {
           "provider": "mistral",
           "model": "zai-glm-5-3",
-          "effort": "low"
+          "effort": "low",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "glm-5.2"
+          "model": "glm-5.2",
+          "context": 256000
         }
       ],
       "medium": [
         {
           "provider": "mistral",
           "model": "zai-glm-5-3",
-          "effort": "high"
+          "effort": "high",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "glm-5.2"
+          "model": "glm-5.2",
+          "context": 256000
         }
       ],
       "high": [
         {
           "provider": "mistral",
           "model": "zai-glm-5-3",
-          "effort": "high"
+          "effort": "high",
+          "context": 1048576
         },
         {
           "provider": "scaleway",
-          "model": "glm-5.2"
+          "model": "glm-5.2",
+          "context": 256000
         }
       ]
     }

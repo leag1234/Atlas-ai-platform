@@ -21,6 +21,7 @@ class Target:
     model: str
     # Provider-specific value sent for the requested level (None: forward as is).
     effort: str | None = None
+    context: int = 0
 
 
 def config() -> dict[str, Any]:
@@ -52,6 +53,7 @@ def targets(name: str, effort: str) -> tuple[str, tuple[Target, ...]]:
             str(item["provider"]),
             str(item["model"]),
             str(item["effort"]) if item.get("effort") else None,
+            int(item["context"]),
         )
         for item in entries
     )

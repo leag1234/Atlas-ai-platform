@@ -277,5 +277,15 @@ class Wire:
                     )
                 )
             result = self.result()
-            events.append(self.event("response." + result["status"], response=result))
+            events.append(
+                self.event(
+                    "response." + result["status"],
+                    response=result,
+                    **(
+                        {"served_by": self.output.served_by}
+                        if self.output.served_by
+                        else {}
+                    ),
+                )
+            )
         return events

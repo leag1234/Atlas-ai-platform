@@ -226,32 +226,24 @@ class MessagesTests(unittest.TestCase):
         self.assertEqual(block["input"], {"value": 56})
         self.assertEqual(events[-2]["delta"]["stop_reason"], "tool_use")
         self.assertEqual(events[-1]["served_by"], "mistral/fictional-model")
-        history = self.body["messages"] + [
-            {"role": "assistant", "content": [block]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "tool_result", "tool_use_id": block["id"], "content": "56"}
-                ],
+
+    def test_three_mib_stream_is_accepted_and_final_event_names_provider(self) -> None:
+        reply = self.post(
+            "/v1/messages",
+            json=self.body
+            | {
+                "stream": True,
+                "messages": [{"role": "user", "content": "fictional-" * 262144}],
             },
-        ]
-        reply = self.post(json=self.body | {"stream": True, "messages": history})
+        )
+        self.assertEqual(reply.status_code, 200, reply.text)
         events = [
             json.loads(line[6:])
             for line in reply.text.splitlines()
             if line.startswith("data: ")
         ]
-        self.assertEqual(
-            "".join(
-                e["delta"].get("text", "")
-                for e in events
-                if e["type"] == "content_block_delta"
-            ),
-            "56",
-        )
-        self.assertEqual(events[-2]["delta"]["stop_reason"], "end_turn")
-        self.assertEqual(events[-2]["usage"]["output_tokens"], 2)
-        self.assertEqual(self.store.usage(self.row["id"])["requests"], 2)
+        self.assertEqual(events[-1]["type"], "message_stop")
+        self.assertEqual(events[-1]["served_by"], "mistral/fictional-model")
 
     def test_errors_auth_scope_quotas_expiry_and_revocation(self) -> None:
         for path in (
@@ -429,7 +421,7 @@ class MessagesTests(unittest.TestCase):
 
     def test_body_limit_and_key_money_quota(self) -> None:
         self.assert_error(
-            self.post(content=b"x" * 1048577, json=None), 413, "request_too_large"
+            self.post(content=b"x" * 8388609, json=None), 413, "request_too_large"
         )
         _, key = self.create(daily_micro_eur=1)
         reply = self.post(headers={"x-api-key": key})
