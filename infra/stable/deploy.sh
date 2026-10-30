@@ -24,7 +24,16 @@ grep -Fx -- "$tag" "$marker" >/dev/null || {
 git -C "$repo" worktree add --detach "$candidate" "refs/tags/$tag"
 cleanup() { git -C "$repo" worktree remove --force "$candidate" 2>/dev/null || true; }
 trap cleanup EXIT
-(cd "$candidate" && export ATLAS_PORT_BASE=1900 ATLAS_STABLE=0 ATLAS_SEARCH_PROVIDER=serpapi GITHUB_ACTIONS=false && bash scripts/test.sh)
+kit=$(cd "$(dirname "$0")" && pwd)
+# The local suite repeats CI's unit run; the caller may skip it when the tag's tree is the
+# tree CI already tested green (ATLAS_DEPLOY_SKIP_TESTS=1, set after comparing git trees).
+if [[ "${ATLAS_DEPLOY_SKIP_TESTS:-}" == 1 ]]; then
+  echo "tests skipped: tag tree already green in CI"
+else
+  (umask 022 && cd "$candidate" && export ATLAS_PORT_BASE=1900 ATLAS_STABLE=0 ATLAS_SEARCH_PROVIDER=serpapi GITHUB_ACTIONS=false && bash scripts/test.sh)
+fi
+# Owner rule 2026-10-30: never cut a user; re-check five idle minutes right before the stop.
+QUIET=300 MAX=10800 bash "$kit/wait-idle.sh" || { echo "guest busy: not stopping, owner decision needed" >&2; exit 1; }
 sudo systemctl stop atlas-stable.service
 if [[ -e "$previous" ]]; then git -C "$repo" worktree remove --force "$previous"; fi
 if [[ -e "$stable" ]]; then git -C "$repo" worktree move "$stable" "$previous"; fi

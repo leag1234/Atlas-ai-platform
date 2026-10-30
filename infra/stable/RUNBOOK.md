@@ -433,7 +433,10 @@ are privileged access, not a guest isolation boundary.
 17. **VM, root; web server, owner with sudo.** Update to a new tag: repeat the exact
     CI review in step 1, backup private state, close the tunnel, append the reviewed
     tag to the root-only marker, and run `deploy.sh "$TAG"`. Candidate tests run
-    with stable mode off on base 1900. Expected: new exact tag, healthy stack and
+    with stable mode off on base 1900, unless `ATLAS_DEPLOY_SKIP_TESTS=1` says the
+    tag's git tree equals the tree CI tested green. Right before the stop,
+    `wait-idle.sh` waits for five minutes without guest or API activity and gives up
+    after three hours (no forced cut). Expected: new exact tag, healthy stack and
     retained previous worktree. Review nginx/kit changes separately; deploy static
     assets with dry-run first, then reopen the tunnel. Never promote a moving branch.
 
