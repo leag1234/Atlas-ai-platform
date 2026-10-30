@@ -66,7 +66,7 @@ class RawChatInput(Strict):
     response_format: ResponseFormat = Field(
         default_factory=lambda: ResponseFormat(type="text")
     )
-    max_tokens: int = Field(default=512, ge=1, le=8192)
+    max_tokens: int = Field(default=4096, ge=1, le=8192)
     temperature: float = Field(default=0, ge=0, le=2)
     stream: bool = False
     stream_options: StreamOptions = StreamOptions()
