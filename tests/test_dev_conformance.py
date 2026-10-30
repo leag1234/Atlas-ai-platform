@@ -3,9 +3,12 @@
 import json
 import unittest
 from typing import Any
+from dataclasses import replace
+from unittest.mock import patch
 
 from devapi_support import Environment
 from test_dev_chat import BODY
+import dev_gateway as gateway
 
 
 class DevConformanceTests(unittest.TestCase):
@@ -40,6 +43,18 @@ class DevConformanceTests(unittest.TestCase):
         self.assertEqual(len(self.env.inputs), 1)
 
     def test_usage_null_on_each_nonterminal_chat_chunk(self) -> None:
+        prepare = gateway.prepare
+        self.env.context.enter_context(
+            patch.object(
+                gateway,
+                "prepare",
+                lambda request: replace(
+                    prepare(request),
+                    provider="mistral",
+                    model="fictional-model",
+                ),
+            )
+        )
         for include in (True, False):
             response = self.env.client.post(
                 "/v1/chat/completions",
@@ -59,10 +74,12 @@ class DevConformanceTests(unittest.TestCase):
             if include:
                 self.assertEqual(chunks[-1]["choices"], [])
                 self.assertGreater(chunks[-1]["usage"]["total_tokens"], 0)
+                self.assertEqual(chunks[-1]["served_by"], "mistral/fictional-model")
                 for chunk in chunks[:-1]:
                     self.assertIn("usage", chunk)
                     self.assertIsNone(chunk["usage"])
             else:
+                self.assertEqual(chunks[-1]["served_by"], "mistral/fictional-model")
                 for chunk in chunks:
                     self.assertNotIn("usage", chunk)
 

@@ -304,6 +304,9 @@ async def chat(
     )
 
     async def chunks() -> AsyncGenerator[str, None]:
+        # Chat streams hold one chunk back so the last JSON chunk before [DONE]
+        # can name the model that served the answer (served_by).
+        last: dict[str, Any] | None = None
         if wire:
             for event in wire.start():
                 yield (
@@ -329,8 +332,14 @@ async def chat(
                 elif chunk.get("choices") != [] or parsed.stream_options.include_usage:
                     if parsed.stream_options.include_usage and "error" not in chunk:
                         chunk.setdefault("usage", None)
-                    yield "data: " + json.dumps(chunk) + "\n\n"
+                    if last is not None:
+                        yield "data: " + json.dumps(last) + "\n\n"
+                    last = chunk
         if wire is None:
+            if last is not None:
+                if output.served_by and "error" not in last:
+                    last["served_by"] = output.served_by
+                yield "data: " + json.dumps(last) + "\n\n"
             yield "data: [DONE]\n\n"
 
     if parsed.stream:
