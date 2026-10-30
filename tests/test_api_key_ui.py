@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import tempfile
 import threading
@@ -21,6 +22,34 @@ from services.orchestrator.api_keys import configured_store
 
 
 class KeyUiAssetTests(unittest.TestCase):
+    def test_policy_labels_and_weekly_cap_conversion(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        script = (root / "services/orchestrator/api-key-ui.js").read_text()
+        words = re.search(r"const words = \{(?P<body>.*?)\n  \};", script, re.DOTALL)
+        self.assertIsNotNone(words)
+        assert words is not None
+        parsed = [
+            json.loads(f"[{array}]".replace("'", '"'))
+            for locale in ("en", "fr", "de", "es", "it")
+            for array in re.findall(rf"\n    {locale}: \[(.*?)\]", words.group("body"))
+        ]
+        self.assertEqual(len(parsed), 5)
+        self.assertEqual({len(array) for array in parsed}, {58})
+        self.assertIn("button(t(36))", script)
+        self.assertEqual(parsed[0][36], "Save policy")
+        self.assertIn("t(50)", script)
+        self.assertEqual(parsed[0][50], "per day")
+        self.assertEqual(parsed[0][57], "Weekly cap (EUR)")
+        self.assertTrue(all(array[57] for array in parsed))
+        self.assertIn("'Mis claves'", script)
+        self.assertNotIn("'Mis clés'", script)
+        self.assertIn("['weekly_micro_eur',57,0.000001,1000]", script)
+        self.assertIn(
+            "name === 'daily_micro_eur' || name === 'weekly_micro_eur' ? 1000000 : 1",
+            script,
+        )
+        self.assertIn("control.value === '' ? null", script)
+
     def test_revocation_row_has_quiet_action_and_localized_mobile_details(self) -> None:
         root = Path(__file__).resolve().parents[1]
         script = (root / "services/orchestrator/api-key-ui.js").read_text()
