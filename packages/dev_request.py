@@ -81,7 +81,7 @@ class Request(Strict):
     temperature: float = Field(default=0, ge=0, le=2)
     tool_choice: str | dict[str, Any] = "auto"
     parallel_tool_calls: bool = True
-    reasoning_effort: Literal["none", "low"] = "none"
+    reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
 
     @model_validator(mode="after")
     def validate_conversation(self) -> "Request":

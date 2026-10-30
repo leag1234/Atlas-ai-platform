@@ -72,7 +72,7 @@ class RawChatInput(Strict):
     stream_options: StreamOptions = StreamOptions()
     tool_choice: str | dict[str, Any] = "auto"
     parallel_tool_calls: bool = True
-    reasoning_effort: Literal["none", "low"] = "none"
+    reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
 
     @property
     def validate_output(self) -> bool:
