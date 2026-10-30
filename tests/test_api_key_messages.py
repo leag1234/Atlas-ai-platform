@@ -348,8 +348,8 @@ class MessagesTests(unittest.TestCase):
             self.assertEqual(reply.json()["model"], expected)
         self.assert_error(
             self.post(json=self.body | {"model": "raw/unknown"}),
-            404,
-            "not_found_error",
+            400,
+            "invalid_request_error",
         )
 
     def test_actual_public_plan_with_recorded_provider_stream(self) -> None:

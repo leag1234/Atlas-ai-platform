@@ -108,7 +108,7 @@ async def messages(request: Request) -> Response:
         try:
             model = select_public_model(raw["model"])
         except (KeyError, ValueError):
-            return error(404, "invalid_model")
+            return error(400, "invalid_model")
         if request.url.path.endswith("/count_tokens"):
             parsed = parse_messages(
                 dict(raw, model="atlas-code", max_tokens=raw.get("max_tokens", 1))

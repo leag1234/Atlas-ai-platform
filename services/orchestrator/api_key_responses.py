@@ -32,7 +32,7 @@ async def respond(request: Request) -> Response:
     try:
         public_model = select_public_model(raw["model"])
     except ValueError:
-        return error(404, "invalid_model")
+        return error(400, "invalid_model")
     selected = "raw/public-routing"
     raw["model"] = selected
     request._body = json.dumps(raw).encode()

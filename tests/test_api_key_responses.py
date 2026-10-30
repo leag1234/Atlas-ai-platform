@@ -224,7 +224,7 @@ class KeyResponsesTests(unittest.TestCase):
                 result = self.result(self.post(self.payload | {"model": name}), False)
                 self.assertEqual(result["model"], selected)
         reply = self.post(self.payload | {"model": "raw/internal-only"})
-        self.assertEqual(reply.status_code, 404)
+        self.assertEqual(reply.status_code, 400)
 
     def test_chat_completions_reports_public_usage_and_provider(self) -> None:
         reply = self.client.post(

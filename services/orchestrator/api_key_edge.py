@@ -214,7 +214,7 @@ async def chat(request: Request) -> Response:
     try:
         public_model = select_public_model(name)
     except ValueError:
-        return error(404, "invalid_model")
+        return error(400, "invalid_model")
     missing = require(request, "model")
     if missing is not None:
         return missing
