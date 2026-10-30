@@ -146,7 +146,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
             "tools": tools,
             "stream": value.get("stream", False),
             "stream_options": {"include_usage": True},
-            "max_tokens": value.get("max_output_tokens", 512),
+            "max_tokens": value.get("max_output_tokens") or 4096,
             "temperature": value.get("temperature", 0),
             "parallel_tool_calls": value.get("parallel_tool_calls", True),
             "tool_choice": choice,

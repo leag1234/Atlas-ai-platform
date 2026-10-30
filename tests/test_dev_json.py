@@ -206,6 +206,7 @@ class DevJsonTests(unittest.TestCase):
                 "model": "atlas-code",
                 "input": "JSON",
                 "stream": True,
+                "max_output_tokens": 512,
                 "text": {"format": {"type": "json_schema", **FORMAT["json_schema"]}},
             },
             "responses",
