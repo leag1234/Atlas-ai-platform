@@ -24,7 +24,7 @@ from image_prompt import (
     scene_reservation,
     rewrite_scene,
 )
-from image_scene import anchored_scene
+from image_scene import anchored_scene, names_medium
 from image_verify import Verification, audit, reserve as verification_reserve, verify
 
 
@@ -36,6 +36,7 @@ class ImageWorkerFailure(RuntimeError):
 
 class ImageRequest(ImagePrompt):
     dialogue: list[str] = Field(default_factory=list, max_length=24)
+    medium: str | None = Field(default=None, min_length=1, max_length=200)
     max_cost_eur: Decimal = Field(
         default=Decimal("0.05"),
         gt=0,
@@ -90,6 +91,8 @@ async def generate(request: object) -> dict[str, object]:
         )
     if prompt.dialogue:
         scene = await rewrite_scene(prompt.dialogue, min(30, prompt.timeout))
+        if prompt.medium and not names_medium(prompt.dialogue[-1]):
+            scene.style = prompt.medium
         rewritten = ImagePrompt(prompt=scene.render()).prompt
     else:
         rewrite_budget = RewriteBudget(prompt.max_cost_eur, reserved, structured=True)
