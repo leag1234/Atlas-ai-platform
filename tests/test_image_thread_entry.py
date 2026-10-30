@@ -31,7 +31,7 @@ FOLLOWUPS = (
     "Plus grand le chien.",
     "Make the man older.",
 )
-BASE = {
+BASE: dict[str, object] = {
     "relation": "new",
     "characters": [
         {"name": "Mary", "role": "a mother"},
@@ -46,8 +46,15 @@ BASE = {
 
 class ImageThreadEntryTests(unittest.TestCase):
     def exercise(
-        self, followup: str, update: dict[str, object], *, direct: bool = False
-    ) -> tuple[str, str]:
+        self,
+        followup: str,
+        update: dict[str, object],
+        *,
+        direct: bool = False,
+        original: str = ORIGINAL,
+        base: dict[str, object] = BASE,
+        failed_key: str | None = None,
+    ) -> tuple[list[str], str, str]:
         model = GatewayModel(
             "http://unused",
             Configuration(
@@ -91,9 +98,11 @@ class ImageThreadEntryTests(unittest.TestCase):
             return {"image": png(), "seed": 7, "cost_eur": "0.001"}
 
         async def verified(image: str, scene: Scene, timeout: float) -> Verification:
-            return Verification(
-                dict.fromkeys(scene.expected_answers(), True), Decimal("0.001")
-            )
+            answers = dict.fromkeys(scene.expected_answers(), True)
+            if failed_key:
+                self.assertIn(failed_key, answers)
+                answers[failed_key] = False
+            return Verification(answers, Decimal("0.001"))
 
         with (
             tempfile.TemporaryDirectory(dir="BRAIN") as root,
@@ -121,8 +130,8 @@ class ImageThreadEntryTests(unittest.TestCase):
                 "complete",
                 AsyncMock(
                     side_effect=[
-                        {"text": json.dumps({"updates": [BASE]})},
-                        {"text": json.dumps({"updates": [BASE, update]})},
+                        {"text": json.dumps({"updates": [base]})},
+                        {"text": json.dumps({"updates": [base, update]})},
                     ]
                 ),
             ),
@@ -135,14 +144,14 @@ class ImageThreadEntryTests(unittest.TestCase):
             patch.object(imagegen, "verify", AsyncMock(side_effect=verified)),
             TestClient(app) as client,
         ):
-            messages = [{"role": "user", "content": ORIGINAL}]
+            messages = [{"role": "user", "content": original}]
             first = client.post("/v1/chat/completions", json={"messages": messages})
             self.assertEqual(first.status_code, 200, first.text)
-            reply = first.json()["choices"][0]["message"]["content"]
-            self.assertIn("/images/", reply)
+            first_reply = first.json()["choices"][0]["message"]["content"]
+            self.assertIn("/images/", first_reply)
             messages.extend(
                 [
-                    {"role": "assistant", "content": reply},
+                    {"role": "assistant", "content": first_reply},
                     {"role": "user", "content": followup},
                 ]
             )
@@ -150,13 +159,13 @@ class ImageThreadEntryTests(unittest.TestCase):
             self.assertEqual(second.status_code, 200, second.text)
             self.assertEqual(decision.await_count, 0 if direct else 1)
             self.assertEqual(len(payloads), 2)
-            self.assertEqual(payloads[1]["dialogue"], [ORIGINAL, followup])
+            self.assertEqual(payloads[1]["dialogue"], [original, followup])
             self.assertIn("Visual image only", str(payloads[1]["prompt"]))
             self.assertIn(followup, str(payloads[1]["prompt"]))
             self.assertNotIn("a man and a woman", str(payloads[1]))
-            reply = second.json()["choices"][0]["message"]["content"]
-            self.assertIn("/images/", reply)
-            return prompts[-1], reply
+            second_reply = second.json()["choices"][0]["message"]["content"]
+            self.assertIn("/images/", second_reply)
+            return prompts, first_reply, second_reply
 
     def test_seven_natural_followups_use_tool_and_keep_scene(self) -> None:
         updates: list[dict[str, object]] = [
@@ -188,7 +197,8 @@ class ImageThreadEntryTests(unittest.TestCase):
         ]
         for followup, update, detail in zip(FOLLOWUPS, updates, details):
             with self.subTest(followup=followup):
-                rendered, _ = self.exercise(followup, update)
+                prompts, _, _ = self.exercise(followup, update)
+                rendered = prompts[-1]
                 for expected in (
                     "the young adult woman",
                     "the newborn male infant as a newborn baby",
@@ -207,14 +217,15 @@ class ImageThreadEntryTests(unittest.TestCase):
             "Génère une photo de la même scène avec un âne.",
         ):
             with self.subTest(followup=followup):
-                rendered, _ = self.exercise(
+                prompts, _, _ = self.exercise(
                     followup, {"elements": ["a donkey"]}, direct=True
                 )
+                rendered = prompts[-1]
                 self.assertIn("a donkey", rendered)
                 self.assertIn("Bethlehem stable", rendered)
 
     def test_unrelated_request_starts_new_scene(self) -> None:
-        rendered, _ = self.exercise(
+        prompts, _, _ = self.exercise(
             "Maintenant, un chat sur un toit",
             {
                 "relation": "new",
@@ -222,6 +233,7 @@ class ImageThreadEntryTests(unittest.TestCase):
                 "setting": "a rooftop",
             },
         )
+        rendered = prompts[-1]
         self.assertIn("cat", rendered)
         self.assertIn("rooftop", rendered)
         for old in (
@@ -234,6 +246,41 @@ class ImageThreadEntryTests(unittest.TestCase):
             "newborn",
         ):
             self.assertNotIn(old, rendered)
+
+    def test_french_count_failure_and_followup_keep_photo_and_safety_clause(
+        self,
+    ) -> None:
+        original = "Crée une image simple d'un mouton avec huit pattes sur fond blanc."
+        followup = "Même chose mais avec un chapeau rouge."
+        base: dict[str, object] = {
+            "relation": "new",
+            "characters": [
+                {
+                    "name": "sheep",
+                    "sex": "person",
+                    "age_group": "adult",
+                }
+            ],
+            "setting": "plain white background",
+            "style": "photographic photograph",
+        }
+        # The rewriter incorrectly suggests a cartoon on the follow-up. The chat
+        # path must retain the established medium because the user did not change it.
+        prompts, first_reply, second_reply = self.exercise(
+            followup,
+            {"style": "cartoon drawing", "elements": ["a red hat"]},
+            direct=True,
+            original=original,
+            base=base,
+            failed_key="count_0",
+        )
+        for reply in (first_reply, second_reply):
+            self.assertIn("Le résultat ne respecte pas : huit pattes.", reply)
+        for prompt in prompts:
+            self.assertIn("photographic photograph", prompt)
+            self.assertIn("No text, lettering, signature or watermark.", prompt)
+        self.assertIn("a red hat", prompts[-1])
+        self.assertNotIn("cartoon drawing", prompts[-1])
 
     def test_explanation_never_generates_even_if_model_calls_tool(self) -> None:
         model = GatewayModel(

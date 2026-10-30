@@ -642,6 +642,7 @@ class Scene(BaseModel):
                     )
                     if self.count_constraints
                     else "",
+                    "No text, lettering, signature or watermark.",
                 ),
             )
         )

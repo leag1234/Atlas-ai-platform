@@ -56,6 +56,10 @@ def verification_note(verification: object, language: str) -> str:
 
 
 def _localized_detail(key: str, detail: str, language: str) -> str:
+    if key.startswith("count_"):
+        # Count constraints retain the source-language wording in the gateway
+        # scene, so disclose them verbatim rather than treating them as English.
+        return detail.strip()
     match = re.fullmatch(
         r"(.+?) holds (.+?)'s (?:own )?hand(?: with his hand)?", detail
     )
