@@ -9,9 +9,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  tests:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # The test gate is split into parallel shards; the workflow (and the check
+    # that automerge waits for) succeeds only when every shard succeeds.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shard: unit, milestones: "" }
+          - { shard: milestones, milestones: "5-6,7-12" }
+          - { shard: milestones, milestones: "13-19" }
+          - { shard: milestones, milestones: "20-26" }
+    name: tests (${{ matrix.shard }} ${{ matrix.milestones }})
     steps:
       - uses: actions/checkout@v4
 
@@ -32,18 +43,25 @@ jobs:
           [[ -f requirements-dev.txt ]] && pip install -q -r requirements-dev.txt || true
 
       - name: Lint
+        if: matrix.shard == 'unit'
         run: make lint
 
       - name: Typecheck
+        if: matrix.shard == 'unit'
         run: make typecheck
 
       - name: Tests (no live LLM)
+        env:
+          ATLAS_CI_SHARD: ${{ matrix.shard }}
+          ATLAS_CI_MILESTONES: ${{ matrix.milestones }}
         run: make test
 
       - name: Secret scan
+        if: matrix.shard == 'unit'
         run: make scan-secrets
 
       - name: No hardcoded model names outside model-gateway
+        if: matrix.shard == 'unit'
         run: |
           if grep -rniE 'qwen|glm|deepseek|llama|mistral|kimi' \
                --include='*.py' --include='*.ts' --include='*.js' --include='*.go' \
@@ -54,6 +72,7 @@ jobs:
           fi
 
       - name: No OpenAI/Anthropic as a runtime dependency of the PoC
+        if: matrix.shard == 'unit'
         run: |
           # Codex (OpenAI) construit le PoC mais ne doit JAMAIS être appelé par le
           # produit : l'inférence reste 100% Scaleway/open-weight. On interdit donc
@@ -73,7 +92,18 @@ jobs:
           fi
 
       - name: Eval smoke
+        if: matrix.shard == 'unit'
         env:
           SCW_GENERATIVE_API_KEY: ${{ secrets.SCW_GENERATIVE_API_KEY }}
           JUDGE_MODEL: ${{ secrets.JUDGE_MODEL }}
         run: make eval-smoke
+
+  # Single required check "ci" (branch ruleset and automerge): green only when
+  # every test shard succeeded.
+  ci:
+    needs: tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All shards passed
+        run: test "${{ needs.tests.result }}" = success

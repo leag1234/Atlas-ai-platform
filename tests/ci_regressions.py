@@ -6,15 +6,32 @@ import os
 import subprocess
 
 
-def run(execute: Callable[[int], None]) -> None:
+def selected() -> list[int]:
+    """Milestones of this CI shard: ATLAS_CI_MILESTONES="7-12,14" (default 5-26)."""
+    value = os.environ.get("ATLAS_CI_MILESTONES") or "5-26"
+    milestones: list[int] = []
+    for part in value.split(","):
+        first, _, last = part.strip().partition("-")
+        milestones.extend(range(int(first), int(last or first) + 1))
+    return milestones
+
+
+def run(execute: Callable[[int], None], milestones: list[int] | None = None) -> None:
+    chosen = selected() if milestones is None else milestones
     # M5 owns an ephemeral database/port and writes only BRAIN/eval outputs.
-    # M6 consumes those outputs and changes reports, so it must run last.
+    # M6 consumes those outputs and changes reports, so it must run last and
+    # always in the same shard as M5.
+    if (5 in chosen) != (6 in chosen):
+        raise ValueError("M5 and M6 must run in the same shard")
     with ThreadPoolExecutor(max_workers=1) as pool:
-        evaluation = pool.submit(execute, 5)
+        evaluation = pool.submit(execute, 5) if 5 in chosen else None
         for milestone in range(7, 27):
-            execute(milestone)
-        evaluation.result()
-    execute(6)
+            if milestone in chosen:
+                execute(milestone)
+        if evaluation is not None:
+            evaluation.result()
+    if 6 in chosen:
+        execute(6)
 
 
 def verify(milestone: int) -> None:
