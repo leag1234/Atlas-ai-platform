@@ -63,6 +63,12 @@ CUSTOM_PARAMETERS = {
 
 
 def responses(value: dict[str, Any]) -> ChatInput:
+    # OpenAI clients (Codex 0.98) send null for unset optional fields: treat null as absent.
+    value = (
+        {k: v for k, v in value.items() if v is not None}
+        if isinstance(value, dict)
+        else value
+    )
     response_fields(
         value,
         {
