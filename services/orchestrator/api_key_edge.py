@@ -12,6 +12,7 @@ import aiohttp
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from packages.profiles import PROFILES
 from services.orchestrator.api_key_messages import install as install_messages
 from services.orchestrator.api_keys import (
     Principal,
@@ -146,7 +147,11 @@ def require(request: Request, scope: str) -> Response | None:
 def models(request: Request) -> dict[str, object]:
     from api_routing import EFFORTS, PUBLIC_MODELS
 
-    names = list(PUBLIC_MODELS) if "model" in request.state.api_key.scopes else []
+    scopes = request.state.api_key.scopes
+    # Assistant names keep the full Atlas assistant (tools, search, memory).
+    names = (["atlas", *PROFILES] if "assistant" in scopes else []) + (
+        list(PUBLIC_MODELS) if "model" in scopes else []
+    )
     return {
         "object": "list",
         "data": [
@@ -155,7 +160,11 @@ def models(request: Request) -> dict[str, object]:
                 "object": "model",
                 "created": 0,
                 "owned_by": "atlas",
-                "reasoning_efforts": list(EFFORTS),
+                **(
+                    {"reasoning_efforts": list(EFFORTS)}
+                    if name in PUBLIC_MODELS
+                    else {}
+                ),
             }
             for name in names
         ],
@@ -208,9 +217,23 @@ async def chat(request: Request) -> Response:
     from api_routing import select_public_model
     from services.orchestrator.dev_inference import chat as raw_chat
 
-    name = raw.get("model", "atlas-code")
+    # Without a model, an assistant-scoped key keeps the assistant (as before).
+    default = "atlas" if "assistant" in request.state.api_key.scopes else "atlas-code"
+    name = raw.get("model", default)
     if not isinstance(name, str):
         return error(400, "invalid_model")
+    if name == "atlas" or name in PROFILES:
+        # The Atlas assistant itself is not a routed usage: keep its own path.
+        missing = require(request, "assistant")
+        if missing is not None:
+            return missing
+        if name == "atlas":
+            raw["model"] = PROFILES[0]
+        raw["atlas_ui"] = False
+        request._body = json.dumps(raw).encode()
+        from services.orchestrator.chat_api import chat as assistant_chat
+
+        return await assistant_chat(request)
     try:
         public_model = select_public_model(name)
     except ValueError:
