@@ -338,6 +338,37 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertGreater(usage["unknown_micro_eur"], 0)
         self.assertEqual(usage["charged_micro_eur"], usage["unknown_micro_eur"])
 
+    def test_provider_credit_refusal_falls_back_then_reports_quota(self) -> None:
+        from provider_retry import TransientProviderError
+
+        models: list[str] = []
+
+        async def primary_out_of_credit(
+            plan: gateway.Plan,
+        ) -> AsyncGenerator[bytes, None]:
+            models.append(plan.model)
+            if len(models) == 1:
+                raise TransientProviderError("provider_quota")
+            async for piece in self.transport(plan):
+                yield piece
+
+        with patch.object(gateway, "transport", primary_out_of_credit):
+            reply = self.post(self.payload)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertEqual(len(models), 2)
+        self.assertNotEqual(models[0], models[1])
+
+        async def every_target_out_of_credit(
+            plan: gateway.Plan,
+        ) -> AsyncGenerator[bytes, None]:
+            raise TransientProviderError("provider_quota")
+            yield b""
+
+        with patch.object(gateway, "transport", every_target_out_of_credit):
+            reply = self.post(self.payload)
+        self.assertEqual(reply.status_code, 503, reply.text)
+        self.assertEqual(reply.json()["error"]["type"], "provider_quota")
+
     def test_user_budget_and_request_cap(self) -> None:
         with patch.dict(os.environ, {"ATLAS_USER_DAILY_EUR": "0.000001"}):
             reply = self.post(self.payload)
