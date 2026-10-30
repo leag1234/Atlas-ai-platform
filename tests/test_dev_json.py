@@ -146,8 +146,9 @@ class DevJsonTests(unittest.TestCase):
                 response = self.post(BODY | {"response_format": fmt})
                 self.assertEqual(response.status_code, 400, response.text)
         text: Any
+        # A null text is an absent option (OpenAI clients such as Codex 0.98 send
+        # nulls for unset fields); malformed values stay client errors.
         for text in (
-            None,
             [],
             {"format": {"type": "json_schema", "schema": {}}},
             {"format": FORMAT},
