@@ -219,8 +219,8 @@ async def chat(
         async with asyncio.timeout(120):
             async for piece in request.stream():
                 body.extend(piece)
-                if len(body) > 1048576:
-                    raise LimitError("body_limit", len(body), 1048576, "bytes")
+                if len(body) > 8388608:
+                    raise LimitError("body_limit", len(body), 8388608, "bytes")
         raw = json.loads(body)
         try:
             parsed = (
@@ -254,7 +254,18 @@ async def chat(
             developer, plan.reserved, monetary=plan.reserved > 0 and not plan.unpriced
         )
     except LimitError as exc:
-        return error(exc.code, 400, exc.detail)
+        return JSONResponse(
+            {
+                "error": {
+                    "type": exc.code,
+                    "message": exc.detail,
+                    "measured": exc.measured,
+                    "limit": exc.limit,
+                    "unit": exc.unit,
+                }
+            },
+            status_code=400,
+        )
     except SemanticFieldError as exc:
         return error("invalid_request", 400, str(exc))
     except ValidationError as exc:

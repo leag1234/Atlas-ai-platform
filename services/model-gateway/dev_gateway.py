@@ -83,6 +83,14 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
     effort = str(body.get("reasoning_effort", "none"))
     _, entries = targets(usage, effort)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
+    # Estimate tokens as bytes / 4. The reservation remains conservative in
+    # bytes, but is clamped to each target's advertised context.
+    estimated_tokens = incoming // 4
+    fitting = [entry for entry in entries if entry.context >= estimated_tokens]
+    if not fitting:
+        raise LimitError(
+            "context_exceeded", estimated_tokens, entries[0].context, "tokens"
+        )
 
     def one(target: Target) -> Plan:
         prices = ServerlessPolicy(allow_unpriced=True).prices
@@ -118,20 +126,31 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
             ),
         )
 
-    plans = [one(entry) for entry in entries]
-    bound = sum((plan.charge(incoming, request.max_tokens) for plan in plans), 0)
+    plans = [one(entry) for entry in fitting]
+    bound = sum(
+        (
+            plan.charge(min(incoming, target.context), request.max_tokens)
+            for plan, target in zip(plans, fitting)
+        ),
+        0,
+    )
     if bound > call_cap():
         raise LimitError("cost_budget", bound, call_cap(), "microEUR")
     primary = replace(
         plans[0],
         reserved=bound,
-        attempt_bound=plans[0].charge(incoming, request.max_tokens),
+        attempt_bound=plans[0].charge(
+            min(incoming, fitting[0].context), request.max_tokens
+        ),
     )
     if len(plans) > 1:
         primary = replace(
             primary,
             fallback=replace(
-                plans[1], attempt_bound=plans[1].charge(incoming, request.max_tokens)
+                plans[1],
+                attempt_bound=plans[1].charge(
+                    min(incoming, fitting[1].context), request.max_tokens
+                ),
             ),
         )
     return primary

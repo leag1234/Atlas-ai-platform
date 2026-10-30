@@ -52,6 +52,54 @@ class RoutedBodyTests(unittest.TestCase):
         self.assertTrue(all("tool_calls" not in m for m in body["messages"]))
 
 
+class RoutedContextTests(unittest.TestCase):
+    def test_large_fictional_body_fits_primary_and_skips_small_fallback(self) -> None:
+        import json as _json
+        import dev_gateway
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "fictional-" * 262144}],
+                "max_tokens": 32,
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "MISTRAL_API_KEY": "test-only",
+                "SCW_GENERATIVE_API_KEY": "test-only",
+                "ATLAS_RAW_CALL_MAX_MICRO_EUR": "5000000",
+            },
+        ):
+            plan = dev_gateway.prepare_api(request, "atlas-code", "key-test")
+            self.assertLessEqual(plan.reserved, dev_gateway.call_cap())
+        self.assertIsNone(plan.fallback)
+        self.assertEqual(_json.loads(plan.body)["model"], "zai-glm-5-3")
+
+    def test_body_larger_than_every_context_is_refused_as_context(self) -> None:
+        import dev_gateway
+        from packages.dev_request import Request
+        from packages.limits import LimitError
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "fictional-" * 524288}],
+                "max_tokens": 32,
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+        ):
+            with self.assertRaises(LimitError) as raised:
+                dev_gateway.prepare_api(request, "atlas-code", "key-test")
+        self.assertEqual(raised.exception.code, "context_exceeded")
+        self.assertEqual(raised.exception.limit, 1048576)
+
+
 class RoutedEffortTests(unittest.TestCase):
     def test_routed_effort_uses_values_the_provider_accepts(self) -> None:
         import json as _json

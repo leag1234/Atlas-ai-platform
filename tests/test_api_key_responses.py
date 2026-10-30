@@ -214,6 +214,34 @@ class KeyResponsesTests(unittest.TestCase):
             Decimal(usage["charged_micro_eur"]) / 1000000,
         )
 
+    def test_three_mib_stream_is_accepted_and_final_event_names_provider(self) -> None:
+        payload = self.payload | {
+            "stream": True,
+            "input": "fictional-" * 262144,
+        }
+        # Production sets the per-call cap to 5 EUR; a 3 MiB turn reserves above the 0.05 EUR default.
+        with patch.dict(os.environ, {"ATLAS_RAW_CALL_MAX_MICRO_EUR": "5000000"}):
+            reply = self.post(payload)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        events = [
+            json.loads(line[6:])
+            for line in reply.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        self.assertEqual(events[-1]["type"], "response.completed")
+        self.assertEqual(events[-1]["served_by"], "mistral/zai-glm-5-3-flash")
+        self.assertEqual(
+            events[-1]["response"]["served_by"], "mistral/zai-glm-5-3-flash"
+        )
+
+    def test_body_larger_than_every_context_is_refused_as_context(self) -> None:
+        payload = self.payload | {"input": "fictional-" * 524288}
+        reply = self.post(payload)
+        self.assertEqual(reply.status_code, 400, reply.text)
+        self.assertEqual(reply.json()["error"]["type"], "context_exceeded")
+        self.assertEqual(reply.json()["error"]["measured"], 1310956)
+        self.assertEqual(reply.json()["error"]["limit"], 1048576)
+
     def test_model_aliases_default_to_code_and_refuse_raw_ids(self) -> None:
         for name, selected in [
             ("gpt-fictional-client", "atlas-code"),
@@ -332,7 +360,7 @@ class KeyResponsesTests(unittest.TestCase):
             {"model": "atlas-code"},
             self.payload | {"model": []},
             self.payload | {"project_id": "other"},
-            self.payload | {"input": "x" * 1048576},
+            self.payload | {"input": "x" * 8388608},
         ]
         for value in inputs:
             reply = self.post(value)
