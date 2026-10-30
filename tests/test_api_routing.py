@@ -1,10 +1,12 @@
 """Public usage routing is configuration-driven and has no provider I/O."""
 
 import os
+from collections.abc import AsyncIterator
 import unittest
 from unittest.mock import patch
 
 from api_routing import select_public_model, targets
+import dev_gateway
 
 
 class ApiRoutingTests(unittest.TestCase):
@@ -157,6 +159,168 @@ class RoutedTypedContentTests(unittest.TestCase):
                 texts.extend(c["delta"].get("content") for c in choices)
         self.assertIn("391", texts)
         self.assertNotIn("fictional reasoning", _json.dumps(events))
+
+
+class RoutedReasoningOnlyRetryTests(unittest.TestCase):
+    def _plan(self) -> "dev_gateway.Plan":
+        import dev_gateway
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Reply OK"}],
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+        ):
+            return dev_gateway.prepare_api(request, "atlas-code", "key-test")
+
+    @staticmethod
+    def _stream(frames: list[dict[str, object]]) -> bytes:
+        import json as _json
+
+        return (
+            b"".join(
+                b"data: " + _json.dumps(frame).encode() + b"\n\n" for frame in frames
+            )
+            + b"data: [DONE]\n\n"
+        )
+
+    @staticmethod
+    def _reasoning_only() -> bytes:
+        return RoutedReasoningOnlyRetryTests._stream(
+            [
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"reasoning_content": "fictional reasoning"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                },
+                {
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 4,
+                        "total_tokens": 14,
+                    },
+                },
+            ]
+        )
+
+    @staticmethod
+    def _answer() -> bytes:
+        return RoutedReasoningOnlyRetryTests._stream(
+            [
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": "OK"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                },
+                {
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": 20,
+                        "completion_tokens": 2,
+                        "total_tokens": 22,
+                    },
+                },
+            ]
+        )
+
+    def test_reasoning_only_retries_same_target_and_sums_usage(self) -> None:
+        import asyncio
+
+        plan = self._plan()
+        streams = iter([self._reasoning_only(), self._answer()])
+
+        async def fake_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            yield next(streams)
+
+        async def collect() -> list[dict[str, object]]:
+            with patch.object(dev_gateway, "transport", fake_transport):
+                return [event async for event in dev_gateway.events(plan)]
+
+        events = asyncio.run(collect())
+        self.assertEqual(
+            [event for event in events if event.get("choices")],
+            [
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": "OK"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            ],
+        )
+        self.assertEqual(
+            events[-1]["usage"],
+            {"prompt_tokens": 30, "completion_tokens": 6, "total_tokens": 36},
+        )
+        self.assertEqual(
+            events[-1]["cost_micro_eur"],
+            plan.charge(10, 4) + plan.charge(20, 2),
+        )
+
+    def test_two_reasoning_only_attempts_use_fallback_and_sums_usage(self) -> None:
+        import asyncio
+
+        plan = self._plan()
+        assert plan.fallback is not None
+        streams = iter([self._reasoning_only(), self._reasoning_only(), self._answer()])
+
+        async def fake_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            yield next(streams)
+
+        async def collect() -> list[dict[str, object]]:
+            with patch.object(dev_gateway, "transport", fake_transport):
+                return [event async for event in dev_gateway.events(plan)]
+
+        events = asyncio.run(collect())
+        self.assertEqual(events[-1]["served_by"], "scaleway/deepseek-v4-flash-0731")
+        self.assertEqual(
+            events[-1]["usage"],
+            {"prompt_tokens": 40, "completion_tokens": 10, "total_tokens": 50},
+        )
+        self.assertEqual(
+            events[-1]["cost_micro_eur"],
+            2 * plan.charge(10, 4) + plan.fallback.charge(20, 2),
+        )
+
+    def test_visible_answer_is_never_retried(self) -> None:
+        import asyncio
+
+        plan = self._plan()
+        calls = 0
+
+        async def fake_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            nonlocal calls
+            calls += 1
+            yield self._answer()
+
+        async def collect() -> list[dict[str, object]]:
+            with patch.object(dev_gateway, "transport", fake_transport):
+                return [event async for event in dev_gateway.events(plan)]
+
+        events = asyncio.run(collect())
+        self.assertEqual(calls, 1)
+        terminal = events[-1]
+        assert isinstance(terminal, dict)
+        usage = terminal["usage"]
+        assert isinstance(usage, dict)
+        self.assertEqual(usage["completion_tokens"], 2)
 
 
 class ReusedCallIndexTests(unittest.TestCase):
