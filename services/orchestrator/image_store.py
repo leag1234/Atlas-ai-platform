@@ -27,7 +27,7 @@ def directory() -> Path:
     return Path(os.environ.get("ATLAS_IMAGE_DIR", "BRAIN/generated-images"))
 
 
-def store(url: str) -> str:
+def store(url: str, metadata: dict[str, str] | None = None) -> str:
     image_info(url)
     root = directory()
     if root.is_symlink():
@@ -38,6 +38,11 @@ def store(url: str) -> str:
     with (root / (key + ".png")).open("xb") as output:
         os.fchmod(output.fileno(), 0o600)
         output.write(base64.b64decode(url.split(",", 1)[1], validate=True))
+    if metadata:
+        path = root / (key + ".json")
+        with path.open("x") as output:
+            os.fchmod(output.fileno(), 0o600)
+            json.dump(metadata, output)
     return (
         os.environ.get(
             "ATLAS_PUBLIC_URL", atlas_ports().url("adapter", "localhost")
@@ -45,6 +50,22 @@ def store(url: str) -> str:
         + "/images/"
         + key
     )
+
+
+def generated_medium(reference_url: str) -> str | None:
+    """Return bounded server-written medium metadata for an opaque image URL."""
+    match = re.search(r"/images/([a-f0-9]{32})$", reference_url)
+    if match is None:
+        return None
+    path = directory() / (match.group(1) + ".json")
+    if path.is_symlink():
+        return None
+    try:
+        value = json.loads(path.read_text())
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    medium = value.get("medium") if isinstance(value, dict) else None
+    return medium if isinstance(medium, str) and 1 <= len(medium) <= 200 else None
 
 
 @router.get("/images/{key}")

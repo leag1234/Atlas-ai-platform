@@ -4,6 +4,7 @@ from decimal import Decimal
 import json
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -14,6 +15,7 @@ import image_prompt
 from image_scene import Scene, ScenePatch
 from image_verify import Verification
 from services.orchestrator.chat_api import app
+from services.orchestrator.api_keys import Store
 from services.orchestrator.chat_schema import ChatMessage
 from services.orchestrator.followup import image_dialogue
 from services.orchestrator.image_verification import verification_note
@@ -53,7 +55,9 @@ class ImageThreadEntryTests(unittest.TestCase):
         direct: bool = False,
         original: str = ORIGINAL,
         base: dict[str, object] = BASE,
+        followup_base: dict[str, object] | None = None,
         failed_key: str | None = None,
+        expected_medium: str | None = None,
     ) -> tuple[list[str], str, str]:
         model = GatewayModel(
             "http://unused",
@@ -131,7 +135,18 @@ class ImageThreadEntryTests(unittest.TestCase):
                 AsyncMock(
                     side_effect=[
                         {"text": json.dumps({"updates": [base]})},
-                        {"text": json.dumps({"updates": [base, update]})},
+                        {
+                            "text": json.dumps(
+                                {
+                                    "updates": [
+                                        followup_base
+                                        if followup_base is not None
+                                        else base,
+                                        update,
+                                    ]
+                                }
+                            )
+                        },
                     ]
                 ),
             ),
@@ -144,28 +159,57 @@ class ImageThreadEntryTests(unittest.TestCase):
             patch.object(imagegen, "verify", AsyncMock(side_effect=verified)),
             TestClient(app) as client,
         ):
-            messages = [{"role": "user", "content": original}]
-            first = client.post("/v1/chat/completions", json={"messages": messages})
-            self.assertEqual(first.status_code, 200, first.text)
-            first_reply = first.json()["choices"][0]["message"]["content"]
-            self.assertIn("/images/", first_reply)
-            messages.extend(
-                [
-                    {"role": "assistant", "content": first_reply},
-                    {"role": "user", "content": followup},
-                ]
+            store = Store(Path(root) / "keys.sqlite", "fictional-pepper-" * 4)
+            _, key = store.create(
+                org_id="fictional-org",
+                member_id="fictional-member",
+                subject="tester@example.invalid",
+                budget_user="fictional-user",
+                name="image-followup",
+                scopes=["assistant"],
+                created_by="operator",
             )
-            second = client.post("/v1/chat/completions", json={"messages": messages})
-            self.assertEqual(second.status_code, 200, second.text)
-            self.assertEqual(decision.await_count, 0 if direct else 1)
-            self.assertEqual(len(payloads), 2)
-            self.assertEqual(payloads[1]["dialogue"], [original, followup])
-            self.assertIn("Visual image only", str(payloads[1]["prompt"]))
-            self.assertIn(followup, str(payloads[1]["prompt"]))
-            self.assertNotIn("a man and a woman", str(payloads[1]))
-            second_reply = second.json()["choices"][0]["message"]["content"]
-            self.assertIn("/images/", second_reply)
-            return prompts, first_reply, second_reply
+            messages = [{"role": "user", "content": original}]
+            with patch(
+                "services.orchestrator.api_key_edge.configured_store",
+                return_value=store,
+            ):
+                headers = {"x-api-key": key}
+                first = client.post(
+                    "/api/atlas/v1/chat/completions",
+                    headers=headers,
+                    json={"messages": messages, "stream": False},
+                )
+                self.assertEqual(first.status_code, 200, first.text)
+                first_reply = first.json()["choices"][0]["message"]["content"]
+                self.assertIn("/images/", first_reply)
+                if expected_medium is not None:
+                    self.assertEqual(
+                        first.json()["atlas"]["images"][0]["medium"], expected_medium
+                    )
+                messages.extend(
+                    [
+                        {"role": "assistant", "content": first_reply},
+                        {"role": "user", "content": followup},
+                    ]
+                )
+                second = client.post(
+                    "/api/atlas/v1/chat/completions",
+                    headers=headers,
+                    json={"messages": messages, "stream": False},
+                )
+                self.assertEqual(second.status_code, 200, second.text)
+                self.assertEqual(decision.await_count, 0 if direct else 1)
+                self.assertEqual(len(payloads), 2)
+                self.assertEqual(payloads[1]["dialogue"], [original, followup])
+                if expected_medium is not None:
+                    self.assertEqual(payloads[1]["medium"], expected_medium)
+                self.assertIn("Visual image only", str(payloads[1]["prompt"]))
+                self.assertIn(followup, str(payloads[1]["prompt"]))
+                self.assertNotIn("a man and a woman", str(payloads[1]))
+                second_reply = second.json()["choices"][0]["message"]["content"]
+                self.assertIn("/images/", second_reply)
+                return prompts, first_reply, second_reply
 
     def test_seven_natural_followups_use_tool_and_keep_scene(self) -> None:
         updates: list[dict[str, object]] = [
@@ -264,6 +308,7 @@ class ImageThreadEntryTests(unittest.TestCase):
             "setting": "plain white background",
             "style": "photographic photograph",
         }
+        followup_base = {key: value for key, value in base.items() if key != "style"}
         # The rewriter incorrectly suggests a cartoon on the follow-up. The chat
         # path must retain the established medium because the user did not change it.
         prompts, first_reply, second_reply = self.exercise(
@@ -272,7 +317,9 @@ class ImageThreadEntryTests(unittest.TestCase):
             direct=True,
             original=original,
             base=base,
+            followup_base=followup_base,
             failed_key="count_0",
+            expected_medium="photographic photograph",
         )
         for reply in (first_reply, second_reply):
             self.assertIn("Le résultat ne respecte pas : huit pattes.", reply)

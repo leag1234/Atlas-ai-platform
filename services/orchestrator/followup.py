@@ -150,6 +150,19 @@ def image_dialogue(messages: list[ChatMessage]) -> list[str]:
     return turns
 
 
+def image_medium(messages: list[ChatMessage]) -> str | None:
+    """Recover a generated image's server-written medium from assistant Markdown."""
+    from services.orchestrator.image_store import generated_medium
+
+    for message in reversed(messages[:-1]):
+        if message.role != "assistant":
+            continue
+        for reference in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", message.text):
+            if medium := generated_medium(reference):
+                return medium
+    return None
+
+
 def image_iteration(messages: list[ChatMessage]) -> str | None:
     """A direct-route hint; never the gate for carrying image history."""
     if not messages or not (

@@ -6,6 +6,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from image_constraints import extract_constraints, normalized
 
 
+def names_medium(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:style|photo(?:graph)?|realistic|realiste|illustration|drawing|"
+            r"dessin|cartoon|icon|icone|renaissance|painting|peinture|"
+            r"noir et blanc|black and white|watercolou?r)\b",
+            normalized(text),
+        )
+    )
+
+
 def character_key(name: str) -> str:
     return {"virgin mary": "mary"}.get(normalized(name), normalized(name))
 
@@ -97,12 +108,7 @@ class ScenePatch(BaseModel):
         """Discard model-proposed replacements that the correction did not request."""
         correction = normalized(text)
         changed = self.model_dump()
-        if not re.search(
-            r"\b(?:style|photo(?:graph)?|realistic|realiste|illustration|drawing|"
-            r"dessin|cartoon|icon|icone|renaissance|painting|peinture|"
-            r"noir et blanc|black and white|watercolou?r)\b",
-            correction,
-        ):
+        if not names_medium(correction):
             changed["style"] = None
         if not re.search(
             r"\b(?:setting|scene|background|decor|d[eé]cor|etable|stable|"

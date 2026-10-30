@@ -89,6 +89,7 @@ async def process_image(
     *,
     language: str,
     dialogue: list[str] | None = None,
+    medium: str | None = None,
     budget: Decimal = Decimal("0.05"),
     timeout: float = 118,
 ) -> None:
@@ -195,6 +196,7 @@ async def process_image(
                             if dialogue and len(dialogue) > 1
                             else {}
                         ),
+                        **({"medium": medium} if medium else {}),
                         "seed": seed,
                         "lang": language,
                         "max_cost_eur": str(budget - retry_cost),
@@ -225,7 +227,10 @@ async def process_image(
             raise ValueError("invalid_provider_cost")
         labels = json.loads(Path("prompts/image-labels.json").read_text())
         label = labels[language]
-        reference = store(image.url)
+        scene = response.get("scene")
+        medium = scene.get("style") if isinstance(scene, dict) else None
+        metadata = {"medium": medium} if isinstance(medium, str) and medium else {}
+        reference = store(image.url, metadata)
         item.images = [
             {
                 k: v
@@ -235,6 +240,8 @@ async def process_image(
         ]
         item.images[0]["reference"] = reference
         item.images[0]["original_request"] = item.question
+        if metadata:
+            item.images[0].update(metadata)
         item.reponse = f"![{label}]({reference})"
         from services.orchestrator.image_verification import verification_note
 

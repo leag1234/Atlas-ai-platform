@@ -33,6 +33,7 @@ from services.orchestrator.followup import (
     is_followup,
     image_iteration,
     image_dialogue,
+    image_medium,
     image_explanation,
     image_retry_confirmation,
     raw_scene_continuation,
@@ -1039,6 +1040,7 @@ async def _process(
                 dialogue=None
                 if image_retry_confirmation(request.messages)
                 else dialogue,
+                medium=image_medium(request.messages) if len(dialogue) > 1 else None,
                 timeout=min(118, request.timeout_seconds),
             )
             succeeded = True
