@@ -277,7 +277,7 @@ async def chat(
     ) as exc:
         code = (
             str(exc)
-            if str(exc) in {"cost_budget", "context_exceeded"}
+            if str(exc) in {"cost_budget", "context_exceeded", "invalid_reservation"}
             else "invalid_request"
         )
         return error(code, 400)

@@ -15,6 +15,8 @@ from typing import Any
 
 from services.orchestrator.dev_auth import Store as DeveloperStore, QuotaError
 
+MAX_CALL_RESERVATION = 5000000
+
 
 @dataclass(frozen=True)
 class Principal:
@@ -393,8 +395,10 @@ class Store(DeveloperStore):
         )
 
     def reserve(self, developer: str, amount: int, *, monetary: bool = True) -> str:
-        # Same atomic reserve/settle algorithm as dev_auth, with the assistant ceiling.
-        if type(amount) is not int or not 0 <= amount <= 300000:
+        # Same atomic reserve/settle algorithm as dev_auth. The bound is the highest
+        # per-call cap an operator may set (dev_gateway.call_cap, 5 EUR); the configured
+        # cap itself is enforced by the gateway before any reservation reaches here.
+        if type(amount) is not int or not 0 <= amount <= MAX_CALL_RESERVATION:
             raise ValueError("invalid_reservation")
         identifier, day, week = secrets.token_hex(16), self.day(), self.week()
         failure: dict[str, object] | None = None
