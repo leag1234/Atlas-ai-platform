@@ -5,6 +5,14 @@ from typing import Any
 from services.orchestrator.dev_chat import Output
 
 
+def reasoning_tokens(usage: Any) -> int:
+    details = (
+        usage.get("completion_tokens_details") if isinstance(usage, dict) else None
+    )
+    value = details.get("reasoning_tokens") if isinstance(details, dict) else None
+    return value if isinstance(value, int) and value >= 0 else 0
+
+
 class Wire:
     def __init__(self, output: Output, request: dict[str, Any]) -> None:
         self.output, self.request = output, request
@@ -49,14 +57,7 @@ class Wire:
                 "input_tokens_details": {"cached_tokens": 0},
                 # Responses clients (Codex) require the field. Report the provider's
                 # count when it gives one; providers that hide reasoning give 0.
-                "output_tokens_details": {
-                    "reasoning_tokens": int(
-                        (usage.get("completion_tokens_details") or {}).get(
-                            "reasoning_tokens"
-                        )
-                        or 0
-                    )
-                },
+                "output_tokens_details": {"reasoning_tokens": reasoning_tokens(usage)},
             },
         }
 
