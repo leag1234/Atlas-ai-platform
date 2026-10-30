@@ -38,6 +38,16 @@ class DevInputTests(unittest.TestCase):
         self.assertEqual(request.messages[-1].tool_call_id, "c1")
         self.assertEqual(request.messages[-1].content, "code")
         self.assertNotIn("untrusted", request.model_dump_json())
+        # Codex grows a turn description in client_metadata during long sessions.
+        long_turn = {"x-codex-turn-metadata": "t" * 4096}
+        self.assertNotIn(
+            "tttt",
+            responses(payload | {"client_metadata": long_turn}).model_dump_json(),
+        )
+        with self.assertRaises(ValueError):
+            responses(payload | {"metadata": {"note": "m" * 1025}})
+        with self.assertRaises(ValueError):
+            responses(payload | {"client_metadata": {"turn": "t" * 65537}})
         extra: dict[str, Any]
         for extra in (
             {"store": True},

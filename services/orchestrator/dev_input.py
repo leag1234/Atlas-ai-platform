@@ -100,21 +100,24 @@ def responses(value: dict[str, Any]) -> ChatInput:
         ["reasoning.encrypted_content"],
     ):
         raise ValueError("unsupported_storage_or_include")
-    for key in ("metadata", "client_metadata"):
+    # metadata follows the public limits; client_metadata is the client's own
+    # bookkeeping (Codex grows a turn description in it), never forwarded to a
+    # model, so it only gets a wide size bound.
+    for key, entries, characters in (
+        ("metadata", 32, 1024),
+        ("client_metadata", 64, 65536),
+    ):
         meta = value.get(key, {})
         if isinstance(meta, dict):
-            if len(meta) > 32:
-                raise LimitError("invalid_metadata", len(meta), 32, "entries")
+            if len(meta) > entries:
+                raise LimitError("invalid_metadata", len(meta), entries, "entries")
             for entry in meta.values():
-                if isinstance(entry, str) and len(entry) > 1024:
-                    raise LimitError("invalid_metadata", len(entry), 1024, "characters")
-        if (
-            not isinstance(meta, dict)
-            or len(meta) > 32
-            or any(
-                not isinstance(k, str) or not isinstance(v, str) or len(v) > 1024
-                for k, v in meta.items()
-            )
+                if isinstance(entry, str) and len(entry) > characters:
+                    raise LimitError(
+                        "invalid_metadata", len(entry), characters, "characters"
+                    )
+        if not isinstance(meta, dict) or any(
+            not isinstance(k, str) or not isinstance(v, str) for k, v in meta.items()
         ):
             raise ValueError("invalid_metadata")
     if not isinstance(value.get("prompt_cache_key", ""), str):
