@@ -65,6 +65,36 @@ class DevInputTests(unittest.TestCase):
             "none",
         )
 
+    def test_long_agent_history_fits_the_raw_message_limit(self) -> None:
+        # Measured 2026-10-30: a Codex session of about 1250 small tool turns was
+        # refused with "measured length 1025; max_length 1024" on the message list.
+        from services.orchestrator.dev_chat import RawChatInput
+
+        items: list[dict[str, Any]] = [
+            {"type": "message", "role": "user", "content": "Start."}
+        ]
+        for index in range(1500):
+            items += [
+                {
+                    "type": "function_call",
+                    "call_id": f"c{index}",
+                    "name": "read",
+                    "arguments": "{}",
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": f"c{index}",
+                    "output": "ok",
+                },
+            ]
+        tools = [{"type": "function", "name": "read", "parameters": {"type": "object"}}]
+        parsed = responses({"model": "atlas-code", "input": items, "tools": tools})
+        raw = RawChatInput.model_validate(
+            parsed.model_dump(by_alias=True, exclude_none=True)
+            | {"model": "raw/public-routing"}
+        )
+        self.assertGreater(len(raw.messages), 1024)
+
     def test_responses_drops_unknown_tools_and_invalid_namespaces(self) -> None:
         payload: dict[str, Any] = {
             "model": "atlas-code",

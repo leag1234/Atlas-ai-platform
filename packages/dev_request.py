@@ -75,7 +75,7 @@ class Request(Strict):
     def validate_output(self) -> bool:
         return self.response_format.type != "text" or self.tool_choice == "none"
 
-    messages: list[Message] = Field(min_length=1, max_length=1024)
+    messages: list[Message] = Field(min_length=1, max_length=4096)
     tools: list[Tool] = Field(default_factory=list, max_length=64)
     max_tokens: int = Field(default=4096, ge=1, le=8192)
     temperature: float = Field(default=0, ge=0, le=2)

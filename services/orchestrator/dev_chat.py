@@ -61,7 +61,7 @@ class RawChatInput(Strict):
     """Raw gateway request: retain OpenAI content parts instead of normalizing them."""
 
     model: str = Field(pattern=r"^raw/.+$")
-    messages: list[RawMessage] = Field(min_length=1, max_length=1024)
+    messages: list[RawMessage] = Field(min_length=1, max_length=4096)
     tools: list[Tool] = Field(default_factory=list, max_length=64)
     response_format: ResponseFormat = Field(
         default_factory=lambda: ResponseFormat(type="text")
