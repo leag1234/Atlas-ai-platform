@@ -1,8 +1,9 @@
-"""Text/function input translations; unsupported extensions fail before inference."""
+"""Text/function input translations at the stateless Responses boundary."""
 
 from packages.limits import LimitError
 
 import json
+import logging
 from typing import Any
 from services.orchestrator.dev_chat import ChatInput
 
@@ -12,11 +13,82 @@ def fields(value: dict[str, Any], allowed: str) -> None:
         raise ValueError("unsupported_field")
 
 
+class SemanticFieldError(ValueError):
+    """A client option whose semantics cannot be preserved by this route."""
+
+
+def dropped(scope: str, names: set[str]) -> None:
+    """Record only field names: request content must never reach compatibility logs."""
+    if names:
+        logging.getLogger("atlas.responses").warning(
+            json.dumps(
+                {
+                    "event": "responses_fields_dropped",
+                    "scope": scope,
+                    "fields": sorted(names),
+                }
+            )
+        )
+
+
+def response_fields(value: dict[str, Any], allowed: set[str], scope: str) -> None:
+    dropped(scope, set(value) - allowed)
+
+
+def format_description(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+LOCAL_SHELL_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "command": {"type": "array", "items": {"type": "string"}},
+        "workdir": {"type": "string"},
+        "timeout_ms": {"type": "integer", "minimum": 1},
+        "env": {"type": "object", "additionalProperties": {"type": "string"}},
+    },
+    "required": ["command"],
+    "additionalProperties": False,
+}
+
+
+CUSTOM_PARAMETERS = {
+    "type": "object",
+    "properties": {"input": {"type": "string"}},
+    "required": ["input"],
+    "additionalProperties": False,
+}
+
+
 def responses(value: dict[str, Any]) -> ChatInput:
-    fields(
+    response_fields(
         value,
-        "model input instructions tools tool_choice parallel_tool_calls max_output_tokens temperature stream store reasoning include prompt_cache_key metadata client_metadata text",
+        {
+            "model",
+            "input",
+            "instructions",
+            "tools",
+            "tool_choice",
+            "parallel_tool_calls",
+            "max_output_tokens",
+            "temperature",
+            "stream",
+            "store",
+            "reasoning",
+            "include",
+            "prompt_cache_key",
+            "metadata",
+            "client_metadata",
+            "text",
+            "previous_response_id",
+        },
+        "request",
     )
+    for field in ("previous_response_id", "project_id"):
+        if field in value:
+            raise SemanticFieldError("unsupported field: " + field)
     if value.get("store", False) is not False or value.get("include", []) not in (
         [],
         ["reasoning.encrypted_content"],
@@ -42,9 +114,9 @@ def responses(value: dict[str, Any]) -> ChatInput:
     if not isinstance(value.get("prompt_cache_key", ""), str):
         raise ValueError("invalid_cache_hint")
     reasoning = value.get("reasoning", {})
-    fields(reasoning, "effort summary")
-    if reasoning.get("summary", "none") != "none":
-        raise ValueError("unsupported_reasoning_summary")
+    if not isinstance(reasoning, dict):
+        raise ValueError("invalid_reasoning")
+    response_fields(reasoning, {"effort", "summary"}, "reasoning")
     messages: list[dict[str, Any]] = []
     instructions = value.get("instructions", "")
     if not isinstance(instructions, str):
@@ -101,6 +173,45 @@ def responses(value: dict[str, Any]) -> ChatInput:
                     "content": item["output"],
                 }
             )
+        elif kind in ("custom_tool_call", "local_shell_call"):
+            response_fields(
+                item,
+                {"type", "id", "call_id", "name", "input", "action", "status"},
+                kind,
+            )
+            call_id, name = item.get("call_id"), item.get("name")
+            if not isinstance(call_id, str) or not isinstance(name, str):
+                raise ValueError("invalid_tool_call")
+            if kind == "custom_tool_call":
+                input_value = item.get("input")
+                if not isinstance(input_value, str):
+                    raise ValueError("invalid_custom_tool_call")
+                arguments: dict[str, Any] = {"input": input_value}
+            else:
+                action = item.get("action")
+                if not isinstance(action, dict):
+                    raise ValueError("invalid_local_shell_call")
+                arguments = action
+            call = {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": json.dumps(arguments)},
+            }
+            if messages and messages[-1]["role"] == "assistant":
+                messages[-1].setdefault("tool_calls", []).append(call)
+            else:
+                messages.append({"role": "assistant", "tool_calls": [call]})
+        elif kind in ("custom_tool_call_output", "local_shell_call_output"):
+            response_fields(item, {"type", "id", "call_id", "output"}, kind)
+            if not isinstance(item.get("call_id"), str) or "output" not in item:
+                raise ValueError("invalid_tool_output")
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": item["call_id"],
+                    "content": item["output"],
+                }
+            )
         elif kind == "reasoning":
             # Stateless raw providers cannot consume another provider's opaque state.
             fields(item, "type id summary content encrypted_content status")
@@ -109,18 +220,100 @@ def responses(value: dict[str, Any]) -> ChatInput:
             ):
                 raise ValueError("invalid_reasoning_item")
         else:
-            raise ValueError("unsupported_input_type")
+            dropped("input", {"type:" + str(kind)})
     tools = []
     for tool in value.get("tools", []):
-        fields(tool, "type name description parameters strict")
-        if tool["type"] != "function":
-            raise ValueError("unsupported_tool")
-        tools.append(
-            {
-                "type": "function",
-                "function": {k: v for k, v in tool.items() if k != "type"},
-            }
-        )
+        if not isinstance(tool, dict) or not isinstance(tool.get("type"), str):
+            # A malformed tool is a client error; only unknown typed tools are dropped.
+            raise ValueError("invalid_tool")
+        kind = tool.get("type")
+        if kind == "function":
+            response_fields(
+                tool,
+                {"type", "name", "description", "parameters", "strict"},
+                "function_tool",
+            )
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        k: v
+                        for k, v in tool.items()
+                        if k in {"name", "description", "parameters", "strict"}
+                    },
+                }
+            )
+        elif kind == "custom":
+            response_fields(
+                tool,
+                {"type", "name", "description", "format", "grammar"},
+                "custom_tool",
+            )
+            name = tool.get("name")
+            if not isinstance(name, str):
+                raise ValueError("invalid_custom_tool")
+            description = tool.get("description", "")
+            if not isinstance(description, str):
+                raise ValueError("invalid_custom_tool")
+            grammar = tool.get("grammar", tool.get("format"))
+            if grammar is not None:
+                description += "\nInput format: " + format_description(grammar)
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": description,
+                        "parameters": CUSTOM_PARAMETERS,
+                    },
+                }
+            )
+        elif kind == "local_shell":
+            response_fields(tool, {"type"}, "local_shell_tool")
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "local_shell",
+                        "description": "Run a local shell command.",
+                        "parameters": LOCAL_SHELL_PARAMETERS,
+                    },
+                }
+            )
+        elif kind == "namespace":
+            response_fields(tool, {"type", "name", "tools"}, "namespace_tool")
+            namespace, members = tool.get("name"), tool.get("tools")
+            if not isinstance(namespace, str) or not isinstance(members, list):
+                dropped("namespace_tool", {"invalid_namespace"})
+                continue
+            for member in members:
+                if not isinstance(member, dict) or member.get("type") != "function":
+                    dropped("namespace_tool", {"invalid_member"})
+                    continue
+                response_fields(
+                    member,
+                    {"type", "name", "description", "parameters", "strict"},
+                    "namespace_function",
+                )
+                name = member.get("name")
+                if not isinstance(name, str):
+                    dropped("namespace_tool", {"invalid_member"})
+                    continue
+                tools.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            **{
+                                k: v
+                                for k, v in member.items()
+                                if k in {"description", "parameters", "strict"}
+                            },
+                            "name": namespace + "__" + name,
+                        },
+                    }
+                )
+        else:
+            dropped("tools", {"type:" + str(kind)})
     choice = value.get("tool_choice", "auto")
     if isinstance(choice, dict):
         fields(choice, "type name")
@@ -130,7 +323,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
     text = value.get("text", {})
     if not isinstance(text, dict):
         raise ValueError("invalid_text_format")
-    fields(text, "format")
+    response_fields(text, {"format", "verbosity"}, "text")
     fmt = text.get("format", {"type": "text"})
     if isinstance(fmt, dict) and fmt.get("type") == "json_schema":
         fields(fmt, "type name schema strict description")

@@ -1,6 +1,7 @@
 """Stateless Responses text/function compatibility for developer clients."""
 
 import copy
+import json
 from typing import Any
 from services.orchestrator.dev_chat import Output
 
@@ -74,6 +75,16 @@ class Wire:
             for kind in ("response.created", "response.in_progress")
         ]
 
+    def tool_kind(self, name: str) -> str:
+        for tool in self.request.get("tools", []):
+            if not isinstance(tool, dict):
+                continue
+            if tool.get("type") == "custom" and tool.get("name") == name:
+                return "custom"
+            if tool.get("type") == "local_shell" and name == "local_shell":
+                return "local_shell"
+        return "function"
+
     def feed(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events = []
         item: dict[str, Any]
@@ -143,12 +154,30 @@ class Wire:
                 if key not in self.indices:
                     index = self.indices[key] = len(self.items)
                     call = self.output.calls[change["index"]]
+                    kind = self.tool_kind(call["function"]["name"])
                     item = {
-                        "id": "fc_" + call["id"],
-                        "type": "function_call",
+                        "id": (
+                            "ctc_"
+                            if kind == "custom"
+                            else "lsh_"
+                            if kind == "local_shell"
+                            else "fc_"
+                        )
+                        + call["id"],
+                        "type": "custom_tool_call"
+                        if kind == "custom"
+                        else "local_shell_call"
+                        if kind == "local_shell"
+                        else "function_call",
                         "call_id": call["id"],
                         "name": call["function"]["name"],
-                        "arguments": "",
+                        **(
+                            {"input": ""}
+                            if kind == "custom"
+                            else {"action": {}}
+                            if kind == "local_shell"
+                            else {"arguments": ""}
+                        ),
                         "status": "in_progress",
                     }
                     self.items.append(item)
@@ -160,16 +189,45 @@ class Wire:
                 index = self.indices[key]
                 item = self.items[index]
                 args = change["function"].get("arguments", "")
-                item["arguments"] += args
-                if args:
-                    events.append(
-                        self.event(
-                            "response.function_call_arguments.delta",
-                            output_index=index,
-                            item_id=item["id"],
-                            delta=args,
+                if item["type"] == "custom_tool_call":
+                    try:
+                        input_value = json.loads(
+                            self.output.calls[change["index"]]["function"]["arguments"]
+                        )["input"]
+                    except (KeyError, TypeError, ValueError):
+                        input_value = ""
+                    previous = item["input"]
+                    item["input"] = input_value
+                elif item["type"] == "local_shell_call":
+                    try:
+                        item["action"] = json.loads(
+                            self.output.calls[change["index"]]["function"]["arguments"]
                         )
-                    )
+                    except (TypeError, ValueError):
+                        item["action"] = {}
+                else:
+                    item["arguments"] += args
+                if args:
+                    if item["type"] == "custom_tool_call":
+                        delta = item["input"][len(previous) :]
+                        if delta:
+                            events.append(
+                                self.event(
+                                    "response.custom_tool_call_input.delta",
+                                    output_index=index,
+                                    item_id=item["id"],
+                                    delta=delta,
+                                )
+                            )
+                    elif item["type"] == "function_call":
+                        events.append(
+                            self.event(
+                                "response.function_call_arguments.delta",
+                                output_index=index,
+                                item_id=item["id"],
+                                delta=args,
+                            )
+                        )
         if "usage" in chunk:
             for index, item in enumerate(self.items):
                 item["status"] = (
@@ -195,7 +253,16 @@ class Wire:
                             part=part,
                         )
                     )
-                else:
+                elif item["type"] == "custom_tool_call":
+                    events.append(
+                        self.event(
+                            "response.custom_tool_call_input.done",
+                            **common,
+                            name=item["name"],
+                            input=item["input"],
+                        )
+                    )
+                elif item["type"] == "function_call":
                     events.append(
                         self.event(
                             "response.function_call_arguments.done",
