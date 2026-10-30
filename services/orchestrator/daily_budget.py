@@ -228,7 +228,9 @@ class DailyLedger:
             )
         )
 
-    def reserve_cost(self, user: str, amount: Decimal, lang: str) -> CostReservation:
+    def reserve_cost(
+        self, user: str, amount: Decimal, lang: str, *, user_limits: bool = True
+    ) -> CostReservation:
         limits = (
             (
                 "daily_cost",
@@ -257,7 +259,9 @@ class DailyLedger:
                     db, kind, period, None, "reserved_micro + measured_micro"
                 )
                 checks += [
-                    (category, own, own + micro, user_limit),
+                    # An API key with its own budget is capped by its weekly key cap
+                    # (api_keys), not by the per-user limits; instance limits still apply.
+                    (category, own, own + micro, user_limit if user_limits else None),
                     ("global_" + category, total, total + micro, global_limit),
                 ]
             for category, _, used, limit in checks:
