@@ -280,7 +280,7 @@ async def chat(
             nudged, repeats = nudge_messages(list(parsed.messages))
             if repeats:
                 parsed = parsed.model_copy(update={"messages": nudged})
-                logging.getLogger("uvicorn.error").info(
+                logging.getLogger("uvicorn.error").warning(
                     json.dumps({"event": "devapi_loop_nudge", "repeats": repeats})
                 )
         plan = (
