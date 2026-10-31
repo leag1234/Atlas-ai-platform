@@ -107,6 +107,10 @@ class BrandAssetTests(unittest.TestCase):
         self.assertIn("let beta = true;", script)
         self.assertIn("beta = !major || Number(major[1]) < 1;", script)
         self.assertIn("#sidebar-webui-name", script)
+        self.assertIn("main .text-2xl span.line-clamp-1", script)
+        welcome = (ROOT / "infra/stable/static/welcome.html").read_text()
+        self.assertIn('<span class="beta" id="beta">Beta</span>', welcome)
+        self.assertIn("l==='fr'?'Bêta':'Beta'", welcome)
         self.assertIn("'Bêta' : 'Beta'", script)
         self.assertIn(".atlas-beta", css)
 
