@@ -18,6 +18,13 @@ NOTE = (
     "times in this session. Do not run it again with the same arguments. Use what you "
     "already know, try a different approach, or stop and report what blocks you.]"
 )
+REPLACE_AT = 5
+REPLACEMENT = (
+    "[Atlas note: this exact call ({name}) has returned this same result {count} times; "
+    "the result is already earlier in this conversation, so it is not repeated here. "
+    "Do not run this call again. Take the next step of your task with what you already "
+    "know, run a different command, or stop and report what blocks you.]"
+)
 TIMING = re.compile(r"^(?:Chunk ID: \S+|Wall time: [\d.]+ seconds?)\n", re.MULTILINE)
 
 
@@ -54,10 +61,13 @@ def nudge_messages(messages: list[Any]) -> tuple[list[Any], int]:
     ]
     if len(same) < REPEATS:
         return messages, 0
-    result = list(messages)
-    result[index] = messages[index].model_copy(
-        update={
-            "content": (last_output or "") + NOTE.format(name=name, count=len(same))
-        }
+    # Measured 2026-10-31: a model ignored the appended note about 20 times in a row;
+    # from REPLACE_AT repeats the duplicate output is replaced by the note alone.
+    content = (
+        REPLACEMENT.format(name=name, count=len(same))
+        if len(same) >= REPLACE_AT
+        else (last_output or "") + NOTE.format(name=name, count=len(same))
     )
+    result = list(messages)
+    result[index] = messages[index].model_copy(update={"content": content})
     return result, len(same)
