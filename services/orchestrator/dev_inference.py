@@ -324,17 +324,22 @@ async def chat(
     except PermissionError:
         return error("unauthorized", 401)
     except ValueError as exc:
-        if str(exc) != "strict_privacy_unavailable":
-            raise
-        return JSONResponse(
-            {
-                "error": {
-                    "type": "strict_privacy_unavailable",
-                    "message": "No owned inference server is available for strict privacy mode.",
-                }
-            },
-            status_code=503,
+        if str(exc) == "strict_privacy_unavailable":
+            return JSONResponse(
+                {
+                    "error": {
+                        "type": "strict_privacy_unavailable",
+                        "message": "No owned inference server is available for strict privacy mode.",
+                    }
+                },
+                status_code=503,
+            )
+        code = (
+            str(exc)
+            if str(exc) in {"cost_budget", "context_exceeded", "invalid_reservation"}
+            else "invalid_request"
         )
+        return error(code, 400)
     except (
         ValueError,
         TypeError,

@@ -11,6 +11,7 @@
   "owner_member_id": "10000000-0000-4000-8000-000000000001",
   "state": "active",
   "default_action": "chat",
+  "privacy": "standard",
   "instructions_file_id": "10000000-0000-4000-8000-000000000001",
   "memory_revision": 0,
   "deliverables_folder_id": "10000000-0000-4000-8000-000000000001",
