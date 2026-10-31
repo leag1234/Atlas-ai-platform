@@ -110,6 +110,10 @@ async def authenticate(
                 "failure", principal.id, reason="scope", missing_scope="project"
             )
             return error(403, "insufficient_scope", missing_scope="project")
+        # A processing option, not an identity assertion: read it before the strip below.
+        request.state.context_trim = (
+            request.headers.get("x-atlas-context-trim", "").lower() == "on"
+        )
         # Discard every client identity assertion, including the user budget selector.
         request.scope["headers"] = [
             (name, value)
