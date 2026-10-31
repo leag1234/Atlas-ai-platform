@@ -274,6 +274,15 @@ async def chat(
             parsed = parsed.model_copy(
                 update={"messages": trim_messages(list(parsed.messages))}
             )
+        if public_model is not None:
+            from services.orchestrator.loop_nudge import nudge_messages
+
+            nudged, repeats = nudge_messages(list(parsed.messages))
+            if repeats:
+                parsed = parsed.model_copy(update={"messages": nudged})
+                logging.getLogger("uvicorn.error").info(
+                    json.dumps({"event": "devapi_loop_nudge", "repeats": repeats})
+                )
         plan = (
             gateway.prepare_api(parsed, public_model, request.state.api_key.id)
             if public_model is not None
