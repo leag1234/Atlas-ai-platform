@@ -40,6 +40,7 @@ class Named(BaseModel):
 
 class ProjectInput(Named):
     instructions: str = Field(default="", max_length=4000)
+    privacy: Literal["standard", "strict"] = "standard"
 
 
 class DocumentInput(Named):
@@ -78,7 +79,7 @@ def dispatch(method: str, path: str, body: bytes) -> object:
             return store.listing()
         if method == "POST":
             p = ProjectInput.model_validate_json(body)
-            return {"id": store.create(p.name, p.instructions)}
+            return {"id": store.create(p.name, p.instructions, p.privacy)}
         raise KeyError("not_found")
     project = parts[0]
     try:
@@ -93,6 +94,7 @@ def dispatch(method: str, path: str, body: bytes) -> object:
         if method == "PATCH":
             p = ProjectInput.model_validate_json(body)
             store.update(project, p.name, p.instructions)
+            store.set_privacy(project, p.privacy)
             return {"ok": True}
     if tail == ["conversations"]:
         if method == "GET":

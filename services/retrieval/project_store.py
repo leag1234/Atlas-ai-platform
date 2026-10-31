@@ -455,6 +455,7 @@ class Scope:
             owner_member_id=actor,
             state="active",
             default_action=data["default_action"],
+            privacy=data["privacy"],
             instructions_file_id=str(uuid4()),
             memory_revision=0,
             deliverables_folder_id=str(uuid4()),

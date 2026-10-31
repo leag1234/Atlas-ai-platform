@@ -7,6 +7,7 @@ from packages.ports import atlas_ports
 import re
 import time
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -44,9 +45,15 @@ class HistoryTurn(BaseModel):
 
 class Context(BaseModel):
     instructions: str = Field(max_length=4000)
+    privacy: Literal["standard", "strict"] = "standard"
     revision: int = Field(ge=0)
     facts: list[MemoryFact] = Field(max_length=8)
     history: list[HistoryTurn] = Field(max_length=8)
+
+
+def tool_name(tool: Message) -> str | None:
+    function = tool.get("function")
+    return function.get("name") if isinstance(function, dict) else None
 
 
 class ProjectTools(ChatTools):
@@ -166,6 +173,13 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
         os.environ.get("ATLAS_GATEWAY_URL", atlas_ports().url("gateway")),
         local_enabled=False,
     )
+    model.privacy = context.privacy
+    if context.privacy == "strict":
+        from api_routing import select_public_model, targets
+
+        targets(
+            select_public_model(request.model), request.reasoning_effort, strict=True
+        )
     model.local_enabled, model.observing = False, True
     sink = sink_context.get()
     answer_stream = AnswerStream(sink) if sink else None
@@ -186,6 +200,12 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
         and isinstance(function := t.get("function"), dict)
         and function.get("name") == "rag_search"
     ]
+    if context.privacy == "strict":
+        model.tools = [
+            tool
+            for tool in model.tools
+            if tool_name(tool) not in {"web_search", "web_fetch"}
+        ]
     if images_enabled():
         model.tools.append(declaration())
     tools = ProjectTools(item, str(project))

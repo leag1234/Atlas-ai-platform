@@ -102,6 +102,7 @@ class GatewayModel:
         self.output_tokens = 0
         self.observations: list[Observation] = []
         self.local_enabled = True
+        self.privacy = "standard"
         self.observing = False
         self.generation_ms = 0.0
         self.sink: Sink | None = None
@@ -481,6 +482,8 @@ class GatewayModel:
                 reasoning_effort=self.reasoning_effort,
                 budget_eur=str(self.allowance),
             )
+        if self.privacy == "strict":
+            payload["privacy"] = "strict"
         if self.produces_files:
             payload["produces_files"] = True
         if self.has_attachments:

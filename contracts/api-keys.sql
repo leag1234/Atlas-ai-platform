@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
  daily_micro_eur INTEGER CHECK(daily_micro_eur > 0),
  weekly_micro_eur INTEGER CHECK(weekly_micro_eur > 0),
  own_budget INTEGER NOT NULL DEFAULT 0 CHECK(own_budget IN (0,1)),
+ privacy TEXT NOT NULL DEFAULT 'standard' CHECK(privacy IN ('standard','strict')),
  created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
  last_used_at INTEGER, last_used_ip_prefix TEXT, revoked_at INTEGER
 );

@@ -31,6 +31,23 @@ GET  /v1/usage                              (tokens, cost, per tenant/user)
 
 ## 2. Multi-tenant
 
+## Strict privacy
+
+Strict privacy is selected per request with `X-Atlas-Privacy: strict`, or per API
+key with `privacy=strict` in the key administrator. Projects may also set
+`privacy` to `strict` through the project API. In strict mode Atlas routes only
+to targets marked `"privacy": "owned"` in `services/model-gateway/api-routing.json`;
+if no owned target is available it returns HTTP 503
+`strict_privacy_unavailable` and never falls back to a shared provider. Web
+search and web fetch are not offered. Responses report the effective `privacy`
+value beside `served_by`.
+
+An owned target is an OpenAI-compatible vLLM endpoint on a server the owner
+fully controls. Configure its base URL with `ATLAS_OWNED_VLLM_BASE_URL` and its
+optional credential with `ATLAS_OWNED_VLLM_API_KEY`, then add a target such as
+`{"provider":"owned-vllm","model":"owned-vllm-model","context":262144,"privacy":"owned"}`
+to the relevant route. Targets without `"privacy":"owned"` remain shared.
+
 - REQ-PLT-001 (MUST): **Logical silo** model: one Postgres database, isolation by
   `tenant_id` + Row Level Security **enabled at the database level**, not only in the
   application code. RLS is the last line of defense when a query forgets a `WHERE`.

@@ -6957,6 +6957,11 @@ components:
           enum:
           - chat
           - work
+        privacy:
+          type: string
+          enum:
+          - standard
+          - strict
         instructions_file_id:
           type: string
           format: uuid
@@ -6990,6 +6995,7 @@ components:
       - owner_member_id
       - state
       - default_action
+      - privacy
       - instructions_file_id
       - memory_revision
       - deliverables_folder_id
@@ -10824,9 +10830,15 @@ components:
           type: array
           items:
             type: string
+        privacy:
+          type: string
+          enum:
+          - standard
+          - strict
       required:
       - instructions_version
       - instructions_text
+      - privacy
       - memory_revision
       - facts
       - passages

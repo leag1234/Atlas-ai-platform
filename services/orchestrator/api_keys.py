@@ -26,6 +26,7 @@ class Principal:
     subject: str
     budget_user: str
     scopes: tuple[str, ...]
+    privacy: str = "standard"
 
 
 class KeyQuotaError(QuotaError):
@@ -104,6 +105,10 @@ class Store(DeveloperStore):
         if "own_budget" not in keys:
             db.execute(
                 "ALTER TABLE api_keys ADD COLUMN own_budget INTEGER NOT NULL DEFAULT 0 CHECK(own_budget IN (0,1))"
+            )
+        if "privacy" not in keys:
+            db.execute(
+                "ALTER TABLE api_keys ADD COLUMN privacy TEXT NOT NULL DEFAULT 'standard' CHECK(privacy IN ('standard','strict'))"
             )
         requests = self._columns(db, "api_key_requests")
         if "week" not in requests:
@@ -244,6 +249,7 @@ class Store(DeveloperStore):
         daily_micro_eur: int | None = None,
         weekly_micro_eur: int | None = 100000000,
         own_budget: bool = False,
+        privacy: str = "standard",
         lifetime_days: int = 90,
         browser_policy: bool = False,
         administrator: bool = False,
@@ -262,6 +268,7 @@ class Store(DeveloperStore):
                 for v in (daily_requests, daily_micro_eur, weekly_micro_eur)
             )
             or type(own_budget) is not bool
+            or privacy not in ("standard", "strict")
         ):
             raise ValueError("invalid_key_policy")
         prefix = "atl_" + secrets.token_hex(4)
@@ -295,7 +302,7 @@ class Store(DeveloperStore):
                 weekly_micro_eur = policy["weekly_micro_eur"]
                 own_budget = policy["weekly_micro_eur"] is not None
             db.execute(
-                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,weekly_micro_eur,own_budget,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO api_keys (id,org_id,member_id,subject,budget_user,name,prefix,hash,hash_kind,scopes,expires_at,daily_requests,daily_micro_eur,weekly_micro_eur,own_budget,privacy,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     identifier,
                     org_id,
@@ -312,6 +319,7 @@ class Store(DeveloperStore):
                     daily_micro_eur,
                     weekly_micro_eur,
                     int(own_budget),
+                    privacy,
                     created_by,
                     now,
                 ),
@@ -382,6 +390,7 @@ class Store(DeveloperStore):
             str(row["subject"]),
             (f"api-key:{row['id']}" if row["own_budget"] else str(row["budget_user"])),
             tuple(json.loads(row["scopes"])),
+            str(row["privacy"]),
         )
 
     def has_legacy(self, key: str) -> bool:

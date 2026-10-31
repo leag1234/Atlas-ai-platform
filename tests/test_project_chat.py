@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from typing import cast
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -47,6 +48,40 @@ class ProjectChatTests(unittest.IsolatedAsyncioTestCase):
             row for row in self.seen if str(row["url"]).endswith("/agent/complete")
         ]
         self.assertIn("Answer in French.", str(calls[0]["messages"]))
+
+    async def test_strict_project_removes_web_tools_and_uses_strict_route(self) -> None:
+        project = self.client.post(
+            "/projects", json={"name": "Privé", "privacy": "strict"}
+        ).json()["id"]
+        request = ChatRequest(
+            project_id=project,
+            conversation_id=self.conversation(project),
+            messages=[ChatMessage(role="user", content="Question")],
+        )
+        item = Interaction()
+        model = GatewayModel(
+            "http://gateway",
+            Configuration(
+                input_eur_per_mtok=Decimal("0.5"),
+                output_eur_per_mtok=Decimal("1"),
+                max_tokens=2048,
+            ),
+        )
+        model.tools = []
+        with (
+            patch.object(GatewayModel, "connect", return_value=model),
+            patch.object(GatewayModel, "post", side_effect=self.post),
+        ):
+            with self.assertRaisesRegex(ValueError, "strict_privacy_unavailable"):
+                await process(request, item)
+        self.assertEqual(model.privacy, "strict")
+        self.assertFalse(
+            any(
+                (cast(dict[str, object], tool.get("function")) or {}).get("name")
+                in {"web_search", "web_fetch"}
+                for tool in model.tools
+            )
+        )
 
     def test_recurring_project_request_uses_turn_local_localized_guidance(self) -> None:
         from services.orchestrator.project_transcript import recurring_guidance

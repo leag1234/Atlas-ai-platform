@@ -99,6 +99,7 @@ class Output:
         self.reason: str | None = None
         self.usage: dict[str, Any] | None = None
         self.served_by: str | None = None
+        self.privacy: str | None = None
 
     def feed(self, frame: dict[str, Any]) -> dict[str, Any]:
         chunk: dict[str, Any] = dict(
@@ -114,6 +115,9 @@ class Output:
             if frame.get("served_by"):
                 self.served_by = str(frame["served_by"])
                 chunk["served_by"] = self.served_by
+            if frame.get("privacy"):
+                self.privacy = str(frame["privacy"])
+                chunk["privacy"] = self.privacy
         for choice in frame["choices"]:
             delta = choice["delta"]
             clean: dict[str, Any] = {}
@@ -260,4 +264,6 @@ class Output:
         )
         if self.served_by:
             result["served_by"] = self.served_by
+        if self.privacy:
+            result["privacy"] = self.privacy
         return result

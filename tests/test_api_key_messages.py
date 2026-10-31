@@ -86,7 +86,7 @@ class MessagesTests(unittest.TestCase):
         )
         return self.store.create(**(defaults | values))
 
-    def plan(self, request: Any, usage: str, api_key_id: str) -> Plan:
+    def plan(self, request: Any, usage: str, api_key_id: str, **_: Any) -> Plan:
         self.prepared.append(request)
         return Plan(
             "{}",

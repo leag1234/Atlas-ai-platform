@@ -70,6 +70,19 @@ def api_key_for(provider: str) -> str:
     return os.environ.get(str(preset["api_key_env"]), "")
 
 
+def owned_endpoint() -> str:
+    value = os.environ.get("ATLAS_OWNED_VLLM_BASE_URL", "")
+    if not value:
+        raise ValueError("strict_privacy_unavailable")
+    return validate_endpoint(
+        value, urlsplit(value).hostname in {"localhost", "127.0.0.1", "::1"}
+    )
+
+
+def owned_api_key() -> str:
+    return api_key_for("owned-vllm")
+
+
 def preset_value(provider: str, key: str) -> Any:
     preset = presets().get(provider)
     if not preset:

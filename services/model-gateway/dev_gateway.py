@@ -38,6 +38,7 @@ class Plan:
     unpriced: bool = False
     fallback: "Plan | None" = None
     attempt_bound: int = 0
+    privacy: str = "shared"
 
     def charge(self, incoming: int, outgoing: int, cached: int = 0) -> int:
         cached = min(max(cached, 0), incoming)
@@ -67,7 +68,9 @@ def _cache_key(api_key_id: str, body: dict[str, Any]) -> str:
     return hashlib.sha256((api_key_id + ":" + digest).encode()).hexdigest()
 
 
-def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
+def prepare_api(
+    request: Any, usage: str, api_key_id: str, *, strict: bool = False
+) -> Plan:
     """Freeze a public usage route; raw IDs never enter this decision."""
     body = request.model_dump(exclude_none=True, by_alias=True)
     # Same wire cleanup as prepare(): strict providers reject empty tool_calls,
@@ -81,7 +84,7 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
         for key in ("tools", "tool_choice", "parallel_tool_calls"):
             body.pop(key, None)
     effort = str(body.get("reasoning_effort", "none"))
-    _, entries = targets(usage, effort)
+    _, entries = targets(usage, effort, strict=strict)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
     # Estimate tokens as bytes / 4. The reservation remains conservative in
     # bytes, but is clamped to each target's advertised context.
@@ -118,6 +121,7 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
             provider=target.provider,
             model=target.model,
             api_key=provider_settings.api_key_for(target.provider),
+            privacy=target.privacy,
             prompt_cache_key=payload.get("prompt_cache_key"),
             cached_input_rate=(
                 Decimal(str(price["cached_input_eur_per_mtok"]))
@@ -144,11 +148,14 @@ def prepare_api(request: Any, usage: str, api_key_id: str) -> Plan:
         ),
     )
     if len(plans) > 1:
+        fallback = plans[1]
+        if strict:
+            fallback = replace(fallback, fallback=None)
         primary = replace(
             primary,
             fallback=replace(
-                plans[1],
-                attempt_bound=plans[1].charge(
+                fallback,
+                attempt_bound=fallback.charge(
                     min(incoming, fitting[1].context), request.max_tokens
                 ),
             ),
@@ -482,6 +489,7 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
             (usage.prompt_tokens_details or {}).get("cached_tokens", 0),
         ),
         "served_by": plan.provider + "/" + plan.model if plan.provider else None,
+        "privacy": plan.privacy,
     }
 
 

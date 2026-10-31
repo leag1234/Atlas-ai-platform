@@ -28,6 +28,79 @@ class ApiRoutingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             select_public_model("raw/internal")
 
+    def test_strict_mode_keeps_only_owned_targets_and_never_falls_back(self) -> None:
+        with patch(
+            "api_routing.config",
+            return_value={
+                "usages": {
+                    "atlas-code": {
+                        "none": [
+                            {"provider": "mistral", "model": "shared", "context": 1000},
+                            {
+                                "provider": "owned-vllm",
+                                "model": "owned",
+                                "context": 1000,
+                                "privacy": "owned",
+                            },
+                        ]
+                    }
+                }
+            },
+        ):
+            _, entries = targets("atlas-code", "none", strict=True)
+        self.assertEqual([target.privacy for target in entries], ["owned"])
+        self.assertEqual(entries[0].model, "owned")
+
+    def test_strict_mode_without_owned_target_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as raised:
+            targets("atlas-code", "none", strict=True)
+        self.assertEqual(str(raised.exception), "strict_privacy_unavailable")
+
+    def test_strict_mode_never_configures_a_shared_fallback(self) -> None:
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 10,
+            }
+        )
+        with patch(
+            "api_routing.config",
+            return_value={
+                "usages": {
+                    "atlas-code": {
+                        "none": [
+                            {
+                                "provider": "owned-vllm",
+                                "model": "owned",
+                                "context": 1000,
+                                "privacy": "owned",
+                            },
+                            {
+                                "provider": "mistral",
+                                "model": "shared",
+                                "context": 1000,
+                            },
+                        ]
+                    }
+                }
+            },
+        ):
+            with patch("dev_gateway.ServerlessPolicy") as policy:
+                policy.return_value.allow_unpriced = True
+                policy.return_value.prices = {
+                    "owned": {
+                        "input_eur_per_mtok": 0,
+                        "output_eur_per_mtok": 0,
+                    }
+                }
+                plan = dev_gateway.prepare_api(
+                    request, "atlas-code", "key-test", strict=True
+                )
+        self.assertEqual(plan.privacy, "owned")
+        self.assertIsNone(plan.fallback)
+
 
 class RoutedBodyTests(unittest.TestCase):
     def test_routed_body_has_no_empty_tool_fields(self) -> None:

@@ -580,6 +580,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 os.environ.get("ATLAS_GATEWAY_URL", atlas_ports().url("gateway")),
                 local_enabled=False,
             )
+            model.privacy = str(context.get("privacy", "standard"))
             model.configure_quality(request.model, request.max_tokens)
             model.cost_ceiling = Decimal(str(turn["usage"]["reserved_eur"]))
             model.dispatch_hook = events.publish
@@ -618,6 +619,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 model.tools.append(context_tools.schedules.declaration())
             if not request._api_key_request:
                 context_tools.connectors = await prepare_connectors(request)
+                if model.privacy == "strict":
+                    context_tools.connectors = None
             if context_tools.connectors is not None:
                 context_tools.connectors.bind(model)
             from services.orchestrator.skill_tools import SkillTools

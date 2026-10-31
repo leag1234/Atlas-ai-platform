@@ -31,6 +31,7 @@
     "persistability": "content"
   },
   "context": {
+    "privacy": "standard",
     "instructions_version": "10000000-0000-4000-8000-000000000001",
     "instructions_text": "Example",
     "memory_revision": 0,

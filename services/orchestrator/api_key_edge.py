@@ -114,6 +114,12 @@ async def authenticate(
         request.state.context_trim = (
             request.headers.get("x-atlas-context-trim", "").lower() == "on"
         )
+        request.state.privacy = (
+            "strict"
+            if request.headers.get("x-atlas-privacy", "").lower() == "strict"
+            or principal.privacy == "strict"
+            else "standard"
+        )
         # Discard every client identity assertion, including the user budget selector.
         request.scope["headers"] = [
             (name, value)
