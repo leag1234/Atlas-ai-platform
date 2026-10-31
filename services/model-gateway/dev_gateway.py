@@ -372,7 +372,7 @@ def retry(plan: Plan, error: str, remaining: int) -> Plan:
 
 class Usage(BaseModel):
     prompt_tokens: int = Field(ge=0, le=1048576, strict=True)
-    completion_tokens: int = Field(ge=0, le=8192, strict=True)
+    completion_tokens: int = Field(ge=0, le=32768, strict=True)
     total_tokens: int | None = Field(default=None, ge=0, strict=True)
     prompt_tokens_details: dict[str, int] | None = None
 

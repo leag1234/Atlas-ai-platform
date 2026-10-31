@@ -32,6 +32,8 @@ class KeyResponsesTests(unittest.TestCase):
                     "ATLAS_DATA_DIR": str(root),
                     "ATLAS_PROJECT_MODE": "0",
                     "ATLAS_PROJECT_DSN": "",
+                    # As on atlas.eu.com: Codex turns reserve up to 16384 output tokens.
+                    "ATLAS_RAW_CALL_MAX_MICRO_EUR": "5000000",
                     "ATLAS_USER_DAILY_EUR": "10",
                     "ATLAS_GLOBAL_DAILY_EUR": "20",
                     "ATLAS_PROVIDER": "",
