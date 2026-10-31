@@ -37,10 +37,12 @@ class LoopNudgeTests(unittest.TestCase):
         nudged, repeats = nudge_messages(messages)
         self.assertEqual(repeats, 3)
         self.assertTrue(
-            nudged[-1].content.endswith(NOTE.format(name="exec_command", count=3))
+            (nudged[-1].content or "").endswith(
+                NOTE.format(name="exec_command", count=3)
+            )
         )
         self.assertEqual(nudged[:-1], messages[:-1])
-        self.assertNotIn("Atlas note", messages[-1].content)
+        self.assertNotIn("Atlas note", messages[-1].content or "")
 
     def test_alternating_loop_is_detected(self) -> None:
         turns = [
