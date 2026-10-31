@@ -4,7 +4,7 @@ The API is stateless, so the rule reads the history alone. When the newest tool 
 the same name and arguments as at least ``REPEATS - 1`` earlier calls among the last
 ``WINDOW`` calls, and all of them returned the same output (timing lines ignored), a short
 note is appended to the newest tool output asking the model to change approach. Measured
-on 2026-10-31: a GLM 5.3 Flash worker received the same empty search result 472 times and
+on 2026-10-31: a coding worker received the same empty search result 472 times and
 reran the search each time. Repeated calls whose outputs differ (tests rerun after an
 edit, a build that progresses) are never touched."""
 
