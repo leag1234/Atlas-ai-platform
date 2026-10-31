@@ -661,8 +661,13 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # Truthfulness V1 (owner decision 2026-10-31): a factual question is answered in
     # one piece after its precise claims are checked against the sources fetched in
     # this turn; other turns keep streaming.
+    # Off by default until it is tuned: the first live measure (2026-10-31) showed it
+    # marked 28 of 58 correct factual answers as unverified. ATLAS_GROUNDING=on enables it.
     check = (
-        grounding.Grounding() if grounding.needs_grounding(request.user_text) else None
+        grounding.Grounding()
+        if os.environ.get("ATLAS_GROUNDING", "off") == "on"
+        and grounding.needs_grounding(request.user_text)
+        else None
     )
     checking = grounding.current.set(check)
     sink = sink_context.get()

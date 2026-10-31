@@ -1,5 +1,6 @@
 """Offline checks for precise-claim grounding with fictional data."""
 
+import os
 import unittest
 from unittest.mock import patch
 
@@ -123,6 +124,9 @@ class FactualQuestionTests(unittest.TestCase):
 
 
 class DeliveryTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.enterContext(patch.dict(os.environ, {"ATLAS_GROUNDING": "on"}))
+
     async def run_turn(
         self, question: str, answer: str, evidence: str | None
     ) -> tuple[Interaction, list[dict[str, object]]]:
@@ -136,9 +140,10 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             assert upstream is not None
             if evidence is not None:
                 await upstream({"phase": "tool_started", "tool": "web_search"})
-                check = grounding.current.get()
-                assert check is not None
-                check.collect({"results": [{"title": "Valmorel", "snippet": evidence}]})
+                if (check := grounding.current.get()) is not None:
+                    check.collect(
+                        {"results": [{"title": "Valmorel", "snippet": evidence}]}
+                    )
             await upstream({"delta": {"content": answer}})
             item.reponse = answer
             item.state = "done"
@@ -184,6 +189,16 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             None,
         )
         self.assertEqual(item.reponse, "The Valmorel bridge opened in 1927.")
+
+    async def test_grounding_is_off_by_default(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_GROUNDING": "off"}):
+            item, events = await self.run_turn(
+                "When did the Valmorel bridge open?",
+                "The Valmorel bridge opened in 1931.",
+                "The Valmorel bridge opened to traffic in 1927.",
+            )
+        self.assertEqual(item.reponse, "The Valmorel bridge opened in 1931.")
+        self.assertIn({"delta": {"content": item.reponse}}, events)
 
     async def test_other_turns_keep_streaming(self) -> None:
         item, events = await self.run_turn(
