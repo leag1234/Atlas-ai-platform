@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 # Block before importing service dependencies, which may initialize worker threads.
 # The dedicated waiter below receives these signals only for the deployed instance.
@@ -163,12 +163,17 @@ def require_stable_configuration() -> None:
     if project_mode():
         require_env(
             (
-                "ATLAS_PROJECT_DSN",
                 "ATLAS_PROJECT_IDENTITY_SECRET",
                 "ATLAS_PROJECT_EXECUTION_SECRET",
                 "ATLAS_PROJECT_SIGNING_KEY",
             )
         )
+        # The runtime Postgres gets a free port at each start, so the application DSN is
+        # either given whole or derived at startup from the atlas_project_app password.
+        if not os.environ.get("ATLAS_PROJECT_DSN") and (
+            len(os.environ.get("ATLAS_PROJECT_DB_PASSWORD", "").encode()) < 32
+        ):
+            raise RuntimeError("invalid_configuration: ATLAS_PROJECT_DB_PASSWORD")
         for key in (
             "ATLAS_PROJECT_IDENTITY_SECRET",
             "ATLAS_PROJECT_EXECUTION_SECRET",
@@ -441,13 +446,18 @@ def webui(name: str, persistent: bool) -> None:
     docker_run(name, WEBUI_IMAGE, options)
 
 
-def wait_http(url: str, timeout: float = 120) -> None:
+def wait_http(url: str, timeout: float = 120, *, any_status: bool = False) -> None:
+    """Wait for HTTP 200, or for any HTTP answer when ``any_status`` (authenticated routes)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             with urlopen(url, timeout=2) as response:
                 if response.status == 200:
                     return
+        except HTTPError:
+            if any_status:
+                return
+            time.sleep(0.2)
         except (URLError, TimeoutError, ConnectionError):
             time.sleep(0.2)
     raise RuntimeError("service_start_timeout")
@@ -525,7 +535,8 @@ def project_runner() -> Iterator[None]:
     docker_run(name, RUNNER_IMAGE, options)
     os.environ["ATLAS_RUNNER_URL"] = ports.url("runner")
     try:
-        wait_http(ports.url("runner") + "/internal/runner/probe", 60)
+        # The probe route is POST-only and authenticated: any HTTP answer means it is up.
+        wait_http(ports.url("runner") + "/internal/runner/probe", 60, any_status=True)
         yield
     finally:
         docker("stop", name)
@@ -580,6 +591,16 @@ def stack(name: str = "atlas-chat", persistent: bool = True) -> Iterator[None]:
             time.sleep(0.5)
         else:
             raise RuntimeError("database_start_timeout")
+        if project_mode() and not os.environ.get("ATLAS_PROJECT_DSN"):
+            password = (
+                os.environ["ATLAS_PROJECT_DB_PASSWORD"]
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+            )
+            os.environ["ATLAS_PROJECT_DSN"] = (
+                f"host=127.0.0.1 port={port} user=atlas_project_app "
+                f"password='{password}' dbname=postgres connect_timeout=2"
+            )
         gateway = serve(CPUModels(), ports.port("gateway"))
         thread = threading.Thread(target=gateway.serve_forever, daemon=True)
         thread.start()

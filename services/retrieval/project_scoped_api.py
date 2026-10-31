@@ -856,6 +856,7 @@ def resolve_identity(data: IdentityResolutionRequest) -> dict[str, Any]:
         raise ProjectError(503, "dependency_unavailable")
     repository = store(dsn)
     with repository.pool.connection() as db:
+        db.execute("SELECT atlas_projects.ensure_member(%s)", (data.subject,))
         rows = db.execute(
             "SELECT * FROM atlas_projects.identity_memberships(%s)", (data.subject,)
         ).fetchall()

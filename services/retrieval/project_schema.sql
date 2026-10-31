@@ -266,3 +266,21 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
 $$;
 REVOKE ALL ON FUNCTION atlas_projects.identity_memberships(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION atlas_projects.identity_memberships(text) TO atlas_project_app;
+CREATE FUNCTION atlas_projects.ensure_member(asserted_subject text)
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE organization uuid; identifier uuid; active_count bigint;
+BEGIN
+ SELECT org_id, count(*) OVER() INTO organization, active_count
+ FROM atlas_projects.organizations WHERE data->>'status'='active' ORDER BY org_id;
+ IF active_count <> 1 THEN RETURN NULL; END IF;
+ SELECT id INTO identifier FROM atlas_projects.members
+ WHERE org_id=organization AND subject=asserted_subject;
+ IF identifier IS NOT NULL THEN RETURN identifier; END IF;
+ identifier=gen_random_uuid();
+ INSERT INTO atlas_projects.members(org_id,id,subject,role,status,revision,data)
+ VALUES(organization,identifier,asserted_subject,'member','active',0,
+   jsonb_build_object('id',identifier,'display_name',asserted_subject));
+ RETURN identifier;
+END $$;
+REVOKE ALL ON FUNCTION atlas_projects.ensure_member(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION atlas_projects.ensure_member(text) TO atlas_project_app;

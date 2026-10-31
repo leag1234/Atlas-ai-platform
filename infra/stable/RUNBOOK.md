@@ -111,14 +111,28 @@ are privileged access, not a guest isolation boundary.
    `runbooks/project-installation.md`; the equivalent command is:
 
    ```sh
-   make project-install PROJECT_INSTALL_ARGS='--name "Research collective" --admin-subject "configured-identity-subject" --policy /path/to/policy.json --legacy-db /path/to/projects.sqlite'
+   export ATLAS_RETRIEVAL_DSN='postgresql://atlas:OPERATOR_PASSWORD@127.0.0.1:13740/atlas'
+   make project-install PROJECT_INSTALL_ARGS='--name "Atlas" --admin-subject "configured-identity-subject" --policy infra/stable/project-policy.example.json --legacy-db /path/to/projects.sqlite'
+   ```
+
+   Omit `--legacy-db` for an empty installation. Then create the deployment
+   password for the non-owner role without printing it:
+
+   ```sh
+   read -s APPLICATION_ROLE_PASSWORD
+   psql "$ATLAS_RETRIEVAL_DSN" -v ON_ERROR_STOP=1 \
+     -v application_role_password="$APPLICATION_ROLE_PASSWORD" \
+     -c "ALTER ROLE atlas_project_app LOGIN PASSWORD :'application_role_password';"
+   unset APPLICATION_ROLE_PASSWORD
    ```
 
    Then set, in `/opt/atlas-src/stable.env`:
 
    ```sh
    ATLAS_PROJECT_MODE=1
-   ATLAS_PROJECT_DSN='application role DSN'
+   # The runtime Postgres gets a free port at each start: give the password, the
+   # launcher builds ATLAS_PROJECT_DSN with the actual port.
+   ATLAS_PROJECT_DB_PASSWORD='APPLICATION_ROLE_PASSWORD (at least 32 bytes)'
    ATLAS_PROJECT_IDENTITY_SECRET='at least 32 bytes'
    ATLAS_PROJECT_EXECUTION_SECRET='at least 32 bytes'
    ATLAS_PROJECT_SIGNING_KEY='at least 32 bytes'

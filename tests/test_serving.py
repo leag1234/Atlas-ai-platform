@@ -214,9 +214,17 @@ class ServingTests(unittest.TestCase):
             with patch.dict(os.environ, values | {key: "short"}, clear=True):
                 with self.assertRaisesRegex(RuntimeError, key):
                     require_stable_configuration()
-        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "ATLAS_PROJECT_DSN"):
+        secrets_only = {k: v for k, v in values.items() if k != "ATLAS_PROJECT_DSN"}
+        with patch.dict(os.environ, secrets_only, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "ATLAS_PROJECT_DB_PASSWORD"):
                 require_stable_configuration()
+        # The runtime Postgres port changes at each start: a password alone is enough.
+        with patch.dict(
+            os.environ,
+            secrets_only | {"ATLAS_PROJECT_DB_PASSWORD": "d" * 32},
+            clear=True,
+        ):
+            require_stable_configuration()
 
     def test_stable_options_are_off_by_default_and_complete_when_enabled(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -323,3 +331,16 @@ class ServingTests(unittest.TestCase):
             with patch.dict(os.environ, {"ESCALATION_MODEL": ""}):
                 with self.assertRaisesRegex(RuntimeError, "missing_configuration"):
                     main()
+
+
+class WaitHttpTests(unittest.TestCase):
+    def test_authenticated_route_counts_as_up_only_when_asked(self) -> None:
+        from urllib.error import HTTPError
+
+        refused = HTTPError("http://runner/probe", 401, "unauthenticated", {}, None)  # type: ignore[arg-type]
+        from services.orchestrator.serving import wait_http
+
+        with patch("services.orchestrator.serving.urlopen", side_effect=refused):
+            wait_http("http://runner/probe", 1, any_status=True)
+            with self.assertRaises(RuntimeError):
+                wait_http("http://runner/probe", 0.5)
