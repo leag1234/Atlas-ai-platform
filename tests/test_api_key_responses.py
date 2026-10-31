@@ -32,6 +32,8 @@ class KeyResponsesTests(unittest.TestCase):
                     "ATLAS_DATA_DIR": str(root),
                     "ATLAS_PROJECT_MODE": "0",
                     "ATLAS_PROJECT_DSN": "",
+                    # As on atlas.eu.com: Codex turns reserve up to 16384 output tokens.
+                    "ATLAS_RAW_CALL_MAX_MICRO_EUR": "5000000",
                     "ATLAS_USER_DAILY_EUR": "10",
                     "ATLAS_GLOBAL_DAILY_EUR": "20",
                     "ATLAS_PROVIDER": "",
@@ -449,6 +451,15 @@ class KeyResponsesTests(unittest.TestCase):
             self.assertIn(reply.status_code, (400, 403, 413), reply.text)
             self.assertIn("error", reply.json())
         self.assertEqual(self.inputs, [])
+
+    def test_key_route_gives_codex_turns_16384_output_tokens(self) -> None:
+        # Reported 2026-10-31: a Codex turn writing a long file stopped at 4096 tokens.
+        from services.orchestrator.api_key_responses import KEY_DEFAULT_OUTPUT_TOKENS
+
+        self.assertEqual(KEY_DEFAULT_OUTPUT_TOKENS, 16384)
+        reply = self.post(self.payload)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertEqual(self.inputs[-1]["max_tokens"], 16384)
 
     def test_codex_160_tools_json_and_streaming(self) -> None:
         """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""

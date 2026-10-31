@@ -11,6 +11,8 @@ from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.dev_inference import chat
 from api_routing import select_public_model
 
+KEY_DEFAULT_OUTPUT_TOKENS = 16384
+
 
 async def respond(request: Request) -> Response:
     missing = require(request, "model")
@@ -35,6 +37,9 @@ async def respond(request: Request) -> Response:
         return error(400, "invalid_model")
     selected = "raw/public-routing"
     raw["model"] = selected
+    # Codex sends no max_output_tokens; one long tool call (a whole file) can exceed
+    # 4096 tokens and end the turn as incomplete (reported 2026-10-31).
+    raw.setdefault("max_output_tokens", KEY_DEFAULT_OUTPUT_TOKENS)
     request._body = json.dumps(raw).encode()
     request.state.store = ModelAccounting(
         request.state.key_store, request.state.api_key
