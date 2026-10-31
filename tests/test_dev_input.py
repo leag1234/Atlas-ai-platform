@@ -95,6 +95,52 @@ class DevInputTests(unittest.TestCase):
         )
         self.assertGreater(len(raw.messages), 1024)
 
+    def test_image_in_a_tool_output_becomes_a_text_placeholder(self) -> None:
+        # Reported 2026-10-31: a Codex worker printed a PNG screenshot into its tool
+        # output and the request failed with "invalid field; value_error".
+        from services.orchestrator.dev_input import IMAGE_OMITTED
+
+        items: list[dict[str, Any]] = [
+            {"type": "message", "role": "user", "content": "Check the page."},
+            {
+                "type": "function_call",
+                "call_id": "c1",
+                "name": "view",
+                "arguments": "{}",
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "c1",
+                "output": [
+                    {"type": "input_text", "text": "Screenshot saved."},
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,iVBORw0KGgo=",
+                    },
+                ],
+            },
+        ]
+        tools = [{"type": "function", "name": "view", "parameters": {"type": "object"}}]
+        parsed = responses({"model": "atlas-code", "input": items, "tools": tools})
+        self.assertEqual(
+            parsed.messages[-1].content, "Screenshot saved.\n" + IMAGE_OMITTED
+        )
+        with self.assertRaises(ValueError):
+            responses(
+                {
+                    "model": "atlas-code",
+                    "input": items[:2]
+                    + [
+                        {
+                            "type": "function_call_output",
+                            "call_id": "c1",
+                            "output": [{"type": "audio"}],
+                        }
+                    ],
+                    "tools": tools,
+                }
+            )
+
     def test_responses_drops_unknown_tools_and_invalid_namespaces(self) -> None:
         payload: dict[str, Any] = {
             "model": "atlas-code",
