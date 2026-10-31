@@ -155,7 +155,9 @@ class ServingTests(unittest.TestCase):
         with (
             patch.dict(os.environ, secrets, clear=True),
             patch("services.orchestrator.serving.docker_run") as docker_run,
-            patch("services.orchestrator.serving.require_docker_image") as require_image,
+            patch(
+                "services.orchestrator.serving.require_docker_image"
+            ) as require_image,
             patch("services.orchestrator.serving.wait_http") as wait_http,
             patch("services.orchestrator.serving.docker") as docker,
         ):

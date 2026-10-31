@@ -652,7 +652,12 @@ def run() -> None:
     project_stack = project_runner() if project_mode() else nullcontext()
     searxng_stack = searxng() if "searxng" in providers else nullcontext()
     try:
-        with project_stack, searxng_stack, terminal("atlas-open-terminal", binding), stack():
+        with (
+            project_stack,
+            searxng_stack,
+            terminal("atlas-open-terminal", binding),
+            stack(),
+        ):
             os.environ["ATLAS_TERMINAL_ENABLED"] = "1"
             try:
                 with user_interface("atlas-chat-ui", True):
