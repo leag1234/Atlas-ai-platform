@@ -41,6 +41,7 @@ from services.retrieval.store import Store
 
 WEBUI_IMAGE = "ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933"
 SEARXNG_IMAGE = "searxng/searxng:2026.10.17-1c10abe2d@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e"
+RUNNER_IMAGE = "atlas-project-runner:local"
 
 # Open WebUI v0.11.3's shipped shell references these paths. Keep its shell and
 # license notices untouched; these read-only mounts provide Atlas artwork there.
@@ -160,9 +161,21 @@ def require_accepted_stop(
 def require_stable_configuration() -> None:
     """Fail before Docker side effects when stable authentication is incomplete."""
     if project_mode():
-        require_env(("ATLAS_PROJECT_IDENTITY_SECRET",))
-        if len(os.environ["ATLAS_PROJECT_IDENTITY_SECRET"].encode()) < 32:
-            raise RuntimeError("invalid_configuration: ATLAS_PROJECT_IDENTITY_SECRET")
+        require_env(
+            (
+                "ATLAS_PROJECT_DSN",
+                "ATLAS_PROJECT_IDENTITY_SECRET",
+                "ATLAS_PROJECT_EXECUTION_SECRET",
+                "ATLAS_PROJECT_SIGNING_KEY",
+            )
+        )
+        for key in (
+            "ATLAS_PROJECT_IDENTITY_SECRET",
+            "ATLAS_PROJECT_EXECUTION_SECRET",
+            "ATLAS_PROJECT_SIGNING_KEY",
+        ):
+            if len(os.environ[key].encode()) < 32:
+                raise RuntimeError("invalid_configuration:" + key)
     if stable_mode():
         require_env(
             ("WEBUI_SECRET_KEY", "ATLAS_TRUSTED_EMAIL_HEADER", "ATLAS_PROXY_SECRET")
@@ -262,6 +275,16 @@ def docker_run(name: str, image: str, options: list[str]) -> None:
                     raise
                 time.sleep(0.1)
     docker("run", "--rm", "-d", "--name", name, *options, image)
+
+
+def require_docker_image(image: str) -> None:
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        raise RuntimeError("docker_image_missing:" + image)
 
 
 def webui(name: str, persistent: bool) -> None:
@@ -460,6 +483,55 @@ def searxng() -> Iterator[None]:
 
 
 @contextmanager
+def project_runner() -> Iterator[None]:
+    """Run the opt-in, loopback-only project execution runner."""
+    if not project_mode():
+        yield
+        return
+    ports = atlas_ports()
+    name = ports.name("atlas-project-runner")
+    require_docker_image(RUNNER_IMAGE)
+    options = [
+        "-p",
+        f"127.0.0.1:{ports.port('runner')}:13712",
+        "-e",
+        "ATLAS_PROJECT_SIGNING_KEY",
+        "-e",
+        "ATLAS_PROJECT_EXECUTION_SECRET",
+        "-e",
+        "ATLAS_RUNNER_KEYS=/keys",
+        "-e",
+        "ATLAS_RUNNER_STATE=/state",
+        "-e",
+        "ATLAS_RUNNER_FIREWALL=1",
+        "-v",
+        ports.name("atlas-project-runner-keys") + ":/keys",
+        "-v",
+        ports.name("atlas-project-runner-state") + ":/state",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_ADMIN",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--read-only",
+        "--tmpfs",
+        "/tmp",
+        "--memory",
+        "512m",
+        "--pids-limit",
+        "128",
+    ]
+    docker_run(name, RUNNER_IMAGE, options)
+    os.environ["ATLAS_RUNNER_URL"] = ports.url("runner")
+    try:
+        wait_http(ports.url("runner") + "/internal/runner/probe", 60)
+        yield
+    finally:
+        docker("stop", name)
+
+
+@contextmanager
 def stack(name: str = "atlas-chat", persistent: bool = True) -> Iterator[None]:
     from packages.user_memory_auth import service_secret
 
@@ -577,9 +649,10 @@ def run() -> None:
         if ports.base == 0
         else "127.0.0.1:" + str(ports.port("terminal"))
     )
+    project_stack = project_runner() if project_mode() else nullcontext()
     searxng_stack = searxng() if "searxng" in providers else nullcontext()
     try:
-        with searxng_stack, terminal("atlas-open-terminal", binding), stack():
+        with project_stack, searxng_stack, terminal("atlas-open-terminal", binding), stack():
             os.environ["ATLAS_TERMINAL_ENABLED"] = "1"
             try:
                 with user_interface("atlas-chat-ui", True):

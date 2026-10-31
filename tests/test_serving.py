@@ -12,6 +12,8 @@ from unittest.mock import Mock, patch
 
 from services.orchestrator.serving import (
     main,
+    project_runner,
+    require_docker_image,
     require_stable_configuration,
     require_accepted_stop,
     searxng,
@@ -121,6 +123,98 @@ class ServingTests(unittest.TestCase):
         self.assertIn("GRANIAN_LOG_ACCESS_ENABLED=false", options)
         self.assertEqual(wait_http.call_args.args[0], "http://127.0.0.1:10688/healthz")
         docker.assert_called_once_with("stop", name)
+
+    def test_project_runner_is_off_by_default(self) -> None:
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("services.orchestrator.serving.docker_run") as docker_run,
+            patch("services.orchestrator.serving.docker") as docker,
+        ):
+            with project_runner():
+                pass
+        docker_run.assert_not_called()
+        docker.assert_not_called()
+
+    def test_missing_runner_image_fails_before_container_start(self) -> None:
+        with (
+            patch("services.orchestrator.serving.subprocess.run") as run,
+            patch("services.orchestrator.serving.docker_run") as docker_run,
+        ):
+            run.return_value = Mock(returncode=1)
+            with self.assertRaisesRegex(RuntimeError, "atlas-project-runner:local"):
+                require_docker_image("atlas-project-runner:local")
+        docker_run.assert_not_called()
+
+    def test_project_runner_is_loopback_only_and_compose_isolated(self) -> None:
+        secrets = {
+            "ATLAS_PORT_BASE": "1800",
+            "ATLAS_PROJECT_MODE": "1",
+            "ATLAS_PROJECT_SIGNING_KEY": "x" * 32,
+            "ATLAS_PROJECT_EXECUTION_SECRET": "y" * 32,
+        }
+        with (
+            patch.dict(os.environ, secrets, clear=True),
+            patch("services.orchestrator.serving.docker_run") as docker_run,
+            patch("services.orchestrator.serving.require_docker_image") as require_image,
+            patch("services.orchestrator.serving.wait_http") as wait_http,
+            patch("services.orchestrator.serving.docker") as docker,
+        ):
+            with project_runner():
+                pass
+        require_image.assert_called_once_with("atlas-project-runner:local")
+        name, image, options = docker_run.call_args.args
+        self.assertEqual(name, "atlas-project-runner-1800")
+        self.assertEqual(image, "atlas-project-runner:local")
+        self.assertIn("127.0.0.1:15512:13712", options)
+        self.assertIn("atlas-project-runner-keys-1800:/keys", options)
+        self.assertIn("atlas-project-runner-state-1800:/state", options)
+        self.assertIn("ATLAS_RUNNER_FIREWALL=1", options)
+        self.assertIn("ATLAS_PROJECT_SIGNING_KEY", options)
+        self.assertIn("ATLAS_PROJECT_EXECUTION_SECRET", options)
+        self.assertNotIn("docker.sock", str(options))
+        for option in (
+            "--cap-drop",
+            "ALL",
+            "--cap-add",
+            "NET_ADMIN",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--read-only",
+            "--tmpfs",
+            "/tmp",
+            "--memory",
+            "512m",
+            "--pids-limit",
+            "128",
+        ):
+            self.assertIn(option, options)
+        self.assertEqual(
+            wait_http.call_args.args[0],
+            "http://127.0.0.1:15512/internal/runner/probe",
+        )
+        docker.assert_called_once_with("stop", name)
+
+    def test_project_configuration_is_required_and_secret_lengths_checked(self) -> None:
+        values = {
+            "ATLAS_PROJECT_MODE": "1",
+            "ATLAS_PROJECT_DSN": "application-dsn",
+            "ATLAS_PROJECT_IDENTITY_SECRET": "a" * 32,
+            "ATLAS_PROJECT_EXECUTION_SECRET": "b" * 32,
+            "ATLAS_PROJECT_SIGNING_KEY": "c" * 32,
+        }
+        with patch.dict(os.environ, values, clear=True):
+            require_stable_configuration()
+        for key in (
+            "ATLAS_PROJECT_IDENTITY_SECRET",
+            "ATLAS_PROJECT_EXECUTION_SECRET",
+            "ATLAS_PROJECT_SIGNING_KEY",
+        ):
+            with patch.dict(os.environ, values | {key: "short"}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, key):
+                    require_stable_configuration()
+        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "ATLAS_PROJECT_DSN"):
+                require_stable_configuration()
 
     def test_stable_options_are_off_by_default_and_complete_when_enabled(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
