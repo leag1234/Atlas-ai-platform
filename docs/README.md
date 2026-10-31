@@ -1,5 +1,7 @@
 # Project ATLAS — Sovereign LLM Platform on Open-Weight Models
 
+> **Beta.** Atlas is in beta until version 1.0: features, models and APIs may still change.
+>
 > Normative reference corpus. These documents are authoritative over the code.
 > Any deviation must go through an ADR (see `11-standards-ingenierie-agents.md`).
 

@@ -507,3 +507,5 @@ html[data-atlas-guest] .atlas-actions button { opacity:1!important; }
 html[data-atlas-guest] .chat-assistant .status-description .shimmer { animation:none!important; background:none!important; color:var(--atlas-muted)!important; -webkit-text-fill-color:var(--atlas-muted)!important; }
 /* Composer placeholder colour. */
 html[data-atlas-guest] #chat-input [data-placeholder].is-empty::before { color:var(--atlas-muted)!important; opacity:1!important; }
+/* Beta badge next to the Atlas name and logo until 1.0 (brand-ui.js). */
+html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none; align-self:center; margin-left:.375rem; padding:0 .375rem; border:1px solid currentColor; border-radius:999px; color:var(--atlas-accent); background:transparent; font-family:var(--atlas-font); font-size:10px; font-weight:600; line-height:16px; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; vertical-align:middle; }
