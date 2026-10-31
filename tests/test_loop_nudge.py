@@ -44,6 +44,24 @@ class LoopNudgeTests(unittest.TestCase):
         self.assertEqual(nudged[:-1], messages[:-1])
         self.assertNotIn("Atlas note", messages[-1].content or "")
 
+    def test_from_five_repeats_the_duplicate_output_is_replaced(self) -> None:
+        from services.orchestrator.loop_nudge import REPLACEMENT
+
+        turns = [("rg -n beta reports", EMPTY.format(i, i)) for i in range(6)]
+        nudged, repeats = nudge_messages(history(*turns))
+        self.assertEqual(repeats, 6)
+        self.assertEqual(
+            nudged[-1].content, REPLACEMENT.format(name="exec_command", count=6)
+        )
+
+    def test_a_full_window_of_identical_calls_reaches_the_stop_count(self) -> None:
+        from services.orchestrator.loop_nudge import LOOP_STOP, WINDOW
+
+        turns = [("docker ps", EMPTY.format(i, i % 10)) for i in range(WINDOW + 3)]
+        _, repeats = nudge_messages(history(*turns))
+        self.assertEqual(repeats, WINDOW)
+        self.assertGreaterEqual(repeats, LOOP_STOP)
+
     def test_alternating_loop_is_detected(self) -> None:
         turns = [
             ("rg a reports", EMPTY.format(i, i))

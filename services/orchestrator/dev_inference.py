@@ -275,14 +275,31 @@ async def chat(
                 update={"messages": trim_messages(list(parsed.messages))}
             )
         if public_model is not None:
-            from services.orchestrator.loop_nudge import nudge_messages
+            from services.orchestrator.loop_nudge import LOOP_STOP, nudge_messages
 
             nudged, repeats = nudge_messages(list(parsed.messages))
             if repeats:
-                parsed = parsed.model_copy(update={"messages": nudged})
-                logging.getLogger("uvicorn.error").info(
+                logging.getLogger("atlas.api").warning(
                     json.dumps({"event": "devapi_loop_nudge", "repeats": repeats})
                 )
+                if repeats >= LOOP_STOP:
+                    # Measured 2026-10-31: agents kept repeating after the note;
+                    # stop the session instead of spending the client's budget.
+                    return JSONResponse(
+                        {
+                            "error": {
+                                "type": "tool_loop_detected",
+                                "message": (
+                                    f"The same tool call returned the same result "
+                                    f"{repeats} times in a row; Atlas stopped this "
+                                    "session to protect your budget. Change approach "
+                                    "or start a new session."
+                                ),
+                            }
+                        },
+                        status_code=409,
+                    )
+                parsed = parsed.model_copy(update={"messages": nudged})
         strict = getattr(request.state, "privacy", "standard") == "strict"
         plan = (
             gateway.prepare_api(

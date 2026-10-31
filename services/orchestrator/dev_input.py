@@ -179,7 +179,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
                 {
                     "role": "tool",
                     "tool_call_id": item["call_id"],
-                    "content": item["output"],
+                    "content": tool_output_text(item["output"]),
                 }
             )
         elif kind in ("custom_tool_call", "local_shell_call"):
@@ -218,7 +218,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
                 {
                     "role": "tool",
                     "tool_call_id": item["call_id"],
-                    "content": item["output"],
+                    "content": tool_output_text(item["output"]),
                 }
             )
         elif kind == "reasoning":
@@ -363,6 +363,33 @@ def cache_hint(part: dict[str, Any]) -> None:
         fields(cache, "type ttl")
         if cache["type"] != "ephemeral" or cache.get("ttl", "5m") not in ("5m", "1h"):
             raise ValueError("unsupported_cache_hint")
+
+
+IMAGE_OMITTED = (
+    "[Image omitted: Atlas coding models read text only. Describe the image in text, "
+    "or save it to a file and refer to its path.]"
+)
+
+
+def tool_output_text(value: Any) -> str:
+    """Tool output as text: Codex may return a list of text and image parts."""
+    if isinstance(value, str):
+        return value
+    if not isinstance(value, list):
+        raise ValueError("invalid_tool_output")
+    parts = []
+    for part in value:
+        if not isinstance(part, dict) or not isinstance(part.get("type"), str):
+            raise ValueError("invalid_tool_output")
+        if part["type"] in ("input_text", "output_text", "text"):
+            if not isinstance(part.get("text"), str):
+                raise ValueError("invalid_tool_output")
+            parts.append(part["text"])
+        elif part["type"] in ("input_image", "image"):
+            parts.append(IMAGE_OMITTED)
+        else:
+            raise ValueError("unsupported_tool_output")
+    return "\n".join(parts)
 
 
 def text_blocks(value: Any) -> str:
