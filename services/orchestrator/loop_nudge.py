@@ -19,6 +19,8 @@ NOTE = (
     "already know, try a different approach, or stop and report what blocks you.]"
 )
 REPLACE_AT = 5
+# Every one of the last WINDOW calls identical with the same result: refuse the request.
+LOOP_STOP = WINDOW
 REPLACEMENT = (
     "[Atlas note: this exact call ({name}) has returned this same result {count} times; "
     "the result is already earlier in this conversation, so it is not repeated here. "
