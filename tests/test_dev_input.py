@@ -65,15 +65,6 @@ class DevInputTests(unittest.TestCase):
             "none",
         )
 
-    def test_responses_default_output_cap_fits_long_tool_calls(self) -> None:
-        # Reported 2026-10-31: a Codex turn writing a long file stopped at 4096 tokens.
-        plain = responses({"model": "atlas-code", "input": "short"})
-        self.assertEqual(plain.max_tokens, 16384)
-        chosen = responses(
-            {"model": "atlas-code", "input": "short", "max_output_tokens": 30000}
-        )
-        self.assertEqual(chosen.max_tokens, 30000)
-
     def test_long_agent_history_fits_the_raw_message_limit(self) -> None:
         # Measured 2026-10-30: a Codex session of about 1250 small tool turns was
         # refused with "measured length 1025; max_length 1024" on the message list.

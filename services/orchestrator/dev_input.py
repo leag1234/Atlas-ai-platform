@@ -348,9 +348,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
             "tools": tools,
             "stream": value.get("stream", False),
             "stream_options": {"include_usage": True},
-            # Codex sends no max_output_tokens; one long tool call (a whole file) can
-            # exceed 4096 tokens, which ends the turn as incomplete (reported 2026-10-31).
-            "max_tokens": value.get("max_output_tokens") or 16384,
+            "max_tokens": value.get("max_output_tokens") or 4096,
             "temperature": value.get("temperature", 0),
             "parallel_tool_calls": value.get("parallel_tool_calls", True),
             "tool_choice": choice,

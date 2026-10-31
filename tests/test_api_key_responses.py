@@ -452,6 +452,15 @@ class KeyResponsesTests(unittest.TestCase):
             self.assertIn("error", reply.json())
         self.assertEqual(self.inputs, [])
 
+    def test_key_route_gives_codex_turns_16384_output_tokens(self) -> None:
+        # Reported 2026-10-31: a Codex turn writing a long file stopped at 4096 tokens.
+        from services.orchestrator.api_key_responses import KEY_DEFAULT_OUTPUT_TOKENS
+
+        self.assertEqual(KEY_DEFAULT_OUTPUT_TOKENS, 16384)
+        reply = self.post(self.payload)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertEqual(self.inputs[-1]["max_tokens"], 16384)
+
     def test_codex_160_tools_json_and_streaming(self) -> None:
         """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""
 
