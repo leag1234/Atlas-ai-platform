@@ -1,0 +1,42 @@
+{
+  "retention": {
+    "content_expiry_days": null,
+    "deletion_grace_days": 30,
+    "temporary_after_terminal_hours": 24,
+    "audit_days": 90,
+    "backup_expiry_days": 30,
+    "superseded_versions_days": null,
+    "legal_hold": false
+  },
+  "quotas": {
+    "pinned_memory_tokens": 1500,
+    "active_members": 1000,
+    "active_projects": 3000,
+    "stored_bytes": 21474836480,
+    "versioned_bytes": 21474836480,
+    "derived_bytes": 10737418240,
+    "temporary_bytes": 5368709120,
+    "upload_count": 100000,
+    "concurrent_jobs": 4,
+    "upload_bytes": 16777216,
+    "daily_model_eur": 20,
+    "monthly_model_eur": 300,
+    "per_turn": {
+      "tool_calls": 40,
+      "model_calls": 41,
+      "wall_seconds": 300,
+      "cost_eur": 0.3,
+      "per_call_eur": 0.1,
+      "expanded_bytes": 209715200,
+      "archive_entries": 20000,
+      "text_tool_bytes": 262144,
+      "command_output_bytes": 32768,
+      "command_seconds": 120,
+      "command_memory_bytes": 536870912
+    }
+  },
+  "image_safety_floor": "strict",
+  "connector_allowlist": [],
+  "skill_allowlist": [],
+  "local_egress": false
+}

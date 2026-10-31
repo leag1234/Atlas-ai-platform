@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 # Block before importing service dependencies, which may initialize worker threads.
 # The dedicated waiter below receives these signals only for the deployed instance.
@@ -41,6 +41,7 @@ from services.retrieval.store import Store
 
 WEBUI_IMAGE = "ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933"
 SEARXNG_IMAGE = "searxng/searxng:2026.10.17-1c10abe2d@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e"
+RUNNER_IMAGE = "atlas-project-runner:local"
 
 # Open WebUI v0.11.3's shipped shell references these paths. Keep its shell and
 # license notices untouched; these read-only mounts provide Atlas artwork there.
@@ -160,9 +161,26 @@ def require_accepted_stop(
 def require_stable_configuration() -> None:
     """Fail before Docker side effects when stable authentication is incomplete."""
     if project_mode():
-        require_env(("ATLAS_PROJECT_IDENTITY_SECRET",))
-        if len(os.environ["ATLAS_PROJECT_IDENTITY_SECRET"].encode()) < 32:
-            raise RuntimeError("invalid_configuration: ATLAS_PROJECT_IDENTITY_SECRET")
+        require_env(
+            (
+                "ATLAS_PROJECT_IDENTITY_SECRET",
+                "ATLAS_PROJECT_EXECUTION_SECRET",
+                "ATLAS_PROJECT_SIGNING_KEY",
+            )
+        )
+        # The runtime Postgres gets a free port at each start, so the application DSN is
+        # either given whole or derived at startup from the atlas_project_app password.
+        if not os.environ.get("ATLAS_PROJECT_DSN") and (
+            len(os.environ.get("ATLAS_PROJECT_DB_PASSWORD", "").encode()) < 32
+        ):
+            raise RuntimeError("invalid_configuration: ATLAS_PROJECT_DB_PASSWORD")
+        for key in (
+            "ATLAS_PROJECT_IDENTITY_SECRET",
+            "ATLAS_PROJECT_EXECUTION_SECRET",
+            "ATLAS_PROJECT_SIGNING_KEY",
+        ):
+            if len(os.environ[key].encode()) < 32:
+                raise RuntimeError("invalid_configuration:" + key)
     if stable_mode():
         require_env(
             ("WEBUI_SECRET_KEY", "ATLAS_TRUSTED_EMAIL_HEADER", "ATLAS_PROXY_SECRET")
@@ -262,6 +280,16 @@ def docker_run(name: str, image: str, options: list[str]) -> None:
                     raise
                 time.sleep(0.1)
     docker("run", "--rm", "-d", "--name", name, *options, image)
+
+
+def require_docker_image(image: str) -> None:
+    result = subprocess.run(
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode:
+        raise RuntimeError("docker_image_missing:" + image)
 
 
 def webui(name: str, persistent: bool) -> None:
@@ -418,13 +446,18 @@ def webui(name: str, persistent: bool) -> None:
     docker_run(name, WEBUI_IMAGE, options)
 
 
-def wait_http(url: str, timeout: float = 120) -> None:
+def wait_http(url: str, timeout: float = 120, *, any_status: bool = False) -> None:
+    """Wait for HTTP 200, or for any HTTP answer when ``any_status`` (authenticated routes)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             with urlopen(url, timeout=2) as response:
                 if response.status == 200:
                     return
+        except HTTPError:
+            if any_status:
+                return
+            time.sleep(0.2)
         except (URLError, TimeoutError, ConnectionError):
             time.sleep(0.2)
     raise RuntimeError("service_start_timeout")
@@ -454,6 +487,56 @@ def searxng() -> Iterator[None]:
     docker_run(name, SEARXNG_IMAGE, options)
     try:
         wait_http(ports.url("searxng") + "/healthz", 60)
+        yield
+    finally:
+        docker("stop", name)
+
+
+@contextmanager
+def project_runner() -> Iterator[None]:
+    """Run the opt-in, loopback-only project execution runner."""
+    if not project_mode():
+        yield
+        return
+    ports = atlas_ports()
+    name = ports.name("atlas-project-runner")
+    require_docker_image(RUNNER_IMAGE)
+    options = [
+        "-p",
+        f"127.0.0.1:{ports.port('runner')}:13712",
+        "-e",
+        "ATLAS_PROJECT_SIGNING_KEY",
+        "-e",
+        "ATLAS_PROJECT_EXECUTION_SECRET",
+        "-e",
+        "ATLAS_RUNNER_KEYS=/keys",
+        "-e",
+        "ATLAS_RUNNER_STATE=/state",
+        "-e",
+        "ATLAS_RUNNER_FIREWALL=1",
+        "-v",
+        ports.name("atlas-project-runner-keys") + ":/keys",
+        "-v",
+        ports.name("atlas-project-runner-state") + ":/state",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_ADMIN",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--read-only",
+        "--tmpfs",
+        "/tmp",
+        "--memory",
+        "512m",
+        "--pids-limit",
+        "128",
+    ]
+    docker_run(name, RUNNER_IMAGE, options)
+    os.environ["ATLAS_RUNNER_URL"] = ports.url("runner")
+    try:
+        # The probe route is POST-only and authenticated: any HTTP answer means it is up.
+        wait_http(ports.url("runner") + "/internal/runner/probe", 60, any_status=True)
         yield
     finally:
         docker("stop", name)
@@ -508,6 +591,16 @@ def stack(name: str = "atlas-chat", persistent: bool = True) -> Iterator[None]:
             time.sleep(0.5)
         else:
             raise RuntimeError("database_start_timeout")
+        if project_mode() and not os.environ.get("ATLAS_PROJECT_DSN"):
+            password = (
+                os.environ["ATLAS_PROJECT_DB_PASSWORD"]
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+            )
+            os.environ["ATLAS_PROJECT_DSN"] = (
+                f"host=127.0.0.1 port={port} user=atlas_project_app "
+                f"password='{password}' dbname=postgres connect_timeout=2"
+            )
         gateway = serve(CPUModels(), ports.port("gateway"))
         thread = threading.Thread(target=gateway.serve_forever, daemon=True)
         thread.start()
@@ -577,9 +670,15 @@ def run() -> None:
         if ports.base == 0
         else "127.0.0.1:" + str(ports.port("terminal"))
     )
+    project_stack = project_runner() if project_mode() else nullcontext()
     searxng_stack = searxng() if "searxng" in providers else nullcontext()
     try:
-        with searxng_stack, terminal("atlas-open-terminal", binding), stack():
+        with (
+            project_stack,
+            searxng_stack,
+            terminal("atlas-open-terminal", binding),
+            stack(),
+        ):
             os.environ["ATLAS_TERMINAL_ENABLED"] = "1"
             try:
                 with user_interface("atlas-chat-ui", True):

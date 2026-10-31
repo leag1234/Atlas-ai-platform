@@ -88,6 +88,7 @@ are privileged access, not a guest isolation boundary.
        ATLAS_WEB_CACHE='/var/lib/atlas-stable/web.sqlite',
        ATLAS_IMAGE_DIR='/var/lib/atlas-stable/images',
        ATLAS_PROJECT_DB='/var/lib/atlas-stable/projects.sqlite',
+       ATLAS_DATA_ROOT='/var/lib/atlas-stable/project-data',
        ATLAS_PUBLIC_URL='https://atlas.eu.com')
    fd = os.open('stable.env', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
    with os.fdopen(fd, 'w') as output:
@@ -95,6 +96,60 @@ are privileged access, not a guest isolation boundary.
    PY
    stat -c '%U:%G %a %n' /opt/atlas-src/stable.env
    ```
+
+   Project mode remains off in this bootstrap. To enable it later, first install
+   the project schema with an operator DSN and configure the non-owner
+   `atlas_project_app` DSN as described in `runbooks/project-installation.md`.
+   Build the runner image once from the deployment checkout:
+
+   ```sh
+   docker build -f infra/docker/Dockerfile --target runner -t atlas-project-runner:local .
+   ```
+
+   Install the project schema once with the operator DSN in
+   `ATLAS_RETRIEVAL_DSN` (never the application DSN), following
+   `runbooks/project-installation.md`; the equivalent command is:
+
+   ```sh
+   export ATLAS_RETRIEVAL_DSN='postgresql://atlas:OPERATOR_PASSWORD@127.0.0.1:13740/atlas'
+   make project-install PROJECT_INSTALL_ARGS='--name "Atlas" --admin-subject "configured-identity-subject" --policy infra/stable/project-policy.example.json --legacy-db /path/to/projects.sqlite'
+   ```
+
+   Omit `--legacy-db` for an empty installation. Then create the deployment
+   password for the non-owner role without printing it:
+
+   ```sh
+   read -s APPLICATION_ROLE_PASSWORD
+   psql "$ATLAS_RETRIEVAL_DSN" -v ON_ERROR_STOP=1 \
+     -v application_role_password="$APPLICATION_ROLE_PASSWORD" \
+     -c "ALTER ROLE atlas_project_app LOGIN PASSWORD :'application_role_password';"
+   unset APPLICATION_ROLE_PASSWORD
+   ```
+
+   Then set, in `/opt/atlas-src/stable.env`:
+
+   ```sh
+   ATLAS_PROJECT_MODE=1
+   # The runtime Postgres gets a free port at each start: give the password, the
+   # launcher builds ATLAS_PROJECT_DSN with the actual port.
+   ATLAS_PROJECT_DB_PASSWORD='APPLICATION_ROLE_PASSWORD (at least 32 bytes)'
+   ATLAS_PROJECT_IDENTITY_SECRET='at least 32 bytes'
+   ATLAS_PROJECT_EXECUTION_SECRET='at least 32 bytes'
+   ATLAS_PROJECT_SIGNING_KEY='at least 32 bytes'
+   ATLAS_PROJECT_ORIGIN='https://atlas.eu.com'
+   ATLAS_DATA_ROOT='/var/lib/atlas-stable/project-data'
+   ATLAS_SCHEDULED_TASKS=1
+   ATLAS_REMOTE_RUNNERS=1
+   ```
+
+   Restart `atlas-stable.service`. The launcher starts only the additional
+   loopback runner container; it fails before starting it if
+   `atlas-project-runner:local` is absent, and it never installs or migrates
+   the project schema.
+   The runner has no Docker socket, drops all capabilities except `NET_ADMIN`,
+   uses `no-new-privileges`, a read-only root filesystem, tmpfs `/tmp`, memory
+   and PID limits, and named keys/state volumes. Keep the three project secrets
+   identical across the launcher and runner environment; never print them.
 
    Expected: prompts with hidden input, then `root:root 600`; no secret output.
    Do not copy development credentials or a development `.env` into the worktree.

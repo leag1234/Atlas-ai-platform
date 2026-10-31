@@ -14,6 +14,7 @@ DEFAULT_PORTS = {
     "stt": 8022,
     "postgres": 5432,
     "searxng": 8888,
+    "runner": 13712,
 }
 
 

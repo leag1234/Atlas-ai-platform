@@ -11,7 +11,7 @@ import threading
 import time
 from typing import Any
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 from urllib.parse import urlsplit
 from packages.ports import atlas_ports
 
@@ -144,6 +144,41 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
             )
         self.assertEqual(self.resolve(name="spoofed").status_code, 422)
         self.assertEqual(self.resolve("revoked").json()["memberships"], [])
+
+    def test_single_organization_auto_membership_is_idempotent(self) -> None:
+        with psycopg.connect(self.admin_dsn) as db:
+            db.execute(
+                "UPDATE atlas_projects.organizations "
+                "SET data=jsonb_set(data,'{status}',%s) WHERE org_id=%s",
+                (Jsonb("inactive"), self.other_org),
+            )
+        try:
+            first = self.resolve("newcomer")
+            second = self.resolve("newcomer")
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertEqual(
+                first.json()["memberships"],
+                [dict(org_id=self.org, role="member", name="Research collective")],
+            )
+            with psycopg.connect(self.admin_dsn) as db:
+                rows = db.execute(
+                    "SELECT org_id,subject,role,status "
+                    "FROM atlas_projects.members WHERE subject=%s",
+                    ("newcomer",),
+                ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(
+                rows[0],
+                (UUID(self.org), "newcomer", "member", "active"),
+            )
+        finally:
+            with psycopg.connect(self.admin_dsn) as db:
+                db.execute(
+                    "UPDATE atlas_projects.organizations "
+                    "SET data=jsonb_set(data,'{status}',%s) WHERE org_id=%s",
+                    (Jsonb("active"), self.other_org),
+                )
         self.assertEqual(self.resolve(org=self.other_org).status_code, 404)
 
     def test_broker_discovery_claims_and_reauthorization(self) -> None:
