@@ -86,25 +86,25 @@ def small_talk(question: str) -> bool:
 # User-facing wording added by grounding, in the five UI languages (default English).
 WORDING: dict[str, dict[str, str]] = {
     "missing": {
-        "en": "I cannot verify this claim from the available sources.",
-        "fr": "Je ne peux pas vérifier cette affirmation à partir des sources disponibles.",
-        "de": "Ich kann diese Aussage anhand der verfügbaren Quellen nicht überprüfen.",
-        "es": "No puedo verificar esta afirmación con las fuentes disponibles.",
-        "it": "Non posso verificare questa affermazione con le fonti disponibili.",
+        "en": "No retrieved source mentions this entity.",
+        "fr": "Aucune source consultée ne mentionne cette entité.",
+        "de": "Keine abgerufene Quelle erwähnt diese Entität.",
+        "es": "Ninguna fuente consultada menciona esta entidad.",
+        "it": "Nessuna fonte consultata menziona questa entità.",
     },
-    "unverified": {
-        "en": "Unverified claim; do not treat this as established:",
-        "fr": "Affirmation non vérifiée, à ne pas considérer comme établie :",
-        "de": "Nicht überprüfte Aussage, nicht als gesichert betrachten:",
-        "es": "Afirmación no verificada; no la considere establecida:",
-        "it": "Affermazione non verificata, da non considerare accertata:",
+    "contradicted": {
+        "en": "A retrieved source contradicts this claim:",
+        "fr": "Une source consultée contredit cette affirmation :",
+        "de": "Eine abgerufene Quelle widerspricht dieser Aussage:",
+        "es": "Una fuente consultada contradice esta afirmación:",
+        "it": "Una fonte consultata contraddice questa affermazione:",
     },
     "premise_unsupported": {
-        "en": "The question's premise is not established by the available sources.",
-        "fr": "La prémisse de la question n'est pas établie par les sources disponibles.",
-        "de": "Die Prämisse der Frage wird durch die verfügbaren Quellen nicht belegt.",
-        "es": "La premisa de la pregunta no está respaldada por las fuentes disponibles.",
-        "it": "La premessa della domanda non è confermata dalle fonti disponibili.",
+        "en": "The question's premise is contradicted by a retrieved source.",
+        "fr": "La prémisse de la question est contredite par une source consultée.",
+        "de": "Die Prämisse der Frage wird durch eine abgerufene Quelle widerlegt.",
+        "es": "La premisa de la pregunta es contradicha por una fuente consultada.",
+        "it": "La premessa della domanda è contraddetta da una fonte consultata.",
     },
     "premise_incorrect": {
         "en": "The premise is incorrect: the retrieved source gives {date}, not {old}.",
@@ -222,6 +222,31 @@ def factual_query(question: str) -> str:
     return question.strip()[:500]
 
 
+QUESTION_WORDS = frozenset(
+    "what where which whom whose who when why how quel quelle quels quelles ou".split()
+)
+
+
+def question_entities(question: str) -> list[str]:
+    """Quoted titles, else runs of consecutive capitalised words (stop words trimmed)."""
+    quoted = [normalized(match[1]) for match in QUOTED.finditer(question)]
+    if quoted:
+        return quoted
+    entities = []
+    for run in re.finditer(
+        r"\b[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*(?:\s+[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*)*",
+        question,
+    ):
+        words = normalized(run[0]).split()
+        while words and (words[0] in STOP or words[0] in QUESTION_WORDS):
+            words.pop(0)
+        while words and words[-1] in STOP:
+            words.pop()
+        if words:
+            entities.append(" ".join(words))
+    return entities
+
+
 @dataclass
 class Grounding:
     evidence: list[str] = field(default_factory=list)
@@ -258,34 +283,53 @@ class Grounding:
             for row in value:
                 self.collect(row)
 
-    def supported(self, claim: Claim) -> bool:
-        content = terms(claim.text)
-        if claim.values and content <= set(" ".join(claim.values).split()):
-            return all(
-                any(
-                    re.search(r"\b" + re.escape(value) + r"\b", normalized(passage))
-                    for passage in self.evidence
-                )
-                for value in claim.values
+    def contradicted(self, claim: Claim) -> str:
+        if not claim.values:
+            return ""
+        content = terms(claim.text) - set(" ".join(claim.values).split())
+        if not content:
+            return ""
+        claim_values = set(claim.values)
+        supporting_passages = [
+            passage
+            for passage in self.evidence
+            if all(
+                re.search(r"\b" + re.escape(value) + r"\b", normalized(passage))
+                for value in claim_values
             )
+        ]
+        if supporting_passages:
+            return ""
         for passage in self.evidence:
-            source = normalized(passage)
-            if re.search(
-                r"\b(?:not|never|pas|jamais|aucun\w*|false|incorrect|faux)\b", source
-            ) and not re.search(
-                r"\b(?:not|never|pas|jamais|aucun\w*|false|incorrect|faux)\b",
-                normalized(claim.text),
-            ):
-                continue
-            if not all(
-                re.search(r"\b" + re.escape(value) + r"\b", source)
-                for value in claim.values
-            ):
-                continue
-            overlap = content & terms(passage)
-            if content and len(overlap) / len(content) >= 0.75:
-                return True
-        return False
+            for match in re.finditer(r"[^\n]+?(?:[.!?](?=\s|$)|(?=\n|$))", passage):
+                source_sentence = match[0].strip()
+                source = normalized(source_sentence)
+                if re.search(
+                    r"\b(?:not|never|pas|jamais|aucun\w*|false|incorrect|faux)\b",
+                    source,
+                ):
+                    continue
+                source_values = {
+                    normalized(number[0])
+                    for number in NUMBER.finditer(source_sentence)
+                    if not re.search(
+                        r"\b(?:not|pas|ni|instead of|plutot que)(?: en| in)?$",
+                        normalized(
+                            source_sentence[
+                                max(0, number.start() - 24) : number.start()
+                            ]
+                        ),
+                    )
+                }
+                source_values.update(
+                    normalized(quoted[1]) for quoted in QUOTED.finditer(source_sentence)
+                )
+                if not source_values or source_values & claim_values:
+                    continue
+                overlap = content & terms(source_sentence)
+                if overlap and len(overlap) / len(content) >= 0.75:
+                    return source_sentence.strip()
+        return ""
 
     def correction(self, question: str, language: str) -> str:
         years = set(YEAR.findall(question))
@@ -328,13 +372,15 @@ class Grounding:
             + candidates[date]
         )
 
-    def attribution_anchors_present(self, claim: Claim) -> bool:
-        return bool(claim.values) and any(
-            all(
-                re.search(r"\b" + re.escape(value) + r"\b", normalized(passage))
-                for value in claim.values
+    def entity_missing(self, question: str) -> bool:
+        """True when some entity named by the question appears in no fetched passage."""
+        passages = [normalized(passage) for passage in self.evidence]
+        return any(
+            not any(
+                re.search(r"\b" + re.escape(entity) + r"\b", passage)
+                for passage in passages
             )
-            for passage in self.evidence
+            for entity in question_entities(question)
         )
 
     def check(self, answer: str, question: str, language: str) -> str:
@@ -343,37 +389,42 @@ class Grounding:
             small_talk(question) and not self.evidence
         ):
             return answer
-        missing = wording("missing", language)
-        unverified = wording("unverified", language)
         claims = extract_claims(answer)
         self.claims_checked = len(claims)
         for claim in reversed(claims):
-            if self.supported(claim):
+            source_sentence = self.contradicted(claim)
+            if not source_sentence:
                 continue
             self.claims_changed += 1
-            replacement = (
-                "\n\n" + unverified + "\n> " + claim.text.strip() + "\n\n"
-                if self.evidence
-                and (
-                    not ATTRIBUTION.search(normalized(claim.text))
-                    or self.attribution_anchors_present(claim)
-                )
-                else " " + missing + " "
+            note = (
+                "\n\n"
+                + wording("contradicted", language)
+                + "\n> "
+                + source_sentence
+                + "\n\n"
             )
-            answer = answer[: claim.start] + replacement + answer[claim.end :]
+            answer = answer[: claim.end] + note + answer[claim.end :].lstrip()
+        answer = answer.rstrip()
+        if self.evidence and self.entity_missing(question):
+            answer = wording("missing", language) + "\n\n" + answer
         if premise(question):
             self.premises_checked = 1
-            values = tuple(YEAR.findall(question))
-            assumed = Claim(0, len(question), question, values)
             correction = self.correction(question, language)
             if correction:
                 answer = correction + "\n\n" + answer
-            elif not self.supported(assumed) and not re.search(
-                r"\b(?:not|incorrect|false|correction|pas|faux|errone\w*)\b",
-                normalized(answer),
-            ):
-                notice = wording("premise_unsupported", language)
-                answer = notice + "\n\n" + answer
+            else:
+                assumed = Claim(
+                    0, len(question), question, tuple(YEAR.findall(question))
+                )
+                if (
+                    assumed.values
+                    and all(
+                        re.search(r"\b" + re.escape(value) + r"\b", normalized(answer))
+                        for value in assumed.values
+                    )
+                    and self.contradicted(assumed)
+                ):
+                    answer = wording("premise_unsupported", language) + "\n\n" + answer
         self.latency_ms += (time.monotonic() - started) * 1000
         return answer
 

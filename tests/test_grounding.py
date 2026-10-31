@@ -35,23 +35,47 @@ class GroundingTests(unittest.TestCase):
         checker = Grounding()
         checker.add("Northbridge opened in 1924 and cost 12 million units.")
         answer = "Northbridge opened in 1924 and cost 12 million units."
-        self.assertEqual(checker.check(answer, "Opening?", "en"), answer)
+        self.assertEqual(
+            checker.check(answer, "When did Northbridge open?", "en"), answer
+        )
         self.assertEqual(checker.claims_checked, 1)
         self.assertEqual(checker.claims_changed, 0)
 
-    def test_unsupported_claim_without_evidence_is_dropped(self) -> None:
+    def test_correct_claim_absent_from_sources_is_unchanged(self) -> None:
         checker = Grounding()
         answer = checker.check("Northbridge opened in 1924.", "Opening?", "en")
-        self.assertNotIn("Northbridge opened in 1924", answer)
-        self.assertIn("cannot verify", answer)
-        self.assertEqual(checker.claims_changed, 1)
+        self.assertEqual(answer, "Northbridge opened in 1924.")
+        self.assertEqual(checker.claims_checked, 1)
+        self.assertEqual(checker.claims_changed, 0)
 
-    def test_unsupported_claim_with_evidence_is_marked_not_quoted_as_fact(self) -> None:
+    def test_contradicted_claim_is_kept_with_a_source_note(self) -> None:
         checker = Grounding()
         checker.add("Northbridge opened in 1924.")
-        answer = checker.check("Northbridge opened in 1925.", "Opening?", "en")
-        self.assertIn("Unverified claim", answer)
-        self.assertIn("> Northbridge opened in 1925.", answer)
+        original = "Northbridge opened in 1925."
+        answer = checker.check(original, "When did Northbridge open?", "en")
+        self.assertTrue(answer.startswith(original))
+        self.assertIn(WORDING["contradicted"]["en"], answer)
+        self.assertIn("> Northbridge opened in 1924.", answer)
+        self.assertEqual(checker.claims_changed, 1)
+
+    def test_conflicting_sources_do_not_contradict_a_supported_value(self) -> None:
+        checker = Grounding()
+        checker.add("Northbridge opened in 1924.")
+        checker.add("Northbridge opened in 1925.")
+        answer = checker.check(
+            "Northbridge opened in 1924.", "When did Northbridge open?", "en"
+        )
+        self.assertEqual(answer, "Northbridge opened in 1924.")
+        self.assertEqual(checker.claims_changed, 0)
+
+    def test_negated_number_is_not_treated_as_the_claim_value(self) -> None:
+        checker = Grounding()
+        checker.add("Northbridge did not open in 1924.")
+        answer = checker.check(
+            "Northbridge opened in 1924.", "When did Northbridge open?", "en"
+        )
+        self.assertEqual(answer, "Northbridge opened in 1924.")
+        self.assertEqual(checker.claims_changed, 0)
 
     def test_no_sources_and_no_precise_claims_are_unchanged(self) -> None:
         checker = Grounding()
@@ -77,6 +101,27 @@ class GroundingTests(unittest.TestCase):
         self.assertIn("> Northbridge opened in 1924.", answer)
         self.assertEqual(checker.premises_checked, 1)
 
+    def test_premise_notice_requires_a_repeated_and_contradicted_year(self) -> None:
+        checker = Grounding()
+        checker.add("Northbridge opened in 1924.")
+        answer = checker.check(
+            "Northbridge opened in 1912.", "Why was Northbridge opened in 1912?", "en"
+        )
+        self.assertIn(
+            WORDING["premise_incorrect"]["en"].format(date="1924", old="1912"), answer
+        )
+        self.assertIn("> Northbridge opened in 1924.", answer)
+
+        checker = Grounding()
+        checker.add("Northbridge opened in 1924.")
+        answer = checker.check(
+            "Northbridge opened recently.", "Why was Northbridge opened in 1912?", "en"
+        )
+        self.assertTrue(answer.endswith("Northbridge opened recently."))
+        self.assertIn(
+            WORDING["premise_incorrect"]["en"].format(date="1924", old="1912"), answer
+        )
+
     def test_premise_search_is_neutral(self) -> None:
         self.assertEqual(
             factual_query("Why was Northbridge opened in 1912?"),
@@ -90,14 +135,63 @@ class GroundingTests(unittest.TestCase):
         for key, table in WORDING.items():
             self.assertEqual(set(table), {"en", "fr", "de", "es", "it"}, key)
 
-    def test_unsupported_claim_uses_the_answer_language(self) -> None:
-        answer = "Northbridge opened in 1924."
+    def test_contradicted_claim_uses_the_answer_language(self) -> None:
+        evidence = "Northbridge opened in 1924."
+        answer = "Northbridge opened in 1925."
         for language in ("en", "fr", "de", "es", "it"):
-            checked = Grounding().check(answer, "When did Northbridge open?", language)
-            self.assertIn(WORDING["missing"][language], checked)
-            self.assertNotIn("1924", checked)
-        checked = Grounding().check(answer, "When did Northbridge open?", "pt")
-        self.assertIn(WORDING["missing"]["en"], checked)
+            checker = Grounding()
+            checker.add(evidence)
+            checked = checker.check(answer, "When did Northbridge open?", language)
+            self.assertIn(WORDING["contradicted"][language], checked)
+        checker = Grounding()
+        checker.add(evidence)
+        checked = checker.check(answer, "When did Northbridge open?", "pt")
+        self.assertIn(WORDING["contradicted"]["en"], checked)
+
+    def test_missing_entity_notice_is_prepended_once(self) -> None:
+        checker = Grounding()
+        checker.add("Southbridge opened in 1924.")
+        answer = "Northbridge opened in 1924."
+        checked = checker.check(answer, "When did Northbridge open?", "en")
+        self.assertTrue(checked.startswith(WORDING["missing"]["en"]))
+        self.assertEqual(checked.count(WORDING["missing"]["en"]), 1)
+        self.assertIn(answer, checked)
+
+    def test_entity_mentioned_by_a_source_gets_no_missing_notice(self) -> None:
+        checker = Grounding()
+        checker.add("Northbridge opened in 1924.")
+        answer = "Northbridge opened in 1925."
+        checked = checker.check(answer, "When did Northbridge open?", "en")
+        self.assertNotIn(WORDING["missing"]["en"], checked)
+
+    def test_question_word_and_two_known_names_get_no_missing_notice(self) -> None:
+        checker = Grounding()
+        checker.add("Clara Venn won the Halden Prize in 1931.")
+        answer = "Clara Venn won the Halden Prize in 1931."
+        checked = checker.check(
+            answer, "What year did Clara Venn win the Halden Prize?", "en"
+        )
+        self.assertNotIn(WORDING["missing"]["en"], checked)
+
+    def test_unknown_name_next_to_a_known_place_gets_the_missing_notice(self) -> None:
+        checker = Grounding()
+        checker.add("Valmorel is a region in the north.")
+        checked = checker.check(
+            "Orlbrix was founded in 1802.", "Who founded Orlbrix in Valmorel?", "en"
+        )
+        self.assertTrue(checked.startswith(WORDING["missing"]["en"]))
+
+    def test_contradiction_note_follows_its_own_claim(self) -> None:
+        checker = Grounding()
+        checker.add("Northbridge opened in 1924.")
+        answer = checker.check(
+            "Northbridge opened in 1925. It spans the river.",
+            "When did Northbridge open?",
+            "en",
+        )
+        note = answer.index(WORDING["contradicted"]["en"])
+        self.assertLess(answer.index("1925"), note)
+        self.assertLess(note, answer.index("It spans the river."))
 
 
 class FactualQuestionTests(unittest.TestCase):
@@ -141,9 +235,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             if evidence is not None:
                 await upstream({"phase": "tool_started", "tool": "web_search"})
                 if (check := grounding.current.get()) is not None:
-                    check.collect(
-                        {"results": [{"title": "Valmorel", "snippet": evidence}]}
-                    )
+                    check.collect({"results": [{"snippet": evidence}]})
             await upstream({"delta": {"content": answer}})
             item.reponse = answer
             item.state = "done"
@@ -163,14 +255,16 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             sink_context.reset(token)
         return item, events
 
-    async def test_factual_turn_never_streams_an_unsupported_claim(self) -> None:
+    async def test_factual_turn_keeps_a_contradicted_claim_with_a_note(self) -> None:
         item, events = await self.run_turn(
             "When did the Valmorel bridge open?",
             "The Valmorel bridge opened in 1931.",
             "The Valmorel bridge opened to traffic in 1927.",
         )
-        self.assertNotIn("1931", str(events))
-        self.assertNotIn("1931", item.reponse.split(">")[0])
+        self.assertTrue(item.reponse.startswith("The Valmorel bridge opened in 1931."))
+        self.assertIn(WORDING["contradicted"]["en"], item.reponse)
+        self.assertIn("> The Valmorel bridge opened to traffic in 1927.", item.reponse)
+        self.assertNotIn("delta", str(events))
         self.assertTrue(any(event.get("phase") == "tool_started" for event in events))
 
     async def test_factual_turn_keeps_a_supported_answer(self) -> None:
