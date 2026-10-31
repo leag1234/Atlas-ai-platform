@@ -164,27 +164,35 @@ class GroundingTests(unittest.TestCase):
         checked = checker.check(answer, "When did Northbridge open?", "en")
         self.assertNotIn(WORDING["missing"]["en"], checked)
 
-
     def test_question_word_and_two_known_names_get_no_missing_notice(self) -> None:
         checker = Grounding()
         checker.add("Clara Venn won the Halden Prize in 1931.")
         answer = "Clara Venn won the Halden Prize in 1931."
-        checked = checker.check(answer, "What year did Clara Venn win the Halden Prize?", "en")
+        checked = checker.check(
+            answer, "What year did Clara Venn win the Halden Prize?", "en"
+        )
         self.assertNotIn(WORDING["missing"]["en"], checked)
 
     def test_unknown_name_next_to_a_known_place_gets_the_missing_notice(self) -> None:
         checker = Grounding()
         checker.add("Valmorel is a region in the north.")
-        checked = checker.check("Orlbrix was founded in 1802.", "Who founded Orlbrix in Valmorel?", "en")
+        checked = checker.check(
+            "Orlbrix was founded in 1802.", "Who founded Orlbrix in Valmorel?", "en"
+        )
         self.assertTrue(checked.startswith(WORDING["missing"]["en"]))
 
     def test_contradiction_note_follows_its_own_claim(self) -> None:
         checker = Grounding()
         checker.add("Northbridge opened in 1924.")
-        answer = checker.check("Northbridge opened in 1925. It spans the river.", "When did Northbridge open?", "en")
+        answer = checker.check(
+            "Northbridge opened in 1925. It spans the river.",
+            "When did Northbridge open?",
+            "en",
+        )
         note = answer.index(WORDING["contradicted"]["en"])
         self.assertLess(answer.index("1925"), note)
         self.assertLess(note, answer.index("It spans the river."))
+
 
 class FactualQuestionTests(unittest.TestCase):
     def test_precise_fact_questions_in_every_ui_language(self) -> None:
@@ -227,9 +235,7 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             if evidence is not None:
                 await upstream({"phase": "tool_started", "tool": "web_search"})
                 if (check := grounding.current.get()) is not None:
-                    check.collect(
-                        {"results": [{"snippet": evidence}]}
-                    )
+                    check.collect({"results": [{"snippet": evidence}]})
             await upstream({"delta": {"content": answer}})
             item.reponse = answer
             item.state = "done"

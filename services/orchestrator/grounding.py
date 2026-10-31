@@ -222,7 +222,9 @@ def factual_query(question: str) -> str:
     return question.strip()[:500]
 
 
-QUESTION_WORDS = frozenset("what where which whom whose who when why how quel quelle quels quelles ou".split())
+QUESTION_WORDS = frozenset(
+    "what where which whom whose who when why how quel quelle quels quelles ou".split()
+)
 
 
 def question_entities(question: str) -> list[str]:
@@ -231,7 +233,10 @@ def question_entities(question: str) -> list[str]:
     if quoted:
         return quoted
     entities = []
-    for run in re.finditer(r"\b[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*(?:\s+[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*)*", question):
+    for run in re.finditer(
+        r"\b[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*(?:\s+[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*)*",
+        question,
+    ):
         words = normalized(run[0]).split()
         while words and (words[0] in STOP or words[0] in QUESTION_WORDS):
             words.pop(0)
@@ -371,7 +376,10 @@ class Grounding:
         """True when some entity named by the question appears in no fetched passage."""
         passages = [normalized(passage) for passage in self.evidence]
         return any(
-            not any(re.search(r"\b" + re.escape(entity) + r"\b", passage) for passage in passages)
+            not any(
+                re.search(r"\b" + re.escape(entity) + r"\b", passage)
+                for passage in passages
+            )
             for entity in question_entities(question)
         )
 
@@ -388,7 +396,13 @@ class Grounding:
             if not source_sentence:
                 continue
             self.claims_changed += 1
-            note = "\n\n" + wording("contradicted", language) + "\n> " + source_sentence + "\n\n"
+            note = (
+                "\n\n"
+                + wording("contradicted", language)
+                + "\n> "
+                + source_sentence
+                + "\n\n"
+            )
             answer = answer[: claim.end] + note + answer[claim.end :].lstrip()
         answer = answer.rstrip()
         if self.evidence and self.entity_missing(question):
@@ -399,16 +413,18 @@ class Grounding:
             if correction:
                 answer = correction + "\n\n" + answer
             else:
-                assumed = Claim(0, len(question), question, tuple(YEAR.findall(question)))
-                if assumed.values and all(
-                    re.search(r"\b" + re.escape(value) + r"\b", normalized(answer))
-                    for value in assumed.values
-                ) and self.contradicted(assumed):
-                    answer = (
-                        wording("premise_unsupported", language)
-                        + "\n\n"
-                        + answer
+                assumed = Claim(
+                    0, len(question), question, tuple(YEAR.findall(question))
+                )
+                if (
+                    assumed.values
+                    and all(
+                        re.search(r"\b" + re.escape(value) + r"\b", normalized(answer))
+                        for value in assumed.values
                     )
+                    and self.contradicted(assumed)
+                ):
+                    answer = wording("premise_unsupported", language) + "\n\n" + answer
         self.latency_ms += (time.monotonic() - started) * 1000
         return answer
 
