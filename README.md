@@ -5,6 +5,8 @@
   <img src="assets/brand/svg/atlas-logotype.svg" alt="Atlas" width="314">
 </picture>
 
+> **Beta.** Atlas is in beta until version 1.0: features, models and APIs may still change.
+
 I started Atlas because I want to keep control over our data, something Claude
 and ChatGPT do not allow in the way I need. My aim is an agentic AI assistant
 platform close to their performance while enabling digital sovereignty.

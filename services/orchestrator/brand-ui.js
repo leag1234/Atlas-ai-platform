@@ -44,6 +44,30 @@
     image.alt = 'Atlas';
   }
 
+  // Owner rule 2026-10-31: a Beta badge sits next to the Atlas name and logo until version 1.0.
+  // Shown by default; hidden only once atlas-version.json reports a major version of 1 or more.
+  let beta = true;
+  fetch('/static/atlas/atlas-version.json', {cache:'no-cache', credentials:'same-origin'})
+    .then(response => response.ok ? response.json() : null)
+    .then(data => {
+      const major = /^(\d+)\./.exec(data?.version || '');
+      beta = !major || Number(major[1]) < 1;
+      refresh();
+    })
+    .catch(() => {});
+
+  function markBeta(anchor) {
+    const label = (localStorage.getItem('locale') || '').startsWith('fr') ? 'Bêta' : 'Beta';
+    const next = anchor.nextElementSibling;
+    const badge = next && next.classList.contains('atlas-beta') ? next : null;
+    if (!beta) { if (badge) badge.remove(); return; }
+    if (badge) { if (badge.textContent !== label) badge.textContent = label; return; }
+    const created = document.createElement('span');
+    created.className = 'atlas-beta';
+    created.textContent = label;
+    anchor.after(created);
+  }
+
   let accountName = '';
   async function loadAccountName() {
     try {
@@ -58,6 +82,10 @@
 
   function refresh() {
     document.querySelectorAll('img').forEach(replaceLogo);
+    document.querySelectorAll('#sidebar-webui-name').forEach(markBeta);
+    if (location.pathname.startsWith('/auth')) {
+      document.querySelectorAll('img[data-atlas-brand=logotype], img[data-atlas-brand=symbol]').forEach(markBeta);
+    }
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
     for (const container of document.querySelectorAll('nav, header, [role=dialog], #sidebar, #pinned-menu-items-list, #sidebar-webui-name')) {

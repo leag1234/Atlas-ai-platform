@@ -100,6 +100,16 @@ class BrandAssetTests(unittest.TestCase):
         self.assertIn("/static/logo.png", script)
         self.assertNotIn("location.reload", script)
 
+    def test_beta_badge_follows_the_version_until_1_0(self) -> None:
+        script = (ROOT / "services/orchestrator/brand-ui.js").read_text()
+        css = (ROOT / "services/orchestrator/chat-ui.css").read_text()
+        self.assertIn("/static/atlas/atlas-version.json", script)
+        self.assertIn("let beta = true;", script)
+        self.assertIn("beta = !major || Number(major[1]) < 1;", script)
+        self.assertIn("#sidebar-webui-name", script)
+        self.assertIn("'Bêta' : 'Beta'", script)
+        self.assertIn(".atlas-beta", css)
+
     def test_compose_image_copies_the_pinned_shell_asset_names(self) -> None:
         dockerfile = (ROOT / "infra/docker/Dockerfile.webui").read_text()
         for target in PUBLIC_MIME_TYPES:
