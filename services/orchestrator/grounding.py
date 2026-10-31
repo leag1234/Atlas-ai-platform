@@ -184,6 +184,30 @@ def premise(question: str) -> bool:
     )
 
 
+# Questions asking for a precise fact (who, when, where, how many...) in the five
+# UI languages, after normalized() (casefolded, accents removed).
+FACT_CUE = re.compile(
+    r"\b(?:who|when|where|which year|what year|how many|how much|how long|"
+    r"qui|quand|quel|quelle|quels|quelles|combien|en quelle annee|"
+    r"wer|wann|wo|welche|welcher|welches|wie viele|wie viel|"
+    r"quien|cuando|donde|cual|cuanto|cuanta|cuantos|cuantas|"
+    r"chi|quando|dove|quale|quali|quanto|quanta|quanti|quante)\b"
+)
+
+
+def needs_grounding(question: str) -> bool:
+    """Decide before any streaming whether a turn's answer is held and checked."""
+    text = normalized(question)
+    if not text or CREATIVE.search(text) or small_talk(question):
+        return False
+    return bool(
+        premise(question)
+        or FACT_CUE.search(text)
+        or YEAR.search(question)
+        or NUMBER.search(question)
+    )
+
+
 def factual_query(question: str) -> str:
     """Return a neutral query for a question carrying a factual premise."""
     text = normalized(question)
