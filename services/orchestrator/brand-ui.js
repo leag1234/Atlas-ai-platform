@@ -83,6 +83,9 @@
   function refresh() {
     document.querySelectorAll('img').forEach(replaceLogo);
     document.querySelectorAll('#sidebar-webui-name').forEach(markBeta);
+    for (const name of document.querySelectorAll('main .text-2xl span.line-clamp-1')) {
+      if (name.textContent.trim() === 'Atlas') markBeta(name);
+    }
     if (location.pathname.startsWith('/auth')) {
       document.querySelectorAll('img[data-atlas-brand=logotype], img[data-atlas-brand=symbol]').forEach(markBeta);
     }
