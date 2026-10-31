@@ -239,7 +239,8 @@ async def chat(
     raw_model: str | None = None,
     public_model: str | None = None,
 ) -> Response:
-    deadline = monotonic() + 120
+    # nginx allows 300 s on the API; long streamed agent turns need more than 120 s.
+    deadline = monotonic() + 300
     try:
         body = bytearray()
         async with asyncio.timeout(120):
@@ -413,6 +414,20 @@ async def chat(
                     if last is not None:
                         yield "data: " + json.dumps(last) + "\n\n"
                     last = chunk
+        if wire is not None and not getattr(
+            getattr(wire, "core", wire), "terminal", True
+        ):
+            # The provider stream ended without a final frame: end with a failure
+            # event instead of closing silently.
+            logging.getLogger("atlas.api").warning(
+                json.dumps({"event": "devapi_stream_unterminated"})
+            )
+            for event in wire.feed(
+                {"error": {"type": "server_error", "message": "provider_stream_ended"}}
+            ):
+                yield (
+                    "event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n"
+                )
         if wire is None:
             if last is not None:
                 if output.served_by and "error" not in last:

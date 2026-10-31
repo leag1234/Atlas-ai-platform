@@ -330,6 +330,12 @@ class KeyResponsesTests(unittest.TestCase):
                     self.assertEqual(reply.status_code, 200)
                     self.assertIn("event: error", reply.text)
                     self.assertNotIn("response.completed", reply.text)
+                    # Reported 2026-10-31: Codex needs a terminal event after an error.
+                    self.assertTrue(
+                        reply.text.rstrip()
+                        .split("\n\n")[-1]
+                        .startswith("event: response.failed")
+                    )
                 else:
                     self.assertEqual(reply.status_code, 502)
                     self.assertEqual(reply.json()["error"]["type"], "provider_error")
@@ -337,6 +343,20 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(usage["requests"], 2)
         self.assertGreater(usage["unknown_micro_eur"], 0)
         self.assertEqual(usage["charged_micro_eur"], usage["unknown_micro_eur"])
+
+    def test_stream_ending_without_a_final_frame_ends_with_response_failed(
+        self,
+    ) -> None:
+        async def truncated(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            yield b'data: {"choices":[{"index":0,"delta":{"content":"Partial"},"finish_reason":null}]}\n\n'
+
+        with patch.object(gateway, "transport", truncated):
+            reply = self.post(self.payload | {"stream": True})
+        self.assertEqual(reply.status_code, 200)
+        self.assertNotIn("response.completed", reply.text)
+        self.assertTrue(
+            reply.text.rstrip().split("\n\n")[-1].startswith("event: response.failed")
+        )
 
     def test_provider_credit_refusal_falls_back_then_reports_quota(self) -> None:
         from provider_retry import TransientProviderError
