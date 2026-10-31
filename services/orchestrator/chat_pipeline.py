@@ -27,6 +27,7 @@ from services.orchestrator.loop import Call, Limits, Message, Query, run
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.tools import Rag, Runtime, search_providers
 from services.orchestrator.stream_client import Sink, sink_context
+from services.orchestrator import grounding
 from services.orchestrator.vision import process_vision
 from services.orchestrator.search_policy import required_research, corpus_allowed
 from services.orchestrator.followup import (
@@ -407,6 +408,8 @@ class ChatTools(Runtime):
                     ]
             if call.name in {"web_search", "web_fetch"} and "error" not in output:
                 self.item.retrieved_urls.extend(urls)
+                if (check := grounding.current.get()) is not None:
+                    check.collect(data)
                 if call.name == "web_search" and isinstance(data, dict):
                     for row in data.get("results", []):
                         if isinstance(row, dict) and isinstance(row.get("link"), str):
@@ -655,9 +658,21 @@ async def process(request: ChatRequest, item: Interaction) -> None:
 
     capture = context_usage.samples.set(item.context_samples)
     components = context_usage.parts.set({})
+    # Truthfulness V1 (owner decision 2026-10-31): a factual question is answered in
+    # one piece after its precise claims are checked against the sources fetched in
+    # this turn; other turns keep streaming.
+    check = (
+        grounding.Grounding() if grounding.needs_grounding(request.user_text) else None
+    )
+    checking = grounding.current.set(check)
+    sink = sink_context.get()
+    held = sink_context.set(_HeldAnswer(sink)) if check and sink else None
     try:
         await _process_request(request, item)
     finally:
+        if held is not None:
+            sink_context.reset(held)
+        grounding.current.reset(checking)
         context_usage.parts.reset(components)
         context_usage.samples.reset(capture)
     from services.orchestrator.source_truth import clean_citation_residue
@@ -667,6 +682,12 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
     )
+    if check is not None and check.evidence and item.state == "done":
+        item.reponse = check.check(
+            item.reponse,
+            request.user_text,
+            conversation_language(request.conversation_messages, request.ui_locale),
+        )
     if item.state == "done" and not item.reponse.strip():
         item.erreurs.append("empty_answer")
         notices = {
@@ -682,6 +703,19 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse = notices.get(language, notices["en"])
         if sink := sink_context.get():
             await sink({"delta": {"content": item.reponse}})
+
+
+class _HeldAnswer:
+    """Withhold answer text while a factual turn is checked; pass every other event."""
+
+    def __init__(self, sink: Sink) -> None:
+        self.sink = sink
+
+    async def __call__(self, event: dict[str, object]) -> None:
+        delta = event.get("delta")
+        if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+            return
+        await self.sink(event)
 
 
 class _RoutedStreamBuffer:
