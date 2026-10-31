@@ -22,6 +22,7 @@ class Target:
     # Provider-specific value sent for the requested level (None: forward as is).
     effort: str | None = None
     context: int = 0
+    privacy: str = "shared"
 
 
 def config() -> dict[str, Any]:
@@ -43,7 +44,9 @@ def select_public_model(name: str) -> str:
     return public_model(name) if name in PUBLIC_MODELS else "atlas-code"
 
 
-def targets(name: str, effort: str) -> tuple[str, tuple[Target, ...]]:
+def targets(
+    name: str, effort: str, *, strict: bool = False
+) -> tuple[str, tuple[Target, ...]]:
     usage = public_model(name)
     entries = config().get("usages", {}).get(usage, {}).get(effort)
     if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
@@ -54,9 +57,14 @@ def targets(name: str, effort: str) -> tuple[str, tuple[Target, ...]]:
             str(item["model"]),
             str(item["effort"]) if item.get("effort") else None,
             int(item["context"]),
+            "owned" if item.get("privacy") == "owned" else "shared",
         )
         for item in entries
     )
+    if strict:
+        selected = tuple(target for target in selected if target.privacy == "owned")
+        if not selected:
+            raise ValueError("strict_privacy_unavailable")
     if not selected or effort not in EFFORTS:
         raise ValueError("invalid_model")
     return usage, selected

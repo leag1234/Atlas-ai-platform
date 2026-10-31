@@ -67,6 +67,8 @@ class Wire:
         }
         if self.output.served_by:
             result["served_by"] = self.output.served_by
+        if self.output.privacy:
+            result["privacy"] = self.output.privacy
         return result
 
     def start(self) -> list[dict[str, Any]]:

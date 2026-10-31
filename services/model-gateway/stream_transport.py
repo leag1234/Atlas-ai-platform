@@ -54,6 +54,33 @@ async def stream(
     provider: AgentProvider, payload: object
 ) -> AsyncGenerator[dict[str, object], None]:
     request = StreamRequest.model_validate(payload)
+    if request.privacy == "strict":
+        model = str(provider_settings.preset_value("owned-vllm", "text_model"))
+        async with aclosing(
+            retry_stream(
+                attempt,
+                request,
+                model,
+                request.timeout,
+                Decimal("0"),
+                0,
+                RetryLedger(),
+            )
+        ) as events:
+            async for event in events:
+                result = event.get("result")
+                if isinstance(result, dict):
+                    result["cost_eur"] = "0"
+                    if request.observe:
+                        result["observation"] = {
+                            "provider": "owned",
+                            "route": "simple"
+                            if classify(request.messages) == "chat_simple"
+                            else "complexe",
+                            "fallback": False,
+                        }
+                    yield event
+        return
     if request.profile is not None:
         from quality import stream_quality
 
@@ -197,7 +224,11 @@ async def attempt(
     # may turn an exhausted output allowance into an HTTP failure/retry (D5).
     if request.max_tokens < 1:
         raise ProviderLimitError("output_budget", 1, request.max_tokens, "tokens")
-    endpoint = provider_settings.endpoint()
+    endpoint = (
+        provider_settings.owned_endpoint()
+        if request.privacy == "strict"
+        else provider_settings.endpoint()
+    )
     answer_only = request.profile is not None and request.tool_choice == "none"
     body = {
         "model": model,
@@ -252,7 +283,14 @@ async def attempt(
                     if classify_task(request.messages) == "vision"
                     else ServerlessPolicy().public_profiles.get(request.profile or ""),
                 ),
-                headers={"Authorization": "Bearer " + provider_settings.api_key()},
+                headers={
+                    "Authorization": "Bearer "
+                    + (
+                        provider_settings.owned_api_key()
+                        if request.privacy == "strict"
+                        else provider_settings.api_key()
+                    )
+                },
                 allow_redirects=False,
             ) as response:
                 if response.status != 200:

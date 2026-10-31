@@ -42,4 +42,8 @@ models:
     input_eur_per_mtok: 0.0
     output_eur_per_mtok: 0.0
     note: "zero per-token cost; GPU billed hourly, outside the per-request budget"
+  owned-vllm-model:
+    input_eur_per_mtok: 0.0
+    output_eur_per_mtok: 0.0
+    note: "owned hardware cost is outside the per-request budget"
 source: "Scaleway Generative APIs pricing, consulted 2026-09-09"

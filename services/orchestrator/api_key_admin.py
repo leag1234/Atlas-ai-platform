@@ -37,6 +37,7 @@ class CreateKey(BaseModel):
     daily_micro_eur: int | None = Field(default=None, ge=1)
     weekly_micro_eur: int | None = Field(default=100000000, ge=1)
     own_budget: bool = False
+    privacy: Literal["standard", "strict"] = "standard"
 
 
 @app.middleware("http")
@@ -157,6 +158,7 @@ def main() -> None:
     parser.add_argument("--daily-micro-eur", type=int)
     parser.add_argument("--weekly-micro-eur", type=int, default=100000000)
     parser.add_argument("--own-budget", action="store_true")
+    parser.add_argument("--privacy", choices=("standard", "strict"), default="standard")
     args = parser.parse_args()
     url = urlsplit(args.admin_url)
     if (
@@ -186,6 +188,7 @@ def main() -> None:
                 "daily_micro_eur",
                 "weekly_micro_eur",
                 "own_budget",
+                "privacy",
             )
         }
         values = {k: v for k, v in values.items() if v is not None}

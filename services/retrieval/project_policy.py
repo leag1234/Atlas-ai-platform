@@ -112,6 +112,7 @@ class ProjectCreate(Closed):
     name: Name
     instructions: str = Field(default="", max_length=4000)
     default_action: Literal["chat", "work"] = "chat"
+    privacy: Literal["standard", "strict"] = "standard"
 
 
 class ProjectPatch(Closed):
@@ -119,6 +120,7 @@ class ProjectPatch(Closed):
     name: Name | None = None
     default_action: Literal["chat", "work"] | None = None
     state: Literal["active", "archived"] | None = None
+    privacy: Literal["standard", "strict"] | None = None
 
 
 class ImportedMessage(Closed):

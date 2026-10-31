@@ -271,6 +271,7 @@ class Transcript:
         history = states.eligible(conversation, session)
         snapshot = states.snapshot(history, session)
         return dict(
+            privacy=self.scope.project_data.get("privacy", "standard"),
             instructions_version=instructions["version"],
             instructions_text=instructions["text"],
             memory_revision=base["memory_revision"],

@@ -38,7 +38,9 @@ class Projects:
         with self.connection() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS projects (
-                    id TEXT PRIMARY KEY, name TEXT, instructions TEXT, revision INTEGER);
+                    id TEXT PRIMARY KEY, name TEXT, instructions TEXT,
+                    privacy TEXT NOT NULL DEFAULT 'standard'
+                    CHECK(privacy IN ('standard','strict')), revision INTEGER);
                 CREATE TABLE IF NOT EXISTS conversations (
                     id TEXT PRIMARY KEY, project TEXT REFERENCES projects(id), name TEXT);
                 CREATE TABLE IF NOT EXISTS turns (
@@ -78,14 +80,16 @@ class Projects:
             raise KeyError("not_found")
         return row
 
-    def create(self, name: str, instructions: str) -> str:
+    def create(self, name: str, instructions: str, privacy: str = "standard") -> str:
         bounded(name, 120)
         bounded(instructions, 4000, True)
+        if privacy not in ("standard", "strict"):
+            raise ValueError("invalid_privacy")
         identifier = str(uuid4())
         with self.connection() as db:
             db.execute(
-                "INSERT INTO projects VALUES (?,?,?,0)",
-                (identifier, name, instructions),
+                "INSERT INTO projects VALUES (?,?,?,?,0)",
+                (identifier, name, instructions, privacy),
             )
         return identifier
 
@@ -108,6 +112,13 @@ class Projects:
                 "UPDATE projects SET name=?,instructions=? WHERE id=?",
                 (name, instructions, project),
             )
+
+    def set_privacy(self, project: str, privacy: str) -> None:
+        if privacy not in ("standard", "strict"):
+            raise ValueError("invalid_privacy")
+        with self.connection() as db:
+            self.require(db, project)
+            db.execute("UPDATE projects SET privacy=? WHERE id=?", (privacy, project))
 
     def conversation(self, project: str, name: str) -> str:
         bounded(name, 120)
@@ -183,6 +194,7 @@ class Projects:
             ]
             return {
                 "instructions": row["instructions"],
+                "privacy": row["privacy"],
                 "revision": row["revision"],
                 "facts": selected,
                 "history": list(reversed(history)),

@@ -37,6 +37,21 @@ class ProjectAPITests(unittest.TestCase):
                 self.client.post("/projects", json={"name": invalid}).status_code, 422
             )
 
+    def test_project_privacy_is_persisted_and_updated(self) -> None:
+        project = self.project("Projet")
+        self.assertEqual(
+            self.client.get(f"/projects/{project}").json()["privacy"], "standard"
+        )
+        self.assertEqual(
+            self.client.patch(
+                f"/projects/{project}", json={"name": "Projet", "privacy": "strict"}
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(f"/projects/{project}").json()["privacy"], "strict"
+        )
+
     def test_foreign_conversation_is_not_readable(self) -> None:
         first, second = self.project("Premier"), self.project("Second")
         conversation = self.client.post(

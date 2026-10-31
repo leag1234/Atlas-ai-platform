@@ -113,6 +113,39 @@ class KeyTests(unittest.TestCase):
         self.assertTrue(row["own_budget"])
         self.assertEqual(row["expires_at"] - row["created_at"], 21 * 86400)
 
+    def test_key_privacy_setting_is_persisted_and_resolved(self) -> None:
+        row, key = self.create(privacy="strict")
+        self.assertEqual(row["privacy"], "strict")
+        self.assertEqual(self.store.resolve(key, "192.0.2.1").privacy, "strict")
+
+    def test_strict_privacy_header_returns_explicit_503(self) -> None:
+        _, key = self.create(scopes=["model"])
+        with TestClient(app) as client:
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key, "X-Atlas-Privacy": "strict"},
+                json={
+                    "model": "atlas-code",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                },
+            )
+        self.assertEqual(reply.status_code, 503, reply.text)
+        self.assertEqual(reply.json()["error"]["type"], "strict_privacy_unavailable")
+
+    def test_strict_privacy_key_setting_returns_explicit_503(self) -> None:
+        _, key = self.create(scopes=["model"], privacy="strict")
+        with TestClient(app) as client:
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key},
+                json={
+                    "model": "atlas-code",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                },
+            )
+        self.assertEqual(reply.status_code, 503, reply.text)
+        self.assertEqual(reply.json()["error"]["type"], "strict_privacy_unavailable")
+
     def test_hash_expiry_revocation_metadata_and_permissions(self) -> None:
         row, key = self.create()
         self.assertRegex(row["prefix"], r"^atl_[0-9a-f]{8}$")
@@ -634,7 +667,7 @@ class KeyTests(unittest.TestCase):
         plan = Plan("{}", "https://example.invalid/v1", 1000, Decimal(1), Decimal(1))
         seen: list[Any] = []
 
-        def prepare_public(request: Any, *_: str) -> Plan:
+        def prepare_public(request: Any, *_: str, **__: object) -> Plan:
             seen.append(request)
             return plan
 

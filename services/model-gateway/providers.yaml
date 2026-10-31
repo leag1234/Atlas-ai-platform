@@ -87,5 +87,13 @@
     "name": "Other OpenAI-compatible endpoint (enter settings)", "base_url": null,
     "text_model": null, "vision_model": null, "context": 32768, "price": null,
     "unverified": ["operator-supplied URL, model, capabilities and prices"], "sources": []
+  },
+  # Source: operator-supplied; strict privacy requires a fully owner-controlled endpoint.
+  "owned-vllm": {
+    "name": "Owned OpenAI-compatible vLLM endpoint", "base_url": null,
+    "api_key_env": "ATLAS_OWNED_VLLM_API_KEY",
+    "text_model": "owned-vllm-model", "vision_model": null,
+    "context": 262144, "price": {"currency": "EUR", "input": 0, "output": 0},
+    "unverified": ["operator-supplied URL and model capabilities"], "sources": []
   }
 }

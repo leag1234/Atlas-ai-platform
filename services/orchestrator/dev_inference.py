@@ -283,8 +283,11 @@ async def chat(
                 logging.getLogger("uvicorn.error").info(
                     json.dumps({"event": "devapi_loop_nudge", "repeats": repeats})
                 )
+        strict = getattr(request.state, "privacy", "standard") == "strict"
         plan = (
-            gateway.prepare_api(parsed, public_model, request.state.api_key.id)
+            gateway.prepare_api(
+                parsed, public_model, request.state.api_key.id, strict=strict
+            )
             if public_model is not None
             else gateway.prepare_raw(parsed)
             if raw_model is not None
@@ -320,6 +323,18 @@ async def chat(
         return error("quota_exceeded", 429)
     except PermissionError:
         return error("unauthorized", 401)
+    except ValueError as exc:
+        if str(exc) != "strict_privacy_unavailable":
+            raise
+        return JSONResponse(
+            {
+                "error": {
+                    "type": "strict_privacy_unavailable",
+                    "message": "No owned inference server is available for strict privacy mode.",
+                }
+            },
+            status_code=503,
+        )
     except (
         ValueError,
         TypeError,

@@ -25,6 +25,7 @@ class ProviderSetupTests(unittest.TestCase):
                 "huggingface",
                 "deepseek",
                 "other",
+                "owned-vllm",
             },
         )
 

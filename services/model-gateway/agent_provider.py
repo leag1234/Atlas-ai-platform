@@ -86,6 +86,9 @@ class AgentRequest(BaseModel):
     )
     timeout: float = Field(gt=0, le=300)
     local_enabled: bool = True
+    privacy: Literal["standard", "strict"] = Field(
+        default="standard", exclude_if=lambda value: value == "standard"
+    )
     observe: bool = False
     profile: str | None = Field(default=None, exclude_if=lambda value: value is None)
     max_tokens: int = Field(
@@ -215,6 +218,8 @@ class AgentProvider:
 
     async def complete(self, payload: object) -> dict[str, object]:
         request = AgentRequest.model_validate(payload)
+        if request.privacy == "strict":
+            return await self.owned_complete(request)
         if request.profile is not None:
             from quality import complete
 
@@ -285,11 +290,33 @@ class AgentProvider:
             )
             return observed(answer, "escalade")
 
+    async def owned_complete(self, request: AgentRequest) -> dict[str, object]:
+        endpoint = provider_settings.owned_endpoint()
+        model = str(provider_settings.preset_value("owned-vllm", "text_model"))
+        async with asyncio.timeout(request.timeout):
+            answer = await self._complete(
+                request,
+                endpoint,
+                model,
+                provider_settings.owned_api_key(),
+                request.timeout,
+            )
+        if request.observe:
+            answer["observation"] = {
+                "provider": "owned",
+                "route": "simple"
+                if classify(request.messages) == "chat_simple"
+                else "complexe",
+            }
+        return answer
+
     async def serverless_complete(self, request: AgentRequest) -> dict[str, object]:
         from serverless import ServerlessPolicy
         from provider_retry import RetryLedger, retry_stream
         from contextlib import aclosing
 
+        if request.privacy == "strict":
+            return await self.owned_complete(request)
         policy = ServerlessPolicy()
         plan = policy.reserve(request.messages, request.tools)
         endpoint = provider_settings.endpoint()
