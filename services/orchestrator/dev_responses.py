@@ -20,6 +20,8 @@ class Wire:
         self.items: list[dict[str, Any]] = []
         self.indices: dict[str, int] = {}
         self.sequence = 0
+        # True once response.completed, .incomplete or .failed has been emitted.
+        self.terminal = False
 
     def event(self, kind: str, **data: Any) -> dict[str, Any]:
         event = {"type": kind, "sequence_number": self.sequence, **copy.deepcopy(data)}
@@ -89,17 +91,25 @@ class Wire:
         events = []
         item: dict[str, Any]
         if "error" in chunk:
+            code = (
+                chunk["error"].get("type", "server_error")
+                if chunk["error"].get("type") == "invalid_response_format"
+                else "server_error"
+            )
+            message = (
+                chunk["error"].get("message", "invalid_response_format")
+                if chunk["error"].get("type") == "invalid_response_format"
+                else "provider_error"
+            )
+            # Clients such as Codex wait for a terminal response event; without one an
+            # error mid-stream looks like a dropped connection (reported 2026-10-31).
+            failed = self.result("failed") | {
+                "error": {"code": code, "message": message}
+            }
+            self.terminal = True
             return [
-                self.event(
-                    "error",
-                    code=chunk["error"].get("type", "server_error")
-                    if chunk["error"].get("type") == "invalid_response_format"
-                    else "server_error",
-                    message=chunk["error"].get("message", "invalid_response_format")
-                    if chunk["error"].get("type") == "invalid_response_format"
-                    else "provider_error",
-                    param=None,
-                )
+                self.event("error", code=code, message=message, param=None),
+                self.event("response.failed", response=failed),
             ]
         for choice in chunk["choices"]:
             delta = choice["delta"]
@@ -277,6 +287,7 @@ class Wire:
                     )
                 )
             result = self.result()
+            self.terminal = True
             events.append(
                 self.event(
                     "response." + result["status"],
