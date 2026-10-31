@@ -222,16 +222,24 @@ def factual_query(question: str) -> str:
     return question.strip()[:500]
 
 
-def question_entity(question: str) -> str:
-    quoted = QUOTED.search(question)
+QUESTION_WORDS = frozenset("what where which whom whose who when why how quel quelle quels quelles ou".split())
+
+
+def question_entities(question: str) -> list[str]:
+    """Quoted titles, else runs of consecutive capitalised words (stop words trimmed)."""
+    quoted = [normalized(match[1]) for match in QUOTED.finditer(question)]
     if quoted:
-        return quoted[1]
-    names = re.findall(r"\b[A-ZÀ-Ý][\wÀ-ÿ]+(?:[-'][\wÀ-ÿ]+)*", question)
-    return " ".join(normalized(name) for name in names if normalized(name) not in STOP)
-
-
-def specific_entity_question(question: str) -> bool:
-    return bool(QUOTED.search(question) or question_entity(question))
+        return quoted
+    entities = []
+    for run in re.finditer(r"\b[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*(?:\s+[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*)*", question):
+        words = normalized(run[0]).split()
+        while words and (words[0] in STOP or words[0] in QUESTION_WORDS):
+            words.pop(0)
+        while words and words[-1] in STOP:
+            words.pop()
+        if words:
+            entities.append(" ".join(words))
+    return entities
 
 
 @dataclass
@@ -333,7 +341,7 @@ class Grounding:
         names = {
             normalized(name)
             for name in re.findall(r"\b[A-ZÀ-Ý][\wÀ-ÿ]+", question)
-            if name not in {"Why", "How"}
+            if normalized(name) not in STOP
         }
         if not relation or not names:
             return ""
@@ -360,12 +368,11 @@ class Grounding:
         )
 
     def entity_missing(self, question: str) -> bool:
-        entity = question_entity(question)
-        if not entity:
-            return False
-        return not any(
-            re.search(r"\b" + re.escape(entity) + r"\b", normalized(passage))
-            for passage in self.evidence
+        """True when some entity named by the question appears in no fetched passage."""
+        passages = [normalized(passage) for passage in self.evidence]
+        return any(
+            not any(re.search(r"\b" + re.escape(entity) + r"\b", passage) for passage in passages)
+            for entity in question_entities(question)
         )
 
     def check(self, answer: str, question: str, language: str) -> str:
@@ -376,19 +383,16 @@ class Grounding:
             return answer
         claims = extract_claims(answer)
         self.claims_checked = len(claims)
-        if (
-            self.evidence
-            and specific_entity_question(question)
-            and self.entity_missing(question)
-        ):
-            answer = wording("missing", language) + "\n\n" + answer
         for claim in reversed(claims):
             source_sentence = self.contradicted(claim)
             if not source_sentence:
                 continue
             self.claims_changed += 1
-            note = wording("contradicted", language) + "\n> " + source_sentence
-            answer = answer.rstrip() + "\n\n" + note
+            note = "\n\n" + wording("contradicted", language) + "\n> " + source_sentence + "\n\n"
+            answer = answer[: claim.end] + note + answer[claim.end :].lstrip()
+        answer = answer.rstrip()
+        if self.evidence and self.entity_missing(question):
+            answer = wording("missing", language) + "\n\n" + answer
         if premise(question):
             self.premises_checked = 1
             correction = self.correction(question, language)
