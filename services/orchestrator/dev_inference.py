@@ -268,6 +268,12 @@ async def chat(
                 parsed.model_dump(by_alias=True, exclude_none=True)
                 | {"model": raw_model}
             )
+        if public_model is not None and getattr(request.state, "context_trim", False):
+            from services.orchestrator.context_trim import trim_messages
+
+            parsed = parsed.model_copy(
+                update={"messages": trim_messages(list(parsed.messages))}
+            )
         plan = (
             gateway.prepare_api(parsed, public_model, request.state.api_key.id)
             if public_model is not None

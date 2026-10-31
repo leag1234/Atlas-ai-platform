@@ -369,6 +369,37 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 503, reply.text)
         self.assertEqual(reply.json()["error"]["type"], "provider_quota")
 
+    def test_context_trim_header_stubs_old_tool_outputs(self) -> None:
+        from services.orchestrator.context_trim import BLOCK, KEEP
+
+        items: list[dict[str, Any]] = [{"role": "user", "content": "Fix the parser."}]
+        for index in range(KEEP + BLOCK):
+            items += [
+                {
+                    "type": "function_call",
+                    "call_id": f"c{index}",
+                    "name": "save_value",
+                    "arguments": "{}",
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": f"c{index}",
+                    "output": f"fictional output {index}",
+                },
+            ]
+        payload = self.payload | {"input": items}
+        for header, stubs in (("on", BLOCK), (None, 0)):
+            headers = dict(self.headers)
+            if header:
+                headers["X-Atlas-Context-Trim"] = header
+            reply = self.post(payload, headers)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            tools = [m for m in self.inputs[-1]["messages"] if m["role"] == "tool"]
+            self.assertEqual(len(tools), KEEP + BLOCK)
+            self.assertEqual(
+                sum("Atlas removed" in str(m["content"]) for m in tools), stubs
+            )
+
     def test_user_budget_and_request_cap(self) -> None:
         with patch.dict(os.environ, {"ATLAS_USER_DAILY_EUR": "0.000001"}):
             reply = self.post(self.payload)
