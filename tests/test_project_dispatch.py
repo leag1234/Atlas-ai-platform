@@ -295,7 +295,8 @@ class ScopedProjectDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.timeout_seconds, 300)
         source = Path("services/orchestrator/project_transcript.py").read_text()
         self.assertIn("has_attachments=request.has_attachments", source)
-        self.assertIn("produces_files=produces_file(", source)
+        self.assertIn("produces_files = produces_file(", source)
+        self.assertEqual(source.count("produces_files=produces_files"), 2)
         Limits(
             profile=request.model,
             tokens=262144,
