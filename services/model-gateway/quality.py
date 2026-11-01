@@ -437,11 +437,11 @@ async def stream_quality(
                             ) or possible_promise_answer(prefix):
                                 continue
                             prefix_open = False
-                            # Visible answers cannot be retried. Let this attempt
-                            # use the original deadline instead of cancelling it
-                            # early to reserve time for an ineligible recovery.
-                            if not complete_response:
-                                deadline.reschedule(full_deadline)
+                            # Answers that are already visible or held cannot be
+                            # retried. Let this attempt use the original deadline
+                            # instead of cancelling it early to reserve time for
+                            # an ineligible recovery.
+                            deadline.reschedule(full_deadline)
                             for pending_event in buffered:
                                 if current.tools and not answer_emitted:
                                     held_content.append(pending_event)

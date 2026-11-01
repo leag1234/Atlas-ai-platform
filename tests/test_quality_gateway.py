@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from decimal import Decimal
+import asyncio
 import os
 import json
 import unittest
@@ -218,6 +219,55 @@ class ProfileTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_held_answer_uses_full_request_deadline(self) -> None:
+        from quality import input_bound
+        from serverless import ServerlessPolicy, classify_task
+
+        seen: list[float] = []
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            seen.append(timeout)
+            await asyncio.sleep(0.20)
+            yield {"delta": {"content": "The answer is 42."}}
+            await asyncio.sleep(0.17)
+            yield result("The answer is 42.", 20)
+
+        tool = {
+            "type": "function",
+            "function": {
+                "name": "web_fetch",
+                "description": "Fetch a source.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+        original = request(
+            timeout=0.5,
+            tools=[tool],
+        )
+        with patch.dict(os.environ, environment()):
+            policy = ServerlessPolicy()
+            model = policy.models[classify_task(original.messages)]
+            incoming = input_bound(original.messages, original.tools)
+            budget = policy.cost(
+                model, incoming, original.max_tokens
+            ) * 2 + policy.cost(model, incoming, 3000)
+        original = original.model_copy(update={"budget_eur": str(budget)})
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+        ):
+            events = [
+                event
+                async for event in stream_quality(
+                    AgentProvider(), original, complete_response=True
+                )
+            ]
+        self.assertEqual(len(seen), 1)
+        self.assertAlmostEqual(seen[0], 0.25, delta=0.01)
+        self.assertIn("The answer is 42.", str(events))
+
     async def test_serialized_tool_history_recovers_without_emitting_it(self) -> None:
         calls: list[AgentRequest] = []
         malformed = json.dumps(
