@@ -25,11 +25,6 @@ _FILE_FUTURE = re.compile(
 )
 
 
-def promises_file(text: str) -> bool:
-    """Whether text announces a file action in the first person (any sentence)."""
-    return bool(_FILE_FUTURE.search(_folded(text)))
-
-
 def strip_file_promises(text: str) -> str:
     """Remove complete promising sentences, retaining content and disclosure."""
     parts = re.split(r"(?<=[.!?;])(?=\s)|(?<=\n)", text)
