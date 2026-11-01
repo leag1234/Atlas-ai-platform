@@ -5,6 +5,7 @@ import base64
 from contextvars import ContextVar
 from decimal import Decimal
 import json
+from uuid import UUID
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -44,8 +45,20 @@ def error(status: int, code: str, **values: object) -> JSONResponse:
     )
 
 
+def project_organization(org_id: str) -> bool:
+    """Project organizations have UUID ids; keys of the pre-project instance organization
+    (for example "stable") are not tied to project membership."""
+    try:
+        UUID(org_id)
+    except ValueError:
+        return False
+    return True
+
+
 async def check_member(principal: Principal) -> str | None:
-    if not project_mode():
+    # Measured 2026-11-01: turning project mode on rejected every existing key of the
+    # guest instance (org "stable") with 422, because they were checked as project members.
+    if not project_mode() or not project_organization(principal.org_id):
         return None
     async with aiohttp.ClientSession(
         trust_env=False, timeout=aiohttp.ClientTimeout(total=10)
