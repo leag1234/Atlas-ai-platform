@@ -474,6 +474,16 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
                 )
                 self.assertNotIn(self.service_secret, result.text)
                 self.assertNotIn(self.front_secret, result.text)
+                # The guest front door also sends X-Atlas-User-Role for Open WebUI.
+                with_role = client.get(
+                    "/api/atlas/me",
+                    headers={
+                        **self.front(),
+                        "Host": "testserver",
+                        "X-Atlas-User-Role": "user",
+                    },
+                )
+                self.assertEqual(with_role.status_code, 200, with_role.text)
                 denied = client.get(
                     "/api/atlas/me", headers={"X-Atlas-User": "administrator"}
                 )
