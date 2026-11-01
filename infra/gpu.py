@@ -164,6 +164,15 @@ def create(service: str, resource: str, *args: str) -> Any:
     return result
 
 
+def positive_env(name: str, default: int) -> int:
+    value = os.environ.get(name, "")
+    if not value:
+        return default
+    if not re.fullmatch(r"[1-9][0-9]{0,6}", value):
+        raise ValueError("Invalid " + name)
+    return int(value)
+
+
 def bootstrap(volume: str, model: str, fresh: bool) -> str:
     port = atlas_ports().port("terminal")
     device = shlex.quote("/dev/disk/by-id/scsi-0SCW_sbs_volume-" + volume)
@@ -175,6 +184,13 @@ def bootstrap(volume: str, model: str, fresh: bool) -> str:
     revision = os.environ.get("LOCAL_MODEL_REVISION", "main")
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", revision):
         raise ValueError("Invalid model revision")
+    max_model_len = positive_env("GPU_MAX_MODEL_LEN", 8192)
+    parser = os.environ.get("GPU_TOOL_CALL_PARSER", "")
+    if parser and not re.fullmatch(r"[a-z0-9_]+", parser):
+        raise ValueError("Invalid GPU_TOOL_CALL_PARSER")
+    tool_flags = (
+        f" --enable-auto-tool-choice --tool-call-parser {parser}" if parser else ""
+    )
     script = f"""#!/bin/bash
 set -Eeuo pipefail
 mkdir -p /root/.ssh
@@ -191,7 +207,7 @@ nvidia-smi
 docker run -d --restart unless-stopped --gpus all --ipc=host --name vllm \\
  -p {port}:{port} -v /mnt/weights:/root/.cache/huggingface \\
  vllm/vllm-openai:v0.10.2 --model {shlex.quote(model)} --revision {shlex.quote(revision)} --served-model-name local \\
- --enable-prefix-caching --max-model-len 8192 --port {port}
+ --enable-prefix-caching --max-model-len {max_model_len} --port {port}{tool_flags}
 """
     return (
         script.split("docker run -d", 1)[0]
@@ -349,6 +365,11 @@ def up() -> None:
         "L40S-2-48G",
         "H100-SXM-2-80G",
     ]
+    if override := os.environ.get("GPU_PREFERENCES", ""):
+        chosen_types = [t.strip() for t in override.split(",") if t.strip()]
+        if not chosen_types or any(t not in preferences for t in chosen_types):
+            raise ValueError("Invalid GPU_PREFERENCES: use known server types")
+        preferences = chosen_types
     affordable = [
         r
         for t in preferences
@@ -381,7 +402,7 @@ def up() -> None:
             "volume",
             "name=" + gpu_name() + "-weights",
             "tags.2=atlas-unformatted",
-            "from-empty.size=200GB",
+            "from-empty.size=" + str(positive_env("GPU_WEIGHTS_GB", 200)) + "GB",
             "perf-iops=5000",
             "--wait",
         )

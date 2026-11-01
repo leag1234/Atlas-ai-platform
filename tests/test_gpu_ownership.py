@@ -185,6 +185,48 @@ class OwnershipTests(unittest.TestCase):
             [r["id"] for r in self.load()["instance/server"]], ["demo-server"]
         )
 
+    def test_eval_overrides_are_opt_in_and_validated(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("gpu_cli", ROOT / "infra/gpu.py")
+        assert spec is not None and spec.loader is not None
+        gpu = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gpu)
+        keys = ("GPU_MAX_MODEL_LEN", "GPU_TOOL_CALL_PARSER", "GPU_WEIGHTS_GB")
+        clean = {k: v for k, v in os.environ.items() if k not in keys}
+        with patch.dict(os.environ, clean, clear=True):
+            default = gpu.bootstrap("vol", "org/model", True)
+            self.assertIn("--max-model-len 8192 --port", default)
+            self.assertNotIn("tool-call-parser", default)
+            self.assertEqual(gpu.positive_env("GPU_WEIGHTS_GB", 200), 200)
+        with patch.dict(
+            os.environ,
+            {**clean, "GPU_MAX_MODEL_LEN": "32768", "GPU_TOOL_CALL_PARSER": "hermes"},
+            clear=True,
+        ):
+            script = gpu.bootstrap("vol", "org/model", True)
+            self.assertIn("--max-model-len 32768", script)
+            self.assertIn("--enable-auto-tool-choice --tool-call-parser hermes", script)
+        for name, value in (
+            ("GPU_TOOL_CALL_PARSER", "hermes; rm"),
+            ("GPU_MAX_MODEL_LEN", "0"),
+            ("GPU_WEIGHTS_GB", "80GB"),
+        ):
+            with patch.dict(os.environ, {**clean, name: value}, clear=True):
+                with self.assertRaises(ValueError):
+                    gpu.bootstrap("vol", "org/model", True)
+                    gpu.positive_env("GPU_WEIGHTS_GB", 200)
+
+    def test_unknown_gpu_preference_refuses_before_creation(self) -> None:
+        data = self.fixture()
+        data["instance/server-type"][0]["availability"] = "available"
+        self.save(data)
+        self.env["GPU_PREFERENCES"] = "L4-1-24G,B300-8-288G"
+        result = self.run_gpu("up")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid GPU_PREFERENCES", result.stderr)
+        self.assertEqual(self.mutations(), [])
+
     def test_owner_default_is_stable_worktree_hash(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             expected = (
