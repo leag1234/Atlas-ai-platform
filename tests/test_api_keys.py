@@ -810,3 +810,23 @@ class KeyTests(unittest.TestCase):
             self.assertEqual(
                 client.get("/api/atlas/v1/models", headers=headers).status_code, 401
             )
+
+
+class LegacyOrganizationKeyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_instance_keys_skip_project_membership_in_project_mode(self) -> None:
+        from types import SimpleNamespace
+
+        from services.orchestrator.api_key_edge import (
+            check_member,
+            project_organization,
+        )
+
+        self.assertFalse(project_organization("stable"))
+        self.assertTrue(project_organization("99fadc50-63ef-4f19-8f4d-746a95905d42"))
+        legacy = SimpleNamespace(
+            org_id="stable", member_id="workers", subject="w@example.test"
+        )
+        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
+            with patch("services.orchestrator.api_key_edge.broker_identity") as broker:
+                self.assertIsNone(await check_member(legacy))  # type: ignore[arg-type]
+                broker.assert_not_called()
