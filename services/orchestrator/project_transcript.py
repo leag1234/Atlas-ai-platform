@@ -18,6 +18,7 @@ import aiohttp
 from fastapi import Request
 
 from packages import context_usage
+from packages.file_intent import produces_file
 from packages.language import conversation_language, language_instruction
 from packages.ports import atlas_ports
 from services.orchestrator.chat_schema import ChatRequest
@@ -647,6 +648,12 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     profile=request.model,
                     tokens=262144,
                     cost=model.cost_ceiling,
+                    # Same rule as ChatRequest.timeout_seconds, so the longer
+                    # file deadline passes the Limits check.
+                    has_attachments=request.has_attachments,
+                    produces_files=produces_file(
+                        request.user_text, include_images=False
+                    ),
                     wall_clock=max(
                         0, request.timeout_seconds - (monotonic() - started)
                     ),
