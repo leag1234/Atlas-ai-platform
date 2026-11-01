@@ -204,6 +204,7 @@ async def run(
     recent: list[tuple[str, str]] = []
     quota_recovered = False
     protocol_recovered = False
+    file_promise_retried = False
     links_recovered = False
     retrieved: set[str] = set()
     tool_urls: set[str] = set()
@@ -319,6 +320,8 @@ async def run(
                 protocol_material,
                 unfinished_announcement,
             )
+            from packages.file_answers import promises_file
+            from packages.file_intent import produces_file
 
             if turn.calls and protocol_material(turn.text):
                 turn = Turn("", turn.calls, turn.usage)
@@ -344,6 +347,23 @@ async def run(
                         (Call(f"raw-tool-{result.tool_calls + 1}", name, arguments),),
                         turn.usage,
                     )
+                elif (
+                    limits.code_mode
+                    and not file_promise_retried
+                    and getattr(tools, "deliverables", None) == []
+                    and produces_file(query.question, include_images=False)
+                    and promises_file(complete_text)
+                ):
+                    # Work model announced the requested file and stopped: one retry.
+                    file_promise_retried = True
+                    messages.append({"role": "assistant", "content": turn.text})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "You announced the requested file but did not create it. Create it now with the tools, then reply briefly.",
+                        }
+                    )
+                    continue
                 elif protocol_material(complete_text) or unfinished_announcement(
                     complete_text
                 ):
