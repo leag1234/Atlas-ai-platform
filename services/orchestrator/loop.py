@@ -44,9 +44,9 @@ class Limits:
 
     def __post_init__(self) -> None:
         if self.code_mode:
-            from services.orchestrator.code_workspace import enabled
+            from services.orchestrator.code_workspace import work_enabled
 
-            if not enabled() or not (
+            if not work_enabled() or not (
                 self.tokens is None
                 and self.profile in PROFILES
                 and 0 <= self.tool_calls <= 1000

@@ -21,6 +21,19 @@ def enabled() -> bool:
     ) and os.environ.get("ATLAS_STABLE") != "1"
 
 
+def work_enabled() -> bool:
+    """Project Work sessions may run: the owner runtime, or the guest runtime opted in.
+
+    The guest opt-in covers only scoped project Work. Legacy code mode and the
+    read-only workspace mount in the shared files terminal still follow enabled().
+    """
+    return enabled() or (
+        os.environ.get("ATLAS_STABLE") == "1"
+        and os.environ.get("ATLAS_PROJECT_MODE") == "1"
+        and os.environ.get("ATLAS_STABLE_PROJECT_WORK") == "1"
+    )
+
+
 def session_key(value: str) -> str:
     return UUID(value).hex
 

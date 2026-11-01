@@ -335,6 +335,42 @@ class CodeTests(unittest.IsolatedAsyncioTestCase):
             ("I changed the function.", False),
         )
 
+    def test_guest_project_work_needs_explicit_opt_in(self) -> None:
+        from decimal import Decimal
+        from services.orchestrator.code_workspace import work_enabled
+        from services.orchestrator.loop import Limits
+
+        guest = {"ATLAS_STABLE": "1", "ATLAS_PROJECT_MODE": "1"}
+
+        def limits() -> Limits:
+            return Limits(
+                profile="atlas-qwen",
+                tokens=None,
+                tool_calls=40,
+                wall_clock=1200,
+                cost=Decimal("1"),
+                code_mode=True,
+                model_calls=41,
+            )
+
+        for values, allowed in (
+            (guest, False),
+            ({**guest, "ATLAS_STABLE_PROJECT_WORK": "1"}, True),
+            (
+                {**guest, "ATLAS_PROJECT_MODE": "0", "ATLAS_STABLE_PROJECT_WORK": "1"},
+                False,
+            ),
+        ):
+            with patch.dict(os.environ, values):
+                # Legacy code mode and the shared terminal mount stay off on the guest.
+                self.assertFalse(enabled())
+                self.assertEqual(work_enabled(), allowed)
+                if allowed:
+                    limits()
+                else:
+                    with self.assertRaisesRegex(ValueError, "invalid_code_limits"):
+                        limits()
+
     def test_flag_off_and_stable_off(self) -> None:
         for values in ({"ATLAS_CODE_MODE": "0"}, {"ATLAS_STABLE": "1"}):
             with patch.dict(os.environ, values):
