@@ -185,6 +185,9 @@ def bootstrap(volume: str, model: str, fresh: bool) -> str:
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", revision):
         raise ValueError("Invalid model revision")
     max_model_len = positive_env("GPU_MAX_MODEL_LEN", 8192)
+    vllm_tag = os.environ.get("GPU_VLLM_TAG", "v0.10.2")
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", vllm_tag):
+        raise ValueError("Invalid GPU_VLLM_TAG: use a release such as v0.31.0")
     parser = os.environ.get("GPU_TOOL_CALL_PARSER", "")
     if parser and not re.fullmatch(r"[a-z0-9_]+", parser):
         raise ValueError("Invalid GPU_TOOL_CALL_PARSER")
@@ -206,7 +209,7 @@ systemctl enable --now docker
 nvidia-smi
 docker run -d --restart unless-stopped --gpus all --ipc=host --name vllm \\
  -p {port}:{port} -v /mnt/weights:/root/.cache/huggingface \\
- vllm/vllm-openai:v0.10.2 --model {shlex.quote(model)} --revision {shlex.quote(revision)} --served-model-name local \\
+ vllm/vllm-openai:{vllm_tag} --model {shlex.quote(model)} --revision {shlex.quote(revision)} --served-model-name local \\
  --enable-prefix-caching --max-model-len {max_model_len} --port {port}{tool_flags}
 """
     return (

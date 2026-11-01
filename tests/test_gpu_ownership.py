@@ -192,12 +192,18 @@ class OwnershipTests(unittest.TestCase):
         assert spec is not None and spec.loader is not None
         gpu = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gpu)
-        keys = ("GPU_MAX_MODEL_LEN", "GPU_TOOL_CALL_PARSER", "GPU_WEIGHTS_GB")
+        keys = (
+            "GPU_MAX_MODEL_LEN",
+            "GPU_TOOL_CALL_PARSER",
+            "GPU_WEIGHTS_GB",
+            "GPU_VLLM_TAG",
+        )
         clean = {k: v for k, v in os.environ.items() if k not in keys}
         with patch.dict(os.environ, clean, clear=True):
             default = gpu.bootstrap("vol", "org/model", True)
             self.assertIn("--max-model-len 8192 --port", default)
             self.assertNotIn("tool-call-parser", default)
+            self.assertIn("vllm/vllm-openai:v0.10.2 ", default)
             self.assertEqual(gpu.positive_env("GPU_WEIGHTS_GB", 200), 200)
         with patch.dict(
             os.environ,
@@ -207,10 +213,15 @@ class OwnershipTests(unittest.TestCase):
             script = gpu.bootstrap("vol", "org/model", True)
             self.assertIn("--max-model-len 32768", script)
             self.assertIn("--enable-auto-tool-choice --tool-call-parser hermes", script)
+        with patch.dict(os.environ, {**clean, "GPU_VLLM_TAG": "v0.31.0"}, clear=True):
+            self.assertIn(
+                "vllm/vllm-openai:v0.31.0 ", gpu.bootstrap("vol", "o/m", True)
+            )
         for name, value in (
             ("GPU_TOOL_CALL_PARSER", "hermes; rm"),
             ("GPU_MAX_MODEL_LEN", "0"),
             ("GPU_WEIGHTS_GB", "80GB"),
+            ("GPU_VLLM_TAG", "latest"),
         ):
             with patch.dict(os.environ, {**clean, name: value}, clear=True):
                 with self.assertRaises(ValueError):
