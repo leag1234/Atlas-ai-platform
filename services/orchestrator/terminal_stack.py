@@ -188,8 +188,14 @@ def loopback_html_injector(
                     ):
                         # The BFF verifies credentials and Origin against the original
                         # browser Host. No private credential reaches retrieval's public routes.
+                        # The front door sets X-Atlas-User-Role for Open WebUI; project
+                        # routes derive roles from membership and refuse the header
+                        # (measured 2026-11-01: every /api/atlas/me answered 401).
                         project_header = (
-                            without_header(header, b"connection")
+                            without_header(
+                                without_header(header, b"connection"),
+                                b"x-atlas-user-role",
+                            )
                             + b"\r\nConnection: close"
                         )
                         if target_path.startswith("/api/atlas/v1/"):
