@@ -582,7 +582,15 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 local_enabled=False,
             )
             model.privacy = str(context.get("privacy", "standard"))
-            model.configure_quality(request.model, request.max_tokens)
+            # The file flags follow ChatRequest.timeout_seconds: the gateway and the
+            # Limits check both accept the longer file deadline only with them.
+            produces_files = produces_file(request.user_text, include_images=False)
+            model.configure_quality(
+                request.model,
+                request.max_tokens,
+                has_attachments=request.has_attachments,
+                produces_files=produces_files,
+            )
             model.cost_ceiling = Decimal(str(turn["usage"]["reserved_eur"]))
             model.dispatch_hook = events.publish
             model.session_context = session_context
@@ -648,12 +656,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     profile=request.model,
                     tokens=262144,
                     cost=model.cost_ceiling,
-                    # Same rule as ChatRequest.timeout_seconds, so the longer
-                    # file deadline passes the Limits check.
                     has_attachments=request.has_attachments,
-                    produces_files=produces_file(
-                        request.user_text, include_images=False
-                    ),
+                    produces_files=produces_files,
                     wall_clock=max(
                         0, request.timeout_seconds - (monotonic() - started)
                     ),
