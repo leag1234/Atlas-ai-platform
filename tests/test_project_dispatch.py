@@ -274,6 +274,44 @@ class ScopedProjectDispatchTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.request("work").timeout_seconds, 615)
             self.assertEqual(self.request("chat").timeout_seconds, 120)
 
+    def test_project_chat_file_deadline_passes_the_limits_check(self) -> None:
+        from packages.file_intent import produces_file
+        from services.orchestrator.loop import Limits
+
+        request = self.request("chat").model_copy(
+            update={
+                "messages": ChatRequest.model_validate(
+                    {
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": "Write the meeting notes as a .docx file.",
+                            }
+                        ]
+                    }
+                ).messages
+            }
+        )
+        self.assertEqual(request.timeout_seconds, 300)
+        source = Path("services/orchestrator/project_transcript.py").read_text()
+        self.assertIn("has_attachments=request.has_attachments", source)
+        self.assertIn("produces_files=produces_file(", source)
+        Limits(
+            profile=request.model,
+            tokens=262144,
+            cost=Decimal("0.10"),
+            has_attachments=request.has_attachments,
+            produces_files=produces_file(request.user_text, include_images=False),
+            wall_clock=request.timeout_seconds,
+        )
+        with self.assertRaisesRegex(ValueError, "invalid_limits"):
+            Limits(
+                profile=request.model,
+                tokens=262144,
+                cost=Decimal("0.10"),
+                wall_clock=request.timeout_seconds,
+            )
+
     async def test_work_uses_authenticated_entry_and_canonical_context(self) -> None:
         from services.orchestrator.project_transcript import process_scoped_project
 
