@@ -105,3 +105,68 @@ class ProtocolDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.state, "stopped")
         self.assertEqual(result.reason, "protocol_completion_limit")
         self.assertIn("protocol_completion_limit", result.text)
+
+
+class WorkFixtureTools(FixtureTools):
+    def __init__(self) -> None:
+        super().__init__()
+        self.deliverables: list[dict[str, object]] = []
+
+
+class WorkFilePromiseTests(unittest.IsolatedAsyncioTestCase):
+    def limits(self) -> Limits:
+        return Limits(
+            profile="atlas-glm",
+            tokens=None,
+            tool_calls=40,
+            wall_clock=600,
+            cost=Decimal("1"),
+            code_mode=True,
+            model_calls=41,
+        )
+
+    async def run_work(self, turns: list[Turn], tools: FixtureTools) -> tuple:
+        import os
+        from unittest.mock import patch
+
+        model = FixtureModel(turns)
+        with patch.dict(os.environ, {"ATLAS_CODE_MODE": "1", "ATLAS_STABLE": "0"}):
+            result = await run(
+                Query(
+                    question="Produis un document Word compte-rendu.docx.", lang="fr"
+                ),
+                model,
+                tools,
+                "system",
+                self.limits(),
+            )
+        return result, model
+
+    async def test_announced_file_without_deliverable_gets_one_retry(self) -> None:
+        result, model = await self.run_work(
+            [
+                Turn("Je vais créer le document Word compte-rendu.docx."),
+                Turn("Le document est prêt."),
+            ],
+            WorkFixtureTools(),
+        )
+        self.assertEqual(result.text, "Le document est prêt.")
+        self.assertIn("did not create it", str(model.messages[1][-1]))
+
+    async def test_second_announcement_is_not_retried_again(self) -> None:
+        result, model = await self.run_work(
+            [
+                Turn("Je vais créer le document Word."),
+                Turn("Je vais créer le document Word maintenant."),
+            ],
+            WorkFixtureTools(),
+        )
+        self.assertEqual(len(model.messages), 2)
+        self.assertNotEqual(result.text, "")
+
+    async def test_tools_without_deliverables_never_retry(self) -> None:
+        result, model = await self.run_work(
+            [Turn("Je vais créer le document Word compte-rendu.docx.")],
+            FixtureTools(),
+        )
+        self.assertEqual(len(model.messages), 1)
