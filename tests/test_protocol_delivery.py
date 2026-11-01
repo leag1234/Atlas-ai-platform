@@ -3,7 +3,15 @@
 from decimal import Decimal
 import unittest
 
-from services.orchestrator.loop import Call, Limits, Query, Reservation, Turn, run
+from services.orchestrator.loop import (
+    Call,
+    Limits,
+    Query,
+    Reservation,
+    Result as RunResult,
+    Turn,
+    run,
+)
 
 
 class FixtureModel:
@@ -125,7 +133,9 @@ class WorkFilePromiseTests(unittest.IsolatedAsyncioTestCase):
             model_calls=41,
         )
 
-    async def run_work(self, turns: list[Turn], tools: FixtureTools) -> tuple:
+    async def run_work(
+        self, turns: list[Turn], tools: FixtureTools
+    ) -> tuple[RunResult, FixtureModel]:
         import os
         from unittest.mock import patch
 
