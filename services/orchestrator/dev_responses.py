@@ -87,7 +87,50 @@ class Wire:
                 return "custom"
             if tool.get("type") == "local_shell" and name == "local_shell":
                 return "local_shell"
+            if tool.get("type") in ("shell", "apply_patch") and name == tool["type"]:
+                return str(tool["type"])
         return "function"
+
+    def new_item(self, kind: str, call: dict[str, Any]) -> dict[str, Any]:
+        if kind in ("shell", "apply_patch"):
+            # Client-executed tools of the Responses API: native items, filled as the
+            # arguments stream.
+            return {
+                "id": ("sh_" if kind == "shell" else "apc_") + call["id"],
+                "type": kind + "_call",
+                "call_id": call["id"],
+                **(
+                    {"action": {}, "environment": {"type": "local"}}
+                    if kind == "shell"
+                    else {"operation": {}}
+                ),
+                "status": "in_progress",
+            }
+        return {
+            "id": (
+                "ctc_"
+                if kind == "custom"
+                else "lsh_"
+                if kind == "local_shell"
+                else "fc_"
+            )
+            + call["id"],
+            "type": "custom_tool_call"
+            if kind == "custom"
+            else "local_shell_call"
+            if kind == "local_shell"
+            else "function_call",
+            "call_id": call["id"],
+            "name": call["function"]["name"],
+            **(
+                {"input": ""}
+                if kind == "custom"
+                else {"action": {}}
+                if kind == "local_shell"
+                else {"arguments": ""}
+            ),
+            "status": "in_progress",
+        }
 
     def feed(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events = []
@@ -167,31 +210,7 @@ class Wire:
                     index = self.indices[key] = len(self.items)
                     call = self.output.calls[change["index"]]
                     kind = self.tool_kind(call["function"]["name"])
-                    item = {
-                        "id": (
-                            "ctc_"
-                            if kind == "custom"
-                            else "lsh_"
-                            if kind == "local_shell"
-                            else "fc_"
-                        )
-                        + call["id"],
-                        "type": "custom_tool_call"
-                        if kind == "custom"
-                        else "local_shell_call"
-                        if kind == "local_shell"
-                        else "function_call",
-                        "call_id": call["id"],
-                        "name": call["function"]["name"],
-                        **(
-                            {"input": ""}
-                            if kind == "custom"
-                            else {"action": {}}
-                            if kind == "local_shell"
-                            else {"arguments": ""}
-                        ),
-                        "status": "in_progress",
-                    }
+                    item = self.new_item(kind, call)
                     self.items.append(item)
                     events.append(
                         self.event(
@@ -201,6 +220,24 @@ class Wire:
                 index = self.indices[key]
                 item = self.items[index]
                 args = change["function"].get("arguments", "")
+                if item["type"] in ("shell_call", "apply_patch_call"):
+                    try:
+                        parsed = json.loads(
+                            self.output.calls[change["index"]]["function"]["arguments"]
+                        )
+                    except (TypeError, ValueError):
+                        parsed = {}
+                    if not isinstance(parsed, dict):
+                        parsed = {}
+                    if item["type"] == "shell_call":
+                        item["action"] = {
+                            "commands": parsed.get("commands", []),
+                            "timeout_ms": parsed.get("timeout_ms"),
+                            "max_output_length": parsed.get("max_output_length"),
+                        }
+                    else:
+                        item["operation"] = parsed.get("operation", {})
+                    continue
                 if item["type"] == "custom_tool_call":
                     try:
                         input_value = json.loads(

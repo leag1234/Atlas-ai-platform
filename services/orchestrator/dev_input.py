@@ -41,6 +41,47 @@ def format_description(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+SHELL_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "commands": {"type": "array", "items": {"type": "string"}},
+        "timeout_ms": {"type": "integer"},
+        "max_output_length": {"type": "integer"},
+    },
+    "required": ["commands"],
+}
+APPLY_PATCH_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "operation": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": ["create_file", "update_file", "delete_file"],
+                },
+                "path": {"type": "string"},
+                "diff": {
+                    "type": "string",
+                    "description": "V4A diff; omitted for delete_file.",
+                },
+            },
+            "required": ["type", "path"],
+        }
+    },
+    "required": ["operation"],
+}
+CLIENT_TOOLS = {
+    "shell": (
+        "Run shell commands on the client and return their output.",
+        SHELL_PARAMETERS,
+    ),
+    "apply_patch": (
+        "Create, update or delete a file on the client with a diff.",
+        APPLY_PATCH_PARAMETERS,
+    ),
+}
+
 LOCAL_SHELL_PARAMETERS = {
     "type": "object",
     "properties": {
@@ -248,6 +289,78 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                     "content": tool_output_text(item["output"]),
                 }
             )
+        elif kind in ("shell_call", "apply_patch_call"):
+            response_fields(
+                item,
+                {
+                    "type",
+                    "id",
+                    "call_id",
+                    "action",
+                    "operation",
+                    "status",
+                    "environment",
+                    "caller",
+                    "created_by",
+                },
+                kind,
+            )
+            call_id = item.get("call_id")
+            payload = (
+                {
+                    "commands": (item.get("action") or {}).get("commands", []),
+                    **{
+                        k: v
+                        for k, v in (item.get("action") or {}).items()
+                        if k in ("timeout_ms", "max_output_length") and v is not None
+                    },
+                }
+                if kind == "shell_call"
+                else {"operation": item.get("operation")}
+            )
+            if not isinstance(call_id, str):
+                raise ValueError("invalid_tool_call")
+            call = {
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": "shell" if kind == "shell_call" else "apply_patch",
+                    "arguments": json.dumps(payload),
+                },
+            }
+            if messages and messages[-1]["role"] == "assistant":
+                messages[-1].setdefault("tool_calls", []).append(call)
+            else:
+                messages.append({"role": "assistant", "tool_calls": [call]})
+        elif kind in ("shell_call_output", "apply_patch_call_output"):
+            response_fields(
+                item,
+                {
+                    "type",
+                    "id",
+                    "call_id",
+                    "output",
+                    "status",
+                    "max_output_length",
+                    "caller",
+                    "created_by",
+                },
+                kind,
+            )
+            if not isinstance(item.get("call_id"), str):
+                raise ValueError("invalid_tool_output")
+            result = (
+                item.get("output")
+                if kind == "shell_call_output"
+                else {"status": item.get("status"), "output": item.get("output")}
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": item["call_id"],
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
+            )
         elif kind == "reasoning":
             # Stateless raw providers cannot consume another provider's opaque state.
             fields(item, "type id summary content encrypted_content status")
@@ -313,6 +426,21 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                         "name": "local_shell",
                         "description": "Run a local shell command.",
                         "parameters": LOCAL_SHELL_PARAMETERS,
+                    },
+                }
+            )
+        elif kind in CLIENT_TOOLS:
+            response_fields(
+                tool, {"type", "environment", "allowed_callers"}, kind + "_tool"
+            )
+            description, parameters = CLIENT_TOOLS[kind]
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": kind,
+                        "description": description,
+                        "parameters": parameters,
                     },
                 }
             )
