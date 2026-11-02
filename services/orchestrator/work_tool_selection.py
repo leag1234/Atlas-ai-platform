@@ -9,6 +9,7 @@ All execution still passes the scoped broker and worker checks.
 """
 
 import re
+from collections.abc import Callable
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -130,6 +131,8 @@ class WorkToolSelection:
         self.remote_enabled = group == "remote"
         self.group = group
         self.pending: str | None = None
+        # Set by the Work turn: true while the request asks for a file that was not produced yet.
+        self.deliverable_pending: Callable[[], bool] | None = None
         self.focus: str | None = None
         self.pending_focus: str | None = None
         self.verified = False
@@ -251,6 +254,19 @@ class WorkToolSelection:
                 group=selected.group,
                 allowed_tools=list(self.groups[selected.group]),
                 next_step="Use one of allowed_tools as focus, or omit focus.",
+            )
+        current = self.pending or self.group
+        if (
+            self.deliverable_pending is not None
+            and self.deliverable_pending()
+            and "publish_document" in self.groups.get(current, ())
+            and "publish_document" not in self.groups[selected.group]
+        ):
+            raise ToolSelectionError(
+                "a file was requested and not produced yet",
+                error="deliverable_group_required",
+                group=current,
+                next_step=f"Stay in the {current} group: read the source there, then call publish_document with the content. Do not switch groups before the file exists.",
             )
         self.pending, self.pending_focus = selected.group, selected.focus
         return dict(group=self.pending, tools=list((*CORE, *self.groups[self.pending])))
