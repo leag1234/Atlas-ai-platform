@@ -236,6 +236,111 @@ async def drive(
         )
 
 
+async def hosted_drive(
+    store: Store,
+    developer: str,
+    request_id: str,
+    plan: gateway.Plan,
+    output: Output,
+    deadline: float,
+    request: RawChatInput,
+    public_model: str,
+    key_id: str,
+    strict: bool,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Model turns with hosted searches in between, until the model answers or calls a client tool.
+
+    Each turn is its own provider call with its own reservation. Searches stream to the client
+    as hosted items when they run; the final turn's chunks follow with the summed usage.
+    """
+    from services.orchestrator.hosted_tools import MAX_ROUNDS, search_query, web_search
+
+    prompt_tokens = completion_tokens = 0
+    for turn in range(MAX_ROUNDS):
+        candidate = Output(request_id, request, str(output.base["model"]))
+        kept: list[dict[str, Any]] = []
+        async with aclosing(
+            drive(store, developer, request_id, plan, candidate, deadline)
+        ) as frames:
+            async for chunk in frames:
+                if "error" in chunk:
+                    yield chunk
+                    return
+                kept.append(chunk)
+        if candidate.usage:
+            prompt_tokens += int(candidate.usage.get("prompt_tokens", 0))
+            completion_tokens += int(candidate.usage.get("completion_tokens", 0))
+        calls = list(candidate.calls.values())
+        searches = [c for c in calls if c["function"]["name"] == "web_search"]
+        if not searches or len(searches) != len(calls) or turn == MAX_ROUNDS - 1:
+            output.choices = candidate.choices
+            output.served_by = candidate.served_by
+            output.privacy = candidate.privacy
+            output.usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            }
+            for chunk in kept:
+                if "usage" in chunk:
+                    chunk = dict(chunk, usage=output.usage)
+                yield chunk
+            return
+        results = []
+        for call in searches:
+            query = search_query(call["function"]["arguments"])
+            found = await web_search(
+                query, max(1.0, min(20.0, deadline - monotonic())), key_id
+            )
+            yield {
+                "hosted": {
+                    "type": "web_search_call",
+                    "id": call["id"],
+                    "query": query,
+                    "results": found["results"],
+                }
+            }
+            results.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": json.dumps(found, ensure_ascii=False),
+                }
+            )
+        assistant = {
+            "role": "assistant",
+            "content": candidate.text or None,
+            "tool_calls": calls,
+        }
+        request = RawChatInput.model_validate(
+            request.model_dump(by_alias=True, exclude_none=True)
+            | {
+                "messages": [
+                    *request.model_dump(by_alias=True, exclude_none=True)["messages"],
+                    assistant,
+                    *results,
+                ]
+            }
+        )
+        try:
+            plan = gateway.prepare_api(request, public_model, key_id, strict=strict)
+            request_id = store.reserve(
+                developer,
+                plan.reserved,
+                monetary=plan.reserved > 0 and not plan.unpriced,
+            )
+        except (LimitError, QuotaError, ValueError) as exc:
+            yield {
+                "error": {
+                    "type": "budget_limit"
+                    if isinstance(exc, QuotaError)
+                    else "invalid_request",
+                    "message": str(exc)[:200],
+                }
+            }
+            return
+
+
 async def chat(
     request: Request,
     protocol: str = "chat",
@@ -271,6 +376,7 @@ async def chat(
             except FileContentError as exc:
                 return error(str(exc), 400)
         parsed: ChatInput | RawChatInput
+        hosted: list[str] = []
         try:
             if protocol in ("messages", "responses") and raw_model is not None:
                 from packages.api_content import inline_files, normalize_chat
@@ -286,6 +392,7 @@ async def chat(
                 ChatInput.model_validate(text_only(converted))
                 normalize_chat(converted)
                 inline_files(converted["messages"])
+                hosted = converted.pop("_hosted", [])
                 parsed = RawChatInput.model_validate(dict(converted, model=raw_model))
             else:
                 parsed = (
@@ -333,6 +440,13 @@ async def chat(
                     )
                 parsed = parsed.model_copy(update={"messages": nudged})
         strict = getattr(request.state, "privacy", "standard") == "strict"
+        if hosted and strict:
+            # Strict privacy: no request leaves the owned infrastructure, so no search.
+            return error(
+                "web_search_unavailable_in_strict_privacy",
+                400,
+                "Web search is not available in strict privacy mode.",
+            )
         plan = (
             gateway.prepare_api(
                 parsed, public_model, request.state.api_key.id, strict=strict
@@ -415,6 +529,22 @@ async def chat(
         else None
     )
 
+    def run() -> AsyncGenerator[dict[str, Any], None]:
+        if not hosted or public_model is None:
+            return drive(store, developer, request_id, plan, output, deadline)
+        return hosted_drive(
+            store,
+            developer,
+            request_id,
+            plan,
+            output,
+            deadline,
+            cast(RawChatInput, parsed),
+            public_model,
+            request.state.api_key.id,
+            strict,
+        )
+
     async def chunks() -> AsyncGenerator[str, None]:
         # Chat streams hold one chunk back so the last JSON chunk before [DONE]
         # can name the model that served the answer (served_by).
@@ -424,9 +554,7 @@ async def chat(
                 yield (
                     "event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n"
                 )
-        async with aclosing(
-            drive(store, developer, request_id, plan, output, deadline)
-        ) as frames:
+        async with aclosing(run()) as frames:
             async for chunk in frames:
                 if wire:
                     try:
@@ -477,9 +605,7 @@ async def chat(
             media_type="text/event-stream",
             headers=headers,
         )
-    async with aclosing(
-        drive(store, developer, request_id, plan, output, deadline)
-    ) as frames:
+    async with aclosing(run()) as frames:
         async for frame in frames:
             if "error" in frame:
                 status = 503 if frame["error"]["type"] == "provider_quota" else 502

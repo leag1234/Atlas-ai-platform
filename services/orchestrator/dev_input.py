@@ -396,6 +396,7 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
         else:
             dropped("input", {"type:" + str(kind)})
     tools = []
+    hosted: list[str] = []
     for tool in value.get("tools", []):
         if not isinstance(tool, dict) or not isinstance(tool.get("type"), str):
             # A malformed tool is a client error; only unknown typed tools are dropped.
@@ -501,6 +502,13 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                         },
                     }
                 )
+        elif str(kind).startswith(("web_search", "web_search_preview")):
+            # Hosted tool: Atlas runs the search between model turns (hosted_tools).
+            from services.orchestrator.hosted_tools import SEARCH_FUNCTION
+
+            if "web_search" not in hosted:
+                hosted.append("web_search")
+                tools.append(SEARCH_FUNCTION)
         else:
             dropped("tools", {"type:" + str(kind)})
     choice = value.get("tool_choice", "auto")
@@ -533,6 +541,7 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
         "parallel_tool_calls": value.get("parallel_tool_calls", True),
         "tool_choice": choice,
         "reasoning_effort": reasoning.get("effort", "none"),
+        **({"_hosted": hosted} if hosted else {}),
     }
 
 
@@ -758,7 +767,13 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def responses(value: dict[str, Any]) -> ChatInput:
-    return ChatInput.model_validate(responses_body(value))
+    body = responses_body(value)
+    # Hosted tools run only on the routed key route; elsewhere they stay dropped.
+    if body.pop("_hosted", None):
+        body["tools"] = [
+            tool for tool in body["tools"] if tool["function"]["name"] != "web_search"
+        ]
+    return ChatInput.model_validate(body)
 
 
 def messages(value: dict[str, Any]) -> ChatInput:
@@ -768,6 +783,7 @@ def messages(value: dict[str, Any]) -> ChatInput:
 def text_only(body: dict[str, Any]) -> dict[str, Any]:
     """The body with media parts as text, for the checks of the text-only schema."""
     copy = dict(body, messages=[dict(m) for m in body["messages"]])
+    copy.pop("_hosted", None)
     for message in copy["messages"]:
         if isinstance(message.get("content"), list):
             message["content"] = "\n".join(

@@ -490,6 +490,108 @@ class KeyResponsesTests(unittest.TestCase):
                 self.assertEqual(reply.status_code, 404, reply.text)
                 self.assertEqual(reply.json()["error"]["code"], "storage_not_supported")
 
+    def test_hosted_web_search(self) -> None:
+        """web_search runs on Atlas between two model turns; the client sees a web_search_call item."""
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            if body["messages"][-1]["role"] == "tool":
+                delta: dict[str, Any] = {
+                    "content": "Paris has 2.1 million inhabitants [1]."
+                }
+                reason = "stop"
+            else:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_search",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query":"Paris population"}',
+                            },
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            for frame in (
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ):
+                yield ("data: " + json.dumps(frame) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        searched: list[str] = []
+
+        async def fake_search(
+            query: str, timeout: float, key_id: str
+        ) -> dict[str, Any]:
+            searched.append(query)
+            return {
+                "results": [
+                    {
+                        "title": "Paris",
+                        "url": "https://example.invalid/paris",
+                        "snippet": "2.1 million",
+                    }
+                ]
+            }
+
+        body = {
+            "model": "atlas-code",
+            "input": "How many people live in Paris?",
+            "store": False,
+            "tools": [{"type": "web_search"}],
+        }
+        with (
+            patch.object(gateway, "transport", transport),
+            patch("services.orchestrator.hosted_tools.web_search", fake_search),
+        ):
+            for stream in (False, True):
+                with self.subTest(stream=stream):
+                    reply = self.post(dict(body, stream=stream))
+                    self.assertEqual(reply.status_code, 200, reply.text)
+                    if stream:
+                        frames = [
+                            json.loads(line[6:])
+                            for line in reply.text.splitlines()
+                            if line.startswith("data: ")
+                        ]
+                        self.assertIn(
+                            "response.web_search_call.completed",
+                            [f["type"] for f in frames],
+                        )
+                        result = frames[-1]["response"]
+                    else:
+                        result = reply.json()
+                    self.assertEqual(
+                        [o["type"] for o in result["output"]],
+                        ["web_search_call", "message"],
+                    )
+                    self.assertEqual(
+                        result["output"][0]["action"]["query"], "Paris population"
+                    )
+                    self.assertIn(
+                        "2.1 million", result["output"][1]["content"][0]["text"]
+                    )
+                    self.assertEqual(result["usage"]["input_tokens"], 20)
+                    sent = self.inputs[-1]
+                    self.assertEqual(sent["tools"][0]["function"]["name"], "web_search")
+                    self.assertEqual(sent["messages"][-1]["role"], "tool")
+                    self.assertIn(
+                        "example.invalid/paris", sent["messages"][-1]["content"]
+                    )
+        self.assertEqual(searched, ["Paris population", "Paris population"])
+
+        strict = self.post(
+            dict(body), headers=dict(self.headers, **{"X-Atlas-Privacy": "strict"})
+        )
+        self.assertEqual(strict.status_code, 400, strict.text)
+        self.assertIn("strict", strict.text)
+
     def test_client_shell_and_apply_patch_tools(self) -> None:
         """The client-executed shell and apply_patch tools of the Responses API."""
         arguments = {
