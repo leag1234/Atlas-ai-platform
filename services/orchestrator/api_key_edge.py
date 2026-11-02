@@ -351,6 +351,46 @@ async def chat(request: Request) -> Response:
         )
 
 
+def not_stored(kind: str) -> JSONResponse:
+    from services.orchestrator.dev_input import STORAGE_MESSAGE
+
+    return JSONResponse(
+        {
+            "error": {
+                "message": STORAGE_MESSAGE,
+                "type": "invalid_request_error",
+                "param": None,
+                "code": "storage_not_supported",
+                "object": kind,
+            }
+        },
+        status_code=404,
+    )
+
+
+# Retrieval, deletion and cancellation need stored objects: nothing is stored.
+@app.api_route("/responses/{response_id}", methods=["GET", "DELETE"])
+async def stored_response(response_id: str) -> Response:
+    return not_stored("response")
+
+
+@app.api_route("/responses/{response_id}/{action}", methods=["GET", "POST"])
+async def stored_response_action(response_id: str, action: str) -> Response:
+    return not_stored("response")
+
+
+@app.api_route("/conversations", methods=["GET", "POST"])
+@app.api_route("/conversations/{path:path}", methods=["GET", "POST", "DELETE"])
+async def stored_conversation(path: str = "") -> Response:
+    return not_stored("conversation")
+
+
+@app.get("/chat/completions")
+@app.api_route("/chat/completions/{path:path}", methods=["GET", "POST", "DELETE"])
+async def stored_completion(path: str = "") -> Response:
+    return not_stored("chat.completion")
+
+
 @app.post("/responses/input_tokens")
 async def response_input_tokens(request: Request) -> Response:
     from packages.api_content import estimated_tokens

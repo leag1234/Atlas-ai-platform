@@ -468,6 +468,28 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 200, reply.text)
         self.assertEqual(self.inputs[-1]["max_tokens"], 16384)
 
+    def test_nothing_is_stored(self) -> None:
+        refused = self.post(dict(self.payload, previous_response_id="resp_1"))
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("does not store", refused.text)
+        stored = self.post(dict(self.payload, store=True))
+        self.assertEqual(stored.status_code, 200, stored.text)
+        self.assertIs(stored.json()["store"], False)
+        for method, path in (
+            ("GET", "/api/atlas/v1/responses/resp_1"),
+            ("DELETE", "/api/atlas/v1/responses/resp_1"),
+            ("POST", "/api/atlas/v1/responses/resp_1/cancel"),
+            ("GET", "/api/atlas/v1/responses/resp_1/input_items"),
+            ("POST", "/api/atlas/v1/conversations"),
+            ("GET", "/api/atlas/v1/conversations/conv_1/items"),
+            ("GET", "/api/atlas/v1/chat/completions"),
+            ("GET", "/api/atlas/v1/chat/completions/chatcmpl-1"),
+        ):
+            with self.subTest(method=method, path=path):
+                reply = self.client.request(method, path, headers=self.headers)
+                self.assertEqual(reply.status_code, 404, reply.text)
+                self.assertEqual(reply.json()["error"]["code"], "storage_not_supported")
+
     def test_client_shell_and_apply_patch_tools(self) -> None:
         """The client-executed shell and apply_patch tools of the Responses API."""
         arguments = {

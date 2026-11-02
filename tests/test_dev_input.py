@@ -49,13 +49,21 @@ class DevInputTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             responses(payload | {"client_metadata": {"turn": "t" * 65537}})
         extra: dict[str, Any]
+        # Nothing is stored (owner decision 2026-11-02): chaining, conversations and
+        # background runs are refused by name; store: true and include are accepted.
+        from services.orchestrator.dev_input import StorageRefusal
+
         for extra in (
-            {"store": True},
             {"previous_response_id": "private"},
-            {"include": ["other"]},
+            {"conversation": "conv_1"},
+            {"background": True},
         ):
-            with self.assertRaises(ValueError):
+            with self.assertRaises(StorageRefusal):
                 responses(payload | extra)
+        for extra in ({"store": True}, {"include": ["web_search_call.action.sources"]}):
+            self.assertEqual(responses(payload | extra).model, "atlas-code")
+        with self.assertRaises(ValueError):
+            responses(payload | {"include": "not-a-list"})
         self.assertEqual(
             responses({"model": "atlas-code", "input": "short"}).messages[0].content,
             "short",
