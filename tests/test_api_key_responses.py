@@ -468,6 +468,102 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 200, reply.text)
         self.assertEqual(self.inputs[-1]["max_tokens"], 16384)
 
+    def test_client_shell_and_apply_patch_tools(self) -> None:
+        """The client-executed shell and apply_patch tools of the Responses API."""
+        arguments = {
+            "shell": '{"commands":["pwd","ls"],"timeout_ms":1000}',
+            "apply_patch": '{"operation":{"type":"create_file","path":"a.txt","diff":"+hello"}}',
+        }
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            if body["messages"][-1]["role"] == "tool":
+                delta: dict[str, Any] = {"content": "done"}
+                reason = "stop"
+            else:
+                name = body["tools"][0]["function"]["name"]
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_client",
+                            "type": "function",
+                            "function": {"name": name, "arguments": arguments[name]},
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            for frame in (
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 2}},
+            ):
+                yield ("data: " + json.dumps(frame) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        with patch.object(gateway, "transport", transport):
+            for kind, output_item in (
+                (
+                    "shell",
+                    {
+                        "output": [
+                            {
+                                "stdout": "/tmp",
+                                "stderr": "",
+                                "outcome": {"type": "exit", "exit_code": 0},
+                            }
+                        ]
+                    },
+                ),
+                ("apply_patch", {"status": "completed", "output": "created a.txt"}),
+            ):
+                with self.subTest(kind=kind):
+                    reply = self.post(
+                        {
+                            "model": "atlas-code",
+                            "input": "fictional task",
+                            "store": False,
+                            "tools": [{"type": kind}],
+                        }
+                    )
+                    self.assertEqual(reply.status_code, 200, reply.text)
+                    call = reply.json()["output"][0]
+                    self.assertEqual(call["type"], kind + "_call")
+                    self.assertEqual(
+                        self.inputs[-1]["tools"][0]["function"]["name"], kind
+                    )
+                    if kind == "shell":
+                        self.assertEqual(call["action"]["commands"], ["pwd", "ls"])
+                        self.assertEqual(call["environment"], {"type": "local"})
+                    else:
+                        self.assertEqual(call["operation"]["path"], "a.txt")
+                    follow = self.post(
+                        {
+                            "model": "atlas-code",
+                            "store": False,
+                            "tools": [{"type": kind}],
+                            "input": [
+                                {"role": "user", "content": "fictional task"},
+                                call,
+                                {
+                                    "type": kind + "_call_output",
+                                    "call_id": call["call_id"],
+                                    **output_item,
+                                },
+                            ],
+                        }
+                    )
+                    self.assertEqual(follow.status_code, 200, follow.text)
+                    sent = self.inputs[-1]["messages"]
+                    self.assertEqual(
+                        sent[-2]["tool_calls"][0]["function"]["name"], kind
+                    )
+                    self.assertEqual(sent[-1]["role"], "tool")
+                    self.assertEqual(
+                        follow.json()["output"][0]["content"][0]["text"], "done"
+                    )
+
     def test_codex_160_tools_json_and_streaming(self) -> None:
         """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""
 
