@@ -17,6 +17,19 @@ class SemanticFieldError(ValueError):
     """A client option whose semantics cannot be preserved by this route."""
 
 
+STORAGE_MESSAGE = (
+    "Atlas does not store responses or conversations. Send the full conversation "
+    "history in input instead of previous_response_id or conversation."
+)
+
+
+class StorageRefusal(SemanticFieldError):
+    """A feature that needs responses stored on the server (owner decision 2026-11-02)."""
+
+    def __init__(self) -> None:
+        super().__init__(STORAGE_MESSAGE)
+
+
 def dropped(scope: str, names: set[str]) -> None:
     """Record only field names: request content must never reach compatibility logs."""
     if names:
@@ -136,17 +149,24 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
             "client_metadata",
             "text",
             "previous_response_id",
+            "conversation",
+            "background",
         },
         "request",
     )
-    for field in ("previous_response_id", "project_id"):
-        if field in value:
-            raise SemanticFieldError("unsupported field: " + field)
-    if value.get("store", False) is not False or value.get("include", []) not in (
-        [],
-        ["reasoning.encrypted_content"],
+    # Nothing is stored: chaining by id, conversations and background runs need storage.
+    # store: true is accepted and the response reports store: false.
+    if (
+        "previous_response_id" in value
+        or "conversation" in value
+        or value.get("background")
     ):
-        raise ValueError("unsupported_storage_or_include")
+        raise StorageRefusal()
+    if "project_id" in value:
+        raise SemanticFieldError("unsupported field: project_id")
+    include = value.get("include", [])
+    if not isinstance(include, list) or not all(isinstance(i, str) for i in include):
+        raise ValueError("invalid_include")
     # metadata follows the public limits; client_metadata is the client's own
     # bookkeeping (Codex grows a turn description in it), never forwarded to a
     # model, so it only gets a wide size bound.

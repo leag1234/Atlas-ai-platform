@@ -17,7 +17,12 @@ from pydantic import ValidationError
 import dev_gateway as gateway
 from services.orchestrator.dev_auth import QuotaError, Store
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
-from services.orchestrator.dev_input import SemanticFieldError, responses, messages
+from services.orchestrator.dev_input import (
+    SemanticFieldError,
+    StorageRefusal,
+    messages,
+    responses,
+)
 from services.orchestrator.dev_messages import Wire as MessagesWire
 from services.orchestrator.dev_responses import Wire
 
@@ -468,6 +473,8 @@ async def chat(
             },
             status_code=400,
         )
+    except StorageRefusal as exc:
+        return error("storage_not_supported", 400, str(exc))
     except SemanticFieldError as exc:
         return error("invalid_request", 400, str(exc))
     except ValidationError as exc:
