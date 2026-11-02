@@ -555,6 +555,33 @@ def cell_position(address: str) -> tuple[int, int]:
     return row, column
 
 
+def applicable_selector(
+    units: list[dict[str, Any]], selector: dict[str, Any]
+) -> dict[str, Any]:
+    """Drop selector parts that cannot apply to this document type.
+
+    Models often send a page range or a cell range for a plain text or word
+    document that has neither. Such a selector matches nothing and the model
+    repeats the same call until the loop guard stops the turn. A part is ignored
+    only when no unit of the document carries that kind of locator; a selector
+    that does apply keeps its strict behaviour.
+    """
+    kinds = {
+        key
+        for unit in units
+        if isinstance(unit.get("locator"), dict)
+        for key in unit["locator"]
+    }
+    ignored: set[str] = set()
+    if "page" not in kinds:
+        ignored |= {"page_start", "page_end"}
+    if "paragraph" not in kinds:
+        ignored |= {"paragraph_start", "paragraph_end"}
+    if "cell" not in kinds:
+        ignored |= {"sheet", "range"}
+    return {key: value for key, value in selector.items() if key not in ignored}
+
+
 def select_units(
     units: list[dict[str, Any]], selector: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -568,6 +595,7 @@ def select_units(
     }
     if set(selector) - allowed:
         raise ValueError("Unknown document selector")
+    selector = applicable_selector(units, selector)
     for kind in ("page", "paragraph"):
         start, end = (
             selector.get(kind + "_start", 1),
