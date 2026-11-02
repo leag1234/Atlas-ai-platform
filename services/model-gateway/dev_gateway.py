@@ -108,7 +108,7 @@ def prepare_api(
             stream_options={"include_usage": True},
         )
         if not payload.get("temperature"):
-            # Greedy sampling ignores top_p and top_k; Mistral refuses them with it.
+            # Greedy sampling ignores top_p and top_k, and one routed provider refuses them with it.
             payload.pop("top_p", None)
             payload.pop("top_k", None)
         seed_field = provider_settings.preset_value(target.provider, "seed_field")
