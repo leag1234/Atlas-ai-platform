@@ -9,7 +9,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A pull request that only changes documentation does not need the full test gate. This job decides.
+  # Fail-safe: anything unclear (a push, no changed file, a file outside docs/, a docs file that a test,
+  # a script or the code refers to) runs the full gate exactly as before.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Classify the change
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          docs_only=false
+          if [[ "$EVENT" == "pull_request" ]]; then
+            files="$(git diff --no-renames --name-only "$BASE...$HEAD")"
+            echo "Changed files:"; echo "$files"
+            if [[ -n "$files" ]]; then
+              docs_only=true
+              while IFS= read -r file; do
+                case "$file" in
+                  docs/*)
+                    if grep -rqF -- "$file" tests scripts Makefile services packages contracts prompts 2>/dev/null; then
+                      echo "$file is referenced by checks or code: full gate"
+                      docs_only=false; break
+                    fi ;;
+                  *) docs_only=false; break ;;
+                esac
+              done <<< "$files"
+            fi
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "docs_only=$docs_only"
+
+  # The checks that apply to documentation only.
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Documentation is in English
+        run: bash scripts/verify-m16.sh
+      - name: Secret scan
+        run: make scan-secrets
+
   tests:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # The test gate is split into parallel shards; the workflow (and the check
@@ -98,12 +152,23 @@ jobs:
           JUDGE_MODEL: ${{ secrets.JUDGE_MODEL }}
         run: make eval-smoke
 
-  # Single required check "ci" (branch ruleset and automerge): green only when
-  # every test shard succeeded.
+  # Single required check "ci" (branch ruleset and automerge): green only when the changes job
+  # succeeded and either the documentation checks (documentation-only change) or every test shard passed.
   ci:
-    needs: tests
+    needs: [changes, tests, docs]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: All shards passed
-        run: test "${{ needs.tests.result }}" = success
+      - name: Required checks passed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          TESTS: ${{ needs.tests.result }}
+          DOCS: ${{ needs.docs.result }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+        run: |
+          test "$CHANGES" = success
+          if [[ "$DOCS_ONLY" == "true" ]]; then
+            test "$DOCS" = success && test "$TESTS" = skipped
+          else
+            test "$TESTS" = success && test "$DOCS" = skipped
+          fi
