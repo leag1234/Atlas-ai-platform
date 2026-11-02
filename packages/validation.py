@@ -37,6 +37,10 @@ def describe_validation(error: ValidationError) -> str:
             measured = f"measured length {len(value)}"
         elif bounds and type(value) in (int, float):
             measured = f"measured value {value}"
+        elif kind == "extra_forbidden":
+            # Field names are client keys, not values: naming them tells the client what to remove.
+            path = ".".join(str(part) for part in failure["loc"])
+            measured = "unknown field " + path[:200]
         else:
             measured = "invalid field"
         descriptions.append(f"Request validation: {measured}; {bounds or kind}")

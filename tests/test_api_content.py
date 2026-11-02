@@ -68,3 +68,74 @@ class ApiContentTests(unittest.TestCase):
             },
         ]
         self.assertEqual(inline_files([dict(m) for m in messages]), messages)
+
+
+class ClientExtrasTests(unittest.TestCase):
+    """opencode and other OpenAI-compatible clients send optional fields the direct models ignore."""
+
+    def opencode_body(self) -> dict[str, Any]:
+        return {
+            "model": "raw/public-routing",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "prompt_cache_key": "session-1",
+            "store": False,
+            "top_p": 1,
+            "max_tokens": 1000,
+            "parallel_tool_calls": True,
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {"name": "read", "parameters": {"type": "object"}},
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            "messages": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "You are a coding agent.",
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                },
+                {"role": "user", "content": "Read main.py"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "I should read the file.",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "read", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_1", "content": "print(1)"},
+            ],
+        }
+
+    def test_opencode_request_validates(self) -> None:
+        from packages.api_content import drop_client_extras
+        from services.orchestrator.dev_chat import RawChatInput
+
+        parsed = RawChatInput.model_validate(drop_client_extras(self.opencode_body()))
+        self.assertEqual(len(parsed.messages), 4)
+        self.assertEqual(parsed.tools[0].function.name, "read")
+
+    def test_unknown_field_is_named(self) -> None:
+        from pydantic import ValidationError
+
+        from packages.api_content import drop_client_extras
+        from packages.validation import describe_validation
+        from services.orchestrator.dev_chat import RawChatInput
+
+        body = drop_client_extras(dict(self.opencode_body(), invented_option=1))
+        with self.assertRaises(ValidationError) as caught:
+            RawChatInput.model_validate(body)
+        self.assertIn(
+            "unknown field invented_option", describe_validation(caught.exception)
+        )
