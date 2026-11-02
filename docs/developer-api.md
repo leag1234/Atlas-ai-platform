@@ -221,7 +221,7 @@ is one euro) and the limits that apply to your key.
 
 | Status | Meaning | What to do |
 |---|---|---|
-| 400 `invalid_request` | A field is invalid (for example an unknown `reasoning_effort`) | Fix the request |
+| 400 `invalid_request` or `body_limit` | A field is invalid (for example an unknown `reasoning_effort`), the body is larger than 8 MiB, or the history has more than 4096 messages | Fix or shorten the request |
 | 401 | Missing, wrong, expired or revoked key | Check the key and its expiry date |
 | 409 `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
 | 429 with a JSON body | The budget of the key is reached; the message says whether day or week | Stop, or ask for a higher budget |
