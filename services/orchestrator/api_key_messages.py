@@ -105,6 +105,14 @@ async def messages(request: Request) -> Response:
                 missing_scope="project",
             )
             return error(403, "insufficient_scope", missing_scope="project")
+        from packages.api_content import assistant_name, assistant_route_message
+
+        if assistant_name(raw["model"]):
+            return error(
+                400,
+                assistant_route_message(),
+                code="assistant_model_on_chat_completions",
+            )
         try:
             model = select_public_model(raw["model"])
         except (KeyError, ValueError):
