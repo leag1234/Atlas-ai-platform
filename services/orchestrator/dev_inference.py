@@ -254,9 +254,12 @@ async def chat(
                 FileContentError,
                 drop_client_extras,
                 inline_files,
+                unsupported_option,
             )
 
             drop_client_extras(raw)
+            if (option := unsupported_option(raw)) is not None:
+                return error("unsupported_parameter: " + option, 400)
             try:
                 inline_files(raw.get("messages") or [])
             except FileContentError as exc:
