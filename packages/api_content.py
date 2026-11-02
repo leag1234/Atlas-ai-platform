@@ -1,6 +1,7 @@
 """Model names and attached files on the direct API routes (Responses, Messages, routed chat)."""
 
 import base64
+import json
 import binascii
 from pathlib import PurePath
 from collections.abc import Mapping
@@ -117,3 +118,9 @@ def drop_client_extras(body: dict[str, Any]) -> dict[str, Any]:
 def messages_protocol(headers: Mapping[str, str]) -> bool:
     """Clients of the Anthropic Messages format send its version header on every request."""
     return "anthropic-version" in headers
+
+
+def estimated_tokens(value: object) -> int:
+    """Input tokens estimated as UTF-8 bytes / 4, rounded up (no provider tokenizer is exposed)."""
+    size = len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
+    return -(-size // 4)
