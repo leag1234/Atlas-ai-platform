@@ -166,32 +166,97 @@ def require(request: Request, scope: str) -> Response | None:
     return error(403, "insufficient_scope", missing_scope=scope)
 
 
-@app.get("/models")
-def models(request: Request) -> dict[str, object]:
-    from api_routing import EFFORTS, PUBLIC_MODELS
+def model_names(request: Request) -> list[str]:
+    from api_routing import PUBLIC_MODELS
 
     scopes = request.state.api_key.scopes
     # Assistant names keep the full Atlas assistant (tools, search, memory).
-    names = (["atlas", *PROFILES] if "assistant" in scopes else []) + (
+    return (["atlas", *PROFILES] if "assistant" in scopes else []) + (
         list(PUBLIC_MODELS) if "model" in scopes else []
     )
+
+
+def anthropic_client(request: Request) -> bool:
+    # Every Anthropic client sends anthropic-version; the model objects differ by format.
+    return "anthropic-version" in request.headers
+
+
+def openai_model(name: str) -> dict[str, object]:
+    from api_routing import EFFORTS, PUBLIC_MODELS
+
     return {
-        "object": "list",
-        "data": [
-            {
-                "id": name,
-                "object": "model",
-                "created": 0,
-                "owned_by": "atlas",
-                **(
-                    {"reasoning_efforts": list(EFFORTS)}
-                    if name in PUBLIC_MODELS
-                    else {}
-                ),
-            }
-            for name in names
-        ],
+        "id": name,
+        "object": "model",
+        "created": 0,
+        "owned_by": "atlas",
+        **({"reasoning_efforts": list(EFFORTS)} if name in PUBLIC_MODELS else {}),
     }
+
+
+def anthropic_model(name: str) -> dict[str, object]:
+    return {
+        "type": "model",
+        "id": name,
+        "display_name": name,
+        "created_at": "1970-01-01T00:00:00Z",
+    }
+
+
+@app.get("/models", response_model=None)
+def models(request: Request) -> Response | dict[str, object]:
+    names = model_names(request)
+    if not anthropic_client(request):
+        return {"object": "list", "data": [openai_model(name) for name in names]}
+    # Anthropic lists are paginated with limit, after_id and before_id.
+    query = request.query_params
+    try:
+        limit = int(query.get("limit", "20"))
+    except ValueError:
+        limit = 0
+    if not 1 <= limit <= 1000:
+        return anthropic_error(400, "invalid_request_error", "limit: 1 to 1000")
+    start, stop = 0, len(names)
+    if "after_id" in query and query["after_id"] in names:
+        start = names.index(query["after_id"]) + 1
+    if "before_id" in query and query["before_id"] in names:
+        stop = names.index(query["before_id"])
+        start = max(start, stop - limit)
+    page = names[start:stop][:limit]
+    return {
+        "data": [anthropic_model(name) for name in page],
+        "has_more": start + len(page) < stop,
+        "first_id": page[0] if page else None,
+        "last_id": page[-1] if page else None,
+    }
+
+
+@app.get("/models/{model_id}", response_model=None)
+def model(model_id: str, request: Request) -> Response | dict[str, object]:
+    if model_id not in model_names(request):
+        message = f"The model {model_id!r} does not exist"
+        if anthropic_client(request):
+            return anthropic_error(404, "not_found_error", message)
+        return JSONResponse(
+            {
+                "error": {
+                    "message": message,
+                    "type": "invalid_request_error",
+                    "param": None,
+                    "code": "model_not_found",
+                }
+            },
+            status_code=404,
+        )
+    if anthropic_client(request):
+        return anthropic_model(model_id)
+    return openai_model(model_id)
+
+
+def anthropic_error(status: int, kind: str, message: str) -> Response:
+    return JSONResponse(
+        {"type": "error", "error": {"type": kind, "message": message}},
+        status_code=status,
+    )
 
 
 @app.get("/usage")

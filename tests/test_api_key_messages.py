@@ -354,6 +354,39 @@ class MessagesTests(unittest.TestCase):
         self.assert_error(self.post(json=[]), 400, "invalid_request_error")
         self.assert_error(self.post(content=b"{"), 400, "invalid_request_error")
 
+    def test_model_list_and_retrieval_in_both_formats(self) -> None:
+        openai = {"Authorization": "Bearer " + self.key}
+        anthropic = {"x-api-key": self.key, "anthropic-version": "2023-06-01"}
+        listed = self.client.get("/api/atlas/v1/models", headers=openai).json()
+        self.assertEqual(listed["object"], "list")
+        names = [entry["id"] for entry in listed["data"]]
+        self.assertIn("atlas-dev", names)
+        one = self.client.get("/api/atlas/v1/models/atlas-dev", headers=openai)
+        self.assertEqual(one.status_code, 200)
+        self.assertEqual(one.json()["object"], "model")
+        missing = self.client.get("/api/atlas/v1/models/no-such-model", headers=openai)
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.json()["error"]["code"], "model_not_found")
+
+        page = self.client.get("/api/atlas/v1/models?limit=2", headers=anthropic).json()
+        self.assertEqual([m["type"] for m in page["data"]], ["model", "model"])
+        self.assertEqual(page["first_id"], names[0])
+        self.assertEqual(page["last_id"], names[1])
+        self.assertTrue(page["has_more"])
+        rest = self.client.get(
+            "/api/atlas/v1/models?limit=1000&after_id=" + page["last_id"],
+            headers=anthropic,
+        ).json()
+        self.assertEqual([m["id"] for m in rest["data"]], names[2:])
+        self.assertFalse(rest["has_more"])
+        one = self.client.get("/api/atlas/v1/models/atlas-dev", headers=anthropic)
+        self.assertEqual((one.json()["type"], one.json()["id"]), ("model", "atlas-dev"))
+        missing = self.client.get(
+            "/api/atlas/v1/models/no-such-model", headers=anthropic
+        )
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.json()["error"]["type"], "not_found_error")
+
     def test_models_resolve_to_public_usage_routes(self) -> None:
         for name, expected in (
             ("atlas-code", "atlas-code"),
