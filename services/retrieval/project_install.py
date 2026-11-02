@@ -110,6 +110,20 @@ def upgrade_work(dsn: str) -> None:
         db.execute(Path(__file__).with_name("project_sharing_schema.sql").read_text())
         db.execute(Path(__file__).with_name("user_memory_schema.sql").read_text())
         db.execute(Path(__file__).with_name("project_schedule_schema.sql").read_text())
+        db.execute(membership_function_sql())
+
+
+def membership_function_sql() -> str:
+    """Guest auto-membership function of the base schema, replayable on upgrade.
+
+    Installations made before guest project mode lack it, and identity resolution
+    then fails with dependency_unavailable for every user.
+    """
+    schema = Path(__file__).with_name("project_schema.sql").read_text()
+    start = schema.index("CREATE FUNCTION atlas_projects.ensure_member(")
+    grant = "GRANT EXECUTE ON FUNCTION atlas_projects.ensure_member(text) TO atlas_project_app;"
+    end = schema.index(grant, start) + len(grant)
+    return schema[start:end].replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)
 
 
 def provision(
