@@ -61,8 +61,9 @@ class SamplingTests(unittest.TestCase):
                 )
 
     def test_top_p_is_not_sent_with_greedy_sampling(self) -> None:
-        for body in plans(RawChatInput.model_validate(raw(top_p=0.9))):
+        for body in plans(RawChatInput.model_validate(raw(top_p=0.9, top_k=40))):
             self.assertNotIn("top_p", body)
+            self.assertNotIn("top_k", body)
         for body in plans(RawChatInput.model_validate(raw(top_p=0.9, temperature=0.3))):
             self.assertEqual(body["top_p"], 0.9)
 
