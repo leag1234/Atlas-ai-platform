@@ -703,6 +703,12 @@ async def process_work(
                     bool(execution.session.get("repository_id")),
                 )
             )
+            from packages.file_intent import produces_file
+
+            file_requested = produces_file(request.user_text, include_images=False)
+            tools.selection.deliverable_pending = lambda: (
+                file_requested and not tools.deliverables
+            )
             if os.environ.get("ATLAS_REMOTE_RUNNERS") == "1":
                 targets = await broker.call(
                     "remote", dict(execution.fence(), operation="list", arguments={})

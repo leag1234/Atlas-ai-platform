@@ -191,3 +191,44 @@ class DocumentAvailabilityTests(unittest.IsolatedAsyncioTestCase):
                 )
             ],
         )
+
+
+class DeliverableGroupGuardTests(unittest.TestCase):
+    def selection(self, pending: bool) -> WorkToolSelection:
+        selection = WorkToolSelection("documents")
+        selection.deliverable_pending = lambda: pending
+        return selection
+
+    def test_switch_away_from_publication_is_refused_until_the_file_exists(
+        self,
+    ) -> None:
+        from services.orchestrator.work_tool_selection import ToolSelectionError
+
+        selection = self.selection(True)
+        with self.assertRaises(ToolSelectionError) as refused:
+            selection.switch(json.dumps({"group": "files"}))
+        self.assertEqual(
+            refused.exception.result["error"], "deliverable_group_required"
+        )
+        self.assertIn("publish_document", refused.exception.result["next_step"])
+        self.assertEqual(selection.group, "documents")
+        self.assertIsNone(selection.pending)
+
+    def test_switch_is_free_once_the_file_exists_or_none_was_requested(self) -> None:
+        self.assertEqual(
+            self.selection(False).switch(json.dumps({"group": "files"}))["group"],
+            "files",
+        )
+        plain = WorkToolSelection("documents")
+        self.assertEqual(plain.switch(json.dumps({"group": "files"}))["group"], "files")
+
+    def test_switch_to_another_publishing_group_and_from_code_stay_allowed(
+        self,
+    ) -> None:
+        self.assertEqual(
+            self.selection(True).switch(json.dumps({"group": "spreadsheets"}))["group"],
+            "spreadsheets",
+        )
+        code = WorkToolSelection("code")
+        code.deliverable_pending = lambda: True
+        self.assertEqual(code.switch(json.dumps({"group": "files"}))["group"], "files")
