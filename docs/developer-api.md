@@ -60,6 +60,21 @@ names the route that answered. The context window is 1,048,576 tokens on the fir
 the fallback. `GET /models` also lists dated aliases (`atlas-code-2026-10-30`, `atlas-chat-2026-10-30`)
 that name the same routes.
 
+### The model name in a request
+
+Atlas accepts any model name and treats every name it does not know as `atlas-code`: `gpt-5-codex`,
+`claude-sonnet-5-5` or a typo all give `atlas-code`. Only `atlas-chat` (and the dated aliases listed by
+`GET /models`) select anything else. This was checked on Chat Completions, Responses and Messages.
+
+- **Chat Completions**: `model` is optional and defaults to `atlas-code`.
+- **Responses and Messages**: `model` is required, and a request without one answers `400`. Codex CLI and
+  Claude Code always send one, so they work even with their default names.
+
+Setting the model explicitly is still recommended: `model = "atlas-code"` in Codex (it also needs the
+context-window lines of section 4, because Codex has no metadata for this model) and the
+`ANTHROPIC_MODEL` variables for Claude Code. It makes the choice visible in your configuration, and it
+avoids a typo silently ending up on the wrong model. Check `served_by` in the first responses.
+
 ### Which reasoning effort
 
 `reasoning_effort` accepts `none`, `low`, `medium` and `high`, in increasing order. `none` means no
