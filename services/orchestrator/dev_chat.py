@@ -60,7 +60,9 @@ class RawMessage(Strict):
 class RawChatInput(Sampling):
     """Raw gateway request: retain OpenAI content parts instead of normalizing them."""
 
-    n: int = Field(default=1, ge=1, le=1, exclude=True)
+    n: int = Field(default=1, ge=1, le=8)
+    logprobs: bool = False
+    top_logprobs: int | None = Field(default=None, ge=0, le=20)
 
     @model_validator(mode="before")
     @classmethod
@@ -93,6 +95,18 @@ class RawChatInput(Sampling):
         return False
 
 
+class Choice:
+    """One answer of a completion; n > 1 asks the provider for several."""
+
+    def __init__(self) -> None:
+        self.text = ""
+        self.calls: dict[int, dict[str, Any]] = {}
+        # Provider index -> Atlas index, for providers that reuse index 0.
+        self.call_slots: dict[int, int] = {}
+        self.reason: str | None = None
+        self.logprobs: list[Any] = []
+
+
 class Output:
     def __init__(
         self,
@@ -106,14 +120,38 @@ class Output:
             "created": int(time.time()),
         }
         self.request = request
-        self.text = ""
-        self.calls: dict[int, dict[str, Any]] = {}
-        # Provider index -> Atlas index, for providers that reuse index 0.
-        self.call_slots: dict[int, int] = {}
-        self.reason: str | None = None
+        self.choices: dict[int, Choice] = {0: Choice()}
         self.usage: dict[str, Any] | None = None
         self.served_by: str | None = None
         self.privacy: str | None = None
+
+    # The first choice keeps the single-answer interface used by every route.
+    @property
+    def text(self) -> str:
+        return self.choices[0].text
+
+    @text.setter
+    def text(self, value: str) -> None:
+        self.choices[0].text = value
+
+    @property
+    def calls(self) -> dict[int, dict[str, Any]]:
+        return self.choices[0].calls
+
+    @calls.setter
+    def calls(self, value: dict[int, dict[str, Any]]) -> None:
+        self.choices[0].calls = value
+
+    @property
+    def reason(self) -> str | None:
+        return self.choices[0].reason
+
+    @reason.setter
+    def reason(self, value: str | None) -> None:
+        self.choices[0].reason = value
+
+    def wanted(self) -> int:
+        return getattr(self.request, "n", 1)
 
     def feed(self, frame: dict[str, Any]) -> dict[str, Any]:
         chunk: dict[str, Any] = dict(
@@ -133,6 +171,10 @@ class Output:
                 self.privacy = str(frame["privacy"])
                 chunk["privacy"] = self.privacy
         for choice in frame["choices"]:
+            position = choice.get("index", 0)
+            if type(position) is not int or not 0 <= position < self.wanted():
+                raise ValueError("invalid_choice_index")
+            st = self.choices.setdefault(position, Choice())
             delta = choice["delta"]
             clean: dict[str, Any] = {}
             if "role" in delta:
@@ -143,7 +185,7 @@ class Output:
             if content is not None:
                 if not isinstance(content, str):
                     raise ValueError("invalid_content")
-                self.text += content
+                st.text += content
                 clean["content"] = content
             changes = []
             for call in delta.get("tool_calls") or []:
@@ -152,21 +194,21 @@ class Output:
                     raise ValueError("invalid_call_index")
                 # Some providers stream every complete call at index 0 with a new
                 # id: a new id on a slot already holding another call opens a call.
-                slot = self.call_slots.get(index, index)
+                slot = st.call_slots.get(index, index)
                 new_id = call.get("id")
                 if (
                     isinstance(new_id, str)
                     and new_id
-                    and slot in self.calls
-                    and self.calls[slot]["id"]
-                    and new_id != self.calls[slot]["id"]
+                    and slot in st.calls
+                    and st.calls[slot]["id"]
+                    and new_id != st.calls[slot]["id"]
                 ):
-                    slot = len(self.calls)
-                self.call_slots[index] = slot
+                    slot = len(st.calls)
+                st.call_slots[index] = slot
                 index = slot
-                if index > len(self.calls) or index >= 64:
+                if index > len(st.calls) or index >= 64:
                     raise ValueError("invalid_call_index")
-                target = self.calls.setdefault(
+                target = st.calls.setdefault(
                     index,
                     {
                         "id": "",
@@ -209,37 +251,33 @@ class Output:
                 changes.append(update)
             if changes:
                 clean["tool_calls"] = changes
-            if len(self.text) > 131072:
-                raise LimitError("content_limit", len(self.text), 131072, "characters")
+            if len(st.text) > 131072:
+                raise LimitError("content_limit", len(st.text), 131072, "characters")
             reason = choice["finish_reason"]
             if reason is not None:
-                self.reason = (
-                    "tool_calls" if self.calls and reason == "stop" else reason
-                )
-                ids = [c["id"] for c in self.calls.values()]
+                st.reason = "tool_calls" if st.calls and reason == "stop" else reason
+                ids = [c["id"] for c in st.calls.values()]
                 if len(set(ids)) != len(ids) or any(not i for i in ids):
                     raise ValueError("invalid_call_id")
                 if reason != "length":
                     choice_mode = self.request.tool_choice
                     if (
-                        (choice_mode == "none" and self.calls)
-                        or (choice_mode == "required" and not self.calls)
-                        or (
-                            not self.request.parallel_tool_calls and len(self.calls) > 1
-                        )
+                        (choice_mode == "none" and st.calls)
+                        or (choice_mode == "required" and not st.calls)
+                        or (not self.request.parallel_tool_calls and len(st.calls) > 1)
                     ):
                         raise ValueError("tool_choice_violated")
                     if isinstance(choice_mode, dict) and (
-                        not self.calls
+                        not st.calls
                         or any(
                             c["function"]["name"] != choice_mode["function"]["name"]
-                            for c in self.calls.values()
+                            for c in st.calls.values()
                         )
                     ):
                         raise ValueError("tool_choice_violated")
-                    if bool(self.calls) != (self.reason == "tool_calls"):
+                    if bool(st.calls) != (st.reason == "tool_calls"):
                         raise ValueError("inconsistent_finish")
-                    for c in self.calls.values():
+                    for c in st.calls.values():
                         if c["function"]["name"] not in {
                             t.function.name for t in self.request.tools
                         } or not isinstance(
@@ -249,32 +287,57 @@ class Output:
                         json.dumps(
                             json.loads(c["function"]["arguments"]), allow_nan=False
                         )
-            chunk["choices"].append(
-                {"index": 0, "delta": clean, "finish_reason": self.reason}
-            )
+            entry: dict[str, Any] = {
+                "index": position,
+                "delta": clean,
+                "finish_reason": st.reason,
+            }
+            if getattr(self.request, "logprobs", False):
+                content_logprobs = (choice.get("logprobs") or {}).get("content") or []
+                st.logprobs.extend(content_logprobs)
+                entry["logprobs"] = {"content": content_logprobs}
+            chunk["choices"].append(entry)
         return chunk
 
     def validation_error(self) -> str | None:
         fmt = self.request.response_format
-        if fmt.type != "text":
-            return validate_json(
-                self.text, fmt.json_schema.schema_ if fmt.json_schema else None
-            )
-        if self.request.tool_choice == "none" and not self.text.strip():
-            return "empty_text"
+        for st in self.choices.values():
+            if fmt.type != "text":
+                problem = validate_json(
+                    st.text, fmt.json_schema.schema_ if fmt.json_schema else None
+                )
+                if problem is not None:
+                    return problem
+            elif self.request.tool_choice == "none" and not st.text.strip():
+                return "empty_text"
         return None
 
     def result(self) -> dict[str, Any]:
-        if self.reason is None or self.usage is None:
+        if (
+            any(st.reason is None for st in self.choices.values())
+            or len(self.choices) != self.wanted()
+            or self.usage is None
+        ):
             raise ValueError("incomplete_response")
-        message: dict[str, Any] = {"role": "assistant", "content": self.text or None}
-        if self.calls:
-            message["tool_calls"] = list(self.calls.values())
+        choices = []
+        for position in sorted(self.choices):
+            st = self.choices[position]
+            message: dict[str, Any] = {"role": "assistant", "content": st.text or None}
+            if st.calls:
+                message["tool_calls"] = list(st.calls.values())
+            entry: dict[str, Any] = {
+                "index": position,
+                "message": message,
+                "finish_reason": st.reason,
+            }
+            if getattr(self.request, "logprobs", False):
+                entry["logprobs"] = {"content": st.logprobs}
+            choices.append(entry)
         result = dict(
             self.base,
             object="chat.completion",
             usage=self.usage,
-            choices=[{"index": 0, "message": message, "finish_reason": self.reason}],
+            choices=choices,
         )
         if self.served_by:
             result["served_by"] = self.served_by

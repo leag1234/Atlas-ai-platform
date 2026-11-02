@@ -73,6 +73,11 @@ def prepare_api(
 ) -> Plan:
     """Freeze a public usage route; raw IDs never enter this decision."""
     body = request.model_dump(exclude_none=True, by_alias=True)
+    # One choice without log probabilities is the provider default: keep the body unchanged.
+    if body.get("n") == 1:
+        body.pop("n")
+    if body.get("logprobs") is False:
+        body.pop("logprobs")
     # Same wire cleanup as prepare(): strict providers reject empty tool_calls,
     # empty tool lists and an unrequested response_format with HTTP 422.
     if "response_format" not in request.model_fields_set:
@@ -84,6 +89,8 @@ def prepare_api(
         for key in ("tools", "tool_choice", "parallel_tool_calls"):
             body.pop(key, None)
     effort = str(body.get("reasoning_effort", "none"))
+    # Several choices (n) multiply the output the provider may bill.
+    outgoing = request.max_tokens * getattr(request, "n", 1)
     _, entries = targets(usage, effort, strict=strict)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
     # Estimate tokens as bytes / 4. The reservation remains conservative in
@@ -140,7 +147,7 @@ def prepare_api(
     plans = [one(entry) for entry in fitting]
     bound = sum(
         (
-            plan.charge(min(incoming, target.context), request.max_tokens)
+            plan.charge(min(incoming, target.context), outgoing)
             for plan, target in zip(plans, fitting)
         ),
         0,
@@ -150,9 +157,7 @@ def prepare_api(
     primary = replace(
         plans[0],
         reserved=bound,
-        attempt_bound=plans[0].charge(
-            min(incoming, fitting[0].context), request.max_tokens
-        ),
+        attempt_bound=plans[0].charge(min(incoming, fitting[0].context), outgoing),
     )
     if len(plans) > 1:
         fallback = plans[1]
@@ -163,7 +168,7 @@ def prepare_api(
             fallback=replace(
                 fallback,
                 attempt_bound=fallback.charge(
-                    min(incoming, fitting[1].context), request.max_tokens
+                    min(incoming, fitting[1].context), outgoing
                 ),
             ),
         )
@@ -379,20 +384,21 @@ def retry(plan: Plan, error: str, remaining: int) -> Plan:
 
 class Usage(BaseModel):
     prompt_tokens: int = Field(ge=0, le=1048576, strict=True)
-    completion_tokens: int = Field(ge=0, le=32768, strict=True)
+    completion_tokens: int = Field(ge=0, le=8 * 32768, strict=True)
     total_tokens: int | None = Field(default=None, ge=0, strict=True)
     prompt_tokens_details: dict[str, int] | None = None
 
 
 class Choice(BaseModel):
-    index: Literal[0]
+    index: int = Field(ge=0, le=7, strict=True)
     delta: dict[str, Any]
     finish_reason: Literal["stop", "tool_calls", "length"] | None = None
+    logprobs: dict[str, Any] | None = None
 
 
 class Frame(BaseModel):
     error: None = None
-    choices: list[Choice] = Field(max_length=1)
+    choices: list[Choice] = Field(max_length=8)
     usage: Usage | None = None
 
 
@@ -432,7 +438,9 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
 async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
-    buffer, total, done, finished = b"", 0, False, False
+    buffer, total, done = b"", 0, False
+    wanted = int(json.loads(plan.body).get("n", 1))
+    finished: set[int] = set()
     usage: Usage | None = None
     async with aclosing(transport(plan)) as chunks:
         async for piece in chunks:
@@ -460,7 +468,7 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                             if usage is not None
                             else None,
                         )
-                        maximum = json.loads(plan.body)["max_tokens"]
+                        maximum = json.loads(plan.body)["max_tokens"] * wanted
                         if frame.usage.completion_tokens > maximum:
                             raise LimitError(
                                 "output_budget",
@@ -472,9 +480,10 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                         raise ValueError("duplicate_usage")
                     usage = frame.usage
                 for choice in frame.choices:
-                    if finished:
+                    if choice.index in finished or choice.index >= wanted:
                         raise ValueError("delta_after_finish")
-                    finished = choice.finish_reason is not None
+                    if choice.finish_reason is not None:
+                        finished.add(choice.index)
                     # Routed and preset providers may stream typed content parts
                     # (text, reasoning, references); keep only the answer text.
                     if (
@@ -484,8 +493,14 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                             choice.delta["content"]
                         )
                 if frame.choices:
-                    yield {"choices": [c.model_dump() for c in frame.choices]}
-    if buffer.strip() or not done or not finished or usage is None:
+                    yield {
+                        "choices": [
+                            c.model_dump(exclude_none=True)
+                            | {"finish_reason": c.finish_reason}
+                            for c in frame.choices
+                        ]
+                    }
+    if buffer.strip() or not done or len(finished) != wanted or usage is None:
         raise ValueError("incomplete_provider_stream")
     yield {
         "choices": [],

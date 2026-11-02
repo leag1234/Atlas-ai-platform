@@ -89,8 +89,7 @@ async def validated_drive(
                             pending.append(chunk)
                 problem = candidate.validation_error()
                 if problem is None:
-                    output.text, output.calls = candidate.text, candidate.calls
-                    output.reason = candidate.reason
+                    output.choices = candidate.choices
                     output.usage = {
                         "prompt_tokens": incoming,
                         "completion_tokens": outgoing,

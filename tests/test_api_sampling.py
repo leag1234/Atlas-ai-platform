@@ -79,11 +79,11 @@ class SamplingTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             RawChatInput.model_validate(raw(max_completion_tokens=33))
 
-    def test_out_of_range_and_several_choices_are_refused(self) -> None:
+    def test_out_of_range_options_are_refused(self) -> None:
         for options in (
             {"top_p": 1.5},
             {"stop": ["a"] * 5},
-            {"n": 2},
+            {"n": 9},
             {"frequency_penalty": 3},
         ):
             with self.subTest(options=options), self.assertRaises(ValidationError):
@@ -92,8 +92,7 @@ class SamplingTests(unittest.TestCase):
 
     def test_options_no_provider_applies_are_refused_by_name(self) -> None:
         self.assertEqual(unsupported_option(raw(logit_bias={"1": -1})), "logit_bias")
-        self.assertEqual(unsupported_option(raw(logprobs=True)), "logprobs")
-        self.assertIsNone(unsupported_option(raw(logprobs=False, logit_bias={})))
+        self.assertIsNone(unsupported_option(raw(logprobs=True, logit_bias={})))
         # Harmless options without effect are still dropped, not refused.
         body = drop_client_extras(raw(store=False, user="u", service_tier="auto"))
         self.assertEqual(RawChatInput.model_validate(body).max_tokens, 20)
