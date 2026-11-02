@@ -2,7 +2,8 @@
   "version": "2026-10-30",
   "aliases": {
     "atlas-code-2026-10-30": "atlas-code",
-    "atlas-chat-2026-10-30": "atlas-chat"
+    "atlas-chat-2026-10-30": "atlas-chat",
+    "atlas-dev": "atlas-code"
   },
   "usages": {
     "atlas-code": {

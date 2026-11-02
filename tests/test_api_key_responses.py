@@ -255,6 +255,13 @@ class KeyResponsesTests(unittest.TestCase):
                 self.assertEqual(result["model"], selected)
         reply = self.post(self.payload | {"model": "raw/internal-only"})
         self.assertEqual(reply.status_code, 400)
+        from packages.profiles import PROFILES
+
+        for name in ("atlas", *PROFILES):
+            with self.subTest(assistant=name):
+                reply = self.post(self.payload | {"model": name})
+                self.assertEqual(reply.status_code, 400)
+                self.assertIn("/chat/completions", reply.text)
 
     def test_chat_completions_reports_public_usage_and_provider(self) -> None:
         reply = self.client.post(

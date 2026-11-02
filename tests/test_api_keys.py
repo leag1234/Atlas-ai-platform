@@ -628,6 +628,7 @@ class KeyTests(unittest.TestCase):
                 [
                     "atlas-code",
                     "atlas-chat",
+                    "atlas-dev",
                     "atlas-code-2026-10-30",
                     "atlas-chat-2026-10-30",
                 ],

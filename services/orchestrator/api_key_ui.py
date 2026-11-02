@@ -24,7 +24,7 @@ class Create(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     lifetime_days: Literal[7, 21, 30, 90, 365] = 90
     scopes: list[Literal["assistant", "model"]] = Field(
-        default=["assistant"], min_length=1
+        default=["assistant", "model"], min_length=1
     )
     login: str | None = Field(default=None, min_length=1, max_length=320)
 

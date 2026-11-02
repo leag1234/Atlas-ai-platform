@@ -31,6 +31,14 @@ async def respond(request: Request) -> Response:
     except (ValueError, TimeoutError, RecursionError):
         return error(400, "invalid_request")
 
+    from packages.api_content import assistant_name, assistant_route_message
+
+    if assistant_name(raw["model"]):
+        return error(
+            400,
+            "assistant_model_on_chat_completions",
+            message=assistant_route_message(),
+        )
     try:
         public_model = select_public_model(raw["model"])
     except ValueError:
