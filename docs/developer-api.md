@@ -51,11 +51,16 @@ receive token usage in the final chunk before `[DONE]`.
 
 | Model | Use it for | effort `none` (default) | effort `low`, `medium`, `high` |
 |---|---|---|---|
-| `atlas-code` | development: code, agents, tool calls | GLM 5.3 Flash | GLM 5.3 |
-| `atlas-chat` | everything else: conversation, writing, analysis | GLM 5.3 Flash | GLM 5.3 |
+| `atlas-code` | development (code, agents, tool calls) | GLM 5.3 Flash | GLM 5.3 |
+| `atlas-chat` | any other task (support tickets, summaries, translation, writing, analysis) | GLM 5.3 Flash | GLM 5.3 |
 
-Both models try the same providers first. They differ only in the fallback used when the first provider
-is unavailable: DeepSeek V4 Flash for `atlas-code`, GLM 5.2 for `atlas-chat`. `served_by` in the response
+The two names are routes, not specializations. Atlas adds no coding instruction to a request, and both
+names reach the same models first (measured: the same message costs the same number of prompt tokens
+on both). They differ only in the fallback used when the first provider is unavailable: DeepSeek V4
+Flash for `atlas-code`, GLM 5.2 for `atlas-chat`. Any task works with either name; use `atlas-chat` for
+work that is not development, so the configuration says what you mean and the fallback is a general
+model. GLM 5.2 costs about four times more per token than DeepSeek V4 Flash, which matters for large
+volumes on days when the fallback is used. `served_by` in the response
 names the route that answered. The context window is 1,048,576 tokens on the first route and 256,000 on
 the fallback. `GET /models` also lists dated aliases (`atlas-code-2026-10-30`, `atlas-chat-2026-10-30`)
 that name the same routes.
