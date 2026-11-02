@@ -118,6 +118,19 @@ def output_shape(text: str) -> dict[str, object]:
         "distinct_lines": len(counts),
         "top_line_repeats": max(counts.values(), default=0),
         "tail_distinct_chars": len(set(text[-2000:])),
+        "tail_compression": round(
+            len(zlib.compress(text[-2000:].encode()))
+            / max(1, len(text[-2000:].encode())),
+            3,
+        ),
+        "tail_words": len(tail_words := text[-2000:].split()),
+        "tail_distinct_words": len(set(tail_words)),
+        "head_distinct_words_ratio": round(
+            len(set(head_words := text[:2000].split())) / max(1, len(head_words)), 3
+        ),
+        "digits_ratio": round(
+            sum(c.isdigit() for c in text[-2000:]) / max(1, len(text[-2000:])), 3
+        ),
         "tool_markup": any(
             mark in text
             for mark in ("<tool_call", "</tool_call", '"name": "web_', "<|")
