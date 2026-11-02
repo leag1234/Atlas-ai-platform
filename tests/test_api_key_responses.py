@@ -472,7 +472,7 @@ class KeyResponsesTests(unittest.TestCase):
         """The client-executed shell and apply_patch tools of the Responses API."""
         arguments = {
             "shell": '{"commands":["pwd","ls"],"timeout_ms":1000}',
-            "apply_patch": '{"operation":{"type":"create_file","path":"a.txt","diff":"+hello"}}',
+            "apply_patch": '{"operation":{"type":"create_file","path":"a.txt","diff":"*** Begin Patch\\n*** Add File: a.txt\\n+hello\\n*** End Patch"}}',
         }
 
         async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
@@ -538,6 +538,8 @@ class KeyResponsesTests(unittest.TestCase):
                         self.assertEqual(call["environment"], {"type": "local"})
                     else:
                         self.assertEqual(call["operation"]["path"], "a.txt")
+                        # The freeform patch envelope is not part of an operation diff.
+                        self.assertEqual(call["operation"]["diff"], "+hello")
                     follow = self.post(
                         {
                             "model": "atlas-code",

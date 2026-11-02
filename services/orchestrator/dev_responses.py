@@ -14,6 +14,26 @@ def reasoning_tokens(usage: Any) -> int:
     return value if isinstance(value, int) and value >= 0 else 0
 
 
+ENVELOPE = (
+    "*** Begin Patch",
+    "*** End Patch",
+    "*** Add File:",
+    "*** Update File:",
+    "*** Delete File:",
+)
+
+
+def v4a_body(diff: str) -> str:
+    """The diff of one apply_patch operation, without the envelope of the freeform patch tool.
+
+    The Responses apply_patch tool carries one file per operation, so its diff has no
+    *** Begin Patch, *** End Patch or file header lines; models sometimes still write them.
+    """
+    lines = diff.split("\n")
+    kept = [line for line in lines if not line.startswith(ENVELOPE)]
+    return "\n".join(kept) if len(kept) != len(lines) else diff
+
+
 class Wire:
     def __init__(self, output: Output, request: dict[str, Any]) -> None:
         self.output, self.request = output, request
@@ -236,7 +256,14 @@ class Wire:
                             "max_output_length": parsed.get("max_output_length"),
                         }
                     else:
-                        item["operation"] = parsed.get("operation", {})
+                        operation = parsed.get("operation", {})
+                        if isinstance(operation, dict) and isinstance(
+                            operation.get("diff"), str
+                        ):
+                            operation = dict(
+                                operation, diff=v4a_body(operation["diff"])
+                            )
+                        item["operation"] = operation
                     continue
                 if item["type"] == "custom_tool_call":
                     try:
