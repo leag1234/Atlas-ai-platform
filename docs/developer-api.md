@@ -75,7 +75,7 @@ Measured on the hosted service on 2026-11-02:
 | Text | yes | yes |
 | Image analysis (`image_url` parts) | yes | yes |
 | Attached documents (`file` parts: text, PDF, Word, Excel) | yes | yes, as extracted text |
-| Web search, with the retrieved sources cited | yes | no |
+| Web search, with the retrieved sources cited | yes | on Responses, with the hosted `web_search` tool (section 5) |
 | Your own tools (function calling) | no (`tools` is ignored) | yes |
 | Image generation | not available on the hosted service yet | no |
 
@@ -163,8 +163,17 @@ curl -s https://atlas.eu.com/api/atlas/v1/chat/completions \
         {"type":"image_url","image_url":{"url":"data:image/png;base64,<base64>"}}]}]}'
 ```
 
+The same works on the other formats with their own names:
+
+| Format | Image | Document |
+|---|---|---|
+| Chat Completions | `image_url` part | `file` part (`filename`, `file_data` in base64) |
+| Responses | `input_image` (`image_url`, optional `detail`) | `input_file` (`filename`, `file_data`) |
+| Messages | `image` block (`base64` or `url` source) | `document` block (`text`, `base64` PDF or `content` source); `search_result` blocks are read as text |
+
 The whole request is limited to 8 MiB. A file that cannot be read answers 400 instead of being
-ignored.
+ignored. References to stored files (`file_id`, `file_url`) are not available: send the content.
+Audio input (`input_audio`) is refused by name, since no hosted model takes audio yet.
 
 ## 5. Tool calls
 
@@ -180,6 +189,21 @@ curl -s https://atlas.eu.com/api/atlas/v1/chat/completions \
          "parameters":{"type":"object","properties":{"tz":{"type":"string"}},"required":["tz"]}}}],
        "messages":[{"role":"user","content":"What time is it in Paris?"}]}'
 ```
+
+### Responses tools
+
+On Responses, the tools of the OpenAI format are translated for the direct models:
+
+| Tool | Who runs it | What the client receives |
+|---|---|---|
+| `function`, `custom`, `namespace` | the client | `function_call` or `custom_tool_call` items |
+| `local_shell`, `shell` | the client | `local_shell_call` or `shell_call` items (`action.commands`) |
+| `apply_patch` | the client | `apply_patch_call` items (`operation`: `create_file`, `update_file`, `delete_file`, with a V4A diff) |
+| `web_search` | **Atlas**, between model turns, up to 4 turns | a `web_search_call` item per search (`action.query`, `action.sources`), then the answer |
+
+Web search uses the same search chain as the assistant. In strict privacy it is refused with
+`web_search_unavailable_in_strict_privacy`. The other hosted tools of the OpenAI format (`file_search`,
+`code_interpreter`, `image_generation`, `mcp`, `computer_use_preview`) are not available yet.
 
 ## 6. Coding agents
 
@@ -244,6 +268,29 @@ Extended thinking and hosted tools (web search, code execution) are not availabl
 - One writer per file or git branch. Two agents never edit the same files.
 - Watch `GET /usage` during the first runs.
 
+### OpenAI and Anthropic compatibility
+
+The goal is the full OpenAI and Anthropic APIs. What is covered on the direct models, as of
+2026-11-03:
+
+- **Applied:**
+  - Chat Completions: `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `max_tokens` or `max_completion_tokens`, `n` (up to 8 choices), `logprobs` and `top_logprobs`, `response_format`, tools and `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `stream` and `stream_options`;
+  - Responses: `top_p`;
+  - Messages: `stop_sequences`, `top_p`, `top_k`.
+
+  Legacy `functions` and `function_call` map to tools, and `developer` messages to system messages.
+- **Accepted without effect:** `store`, `metadata`, `user`, `safety_identifier`, `service_tier`, `verbosity`, `prompt_cache_key`, `prompt_cache_retention`, and `cache_control` markers. Atlas caches the repeated start of prompts by itself, and responses report `store: false`.
+- **Refused by name:**
+  - `logit_bias`: no hosted provider applies it;
+  - `audio`, `modalities`, `prediction`, `web_search_options`;
+  - any unknown field: the error names it, for example `unknown field messages.2.foo`.
+- **Other routes:** `GET /models` and `GET /models/{id}` (in the Anthropic format for Anthropic clients), `POST /responses/input_tokens` and `POST /messages/count_tokens` (estimated tokens).
+
+**Nothing is stored.** Atlas keeps no response or conversation. Send the full conversation history with
+each request. These features answer `storage_not_supported` with that instruction:
+- `previous_response_id`, `conversation` and `background: true` answer 400;
+- retrieving, deleting or cancelling a response, its input items, the `/conversations` routes, and stored Chat Completions answer 404.
+
 ## 7. Budget, limits and usage
 
 Every key has its own budget, set when it was issued (a weekly or daily amount in euros), and an expiry
@@ -269,7 +316,11 @@ is one euro) and the limits that apply to your key.
 | 400 `invalid_request` or `body_limit` | A field is invalid (for example an unknown `reasoning_effort`), the body is larger than 8 MiB, or the history has more than 4096 messages | Fix or shorten the request |
 | 400 `assistant_model_on_chat_completions` | `atlas` or a profile was sent to Responses or Messages | Use `/chat/completions`, or `atlas-dev` / `atlas-chat` on this route |
 | 400 `file_data_required`, `invalid_file_data`, `unreadable_file` | An attached file is missing, not base64, or has no readable text | Check the file part |
+| 400 `unknown field …`, `unsupported_parameter: …`, `unsupported_content: input_audio` | A field Atlas does not know, or an option no hosted model applies; the message names it | Remove it (see "OpenAI and Anthropic compatibility") |
+| 400 `storage_not_supported` | `previous_response_id`, `conversation` or `background`: Atlas stores nothing | Send the full history in `input` |
+| 400 `web_search_unavailable_in_strict_privacy` | The hosted web search was requested in strict privacy mode | Remove the tool or the strict header |
 | 401 | Missing, wrong, expired or revoked key | Check the key and its expiry date |
+| 404 `storage_not_supported` | A stored response, conversation or completion was requested | Atlas stores nothing; keep your own history |
 | 409 `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
 | 429 with a JSON body | The budget of the key is reached; the message says whether day or week | Stop, or ask for a higher budget |
 | 429 with an HTML page | Rate limit | Wait 30 to 60 seconds and resume; do not restart all workers at once |
