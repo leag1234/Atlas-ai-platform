@@ -57,7 +57,7 @@ receive token usage in the final chunk before `[DONE]`. Responses report the mod
 | `atlas-chat` | A direct model, no Atlas layer: the same models as `atlas-dev`; GLM 5.2 as fallback | Volume processing: summaries, translation, classification, extraction | All three |
 
 `atlas-code` (the former name of `atlas-dev`) and the dated aliases listed by `GET /models` remain
-accepted. Both direct models try Mistral first and fall back to Scaleway when it is unavailable; the
+accepted; responses to `atlas-dev` still report `atlas-code` in `model`. Both direct models try Mistral first and fall back to Scaleway when it is unavailable; the
 assistant runs on Scaleway.
 
 **Assistant or direct model.** The assistant adds its own instructions and tools: it searches the web
