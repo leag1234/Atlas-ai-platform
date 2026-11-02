@@ -35,8 +35,9 @@ def main() -> int:
     index, _, count = sys.argv[1].partition("/")
     selected = parts(int(count))[int(index) - 1]
     print(f"Unit part {index}/{count}: {len(selected)} modules", flush=True)
-    # Same import names as unittest discover -s tests: the tests directory is the top level.
-    sys.path.insert(0, str(TESTS))
+    # Same import path as python3 -m unittest discover -s tests run from the repository:
+    # the tests directory is the top level, and the repository root is importable.
+    sys.path[:0] = [str(TESTS), str(TESTS.parent)]
     suite = unittest.defaultTestLoader.loadTestsFromNames(selected)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     return 0 if result.wasSuccessful() else 1
