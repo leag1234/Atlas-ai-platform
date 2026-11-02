@@ -96,9 +96,12 @@
 .atlas-project-dialog::backdrop {background:#0005;}
 .atlas-project-dialog label,.atlas-project-dialog input {display:block;width:100%;margin:14px 0;}
 .atlas-project-dialog button {margin-right:8px;cursor:pointer;}
-.atlas-project-nav-row {display:flex;align-items:center;gap:6px;padding:4px 12px;}
+.atlas-project-nav-row {display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:4px 12px;}
 .atlas-project-nav-row button {background:transparent;color:inherit;border:0;cursor:pointer;border-radius:8px;padding:8px;font:inherit;}
 .atlas-project-nav-row button:first-child {flex:1;text-align:left;}
+/* Projects and + share the first line; Scheduled tasks takes its own line so no label is cut. */
+.atlas-project-nav-row button {white-space:nowrap;min-width:0;}
+.atlas-project-nav-row button:nth-child(3) {flex:1 0 100%;text-align:left;}
 .atlas-project-nav-row button:hover {background:#8882;}
 .atlas-project-sidebar-projects {margin-top:24px;}
 .atlas-project-host-projects {padding:4px 12px 10px;}
@@ -154,6 +157,10 @@ body.atlas-project-enabled #chat-container div:has(> div > [role=list] > button.
 /* Override the host's generic rounded-form and composer rules in this surface. */
 #atlas-project .atlas-project-composer {border-radius:18px;background:var(--project-card);}
 #atlas-project .atlas-project-composer-tools {background:transparent;}
+/* Inside the chat host, project pages use the conversation panel colour. */
+#atlas-project {--project-bg:var(--atlas-chat-panel,#faf9f6);}
+html.dark #atlas-project {--project-bg:var(--atlas-chat-panel,#242422);}
+@media(prefers-color-scheme:dark) {html:not(.light) #atlas-project {--project-bg:var(--atlas-chat-panel,#242422);}}
 #atlas-project .atlas-project-right {background:var(--project-bg);}
 #atlas-project .atlas-project-mobile-header {display:none;}
 body.atlas-project-open #atlas-ui-selector {display:none;}
