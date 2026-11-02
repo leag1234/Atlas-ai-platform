@@ -155,6 +155,35 @@ class Wire:
     def feed(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events = []
         item: dict[str, Any]
+        if "hosted" in chunk:
+            hosted = chunk["hosted"]
+            index = len(self.items)
+            item = {
+                "id": "ws_" + str(hosted["id"]),
+                "type": "web_search_call",
+                "status": "completed",
+                "action": {
+                    "type": "search",
+                    "query": hosted["query"],
+                    "sources": [
+                        {"type": "url", "url": row["url"]} for row in hosted["results"]
+                    ],
+                },
+            }
+            self.items.append(item)
+            return [
+                self.event(
+                    "response.output_item.added",
+                    output_index=index,
+                    item=dict(item, status="in_progress"),
+                ),
+                self.event(
+                    "response.web_search_call.completed",
+                    output_index=index,
+                    item_id=item["id"],
+                ),
+                self.event("response.output_item.done", output_index=index, item=item),
+            ]
         if "error" in chunk:
             code = (
                 chunk["error"].get("type", "server_error")
