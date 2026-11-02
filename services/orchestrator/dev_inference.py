@@ -253,6 +253,7 @@ async def chat(
                 FileContentError,
                 drop_client_extras,
                 inline_files,
+                normalize_chat,
                 unsupported_option,
             )
 
@@ -260,29 +261,40 @@ async def chat(
             if (option := unsupported_option(raw)) is not None:
                 return error("unsupported_parameter: " + option, 400)
             try:
+                normalize_chat(raw)
                 inline_files(raw.get("messages") or [])
             except FileContentError as exc:
                 return error(str(exc), 400)
+        parsed: ChatInput | RawChatInput
         try:
-            parsed = (
-                responses(
-                    dict(raw, model="atlas-code") if raw_model is not None else raw
+            if protocol in ("messages", "responses") and raw_model is not None:
+                from packages.api_content import inline_files, normalize_chat
+                from services.orchestrator.dev_input import (
+                    messages_body,
+                    responses_body,
+                    text_only,
                 )
-                if protocol == "responses"
-                else messages(dict(raw, model="atlas-code") if raw_model else raw)
-                if protocol == "messages"
-                else RawChatInput.model_validate(raw)
-                if raw_model is not None
-                else ChatInput.model_validate(raw)
-            )
+
+                converter = responses_body if protocol == "responses" else messages_body
+                converted = converter(dict(raw, model="atlas-code"))
+                # Same checks as the text-only schema, then images and files kept.
+                ChatInput.model_validate(text_only(converted))
+                normalize_chat(converted)
+                inline_files(converted["messages"])
+                parsed = RawChatInput.model_validate(dict(converted, model=raw_model))
+            else:
+                parsed = (
+                    responses(raw)
+                    if protocol == "responses"
+                    else messages(raw)
+                    if protocol == "messages"
+                    else RawChatInput.model_validate(raw)
+                    if raw_model is not None
+                    else ChatInput.model_validate(raw)
+                )
         except KeyError:
             # Missing client fields are not missing provider configuration.
             return error("invalid_request", 400)
-        if protocol in ("messages", "responses") and raw_model is not None:
-            parsed = RawChatInput.model_validate(
-                parsed.model_dump(by_alias=True, exclude_none=True)
-                | {"model": raw_model}
-            )
         if public_model is not None and getattr(request.state, "context_trim", False):
             from services.orchestrator.context_trim import trim_messages
 

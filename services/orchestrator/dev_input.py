@@ -62,7 +62,7 @@ CUSTOM_PARAMETERS = {
 }
 
 
-def responses(value: dict[str, Any]) -> ChatInput:
+def responses_body(value: dict[str, Any]) -> dict[str, Any]:
     # OpenAI clients (Codex 0.98) send null for unset optional fields: treat null as absent.
     value = (
         {k: v for k, v in value.items() if v is not None}
@@ -142,8 +142,34 @@ def responses(value: dict[str, Any]) -> ChatInput:
             fields(item, "type role content id status")
             content = item["content"]
             if isinstance(content, list):
-                parts = []
+                parts: list[dict[str, Any]] = []
                 for part in content:
+                    if part.get("type") == "input_image":
+                        fields(part, "type image_url detail file_id")
+                        if not isinstance(part.get("image_url"), str):
+                            # file_id needs the Files API, not available yet.
+                            raise ValueError("unsupported_content")
+                        image: dict[str, Any] = {"url": part["image_url"]}
+                        if part.get("detail") in ("low", "high", "auto"):
+                            image["detail"] = part["detail"]
+                        parts.append({"type": "image_url", "image_url": image})
+                        continue
+                    if part.get("type") == "input_file":
+                        fields(part, "type filename file_data file_url file_id")
+                        if not isinstance(part.get("file_data"), str):
+                            raise ValueError("unsupported_content")
+                        parts.append(
+                            {
+                                "type": "file",
+                                "file": {
+                                    "filename": str(
+                                        part.get("filename") or "attachment"
+                                    ),
+                                    "file_data": part["file_data"],
+                                },
+                            }
+                        )
+                        continue
                     fields(part, "type text annotations logprobs")
                     if (
                         part["type"] not in ("input_text", "output_text")
@@ -152,8 +178,8 @@ def responses(value: dict[str, Any]) -> ChatInput:
                         or part.get("logprobs")
                     ):
                         raise ValueError("unsupported_content")
-                    parts.append(part["text"])
-                content = "\n".join(parts)
+                    parts.append({"type": "text", "text": part["text"]})
+                content = joined(parts)
             messages.append({"role": item["role"], "content": content})
         elif kind == "function_call":
             fields(item, "type call_id name arguments id status")
@@ -341,22 +367,20 @@ def responses(value: dict[str, Any]) -> ChatInput:
             "type": "json_schema",
             "json_schema": {k: v for k, v in fmt.items() if k != "type"},
         }
-    return ChatInput.model_validate(
-        {
-            "response_format": fmt,
-            "model": value["model"],
-            "messages": messages,
-            "tools": tools,
-            "stream": value.get("stream", False),
-            "stream_options": {"include_usage": True},
-            "max_tokens": value.get("max_output_tokens") or 4096,
-            "temperature": value.get("temperature", 0),
-            **({"top_p": value["top_p"]} if value.get("top_p") is not None else {}),
-            "parallel_tool_calls": value.get("parallel_tool_calls", True),
-            "tool_choice": choice,
-            "reasoning_effort": reasoning.get("effort", "none"),
-        }
-    )
+    return {
+        "response_format": fmt,
+        "model": value["model"],
+        "messages": messages,
+        "tools": tools,
+        "stream": value.get("stream", False),
+        "stream_options": {"include_usage": True},
+        "max_tokens": value.get("max_output_tokens") or 4096,
+        "temperature": value.get("temperature", 0),
+        **({"top_p": value["top_p"]} if value.get("top_p") is not None else {}),
+        "parallel_tool_calls": value.get("parallel_tool_calls", True),
+        "tool_choice": choice,
+        "reasoning_effort": reasoning.get("effort", "none"),
+    }
 
 
 def cache_hint(part: dict[str, Any]) -> None:
@@ -407,7 +431,7 @@ def text_blocks(value: Any) -> str:
     return "\n".join(parts)
 
 
-def messages(value: dict[str, Any]) -> ChatInput:
+def messages_body(value: dict[str, Any]) -> dict[str, Any]:
     fields(
         value,
         "model messages system max_tokens tools tool_choice stream temperature metadata thinking output_config"
@@ -435,11 +459,65 @@ def messages(value: dict[str, Any]) -> ChatInput:
         if isinstance(content, str):
             converted.append({"role": role, "content": content})
             continue
-        texts, calls = [], []
+        texts: list[dict[str, Any]] = []
+        calls = []
         for block in content:
             kind = block["type"]
             if kind == "text":
-                texts.append(text_blocks([block]))
+                texts.append({"type": "text", "text": text_blocks([block])})
+            elif kind in ("thinking", "redacted_thinking") and role == "assistant":
+                # Reasoning of an earlier turn: the routed models cannot use another
+                # model's signed reasoning, and it is not part of the answer.
+                continue
+            elif kind == "image" and role == "user":
+                fields(block, "type source cache_control")
+                source = block["source"]
+                if source.get("type") == "base64":
+                    url = f"data:{source['media_type']};base64,{source['data']}"
+                elif source.get("type") == "url" and isinstance(source.get("url"), str):
+                    url = source["url"]
+                else:
+                    raise ValueError("unsupported_content")
+                texts.append({"type": "image_url", "image_url": {"url": url}})
+            elif kind == "document" and role == "user":
+                fields(block, "type source title context citations cache_control")
+                source, title = block["source"], str(block.get("title") or "document")
+                if source.get("type") == "text":
+                    texts.append(
+                        {"type": "text", "text": f"Document {title}:\n{source['data']}"}
+                    )
+                elif source.get("type") == "base64":
+                    suffix = (
+                        ".pdf"
+                        if source.get("media_type") == "application/pdf"
+                        else ".txt"
+                    )
+                    name = title if "." in title else title + suffix
+                    texts.append(
+                        {
+                            "type": "file",
+                            "file": {"filename": name, "file_data": source["data"]},
+                        }
+                    )
+                elif source.get("type") == "content":
+                    texts.append(
+                        {
+                            "type": "text",
+                            "text": f"Document {title}:\n"
+                            + text_blocks(source["content"]),
+                        }
+                    )
+                else:
+                    raise ValueError("unsupported_content")
+            elif kind == "search_result" and role == "user":
+                fields(block, "type source title content citations cache_control")
+                texts.append(
+                    {
+                        "type": "text",
+                        "text": f"Search result {block.get('title', '')} ({block.get('source', '')}):\n"
+                        + text_blocks(block.get("content", [])),
+                    }
+                )
             elif kind == "tool_use" and role == "assistant":
                 fields(block, "type id name input")
                 if not isinstance(block["input"], dict):
@@ -473,7 +551,11 @@ def messages(value: dict[str, Any]) -> ChatInput:
                 raise ValueError("unsupported_content")
         if texts or calls or not content:
             converted.append(
-                {"role": role, "content": "\n".join(texts), "tool_calls": calls}
+                {
+                    "role": role,
+                    "content": joined(texts) if texts else "",
+                    "tool_calls": calls,
+                }
             )
     tools = []
     for tool in value.get("tools", []):
@@ -500,25 +582,51 @@ def messages(value: dict[str, Any]) -> ChatInput:
     disabled = choice.get("disable_parallel_tool_use", False)
     if not isinstance(disabled, bool):
         raise ValueError("invalid_parallel_choice")
-    return ChatInput.model_validate(
-        {
-            "model": value["model"],
-            "messages": converted,
-            "tools": tools,
-            "max_tokens": value["max_tokens"],
-            "stream": value.get("stream", False),
-            "stream_options": {"include_usage": True},
-            "tool_choice": selected,
-            "parallel_tool_calls": not disabled,
-            "temperature": value.get("temperature", 0),
-            **{
-                target: value[source]
-                for source, target in (
-                    ("stop_sequences", "stop"),
-                    ("top_p", "top_p"),
-                    ("top_k", "top_k"),
-                )
-                if value.get(source) not in (None, [])
-            },
-        }
-    )
+    return {
+        "model": value["model"],
+        "messages": converted,
+        "tools": tools,
+        "max_tokens": value["max_tokens"],
+        "stream": value.get("stream", False),
+        "stream_options": {"include_usage": True},
+        "tool_choice": selected,
+        "parallel_tool_calls": not disabled,
+        "temperature": value.get("temperature", 0),
+        **{
+            target: value[source]
+            for source, target in (
+                ("stop_sequences", "stop"),
+                ("top_p", "top_p"),
+                ("top_k", "top_k"),
+            )
+            if value.get(source) not in (None, [])
+        },
+    }
+
+
+def responses(value: dict[str, Any]) -> ChatInput:
+    return ChatInput.model_validate(responses_body(value))
+
+
+def messages(value: dict[str, Any]) -> ChatInput:
+    return ChatInput.model_validate(messages_body(value))
+
+
+def text_only(body: dict[str, Any]) -> dict[str, Any]:
+    """The body with media parts as text, for the checks of the text-only schema."""
+    copy = dict(body, messages=[dict(m) for m in body["messages"]])
+    for message in copy["messages"]:
+        if isinstance(message.get("content"), list):
+            message["content"] = "\n".join(
+                str(part.get("text", "[" + str(part.get("type")) + "]"))
+                for part in message["content"]
+                if isinstance(part, dict)
+            )
+    return copy
+
+
+def joined(parts: list[dict[str, Any]]) -> str | list[dict[str, Any]]:
+    """Plain text when every part is text, as before; content parts when media is present."""
+    if all(part["type"] == "text" for part in parts):
+        return "\n".join(part["text"] for part in parts)
+    return parts
