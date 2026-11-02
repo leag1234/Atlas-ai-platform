@@ -45,10 +45,88 @@ print(reply.choices[0].message.content)
 Streaming works as usual (`"stream": true`). Add `"stream_options": {"include_usage": true}` to
 receive token usage in the final chunk before `[DONE]`.
 
-## 2. Reasoning effort and `max_tokens`
+## 2. Models, reasoning effort and cost
 
-`reasoning_effort` accepts `none` (default, fastest and cheapest), `low`, `medium` and `high`. Use
-`high` only for hard diagnosis: it costs several times more.
+### Which model
+
+| Model | Use it for | effort `none` (default) | effort `low`, `medium`, `high` |
+|---|---|---|---|
+| `atlas-code` | development: code, agents, tool calls | GLM 5.3 Flash | GLM 5.3 |
+| `atlas-chat` | everything else: conversation, writing, analysis | GLM 5.3 Flash | GLM 5.3 |
+
+Both models try the same providers first. They differ only in the fallback used when the first provider
+is unavailable: DeepSeek V4 Flash for `atlas-code`, GLM 5.2 for `atlas-chat`. `served_by` in the response
+names the route that answered. The context window is 1,048,576 tokens on the first route and 256,000 on
+the fallback. `GET /models` also lists dated aliases (`atlas-code-2026-10-30`, `atlas-chat-2026-10-30`)
+that name the same routes.
+
+### Which reasoning effort
+
+`reasoning_effort` accepts `none`, `low`, `medium` and `high`, in increasing order. `none` means no
+reasoning and is the default when the field is omitted. Moving from `none` to `low` also changes the
+model: the cheaper GLM 5.3 Flash becomes the full GLM 5.3, which costs about nine times more per token.
+`low`, `medium` and `high` use the same model and differ in how long it reasons.
+
+Measured on 2026-11-02 with `atlas-code` (15 calls per level: counting, time arithmetic, a coin-change
+count, and two Python functions checked by unit tests):
+
+| Effort | Correct | Average charge per call |
+|---|---|---|
+| `none` | 13 of 15 | 0.000036 EUR |
+| `low` | 15 of 15 | 0.000301 EUR |
+| `medium` | 15 of 15 | 0.000326 EUR |
+| `high` | 15 of 15 | 0.000343 EUR |
+
+The two failures at `none` were the interval-merging function. On tasks this short, `low`, `medium` and
+`high` were not distinguishable in quality: start at `none`, move to `low` when tests fail, and keep
+`high` for hard diagnosis where `low` and `medium` did not work.
+
+The same holds for coding agents. A Codex worker running on Atlas was given two bug-fixing tasks (a
+small project with four seeded bugs, and one with ten) and three runs per effort level, with the tests
+kept read-only:
+
+| Task | Effort | Tasks solved | Average charge | Average tool steps |
+|---|---|---|---|---|
+| Four bugs | `none` | 3 of 3 | 0.0044 EUR | 5 |
+| Four bugs | `low` | 3 of 3 | 0.0187 EUR | 6 |
+| Ten bugs | `none` | 3 of 3 | 0.0117 EUR | 7 |
+| Ten bugs | `low` | 3 of 3 | 0.0604 EUR | 12 |
+
+`none` solved everything at about a fifth of the cost. Use it by default for agents, and switch a task to
+`low` when `none` does not get there.
+
+### What it costs
+
+Prices per million tokens, in euros excluding tax:
+
+| Model | Input | Output |
+|---|---|---|
+| GLM 5.3 Flash (`none`) | 0.1275 | 0.425 |
+| GLM 5.3 (`low` and above) | 1.19 | 3.74 |
+| DeepSeek V4 Flash (`atlas-code` fallback) | 0.40 | 0.80 |
+| GLM 5.2 (`atlas-chat` fallback) | 1.80 | 5.50 |
+
+Agents resend their whole context at every step. Mistral caches the repeated start of a prompt and
+bills cached input tokens much less (GLM 5.3: 0.119 EUR per million instead of 1.19; GLM 5.3 Flash:
+0.0255 instead of 0.1275). Atlas passes this through: cached tokens appear in
+`usage.prompt_tokens_details.cached_tokens` and are charged at the cached rate. Measured on 2026-11-02
+with a 10,162-token prompt repeated five times:
+
+| Route | First call | Next calls |
+|---|---|---|
+| GLM 5.3 (`low` and above) | 0.0121 EUR | 0.0013 EUR (about 89% less), from the second call |
+| GLM 5.3 Flash (`none`) | 0.0013 EUR | 0.0005 EUR when the cache hit, which happened on 2 of 5 calls |
+
+An agent step that sends 50,000 tokens of context and receives 500 tokens costs about 0.0066 EUR at
+`none` with no cache hit. At `low` or above it costs about 0.061 EUR when the context is not cached and
+about 0.0078 EUR when it is, which is the usual case after the first step of a run. Over 100 steps that is
+roughly 0.66 EUR at `none`, 6.1 EUR without cache at `low`, and 0.78 EUR with the cache. Measured on whole
+agent tasks (2026-10-31): about 3 EUR at `none` and about 14 EUR at `high`.
+
+To benefit from the cache, keep the beginning of your prompts identical from one request to the next
+(system prompt, tool definitions, earlier turns) and put what changes at the end.
+
+### `max_tokens`
 
 Reasoning tokens count toward `max_tokens`. If the budget is too small, the model spends all of it
 thinking and returns no answer; Atlas retries and then answers `503 key_service_unavailable`, which is
@@ -157,7 +235,7 @@ is one euro) and the limits that apply to your key.
 
 | Status | Meaning | What to do |
 |---|---|---|
-| 400 `invalid_request` | A field is invalid (for example an unknown `reasoning_effort`) | Fix the request |
+| 400 `invalid_request` or `body_limit` | A field is invalid (for example an unknown `reasoning_effort`), the body is larger than 8 MiB, or the history has more than 4096 messages | Fix or shorten the request |
 | 401 | Missing, wrong, expired or revoked key | Check the key and its expiry date |
 | 409 `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
 | 429 with a JSON body | The budget of the key is reached; the message says whether day or week | Stop, or ask for a higher budget |
@@ -182,3 +260,13 @@ route. A strict privacy mode (`X-Atlas-Privacy: strict`), which would only use i
 controlled by the owner, exists but is not available until such a server is configured: until then it
 answers 503 and never falls back to a shared provider. Treat the service as a beta and do not send data
 you could not share with a hosting provider.
+
+### How strict privacy is configured (operator)
+
+Strict privacy has no settings screen. Which routes accept it is part of the deployment: targets
+marked `"privacy": "owned"` in `services/model-gateway/api-routing.json`, each pointing to an
+OpenAI-compatible vLLM server that the owner fully controls, whose address is set with
+`ATLAS_OWNED_VLLM_BASE_URL` (and `ATLAS_OWNED_VLLM_API_KEY` when the server needs one). A request opts in
+with the `X-Atlas-Privacy: strict` header; an operator can also make a key strict when issuing it, and a
+project can be set to strict through the project API. In strict mode web search and web fetch are not
+offered. See the strict privacy section of [the platform API notes](08-plateforme-api.md).
