@@ -105,6 +105,28 @@ class Choice:
         self.call_slots: dict[int, int] = {}
         self.reason: str | None = None
         self.logprobs: list[Any] = []
+        self.thinking_closed = False
+
+
+def answer_tokens(st: "Choice", tokens: list[Any]) -> list[Any]:
+    """Log probabilities of the visible answer only, as the OpenAI API returns them.
+
+    Some routed models also return their reasoning tokens up to a closing think tag, and
+    control tokens such as <|user|>; neither is part of the answer text.
+    """
+    kept: list[Any] = []
+    for token in tokens:
+        text = str(token.get("token", "")) if isinstance(token, dict) else ""
+        if "</think>" in text:
+            # Everything before the end of reasoning was not answer text.
+            st.logprobs.clear()
+            kept.clear()
+            st.thinking_closed = True
+            continue
+        if text.startswith("<|") and text.endswith("|>"):
+            continue
+        kept.append(token)
+    return kept
 
 
 class Output:
@@ -293,7 +315,9 @@ class Output:
                 "finish_reason": st.reason,
             }
             if getattr(self.request, "logprobs", False):
-                content_logprobs = (choice.get("logprobs") or {}).get("content") or []
+                content_logprobs = answer_tokens(
+                    st, (choice.get("logprobs") or {}).get("content") or []
+                )
                 st.logprobs.extend(content_logprobs)
                 entry["logprobs"] = {"content": content_logprobs}
             chunk["choices"].append(entry)

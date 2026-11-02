@@ -128,3 +128,45 @@ class ChoicesTests(unittest.IsolatedAsyncioTestCase):
     async def test_choice_outside_the_request_is_refused(self) -> None:
         with self.assertRaises(ValueError):
             await self.run_gateway(request(), provider_stream(False))
+
+
+class AnswerTokensTests(unittest.TestCase):
+    def test_reasoning_and_control_tokens_are_not_answer_tokens(self) -> None:
+        output = Output("test", request(logprobs=True))
+        frames = [
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": ""},
+                        "finish_reason": None,
+                        "logprobs": {"content": [token("Simple"), token(".")]},
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": "Blue"},
+                        "finish_reason": None,
+                        "logprobs": {"content": [token("</think>"), token("Blue")]},
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop",
+                        "logprobs": {"content": [token("<|user|>")]},
+                    }
+                ]
+            },
+        ]
+        for frame in frames:
+            output.feed(frame)
+        output.usage = {"prompt_tokens": 10, "completion_tokens": 6}
+        tokens = output.result()["choices"][0]["logprobs"]["content"]
+        self.assertEqual([t["token"] for t in tokens], ["Blue"])
