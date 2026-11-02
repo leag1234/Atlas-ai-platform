@@ -106,6 +106,23 @@ def trim_fetched_pages(
     return trimmed
 
 
+def output_shape(text: str) -> dict[str, object]:
+    """Shape of a cut-off answer for diagnosis: counts only, never the text."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    counts: dict[str, int] = {}
+    for line in lines:
+        counts[line] = counts.get(line, 0) + 1
+    return {
+        "lines": len(lines),
+        "distinct_lines": len(counts),
+        "top_line_repeats": max(counts.values(), default=0),
+        "tail_distinct_chars": len(set(text[-2000:])),
+        "tool_markup": any(
+            mark in text for mark in ("<tool_call", "</tool_call", '"name": "web_', "<|")
+        ),
+    }
+
+
 def input_bound(
     messages: list[dict[str, object]], tools: list[dict[str, object]]
 ) -> int:
@@ -703,6 +720,7 @@ async def stream_quality(
                         "max_tokens": current.max_tokens,
                         "content_chars": len(str(result.get("text", ""))),
                         "attempt": index + 1,
+                        **output_shape(str(result.get("text", ""))),
                     }
                 )
             )
