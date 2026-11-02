@@ -129,6 +129,27 @@ def answer_tokens(st: "Choice", tokens: list[Any]) -> list[Any]:
     return kept
 
 
+def url_citations(text: str, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """OpenAI url_citation annotations for the retrieved urls that the answer quotes."""
+    found: list[dict[str, Any]] = []
+    for source in sources:
+        url = str(source.get("url", ""))
+        start = text.find(url) if url else -1
+        if start >= 0 and all(a["url_citation"]["url"] != url for a in found):
+            found.append(
+                {
+                    "type": "url_citation",
+                    "url_citation": {
+                        "url": url,
+                        "title": str(source.get("title", "")),
+                        "start_index": start,
+                        "end_index": start + len(url),
+                    },
+                }
+            )
+    return sorted(found, key=lambda a: a["url_citation"]["start_index"])
+
+
 class Output:
     def __init__(
         self,
@@ -143,6 +164,8 @@ class Output:
         }
         self.request = request
         self.choices: dict[int, Choice] = {0: Choice()}
+        # Results of hosted searches, cited when the answer quotes their url.
+        self.citations: list[dict[str, Any]] = []
         self.usage: dict[str, Any] | None = None
         self.served_by: str | None = None
         self.privacy: str | None = None
@@ -347,6 +370,9 @@ class Output:
         for position in sorted(self.choices):
             st = self.choices[position]
             message: dict[str, Any] = {"role": "assistant", "content": st.text or None}
+            annotations = url_citations(st.text, self.citations)
+            if annotations:
+                message["annotations"] = annotations
             if st.calls:
                 message["tool_calls"] = list(st.calls.values())
             entry: dict[str, Any] = {
