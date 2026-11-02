@@ -81,6 +81,20 @@ The two failures at `none` were the interval-merging function. On tasks this sho
 `high` were not distinguishable in quality: start at `none`, move to `low` when tests fail, and keep
 `high` for hard diagnosis where `low` and `medium` did not work.
 
+The same holds for coding agents. A Codex worker running on Atlas was given two bug-fixing tasks (a
+small project with four seeded bugs, and one with ten) and three runs per effort level, with the tests
+kept read-only:
+
+| Task | Effort | Tasks solved | Average charge | Average tool steps |
+|---|---|---|---|---|
+| Four bugs | `none` | 3 of 3 | 0.0044 EUR | 5 |
+| Four bugs | `low` | 3 of 3 | 0.0187 EUR | 6 |
+| Ten bugs | `none` | 3 of 3 | 0.0117 EUR | 7 |
+| Ten bugs | `low` | 3 of 3 | 0.0604 EUR | 12 |
+
+`none` solved everything at about a fifth of the cost. Use it by default for agents, and switch a task to
+`low` when `none` does not get there.
+
 ### What it costs
 
 Prices per million tokens, in euros excluding tax:
