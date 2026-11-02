@@ -1037,3 +1037,25 @@ class ProjectIsolationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MembershipUpgradeTests(unittest.TestCase):
+    def test_upgrade_replays_the_guest_membership_function(self) -> None:
+        from services.retrieval.project_install import membership_function_sql
+
+        sql = membership_function_sql()
+        self.assertTrue(
+            sql.startswith(
+                "CREATE OR REPLACE FUNCTION atlas_projects.ensure_member(asserted_subject text)"
+            )
+        )
+        self.assertTrue(
+            sql.endswith(
+                "GRANT EXECUTE ON FUNCTION atlas_projects.ensure_member(text) TO atlas_project_app;"
+            )
+        )
+        self.assertIn(
+            "REVOKE ALL ON FUNCTION atlas_projects.ensure_member(text) FROM PUBLIC;",
+            sql,
+        )
+        self.assertEqual(sql.count("CREATE"), 1)
