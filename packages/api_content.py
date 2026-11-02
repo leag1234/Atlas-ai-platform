@@ -51,3 +51,58 @@ def inline_files(messages: list[Any]) -> list[Any]:
                 raise FileContentError("unreadable_file")
             content[index] = {"type": "text", "text": f"Attached file {name}:\n{text}"}
     return messages
+
+
+# Fields that common OpenAI-compatible clients (opencode, AI SDK, LiteLLM) send and that the direct
+# models do not use. They are dropped before validation instead of failing the whole request; any
+# other unknown field is still refused with its name.
+IGNORED_TOP_LEVEL = frozenset(
+    {
+        "store",
+        "metadata",
+        "user",
+        "safety_identifier",
+        "service_tier",
+        "verbosity",
+        "prompt_cache_key",
+        "prompt_cache_retention",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty",
+        "seed",
+        "stop",
+        "logit_bias",
+        "logprobs",
+        "top_logprobs",
+    }
+)
+IGNORED_MESSAGE = frozenset(
+    {
+        "reasoning_content",
+        "reasoning",
+        "reasoning_text",
+        "reasoning_details",
+        "refusal",
+        "annotations",
+    }
+)
+
+
+def drop_client_extras(body: dict[str, Any]) -> dict[str, Any]:
+    """Remove the known optional client fields above, and cache markers on parts and tools."""
+    for name in IGNORED_TOP_LEVEL:
+        body.pop(name, None)
+    for message in body.get("messages") or []:
+        if not isinstance(message, dict):
+            continue
+        for name in IGNORED_MESSAGE:
+            message.pop(name, None)
+        message.pop("cache_control", None)
+        if isinstance(message.get("content"), list):
+            for part in message["content"]:
+                if isinstance(part, dict):
+                    part.pop("cache_control", None)
+    for tool in body.get("tools") or []:
+        if isinstance(tool, dict):
+            tool.pop("cache_control", None)
+    return body

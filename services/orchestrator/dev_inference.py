@@ -250,8 +250,13 @@ async def chat(
                     raise LimitError("body_limit", len(body), 8388608, "bytes")
         raw = json.loads(body)
         if raw_model is not None and protocol == "chat" and isinstance(raw, dict):
-            from packages.api_content import FileContentError, inline_files
+            from packages.api_content import (
+                FileContentError,
+                drop_client_extras,
+                inline_files,
+            )
 
+            drop_client_extras(raw)
             try:
                 inline_files(raw.get("messages") or [])
             except FileContentError as exc:
