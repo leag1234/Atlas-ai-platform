@@ -63,7 +63,12 @@ APPLY_PATCH_PARAMETERS = {
                 "path": {"type": "string"},
                 "diff": {
                     "type": "string",
-                    "description": "V4A diff; omitted for delete_file.",
+                    "description": (
+                        "V4A diff without *** Begin Patch or *** End Patch lines. "
+                        "create_file: every line of the new file prefixed with +. "
+                        "update_file: @@ hunks of context lines (space), removed lines (-) "
+                        "and added lines (+). Omitted for delete_file."
+                    ),
                 },
             },
             "required": ["type", "path"],
