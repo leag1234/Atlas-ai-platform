@@ -80,6 +80,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
             "parallel_tool_calls",
             "max_output_tokens",
             "temperature",
+            "top_p",
             "stream",
             "store",
             "reasoning",
@@ -350,6 +351,7 @@ def responses(value: dict[str, Any]) -> ChatInput:
             "stream_options": {"include_usage": True},
             "max_tokens": value.get("max_output_tokens") or 4096,
             "temperature": value.get("temperature", 0),
+            **({"top_p": value["top_p"]} if value.get("top_p") is not None else {}),
             "parallel_tool_calls": value.get("parallel_tool_calls", True),
             "tool_choice": choice,
             "reasoning_effort": reasoning.get("effort", "none"),
@@ -408,7 +410,8 @@ def text_blocks(value: Any) -> str:
 def messages(value: dict[str, Any]) -> ChatInput:
     fields(
         value,
-        "model messages system max_tokens tools tool_choice stream temperature metadata thinking output_config",
+        "model messages system max_tokens tools tool_choice stream temperature metadata thinking output_config"
+        " stop_sequences top_p top_k cache_control service_tier",
     )
     if value.get("thinking", {"type": "disabled"}) != {"type": "disabled"}:
         raise ValueError("unsupported_thinking")
@@ -508,5 +511,14 @@ def messages(value: dict[str, Any]) -> ChatInput:
             "tool_choice": selected,
             "parallel_tool_calls": not disabled,
             "temperature": value.get("temperature", 0),
+            **{
+                target: value[source]
+                for source, target in (
+                    ("stop_sequences", "stop"),
+                    ("top_p", "top_p"),
+                    ("top_k", "top_k"),
+                )
+                if value.get(source) not in (None, [])
+            },
         }
     )

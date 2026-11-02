@@ -66,16 +66,21 @@ IGNORED_TOP_LEVEL = frozenset(
         "verbosity",
         "prompt_cache_key",
         "prompt_cache_retention",
-        "top_p",
-        "frequency_penalty",
-        "presence_penalty",
-        "seed",
-        "stop",
-        "logit_bias",
-        "logprobs",
-        "top_logprobs",
     }
 )
+# Accepted by the OpenAI API but applied by none of the hosted providers (logit_bias), or
+# not assembled into Atlas responses yet (logprobs). Refused by name rather than ignored.
+UNSUPPORTED = ("logit_bias", "logprobs", "top_logprobs")
+
+
+def unsupported_option(body: dict[str, Any]) -> str | None:
+    """Name of an option that would be silently lost, if one is set."""
+    for name in UNSUPPORTED:
+        if body.get(name):
+            return name
+    return None
+
+
 IGNORED_MESSAGE = frozenset(
     {
         "reasoning_content",

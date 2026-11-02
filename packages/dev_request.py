@@ -66,7 +66,25 @@ class Message(Strict):
     name: str | None = Field(default=None, max_length=64)
 
 
-class Request(Strict):
+class Sampling(Strict):
+    """Sampling options forwarded to the provider (OpenAI and Anthropic names)."""
+
+    top_p: float | None = Field(default=None, ge=0, le=1)
+    top_k: int | None = Field(default=None, ge=1, le=1000)
+    stop: str | list[str] | None = Field(default=None)
+    seed: int | None = Field(default=None, ge=0, le=2**63 - 1)
+    frequency_penalty: float | None = Field(default=None, ge=-2, le=2)
+    presence_penalty: float | None = Field(default=None, ge=-2, le=2)
+
+    @model_validator(mode="after")
+    def bounded_stop(self) -> "Sampling":
+        stops = [self.stop] if isinstance(self.stop, str) else self.stop or []
+        if len(stops) > 4 or any(not 1 <= len(item) <= 256 for item in stops):
+            raise ValueError("stop: 1 to 4 sequences of 1 to 256 characters")
+        return self
+
+
+class Request(Sampling):
     response_format: ResponseFormat = Field(
         default_factory=lambda: ResponseFormat(type="text")
     )

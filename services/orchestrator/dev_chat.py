@@ -6,7 +6,7 @@ import json
 import time
 from typing import Any, Literal
 from pydantic import Field, model_validator
-from packages.dev_request import Call, Request, ResponseFormat, Strict, Tool
+from packages.dev_request import Call, Request, ResponseFormat, Sampling, Strict, Tool
 from packages.dev_format import validate_json
 
 
@@ -57,8 +57,22 @@ class RawMessage(Strict):
     name: str | None = Field(default=None, max_length=64)
 
 
-class RawChatInput(Strict):
+class RawChatInput(Sampling):
     """Raw gateway request: retain OpenAI content parts instead of normalizing them."""
+
+    n: int = Field(default=1, ge=1, le=1, exclude=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def completion_tokens(cls, value: Any) -> Any:
+        # max_completion_tokens is the current OpenAI name of max_tokens.
+        if isinstance(value, dict) and "max_completion_tokens" in value:
+            value = dict(value)
+            maximum = value.pop("max_completion_tokens")
+            if "max_tokens" in value and value["max_tokens"] != maximum:
+                raise ValueError("conflicting_maximum")
+            value["max_tokens"] = maximum
+        return value
 
     model: str = Field(pattern=r"^raw/.+$")
     messages: list[RawMessage] = Field(min_length=1, max_length=4096)

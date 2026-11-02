@@ -107,6 +107,9 @@ def prepare_api(
             stream=True,
             stream_options={"include_usage": True},
         )
+        seed_field = provider_settings.preset_value(target.provider, "seed_field")
+        if seed_field and "seed" in payload:
+            payload[seed_field] = payload.pop("seed")
         if target.effort is not None:
             # Measured 2026-10-30: some routed models accept only low, high and max.
             payload["reasoning_effort"] = target.effort
