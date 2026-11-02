@@ -118,7 +118,8 @@ def output_shape(text: str) -> dict[str, object]:
         "top_line_repeats": max(counts.values(), default=0),
         "tail_distinct_chars": len(set(text[-2000:])),
         "tool_markup": any(
-            mark in text for mark in ("<tool_call", "</tool_call", '"name": "web_', "<|")
+            mark in text
+            for mark in ("<tool_call", "</tool_call", '"name": "web_', "<|")
         ),
     }
 
