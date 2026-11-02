@@ -124,12 +124,9 @@ async def messages(request: Request) -> Response:
             inputs = parsed.model_dump(
                 include={"messages", "tools"}, by_alias=True, exclude_none=True
             )
-            return JSONResponse(
-                {
-                    "input_tokens": len(json.dumps(inputs, ensure_ascii=False).encode())
-                    + 512
-                }
-            )
+            from packages.api_content import estimated_tokens
+
+            return JSONResponse({"input_tokens": estimated_tokens(inputs)})
         raw["model"] = "raw/public-routing"
         request._body = json.dumps(raw).encode()
         request.state.store = ModelAccounting(

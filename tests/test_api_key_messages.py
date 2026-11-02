@@ -307,6 +307,27 @@ class MessagesTests(unittest.TestCase):
         )
         self.assertEqual(self.events.call_count, 1)
 
+    def test_responses_input_tokens(self) -> None:
+        auth = {"Authorization": "Bearer " + self.key}
+        reply = self.client.post(
+            "/api/atlas/v1/responses/input_tokens",
+            headers=auth,
+            json={
+                "model": "atlas-dev",
+                "input": "Calculate 7 times 8",
+                "instructions": "Be brief.",
+            },
+        )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertEqual(reply.json()["object"], "response.input_tokens")
+        self.assertTrue(5 < reply.json()["input_tokens"] < 100)
+        refused = self.client.post(
+            "/api/atlas/v1/responses/input_tokens",
+            headers=auth,
+            json={"model": "atlas-dev"},
+        )
+        self.assertEqual(refused.status_code, 400)
+
     def test_count_is_local_and_validated(self) -> None:
         body = {k: v for k, v in self.body.items() if k != "max_tokens"}
         values = [
@@ -315,7 +336,9 @@ class MessagesTests(unittest.TestCase):
         ]
         for reply in values:
             self.assertEqual(reply.status_code, 200, reply.text)
-            self.assertGreater(reply.json()["input_tokens"], 512)
+            # Tokens, estimated as bytes / 4: a short request is tens of tokens, not bytes.
+            self.assertGreater(reply.json()["input_tokens"], 20)
+            self.assertLess(reply.json()["input_tokens"], 200)
         self.assertEqual(values[0].json(), values[1].json())
         self.assert_error(
             self.post("/messages/count_tokens", json=body | {"messages": []}),

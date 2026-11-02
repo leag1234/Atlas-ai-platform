@@ -351,6 +351,27 @@ async def chat(request: Request) -> Response:
         )
 
 
+@app.post("/responses/input_tokens")
+async def response_input_tokens(request: Request) -> Response:
+    from packages.api_content import estimated_tokens
+    from services.orchestrator.dev_input import responses as parse_responses
+
+    missing = require(request, "model")
+    if missing is not None:
+        return missing
+    try:
+        raw = json.loads(await request.body())
+        parsed = parse_responses(dict(raw, model="atlas-code", stream=False))
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+        return error(400, "invalid_request")
+    inputs = parsed.model_dump(
+        include={"messages", "tools"}, by_alias=True, exclude_none=True
+    )
+    return JSONResponse(
+        {"object": "response.input_tokens", "input_tokens": estimated_tokens(inputs)}
+    )
+
+
 @app.post("/responses")
 async def responses(request: Request) -> Response:
     from services.orchestrator.api_key_responses import respond
