@@ -163,7 +163,7 @@ class BrowserKeyTests(unittest.TestCase):
         secret = value.pop("key")
         self.assertEqual(value["budget_user"], "alice")
         self.assertEqual(value["subject"], "alice@example.invalid")
-        self.assertEqual(value["scopes"], ["assistant"])
+        self.assertEqual(value["scopes"], ["assistant", "model"])
         self.assertEqual(value["daily_requests"], 200)
         self.assertEqual(value["daily_micro_eur"], 2000000)
         self.assertEqual(value["expires_at"] - value["created_at"], 90 * 86400)

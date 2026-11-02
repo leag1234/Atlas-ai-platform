@@ -240,8 +240,8 @@ async def chat(request: Request) -> Response:
     from api_routing import select_public_model
     from services.orchestrator.dev_inference import chat as raw_chat
 
-    # Without a model, an assistant-scoped key keeps the assistant (as before).
-    default = "atlas" if "assistant" in request.state.api_key.scopes else "atlas-code"
+    # Without a model every key gets the Atlas assistant: the default never depends on the key.
+    default = "atlas"
     name = raw.get("model", default)
     if not isinstance(name, str):
         return error(400, "invalid_model")

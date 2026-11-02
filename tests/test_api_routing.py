@@ -664,3 +664,11 @@ class EmptyContinuationFieldTests(unittest.TestCase):
         )
         self.assertEqual(len(output.calls), 1)
         self.assertEqual(output.calls[0]["function"]["arguments"], '{"command": "ls"}')
+
+
+class GenericNameTests(unittest.TestCase):
+    def test_atlas_dev_is_a_listed_alias_of_the_code_route(self) -> None:
+        from api_routing import PUBLIC_MODELS, select_public_model
+
+        self.assertIn("atlas-dev", PUBLIC_MODELS)
+        self.assertEqual(select_public_model("atlas-dev"), "atlas-code")

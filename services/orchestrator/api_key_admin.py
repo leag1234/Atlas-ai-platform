@@ -192,7 +192,8 @@ def main() -> None:
             )
         }
         values = {k: v for k, v in values.items() if v is not None}
-        values["scopes"] = args.scope or ["assistant"]
+        # Keys are generic (owner rule 2026-11-02): every key gets the whole offer unless restricted.
+        values["scopes"] = args.scope or ["assistant", "model"]
         try:
             body = CreateKey.model_validate(values).model_dump_json().encode()
         except ValueError:
