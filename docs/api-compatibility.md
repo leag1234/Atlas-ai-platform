@@ -4,6 +4,9 @@ Atlas implements selected OpenAI request/response formats. Use the
 [OpenAI API reference](https://platform.openai.com/docs/api-reference) for the
 upstream API definitions; the limits below describe this repository.
 
+For the hosted Atlas API (keys, budgets, models, agents, errors), see the
+[developer API guide](developer-api.md).
+
 There are two separate interfaces:
 
 - **Developer API:** Docker `./atlas setup --api`, loopback port 3001, base URL
