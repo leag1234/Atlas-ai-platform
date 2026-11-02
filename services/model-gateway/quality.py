@@ -8,6 +8,7 @@ import asyncio
 import copy
 import logging
 import os
+import zlib
 from time import monotonic
 from pathlib import Path
 
@@ -122,6 +123,35 @@ def output_shape(text: str) -> dict[str, object]:
             for mark in ("<tool_call", "</tool_call", '"name": "web_', "<|")
         ),
     }
+
+
+def repetitive(window: str, ratio: float = 0.2) -> bool:
+    """A window of generated text that compresses like a loop, not like prose."""
+    data = window.encode()
+    return len(zlib.compress(data)) < ratio * len(data)
+
+
+def repetition_cut(text: str) -> str | None:
+    """Clean prefix of an answer that ended in a repetition loop, or None.
+
+    glm-5.2 sometimes repeats a short pattern until max_tokens (2026-11-02: 4 of 18 short
+    factual answers, 24 to 29 thousand characters). The looping tail compresses far better than
+    prose; the answer written before it is kept.
+    """
+
+    compact = repetitive
+    size = 500
+    if len(text) < 4 * size or not compact(text[-size:]):
+        return None
+    start = len(text) - size
+    while start >= size and compact(text[start - size : start]):
+        start -= size
+    head = text[:start]
+    boundary = max(head.rfind("\n"), head.rfind(". "), head.rfind("。"))
+    if boundary >= len(head) - size:
+        head = head[: boundary + 1]
+    head = head.rstrip()
+    return head if len(head) >= 40 else None
 
 
 def input_bound(
@@ -417,6 +447,7 @@ async def stream_quality(
         # tool-enabled text. Only malformed names may undo that decision.
         answer_started = False
         answer_emitted = False
+        streamed, checked, looping, held_from = "", 0, False, 0
         held_content: list[dict[str, object]] = []
         buffered: list[dict[str, object]] = []
         prefix = ""
@@ -444,6 +475,17 @@ async def stream_quality(
                         if isinstance(delta.get("reasoning_content"), str):
                             partial_reasoning += str(delta["reasoning_content"])
                     if isinstance(delta, dict) and delta.get("content"):
+                        # Stop forwarding a repetition loop; the final text is trimmed below.
+                        streamed += str(delta["content"])
+                        if not looping and len(streamed) >= checked + 250:
+                            checked = len(streamed)
+                            if checked >= 2000 and repetitive(streamed[-1000:], 0.1):
+                                looping, held_from = (
+                                    True,
+                                    checked - len(str(delta["content"])),
+                                )
+                        if looping:
+                            continue
                         if current.max_tokens < request.max_tokens or terminal_failed:
                             buffered.append(event)
                             continue
@@ -711,6 +753,7 @@ async def stream_quality(
             )
             incoming = input_bound(request.messages, request.tools)
         incomplete = result.get("finish_reason") == "length"
+        trimmed = False
         if incomplete:
             logging.getLogger(__name__).warning(
                 json.dumps(
@@ -725,7 +768,25 @@ async def stream_quality(
                     }
                 )
             )
-            if index or answer_started:
+            clean = (
+                None
+                if result.get("calls")
+                else repetition_cut(str(result.get("text", "")))
+            )
+            if clean is not None:
+                logging.getLogger(__name__).warning(
+                    json.dumps(
+                        {
+                            "event": "repetition_trimmed",
+                            "kept_chars": len(clean),
+                            "dropped_chars": len(str(result["text"])) - len(clean),
+                            "attempt": index + 1,
+                        }
+                    )
+                )
+                result = dict(result, text=clean, finish_reason="stop")
+                incomplete, trimmed = False, True
+            elif index or answer_started:
                 if malformed_name is not None:
                     raise MalformedToolCall(malformed_name.measured, index)
                 if index and (not str(result.get("text", "")).strip()):
@@ -783,6 +844,9 @@ async def stream_quality(
             continue
         for event in buffered:
             yield event
+        if looping and result.get("finish_reason") == "stop" and not trimmed:
+            # A regular answer that only looked repetitive: deliver what was held back.
+            yield {"delta": {"content": streamed[held_from:]}}
         answer = {
             "provider_model": model,
             "text": result["text"],
