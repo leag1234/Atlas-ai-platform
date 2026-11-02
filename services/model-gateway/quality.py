@@ -134,7 +134,7 @@ def repetitive(window: str, ratio: float = 0.2) -> bool:
 def repetition_cut(text: str) -> str | None:
     """Clean prefix of an answer that ended in a repetition loop, or None.
 
-    glm-5.2 sometimes repeats a short pattern until max_tokens (2026-11-02: 4 of 18 short
+    The code model sometimes repeats a short pattern until max_tokens (2026-11-02: 4 of 18 short
     factual answers, 24 to 29 thousand characters). The looping tail compresses far better than
     prose; the answer written before it is kept.
     """
