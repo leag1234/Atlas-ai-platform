@@ -176,9 +176,11 @@ def model_names(request: Request) -> list[str]:
     )
 
 
-def anthropic_client(request: Request) -> bool:
-    # Every Anthropic client sends anthropic-version; the model objects differ by format.
-    return "anthropic-version" in request.headers
+def messages_client(request: Request) -> bool:
+    from packages.api_content import messages_protocol
+
+    # Messages-format clients get model objects in that format.
+    return messages_protocol(request.headers)
 
 
 def openai_model(name: str) -> dict[str, object]:
@@ -193,7 +195,7 @@ def openai_model(name: str) -> dict[str, object]:
     }
 
 
-def anthropic_model(name: str) -> dict[str, object]:
+def messages_model(name: str) -> dict[str, object]:
     return {
         "type": "model",
         "id": name,
@@ -205,16 +207,16 @@ def anthropic_model(name: str) -> dict[str, object]:
 @app.get("/models", response_model=None)
 def models(request: Request) -> Response | dict[str, object]:
     names = model_names(request)
-    if not anthropic_client(request):
+    if not messages_client(request):
         return {"object": "list", "data": [openai_model(name) for name in names]}
-    # Anthropic lists are paginated with limit, after_id and before_id.
+    # Messages-format lists are paginated with limit, after_id and before_id.
     query = request.query_params
     try:
         limit = int(query.get("limit", "20"))
     except ValueError:
         limit = 0
     if not 1 <= limit <= 1000:
-        return anthropic_error(400, "invalid_request_error", "limit: 1 to 1000")
+        return messages_error(400, "invalid_request_error", "limit: 1 to 1000")
     start, stop = 0, len(names)
     if "after_id" in query and query["after_id"] in names:
         start = names.index(query["after_id"]) + 1
@@ -223,7 +225,7 @@ def models(request: Request) -> Response | dict[str, object]:
         start = max(start, stop - limit)
     page = names[start:stop][:limit]
     return {
-        "data": [anthropic_model(name) for name in page],
+        "data": [messages_model(name) for name in page],
         "has_more": start + len(page) < stop,
         "first_id": page[0] if page else None,
         "last_id": page[-1] if page else None,
@@ -234,8 +236,8 @@ def models(request: Request) -> Response | dict[str, object]:
 def model(model_id: str, request: Request) -> Response | dict[str, object]:
     if model_id not in model_names(request):
         message = f"The model {model_id!r} does not exist"
-        if anthropic_client(request):
-            return anthropic_error(404, "not_found_error", message)
+        if messages_client(request):
+            return messages_error(404, "not_found_error", message)
         return JSONResponse(
             {
                 "error": {
@@ -247,12 +249,12 @@ def model(model_id: str, request: Request) -> Response | dict[str, object]:
             },
             status_code=404,
         )
-    if anthropic_client(request):
-        return anthropic_model(model_id)
+    if messages_client(request):
+        return messages_model(model_id)
     return openai_model(model_id)
 
 
-def anthropic_error(status: int, kind: str, message: str) -> Response:
+def messages_error(status: int, kind: str, message: str) -> Response:
     return JSONResponse(
         {"type": "error", "error": {"type": kind, "message": message}},
         status_code=status,

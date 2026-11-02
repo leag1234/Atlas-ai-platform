@@ -3,6 +3,7 @@
 import base64
 import binascii
 from pathlib import PurePath
+from collections.abc import Mapping
 from typing import Any
 
 from packages.attachment_reader import extract_bytes
@@ -111,3 +112,8 @@ def drop_client_extras(body: dict[str, Any]) -> dict[str, Any]:
         if isinstance(tool, dict):
             tool.pop("cache_control", None)
     return body
+
+
+def messages_protocol(headers: Mapping[str, str]) -> bool:
+    """Clients of the Anthropic Messages format send its version header on every request."""
+    return "anthropic-version" in headers
