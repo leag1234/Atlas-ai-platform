@@ -92,13 +92,25 @@ Prices per million tokens, in euros excluding tax:
 | DeepSeek V4 Flash (`atlas-code` fallback) | 0.40 | 0.80 |
 | GLM 5.2 (`atlas-chat` fallback) | 1.80 | 5.50 |
 
-An agent step that sends 50,000 tokens of context and receives 500 tokens costs about 0.0066 EUR at
-`none` and about 0.061 EUR at `low` or above. Over 100 steps: 0.66 EUR against 6.1 EUR. Measured on whole
-agent tasks (2026-10-31): about 3 EUR at `none`, about 14 EUR at `high`.
+Agents resend their whole context at every step. Mistral caches the repeated start of a prompt and
+bills cached input tokens much less (GLM 5.3: 0.119 EUR per million instead of 1.19; GLM 5.3 Flash:
+0.0255 instead of 0.1275). Atlas passes this through: cached tokens appear in
+`usage.prompt_tokens_details.cached_tokens` and are charged at the cached rate. Measured on 2026-11-02
+with a 10,162-token prompt repeated five times:
 
-Agents resend their whole context at every step, and Atlas does not currently use provider prompt
-caching (measured: the same 4,729-token prompt sent three times reported 0 cached tokens and was charged
-in full each time), so the size of the context drives the cost.
+| Route | First call | Next calls |
+|---|---|---|
+| GLM 5.3 (`low` and above) | 0.0121 EUR | 0.0013 EUR (about 89% less), from the second call |
+| GLM 5.3 Flash (`none`) | 0.0013 EUR | 0.0005 EUR when the cache hit, which happened on 2 of 5 calls |
+
+An agent step that sends 50,000 tokens of context and receives 500 tokens costs about 0.0066 EUR at
+`none` with no cache hit. At `low` or above it costs about 0.061 EUR when the context is not cached and
+about 0.0078 EUR when it is, which is the usual case after the first step of a run. Over 100 steps that is
+roughly 0.66 EUR at `none`, 6.1 EUR without cache at `low`, and 0.78 EUR with the cache. Measured on whole
+agent tasks (2026-10-31): about 3 EUR at `none` and about 14 EUR at `high`.
+
+To benefit from the cache, keep the beginning of your prompts identical from one request to the next
+(system prompt, tool definitions, earlier turns) and put what changes at the end.
 
 ### `max_tokens`
 
