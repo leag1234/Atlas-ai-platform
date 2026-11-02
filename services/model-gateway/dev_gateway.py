@@ -107,6 +107,9 @@ def prepare_api(
             stream=True,
             stream_options={"include_usage": True},
         )
+        if not payload.get("temperature"):
+            # Greedy sampling ignores top_p, and Mistral refuses top_p below 1 with it.
+            payload.pop("top_p", None)
         seed_field = provider_settings.preset_value(target.provider, "seed_field")
         if seed_field and "seed" in payload:
             payload[seed_field] = payload.pop("seed")

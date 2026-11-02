@@ -40,6 +40,7 @@ def plans(request: Any) -> list[dict[str, Any]]:
 class SamplingTests(unittest.TestCase):
     def test_sampling_options_reach_every_provider(self) -> None:
         options = {
+            "temperature": 0.3,
             "top_p": 0.9,
             "stop": ["\n\n"],
             "seed": 7,
@@ -58,6 +59,12 @@ class SamplingTests(unittest.TestCase):
                 self.assertNotIn(
                     "seed" if seed == "random_seed" else "random_seed", body
                 )
+
+    def test_top_p_is_not_sent_with_greedy_sampling(self) -> None:
+        for body in plans(RawChatInput.model_validate(raw(top_p=0.9))):
+            self.assertNotIn("top_p", body)
+        for body in plans(RawChatInput.model_validate(raw(top_p=0.9, temperature=0.3))):
+            self.assertEqual(body["top_p"], 0.9)
 
     def test_unset_options_are_not_sent(self) -> None:
         for body in plans(RawChatInput.model_validate(raw())):
