@@ -124,3 +124,61 @@ def estimated_tokens(value: object) -> int:
     """Input tokens estimated as UTF-8 bytes / 4, rounded up (no provider tokenizer is exposed)."""
     size = len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
     return -(-size // 4)
+
+
+def normalize_chat(body: dict[str, Any]) -> dict[str, Any]:
+    """Current and legacy Chat Completions forms, mapped to what the routed models accept.
+
+    - developer messages are system messages for the routed models;
+    - assistant content parts (text, refusal) become plain text;
+    - the deprecated functions, function_call and function role map to tools and tool calls;
+    - audio input is refused by name: no hosted model takes it yet.
+    """
+    if "functions" in body:
+        body["tools"] = [
+            {"type": "function", "function": function}
+            for function in body.pop("functions")
+        ]
+    if "function_call" in body:
+        choice = body.pop("function_call")
+        body["tool_choice"] = (
+            {"type": "function", "function": {"name": choice["name"]}}
+            if isinstance(choice, dict)
+            else choice
+        )
+    for position, message in enumerate(body.get("messages") or []):
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        if role == "developer":
+            message["role"] = "system"
+        if role == "function":
+            message["role"] = "tool"
+            message["tool_call_id"] = "call_legacy_" + str(
+                message.pop("name", position)
+            )
+        if role == "assistant" and isinstance(message.get("function_call"), dict):
+            call = message.pop("function_call")
+            message["tool_calls"] = [
+                {
+                    "id": "call_legacy_" + str(call.get("name", "")),
+                    "type": "function",
+                    "function": {
+                        "name": call.get("name", ""),
+                        "arguments": call.get("arguments", "{}"),
+                    },
+                }
+            ]
+        content = message.get("content")
+        if role == "assistant" and isinstance(content, list):
+            message["content"] = "".join(
+                str(part.get("text") or part.get("refusal") or "")
+                for part in content
+                if isinstance(part, dict)
+            )
+        elif isinstance(content, list) and any(
+            isinstance(part, dict) and part.get("type") == "input_audio"
+            for part in content
+        ):
+            raise FileContentError("unsupported_content: input_audio")
+    return body

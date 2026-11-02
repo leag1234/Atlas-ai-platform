@@ -139,3 +139,89 @@ class ClientExtrasTests(unittest.TestCase):
         self.assertIn(
             "unknown field invented_option", describe_validation(caught.exception)
         )
+
+
+class ChatFormsTests(unittest.TestCase):
+    """Current and legacy Chat Completions forms reach the routed models in a form they accept."""
+
+    def validated(self, body: dict[str, Any]) -> Any:
+        from packages.api_content import normalize_chat
+        from services.orchestrator.dev_chat import RawChatInput
+
+        return RawChatInput.model_validate(
+            normalize_chat(dict(body, model="raw/public-routing"))
+        )
+
+    def test_developer_message_is_a_system_message(self) -> None:
+        parsed = self.validated(
+            {
+                "messages": [
+                    {"role": "developer", "content": "Be brief."},
+                    {"role": "user", "content": "Hi"},
+                ]
+            }
+        )
+        self.assertEqual(parsed.messages[0].role, "system")
+
+    def test_assistant_parts_become_text(self) -> None:
+        parsed = self.validated(
+            {
+                "messages": [
+                    {"role": "user", "content": "Hi"},
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "I cannot "},
+                            {"type": "refusal", "refusal": "do that."},
+                        ],
+                    },
+                    {"role": "user", "content": "Fine."},
+                ]
+            }
+        )
+        self.assertEqual(parsed.messages[1].content, "I cannot do that.")
+
+    def test_legacy_functions_map_to_tools(self) -> None:
+        function = {"name": "get_time", "parameters": {"type": "object"}}
+        parsed = self.validated(
+            {
+                "functions": [function],
+                "function_call": {"name": "get_time"},
+                "messages": [
+                    {"role": "user", "content": "Time?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "function_call": {"name": "get_time", "arguments": "{}"},
+                    },
+                    {"role": "function", "name": "get_time", "content": "12:00"},
+                ],
+            }
+        )
+        self.assertEqual(parsed.tools[0].function.name, "get_time")
+        self.assertEqual(
+            parsed.tool_choice, {"type": "function", "function": {"name": "get_time"}}
+        )
+        call = parsed.messages[1].tool_calls[0]
+        self.assertEqual(parsed.messages[2].role, "tool")
+        self.assertEqual(parsed.messages[2].tool_call_id, call.id)
+
+    def test_audio_input_is_refused_by_name(self) -> None:
+        from packages.api_content import FileContentError, normalize_chat
+
+        with self.assertRaisesRegex(FileContentError, "input_audio"):
+            normalize_chat(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_audio",
+                                    "input_audio": {"data": "x", "format": "wav"},
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
