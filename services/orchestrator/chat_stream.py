@@ -492,7 +492,10 @@ def response(
 
                     opener = pdf_placeholders(payload)
                     if opener:
-                        await sink({"delta": {"content": opener}})
+                        # Atlas's own text, not the model's: it bypasses the answer
+                        # filters, so an answer completed without streamed text (a
+                        # document read in one call) is still sent in full.
+                        await queue.put({"delta": {"content": opener}})
                     await process(payload, item)
                     if item.state != "done":
                         raise RuntimeError("request_stopped")
