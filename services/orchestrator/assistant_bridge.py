@@ -83,6 +83,53 @@ async def frames(response: Response) -> AsyncIterator[dict[str, Any]]:
                 yield frame
 
 
+async def stop_at(
+    source: AsyncIterator[dict[str, Any]], stops: list[str]
+) -> AsyncIterator[dict[str, Any]]:
+    """End the assistant's text at the first requested stop sequence, as a model would.
+
+    The assistant is an agent, so the sequences apply to its final text. A tail that could
+    start a sequence is held back; after a match the rest is read but not shown, so the
+    usage frame still reports what the answer cost.
+    """
+    if not stops:
+        async for frame in source:
+            yield frame
+        return
+    keep = max(len(stop) for stop in stops) - 1
+    pending, matched = "", None
+    async for frame in source:
+        choices = []
+        for choice in frame["choices"]:
+            if matched is not None:
+                continue
+            pending += choice["delta"].get("content", "")
+            hits = [(pending.find(stop), stop) for stop in stops if stop in pending]
+            if hits:
+                at, matched = min(hits)
+                text, pending = pending[:at], ""
+            elif choice["finish_reason"]:
+                text, pending = pending, ""
+            else:
+                text = pending[: len(pending) - keep] if keep else pending
+                pending = pending[len(text) :]
+            if text or choice["finish_reason"] or matched is not None:
+                choices.append(
+                    {
+                        "index": 0,
+                        "delta": {"content": text} if text else {},
+                        "finish_reason": "stop"
+                        if matched is not None
+                        else choice["finish_reason"],
+                        **({"stop_reason": matched} if matched is not None else {}),
+                    }
+                )
+        if choices:
+            yield {"choices": choices}
+        if "usage" in frame:
+            yield {"choices": [], "usage": frame["usage"]}
+
+
 async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Response:
     from services.orchestrator.api_key_edge import require
     from services.orchestrator.chat_api import chat as assistant_chat
@@ -97,8 +144,14 @@ async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Respons
     reply = await assistant_chat(request)
     if not isinstance(reply, StreamingResponse) or reply.status_code != 200:
         return reply
+    # Responses has no stop parameter; Messages sequences were validated with the body.
+    stops = list(raw.get("stop_sequences") or []) if protocol == "messages" else []
     shape = RawChatInput.model_validate(
-        {"model": "raw/assistant", "messages": [{"role": "user", "content": "-"}]}
+        {
+            "model": "raw/assistant",
+            "messages": [{"role": "user", "content": "-"}],
+            **({"stop": stops} if stops else {}),
+        }
     )
     output = Output("assistant", shape, str(raw["model"]))
     wire = (
@@ -109,7 +162,7 @@ async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Respons
 
     async def events() -> AsyncGenerator[dict[str, Any], None]:
         finished = False
-        async for frame in frames(reply):
+        async for frame in stop_at(frames(reply), stops):
             if "usage" in frame and not finished:
                 # The usage frame closes the answer: end the text before it.
                 for event in wire.feed(

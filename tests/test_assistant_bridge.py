@@ -179,6 +179,51 @@ class AssistantBridgeTests(unittest.TestCase):
         self.assertEqual(accepted.status_code, 200, accepted.text)
         self.assertNotIn("tools", self.sent[-1])
 
+    def test_stop_sequences_end_the_assistant_text(self) -> None:
+        # The sequence spans two chunks of the assistant stream; usage stays exact.
+        headers = dict(self.openai, **{"anthropic-version": "2023-06-01"})
+        body = {
+            "model": "atlas",
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "Hi"}],
+        }
+        for stops, text, reason, sequence in (
+            (["om A", "zzz"], "Hello fr", "stop_sequence", "om A"),
+            (["zzz"], "Hello from Atlas.", "end_turn", None),
+        ):
+            reply = self.client.post(
+                "/api/atlas/v1/messages",
+                headers=headers,
+                json=body | {"stop_sequences": stops},
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+            answer = reply.json()
+            self.assertEqual(answer["content"], [{"type": "text", "text": text}])
+            self.assertEqual(
+                (answer["stop_reason"], answer["stop_sequence"]), (reason, sequence)
+            )
+            self.assertEqual(answer["usage"], {"input_tokens": 12, "output_tokens": 4})
+        streamed = self.client.post(
+            "/api/atlas/v1/messages",
+            headers=headers,
+            json=body | {"stop_sequences": ["om A"], "stream": True},
+        )
+        events = [
+            json.loads(line[6:])
+            for line in streamed.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        shown = "".join(
+            event["delta"].get("text", "")
+            for event in events
+            if event["type"] == "content_block_delta"
+        )
+        self.assertEqual(shown, "Hello fr")
+        final = next(event for event in events if event["type"] == "message_delta")
+        self.assertEqual(
+            final["delta"], {"stop_reason": "stop_sequence", "stop_sequence": "om A"}
+        )
+
     def test_unsupported_options_are_refused_by_name(self) -> None:
         cases: list[tuple[dict[str, Any], str]] = [
             (
