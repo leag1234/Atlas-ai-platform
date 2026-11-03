@@ -105,7 +105,7 @@ class Choice:
         self.call_slots: dict[int, int] = {}
         self.reason: str | None = None
         # The requested stop sequence that ended the text, when the provider says
-        # which (vLLM's stop_reason; the Mistral API does not report it).
+        # which (vLLM's stop_reason; some providers do not report it).
         self.stop_sequence: str | None = None
         self.logprobs: list[Any] = []
         self.thinking_closed = False
