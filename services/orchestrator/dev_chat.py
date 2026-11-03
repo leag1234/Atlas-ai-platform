@@ -104,6 +104,9 @@ class Choice:
         # Provider index -> Atlas index, for providers that reuse index 0.
         self.call_slots: dict[int, int] = {}
         self.reason: str | None = None
+        # The requested stop sequence that ended the text, when the provider says
+        # which (vLLM's stop_reason; the Mistral API does not report it).
+        self.stop_sequence: str | None = None
         self.logprobs: list[Any] = []
         self.thinking_closed = False
 
@@ -194,6 +197,10 @@ class Output:
     @reason.setter
     def reason(self, value: str | None) -> None:
         self.choices[0].reason = value
+
+    @property
+    def stop_sequence(self) -> str | None:
+        return self.choices[0].stop_sequence
 
     def wanted(self) -> int:
         return getattr(self.request, "n", 1)
@@ -301,6 +308,15 @@ class Output:
             reason = choice["finish_reason"]
             if reason is not None:
                 st.reason = "tool_calls" if st.calls and reason == "stop" else reason
+                matched = choice.get("stop_reason")
+                requested = getattr(self.request, "stop", None)
+                stops = [requested] if isinstance(requested, str) else requested or []
+                if (
+                    st.reason == "stop"
+                    and isinstance(matched, str)
+                    and matched in stops
+                ):
+                    st.stop_sequence = matched
                 ids = [c["id"] for c in st.calls.values()]
                 if len(set(ids)) != len(ids) or any(not i for i in ids):
                     raise ValueError("invalid_call_id")

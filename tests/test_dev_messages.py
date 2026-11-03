@@ -126,6 +126,56 @@ class DevMessagesTests(unittest.TestCase):
                 ],
             )
 
+    def test_stop_sequence_reported_when_the_provider_names_it(self) -> None:
+        from services.orchestrator.dev_chat import Output
+        from services.orchestrator.dev_input import messages
+        from services.orchestrator.dev_messages import Wire
+
+        payload = PAYLOAD | {"stop_sequences": ["END", "5"]}
+        # vLLM names the sequence; the Mistral API does not (measured 2026-11-03);
+        # a sequence the client did not ask for is never reported.
+        for provider_says, expected in (("5", "5"), (None, None), ("other", None)):
+            output = Output("request", messages(payload))
+            wire = Wire(output, {})
+            events = wire.start()
+            events += wire.feed(
+                output.feed(
+                    {
+                        "choices": [
+                            {"delta": {"content": "1,2,3,4,"}, "finish_reason": None}
+                        ]
+                    }
+                )
+            )
+            events += wire.feed(
+                output.feed(
+                    {
+                        "choices": [
+                            {
+                                "delta": {},
+                                "finish_reason": "stop",
+                                "stop_reason": provider_says,
+                            }
+                        ]
+                    }
+                )
+            )
+            events += wire.feed(
+                output.feed(
+                    {
+                        "choices": [],
+                        "usage": {"prompt_tokens": 2, "completion_tokens": 3},
+                    }
+                )
+            )
+            reason = "stop_sequence" if expected else "end_turn"
+            self.assertEqual(wire.result()["stop_reason"], reason)
+            self.assertEqual(wire.result()["stop_sequence"], expected)
+            delta = events[-2]["delta"]
+            self.assertEqual(
+                (delta["stop_reason"], delta["stop_sequence"]), (reason, expected)
+            )
+
     def test_malformed_truncated_object_has_generic_error(self) -> None:
         env = Environment()
         self.addCleanup(env.close)

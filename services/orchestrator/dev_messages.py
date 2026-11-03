@@ -76,12 +76,14 @@ class Wire:
             "role": "assistant",
             "model": self.output.base["model"],
             "content": content,
-            "stop_reason": {
+            "stop_reason": "stop_sequence"
+            if self.output.stop_sequence is not None
+            else {
                 "stop": "end_turn",
                 "tool_calls": "tool_use",
                 "length": "max_tokens",
             }.get(self.output.reason or ""),
-            "stop_sequence": None,
+            "stop_sequence": self.output.stop_sequence,
             "usage": {
                 "input_tokens": usage["prompt_tokens"],
                 "output_tokens": usage["completion_tokens"],
@@ -189,7 +191,7 @@ class Wire:
                         "type": "message_delta",
                         "delta": {
                             "stop_reason": result["stop_reason"],
-                            "stop_sequence": None,
+                            "stop_sequence": result["stop_sequence"],
                         },
                         "usage": result["usage"],
                     },

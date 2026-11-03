@@ -100,7 +100,7 @@ refuses client tools with `assistant_runs_its_own_tools`.
 | `web_fetch`, code execution (`code_execution`, `bash_code_execution`, `text_editor_code_execution`), memory, computer use, MCP connector, `tool_search` | Not implemented |
 | Citations on text blocks | Not implemented |
 | Stream events: `message_start`, `content_block_start`, `content_block_delta` (`text_delta`, `input_json_delta`), `content_block_stop`, `message_delta`, `message_stop` | Applied |
-| `stop_reason: "stop_sequence"` with the sequence that stopped the text | Not implemented (answers `end_turn`) |
+| `stop_reason: "stop_sequence"` with the sequence that stopped the text | Applied when the provider names the sequence (models served by Scaleway); `end_turn` otherwise (the Mistral API does not say which sequence matched) |
 
 ## 5. Differences that are not gaps in the list above
 
@@ -113,6 +113,5 @@ refuses client tools with `assistant_runs_its_own_tools`.
 
 1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
 2. `reasoning` output items and `thinking` blocks in answers.
-3. `stop_reason: "stop_sequence"` on Messages.
-4. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
-5. The families outside chat (embeddings, images, audio, files, batches): phase 2.
+3. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
+4. The families outside chat (embeddings, images, audio, files, batches): phase 2.
