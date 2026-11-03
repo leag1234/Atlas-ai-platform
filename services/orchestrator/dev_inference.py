@@ -292,6 +292,7 @@ async def hosted_drive(
             found = await web_search(
                 query, max(1.0, min(20.0, deadline - monotonic())), key_id
             )
+            output.citations.extend(found["results"])
             yield {
                 "hosted": {
                     "type": "web_search_call",
@@ -377,6 +378,19 @@ async def chat(
                 return error(str(exc), 400)
         parsed: ChatInput | RawChatInput
         hosted: list[str] = []
+        if (
+            raw_model is not None
+            and protocol == "chat"
+            and isinstance(raw, dict)
+            and "web_search_options" in raw
+        ):
+            # Chat Completions asks for web search with web_search_options: the same
+            # hosted search as the Responses web_search tool.
+            from services.orchestrator.hosted_tools import SEARCH_FUNCTION
+
+            raw.pop("web_search_options")
+            raw["tools"] = [*(raw.get("tools") or []), SEARCH_FUNCTION]
+            hosted = ["web_search"]
         try:
             if protocol in ("messages", "responses") and raw_model is not None:
                 from packages.api_content import inline_files, normalize_chat
@@ -569,6 +583,9 @@ async def chat(
                             + json.dumps(event)
                             + "\n\n"
                         )
+                elif "hosted" in chunk:
+                    # Searches run between turns; Chat Completions shows only the answer.
+                    continue
                 elif chunk.get("choices") != [] or parsed.stream_options.include_usage:
                     if parsed.stream_options.include_usage and "error" not in chunk:
                         chunk.setdefault("usage", None)

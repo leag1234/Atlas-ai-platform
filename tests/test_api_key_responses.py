@@ -592,6 +592,85 @@ class KeyResponsesTests(unittest.TestCase):
         self.assertEqual(strict.status_code, 400, strict.text)
         self.assertIn("strict", strict.text)
 
+    def test_hosted_web_search_on_chat_completions(self) -> None:
+        """web_search_options runs the same hosted search; the answer cites retrieved urls."""
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            if body["messages"][-1]["role"] == "tool":
+                delta: dict[str, Any] = {
+                    "content": "About 2.1 million, see https://example.invalid/paris"
+                }
+                reason = "stop"
+            else:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_search",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query":"Paris population"}',
+                            },
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            for frame in (
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ):
+                yield ("data: " + json.dumps(frame) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        async def fake_search(
+            query: str, timeout: float, key_id: str
+        ) -> dict[str, Any]:
+            return {
+                "results": [
+                    {
+                        "title": "Paris",
+                        "url": "https://example.invalid/paris",
+                        "snippet": "2.1 million",
+                    }
+                ]
+            }
+
+        body = {
+            "model": "atlas-code",
+            "messages": [{"role": "user", "content": "How many people live in Paris?"}],
+            "web_search_options": {},
+        }
+        url = "/api/atlas/v1/chat/completions"
+        with (
+            patch.object(gateway, "transport", transport),
+            patch("services.orchestrator.hosted_tools.web_search", fake_search),
+        ):
+            reply = self.client.post(url, headers=self.headers, json=body)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            message = reply.json()["choices"][0]["message"]
+            self.assertIn("2.1 million", message["content"])
+            citation = message["annotations"][0]["url_citation"]
+            self.assertEqual(citation["url"], "https://example.invalid/paris")
+            self.assertEqual(
+                message["content"][citation["start_index"] : citation["end_index"]],
+                "https://example.invalid/paris",
+            )
+            self.assertEqual(reply.json()["usage"]["prompt_tokens"], 20)
+            streamed = self.client.post(
+                url, headers=self.headers, json=dict(body, stream=True)
+            )
+            self.assertEqual(streamed.status_code, 200, streamed.text)
+            self.assertNotIn("hosted", streamed.text)
+            self.assertIn("2.1 million", streamed.text)
+        strict = self.client.post(
+            url, headers=dict(self.headers, **{"X-Atlas-Privacy": "strict"}), json=body
+        )
+        self.assertEqual(strict.status_code, 400, strict.text)
+
     def test_client_shell_and_apply_patch_tools(self) -> None:
         """The client-executed shell and apply_patch tools of the Responses API."""
         arguments = {
