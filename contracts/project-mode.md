@@ -521,6 +521,10 @@ the credential or expiry to the browser; `/api/atlas/me` retains the Me schema.
 
 Set `ATLAS_PROJECT_MODE=1` on the orchestrator/front relay to enable project gates;
 a configured `ATLAS_PROJECT_DSN` also enables them for migration compatibility.
+Project mode always closes the superseded `/projects`, `/code` and `/atlas-code`
+interfaces. `ATLAS_PROJECT_ONLY=1` marks an instance that serves no chat and also
+closes the chat's `/api/v1/files`, `/api/v1/terminals` and `/images` routes; an
+instance that serves the chat beside projects leaves it unset.
 `ATLAS_TRUSTED_EMAIL_HEADER` names the front door's verified subject header
 (default `X-Atlas-User`); it is trusted only with `ATLAS_PROXY_SECRET` on the private
 hop. The host `token` cookie is verified via the pinned host's `/api/v1/auths/`
