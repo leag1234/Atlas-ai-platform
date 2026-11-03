@@ -27,11 +27,32 @@ STORAGE_MESSAGE = (
 )
 
 
+PROMPT_MESSAGE = (
+    "Atlas does not store prompt templates. Send the template text in instructions "
+    "and input instead of prompt."
+)
+ITEM_REFERENCE_MESSAGE = (
+    "Atlas does not store response items. Send the full item in input instead of "
+    "item_reference."
+)
+# Hosted tools that need a server-side runtime Atlas does not offer on this route.
+# Refused by name: dropping them silently would answer as if the tool had run.
+UNSUPPORTED_TOOLS = (
+    "file_search",
+    "code_interpreter",
+    "image_generation",
+    "mcp",
+    "computer_use_preview",
+    "computer_use",
+    "computer",
+)
+
+
 class StorageRefusal(SemanticFieldError):
     """A feature that needs responses stored on the server (owner decision 2026-11-02)."""
 
-    def __init__(self) -> None:
-        super().__init__(STORAGE_MESSAGE)
+    def __init__(self, message: str = STORAGE_MESSAGE) -> None:
+        super().__init__(message)
 
 
 def dropped(scope: str, names: set[str]) -> None:
@@ -155,6 +176,7 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
             "previous_response_id",
             "conversation",
             "background",
+            "prompt",
         },
         "request",
     )
@@ -166,6 +188,8 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
         or value.get("background")
     ):
         raise StorageRefusal()
+    if "prompt" in value:
+        raise StorageRefusal(PROMPT_MESSAGE)
     if "project_id" in value:
         raise SemanticFieldError("unsupported field: project_id")
     include = value.get("include", [])
@@ -208,6 +232,8 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
         items = [{"role": "user", "content": items}]
     for item in items:
         kind = item.get("type", "message")
+        if kind == "item_reference":
+            raise StorageRefusal(ITEM_REFERENCE_MESSAGE)
         if kind == "message":
             fields(item, "type role content id status")
             content = item["content"]
@@ -406,6 +432,13 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
             # A malformed tool is a client error; only unknown typed tools are dropped.
             raise ValueError("invalid_tool")
         kind = tool.get("type")
+        if kind in UNSUPPORTED_TOOLS:
+            raise SemanticFieldError(
+                "unsupported tool: "
+                + kind
+                + ". Atlas does not run this hosted tool; declare a function tool "
+                "and run it on the client."
+            )
         if kind == "function":
             response_fields(
                 tool,

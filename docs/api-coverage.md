@@ -67,15 +67,14 @@ refuses client tools with `assistant_runs_its_own_tools`.
 |---|---|
 | Applied | `model`, `input`, `instructions`, `max_output_tokens`, `temperature`, `top_p`, `tools`, `tool_choice`, `parallel_tool_calls`, `reasoning.effort`, `text.format`, `stream`, `metadata` (echoed back) |
 | Accepted, no effect | `store` (reported as false), `include`, `background: false`, `context_management`, `max_tool_calls`, `prompt_cache_key`, `prompt_cache_retention`, `safety_identifier`, `service_tier`, `stream_options`, `top_logprobs`, `truncation`, `user`, `reasoning.summary` |
-| Refused (`storage_not_supported`) | `previous_response_id`, `conversation`, `background: true` |
-| Dropped | `prompt` (stored prompt templates), `item_reference` input items |
+| Refused (`storage_not_supported`) | `previous_response_id`, `conversation`, `background: true`, `prompt` (stored prompt templates), `item_reference` input items |
 
 | Tool or item | State |
 |---|---|
 | `function`, `custom`, `namespace` tools | Applied (executed by the client) |
 | `local_shell`, `shell`, `apply_patch` tools | Applied (executed by the client) |
 | `web_search` tool | Applied (executed by Atlas, up to 4 turns, `web_search_call` items, `url_citation` annotations) |
-| `file_search`, `code_interpreter`, `image_generation`, `mcp`, `computer_use_preview` tools | Dropped |
+| `file_search`, `code_interpreter`, `image_generation`, `mcp`, `computer_use_preview` tools | Refused by name (`invalid_request`, `unsupported tool: <type>`) |
 | Input: text, `input_image`, `input_file`, function and custom call results, `reasoning` items | Applied |
 | Input: `input_audio` | Refused by name |
 | Output: messages, `function_call`, `custom_tool_call`, `local_shell_call`, `shell_call`, `apply_patch_call`, `web_search_call` | Applied |
@@ -112,9 +111,8 @@ refuses client tools with `assistant_runs_its_own_tools`.
 
 ## 6. Open items, in the order planned
 
-1. Refuse by name what is dropped today: `prompt`, `item_reference`, and the Responses tools `file_search`, `code_interpreter`, `image_generation`, `mcp`, `computer_use_preview`.
-2. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
-3. `reasoning` output items and `thinking` blocks in answers.
-4. `stop_reason: "stop_sequence"` on Messages.
-5. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
-6. The families outside chat (embeddings, images, audio, files, batches): phase 2.
+1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
+2. `reasoning` output items and `thinking` blocks in answers.
+3. `stop_reason: "stop_sequence"` on Messages.
+4. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
+5. The families outside chat (embeddings, images, audio, files, batches): phase 2.

@@ -60,6 +60,28 @@ class DevInputTests(unittest.TestCase):
         ):
             with self.assertRaises(StorageRefusal):
                 responses(payload | extra)
+        # Stored prompt templates and item references need storage too.
+        for extra in (
+            {"prompt": {"id": "pmpt_fictional", "version": "2"}},
+            {"input": [{"type": "item_reference", "id": "msg_fictional"}]},
+        ):
+            with self.assertRaises(StorageRefusal) as refused:
+                responses(payload | extra)
+            self.assertIn("does not store", str(refused.exception))
+        # Hosted tools Atlas does not run are refused by name, never dropped.
+        from services.orchestrator.dev_input import SemanticFieldError
+
+        for kind in (
+            "file_search",
+            "code_interpreter",
+            "image_generation",
+            "mcp",
+            "computer_use_preview",
+        ):
+            with self.assertRaises(SemanticFieldError) as tool_refused:
+                responses(payload | {"tools": [{"type": kind}]})
+            self.assertIn("unsupported tool: " + kind, str(tool_refused.exception))
+            self.assertNotIsInstance(tool_refused.exception, StorageRefusal)
         for extra in ({"store": True}, {"include": ["web_search_call.action.sources"]}):
             self.assertEqual(responses(payload | extra).model, "atlas-code")
         with self.assertRaises(ValueError):
