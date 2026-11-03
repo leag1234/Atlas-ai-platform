@@ -78,6 +78,9 @@ def safe_filename(name: str) -> str:
     return f"{stem}.{ext}" if ext else stem
 
 
+EXECUTIONS = asyncio.Semaphore(8)
+
+
 class TerminalClient:
     def __init__(self, request_id: str) -> None:
         if not request_id.replace("-", "").isalnum():
@@ -85,6 +88,7 @@ class TerminalClient:
         if os.environ.get("ATLAS_TERMINAL_ENABLED") != "1":
             raise RuntimeError("terminal_unavailable")
         self.root = "/home/user/requests/" + request_id
+        self.ready = False
         self.commands = 0
         self.failed_commands = 0
         self.files: list[str] = []
@@ -212,26 +216,112 @@ class TerminalClient:
             "strategy": strategy,
         }
 
+    def isolation_arguments(self, name: str) -> list[str]:
+        """Throwaway container: no network, no capabilities, only this request's directory."""
+        from services.orchestrator.code_workspace import enabled, volume
+
+        ports = atlas_ports()
+        subpath = "requests/" + self.root.rsplit("/", 1)[1]
+        mounts = [
+            "type=volume,src=%s,dst=%s,volume-subpath=%s"
+            % (ports.name("atlas-terminal-files"), self.root, subpath)
+        ]
+        if enabled():
+            mounts.append("type=volume,src=%s,dst=/code-workspaces,readonly" % volume())
+        arguments = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            name,
+            "--label",
+            "atlas.owner=exec",
+            "--network",
+            "none",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--read-only",
+            "--user",
+            "1000:1000",
+            "--memory",
+            "2g",
+            "--memory-swap",
+            "2g",
+            "--cpus",
+            "2",
+            "--pids-limit",
+            "128",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
+            "-e",
+            "HOME=/tmp",
+            "-w",
+            self.root,
+        ]
+        for mount in mounts:
+            arguments += ["--mount", mount]
+        from services.orchestrator.terminal_stack import IMAGE
+
+        return arguments + ["--entrypoint", "/bin/bash", IMAGE, "-c", "--"]
+
+    async def isolated(self, command: str, timeout: float) -> dict[str, object]:
+        """Run one command in its own container, so it cannot see other requests' files."""
+        import uuid
+
+        if not self.ready:
+            await self.initialize()
+            self.ready = True
+        name = "atlas-exec-" + uuid.uuid4().hex
+        limit = 1024 * 1024
+        async with EXECUTIONS:
+            process = await asyncio.create_subprocess_exec(
+                *self.isolation_arguments(name),
+                command,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            raw = bytearray()
+
+            async def collect() -> None:
+                assert process.stdout is not None
+                while chunk := await process.stdout.read(16384):
+                    if len(raw) <= limit:
+                        raw.extend(chunk)
+                await process.wait()
+
+            try:
+                await asyncio.wait_for(collect(), timeout)
+            except asyncio.TimeoutError:
+                return {"status": "timeout"}
+            finally:
+                if process.returncode is None:
+                    kill = await asyncio.create_subprocess_exec(
+                        "docker",
+                        "rm",
+                        "-f",
+                        name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await asyncio.shield(kill.wait())
+                    await asyncio.shield(process.wait())
+        text = bytes(raw[:limit]).decode("utf-8", "replace")
+        return safe_result(
+            {
+                "status": "done",
+                "exit_code": process.returncode,
+                "output": [{"type": "output", "data": text}],
+                "truncated": len(raw) > limit,
+            }
+        )
+
     async def execute(self, command: str, timeout: float) -> dict[str, object]:
         self.commands += 1
-        result = await self.request(
-            "POST",
-            "/execute",
-            timeout,
-            payload={"command": command, "cwd": self.root},
-            params={"wait": str(min(timeout, 30))},
-        )
-        process = result.get("id")
+        result = await self.isolated(command, min(timeout, 30))
         if result.get("status") != "done":
-            if isinstance(process, str):
-                await asyncio.shield(
-                    self.request(
-                        "DELETE",
-                        "/execute/" + quote(process, safe=""),
-                        5,
-                        params={"force": "true"},
-                    )
-                )
             self.failed_commands += 1
             return {
                 "error": "terminal_command_timeout",
