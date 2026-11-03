@@ -31,14 +31,17 @@ async def respond(request: Request) -> Response:
     except (ValueError, TimeoutError, RecursionError):
         return error(400, "invalid_request")
 
-    from packages.api_content import assistant_name, assistant_route_message
+    from packages.api_content import assistant_name
 
     if assistant_name(raw["model"]):
-        return error(
-            400,
-            "assistant_model_on_chat_completions",
-            message=assistant_route_message(),
-        )
+        from services.orchestrator import assistant_bridge
+
+        try:
+            return await assistant_bridge.serve(request, raw, "responses")
+        except PermissionError as exc:
+            return error(400, "assistant_runs_its_own_tools", message=str(exc))
+        except (ValueError, KeyError, TypeError):
+            return error(400, "invalid_request")
     try:
         public_model = select_public_model(raw["model"])
     except ValueError:

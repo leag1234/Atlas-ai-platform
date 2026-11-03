@@ -259,9 +259,10 @@ class KeyResponsesTests(unittest.TestCase):
 
         for name in ("atlas", *PROFILES):
             with self.subTest(assistant=name):
+                # The assistant is served on Responses since 2026-11-03; this key has
+                # only the model scope.
                 reply = self.post(self.payload | {"model": name})
-                self.assertEqual(reply.status_code, 400)
-                self.assertIn("/chat/completions", reply.text)
+                self.assertEqual(reply.status_code, 403)
 
     def test_chat_completions_reports_public_usage_and_provider(self) -> None:
         reply = self.client.post(
