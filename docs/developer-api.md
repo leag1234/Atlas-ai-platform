@@ -75,7 +75,7 @@ Measured on the hosted service on 2026-11-02:
 | Text | yes | yes |
 | Image analysis (`image_url` parts) | yes | yes |
 | Attached documents (`file` parts: text, PDF, Word, Excel) | yes | yes, as extracted text |
-| Web search, with the retrieved sources cited | yes | on Responses, with the hosted `web_search` tool (section 5) |
+| Web search, with the retrieved sources cited | yes | yes, run by Atlas on request (section 5) |
 | Your own tools (function calling) | no (`tools` is ignored) | yes |
 | Image generation | not available on the hosted service yet | no |
 
@@ -201,6 +201,13 @@ On Responses, the tools of the OpenAI format are translated for the direct model
 | `apply_patch` | the client | `apply_patch_call` items (`operation`: `create_file`, `update_file`, `delete_file`, with a V4A diff) |
 | `web_search` | **Atlas**, between model turns, up to 4 turns | a `web_search_call` item per search (`action.query`, `action.sources`), then the answer |
 
+The same hosted web search is available on the other formats, with their own names:
+
+| Format | Request | What the client receives |
+|---|---|---|
+| Chat Completions | `web_search_options: {}` | the answer, with `url_citation` annotations for the retrieved urls it quotes |
+| Messages | a `web_search_20250305` (or later) tool named `web_search` | `server_tool_use` and `web_search_tool_result` blocks before the answer, and `usage.server_tool_use.web_search_requests` |
+
 Web search uses the same search chain as the assistant. In strict privacy it is refused with
 `web_search_unavailable_in_strict_privacy`. The other hosted tools of the OpenAI format (`file_search`,
 `code_interpreter`, `image_generation`, `mcp`, `computer_use_preview`) are not available yet.
@@ -282,7 +289,7 @@ The goal is the full OpenAI and Anthropic APIs. What is covered on the direct mo
 - **Accepted without effect:** `store`, `metadata`, `user`, `safety_identifier`, `service_tier`, `verbosity`, `prompt_cache_key`, `prompt_cache_retention`, and `cache_control` markers. Atlas caches the repeated start of prompts by itself, and responses report `store: false`.
 - **Refused by name:**
   - `logit_bias`: no hosted provider applies it;
-  - `audio`, `modalities`, `prediction`, `web_search_options`;
+  - `audio`, `modalities`, `prediction`;
   - any unknown field: the error names it, for example `unknown field messages.2.foo`.
 - **Other routes:** `GET /models` and `GET /models/{id}` (in the Anthropic format for Anthropic clients), `POST /responses/input_tokens` and `POST /messages/count_tokens` (estimated tokens).
 
