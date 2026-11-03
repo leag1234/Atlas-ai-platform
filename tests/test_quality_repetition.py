@@ -72,10 +72,13 @@ class RepetitionStreamTests(unittest.IsolatedAsyncioTestCase):
     async def run_stream(
         self, text: str, finish_reason: str
     ) -> tuple[str, dict[str, object]]:
+        self.read = 0
+
         async def upstream(
             req: AgentRequest, model: str, timeout: float
         ) -> AsyncGenerator[dict[str, object], None]:
             for piece in pieces(text):
+                self.read += len(piece)
                 yield {"delta": {"content": piece}}
             yield final(text, finish_reason)
 
@@ -107,3 +110,19 @@ class RepetitionStreamTests(unittest.IsolatedAsyncioTestCase):
         streamed, answer = await self.run_stream(PROSE + table, "stop")
         self.assertEqual(answer["text"], PROSE + table)
         self.assertEqual(streamed, PROSE + table)
+
+    async def test_confirmed_loop_closes_the_provider_stream(self) -> None:
+        # A loop that would run 26 thousand characters is not read to its end;
+        # its unknown usage is billed as the full reservation.
+        loop = "les Tilleuls, " * 1900
+        streamed, answer = await self.run_stream(PROSE + loop, "length")
+        self.assertLess(self.read, len(PROSE) + 12000)
+        self.assertTrue(PROSE.strip().startswith(str(answer["text"])[:80]))
+        self.assertLess(len(streamed), len(PROSE) + 2500)
+        self.assertTrue(answer.get("token_split_estimated"))
+
+    async def test_long_regular_table_is_still_delivered_whole(self) -> None:
+        table = "| a | b |\n" * 900
+        streamed, answer = await self.run_stream(PROSE + table, "stop")
+        self.assertEqual(answer["text"], PROSE + table)
+        self.assertEqual(self.read, len(PROSE + table))
