@@ -180,7 +180,7 @@ class AssistantBridgeTests(unittest.TestCase):
         self.assertNotIn("tools", self.sent[-1])
 
     def test_unsupported_options_are_refused_by_name(self) -> None:
-        cases = [
+        cases: list[tuple[dict[str, Any], str]] = [
             (
                 {"tools": [{"type": "file_search", "vector_store_ids": ["vs_1"]}]},
                 "file_search",
