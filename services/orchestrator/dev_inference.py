@@ -589,6 +589,17 @@ async def chat(
                 elif chunk.get("choices") != [] or parsed.stream_options.include_usage:
                     if parsed.stream_options.include_usage and "error" not in chunk:
                         chunk.setdefault("usage", None)
+                    if output.citations:
+                        # The final delta of a searched answer carries its citations.
+                        for choice in chunk.get("choices") or []:
+                            if choice.get("finish_reason") is not None:
+                                from services.orchestrator.dev_chat import url_citations
+
+                                found = url_citations(output.text, output.citations)
+                                if found:
+                                    choice["delta"] = dict(
+                                        choice.get("delta") or {}, annotations=found
+                                    )
                     if last is not None:
                         yield "data: " + json.dumps(last) + "\n\n"
                     last = chunk

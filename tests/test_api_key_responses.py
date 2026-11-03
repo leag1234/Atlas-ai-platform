@@ -672,6 +672,20 @@ class KeyResponsesTests(unittest.TestCase):
             )
             self.assertEqual(streamed.status_code, 200, streamed.text)
             self.assertNotIn("hosted", streamed.text)
+            frames = [
+                json.loads(line[6:])
+                for line in streamed.text.splitlines()
+                if line.startswith("data: {")
+            ]
+            cited = [
+                c["delta"]["annotations"]
+                for f in frames
+                for c in f.get("choices", [])
+                if "annotations" in c.get("delta", {})
+            ]
+            self.assertEqual(
+                cited[0][0]["url_citation"]["url"], "https://example.invalid/paris"
+            )
             self.assertIn("2.1 million", streamed.text)
         strict = self.client.post(
             url, headers=dict(self.headers, **{"X-Atlas-Privacy": "strict"}), json=body
