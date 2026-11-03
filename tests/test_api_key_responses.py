@@ -671,6 +671,117 @@ class KeyResponsesTests(unittest.TestCase):
         )
         self.assertEqual(strict.status_code, 400, strict.text)
 
+    def test_hosted_web_search_on_messages(self) -> None:
+        """The Anthropic web_search server tool: server_tool_use and web_search_tool_result blocks."""
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            if body["messages"][-1]["role"] == "tool":
+                delta: dict[str, Any] = {"content": "About 2.1 million."}
+                reason = "stop"
+            else:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_search",
+                            "type": "function",
+                            "function": {
+                                "name": "web_search",
+                                "arguments": '{"query":"Paris population"}',
+                            },
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            for frame in (
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ):
+                yield ("data: " + json.dumps(frame) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        async def fake_search(
+            query: str, timeout: float, key_id: str
+        ) -> dict[str, Any]:
+            return {
+                "results": [
+                    {
+                        "title": "Paris",
+                        "url": "https://example.invalid/paris",
+                        "snippet": "2.1 million",
+                    }
+                ]
+            }
+
+        headers = dict(self.headers, **{"anthropic-version": "2023-06-01"})
+        body: dict[str, Any] = {
+            "model": "atlas-code",
+            "max_tokens": 200,
+            "tools": [
+                {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
+            ],
+            "messages": [{"role": "user", "content": "How many people live in Paris?"}],
+        }
+        url = "/api/atlas/v1/messages"
+        with (
+            patch.object(gateway, "transport", transport),
+            patch("services.orchestrator.hosted_tools.web_search", fake_search),
+        ):
+            reply = self.client.post(url, headers=headers, json=body)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            result = reply.json()
+            self.assertEqual(
+                [b["type"] for b in result["content"]],
+                ["server_tool_use", "web_search_tool_result", "text"],
+            )
+            self.assertEqual(
+                result["content"][0]["input"], {"query": "Paris population"}
+            )
+            self.assertEqual(
+                result["content"][1]["tool_use_id"], result["content"][0]["id"]
+            )
+            self.assertEqual(
+                result["content"][1]["content"][0]["url"],
+                "https://example.invalid/paris",
+            )
+            self.assertEqual(
+                result["usage"]["server_tool_use"], {"web_search_requests": 1}
+            )
+            self.assertEqual(result["stop_reason"], "end_turn")
+
+            streamed = self.client.post(
+                url, headers=headers, json=dict(body, stream=True)
+            )
+            self.assertEqual(streamed.status_code, 200, streamed.text)
+            starts = [
+                json.loads(line[6:])
+                for line in streamed.text.splitlines()
+                if line.startswith("data: ") and '"content_block_start"' in line
+            ]
+            self.assertEqual([e["index"] for e in starts], [0, 1, 2])
+            self.assertEqual(
+                [e["content_block"]["type"] for e in starts],
+                ["server_tool_use", "web_search_tool_result", "text"],
+            )
+
+            # The blocks come back in the next turn's history.
+            follow = self.client.post(
+                url,
+                headers=headers,
+                json=dict(
+                    body,
+                    messages=[
+                        *body["messages"],
+                        {"role": "assistant", "content": result["content"]},
+                        {"role": "user", "content": "And Lyon?"},
+                    ],
+                ),
+            )
+            self.assertEqual(follow.status_code, 200, follow.text)
+
     def test_client_shell_and_apply_patch_tools(self) -> None:
         """The client-executed shell and apply_patch tools of the Responses API."""
         arguments = {

@@ -10,11 +10,47 @@ class Wire:
     def __init__(self, output: Output, request: dict[str, Any]) -> None:
         self.output = output
         self.core = ResponsesWire(output, request)
+        # A web search is two Messages blocks (server_tool_use, web_search_tool_result)
+        # for one Responses item: core output indexes are shifted accordingly.
+        self.extra: dict[int, int] = {}
+
+    def block(self, output_index: int) -> int:
+        return output_index + sum(1 for index in self.extra if index < output_index)
+
+    @staticmethod
+    def search_blocks(item: dict[str, Any]) -> list[dict[str, Any]]:
+        identifier = "srvtoolu_" + str(item["id"]).removeprefix("ws_")
+        return [
+            {
+                "type": "server_tool_use",
+                "id": identifier,
+                "name": "web_search",
+                "input": {"query": item["action"]["query"]},
+            },
+            {
+                "type": "web_search_tool_result",
+                "tool_use_id": identifier,
+                "content": [
+                    {
+                        "type": "web_search_result",
+                        "url": source["url"],
+                        "title": source.get("title", ""),
+                        "encrypted_content": "",
+                        "page_age": None,
+                    }
+                    for source in item["action"]["sources"]
+                ],
+            },
+        ]
 
     def result(self) -> dict[str, Any]:
         content = []
+        searches = 0
         for item in self.core.items:
-            if item["type"] == "message":
+            if item["type"] == "web_search_call":
+                searches += 1
+                content += self.search_blocks(item)
+            elif item["type"] == "message":
                 content.append({"type": "text", "text": item["content"][0]["text"]})
             else:
                 # A truncated object is explicitly max_tokens, never a completed call.
@@ -49,6 +85,11 @@ class Wire:
             "usage": {
                 "input_tokens": usage["prompt_tokens"],
                 "output_tokens": usage["completion_tokens"],
+                **(
+                    {"server_tool_use": {"web_search_requests": searches}}
+                    if searches
+                    else {}
+                ),
             },
         }
         if self.output.served_by:
@@ -71,6 +112,34 @@ class Wire:
                         "error": {"type": "api_error", "message": "provider_error"},
                     }
                 )
+            elif (
+                kind == "response.output_item.added"
+                and event["item"]["type"] == "web_search_call"
+            ):
+                continue
+            elif (
+                kind == "response.output_item.done"
+                and event["item"]["type"] == "web_search_call"
+            ):
+                index = event["output_index"]
+                if index in self.extra:
+                    # The final pass repeats done for every item: the blocks are out.
+                    continue
+                self.extra[index] = 1
+                first = self.block(index)
+                for offset, search_block in enumerate(
+                    self.search_blocks(event["item"])
+                ):
+                    events += [
+                        {
+                            "type": "content_block_start",
+                            "index": first + offset,
+                            "content_block": search_block,
+                        },
+                        {"type": "content_block_stop", "index": first + offset},
+                    ]
+            elif kind == "response.web_search_call.completed":
+                continue
             elif kind == "response.output_item.added":
                 item = event["item"]
                 block: dict[str, Any] = (
@@ -86,7 +155,7 @@ class Wire:
                 events.append(
                     {
                         "type": "content_block_start",
-                        "index": event["output_index"],
+                        "index": self.block(event["output_index"]),
                         "content_block": block,
                     }
                 )
@@ -102,13 +171,16 @@ class Wire:
                 events.append(
                     {
                         "type": "content_block_delta",
-                        "index": event["output_index"],
+                        "index": self.block(event["output_index"]),
                         "delta": delta,
                     }
                 )
             elif kind == "response.output_item.done":
                 events.append(
-                    {"type": "content_block_stop", "index": event["output_index"]}
+                    {
+                        "type": "content_block_stop",
+                        "index": self.block(event["output_index"]),
+                    }
                 )
             elif kind in ("response.completed", "response.incomplete"):
                 result = self.result()
