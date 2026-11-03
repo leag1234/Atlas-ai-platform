@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from services.orchestrator.api_key_edge import ModelAccounting, error, require
 from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.dev_inference import chat
+from services.orchestrator.dev_input import SemanticFieldError, StorageRefusal
 from api_routing import select_public_model
 
 KEY_DEFAULT_OUTPUT_TOKENS = 16384
@@ -40,6 +41,11 @@ async def respond(request: Request) -> Response:
             return await assistant_bridge.serve(request, raw, "responses")
         except PermissionError as exc:
             return error(400, "assistant_runs_its_own_tools", message=str(exc))
+        except StorageRefusal as exc:
+            return error(400, "storage_not_supported", message=str(exc))
+        except SemanticFieldError as exc:
+            # Named refusals (field, hosted tool, stored prompt) reach the client as written.
+            return error(400, "invalid_request", message=str(exc))
         except (ValueError, KeyError, TypeError):
             return error(400, "invalid_request")
     try:

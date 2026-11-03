@@ -179,6 +179,37 @@ class AssistantBridgeTests(unittest.TestCase):
         self.assertEqual(accepted.status_code, 200, accepted.text)
         self.assertNotIn("tools", self.sent[-1])
 
+    def test_unsupported_options_are_refused_by_name(self) -> None:
+        cases: list[tuple[dict[str, Any], str]] = [
+            (
+                {"tools": [{"type": "file_search", "vector_store_ids": ["vs_1"]}]},
+                "file_search",
+            ),
+            ({"prompt": {"id": "pmpt_1"}}, "prompt"),
+            ({"previous_response_id": "resp_1"}, "does not store"),
+        ]
+        for extra, named in cases:
+            reply = self.client.post(
+                "/api/atlas/v1/responses",
+                headers=self.openai,
+                json={"model": "atlas", "input": "Hi"} | extra,
+            )
+            self.assertEqual(reply.status_code, 400, reply.text)
+            self.assertIn(named, reply.json()["error"]["message"])
+        headers = dict(self.openai, **{"anthropic-version": "2023-06-01"})
+        reply = self.client.post(
+            "/api/atlas/v1/messages",
+            headers=headers,
+            json={
+                "model": "atlas",
+                "max_tokens": 10,
+                "messages": [{"role": "user", "content": "Hi"}],
+                "mcp_servers": [{"type": "url", "url": "https://example.invalid"}],
+            },
+        )
+        self.assertEqual(reply.status_code, 400, reply.text)
+        self.assertIn("mcp_servers", reply.json()["error"]["message"])
+
     def test_assistant_needs_the_assistant_scope(self) -> None:
         reply = self.client.post(
             "/api/atlas/v1/responses",

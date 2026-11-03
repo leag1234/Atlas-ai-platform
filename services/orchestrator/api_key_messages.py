@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.responses import StreamingResponse
 
 from services.orchestrator.daily_budget import BudgetRefusal
+from services.orchestrator.dev_input import SemanticFieldError, StorageRefusal
 from services.orchestrator.dev_input import messages as parse_messages
 
 PATHS = ("/messages", "/v1/messages")
@@ -116,6 +117,11 @@ async def messages(request: Request) -> Response:
                 return await assistant_bridge.serve(request, raw, "messages")
             except PermissionError as exc:
                 return error(400, str(exc), code="assistant_runs_its_own_tools")
+            except StorageRefusal as exc:
+                return error(400, str(exc), code="storage_not_supported")
+            except SemanticFieldError as exc:
+                # Named refusals reach the client as written, not as a bare invalid_request.
+                return error(400, str(exc))
         try:
             model = select_public_model(raw["model"])
         except (KeyError, ValueError):
