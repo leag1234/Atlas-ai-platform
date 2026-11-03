@@ -18,7 +18,8 @@ called.
 The parameter tables describe the direct models (`atlas-dev`, `atlas-chat`). The assistant (`atlas` and
 its profiles) runs its own tools and settings: it takes `model`, `messages` or `input`, `stream`,
 `max_tokens`, `reasoning_effort` and `seed` (measured on 2026-11-02), accepts the other fields, and
-refuses client tools with `assistant_runs_its_own_tools`.
+refuses client tools with `assistant_runs_its_own_tools`. On Messages, `stop_sequences` end its final
+text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 
 ## 1. Routes
 
