@@ -105,14 +105,17 @@ async def messages(request: Request) -> Response:
                 missing_scope="project",
             )
             return error(403, "insufficient_scope", missing_scope="project")
-        from packages.api_content import assistant_name, assistant_route_message
+        from packages.api_content import assistant_name
 
-        if assistant_name(raw["model"]):
-            return error(
-                400,
-                assistant_route_message(),
-                code="assistant_model_on_chat_completions",
-            )
+        if assistant_name(raw["model"]) and not request.url.path.endswith(
+            "/count_tokens"
+        ):
+            from services.orchestrator import assistant_bridge
+
+            try:
+                return await assistant_bridge.serve(request, raw, "messages")
+            except PermissionError as exc:
+                return error(400, str(exc), code="assistant_runs_its_own_tools")
         try:
             model = select_public_model(raw["model"])
         except (KeyError, ValueError):
