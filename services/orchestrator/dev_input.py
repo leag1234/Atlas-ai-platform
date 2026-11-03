@@ -8,13 +8,17 @@ from typing import Any
 from services.orchestrator.dev_chat import ChatInput
 
 
-def fields(value: dict[str, Any], allowed: str) -> None:
-    if set(value) - set(allowed.split()):
-        raise ValueError("unsupported_field")
-
-
 class SemanticFieldError(ValueError):
     """A client option whose semantics cannot be preserved by this route."""
+
+
+def fields(value: dict[str, Any], allowed: str) -> None:
+    unknown = set(value) - set(allowed.split())
+    if unknown:
+        # Field names are client keys, not values: naming them says what to remove.
+        raise SemanticFieldError(
+            "unsupported field: " + ", ".join(sorted(unknown))[:200]
+        )
 
 
 STORAGE_MESSAGE = (
