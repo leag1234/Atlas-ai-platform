@@ -130,6 +130,8 @@ are privileged access, not a guest isolation boundary.
 
    ```sh
    ATLAS_PROJECT_MODE=1
+   # Leave ATLAS_PROJECT_ONLY unset: the chat's attachments, downloads and images
+   # must stay reachable beside projects.
    # The runtime Postgres gets a free port at each start: give the password, the
    # launcher builds ATLAS_PROJECT_DSN with the actual port.
    ATLAS_PROJECT_DB_PASSWORD='APPLICATION_ROLE_PASSWORD (at least 32 bytes)'

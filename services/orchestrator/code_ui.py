@@ -61,6 +61,21 @@ def project_mode() -> bool:
     )
 
 
+def project_only() -> bool:
+    """A project-only instance serves no chat (compose.project.yaml).
+
+    The guest instance runs project mode beside the chat: its attachments, generated
+    downloads and images must stay reachable there (closed by mistake 2026-11-01).
+    """
+    return project_mode() and os.environ.get("ATLAS_PROJECT_ONLY") == "1"
+
+
+# Superseded project interfaces: closed whenever project mode is on.
+LEGACY_PROJECT_PREFIXES = ("/projects", "/code", "/atlas-code")
+# Chat capabilities: closed only on a project-only instance.
+CHAT_PREFIXES = ("/api/v1/terminals", "/api/v1/files", "/images")
+
+
 def legacy_project_route(path: str) -> bool:
     """Normalize like the host router before denying legacy project capabilities."""
     path = path.split("?", 1)[0]
@@ -72,14 +87,5 @@ def legacy_project_route(path: str) -> bool:
     if unquote(path) != path or "\\" in path:
         return True
     path = "/" + posixpath.normpath(path).lstrip("/")
-    return any(
-        path == prefix or path.startswith(prefix + "/")
-        for prefix in (
-            "/projects",
-            "/code",
-            "/atlas-code",
-            "/api/v1/terminals",
-            "/api/v1/files",
-            "/images",
-        )
-    )
+    prefixes = LEGACY_PROJECT_PREFIXES + (CHAT_PREFIXES if project_only() else ())
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in prefixes)

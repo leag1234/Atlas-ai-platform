@@ -89,6 +89,7 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
             os.environ,
             {
                 "ATLAS_PROJECT_MODE": "1",
+                "ATLAS_PROJECT_ONLY": "1",
                 "ATLAS_RETRIEVAL_URL": self.retrieval_url,
                 "ATLAS_WEBUI_URL": self.host_url,
                 "ATLAS_PROJECT_ORIGIN": "http://testserver",
