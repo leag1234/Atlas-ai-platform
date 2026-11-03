@@ -278,8 +278,9 @@ Extended thinking and hosted tools (web search, code execution) are not availabl
 
 ### OpenAI and Anthropic compatibility
 
-The goal is the full OpenAI and Anthropic APIs. What is covered on the direct models, as of
-2026-11-03:
+The goal is the full OpenAI and Anthropic APIs. [API coverage](api-coverage.md) lists every route,
+parameter, tool and block as applied, accepted without effect, refused or not implemented. A summary of
+what is covered on the direct models, as of 2026-11-03:
 
 - **Applied:**
   - Chat Completions: `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `max_tokens` or `max_completion_tokens`, `n` (up to 8 choices), `logprobs` and `top_logprobs`, `response_format`, tools and `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `stream` and `stream_options`;
