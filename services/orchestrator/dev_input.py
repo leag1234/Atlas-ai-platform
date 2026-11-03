@@ -627,6 +627,25 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
             kind = block["type"]
             if kind == "text":
                 texts.append({"type": "text", "text": text_blocks([block])})
+            elif kind == "server_tool_use" and role == "assistant":
+                continue
+            elif kind == "web_search_tool_result" and role == "assistant":
+                rows = (
+                    block.get("content")
+                    if isinstance(block.get("content"), list)
+                    else []
+                )
+                texts.append(
+                    {
+                        "type": "text",
+                        "text": "Web search results: "
+                        + "; ".join(
+                            f"{row.get('title', '')} ({row.get('url', '')})"
+                            for row in rows
+                            if isinstance(row, dict)
+                        ),
+                    }
+                )
             elif kind in ("thinking", "redacted_thinking") and role == "assistant":
                 # Reasoning of an earlier turn: the routed models cannot use another
                 # model's signed reasoning, and it is not part of the answer.
@@ -720,7 +739,20 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
                 }
             )
     tools = []
+    hosted: list[str] = []
     for tool in value.get("tools", []):
+        if str(tool.get("type", "")).startswith("web_search_"):
+            # Server tool: Atlas runs the search between model turns (hosted_tools).
+            from services.orchestrator.hosted_tools import SEARCH_FUNCTION
+
+            fields(
+                tool,
+                "type name max_uses allowed_domains blocked_domains user_location cache_control",
+            )
+            if "web_search" not in hosted:
+                hosted.append("web_search")
+                tools.append(SEARCH_FUNCTION)
+            continue
         fields(tool, "name description input_schema cache_control")
         cache_hint(tool)
         tools.append(
@@ -763,6 +795,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
             )
             if value.get(source) not in (None, [])
         },
+        **({"_hosted": hosted} if hosted else {}),
     }
 
 
@@ -777,7 +810,13 @@ def responses(value: dict[str, Any]) -> ChatInput:
 
 
 def messages(value: dict[str, Any]) -> ChatInput:
-    return ChatInput.model_validate(messages_body(value))
+    body = messages_body(value)
+    # Hosted tools run only on the routed key route; elsewhere they stay unavailable.
+    if body.pop("_hosted", None):
+        body["tools"] = [
+            tool for tool in body["tools"] if tool["function"]["name"] != "web_search"
+        ]
+    return ChatInput.model_validate(body)
 
 
 def text_only(body: dict[str, Any]) -> dict[str, Any]:
