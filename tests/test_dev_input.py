@@ -78,10 +78,10 @@ class DevInputTests(unittest.TestCase):
             "mcp",
             "computer_use_preview",
         ):
-            with self.assertRaises(SemanticFieldError) as refused:
+            with self.assertRaises(SemanticFieldError) as tool_refused:
                 responses(payload | {"tools": [{"type": kind}]})
-            self.assertIn("unsupported tool: " + kind, str(refused.exception))
-            self.assertNotIsInstance(refused.exception, StorageRefusal)
+            self.assertIn("unsupported tool: " + kind, str(tool_refused.exception))
+            self.assertNotIsInstance(tool_refused.exception, StorageRefusal)
         for extra in ({"store": True}, {"include": ["web_search_call.action.sources"]}):
             self.assertEqual(responses(payload | extra).model, "atlas-code")
         with self.assertRaises(ValueError):
