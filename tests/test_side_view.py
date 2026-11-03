@@ -100,3 +100,32 @@ class SideViewTests(unittest.TestCase):
         self.assertEqual(
             content, pdf_placeholders(request()) + "The initial budget is 730 euros."
         )
+
+    def test_answer_without_streamed_text_follows_the_opener(self) -> None:
+        # Document answers are completed in one call and never streamed: the opener
+        # is Atlas's own text and must not stand in for the answer (2026-11-03 tour).
+        async def check() -> str:
+            async def process(payload: ChatRequest, item: Interaction) -> None:
+                item.reponse, item.state = "The initial budget is 730 euros.", "done"
+
+            stream = response(request(), Interaction(), time.monotonic(), process)
+            chunks = []
+            with patch("services.orchestrator.chat_stream.write_interaction"):
+                async for chunk in stream.body_iterator:
+                    chunks.append(
+                        chunk if isinstance(chunk, str) else bytes(chunk).decode()
+                    )
+            return "".join(chunks)
+
+        stream = asyncio.run(check())
+        content = "".join(
+            json.loads(line[6:])
+            .get("choices", [{}])[0]
+            .get("delta", {})
+            .get("content", "")
+            for line in stream.splitlines()
+            if line.startswith("data: ") and line != "data: [DONE]"
+        )
+        self.assertEqual(
+            content, pdf_placeholders(request()) + "The initial budget is 730 euros."
+        )
