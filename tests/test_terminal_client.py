@@ -16,7 +16,7 @@ class CompleteOutputTests(unittest.IsolatedAsyncioTestCase):
         for truncated in (False, True):
             with patch.object(
                 client,
-                "request",
+                "isolated",
                 AsyncMock(
                     return_value={
                         "status": "done",
@@ -25,9 +25,8 @@ class CompleteOutputTests(unittest.IsolatedAsyncioTestCase):
                         "truncated": truncated,
                     }
                 ),
-            ) as transport:
+            ):
                 result = await client.execute("cat document.txt", 15)
-                self.assertNotIn("tail", transport.call_args.kwargs["params"])
                 if truncated:
                     self.assertEqual(result["error"], "terminal_output_truncated")
                     self.assertNotIn("output", result)
@@ -72,3 +71,24 @@ class TerminalClientTests(unittest.TestCase):
         ):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 output_path(root, path)
+
+
+class IsolationTests(unittest.TestCase):
+    def test_container_sees_only_its_own_request_directory(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ATLAS_TERMINAL_ENABLED": "1",
+                "ATLAS_CODE_MODE": "0",
+                "ATLAS_PROJECT_MODE": "0",
+            },
+        ):
+            client = TerminalClient("abc-123")
+            arguments = client.isolation_arguments("atlas-exec-x")
+        mounts = [arguments[i + 1] for i, a in enumerate(arguments) if a == "--mount"]
+        self.assertEqual(len(mounts), 1)
+        self.assertIn("dst=/home/user/requests/abc-123", mounts[0])
+        self.assertIn("volume-subpath=requests/abc-123", mounts[0])
+        self.assertEqual(arguments[arguments.index("--network") + 1], "none")
+        self.assertEqual(arguments[arguments.index("--cap-drop") + 1], "ALL")
+        self.assertIn("--read-only", arguments)
