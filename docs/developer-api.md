@@ -51,8 +51,8 @@ receive token usage in the final chunk before `[DONE]`. Responses report the mod
 
 | Model | What it is | Use it for | Formats |
 |---|---|---|---|
-| `atlas` | The Atlas assistant: Atlas instructions and tools around a large model (Qwen 3.5, 397B parameters, by default) | Questions, research with sources, questions on attached documents and images | Chat Completions |
-| `atlas-qwen`, `atlas-glm`, `atlas-deepseek` | The Atlas assistant with a chosen model: Qwen 3.5 397B, GLM 5.2 or DeepSeek V4 Flash | The same, when you need a given model | Chat Completions |
+| `atlas` | The Atlas assistant: Atlas instructions and tools around a large model (Qwen 3.5, 397B parameters, by default) | Questions, research with sources, questions on attached documents and images | All three |
+| `atlas-qwen`, `atlas-glm`, `atlas-deepseek` | The Atlas assistant with a chosen model: Qwen 3.5 397B, GLM 5.2 or DeepSeek V4 Flash | The same, when you need a given model | All three |
 | `atlas-dev` | A direct model, no Atlas layer: GLM 5.3 Flash at effort `none`, GLM 5.3 above; DeepSeek V4 Flash as fallback | Code, coding agents, your own tools (function calling) | All three |
 | `atlas-chat` | A direct model, no Atlas layer: the same models as `atlas-dev`; GLM 5.2 as fallback | Volume processing: summaries, translation, classification, extraction | All three |
 
@@ -82,9 +82,10 @@ Measured on the hosted service on 2026-11-02:
 ### The model name in a request
 
 - **Chat Completions**: `model` is optional. Without it, every key gets `atlas`.
-- **Responses and Messages**: `model` is required (400 without it). These formats serve the direct
-  models; `atlas` and the profiles answer `400 assistant_model_on_chat_completions`, which names the
-  route to use.
+- **Responses and Messages**: `model` is required (400 without it). They serve the assistant and the
+  direct models. The assistant runs its own tools: a request that gives it client tools (functions,
+  custom, shell…) answers `400 assistant_runs_its_own_tools`; use `atlas-dev` or `atlas-chat` for your
+  own tools. The hosted `web_search` tool is accepted, since the assistant searches by itself.
 - A name that Atlas does not know is served as `atlas-dev` on the direct formats: `gpt-5-codex`,
   `claude-sonnet-5-5` or a typo all reach `atlas-dev`. Set the name explicitly and check `model` and
   `served_by` in the first responses.
@@ -321,7 +322,7 @@ is one euro) and the limits that apply to your key.
 | Status | Meaning | What to do |
 |---|---|---|
 | 400 `invalid_request` or `body_limit` | A field is invalid (for example an unknown `reasoning_effort`), the body is larger than 8 MiB, or the history has more than 4096 messages | Fix or shorten the request |
-| 400 `assistant_model_on_chat_completions` | `atlas` or a profile was sent to Responses or Messages | Use `/chat/completions`, or `atlas-dev` / `atlas-chat` on this route |
+| 400 `assistant_runs_its_own_tools` | Client tools were given to `atlas` or a profile | Use `atlas-dev` or `atlas-chat` for your own tools |
 | 400 `file_data_required`, `invalid_file_data`, `unreadable_file` | An attached file is missing, not base64, or has no readable text | Check the file part |
 | 400 `unknown field …`, `unsupported_parameter: …`, `unsupported_content: input_audio` | A field Atlas does not know, or an option no hosted model applies; the message names it | Remove it (see "OpenAI and Anthropic compatibility") |
 | 400 `storage_not_supported` | `previous_response_id`, `conversation` or `background`: Atlas stores nothing | Send the full history in `input` |
