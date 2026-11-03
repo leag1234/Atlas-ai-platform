@@ -3,7 +3,7 @@
 import copy
 import json
 from typing import Any
-from services.orchestrator.dev_chat import Output
+from services.orchestrator.dev_chat import Output, url_citations
 
 
 def reasoning_tokens(usage: Any) -> int:
@@ -341,6 +341,13 @@ class Wire:
                 common = {"output_index": index, "item_id": item["id"]}
                 if item["type"] == "message":
                     part = item["content"][0]
+                    # Retrieved urls that the answer quotes, as Responses url_citation.
+                    part["annotations"] = [
+                        {"type": "url_citation", **annotation["url_citation"]}
+                        for annotation in url_citations(
+                            part["text"], self.output.citations
+                        )
+                    ]
                     events.append(
                         self.event(
                             "response.output_text.done",

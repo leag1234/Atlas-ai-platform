@@ -498,7 +498,7 @@ class KeyResponsesTests(unittest.TestCase):
             self.inputs.append(body)
             if body["messages"][-1]["role"] == "tool":
                 delta: dict[str, Any] = {
-                    "content": "Paris has 2.1 million inhabitants [1]."
+                    "content": "Paris has 2.1 million inhabitants, see https://example.invalid/paris"
                 }
                 reason = "stop"
             else:
@@ -576,6 +576,13 @@ class KeyResponsesTests(unittest.TestCase):
                     )
                     self.assertIn(
                         "2.1 million", result["output"][1]["content"][0]["text"]
+                    )
+                    part = result["output"][1]["content"][0]
+                    citation = part["annotations"][0]
+                    self.assertEqual(citation["type"], "url_citation")
+                    self.assertEqual(
+                        part["text"][citation["start_index"] : citation["end_index"]],
+                        "https://example.invalid/paris",
                     )
                     self.assertEqual(result["usage"]["input_tokens"], 20)
                     sent = self.inputs[-1]
