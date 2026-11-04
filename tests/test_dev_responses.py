@@ -51,6 +51,39 @@ class DevResponsesTests(unittest.TestCase):
             details = wire.result()["usage"]["output_tokens_details"]
             self.assertEqual(details, {"reasoning_tokens": expected})
 
+    def test_provider_reasoning_tokens_reach_the_client(self) -> None:
+        # Measured 2026-11-04: the provider counted 139 reasoning tokens and the API said 0.
+        env = Environment()
+        self.addCleanup(env.close)
+        frames = [
+            {"choices": [{"index": 0, "delta": {"content": "0.05"}}]},
+            {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 50,
+                    "completion_tokens": 144,
+                    "completion_tokens_details": {
+                        "reasoning_tokens": 139,
+                        "audio_tokens": None,
+                    },
+                },
+            },
+        ]
+        env.raw = (
+            "".join("data: " + json.dumps(frame) + "\n\n" for frame in frames)
+            + "data: [DONE]\n\n"
+        ).encode()
+        reply = env.client.post(
+            "/v1/responses",
+            headers=env.headers,
+            json={"model": "atlas-code", "input": "Ball price?"},
+        )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        usage = reply.json()["usage"]
+        self.assertEqual(usage["output_tokens_details"], {"reasoning_tokens": 139})
+        self.assertEqual(usage["output_tokens"], 144)
+
     def test_http_json_and_incremental_sse(self) -> None:
         env = Environment()
         self.addCleanup(env.close)
