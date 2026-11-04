@@ -204,6 +204,21 @@ class ChatTests(unittest.IsolatedAsyncioTestCase):
         request.__dict__["daily_user"] = "alex-fictional"
         return request
 
+    async def test_unreachable_store_is_a_retryable_error_not_an_answer(self) -> None:
+        import aiohttp
+        from services.orchestrator.model import GatewayError
+
+        self.transport.side_effect = aiohttp.ClientConnectionError()
+        for text in ("Remember I like tea", "Propose-moi un dîner"):
+            item = Interaction()
+            with self.assertRaises(GatewayError) as failed:
+                await prepare(self.request(text), item)
+            self.assertEqual(
+                (failed.exception.code, failed.exception.status),
+                ("memory_unavailable", 503),
+            )
+            self.assertEqual(item.reponse, "")
+
     async def test_save_new_conversation_forget_no_reuse_and_store_based_inspection(
         self,
     ) -> None:
