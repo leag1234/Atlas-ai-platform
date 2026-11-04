@@ -81,6 +81,129 @@ def safe_filename(name: str) -> str:
 EXECUTIONS = asyncio.Semaphore(8)
 
 
+CODE_OUTPUT_LIMIT = 64 * 1024
+CODE_INPUT_LIMIT = 256 * 1024
+
+
+def code_execution_arguments(name: str, image: str) -> list[str]:
+    """Fixed docker flags for one API code execution; nothing here comes from the caller."""
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "-i",
+        "--pull",
+        "never",
+        "--name",
+        name,
+        "--label",
+        "atlas.owner=exec",
+        "--network",
+        "none",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges:true",
+        "--read-only",
+        "--user",
+        "1000:1000",
+        "--memory",
+        "1g",
+        "--memory-swap",
+        "1g",
+        "--cpus",
+        "1",
+        "--pids-limit",
+        "64",
+        "--tmpfs",
+        "/tmp:rw,nosuid,nodev,noexec,size=256m,uid=1000,gid=1000",
+        "-e",
+        "HOME=/tmp",
+        "-w",
+        "/tmp",
+        "--entrypoint",
+        "python3",
+        image,
+        "-",
+    ]
+
+
+async def code_execution_sandbox(code: str, timeout: float = 60.0) -> dict[str, object]:
+    """Run one Python call in a throwaway container with no persistent storage.
+
+    The code goes to the interpreter on stdin, so it never becomes a docker argument. The
+    container is removed in every path: exit, error, timeout and cancellation.
+    """
+    import uuid
+
+    from services.orchestrator.terminal_stack import IMAGE
+
+    source = code.encode("utf-8", "replace")
+    if len(source) > CODE_INPUT_LIMIT:
+        return {"error": "invalid_tool_input"}
+    name = "atlas-exec-" + uuid.uuid4().hex
+    limit = CODE_OUTPUT_LIMIT
+    stdout = bytearray()
+    stderr = bytearray()
+    async with EXECUTIONS:
+        process = await asyncio.create_subprocess_exec(
+            *code_execution_arguments(name, IMAGE),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        completed = False
+
+        async def collect(stream: asyncio.StreamReader, output: bytearray) -> None:
+            # Keep reading past the cap so the child never blocks on a full pipe.
+            while chunk := await stream.read(16384):
+                output.extend(chunk[: max(0, limit - len(output))])
+
+        async def run() -> None:
+            assert process.stdin is not None
+            assert process.stdout is not None and process.stderr is not None
+            readers = asyncio.gather(
+                collect(process.stdout, stdout), collect(process.stderr, stderr)
+            )
+            try:
+                process.stdin.write(source)
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                process.stdin.close()
+            await readers
+            await process.wait()
+
+        try:
+            await asyncio.wait_for(run(), timeout)
+            completed = True
+        except asyncio.TimeoutError:
+            return {"error": "execution_time_exceeded"}
+        finally:
+            if not completed:
+                kill = await asyncio.create_subprocess_exec(
+                    "docker",
+                    "rm",
+                    "-f",
+                    name,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.shield(kill.wait())
+                if process.returncode is None:
+                    process.kill()
+                await asyncio.shield(process.wait())
+    if process.returncode == 125 and stderr.startswith(b"docker:"):
+        # The docker client failed before the code ran (daemon or image missing).
+        return {"error": "unavailable"}
+    return {
+        "stdout": bytes(stdout).decode("utf-8", "replace"),
+        "stderr": bytes(stderr).decode("utf-8", "replace"),
+        "return_code": process.returncode,
+    }
+
+
 class TerminalClient:
     def __init__(self, request_id: str) -> None:
         if not request_id.replace("-", "").isalnum():

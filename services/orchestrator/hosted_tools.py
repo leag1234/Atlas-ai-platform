@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 HOSTED_TOOLS = ("web_search", "web_search_preview")
-HOSTED_NAMES = ("web_search", "web_fetch")
+HOSTED_NAMES = ("web_search", "web_fetch", "code_execution")
 MAX_ROUNDS = 4
 SEARCH_FUNCTION = {
     "type": "function",
@@ -94,6 +94,48 @@ FETCH_FUNCTION = {
         },
     },
 }
+
+
+CODE_FUNCTION = {
+    "type": "function",
+    "function": {
+        "name": "code_execution",
+        "description": "Run Python code in a temporary isolated sandbox.",
+        "parameters": {
+            "type": "object",
+            "properties": {"code": {"type": "string"}},
+            "required": ["code"],
+        },
+    },
+}
+
+
+def execution_code(arguments: str) -> str:
+    try:
+        value = json.loads(arguments)
+    except ValueError:
+        return ""
+    return str(value.get("code", "")) if isinstance(value, dict) else ""
+
+
+async def code_execution(code: str, timeout: float, key_id: str) -> dict[str, Any]:
+    """Run Python in a per-call container and return bounded text streams."""
+    from services.orchestrator.terminal_client import code_execution_sandbox
+
+    try:
+        result = await code_execution_sandbox(code, min(60.0, max(0.1, timeout)))
+    except (OSError, RuntimeError, ValueError):
+        return {"error": "unavailable"}
+    logging.getLogger("atlas.api").info(
+        json.dumps(
+            {
+                "event": "api_hosted_code_execution",
+                "key": key_id,
+                "ok": "return_code" in result,
+            }
+        )
+    )
+    return result
 
 
 def fetch_url(arguments: str) -> str:

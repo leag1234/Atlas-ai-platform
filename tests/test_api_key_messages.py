@@ -253,6 +253,190 @@ class MessagesTests(unittest.TestCase):
         self.assertEqual(events[-2]["usage"]["output_tokens"], 2)
         self.assertEqual(self.store.usage(self.row["id"])["requests"], 2)
 
+    def test_hosted_code_execution_on_messages(self) -> None:
+        """The Messages code execution server tool emits blocks and usage."""
+
+        async def frames(plan: Plan) -> AsyncIterator[dict[str, Any]]:
+            if self.prepared[-1].messages[-1].role == "tool":
+                yield {
+                    "choices": [
+                        {"index": 0, "delta": {"content": "56"}, "finish_reason": None}
+                    ]
+                }
+                reason = "stop"
+            else:
+                yield {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call_code",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "code_execution",
+                                            "arguments": json.dumps(
+                                                {"code": "print(7 * 8)"}
+                                            ),
+                                        },
+                                    }
+                                ]
+                            },
+                            "finish_reason": None,
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            yield {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]}
+            yield {
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                "cost_micro_eur": 12,
+            }
+
+        executed: list[str] = []
+
+        async def fake_code(code: str, timeout: float, key_id: str) -> dict[str, Any]:
+            executed.append(code)
+            return {"stdout": "56\n", "stderr": "", "return_code": 0}
+
+        body: dict[str, Any] = {
+            "model": "claude-fictional-client",
+            "max_tokens": 100,
+            "messages": [{"role": "user", "content": "Calculate 7 times 8"}],
+            "tools": [{"type": "code_execution_20250825", "name": "code_execution"}],
+        }
+        with (
+            patch("services.orchestrator.dev_inference.gateway.events", frames),
+            patch("services.orchestrator.hosted_tools.code_execution", fake_code),
+        ):
+            reply = self.post(json=body)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            result = reply.json()
+            self.assertEqual(
+                [block["type"] for block in result["content"]],
+                ["server_tool_use", "code_execution_tool_result", "text"],
+            )
+            self.assertEqual(result["content"][0]["name"], "code_execution")
+            self.assertEqual(
+                result["content"][1]["content"],
+                {
+                    "type": "code_execution_result",
+                    "stdout": "56\n",
+                    "stderr": "",
+                    "return_code": 0,
+                    "content": [],
+                },
+            )
+            self.assertEqual(
+                result["usage"]["server_tool_use"],
+                {"web_search_requests": 0, "code_execution_requests": 1},
+            )
+            self.assertEqual(executed, ["print(7 * 8)"])
+
+            streamed = self.post(json=body | {"stream": True})
+            starts = [
+                json.loads(line[6:])["content_block"]["type"]
+                for line in streamed.text.splitlines()
+                if line.startswith("data: ") and '"content_block_start"' in line
+            ]
+            self.assertEqual(
+                starts,
+                ["server_tool_use", "code_execution_tool_result", "text"],
+            )
+
+            follow = self.post(
+                json=body
+                | {
+                    "messages": [
+                        *body["messages"],
+                        {"role": "assistant", "content": result["content"]},
+                        {"role": "user", "content": "Thanks"},
+                    ]
+                }
+            )
+            self.assertEqual(follow.status_code, 200, follow.text)
+
+    def test_code_execution_daily_limit(self) -> None:
+        async def frames(plan: Plan) -> AsyncIterator[dict[str, Any]]:
+            if self.prepared[-1].messages[-1].role == "tool":
+                yield {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": "done"},
+                            "finish_reason": None,
+                        }
+                    ]
+                }
+                reason = "stop"
+            else:
+                yield {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call_code",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "code_execution",
+                                            "arguments": json.dumps(
+                                                {"code": "print(1)"}
+                                            ),
+                                        },
+                                    }
+                                ]
+                            },
+                            "finish_reason": None,
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            yield {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]}
+            yield {
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                "cost_micro_eur": 12,
+            }
+
+        async def fake_code(code: str, timeout: float, key_id: str) -> dict[str, Any]:
+            return {"stdout": "1", "stderr": "", "return_code": 0}
+
+        body: dict[str, Any] = {
+            "model": "claude-fictional-client",
+            "max_tokens": 100,
+            "messages": [{"role": "user", "content": "Run code"}],
+            "tools": [
+                {
+                    "type": "code_execution_20250522",
+                    "name": "code_execution",
+                    "max_uses": 1,
+                }
+            ],
+        }
+        with (
+            patch("services.orchestrator.dev_inference.gateway.events", frames),
+            patch("services.orchestrator.hosted_tools.code_execution", fake_code),
+            patch.dict(os.environ, {"ATLAS_API_CODE_EXECUTION_DAILY_LIMIT": "1"}),
+        ):
+            first = self.post(json=body)
+            self.assertEqual(first.status_code, 200, first.text)
+            second = self.post(json=body)
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertEqual(
+                second.json()["content"][1],
+                {
+                    "type": "code_execution_tool_result_error",
+                    "tool_use_id": "srvtoolu_call_code",
+                    "error_code": "too_many_requests",
+                },
+            )
+
     def test_three_mib_stream_is_accepted_and_final_event_names_provider(self) -> None:
         reply = self.post(
             "/v1/messages",

@@ -947,11 +947,199 @@ class KeyResponsesTests(unittest.TestCase):
             )
             self.assertEqual(follow.status_code, 200, follow.text)
 
-            strict = self.client.post(
-                url, headers=dict(headers, **{"x-atlas-privacy": "strict"}), json=body
+    def test_hosted_code_execution_on_responses(self) -> None:
+        """The Responses code interpreter runs in Atlas and streams its lifecycle."""
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            if body["messages"][-1]["role"] == "tool":
+                delta: dict[str, Any] = {"content": "The answer is 56."}
+                reason = "stop"
+            else:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_code",
+                            "type": "function",
+                            "function": {
+                                "name": "code_execution",
+                                "arguments": json.dumps({"code": "print(7 * 8)"}),
+                            },
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            for frame in (
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ):
+                yield ("data: " + json.dumps(frame) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        executed: list[str] = []
+
+        async def fake_code(code: str, timeout: float, key_id: str) -> dict[str, Any]:
+            executed.append(code)
+            return {"stdout": "56\n", "stderr": "", "return_code": 0}
+
+        body: dict[str, Any] = {
+            "model": "atlas-code",
+            "input": "Calculate 7 times 8.",
+            "tools": [{"type": "code_interpreter", "container": {"type": "auto"}}],
+        }
+        with (
+            patch.object(gateway, "transport", transport),
+            patch("services.orchestrator.hosted_tools.code_execution", fake_code),
+        ):
+            reply = self.post(body)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            result = reply.json()
+            self.assertEqual(
+                result["output"][0],
+                {
+                    "id": "ci_call_code",
+                    "type": "code_interpreter_call",
+                    "status": "completed",
+                    "code": "print(7 * 8)",
+                    "container_id": None,
+                    "outputs": [{"type": "logs", "logs": "56"}],
+                },
             )
-            self.assertEqual(strict.status_code, 400, strict.text)
-            self.assertIn("Web fetch is not available", strict.text)
+            self.assertEqual(executed, ["print(7 * 8)"])
+
+            streamed = self.post(dict(body, stream=True))
+            self.assertEqual(streamed.status_code, 200, streamed.text)
+            events = [
+                json.loads(line[6:])
+                for line in streamed.text.splitlines()
+                if line.startswith("data: ")
+            ]
+            self.assertEqual(
+                [event["type"] for event in events],
+                [
+                    "response.created",
+                    "response.in_progress",
+                    "response.output_item.added",
+                    "response.code_interpreter_call.in_progress",
+                    "response.code_interpreter_call.interpreting",
+                    "response.code_interpreter_call_code.delta",
+                    "response.code_interpreter_call_code.done",
+                    "response.code_interpreter_call.completed",
+                    "response.output_item.done",
+                    "response.output_item.added",
+                    "response.content_part.added",
+                    "response.output_text.delta",
+                    "response.output_text.done",
+                    "response.content_part.done",
+                    "response.output_item.done",
+                    "response.completed",
+                ],
+            )
+            self.assertEqual(events[2]["item"]["type"], "code_interpreter_call")
+            self.assertEqual(events[5]["delta"], "print(7 * 8)")
+
+            follow = self.post(
+                dict(
+                    body,
+                    input=[
+                        {"role": "user", "content": body["input"]},
+                        result["output"][0],
+                        {"role": "user", "content": "Thanks"},
+                    ],
+                )
+            )
+            self.assertEqual(follow.status_code, 200, follow.text)
+
+    def test_code_interpreter_container_and_limits(self) -> None:
+        explicit = self.post(
+            {
+                "model": "atlas-code",
+                "input": "Run code",
+                "tools": [
+                    {
+                        "type": "code_interpreter",
+                        "container": {"type": "existing", "id": "container"},
+                    }
+                ],
+            }
+        )
+        self.assertEqual(explicit.status_code, 400, explicit.text)
+        self.assertIn("container", explicit.text)
+
+        async def fake_code(code: str, timeout: float, key_id: str) -> dict[str, Any]:
+            return {"stdout": "x", "stderr": "", "return_code": 0}
+
+        body: dict[str, Any] = {
+            "model": "atlas-code",
+            "input": "Run code",
+            "tools": [
+                {
+                    "type": "code_interpreter",
+                    "container": {"type": "auto"},
+                    "max_uses": 1,
+                }
+            ],
+        }
+        with (
+            patch.object(gateway, "transport", self.code_loop_transport),
+            patch("services.orchestrator.hosted_tools.code_execution", fake_code),
+            patch.dict(os.environ, {"ATLAS_API_CODE_EXECUTION_DAILY_LIMIT": "1"}),
+        ):
+            first = self.post(body)
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json()["output"][0]["status"], "completed")
+            second = self.post(body)
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertEqual(
+                second.json()["output"][0],
+                {
+                    "id": "ci_call_code",
+                    "type": "code_interpreter_call",
+                    "status": "failed",
+                    "code": "print(1)",
+                    "container_id": None,
+                    "outputs": [
+                        {
+                            "type": "logs",
+                            "logs": "Code execution failed: code_execution_daily_limit",
+                        }
+                    ],
+                },
+            )
+
+    async def code_loop_transport(
+        self, plan: gateway.Plan
+    ) -> AsyncGenerator[bytes, None]:
+        body = json.loads(plan.body)
+        self.inputs.append(body)
+        if body["messages"][-1]["role"] == "tool":
+            delta: dict[str, Any] = {"content": "done"}
+            reason = "stop"
+        else:
+            delta = {
+                "tool_calls": [
+                    {
+                        "index": 0,
+                        "id": "call_code",
+                        "type": "function",
+                        "function": {
+                            "name": "code_execution",
+                            "arguments": json.dumps({"code": "print(1)"}),
+                        },
+                    }
+                ]
+            }
+            reason = "tool_calls"
+        for frame in (
+            {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+            {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+            {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+        ):
+            yield ("data: " + json.dumps(frame) + "\n\n").encode()
+        yield b"data: [DONE]\n\n"
 
     def test_client_shell_and_apply_patch_tools(self) -> None:
         """The client-executed shell and apply_patch tools of the Responses API."""

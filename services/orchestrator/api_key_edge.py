@@ -579,6 +579,9 @@ class ModelAccounting:
     def usage(self, developer: str) -> dict[str, object]:
         return self.store.usage(developer)
 
+    def count_code_execution(self, request_id: str, limit: int) -> None:
+        self.store.count_code_execution(request_id, limit)
+
     def reserve(self, developer: str, amount: int, *, monetary: bool = True) -> str:
         reservation = self.ledger.reserve_cost(
             self.principal.budget_user,

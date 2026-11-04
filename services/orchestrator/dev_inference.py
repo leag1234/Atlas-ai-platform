@@ -4,6 +4,7 @@ from packages.limits import LimitError
 from packages.validation import describe_validation
 
 import asyncio
+import os
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
 import json
@@ -248,6 +249,7 @@ async def hosted_drive(
     key_id: str,
     strict: bool,
     fetch_options: dict[str, Any] | None = None,
+    code_options: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Model turns with hosted searches in between, until the model answers or calls a client tool.
 
@@ -257,6 +259,8 @@ async def hosted_drive(
     from services.orchestrator.hosted_tools import (
         HOSTED_NAMES,
         MAX_ROUNDS,
+        code_execution,
+        execution_code,
         fetch_refusal,
         fetch_url,
         search_query,
@@ -265,12 +269,18 @@ async def hosted_drive(
     )
 
     options = fetch_options or {}
+    code_options = code_options or {}
     fetched = 0
+    executions = 0
+    execution_limit = 4
+    if isinstance(code_options.get("max_uses"), int):
+        execution_limit = min(execution_limit, code_options["max_uses"])
     # Addresses the model may read: the conversation as sent, then search results.
     seen = json.dumps(
         request.model_dump(by_alias=True, exclude_none=True)["messages"],
         ensure_ascii=False,
     )
+    original_request_id = request_id
     prompt_tokens = completion_tokens = 0
     for turn in range(MAX_ROUNDS):
         candidate = Output(request_id, request, str(output.base["model"]))
@@ -287,8 +297,12 @@ async def hosted_drive(
             prompt_tokens += int(candidate.usage.get("prompt_tokens", 0))
             completion_tokens += int(candidate.usage.get("completion_tokens", 0))
         calls = list(candidate.calls.values())
-        searches = [c for c in calls if c["function"]["name"] in HOSTED_NAMES]
-        if not searches or len(searches) != len(calls) or turn == MAX_ROUNDS - 1:
+        hosted_calls = [c for c in calls if c["function"]["name"] in HOSTED_NAMES]
+        if (
+            not hosted_calls
+            or len(hosted_calls) != len(calls)
+            or turn == MAX_ROUNDS - 1
+        ):
             output.choices = candidate.choices
             output.served_by = candidate.served_by
             output.privacy = candidate.privacy
@@ -303,7 +317,7 @@ async def hosted_drive(
                 yield chunk
             return
         results = []
-        for call in searches:
+        for call in hosted_calls:
             if call["function"]["name"] == "web_fetch":
                 url = fetch_url(call["function"]["arguments"])
                 refusal = fetch_refusal(url, seen, options, fetched)
@@ -324,6 +338,54 @@ async def hosted_drive(
                         "role": "tool",
                         "tool_call_id": call["id"],
                         "content": json.dumps(page, ensure_ascii=False),
+                    }
+                )
+                continue
+            if call["function"]["name"] == "code_execution":
+                code = execution_code(call["function"]["arguments"])
+                error = None
+                if executions >= execution_limit:
+                    error = "too_many_requests"
+                else:
+                    # Only API key stores count executions; anything else cannot run code.
+                    count = getattr(store, "count_code_execution", None)
+                    try:
+                        if count is None:
+                            raise ValueError("code_execution_not_counted")
+                        count(
+                            original_request_id,
+                            int(
+                                os.environ.get(
+                                    "ATLAS_API_CODE_EXECUTION_DAILY_LIMIT", "100"
+                                )
+                            ),
+                        )
+                    except LimitError:
+                        error = "code_execution_daily_limit"
+                    except (ValueError, OSError):
+                        error = "unavailable"
+                if error is None:
+                    executions += 1
+                    result = await code_execution(
+                        code, max(1.0, min(60.0, deadline - monotonic())), key_id
+                    )
+                    if "error" in result:
+                        error = str(result["error"])
+                else:
+                    result = {"error": error}
+                yield {
+                    "hosted": {
+                        "type": "code_interpreter_call",
+                        "id": call["id"],
+                        "code": code,
+                        **result,
+                    }
+                }
+                results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps(result, ensure_ascii=False),
                     }
                 )
                 continue
@@ -419,6 +481,7 @@ async def chat(
         parsed: ChatInput | RawChatInput
         hosted: list[str] = []
         fetch_options: dict[str, Any] | None = None
+        code_options: dict[str, Any] | None = None
         if (
             raw_model is not None
             and protocol == "chat"
@@ -449,6 +512,7 @@ async def chat(
                 inline_files(converted["messages"])
                 hosted = converted.pop("_hosted", [])
                 fetch_options = converted.pop("_fetch", None)
+                code_options = converted.pop("_code", None)
                 parsed = RawChatInput.model_validate(dict(converted, model=raw_model))
             else:
                 parsed = (
@@ -497,18 +561,20 @@ async def chat(
                 parsed = parsed.model_copy(update={"messages": nudged})
         strict = getattr(request.state, "privacy", "standard") == "strict"
         if hosted and strict:
-            # Strict privacy: no request leaves the owned infrastructure, so no search.
+            # Strict privacy: no request leaves the owned infrastructure. Code
+            # execution stays on Atlas machines, but web tools leave it.
             if "web_search" in hosted:
                 return error(
                     "web_search_unavailable_in_strict_privacy",
                     400,
                     "Web search is not available in strict privacy mode.",
                 )
-            return error(
-                "web_fetch_unavailable_in_strict_privacy",
-                400,
-                "Web fetch is not available in strict privacy mode.",
-            )
+            if "web_fetch" in hosted:
+                return error(
+                    "web_fetch_unavailable_in_strict_privacy",
+                    400,
+                    "Web fetch is not available in strict privacy mode.",
+                )
         plan = (
             gateway.prepare_api(
                 parsed, public_model, request.state.api_key.id, strict=strict
@@ -606,6 +672,7 @@ async def chat(
             request.state.api_key.id,
             strict,
             fetch_options,
+            code_options,
         )
 
     async def chunks() -> AsyncGenerator[str, None]:

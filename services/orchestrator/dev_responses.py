@@ -45,6 +45,9 @@ class Wire:
         self.reasoning = reasoning
         self.items: list[dict[str, Any]] = []
         self.indices: dict[str, int] = {}
+        self.closed: set[int] = set()
+        # Raw sandbox results by item id, for the Messages blocks (not in Responses items).
+        self.code_results: dict[str, dict[str, Any]] = {}
         self.sequence = 0
         # True once response.completed, .incomplete or .failed has been emitted.
         self.terminal = False
@@ -161,6 +164,70 @@ class Wire:
     def feed(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events = []
         item: dict[str, Any]
+        if "hosted" in chunk and chunk["hosted"]["type"] == "code_interpreter_call":
+            hosted = chunk["hosted"]
+            index = len(self.items)
+            refused = "error" in hosted
+            logs = ""
+            if not refused:
+                logs = (hosted.get("stdout", "") + hosted.get("stderr", "")).strip()
+            item = {
+                "id": "ci_" + str(hosted["id"]),
+                "type": "code_interpreter_call",
+                "status": "failed" if refused else "completed",
+                "code": hosted["code"],
+                "container_id": None,
+                "outputs": [
+                    {
+                        "type": "logs",
+                        "logs": "Code execution failed: " + str(hosted["error"])
+                        if refused
+                        else logs,
+                    }
+                ],
+            }
+            self.items.append(item)
+            self.closed.add(index)
+            self.code_results[item["id"]] = {
+                key: hosted[key]
+                for key in ("stdout", "stderr", "return_code", "error")
+                if key in hosted
+            }
+            return [
+                self.event(
+                    "response.output_item.added",
+                    output_index=index,
+                    item=dict(item, status="in_progress", outputs=[]),
+                ),
+                self.event(
+                    "response.code_interpreter_call.in_progress",
+                    output_index=index,
+                    item_id=item["id"],
+                ),
+                self.event(
+                    "response.code_interpreter_call.interpreting",
+                    output_index=index,
+                    item_id=item["id"],
+                ),
+                self.event(
+                    "response.code_interpreter_call_code.delta",
+                    output_index=index,
+                    item_id=item["id"],
+                    delta=hosted["code"],
+                ),
+                self.event(
+                    "response.code_interpreter_call_code.done",
+                    output_index=index,
+                    item_id=item["id"],
+                    code=hosted["code"],
+                ),
+                self.event(
+                    "response.code_interpreter_call.completed",
+                    output_index=index,
+                    item_id=item["id"],
+                ),
+                self.event("response.output_item.done", output_index=index, item=item),
+            ]
         if "hosted" in chunk and chunk["hosted"]["type"] == "web_fetch_call":
             # Only the Messages web_fetch tool produces it; Messages shows it as blocks.
             hosted = chunk["hosted"]
@@ -177,6 +244,7 @@ class Wire:
                 },
             }
             self.items.append(item)
+            self.closed.add(index)
             return [
                 self.event(
                     "response.output_item.added",
@@ -201,6 +269,7 @@ class Wire:
                 },
             }
             self.items.append(item)
+            self.closed.add(index)
             return [
                 self.event(
                     "response.output_item.added",
@@ -403,6 +472,8 @@ class Wire:
                         )
         if "usage" in chunk:
             for index, item in enumerate(self.items):
+                if index in self.closed:
+                    continue
                 item["status"] = (
                     "incomplete" if self.output.reason == "length" else "completed"
                 )

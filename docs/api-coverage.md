@@ -76,13 +76,15 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | `function`, `custom`, `namespace` tools | Applied (executed by the client) |
 | `local_shell`, `shell`, `apply_patch` tools | Applied (executed by the client) |
 | `web_search` tool | Applied (executed by Atlas, up to 4 turns, `web_search_call` items, `url_citation` annotations) |
-| `file_search`, `code_interpreter`, `image_generation`, `mcp`, `computer_use_preview` tools | Refused by name (`invalid_request`, `unsupported tool: <type>`) |
+| `code_interpreter` tool (`container.type: "auto"` only; explicit containers refused; `max_uses` 1–4, default 4) | Applied (executed by Atlas in a per-call sandbox) |
+| `file_search`, `image_generation`, `mcp`, `computer_use_preview` tools | Refused by name (`invalid_request`, `unsupported tool: <type>`) |
 | Input: text, `input_image`, `input_file`, function and custom call results, `reasoning` items | Applied |
 | Input: `input_audio` | Refused by name |
 | Output: messages, `function_call`, `custom_tool_call`, `local_shell_call`, `shell_call`, `apply_patch_call`, `web_search_call` | Applied |
 | Output: `reasoning` items with `reasoning_text` content, when the provider returns reasoning (no `summary`, no `encrypted_content`) | Applied |
-| Output: `file_search_call`, `code_interpreter_call`, `image_generation_call`, `mcp_call` | Not implemented |
-| Stream events: `response.created`, `in_progress`, `output_item.added` and `done`, `content_part.added` and `done`, `output_text.delta` and `done`, function and custom tool input deltas, `web_search_call.completed`, `response.completed`, `response.failed` | Applied |
+| Output: `code_interpreter_call` (`container_id: null`, bounded logs) | Applied |
+| Output: `file_search_call`, `image_generation_call`, `mcp_call` | Not implemented |
+| Stream events: `response.created`, `in_progress`, `output_item.added` and `done`, `content_part.added` and `done`, `output_text.delta` and `done`, function and custom tool input deltas, `web_search_call.completed`, `code_interpreter_call.in_progress/interpreting/completed`, `code_interpreter_call_code.delta/done`, `response.completed`, `response.failed` | Applied |
 | Stream events: `reasoning_text.delta` and `done` | Applied |
 | Stream event `output_text.annotation.added` (one per `url_citation`, before `output_text.done`) | Applied |
 | Stream events for reasoning summaries, refusal, other hosted tools, audio | Not implemented |
@@ -103,7 +105,8 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | `thinking` blocks in answers, when `thinking` is requested and the model reasons (signed with an opaque `signature`; streamed as `thinking_delta` then `signature_delta`, closed before the next block) | Applied |
 | `web_search` server tool (`web_search_20250305` and later): `server_tool_use`, `web_search_tool_result`, `usage.server_tool_use` | Applied |
 | `web_fetch` server tool (`web_fetch_20250910` and later): `server_tool_use`, `web_fetch_tool_result` (text document) or `web_fetch_tool_error`, `usage.server_tool_use.web_fetch_requests`; `max_uses`, `allowed_domains`, `blocked_domains`, `max_content_tokens`. Only addresses present in the conversation or in earlier search results are read (`url_not_allowed` otherwise); `citations` enabled refused by name; refused in strict privacy | Applied |
-| Code execution (`code_execution`, `bash_code_execution`, `text_editor_code_execution`), memory, computer use, MCP connector, `tool_search` | Not implemented |
+| `code_execution` server tool (`code_execution_20250825` and `code_execution_20250522`, named `code_execution`; `max_uses` 1–4, default 4): `server_tool_use`, `code_execution_tool_result` or `code_execution_tool_result_error`, `usage.server_tool_use.code_execution_requests` | Applied (executed by Atlas in a per-call sandbox) |
+| `bash_code_execution`, `text_editor_code_execution`, memory, computer use, MCP connector, `tool_search` | Not implemented |
 | Citations on text blocks: `web_search_result_location` when the answer quotes a searched page (streamed as `citations_delta`); citations sent back in history are accepted | Applied |
 | Citations on document blocks (`citations.enabled` on a document) | Not implemented |
 | Stream events: `message_start`, `content_block_start`, `content_block_delta` (`text_delta`, `input_json_delta`), `content_block_stop`, `message_delta`, `message_stop` | Applied |
@@ -128,9 +131,10 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 - **Tokens.** `input_tokens` counts of the two counting routes are estimates, not a provider tokenizer.
 - **Unknown fields.** A field that is not part of the format answers 400 and the message names it, for example `unknown field messages.2.foo`.
 - **Strict privacy.** The hosted `web_search` tool is refused in strict privacy mode (`web_search_unavailable_in_strict_privacy`).
+- **Code execution.** Each execution runs Python in a new container: no network, no mounted files, read-only root, 1 CPU, 1 GB, 64 processes, 256 MB `/tmp`, 60 s, 64 KB of stdout and of stderr. At most 4 executions per request; a per-key daily cap (`ATLAS_API_CODE_EXECUTION_DAILY_LIMIT`, default 100) answers `code_execution_daily_limit`. Allowed in strict privacy (it runs on Atlas machines).
 
 ## 6. Open items, in the order planned
 
-1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
+1. Files and images generated by code execution (code interpreter phase 2: today only stdout, stderr and the exit code come back; nothing persists between executions).
 2. Citations on document blocks.
 3. The other families outside chat (images, audio, files, batches): phase 2.

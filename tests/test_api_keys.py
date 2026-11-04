@@ -14,7 +14,12 @@ from unittest.mock import patch
 from typing import Any
 
 from fastapi.testclient import TestClient
-from services.orchestrator.api_keys import MAX_CALL_RESERVATION, Store, KeyQuotaError
+from services.orchestrator.api_keys import (
+    MAX_CALL_RESERVATION,
+    Store,
+    KeyQuotaError,
+)
+from packages.limits import LimitError
 from services.orchestrator.api_key_edge import key_call, ModelAccounting
 from services.orchestrator.api_key_admin import app as admin_app
 from services.orchestrator.chat_api import app
@@ -112,6 +117,21 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(row["weekly_micro_eur"], 100000000)
         self.assertTrue(row["own_budget"])
         self.assertEqual(row["expires_at"] - row["created_at"], 21 * 86400)
+
+    def test_code_execution_daily_limit_is_atomic(self) -> None:
+        row, _ = self.create()
+        request_id = self.store.reserve(row["id"], 1000)
+        self.store.count_code_execution(request_id, 1)
+        with self.assertRaises(LimitError):
+            self.store.count_code_execution(request_id, 1)
+        with self.store.connection() as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT code_executions FROM api_key_requests WHERE id=?",
+                    (request_id,),
+                ).fetchone()[0],
+                1,
+            )
 
     def test_key_privacy_setting_is_persisted_and_resolved(self) -> None:
         row, key = self.create(privacy="strict")
