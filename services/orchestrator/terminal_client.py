@@ -340,17 +340,18 @@ class TerminalClient:
         }
 
     def isolation_arguments(self, name: str) -> list[str]:
-        """Throwaway container: no network, no capabilities, only this request's directory."""
-        from services.orchestrator.code_workspace import enabled, volume
+        """Throwaway container: no network, no capabilities, only this request's directory.
 
+        The shared code-workspace volume is never mounted here: it holds every
+        user's project Work scope, and code workers already mount only their own
+        session subpath (code_workspace.CodeWorkspace.invoke).
+        """
         ports = atlas_ports()
         subpath = "requests/" + self.root.rsplit("/", 1)[1]
         mounts = [
             "type=volume,src=%s,dst=%s,volume-subpath=%s"
             % (ports.name("atlas-terminal-files"), self.root, subpath)
         ]
-        if enabled():
-            mounts.append("type=volume,src=%s,dst=/code-workspaces,readonly" % volume())
         arguments = [
             "docker",
             "run",
