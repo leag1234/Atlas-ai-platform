@@ -124,7 +124,7 @@ retain the gateway's per-call ceiling and reserve cost before I/O. Stops are
 normal checked replies with measured values, never HTTP 504 quota errors.
 
 Workspaces persist in Docker volume `atlas-code-workspaces[-PORT_BASE]`, with one
-UUID-derived directory per session. The terminal mounts this volume read-only;
+UUID-derived directory per session. Terminal containers never mount this volume;
 code workers use the same pinned image in separate `--network none` containers,
 mount only their session subdirectory, inherit no host environment, and have a
 read-only root, no capabilities, no privileges, bounded memory/PIDs, and tmpfs.

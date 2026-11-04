@@ -487,13 +487,6 @@ def terminal(name: str, binding: str) -> Iterator[None]:
         if details["Config"].get("Labels", {}).get("atlas.owner") != "files":
             raise RuntimeError("terminal_container_owner_mismatch")
         command("docker", "rm", "-f", name)
-    from services.orchestrator.code_workspace import enabled, volume
-
-    code_mount = (
-        ["--mount", f"type=volume,src={volume()},dst=/code-workspaces,readonly"]
-        if enabled()
-        else []
-    )
     started = False
     try:
         command(
@@ -527,7 +520,6 @@ def terminal(name: str, binding: str) -> Iterator[None]:
             "OPEN_TERMINAL_API_KEY",
             "-e",
             "OPEN_TERMINAL_EXECUTE_TIMEOUT=30",
-            *code_mount,
             "--entrypoint",
             "/bin/sh",
             IMAGE,
