@@ -387,6 +387,9 @@ class Usage(BaseModel):
     completion_tokens: int = Field(ge=0, le=8 * 32768, strict=True)
     total_tokens: int | None = Field(default=None, ge=0, strict=True)
     prompt_tokens_details: dict[str, int] | None = None
+    # Reasoning tokens reach Responses usage (output_tokens_details); some providers
+    # send null for details they do not count.
+    completion_tokens_details: dict[str, int | None] | None = None
 
 
 class Choice(BaseModel):
