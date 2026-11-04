@@ -13,6 +13,7 @@ from services.orchestrator.grounding import (
     extract_claims,
     factual_query,
     needs_grounding,
+    question_entities,
 )
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.stream_client import sink_context
@@ -163,6 +164,24 @@ class GroundingTests(unittest.TestCase):
         answer = "Northbridge opened in 1925."
         checked = checker.check(answer, "When did Northbridge open?", "en")
         self.assertNotIn(WORDING["missing"]["en"], checked)
+
+    def test_sentence_opening_word_is_not_an_entity(self) -> None:
+        checker = Grounding()
+        checker.add("Le tarif réglementé du gaz a pris fin en France en juillet 2023.")
+        answer = "Le tarif réglementé du gaz a pris fin en France en juillet 2023."
+        checked = checker.check(
+            answer,
+            "Quel est le prix actuel du gaz réglementé en France ? Donne tes sources.",
+            "fr",
+        )
+        self.assertNotIn(WORDING["missing"]["fr"], checked)
+        self.assertEqual(
+            question_entities("Who founded Northbridge? Answer briefly."),
+            ["northbridge"],
+        )
+        self.assertEqual(
+            question_entities("Clara Venn won what? Explain."), ["clara venn"]
+        )
 
     def test_question_word_and_two_known_names_get_no_missing_notice(self) -> None:
         checker = Grounding()
