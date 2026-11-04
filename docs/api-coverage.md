@@ -35,7 +35,7 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | Stored Chat Completions: list, retrieve, update, delete, messages | Not implemented (nothing is stored) | n/a |
 | Message Batches | n/a | Not implemented |
 | Files API | Not implemented | Not implemented |
-| Embeddings | Not implemented | n/a |
+| Embeddings: `POST /embeddings` | Applied (model `atlas-embed`, see 4 bis) | n/a |
 | Images: generations, edits, variations | Not implemented | n/a |
 | Audio: speech, transcriptions, translations | Not implemented | n/a |
 | Moderations | Not implemented | n/a |
@@ -106,6 +106,19 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | Stream events: `message_start`, `content_block_start`, `content_block_delta` (`text_delta`, `input_json_delta`), `content_block_stop`, `message_delta`, `message_stop` | Applied |
 | `stop_reason: "stop_sequence"` with the sequence that stopped the text | Applied when the provider names the sequence (models served by Scaleway); `end_turn` otherwise (the Mistral API does not say which sequence matched) |
 
+## 4 bis. Embeddings
+
+| State | Parameters |
+|---|---|
+| Applied | `input` (a string or up to 2048 strings, each at most 131072 bytes), `encoding_format` (`float` or `base64`), `dimensions` (32 to 4096; the provider default is 4096) |
+| Accepted, no effect | `user` |
+| Refused by name | token arrays as `input`, any other field |
+
+- **Model.** Every model name is served by `atlas-embed` (a multilingual embedding model hosted in France); `model` in the answer says `atlas-embed`.
+- **Price and limits.** Input tokens at the embedding role's price; the key's daily quota and budget apply as for chat.
+- **Strict privacy.** Refused (`strict_privacy_unavailable`): no owned embedding server yet.
+- **Nothing is stored**, as everywhere else.
+
 ## 5. Differences that are not gaps in the list above
 
 - **Model names.** A model name Atlas does not know (`gpt-5-codex`, `claude-sonnet-5-5`, a typo) is served as `atlas-dev` on the direct formats. Check `model` and `served_by` in the first responses.
@@ -117,4 +130,4 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 
 1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
 2. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
-3. The families outside chat (embeddings, images, audio, files, batches): phase 2.
+3. The other families outside chat (images, audio, files, batches): phase 2.

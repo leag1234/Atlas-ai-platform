@@ -172,7 +172,7 @@ def model_names(request: Request) -> list[str]:
     scopes = request.state.api_key.scopes
     # Assistant names keep the full Atlas assistant (tools, search, memory).
     return (["atlas", *PROFILES] if "assistant" in scopes else []) + (
-        list(PUBLIC_MODELS) if "model" in scopes else []
+        [*PUBLIC_MODELS, EMBEDDING_MODEL] if "model" in scopes else []
     )
 
 
@@ -349,6 +349,128 @@ async def chat(request: Request) -> Response:
             limit=str(exc.limit),
             category=exc.category,
         )
+
+
+EMBEDDING_MODEL = "atlas-embed"
+
+
+@app.post("/embeddings")
+async def embeddings(request: Request) -> Response:
+    """OpenAI-format embeddings (API parity, phase 2); any model name is served by atlas-embed."""
+    import embeddings as gateway_embeddings
+
+    missing = require(request, "model")
+    if missing is not None:
+        return missing
+    try:
+        raw = json.loads(await request.body())
+    except ValueError:
+        return error(400, "invalid_request")
+    if not isinstance(raw, dict):
+        return error(400, "invalid_request")
+    unknown = set(raw) - {"model", "input", "encoding_format", "dimensions", "user"}
+    if unknown:
+        return error(
+            400,
+            "invalid_request",
+            message="unsupported field: " + ", ".join(sorted(unknown))[:200],
+        )
+    texts = raw.get("input")
+    if isinstance(texts, str):
+        texts = [texts]
+    if (
+        not isinstance(texts, list)
+        or not texts
+        or not all(isinstance(text, str) and text for text in texts)
+    ):
+        return error(
+            400,
+            "invalid_request",
+            message="input: a non-empty string or list of non-empty strings "
+            "(token arrays are not supported)",
+        )
+    if len(texts) > gateway_embeddings.MAX_INPUTS:
+        return error(
+            400,
+            "input_limit",
+            measured=len(texts),
+            limit=gateway_embeddings.MAX_INPUTS,
+            unit="inputs",
+        )
+    longest = max(len(text.encode()) for text in texts)
+    if longest > gateway_embeddings.MAX_INPUT_BYTES:
+        return error(
+            400,
+            "context_exceeded",
+            measured=longest,
+            limit=gateway_embeddings.MAX_INPUT_BYTES,
+            unit="bytes",
+        )
+    encoding = raw.get("encoding_format", "float")
+    dimensions = raw.get("dimensions")
+    if encoding not in ("float", "base64") or (
+        dimensions is not None
+        and (type(dimensions) is not int or not 32 <= dimensions <= 4096)
+    ):
+        return error(
+            400,
+            "invalid_request",
+            message="encoding_format: float or base64; dimensions: 32 to 4096",
+        )
+    if request.state.privacy == "strict":
+        return error(
+            503,
+            "strict_privacy_unavailable",
+            message="No owned embedding server is available for strict privacy mode.",
+        )
+    store = ModelAccounting(request.state.key_store, request.state.api_key)
+    developer = request.state.api_key.id
+    try:
+        request_id = store.reserve(developer, gateway_embeddings.estimated_micro(texts))
+    except BudgetRefusal as exc:
+        return error(
+            429,
+            "budget_limit",
+            used=str(exc.used),
+            limit=str(exc.limit),
+            category=exc.category,
+        )
+    except KeyQuotaError as exc:
+        return error(429, "quota_exceeded", **exc.values)
+    except (PermissionError, ValueError):
+        return error(429, "quota_exceeded")
+    try:
+        result = await gateway_embeddings.embed(
+            texts, dimensions=dimensions, encoding=encoding, timeout=120
+        )
+    except (RuntimeError, OSError, TimeoutError, aiohttp.ClientError):
+        store.finish(request_id, 0)
+        return error(502, "provider_error")
+    store.finish(request_id, result["cost_micro"], result["tokens"], 0)
+    logging.getLogger("atlas.api").info(
+        json.dumps(
+            {
+                "event": "api_embeddings",
+                "key": developer,
+                "inputs": len(texts),
+                "tokens": result["tokens"],
+            }
+        )
+    )
+    return JSONResponse(
+        {
+            "object": "list",
+            "data": [
+                {"object": "embedding", "index": index, "embedding": vector}
+                for index, vector in enumerate(result["vectors"])
+            ],
+            "model": EMBEDDING_MODEL,
+            "usage": {
+                "prompt_tokens": result["tokens"],
+                "total_tokens": result["tokens"],
+            },
+        }
+    )
 
 
 def not_stored(kind: str) -> JSONResponse:
