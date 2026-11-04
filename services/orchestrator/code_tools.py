@@ -366,6 +366,9 @@ def approval_arguments(arguments: str) -> dict[str, Any]:
     return ScopedApproval.model_validate_json(arguments).model_dump()
 
 
+FILE_TOOLS = ("edit_file", "write_file")
+
+
 class WorkTools(CodeTools):
     """Adapt existing tool events once, before retrieval allocates durable sequences."""
 
@@ -392,10 +395,14 @@ class WorkTools(CodeTools):
             output = dict(output, arguments=redact(data["arguments"]))
         if kind == "tool" and data.get("status") in {"completed", "failed"}:
             tool = str(data.get("tool", ""))
-            if data["status"] == "failed":
-                self.validation_failures[tool] = str(output.get("error", "tool_failed"))
+            if data["status"] == "failed" and output.get("error"):
+                self.validation_failures[tool] = str(output["error"])
             else:
-                self.validation_failures.pop(tool, None)
+                # A command that ran and exited non-zero or timed out is a result
+                # the model reports, not an unresolved tool error: verification
+                # tracks test outcomes. A later file write resolves a failed edit.
+                for name in FILE_TOOLS if tool in FILE_TOOLS else (tool,):
+                    self.validation_failures.pop(name, None)
         mapped: dict[str, Any] = {}
         for name in (
             "items",

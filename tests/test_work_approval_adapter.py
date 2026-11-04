@@ -105,13 +105,75 @@ class ApprovalAdapterTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertIn("request_approval", tools.validation_failures)
 
+    async def test_only_unresolved_tool_errors_are_retained(self) -> None:
+        cases: tuple[
+            tuple[list[tuple[str, str, dict[str, Any]]], dict[str, str]], ...
+        ] = (
+            ([("run_command", "failed", {"exit_code": 1})], {}),
+            ([("run_command", "failed", {"exit_code": 0, "timed_out": True})], {}),
+            (
+                [
+                    ("run_command", "failed", {"error": "code_tool_timeout"}),
+                    ("run_command", "failed", {"exit_code": 2}),
+                ],
+                {},
+            ),
+            (
+                [
+                    ("edit_file", "failed", {"error": "invalid old_text"}),
+                    ("write_file", "completed", {"diff": "+x"}),
+                ],
+                {},
+            ),
+            (
+                [
+                    ("write_file", "completed", {"diff": "+x"}),
+                    ("edit_file", "failed", {"error": "invalid old_text"}),
+                ],
+                {"edit_file": "invalid old_text"},
+            ),
+            (
+                [
+                    ("request_approval", "failed", {"error": "invalid_tool_arguments"}),
+                    ("run_command", "completed", {"exit_code": 0}),
+                ],
+                {"request_approval": "invalid_tool_arguments"},
+            ),
+        )
+        for events, expected in cases:
+            with self.subTest(events=events):
+                execution = MagicMock()
+                execution.broker.call = AsyncMock(return_value={"events": []})
+                tools = WorkTools(MagicMock(), execution)
+                for tool, status, output in events:
+                    await tools.emit("tool", tool=tool, status=status, output=output)
+                self.assertEqual(tools.validation_failures, expected)
+
     async def test_work_terminal_matches_stop_and_unresolved_validation(self) -> None:
-        for state, stop, tool_error, expected in (
-            ("done", "", False, "completed"),
-            ("stopped", "loop_detected", False, "failed"),
-            ("done", "", True, "failed"),
+        approval_error = dict(
+            tool="request_approval",
+            status="failed",
+            output={"error": "invalid_tool_arguments"},
+        )
+        # A failing test command is a reported result; an invalid edit that a
+        # later write replaced is resolved. Neither fails the whole turn.
+        failing_test = dict(
+            tool="run_command",
+            status="failed",
+            output={"exit_code": 1, "stdout": "FAILED (failures=1)"},
+        )
+        replaced_edit = [
+            dict(tool="edit_file", status="failed", output={"error": "old_text"}),
+            dict(tool="write_file", status="completed", output={"diff": "+x"}),
+        ]
+        for state, stop, events, expected in (
+            ("done", "", [], "completed"),
+            ("stopped", "loop_detected", [], "failed"),
+            ("done", "", [approval_error], "failed"),
+            ("done", "", [failing_test], "completed"),
+            ("done", "", replaced_edit, "completed"),
         ):
-            with self.subTest(state=state, stop=stop, tool_error=tool_error):
+            with self.subTest(state=state, stop=stop, events=events):
                 session_id, conversation, org, project = (
                     str(uuid4()) for _ in range(4)
                 )
@@ -158,13 +220,8 @@ class ApprovalAdapterTests(unittest.IsolatedAsyncioTestCase):
                 item = Interaction()
 
                 async def turn(*args: Any) -> CodeResult:
-                    if tool_error:
-                        await args[2].emit(
-                            "tool",
-                            tool="request_approval",
-                            status="failed",
-                            output={"error": "invalid_tool_arguments"},
-                        )
+                    for event in events:
+                        await args[2].emit("tool", **event)
                     return CodeResult(text="Partial work", state=state, reason=stop)
 
                 with (
