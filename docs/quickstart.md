@@ -58,7 +58,7 @@ setup does not claim a visible answer was verified.
 
 | Provider | Status | Indicative input / output per million tokens | Notes and official sources |
 | --- | --- | --- | --- |
-| Hetzner | Verified 2026-10-23 | Free during the experiment | **Experimental; not for production.** [API, models and terms](https://docs.hetzner.com/general/company-and-policy/experiments/inference/) |
+| Hetzner | Verified 2026-10-23 | Free during the experiment | **Experimental; not for production. The experiment ends on 2026-12-08 and its Qwen models will not be part of the official product.** [API, models and terms](https://docs.hetzner.com/general/company-and-policy/experiments/inference/) |
 | Scaleway | Verified 2026-10-23 | EUR 0.60 / 3.60 text; EUR 0.25 / 0.50 vision | Current Atlas defaults; [quickstart](https://www.scaleway.com/en/docs/generative-apis/quickstart/), [pricing](https://www.scaleway.com/en/pricing/model-as-a-service/), [FAQ](https://www.scaleway.com/en/docs/generative-apis/faq/) |
 | Mistral | Verified 2026-10-23 | USD 0.15 / 0.60 | [Model](https://docs.mistral.ai/models/mistral-small-4-0-26-03), [API](https://docs.mistral.ai/api/endpoint/chat), [pricing](https://docs.mistral.ai/inference/pricing) |
 | IONOS AI Model Hub | **Not yet tested** (no test access so far) | Preset untested; price unverified | [API](https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation), [model](https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b) |

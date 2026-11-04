@@ -232,7 +232,7 @@ class ImageRewriteTests(unittest.IsolatedAsyncioTestCase):
             await image_prompt.ImageRewriteProvider().complete(request)
         assert complete.await_args is not None
         self.assertEqual(
-            complete.await_args.args[1], "https://inference.hetzner.com/api/v1"
+            complete.await_args.args[1], "https://inference.hetzner.com/v1"
         )
         self.assertEqual(complete.await_args.args[2], policy.models["vision"])
         self.assertEqual(complete.await_args.args[3], "test-token")
