@@ -289,6 +289,7 @@ class PersonEvidenceTests(unittest.IsolatedAsyncioTestCase):
             answer_tokens=20,
             token_split_estimated=False,
             reasoning_retried=False,
+            reasoning_used="none",
             generation_ms=1.0,
             observations=[],
         )

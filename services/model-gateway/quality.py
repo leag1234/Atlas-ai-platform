@@ -420,6 +420,16 @@ async def stream_quality(
                     "reasoning_effort": "none" if index else request.reasoning_effort,
                 }
             )
+        # Configured reasoning applies to the first attempt only. Any recovery
+        # (empty or truncated answer, provider failure) and every later turn of a
+        # recovered answer run without reasoning, within the 3000-token bound.
+        current = current.model_copy(
+            update={
+                "reasoning_effort": "none"
+                if index or request.reasoning_disabled
+                else policy.efforts.get(model, "none")
+            }
+        )
         reserved = policy.cost(model, incoming, current.max_tokens)
         if spent + reserved > budget:
             raise ProviderLimitError(
@@ -906,6 +916,7 @@ async def stream_quality(
             "answer_tokens": answer_tokens,
             "token_split_estimated": estimated,
             "reasoning_retried": retried,
+            "reasoning_effort": current.reasoning_effort,
             "provider_retries": index,
         }
         if retry_completion_tokens:
@@ -925,7 +936,7 @@ async def stream_quality(
                     "event": "quality_usage",
                     "provider_model": model,
                     "profile": request.profile,
-                    "effort": request.reasoning_effort,
+                    "effort": current.reasoning_effort,
                     "trace_tokens": trace_tokens,
                     "answer_tokens": answer_tokens,
                     "token_split_estimated": estimated,

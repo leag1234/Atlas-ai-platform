@@ -15,6 +15,7 @@
     "context": 262144, "experimental": true,
     "code_model": "Qwen/Qwen3.8-27B",
     "code_thinking": true,
+    "reasoning_control": "enable_thinking",
     "code_models": {"Qwen/Qwen3.8-27B": {"context": 262144, "price": {"currency": "EUR", "input": 0, "output": 0}, "source": "https://docs.hetzner.com/general/company-and-policy/experiments/inference/", "verified_at": "2026-10-26"}},
     "request_options": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": false}},
     "price": {"currency": "EUR", "input": 0, "output": 0},

@@ -94,8 +94,13 @@ class AgentRequest(BaseModel):
     max_tokens: int = Field(
         default=2048, ge=1, le=16000, exclude_if=lambda value: value == 2048
     )
-    reasoning_effort: Literal["none", "low", "high"] = Field(
+    reasoning_effort: Literal["none", "low", "medium", "high"] = Field(
         default="none", exclude_if=lambda value: value == "none"
+    )
+    # Set by the orchestrator once a reasoning recovery happened: the following
+    # turns of the same answer must not restart the reasoning that already failed.
+    reasoning_disabled: bool = Field(
+        default=False, exclude_if=lambda value: value is False
     )
     has_attachments: bool = Field(
         default=False, exclude_if=lambda value: value is False

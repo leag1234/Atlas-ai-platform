@@ -547,7 +547,7 @@ async def chat(request: Request) -> Response:
                     if payload._connector_approvals
                     else {}
                 ),
-                "reasoning_effort": payload.reasoning_effort,
+                "reasoning_effort": item.reasoning_effort,
                 "max_output_tokens": payload.max_tokens,
                 "cost_eur": item.cout_eur,
                 "cost_kind": "reserved_upper_bound" if item.erreurs else "measured",

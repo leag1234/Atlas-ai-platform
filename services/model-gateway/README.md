@@ -78,3 +78,19 @@ thinking enabled, while chat, document, and vision requests retain the
 Qwen/Qwen3.6-35B-A3B-FP8 text default with thinking disabled. Set
 `ATLAS_CODE_MODEL` and/or `ATLAS_CODE_THINKING` to override the code defaults;
 an empty value restores the preset.
+
+Reasoning is off by default for every profile model. An operator enables it per
+model, last source wins: `reasoning_effort` in the model's routing.yaml
+capabilities, `reasoning_efforts` (model id to effort) in the provider preset,
+or `ATLAS_REASONING_EFFORTS`, a JSON object such as
+`{"Qwen/Qwen3.8-27B": "medium"}`. Efforts are none, low, medium or high.
+Scaleway (and the legacy routing) receives `reasoning_effort`; a preset with
+`"reasoning_control": "enable_thinking"` (Hetzner) receives
+`chat_template_kwargs.enable_thinking=true` instead, which has no level. Any
+other provider refuses a configured effort when the policy loads. Reasoning
+applies to the first attempt of a turn only: reasoning tokens count against
+the same max_tokens and cost reservation, and an empty or truncated answer
+(`finish_reason=length`) is retried once without reasoning, within 3000 output
+tokens; the following turns of that answer stay without reasoning. No provider
+is configured with a verified separate reasoning-token budget, so this retry is the guard.
+Responses report the effort actually used as `atlas.reasoning_effort`.
