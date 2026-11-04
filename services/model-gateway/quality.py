@@ -42,11 +42,8 @@ from packages.tool_history import (
 from packages.profiles import PROFILES
 from packages.evidence import estimated_tokens
 from packages.images import image_info
-from serverless import ServerlessPolicy, classify_task
+from serverless import REASONING_OUTPUT_TOKENS, ServerlessPolicy, classify_task
 
-
-# Extra output room for the first attempt of a model with configured reasoning.
-REASONING_OUTPUT_TOKENS = {"low": 2000, "medium": 6000, "high": 12000}
 
 CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model context]\n"
 
@@ -438,14 +435,19 @@ async def stream_quality(
             # document can spend the whole budget thinking and be cut mid-answer,
             # after streaming started, where no retry is possible (2026-11-04).
             # Widen only within the context and the cost budget, never refusing a
-            # turn that fitted before.
+            # turn that fitted before, and only while the bounded 3000-token
+            # recovery stays affordable: a widened attempt can end empty with
+            # finish_reason=length after spending all of it on reasoning.
             widened = min(
                 current.max_tokens + REASONING_OUTPUT_TOKENS[current.reasoning_effort],
                 policy.config[role]["capabilities"][model]["context"] - incoming,
             )
             if (
                 widened > current.max_tokens
-                and spent + policy.cost(model, incoming, widened) <= budget
+                and spent
+                + policy.cost(model, incoming, widened)
+                + policy.cost(model, incoming, 3000)
+                <= budget
             ):
                 current = current.model_copy(update={"max_tokens": widened})
         reserved = policy.cost(model, incoming, current.max_tokens)

@@ -35,6 +35,8 @@ class Configuration(BaseModel):
     output_eur_per_mtok: Decimal = Field(ge=0, allow_inf_nan=False)
     max_tokens: int = Field(gt=0, le=2048)
     gateway_reserves_quality: bool = False
+    # First-attempt output room the gateway may add for configured reasoning.
+    reasoning_output_tokens: int = Field(default=0, ge=0, le=12000)
 
 
 class WireCall(BaseModel):
@@ -150,6 +152,13 @@ class GatewayModel:
         self.has_attachments = has_attachments
         self.produces_files = produces_files
         self.reasoning_effort = "none"
+
+    @property
+    def reasoning_room(self) -> int:
+        """Reasoning widening the gateway may apply to this turn's first attempt."""
+        if not self.profile or self.reasoning_retried:
+            return 0
+        return self.configuration.reasoning_output_tokens
 
     @property
     def allowance(self) -> Decimal:
@@ -393,10 +402,11 @@ class GatewayModel:
             # Hold the remaining allowance; the gateway reserves each actual attempt.
             primary_cost = (
                 incoming * self.configuration.input_eur_per_mtok
-                + self.max_tokens * self.configuration.output_eur_per_mtok
+                + (self.max_tokens + self.reasoning_room)
+                * self.configuration.output_eur_per_mtok
             ) / 1_000_000
             return Reservation(
-                incoming * 2 + self.max_tokens + 3000,
+                incoming * 2 + self.max_tokens + self.reasoning_room + 3000,
                 self.allowance
                 if self.configuration.gateway_reserves_quality
                 else max(primary_cost, self.allowance),
@@ -581,19 +591,19 @@ class GatewayModel:
                     "tokens",
                 )
             retry_tokens = result.retry_completion_tokens
-            if retry_tokens > min(
-                result.usage.completion_tokens, 3 * (self.max_tokens + 3000)
-            ):
+            # A widened reasoning attempt that ends empty is followed by the
+            # bounded recovery: both fit the limit (and the reservation).
+            output_limit = self.max_tokens + self.reasoning_room + 3000
+            if retry_tokens > min(result.usage.completion_tokens, 3 * output_limit):
                 raise ValueError("invalid_retry_usage")
             if (
                 self.profile
-                and result.usage.completion_tokens - retry_tokens
-                > self.max_tokens + 3000
+                and result.usage.completion_tokens - retry_tokens > output_limit
             ):
                 raise LimitError(
                     "output_budget",
                     result.usage.completion_tokens,
-                    self.max_tokens + 3000,
+                    output_limit,
                     "tokens including recovery",
                 )
             if self.sink is not None:
