@@ -338,6 +338,19 @@ async def chat(request: Request) -> Response:
             user, ledger = user_from_headers(request.headers), DailyLedger()
             if payload._project_subject:
                 user = payload._project_subject
+            from services.orchestrator.request_owners import record as record_owner
+
+            # Bind this request's user-file directory to the caller before any file
+            # exists: the download relay serves it to this identity only.
+            record_owner(
+                item.request_id,
+                payload._project_subject
+                or (
+                    authenticated_key.subject
+                    if authenticated_key is not None
+                    else request.headers.get("x-openwebui-user-email")
+                ),
+            )
             reserve = Decimal("0.30" if payload.has_attachments else "0.10")
             if payload.code_mode and project_mode():
                 return public_error(ProjectError(409, "feature_not_available"))

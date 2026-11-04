@@ -80,31 +80,62 @@ def identity_allowed(header: bytes) -> bool:
     return re.search(rb"(?im)^authorization:[ \t]*Bearer sk-\S", header) is not None
 
 
-def stable_route_allowed(header: bytes) -> bool:
-    """Expose generated downloads, never the terminal's execution or browse API."""
-    method, target, _ = header.split(b" ", 2)
-    path = target.split(b"?", 1)[0].decode("latin1")
-    if project_mode() and legacy_project_route(path):
-        return False
+DOWNLOAD = re.compile(
+    r"/api/v1/terminals/atlas-files/files/serve/home/user/requests/"
+    r"(chatcmpl-[a-f0-9]{32})/[A-Za-z0-9][A-Za-z0-9_.-]*"
+)
+
+
+def normalized_path(header: bytes) -> str | None:
+    """The request path after repeated percent-decoding and dot removal."""
+    path = header.split(b" ", 2)[1].split(b"?", 1)[0].decode("latin1")
     for _ in range(8):
         decoded = unquote(path)
         if decoded == path:
             break
         path = decoded
     if unquote(path) != path or "\\" in path:
+        return None
+    return posixpath.normpath(path)
+
+
+def download_request(header: bytes) -> str | None:
+    """Request id of a generated-download route, as the relay resolves the path."""
+    path = normalized_path(header)
+    found = DOWNLOAD.fullmatch(path) if path is not None else None
+    return found.group(1) if found is not None else None
+
+
+def download_owned(header: bytes) -> bool:
+    """A generated download is served only to the identity that made the request.
+
+    Request ids are unguessable, but a link is not a credential: it is shared,
+    logged and kept in history.  Other routes are not download routes.
+    """
+    request_id = download_request(header)
+    if request_id is None:
+        return True
+    from services.orchestrator.request_owners import owns
+
+    found = re.findall(rb"(?im)^x-atlas-user:[ \t]*([^\r\n]*)", header)
+    if len(found) != 1:
         return False
-    path = posixpath.normpath(path)
-    if path == "/api/v1/auths/signup":
+    return owns(request_id, found[0].strip().decode("latin1"))
+
+
+def stable_route_allowed(header: bytes) -> bool:
+    """Expose generated downloads, never the terminal's execution or browse API."""
+    method, target, _ = header.split(b" ", 2)
+    if project_mode() and legacy_project_route(
+        target.split(b"?", 1)[0].decode("latin1")
+    ):
+        return False
+    path = normalized_path(header)
+    if path is None or path == "/api/v1/auths/signup":
         return False
     if path.startswith("/api/v1/terminals"):
         return method in (b"GET", b"HEAD") and (
-            path == "/api/v1/terminals"
-            or re.fullmatch(
-                r"/api/v1/terminals/atlas-files/files/serve/home/user/requests/"
-                r"chatcmpl-[a-f0-9]{32}/[A-Za-z0-9][A-Za-z0-9_.-]*",
-                path,
-            )
-            is not None
+            path == "/api/v1/terminals" or DOWNLOAD.fullmatch(path) is not None
         )
     return True
 
@@ -269,6 +300,13 @@ def loopback_html_injector(
                         ):
                             client.sendall(
                                 b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            )
+                            return
+                        if not download_owned(header):
+                            # Same answer as an unknown file: no owner oracle.
+                            client.sendall(
+                                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
+                                b"Cache-Control: private, no-store\r\nConnection: close\r\n\r\n"
                             )
                             return
                         header = without_header(header, b"x-atlas-proxy-secret")
