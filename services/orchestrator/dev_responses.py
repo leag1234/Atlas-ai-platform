@@ -161,6 +161,30 @@ class Wire:
     def feed(self, chunk: dict[str, Any]) -> list[dict[str, Any]]:
         events = []
         item: dict[str, Any]
+        if "hosted" in chunk and chunk["hosted"]["type"] == "web_fetch_call":
+            # Only the Messages web_fetch tool produces it; Messages shows it as blocks.
+            hosted = chunk["hosted"]
+            index = len(self.items)
+            item = {
+                "id": "wf_" + str(hosted["id"]),
+                "type": "web_fetch_call",
+                "status": "completed",
+                "url": hosted["url"],
+                **{
+                    key: hosted[key]
+                    for key in ("text", "retrieved_at", "error")
+                    if key in hosted
+                },
+            }
+            self.items.append(item)
+            return [
+                self.event(
+                    "response.output_item.added",
+                    output_index=index,
+                    item=dict(item, status="in_progress"),
+                ),
+                self.event("response.output_item.done", output_index=index, item=item),
+            ]
         if "hosted" in chunk:
             hosted = chunk["hosted"]
             index = len(self.items)

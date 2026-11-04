@@ -247,14 +247,30 @@ async def hosted_drive(
     public_model: str,
     key_id: str,
     strict: bool,
+    fetch_options: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Model turns with hosted searches in between, until the model answers or calls a client tool.
 
     Each turn is its own provider call with its own reservation. Searches stream to the client
     as hosted items when they run; the final turn's chunks follow with the summed usage.
     """
-    from services.orchestrator.hosted_tools import MAX_ROUNDS, search_query, web_search
+    from services.orchestrator.hosted_tools import (
+        HOSTED_NAMES,
+        MAX_ROUNDS,
+        fetch_refusal,
+        fetch_url,
+        search_query,
+        web_fetch,
+        web_search,
+    )
 
+    options = fetch_options or {}
+    fetched = 0
+    # Addresses the model may read: the conversation as sent, then search results.
+    seen = json.dumps(
+        request.model_dump(by_alias=True, exclude_none=True)["messages"],
+        ensure_ascii=False,
+    )
     prompt_tokens = completion_tokens = 0
     for turn in range(MAX_ROUNDS):
         candidate = Output(request_id, request, str(output.base["model"]))
@@ -271,7 +287,7 @@ async def hosted_drive(
             prompt_tokens += int(candidate.usage.get("prompt_tokens", 0))
             completion_tokens += int(candidate.usage.get("completion_tokens", 0))
         calls = list(candidate.calls.values())
-        searches = [c for c in calls if c["function"]["name"] == "web_search"]
+        searches = [c for c in calls if c["function"]["name"] in HOSTED_NAMES]
         if not searches or len(searches) != len(calls) or turn == MAX_ROUNDS - 1:
             output.choices = candidate.choices
             output.served_by = candidate.served_by
@@ -288,11 +304,35 @@ async def hosted_drive(
             return
         results = []
         for call in searches:
+            if call["function"]["name"] == "web_fetch":
+                url = fetch_url(call["function"]["arguments"])
+                refusal = fetch_refusal(url, seen, options, fetched)
+                fetched += 1
+                page = (
+                    {"url": url, "error": refusal}
+                    if refusal
+                    else await web_fetch(
+                        url,
+                        max(1.0, min(30.0, deadline - monotonic())),
+                        key_id,
+                        options.get("max_content_tokens"),
+                    )
+                )
+                yield {"hosted": {"type": "web_fetch_call", "id": call["id"], **page}}
+                results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "content": json.dumps(page, ensure_ascii=False),
+                    }
+                )
+                continue
             query = search_query(call["function"]["arguments"])
             found = await web_search(
                 query, max(1.0, min(20.0, deadline - monotonic())), key_id
             )
             output.citations.extend(found["results"])
+            seen += " " + " ".join(row["url"] for row in found["results"])
             yield {
                 "hosted": {
                     "type": "web_search_call",
@@ -378,6 +418,7 @@ async def chat(
                 return error(str(exc), 400)
         parsed: ChatInput | RawChatInput
         hosted: list[str] = []
+        fetch_options: dict[str, Any] | None = None
         if (
             raw_model is not None
             and protocol == "chat"
@@ -407,6 +448,7 @@ async def chat(
                 normalize_chat(converted)
                 inline_files(converted["messages"])
                 hosted = converted.pop("_hosted", [])
+                fetch_options = converted.pop("_fetch", None)
                 parsed = RawChatInput.model_validate(dict(converted, model=raw_model))
             else:
                 parsed = (
@@ -456,10 +498,16 @@ async def chat(
         strict = getattr(request.state, "privacy", "standard") == "strict"
         if hosted and strict:
             # Strict privacy: no request leaves the owned infrastructure, so no search.
+            if "web_search" in hosted:
+                return error(
+                    "web_search_unavailable_in_strict_privacy",
+                    400,
+                    "Web search is not available in strict privacy mode.",
+                )
             return error(
-                "web_search_unavailable_in_strict_privacy",
+                "web_fetch_unavailable_in_strict_privacy",
                 400,
-                "Web search is not available in strict privacy mode.",
+                "Web fetch is not available in strict privacy mode.",
             )
         plan = (
             gateway.prepare_api(
@@ -557,6 +605,7 @@ async def chat(
             public_model,
             request.state.api_key.id,
             strict,
+            fetch_options,
         )
 
     async def chunks() -> AsyncGenerator[str, None]:
