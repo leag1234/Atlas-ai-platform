@@ -498,6 +498,38 @@ async def stream_quality(
                                     checked - len(str(delta["content"])),
                                 )
                         if looping:
+                            if len(streamed) - held_from >= 8000 and repetitive(
+                                streamed[-1000:], 0.1
+                            ):
+                                # Confirmed loop (measured loops run 25 to 29 thousand
+                                # characters; a regular table rarely repeats identically
+                                # this long): close the provider stream instead of
+                                # reading it to max_tokens. Its usage is unknown, so the
+                                # full reservation is billed, as for any interrupted
+                                # attempt; the text is trimmed below like a length stop.
+                                result = {
+                                    "text": streamed,
+                                    "calls": [],
+                                    "usage": {
+                                        "prompt_tokens": incoming,
+                                        "completion_tokens": current.max_tokens,
+                                    },
+                                    "finish_reason": "length",
+                                    "reasoning": partial_reasoning,
+                                    "reasoning_tokens": None,
+                                }
+                                estimated = True
+                                logging.getLogger(__name__).warning(
+                                    json.dumps(
+                                        {
+                                            "event": "repetition_stopped",
+                                            "streamed_chars": len(streamed),
+                                            "max_tokens": current.max_tokens,
+                                            "attempt": index + 1,
+                                        }
+                                    )
+                                )
+                                break
                             continue
                         if current.max_tokens < request.max_tokens or terminal_failed:
                             buffered.append(event)
