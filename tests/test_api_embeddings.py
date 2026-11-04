@@ -102,6 +102,16 @@ class EmbeddingsTests(unittest.TestCase):
             self.assertIn(named, reply.text)
         reply = self.client.post(URL, headers=headers, json={"input": ["a"] * 2049})
         self.assertEqual(reply.json()["error"]["type"], "input_limit")
+        reply = self.client.post(
+            URL, headers=headers, json={"input": ["x" * 100000] * 90}
+        )
+        self.assertEqual(reply.json()["error"]["type"], "input_limit")
+        reply = self.client.post(
+            URL,
+            headers=headers | {"Content-Type": "application/json"},
+            content=b'{"input": "' + b"x" * (17 * 1024 * 1024) + b'"}',
+        )
+        self.assertEqual(reply.status_code, 413, reply.text[:200])
         self.assertEqual(self.calls, [])
 
     def test_scope_strict_privacy_and_model_list(self) -> None:

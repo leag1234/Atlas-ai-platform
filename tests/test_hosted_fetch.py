@@ -17,6 +17,20 @@ class FetchRefusalTests(unittest.TestCase):
         self.assertEqual(
             fetch_refusal("file:///etc/passwd", SEEN, {}, 0), "invalid_input"
         )
+        # A prefix of a given address is another address, possibly another host.
+        self.assertEqual(
+            fetch_refusal("https://docs.example.inv", SEEN, {}, 0), "url_not_allowed"
+        )
+        self.assertEqual(
+            fetch_refusal("https://docs.example.invalid", SEEN, {}, 0),
+            "url_not_allowed",
+        )
+        # Trailing punctuation and slash in the text do not change the address.
+        self.assertIsNone(
+            fetch_refusal(
+                "https://other.invalid/b/", "See https://other.invalid/b.", {}, 0
+            )
+        )
 
     def test_domain_filters_and_use_limit(self) -> None:
         allowed = {"allowed_domains": ["example.invalid"]}
