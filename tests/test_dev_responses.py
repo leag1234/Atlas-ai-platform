@@ -84,6 +84,75 @@ class DevResponsesTests(unittest.TestCase):
         self.assertEqual(usage["output_tokens_details"], {"reasoning_tokens": 139})
         self.assertEqual(usage["output_tokens"], 144)
 
+    def test_reasoning_text_becomes_a_reasoning_item(self) -> None:
+        # The provider's reasoning (vLLM reasoning_content, or thinking parts moved
+        # there by the gateway) is a reasoning item before the message; Messages
+        # does not change.
+        env = Environment()
+        self.addCleanup(env.close)
+        frames = [
+            {"choices": [{"index": 0, "delta": {"reasoning_content": "Bat is "}}]},
+            {"choices": [{"index": 0, "delta": {"reasoning_content": "ball + 1."}}]},
+            {"choices": [{"index": 0, "delta": {"content": "0.05"}}]},
+            {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+            {
+                "choices": [],
+                "usage": {
+                    "prompt_tokens": 50,
+                    "completion_tokens": 20,
+                    "completion_tokens_details": {"reasoning_tokens": 15},
+                },
+            },
+        ]
+        env.raw = (
+            "".join("data: " + json.dumps(frame) + "\n\n" for frame in frames)
+            + "data: [DONE]\n\n"
+        ).encode()
+        body = {"model": "atlas-code", "input": "Ball price?"}
+        reply = env.client.post("/v1/responses", headers=env.headers, json=body)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        output = reply.json()["output"]
+        self.assertEqual([item["type"] for item in output], ["reasoning", "message"])
+        self.assertEqual(
+            output[0]["content"],
+            [{"type": "reasoning_text", "text": "Bat is ball + 1."}],
+        )
+        self.assertEqual(output[0]["summary"], [])
+        self.assertEqual(output[1]["content"][0]["text"], "0.05")
+        streamed = env.client.post(
+            "/v1/responses", headers=env.headers, json=body | {"stream": True}
+        )
+        events = [
+            json.loads(line[5:])
+            for line in streamed.text.splitlines()
+            if line.startswith("data:")
+        ]
+        deltas = [
+            event["delta"]
+            for event in events
+            if event["type"] == "response.reasoning_text.delta"
+        ]
+        self.assertEqual(deltas, ["Bat is ", "ball + 1."])
+        done = [e for e in events if e["type"] == "response.reasoning_text.done"]
+        self.assertEqual(done[0]["text"], "Bat is ball + 1.")
+        indexes = [e["output_index"] for e in events if "output_index" in e]
+        self.assertEqual(sorted(set(indexes)), [0, 1])
+        # A fresh key: the test key allows two requests a day.
+        other = Environment()
+        self.addCleanup(other.close)
+        other.raw = env.raw
+        messages = other.client.post(
+            "/v1/messages",
+            headers=other.headers,
+            json={
+                "model": "atlas-code",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Ball price?"}],
+            },
+        )
+        self.assertEqual(messages.status_code, 200, messages.text)
+        self.assertEqual(messages.json()["content"], [{"type": "text", "text": "0.05"}])
+
     def test_http_json_and_incremental_sse(self) -> None:
         env = Environment()
         self.addCleanup(env.close)

@@ -204,7 +204,7 @@ class RoutedEffortTests(unittest.TestCase):
 
 
 class RoutedTypedContentTests(unittest.TestCase):
-    def test_routed_stream_keeps_text_and_drops_reasoning_parts(self) -> None:
+    def test_routed_stream_keeps_text_and_moves_reasoning_parts(self) -> None:
         import asyncio
         import json as _json
         from dataclasses import replace
@@ -274,12 +274,16 @@ class RoutedTypedContentTests(unittest.TestCase):
 
         events = asyncio.run(collect())
         texts: list[object] = []
+        reasoning: list[object] = []
         for event in events:
             choices = event.get("choices")
             if isinstance(choices, list):
                 texts.extend(c["delta"].get("content") for c in choices)
+                reasoning.extend(c["delta"].get("reasoning_content") for c in choices)
+        # The answer text stays clean; the reasoning goes to its own field.
         self.assertIn("391", texts)
-        self.assertNotIn("fictional reasoning", _json.dumps(events))
+        self.assertNotIn("fictional reasoning", _json.dumps(texts))
+        self.assertIn("fictional reasoning", reasoning)
 
 
 class RoutedReasoningOnlyRetryTests(unittest.TestCase):

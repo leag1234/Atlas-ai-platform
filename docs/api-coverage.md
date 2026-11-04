@@ -60,7 +60,8 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | `file_id`, `file_url` references | Refused (send the content) |
 | `custom` tool type | Not implemented on this format |
 | `url_citation` annotations (with web search), streamed or not | Applied |
-| Audio output, `reasoning_content` in answers | Not implemented |
+| `reasoning_content` in streamed deltas, when the provider returns reasoning | Applied |
+| Audio output, `reasoning_content` in non-streamed answers | Not implemented |
 
 ## 3. Responses parameters and items
 
@@ -79,9 +80,11 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | Input: text, `input_image`, `input_file`, function and custom call results, `reasoning` items | Applied |
 | Input: `input_audio` | Refused by name |
 | Output: messages, `function_call`, `custom_tool_call`, `local_shell_call`, `shell_call`, `apply_patch_call`, `web_search_call` | Applied |
-| Output: `reasoning` items, `file_search_call`, `code_interpreter_call`, `image_generation_call`, `mcp_call` | Not implemented |
+| Output: `reasoning` items with `reasoning_text` content, when the provider returns reasoning (no `summary`, no `encrypted_content`) | Applied |
+| Output: `file_search_call`, `code_interpreter_call`, `image_generation_call`, `mcp_call` | Not implemented |
 | Stream events: `response.created`, `in_progress`, `output_item.added` and `done`, `content_part.added` and `done`, `output_text.delta` and `done`, function and custom tool input deltas, `web_search_call.completed`, `response.completed`, `response.failed` | Applied |
-| Stream events for reasoning, refusal, annotations, other hosted tools, audio | Not implemented |
+| Stream events: `reasoning_text.delta` and `done` | Applied |
+| Stream events for reasoning summaries, refusal, annotations, other hosted tools, audio | Not implemented |
 
 ## 4. Messages parameters and blocks
 
@@ -113,6 +116,6 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 ## 6. Open items, in the order planned
 
 1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
-2. `reasoning` output items and `thinking` blocks in answers.
+2. `thinking` blocks in Messages answers (`thinking` enabled is refused by name today).
 3. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
 4. The families outside chat (embeddings, images, audio, files, batches): phase 2.

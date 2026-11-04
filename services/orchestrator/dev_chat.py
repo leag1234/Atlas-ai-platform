@@ -109,6 +109,8 @@ class Choice:
         # The requested stop sequence that ended the text, when the provider says
         # which (vLLM's stop_reason; some providers do not report it).
         self.stop_sequence: str | None = None
+        # The model's reasoning text when the provider returns it (Responses reasoning).
+        self.reasoning = ""
         self.logprobs: list[Any] = []
         self.thinking_closed = False
 
@@ -241,6 +243,16 @@ class Output:
                     raise ValueError("invalid_content")
                 st.text += content
                 clean["content"] = content
+            reasoning = delta.get("reasoning_content")
+            if reasoning:
+                if not isinstance(reasoning, str):
+                    raise ValueError("invalid_reasoning")
+                st.reasoning += reasoning
+                if len(st.reasoning) > 262144:
+                    raise LimitError(
+                        "content_limit", len(st.reasoning), 262144, "characters"
+                    )
+                clean["reasoning_content"] = reasoning
             changes = []
             for call in delta.get("tool_calls") or []:
                 index = call["index"]
