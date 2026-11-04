@@ -13,6 +13,7 @@ import secrets
 import time
 from typing import Any
 
+from packages.limits import LimitError
 from services.orchestrator.dev_auth import Store as DeveloperStore, QuotaError
 
 MAX_CALL_RESERVATION = 5000000
@@ -118,6 +119,10 @@ class Store(DeveloperStore):
                     "UPDATE api_key_requests SET week=? WHERE id=?",
                     (self.week_for_day(str(day)), str(request_id)),
                 )
+        if "code_executions" not in requests:
+            db.execute(
+                "ALTER TABLE api_key_requests ADD COLUMN code_executions INTEGER NOT NULL DEFAULT 0 CHECK(code_executions >= 0)"
+            )
         db.execute(
             "CREATE INDEX IF NOT EXISTS api_key_daily ON api_key_requests(key_id, day)"
         )
@@ -515,6 +520,32 @@ class Store(DeveloperStore):
                 "INSERT INTO api_key_daily_summary VALUES (?,?,?,?) ON CONFLICT(key_id,day) DO UPDATE SET requests=excluded.requests, charged_micro_eur=excluded.charged_micro_eur",
                 (key_id, day, count, charged),
             )
+
+    def count_code_execution(self, request_id: str, limit: int) -> None:
+        """Atomically count one execution against the key's UTC daily limit."""
+        if type(limit) is not int or limit < 1:
+            raise ValueError("invalid_code_execution_limit")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT key_id,day FROM api_key_requests WHERE id=?", (request_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("unknown_request")
+            used = db.execute(
+                "SELECT COALESCE(SUM(code_executions),0) FROM api_key_requests WHERE key_id=? AND day=?",
+                (row["key_id"], row["day"]),
+            ).fetchone()[0]
+            if used >= limit:
+                raise LimitError(
+                    "code_execution_daily_limit", used, limit, "executions"
+                )
+            cursor = db.execute(
+                "UPDATE api_key_requests SET code_executions=code_executions+1 WHERE id=?",
+                (request_id,),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("unknown_request")
 
     def finish(
         self, request_id: str, charged: int | None, incoming: int = 0, outgoing: int = 0

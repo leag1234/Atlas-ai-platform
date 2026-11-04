@@ -39,7 +39,6 @@ ITEM_REFERENCE_MESSAGE = (
 # Refused by name: dropping them silently would answer as if the tool had run.
 UNSUPPORTED_TOOLS = (
     "file_search",
-    "code_interpreter",
     "image_generation",
     "mcp",
     "computer_use_preview",
@@ -313,6 +312,28 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                     "content": tool_output_text(item["output"]),
                 }
             )
+        elif kind == "code_interpreter_call":
+            response_fields(
+                item,
+                {"type", "id", "status", "code", "container_id", "outputs"},
+                "code_interpreter_call",
+            )
+            if not isinstance(item.get("code"), str):
+                raise ValueError("invalid_code_interpreter_call")
+            logs = []
+            for output in item.get("outputs") or []:
+                if not isinstance(output, dict) or output.get("type") != "logs":
+                    raise ValueError("invalid_code_interpreter_output")
+                logs.append(str(output.get("logs", "")))
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "Code execution:\n"
+                    + item["code"]
+                    + "\nOutput:\n"
+                    + "\n".join(logs)[:20000],
+                }
+            )
         elif kind in ("custom_tool_call", "local_shell_call"):
             response_fields(
                 item,
@@ -435,6 +456,7 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
             dropped("input", {"type:" + str(kind)})
     tools = []
     hosted: list[str] = []
+    code_options: dict[str, Any] = {}
     for tool in value.get("tools", []):
         if not isinstance(tool, dict) or not isinstance(tool.get("type"), str):
             # A malformed tool is a client error; only unknown typed tools are dropped.
@@ -554,6 +576,25 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
             if "web_search" not in hosted:
                 hosted.append("web_search")
                 tools.append(SEARCH_FUNCTION)
+        elif kind == "code_interpreter":
+            from services.orchestrator.hosted_tools import CODE_FUNCTION
+
+            response_fields(
+                tool, {"type", "container", "max_uses"}, "code_interpreter_tool"
+            )
+            container = tool.get("container")
+            if not isinstance(container, dict) or container.get("type") != "auto":
+                raise SemanticFieldError(
+                    "unsupported code_interpreter container: use auto; Atlas does not "
+                    "store containers"
+                )
+            max_uses = tool.get("max_uses", 4)
+            if type(max_uses) is not int or not 1 <= max_uses <= 4:
+                raise ValueError("invalid_code_execution_max_uses")
+            if "code_execution" not in hosted:
+                hosted.append("code_execution")
+                tools.append(CODE_FUNCTION)
+                code_options = {"max_uses": max_uses}
         else:
             dropped("tools", {"type:" + str(kind)})
     choice = value.get("tool_choice", "auto")
@@ -589,6 +630,7 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
         "tool_choice": choice,
         "reasoning_effort": reasoning.get("effort", "none"),
         **({"_hosted": hosted} if hosted else {}),
+        **({"_code": code_options} if "code_execution" in hosted else {}),
     }
 
 
@@ -704,7 +746,40 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
             if kind == "text":
                 texts.append({"type": "text", "text": text_blocks([block])})
             elif kind == "server_tool_use" and role == "assistant":
+                if block.get("name") == "code_execution":
+                    texts.append(
+                        {
+                            "type": "text",
+                            "text": "Code execution:\n"
+                            + json.dumps(block.get("input", {}), ensure_ascii=False),
+                        }
+                    )
                 continue
+            elif kind == "code_execution_tool_result" and role == "assistant":
+                result = block.get("content")
+                if not isinstance(result, dict):
+                    result = {}
+                texts.append(
+                    {
+                        "type": "text",
+                        "text": "Code execution output: "
+                        + json.dumps(
+                            {
+                                key: result.get(key)
+                                for key in ("stdout", "stderr", "return_code")
+                            },
+                            ensure_ascii=False,
+                        )[:20000],
+                    }
+                )
+            elif kind == "code_execution_tool_result_error" and role == "assistant":
+                texts.append(
+                    {
+                        "type": "text",
+                        "text": "Code execution error: "
+                        + str(block.get("error_code", "")),
+                    }
+                )
             elif kind == "web_search_tool_result" and role == "assistant":
                 rows = (
                     block.get("content")
@@ -844,6 +919,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
     tools = []
     hosted: list[str] = []
     fetch_options: dict[str, Any] = {}
+    code_options: dict[str, Any] = {}
     for tool in value.get("tools", []):
         if str(tool.get("type", "")).startswith("web_search_"):
             # Server tool: Atlas runs the search between model turns (hosted_tools).
@@ -883,6 +959,23 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
                     )
                     if tool.get(key) is not None
                 }
+            continue
+        if str(tool.get("type", "")) in (
+            "code_execution_20250825",
+            "code_execution_20250522",
+        ):
+            from services.orchestrator.hosted_tools import CODE_FUNCTION
+
+            fields(tool, "type name max_uses cache_control")
+            if tool.get("name") != "code_execution":
+                raise SemanticFieldError("unsupported code_execution name")
+            max_uses = tool.get("max_uses", 4)
+            if type(max_uses) is not int or not 1 <= max_uses <= 4:
+                raise ValueError("invalid_code_execution_max_uses")
+            if "code_execution" not in hosted:
+                hosted.append("code_execution")
+                tools.append(CODE_FUNCTION)
+                code_options = {"max_uses": max_uses}
             continue
         fields(tool, "name description input_schema cache_control")
         cache_hint(tool)
@@ -929,6 +1022,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
         },
         **({"_hosted": hosted} if hosted else {}),
         **({"_fetch": fetch_options} if "web_fetch" in hosted else {}),
+        **({"_code": code_options} if "code_execution" in hosted else {}),
     }
 
 
@@ -960,6 +1054,7 @@ def text_only(body: dict[str, Any]) -> dict[str, Any]:
     copy = dict(body, messages=[dict(m) for m in body["messages"]])
     copy.pop("_hosted", None)
     copy.pop("_fetch", None)
+    copy.pop("_code", None)
     for message in copy["messages"]:
         if isinstance(message.get("content"), list):
             message["content"] = "\n".join(

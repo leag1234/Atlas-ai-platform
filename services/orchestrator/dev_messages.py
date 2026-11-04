@@ -7,6 +7,15 @@ from services.orchestrator.dev_chat import Output
 from services.orchestrator.dev_responses import Wire as ResponsesWire
 
 
+# Error codes of the Messages code execution result; Atlas names map onto them.
+CODE_ERRORS = (
+    "unavailable",
+    "execution_time_exceeded",
+    "too_many_requests",
+    "invalid_tool_input",
+)
+
+
 class Wire:
     def __init__(self, output: Output, request: dict[str, Any]) -> None:
         self.output = output
@@ -114,11 +123,49 @@ class Wire:
     def hosted_blocks(self, item: dict[str, Any]) -> list[dict[str, Any]]:
         if item["type"] == "web_fetch_call":
             return self.fetch_blocks(item)
+        if item["type"] == "code_interpreter_call":
+            return self.code_blocks(item)
         return self.search_blocks(item)
+
+    def code_blocks(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        identifier = "srvtoolu_" + str(item["id"]).removeprefix("ci_")
+        raw = self.core.code_results.get(str(item["id"]), {})
+        result: dict[str, Any] = (
+            {
+                "type": "code_execution_tool_result_error",
+                "tool_use_id": identifier,
+                "error_code": raw["error"]
+                if raw["error"] in CODE_ERRORS
+                else "too_many_requests"
+                if raw["error"] == "code_execution_daily_limit"
+                else "unavailable",
+            }
+            if "error" in raw
+            else {
+                "type": "code_execution_tool_result",
+                "tool_use_id": identifier,
+                "content": {
+                    "type": "code_execution_result",
+                    "stdout": raw.get("stdout", ""),
+                    "stderr": raw.get("stderr", ""),
+                    "return_code": raw.get("return_code"),
+                    "content": [],
+                },
+            }
+        )
+        return [
+            {
+                "type": "server_tool_use",
+                "id": identifier,
+                "name": "code_execution",
+                "input": {"code": item["code"]},
+            },
+            result,
+        ]
 
     def result(self) -> dict[str, Any]:
         content = []
-        searches = fetches = 0
+        searches = fetches = executions = 0
         for item in self.core.items:
             if item["type"] == "web_fetch_call":
                 fetches += 1
@@ -126,6 +173,9 @@ class Wire:
             elif item["type"] == "web_search_call":
                 searches += 1
                 content += self.search_blocks(item)
+            elif item["type"] == "code_interpreter_call":
+                executions += 1
+                content += self.code_blocks(item)
             elif item["type"] == "message":
                 part = item["content"][0]
                 block: dict[str, Any] = {"type": "text", "text": part["text"]}
@@ -186,9 +236,14 @@ class Wire:
                         "server_tool_use": {
                             "web_search_requests": searches,
                             **({"web_fetch_requests": fetches} if fetches else {}),
+                            **(
+                                {"code_execution_requests": executions}
+                                if executions
+                                else {}
+                            ),
                         }
                     }
-                    if searches or fetches
+                    if searches or fetches or executions
                     else {}
                 ),
             },
@@ -245,11 +300,13 @@ class Wire:
             elif kind == "response.output_item.added" and event["item"]["type"] in (
                 "web_search_call",
                 "web_fetch_call",
+                "code_interpreter_call",
             ):
                 continue
             elif kind == "response.output_item.done" and event["item"]["type"] in (
                 "web_search_call",
                 "web_fetch_call",
+                "code_interpreter_call",
             ):
                 index = event["output_index"]
                 if index in self.extra:

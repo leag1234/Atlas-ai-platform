@@ -211,7 +211,22 @@ The same hosted web search is available on the other formats, with their own nam
 
 Web search uses the same search chain as the assistant. In strict privacy it is refused with
 `web_search_unavailable_in_strict_privacy`. The other hosted tools of the OpenAI format (`file_search`,
-`code_interpreter`, `image_generation`, `mcp`, `computer_use_preview`) are not available yet.
+`image_generation`, `mcp`, `computer_use_preview`) are not available yet.
+
+### Hosted code execution
+
+Responses accepts `{"type": "code_interpreter", "container": {"type": "auto"}}`; Messages accepts
+`{"type": "code_execution_20250825", "name": "code_execution"}` (or the `20250522` version). Atlas runs
+Python in a per-call, network-disabled, read-only Docker sandbox with no mounted files and no persistent
+container (1 CPU, 1 GB of memory, 64 processes, 256 MB of scratch space in `/tmp`). Each request
+allows at most four executions (`max_uses`, default 4), each execution has a 60-second wall-clock limit
+and 64 KB of stdout and of stderr, and each API key has a daily execution limit controlled by
+`ATLAS_API_CODE_EXECUTION_DAILY_LIMIT` (default 100; over it the call fails with
+`code_execution_daily_limit`, shown as `too_many_requests` in the Messages format). Responses returns
+`code_interpreter_call` items (a failed call has `status: "failed"` and the reason in its logs);
+Messages returns `server_tool_use` and `code_execution_tool_result` blocks. Nothing persists between
+executions. Code execution is available in strict privacy, since it runs on Atlas machines. Generated
+files and images are not returned in this phase.
 
 ## 6. Coding agents
 

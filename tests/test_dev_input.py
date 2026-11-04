@@ -73,7 +73,6 @@ class DevInputTests(unittest.TestCase):
 
         for kind in (
             "file_search",
-            "code_interpreter",
             "image_generation",
             "mcp",
             "computer_use_preview",
@@ -82,6 +81,14 @@ class DevInputTests(unittest.TestCase):
                 responses(payload | {"tools": [{"type": kind}]})
             self.assertIn("unsupported tool: " + kind, str(tool_refused.exception))
             self.assertNotIsInstance(tool_refused.exception, StorageRefusal)
+        # Code interpreter runs per call: a stored or missing container is refused by name.
+        for container in (None, {"type": "existing", "id": "cntr_x"}, "cntr_x"):
+            with self.assertRaises(SemanticFieldError) as container_refused:
+                responses(
+                    payload
+                    | {"tools": [{"type": "code_interpreter", "container": container}]}
+                )
+            self.assertIn("container", str(container_refused.exception))
         for extra in ({"store": True}, {"include": ["web_search_call.action.sources"]}):
             self.assertEqual(responses(payload | extra).model, "atlas-code")
         with self.assertRaises(ValueError):

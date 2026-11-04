@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS api_key_requests (
  day TEXT NOT NULL, week TEXT NOT NULL, reserved INTEGER NOT NULL CHECK(reserved >= 0),
  charged INTEGER NOT NULL CHECK(charged >= 0),
  input_tokens INTEGER, output_tokens INTEGER,
+ code_executions INTEGER NOT NULL DEFAULT 0 CHECK(code_executions >= 0),
  state TEXT NOT NULL CHECK(state IN ('reserved','complete','unknown'))
 );
 CREATE INDEX IF NOT EXISTS api_key_daily ON api_key_requests(key_id, day);
