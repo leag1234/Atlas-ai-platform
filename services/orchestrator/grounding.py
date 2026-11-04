@@ -228,7 +228,10 @@ QUESTION_WORDS = frozenset(
 
 
 def question_entities(question: str) -> list[str]:
-    """Quoted titles, else runs of consecutive capitalised words (stop words trimmed)."""
+    """Quoted titles, else runs of consecutive capitalised words (stop words trimmed).
+
+    A lone capitalised word opening a sentence is skipped.
+    """
     quoted = [normalized(match[1]) for match in QUOTED.finditer(question)]
     if quoted:
         return quoted
@@ -237,6 +240,11 @@ def question_entities(question: str) -> list[str]:
         r"\b[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*(?:\s+[A-ZÀ-Ý][\wÀ-ÿ]*(?:[-'][\wÀ-ÿ]+)*)*",
         question,
     ):
+        before = question[: run.start()].rstrip()
+        if (not before or before[-1] in ".?!:") and " " not in run[0].strip():
+            # A single capitalised word opening a sentence is usually an ordinary word
+            # ("Donne tes sources."), not a name: it must not trigger the missing notice.
+            continue
         words = normalized(run[0]).split()
         while words and (words[0] in STOP or words[0] in QUESTION_WORDS):
             words.pop(0)
