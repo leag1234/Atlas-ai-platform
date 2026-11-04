@@ -5,6 +5,7 @@ import base64
 from contextvars import ContextVar
 from decimal import Decimal
 import json
+import os
 from uuid import UUID
 import logging
 from collections.abc import Awaitable, Callable
@@ -171,9 +172,14 @@ def model_names(request: Request) -> list[str]:
 
     scopes = request.state.api_key.scopes
     # Assistant names keep the full Atlas assistant (tools, search, memory).
-    return (["atlas", *PROFILES] if "assistant" in scopes else []) + (
-        [*PUBLIC_MODELS, EMBEDDING_MODEL] if "model" in scopes else []
-    )
+    names = []
+    if "assistant" in scopes:
+        names.extend(["atlas", *PROFILES])
+    if "model" in scopes:
+        names.extend([*PUBLIC_MODELS, EMBEDDING_MODEL])
+        if tts_configured():
+            names.append(TTS_MODEL)
+    return names
 
 
 def messages_client(request: Request) -> bool:
@@ -352,6 +358,19 @@ async def chat(request: Request) -> Response:
 
 
 EMBEDDING_MODEL = "atlas-embed"
+TTS_MODEL = "atlas-tts"
+TTS_MAX_INPUT_CHARS = 12000
+TTS_MAX_BODY_BYTES = 64 * 1024
+TTS_MICRO_EUR_PER_CHARACTER = 1
+
+
+def tts_url() -> str:
+    """Base URL of the local speech service; empty when speech is not enabled here."""
+    return os.environ.get("ATLAS_TTS_URL", "").rstrip("/")
+
+
+def tts_configured() -> bool:
+    return bool(tts_url())
 
 
 @app.post("/embeddings")
@@ -508,6 +527,119 @@ def not_stored(kind: str) -> JSONResponse:
             }
         },
         status_code=404,
+    )
+
+
+@app.post("/audio/speech")
+async def speech(request: Request) -> Response:
+    """OpenAI-format speech synthesis, served by the local speech service."""
+    missing = require(request, "model")
+    if missing is not None:
+        return missing
+    body = bytearray()
+    try:
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > TTS_MAX_BODY_BYTES:
+                    return error(
+                        413, "body_limit", measured=len(body), limit=TTS_MAX_BODY_BYTES
+                    )
+        raw = json.loads(body)
+    except (ValueError, TimeoutError):
+        return error(400, "invalid_request")
+    if not isinstance(raw, dict):
+        return error(400, "invalid_request")
+    unknown = set(raw) - {
+        "model",
+        "input",
+        "voice",
+        "response_format",
+        "speed",
+        "instructions",
+    }
+    if unknown:
+        return error(
+            400,
+            "invalid_request",
+            message="unsupported field: " + ", ".join(sorted(unknown))[:200],
+        )
+    text = raw.get("input")
+    if not isinstance(text, str) or not text:
+        return error(400, "invalid_request", message="input: a non-empty string")
+    if len(text) > TTS_MAX_INPUT_CHARS:
+        return error(
+            400,
+            "input_limit",
+            measured=len(text),
+            limit=TTS_MAX_INPUT_CHARS,
+            unit="characters",
+        )
+    response_format = raw.get("response_format", "mp3")
+    if response_format not in {"mp3", "wav"}:
+        return error(400, "invalid_request", message="response_format: mp3 or wav")
+    speed = raw.get("speed", 1.0)
+    if speed != 1.0:
+        return error(400, "invalid_request", message="speed: only 1.0 is supported")
+    if "instructions" in raw:
+        return error(
+            400,
+            "invalid_request",
+            message="instructions are not supported",
+        )
+    if not tts_configured():
+        return error(503, "tts_unavailable")
+    store = ModelAccounting(request.state.key_store, request.state.api_key)
+    developer = request.state.api_key.id
+    try:
+        request_id = store.reserve(developer, len(text) * TTS_MICRO_EUR_PER_CHARACTER)
+    except BudgetRefusal as exc:
+        return error(
+            429,
+            "budget_limit",
+            used=str(exc.used),
+            limit=str(exc.limit),
+            category=exc.category,
+        )
+    except KeyQuotaError as exc:
+        return error(429, "quota_exceeded", **exc.values)
+    except (PermissionError, ValueError):
+        return error(429, "quota_exceeded")
+    try:
+        async with aiohttp.ClientSession(
+            trust_env=False, timeout=aiohttp.ClientTimeout(total=120)
+        ) as client:
+            async with client.post(
+                tts_url() + "/v1/audio/speech",
+                json={
+                    "model": TTS_MODEL,
+                    "input": text,
+                    "response_format": response_format,
+                },
+            ) as upstream:
+                if 400 <= upstream.status < 500:
+                    # The service refused the text itself (nothing speakable): the
+                    # caller's input, not an outage.
+                    store.finish(request_id, 0)
+                    return error(
+                        400, "invalid_request", message="input has no speakable text"
+                    )
+                if upstream.status != 200:
+                    store.finish(request_id, 0)
+                    return error(503, "tts_unavailable")
+                audio = await upstream.read()
+                voice = upstream.headers.get("X-Atlas-TTS-Voice", "")
+    except (OSError, TimeoutError, aiohttp.ClientError):
+        store.finish(request_id, 0)
+        return error(503, "tts_unavailable")
+    store.finish(request_id, len(text) * TTS_MICRO_EUR_PER_CHARACTER, 0, 0)
+    logging.getLogger("atlas.api").info(
+        json.dumps({"event": "api_speech", "key": developer, "characters": len(text)})
+    )
+    return Response(
+        audio,
+        media_type="audio/wav" if response_format == "wav" else "audio/mpeg",
+        headers={"X-Atlas-TTS-Voice": voice},
     )
 
 
