@@ -64,6 +64,22 @@ def without_header(header: bytes, name: bytes) -> bytes:
     )
 
 
+def identity_allowed(header: bytes) -> bool:
+    """A front-door identity names a user, except beside an interface API key.
+
+    nginx turns basic authentication off for "Bearer sk-" interface keys, so it sends
+    an empty user ("@host") with the proxy secret; the interface then checks the key
+    itself. Any other request with an empty user is refused, whatever nginx sends.
+    """
+    found = re.search(rb"(?im)^x-atlas-user:[ \t]*([^\r\n]*)", header)
+    if found is None:
+        return False
+    user = found.group(1).strip()
+    if user and not user.startswith(b"@"):
+        return True
+    return re.search(rb"(?im)^authorization:[ \t]*Bearer sk-\S", header) is not None
+
+
 def stable_route_allowed(header: bytes) -> bool:
     """Expose generated downloads, never the terminal's execution or browse API."""
     method, target, _ = header.split(b" ", 2)
@@ -244,6 +260,7 @@ def loopback_html_injector(
                         if (
                             not stable_route_allowed(header)
                             or not supplied_user
+                            or not identity_allowed(header)
                             or supplied_secret is None
                             or not hmac.compare_digest(
                                 supplied_secret.group(1).strip().decode("latin1"),

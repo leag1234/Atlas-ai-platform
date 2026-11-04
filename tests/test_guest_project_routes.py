@@ -52,5 +52,26 @@ class GuestProjectRoutes(unittest.TestCase):
                 self.assertFalse(legacy_project_route(route), route)
 
 
+class FrontDoorIdentityTests(unittest.TestCase):
+    def test_empty_user_only_beside_an_interface_key(self) -> None:
+        from services.orchestrator.terminal_stack import identity_allowed
+
+        base = b"POST /api/chat/completions HTTP/1.1\r\nHost: guest"
+        self.assertTrue(identity_allowed(base + b"\r\nX-Atlas-User: ana@guest"))
+        self.assertFalse(identity_allowed(base + b"\r\nX-Atlas-User: @guest"))
+        self.assertFalse(identity_allowed(base + b"\r\nX-Atlas-User: "))
+        self.assertFalse(identity_allowed(base))
+        self.assertTrue(
+            identity_allowed(
+                base + b"\r\nX-Atlas-User: @guest\r\nAuthorization: Bearer sk-abc123"
+            )
+        )
+        self.assertFalse(
+            identity_allowed(
+                base + b"\r\nX-Atlas-User: @guest\r\nAuthorization: Bearer atl_x"
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
