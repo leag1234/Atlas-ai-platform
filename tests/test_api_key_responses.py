@@ -565,6 +565,16 @@ class KeyResponsesTests(unittest.TestCase):
                             "response.web_search_call.completed",
                             [f["type"] for f in frames],
                         )
+                        added = [
+                            f
+                            for f in frames
+                            if f["type"] == "response.output_text.annotation.added"
+                        ]
+                        self.assertEqual(
+                            added[0]["annotation"]["url"],
+                            "https://example.invalid/paris",
+                        )
+                        self.assertEqual(added[0]["annotation_index"], 0)
                         result = frames[-1]["response"]
                     else:
                         result = reply.json()
