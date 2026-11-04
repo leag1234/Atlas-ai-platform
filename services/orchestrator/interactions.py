@@ -40,6 +40,9 @@ class Interaction:
     rejection: dict[str, str] = field(default_factory=dict)
     startup_seconds: float = 0.0
     execution: str = "live"
+    # Set only for a project Work turn that ended failed for an explainable reason:
+    # {"category": ..., "answer": public answer text before the failure}.
+    work_failure: dict[str, str] = field(default_factory=dict)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

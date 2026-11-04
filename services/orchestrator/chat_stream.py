@@ -497,7 +497,14 @@ def response(
                         # document read in one call) is still sent in full.
                         await queue.put({"delta": {"content": opener}})
                     await process(payload, item)
-                    if item.state != "done":
+                    # A Work turn that failed for a known reason carries its own
+                    # localized explanation; it is a finished answer, not an outage.
+                    work_failed = (
+                        payload.project_action == "work"
+                        and item.state == "failed"
+                        and bool(item.work_failure)
+                    )
+                    if item.state != "done" and not work_failed:
                         raise RuntimeError("request_stopped")
                     if not payload.atlas_ui and not payload.code_mode:
                         await content(item.reponse, final=True)

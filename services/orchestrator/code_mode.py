@@ -115,6 +115,89 @@ CORRECTION = {
     "it": "Il successo dei test non è verificato: in questo turno non è stato registrato alcun comando di test riuscito.",
 }
 
+# A failed Work turn tells the user, in their language, that the work did not
+# complete and why, as a reason category. Raw reasons stay in the project events.
+WORK_FAILURE = {
+    "en": {
+        "template": "The work did not complete: {reason}.",
+        "tool_error": "a tool step failed and was not resolved",
+        "tests_failed": "the tests did not pass",
+        "time_limit": "the time limit was reached",
+        "step_limit": "the step limit was reached",
+        "budget": "the budget limit for this turn was reached",
+        "other": "the work stopped before finishing",
+    },
+    "fr": {
+        "template": "Le travail n'a pas abouti : {reason}.",
+        "tool_error": "une étape d'outil a échoué et n'a pas été corrigée",
+        "tests_failed": "les tests n'ont pas réussi",
+        "time_limit": "la limite de temps a été atteinte",
+        "step_limit": "la limite d'étapes a été atteinte",
+        "budget": "la limite de budget de ce tour a été atteinte",
+        "other": "le travail s'est arrêté avant la fin",
+    },
+    "de": {
+        "template": "Die Arbeit wurde nicht abgeschlossen: {reason}.",
+        "tool_error": "ein Werkzeugschritt ist fehlgeschlagen und wurde nicht behoben",
+        "tests_failed": "die Tests wurden nicht bestanden",
+        "time_limit": "das Zeitlimit wurde erreicht",
+        "step_limit": "das Schrittlimit wurde erreicht",
+        "budget": "das Budgetlimit dieses Durchgangs wurde erreicht",
+        "other": "die Arbeit wurde vor dem Abschluss beendet",
+    },
+    "es": {
+        "template": "El trabajo no se completó: {reason}.",
+        "tool_error": "un paso de herramienta falló y no se resolvió",
+        "tests_failed": "las pruebas no se superaron",
+        "time_limit": "se alcanzó el límite de tiempo",
+        "step_limit": "se alcanzó el límite de pasos",
+        "budget": "se alcanzó el límite de presupuesto de este turno",
+        "other": "el trabajo se detuvo antes de terminar",
+    },
+    "it": {
+        "template": "Il lavoro non è stato completato: {reason}.",
+        "tool_error": "un passaggio di uno strumento non è riuscito e non è stato risolto",
+        "tests_failed": "i test non sono stati superati",
+        "time_limit": "è stato raggiunto il limite di tempo",
+        "step_limit": "è stato raggiunto il limite di passaggi",
+        "budget": "è stato raggiunto il limite di budget di questo turno",
+        "other": "il lavoro si è interrotto prima della fine",
+    },
+}
+STEP_LIMITS = {
+    "tool_calls",
+    "model_calls",
+    "loop_detected",
+    "protocol_completion_limit",
+    "search_limit",
+    "fetch_limit",
+}
+
+
+def work_failure_category(reason: str, *, tool_failure: bool) -> str | None:
+    """Map a failed Work turn reason to a public category; None is an outage."""
+    if tool_failure:
+        return "tests_failed" if reason == "tests_not_verified" else "tool_error"
+    if reason == "provider_error":
+        return None
+    if reason == "wall_clock":
+        return "time_limit"
+    if reason in STEP_LIMITS:
+        return "step_limit"
+    if reason in {"cost", "tokens"}:
+        return "budget"
+    return "other"
+
+
+def work_failure_reply(item: Interaction, lang: str) -> str | None:
+    """The public final answer of a Work turn that failed for a known reason."""
+    failure = item.work_failure
+    if item.state != "failed" or failure.get("category") not in WORK_FAILURE["en"]:
+        return None
+    words = WORK_FAILURE.get(lang, WORK_FAILURE["en"])
+    message = words["template"].format(reason=words[failure["category"]])
+    return "\n\n".join(p for p in (failure.get("answer", "").strip(), message) if p)
+
 
 def claims_success(text: str) -> bool:
     for match in CLAIM.finditer(text):
@@ -856,8 +939,10 @@ async def process_work(
                 )
             from services.orchestrator.file_results import project_deliverable_links
 
+            delivered: list[str] = []
             for receipt in tools.deliverables:
                 links = project_deliverable_links(receipt, broker.org, broker.project)
+                delivered.append(links)
                 if links not in item.reponse:
                     item.reponse += "\n\n" + links
             item.cout_eur = float(model.spent)
@@ -868,8 +953,18 @@ async def process_work(
             )
             item.state = "done" if terminal == "completed" else "failed"
             if terminal == "failed":
+                tool_failure = not result.reason and bool(reason)
                 reason = reason or result.state
+                category = work_failure_category(reason, tool_failure=tool_failure)
                 item.erreurs.append(reason)
+                if category is not None:
+                    # A stopped loop's text is a diagnostic, not the model's answer.
+                    item.work_failure = dict(
+                        category=category,
+                        answer=item.reponse
+                        if result.state == "done"
+                        else "\n\n".join(dict.fromkeys(delivered)),
+                    )
                 item.reponse += "\n\nWork failed: " + reason
             await tools.emit(
                 "recap",

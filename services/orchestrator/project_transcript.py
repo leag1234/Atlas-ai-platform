@@ -570,10 +570,15 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                     session_id=str(request.work_session_id),
                     **work_options,
                 )
-                if item.state == "failed" and scoped.lang == "fr":
+                if item.state == "failed":
                     from packages.configuration import temporarily_unavailable
+                    from services.orchestrator.code_mode import work_failure_reply
 
-                    item.reponse = temporarily_unavailable(scoped.lang)
+                    reply = work_failure_reply(item, scoped.lang)
+                    if reply is not None:
+                        item.reponse = reply
+                    elif scoped.lang == "fr":
+                        item.reponse = temporarily_unavailable(scoped.lang)
             finally:
                 work_dispatch.reset(dispatch_token)
         else:
@@ -692,7 +697,8 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             from packages.configuration import temporarily_unavailable
 
             if scoped.lang == "fr":
-                item.reponse = temporarily_unavailable(scoped.lang)
+                if not item.work_failure:
+                    item.reponse = temporarily_unavailable(scoped.lang)
                 message = item.reponse
             else:
                 message = "; ".join(item.erreurs) or item.state
@@ -720,6 +726,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             ),
         )
         item.state = "failed"
+        item.work_failure = {}
         item.reponse = temporarily_unavailable(scoped.lang)
         error = ProjectError(503, "dependency_unavailable", item.reponse).body
     finally:
