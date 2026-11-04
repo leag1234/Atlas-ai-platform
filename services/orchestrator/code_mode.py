@@ -485,6 +485,7 @@ async def process_code(request: ChatRequest, item: Interaction) -> None:
             item.cout_eur = max(item.cout_eur, float(model.spent))
             item.provider_model = model.provider_model
             item.reasoning_retried = model.reasoning_retried
+            item.reasoning_effort = model.reasoning_used
         with active_lock:
             active.discard(session)
     # Limit stops are successful protocol replies with explicit measured refusal.

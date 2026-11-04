@@ -101,11 +101,24 @@ def json_options(response_format: object) -> dict[str, Any]:
     return {}
 
 
+REASONING_EFFORTS = ("none", "low", "medium", "high")
+
+
+def reasoning_control(provider: str | None = None) -> str | None:
+    """How a provider turns reasoning on: the effort field, a template switch, or not at all."""
+    name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
+    if name in ("", "scaleway"):
+        return "reasoning_effort"
+    control = presets().get(name, {}).get("reasoning_control")
+    return control if control in ("reasoning_effort", "enable_thinking") else None
+
+
 def request_options(
     body: dict[str, Any], provider: str | None = None, *, role: str | None = None
 ) -> dict[str, Any]:
     name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     body = dict(body)
+    effort = str(body.get("reasoning_effort") or "none")
     if name == "hetzner" and isinstance(messages := body.get("messages"), list):
         # Hetzner's chat template accepts system instructions only at the start.
         # Quality finalization/recovery adds instructions after tool evidence.
@@ -149,6 +162,19 @@ def request_options(
         }
         if thinking == "true":
             # The preset's effort=none would contradict the template switch.
+            body.pop("reasoning_effort", None)
+    if effort != "none":
+        # A configured per-model effort (serverless.ServerlessPolicy.efforts).
+        # The policy refuses it at load time for a provider without a control.
+        control = reasoning_control(name)
+        if control == "reasoning_effort":
+            body["reasoning_effort"] = effort
+        elif control == "enable_thinking":
+            # The template switch has no level: any effort above none enables it.
+            body["chat_template_kwargs"] = {
+                **body.get("chat_template_kwargs", {}),
+                "enable_thinking": True,
+            }
             body.pop("reasoning_effort", None)
     return body
 

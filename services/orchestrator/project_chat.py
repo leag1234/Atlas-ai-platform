@@ -287,6 +287,7 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
         item.trace_tokens, item.answer_tokens = model.trace_tokens, model.answer_tokens
         item.token_split_estimated = model.token_split_estimated
         item.reasoning_retried = model.reasoning_retried
+        item.reasoning_effort = model.reasoning_used
         item.latence_ms["generation"] = model.generation_ms
         if model.observations and item.task_type != "imagegen":
             item.modele_utilise = model.observations[-1].provider

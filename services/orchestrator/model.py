@@ -72,6 +72,7 @@ class WireTurn(BaseModel):
     answer_tokens: int = Field(default=0, ge=0)
     token_split_estimated: bool = False
     reasoning_retried: bool = False
+    reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
     text: str = Field(max_length=128000)
     calls: list[WireCall] = Field(max_length=10)
 
@@ -126,6 +127,8 @@ class GatewayModel:
         self.answer_tokens = 0
         self.token_split_estimated = False
         self.reasoning_retried = False
+        # Highest reasoning effort the gateway actually used for a delivered turn.
+        self.reasoning_used = "none"
         self.cost_ceiling: Decimal | None = None
         self.context_samples: list[dict[str, object]] = []
         from services.orchestrator.session_context import SessionContext
@@ -490,6 +493,8 @@ class GatewayModel:
                 reasoning_effort=self.reasoning_effort,
                 budget_eur=str(self.allowance),
             )
+            if self.reasoning_retried:
+                payload["reasoning_disabled"] = True
         if self.privacy == "strict":
             payload["privacy"] = "strict"
         if self.produces_files:
@@ -628,6 +633,11 @@ class GatewayModel:
             self.answer_tokens += result.answer_tokens
             self.token_split_estimated |= result.token_split_estimated
             self.reasoning_retried |= result.reasoning_retried
+            self.reasoning_used = max(
+                self.reasoning_used,
+                result.reasoning_effort,
+                key=("none", "low", "medium", "high").index,
+            )
             if result.reasoning_retried:
                 # Recovery can request tools; its following turn must finish
                 # without restarting the reasoning that already failed.
