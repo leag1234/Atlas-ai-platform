@@ -53,6 +53,9 @@ async def run_task(job: dict[str, Any]) -> None:
     broker = ScheduleBroker(job["subject"], task["org_id"], task["project_id"])
     ledger, reservation = DailyLedger(), None
     item = Interaction(request_id="chatcmpl-" + job["run_id"])
+    from services.orchestrator.request_owners import record as record_owner
+
+    record_owner(item.request_id, job["subject"])
     owner = asyncio.current_task()
     assert owner is not None
 
