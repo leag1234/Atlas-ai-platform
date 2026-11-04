@@ -201,7 +201,8 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
             configured({"glm-5.2": "medium"}), [result("Answer.", 10)]
         )
         self.assertEqual([a.reasoning_effort for a in attempts], ["medium"])
-        self.assertEqual(attempts[0].max_tokens, 6000)
+        # Reasoning gets its own room on top of the requested answer length.
+        self.assertEqual(attempts[0].max_tokens, 6000 + 6000)
         self.assertEqual(final["reasoning_effort"], "medium")
         self.assertFalse(final["reasoning_retried"])
 
