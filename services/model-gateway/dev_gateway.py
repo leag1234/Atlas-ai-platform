@@ -492,9 +492,20 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                     if (
                         os.environ.get("ATLAS_PROVIDER") or plan.provider
                     ) and "content" in choice.delta:
+                        thinking = Delta.thinking_text(choice.delta["content"])
+                        if thinking:
+                            choice.delta["reasoning_content"] = (
+                                str(choice.delta.get("reasoning_content") or "")
+                                + thinking
+                            )
                         choice.delta["content"] = Delta.text_content(
                             choice.delta["content"]
                         )
+                    # vLLM servers name it reasoning_content or reasoning.
+                    if isinstance(choice.delta.get("reasoning"), str):
+                        choice.delta["reasoning_content"] = str(
+                            choice.delta.get("reasoning_content") or ""
+                        ) + str(choice.delta.pop("reasoning"))
                 if frame.choices:
                     yield {
                         "choices": [

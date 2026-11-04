@@ -29,6 +29,20 @@ class Delta(BaseModel):
     reasoning_content: str | None = None
     tool_calls: list[CallDelta] = Field(default_factory=list, max_length=10)
 
+    @staticmethod
+    def thinking_text(value: object) -> str:
+        """Reasoning text of typed thinking parts ({"type": "thinking", "thinking": [...]})."""
+        if not isinstance(value, list):
+            return ""
+        text: list[str] = []
+        for part in value:
+            if isinstance(part, dict) and part.get("type") == "thinking":
+                inner = part.get("thinking")
+                for piece in inner if isinstance(inner, list) else []:
+                    if isinstance(piece, dict) and isinstance(piece.get("text"), str):
+                        text.append(piece["text"])
+        return "".join(text)
+
     @field_validator("content", mode="before")
     @classmethod
     def text_content(cls, value: object) -> object:

@@ -9,7 +9,7 @@ from services.orchestrator.dev_responses import Wire as ResponsesWire
 class Wire:
     def __init__(self, output: Output, request: dict[str, Any]) -> None:
         self.output = output
-        self.core = ResponsesWire(output, request)
+        self.core = ResponsesWire(output, request, reasoning=False)
         # A web search is two Messages blocks (server_tool_use, web_search_tool_result)
         # for one Responses item: core output indexes are shifted accordingly.
         self.extra: dict[int, int] = {}

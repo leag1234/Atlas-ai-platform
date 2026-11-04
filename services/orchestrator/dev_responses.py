@@ -35,8 +35,14 @@ def v4a_body(diff: str) -> str:
 
 
 class Wire:
-    def __init__(self, output: Output, request: dict[str, Any]) -> None:
+    def __init__(
+        self, output: Output, request: dict[str, Any], reasoning: bool = True
+    ) -> None:
         self.output, self.request = output, request
+        # The model's reasoning text as a reasoning item (reasoning_text content, as
+        # the Responses API gives for open-weight models). Messages builds on this
+        # wire without it: thinking blocks are a separate format.
+        self.reasoning = reasoning
         self.items: list[dict[str, Any]] = []
         self.indices: dict[str, int] = {}
         self.sequence = 0
@@ -207,6 +213,44 @@ class Wire:
             ]
         for choice in chunk["choices"]:
             delta = choice["delta"]
+            if self.reasoning and delta.get("reasoning_content"):
+                if "reasoning" not in self.indices:
+                    index = self.indices["reasoning"] = len(self.items)
+                    item = {
+                        "id": "rs_" + str(self.output.base["id"]),
+                        "type": "reasoning",
+                        "status": "in_progress",
+                        "summary": [],
+                        "content": [],
+                    }
+                    self.items.append(item)
+                    events.append(
+                        self.event(
+                            "response.output_item.added", output_index=index, item=item
+                        )
+                    )
+                    item["content"] = [{"type": "reasoning_text", "text": ""}]
+                    events.append(
+                        self.event(
+                            "response.content_part.added",
+                            output_index=index,
+                            item_id=item["id"],
+                            content_index=0,
+                            part=item["content"][0],
+                        )
+                    )
+                index = self.indices["reasoning"]
+                item = self.items[index]
+                item["content"][0]["text"] += delta["reasoning_content"]
+                events.append(
+                    self.event(
+                        "response.reasoning_text.delta",
+                        output_index=index,
+                        item_id=item["id"],
+                        content_index=0,
+                        delta=delta["reasoning_content"],
+                    )
+                )
             if delta.get("content"):
                 if "text" not in self.indices:
                     index = self.indices["text"] = len(self.items)
@@ -355,6 +399,24 @@ class Wire:
                             content_index=0,
                             text=part["text"],
                             logprobs=[],
+                        )
+                    )
+                    events.append(
+                        self.event(
+                            "response.content_part.done",
+                            **common,
+                            content_index=0,
+                            part=part,
+                        )
+                    )
+                elif item["type"] == "reasoning":
+                    part = item["content"][0]
+                    events.append(
+                        self.event(
+                            "response.reasoning_text.done",
+                            **common,
+                            content_index=0,
+                            text=part["text"],
                         )
                     )
                     events.append(
