@@ -710,7 +710,9 @@ class KeyResponsesTests(unittest.TestCase):
             body = json.loads(plan.body)
             self.inputs.append(body)
             if body["messages"][-1]["role"] == "tool":
-                delta: dict[str, Any] = {"content": "About 2.1 million."}
+                delta: dict[str, Any] = {
+                    "content": "About 2.1 million (https://example.invalid/paris)."
+                }
                 reason = "stop"
             else:
                 delta = {
@@ -783,6 +785,19 @@ class KeyResponsesTests(unittest.TestCase):
                 result["usage"]["server_tool_use"], {"web_search_requests": 1}
             )
             self.assertEqual(result["stop_reason"], "end_turn")
+            # The answer quotes a searched page: its text block cites it.
+            self.assertEqual(
+                result["content"][2]["citations"],
+                [
+                    {
+                        "type": "web_search_result_location",
+                        "url": "https://example.invalid/paris",
+                        "title": "Paris",
+                        "encrypted_index": "",
+                        "cited_text": "2.1 million",
+                    }
+                ],
+            )
 
             streamed = self.client.post(
                 url, headers=headers, json=dict(body, stream=True)
@@ -798,6 +813,13 @@ class KeyResponsesTests(unittest.TestCase):
                 [e["content_block"]["type"] for e in starts],
                 ["server_tool_use", "web_search_tool_result", "text"],
             )
+            cited = [
+                json.loads(line[6:])
+                for line in streamed.text.splitlines()
+                if line.startswith("data: ") and '"citations_delta"' in line
+            ]
+            self.assertEqual(len(cited), 1)
+            self.assertEqual(cited[0]["index"], 2)
 
             # The blocks come back in the next turn's history.
             follow = self.client.post(

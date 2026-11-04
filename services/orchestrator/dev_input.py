@@ -636,7 +636,8 @@ def text_blocks(value: Any) -> str:
         return value
     parts = []
     for part in value:
-        fields(part, "type text cache_control")
+        # citations come back on earlier answers; the model does not need them.
+        fields(part, "type text cache_control citations")
         if part["type"] != "text" or not isinstance(part["text"], str):
             raise SemanticFieldError(
                 "unsupported block here: " + str(part["type"])[:64] + " (text only)"
