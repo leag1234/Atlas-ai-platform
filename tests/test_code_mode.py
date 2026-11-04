@@ -179,6 +179,19 @@ class CodeTests(unittest.IsolatedAsyncioTestCase):
             {"path": "a.py", "old_text": "same same", "new_text": "fixed"},
         )
         self.assertIn("+fixed", result["diff"])
+        created = code_worker.perform(
+            self.root,
+            "edit_file",
+            {"path": "tools/new.py", "old_text": "", "new_text": "print(1)\n"},
+        )
+        self.assertIn("+print(1)", created["diff"])
+        self.assertEqual((self.root / "tools/new.py").read_text(), "print(1)\n")
+        with self.assertRaisesRegex(ValueError, "exactly_once"):
+            code_worker.perform(
+                self.root,
+                "edit_file",
+                {"path": "tools/new.py", "old_text": "", "new_text": "overwrite"},
+            )
         absolute = code_worker.perform(
             self.root, "read_file", {"path": "/workspace/a.py"}
         )

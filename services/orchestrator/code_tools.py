@@ -41,7 +41,7 @@ class Search(Directory):
 
 class Edit(Arguments):
     path: str = Field(max_length=1000)
-    old_text: str = Field(min_length=1, max_length=262144)
+    old_text: str = Field(max_length=262144)
     new_text: str = Field(max_length=262144)
 
 
@@ -83,7 +83,7 @@ DESCRIPTIONS = {
     "list_dir": "List the already-extracted workspace directory, bounded to 500 entries. File paths may be relative or under /workspace; no unpacking is needed.",
     "read_file": "Read an already-extracted workspace UTF-8 file with 1-based inclusive line ranges; 256 KiB cap. Paths are relative or under /workspace.",
     "search": "Search literal text recursively, returning bounded file:line matches.",
-    "edit_file": "Replace old_text exactly once; fails if absent or ambiguous; returns unified diff.",
+    "edit_file": "Replace old_text exactly once; fails if absent or ambiguous; an empty old_text creates a missing or empty file; returns unified diff.",
     "write_file": "Write a UTF-8 workspace file, at most 256 KiB; returns unified diff.",
     "run_command": "Run a shell command in the workspace with no network or credentials. Return exit code and bounded output. Run tests to verify your changes.",
     "update_plan": "Replace the pinned task list with pending, in_progress, or completed items.",
