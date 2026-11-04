@@ -416,6 +416,16 @@ class Wire:
                             part["text"], self.output.citations
                         )
                     ]
+                    for number, annotation in enumerate(part["annotations"]):
+                        events.append(
+                            self.event(
+                                "response.output_text.annotation.added",
+                                **common,
+                                content_index=0,
+                                annotation_index=number,
+                                annotation=annotation,
+                            )
+                        )
                     events.append(
                         self.event(
                             "response.output_text.done",

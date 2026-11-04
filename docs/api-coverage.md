@@ -84,7 +84,8 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | Output: `file_search_call`, `code_interpreter_call`, `image_generation_call`, `mcp_call` | Not implemented |
 | Stream events: `response.created`, `in_progress`, `output_item.added` and `done`, `content_part.added` and `done`, `output_text.delta` and `done`, function and custom tool input deltas, `web_search_call.completed`, `response.completed`, `response.failed` | Applied |
 | Stream events: `reasoning_text.delta` and `done` | Applied |
-| Stream events for reasoning summaries, refusal, annotations, other hosted tools, audio | Not implemented |
+| Stream event `output_text.annotation.added` (one per `url_citation`, before `output_text.done`) | Applied |
+| Stream events for reasoning summaries, refusal, other hosted tools, audio | Not implemented |
 
 ## 4. Messages parameters and blocks
 
