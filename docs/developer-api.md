@@ -176,6 +176,17 @@ The whole request is limited to 8 MiB. A file that cannot be read answers 400 in
 ignored. References to stored files (`file_id`, `file_url`) are not available: send the content.
 Audio input (`input_audio`) is refused by name, since no hosted model takes audio yet.
 
+## 4 bis. Speech synthesis
+
+When the local speech service is configured, `POST /audio/speech` is available in the OpenAI format.
+Any model name is accepted and served by `atlas-tts`. `input` is a non-empty string of at most 12000
+characters. `voice` is accepted for client compatibility but ignored: the voice follows the language
+and is returned in `X-Atlas-TTS-Voice`. `response_format` is `mp3` (default) or `wav`; `speed` must be
+`1.0`; `instructions` are refused by name. The request is charged at 1 micro-euro per character
+(CPU-only estimate), so request-count and daily quotas apply. If the local service is unavailable,
+the edge answers 503 `tts_unavailable`; strict privacy mode remains supported because synthesis is
+local.
+
 ## 5. Tool calls
 
 Function definitions, tool-call history, tool results and `tool_choice` (`auto`, `none`, `required` or a
