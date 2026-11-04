@@ -179,6 +179,8 @@ def model_names(request: Request) -> list[str]:
         names.extend([*PUBLIC_MODELS, EMBEDDING_MODEL])
         if tts_configured():
             names.append(TTS_MODEL)
+        if transcription_configured():
+            names.append(TRANSCRIPTION_MODEL)
     return names
 
 
@@ -640,6 +642,284 @@ async def speech(request: Request) -> Response:
         audio,
         media_type="audio/wav" if response_format == "wav" else "audio/mpeg",
         headers={"X-Atlas-TTS-Voice": voice},
+    )
+
+
+TRANSCRIPTION_MODEL = "atlas-transcribe"
+# Room for the form fields and part headers around a file of the maximum size.
+TRANSCRIPTION_FORM_OVERHEAD = 64 * 1024
+TRANSCRIPTION_FIELDS = {
+    "file",
+    "model",
+    "language",
+    "response_format",
+    "prompt",
+    "temperature",
+    "timestamp_granularities",
+    "timestamp_granularities[]",
+}
+
+
+def transcription_configured() -> bool:
+    import transcription as gateway_transcription
+
+    return gateway_transcription.configured()
+
+
+FormPart = tuple[str | None, str, bytes]
+
+
+def form_parts(content_type: str, body: bytes) -> dict[str, list[FormPart]]:
+    """Parts of a multipart/form-data body by field name: (filename, content type, data)."""
+    from email.message import Message
+
+    header = Message()
+    header["content-type"] = content_type
+    boundary = header.get_param("boundary")
+    if header.get_content_type() != "multipart/form-data" or not isinstance(
+        boundary, str
+    ):
+        raise ValueError("not_multipart")
+    sections = body.split(b"--" + boundary.encode())
+    if len(sections) < 3 or not sections[-1].startswith(b"--"):
+        raise ValueError("malformed_multipart")
+    parts: dict[str, list[FormPart]] = {}
+    for section in sections[1:-1]:
+        if not section.startswith(b"\r\n") or not section.endswith(b"\r\n"):
+            raise ValueError("malformed_multipart")
+        head, separator, data = section[2:-2].partition(b"\r\n\r\n")
+        if not separator:
+            raise ValueError("malformed_multipart")
+        headers = Message()
+        for line in head.decode("utf-8").split("\r\n"):
+            name, colon, value = line.partition(":")
+            if not colon:
+                raise ValueError("malformed_multipart")
+            headers[name.strip()] = value.strip()
+        disposition = headers.get("content-disposition", "")
+        field = headers.get_param("name", header="content-disposition")
+        if not disposition.lower().startswith("form-data") or not isinstance(
+            field, str
+        ):
+            raise ValueError("malformed_multipart")
+        filename = headers.get_param("filename", header="content-disposition")
+        kind = headers.get("content-type", "application/octet-stream")
+        parts.setdefault(field, []).append(
+            (filename if isinstance(filename, str) else None, str(kind), data)
+        )
+    return parts
+
+
+def transcription_text(parts: dict[str, list[FormPart]], name: str) -> str | None:
+    """A single plain text field, or None when absent."""
+    if name not in parts:
+        return None
+    if len(parts[name]) != 1 or parts[name][0][0] is not None:
+        raise ValueError(name)
+    try:
+        return parts[name][0][2].decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(name) from None
+
+
+@app.post("/audio/transcriptions")
+async def transcriptions(request: Request) -> Response:
+    """OpenAI-format speech to text through the gateway transcription provider."""
+    import transcription as gateway_transcription
+
+    missing = require(request, "model")
+    if missing is not None:
+        return missing
+    limit = gateway_transcription.MAX_FILE_BYTES + TRANSCRIPTION_FORM_OVERHEAD
+    # Bounded read, as the other routes; uploads of 25 MB get a longer deadline.
+    body = bytearray()
+    try:
+        async with asyncio.timeout(120):
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > limit:
+                    return error(413, "body_limit", measured=len(body), limit=limit)
+        parts = form_parts(request.headers.get("content-type", ""), bytes(body))
+    except (ValueError, UnicodeDecodeError, TimeoutError):
+        return error(
+            400,
+            "invalid_request",
+            message="a multipart/form-data body with a file field is required",
+        )
+    del body
+    unknown = set(parts) - TRANSCRIPTION_FIELDS
+    if unknown:
+        return error(
+            400,
+            "invalid_request",
+            message="unsupported field: " + ", ".join(sorted(unknown))[:200],
+        )
+    files = parts.get("file", [])
+    if len(files) != 1 or not files[0][2]:
+        return error(
+            400, "invalid_request", message="file: exactly one non-empty audio file"
+        )
+    filename, file_type, audio = files[0]
+    if len(audio) > gateway_transcription.MAX_FILE_BYTES:
+        return error(
+            413,
+            "body_limit",
+            measured=len(audio),
+            limit=gateway_transcription.MAX_FILE_BYTES,
+            unit="bytes",
+        )
+    if "prompt" in parts:
+        return error(400, "invalid_request", message="prompt is not supported")
+    try:
+        language = transcription_text(parts, "language")
+        response_format = transcription_text(parts, "response_format") or "json"
+        temperature_text = transcription_text(parts, "temperature")
+        transcription_text(parts, "model")
+        granularities = [
+            part[2].decode("utf-8", errors="replace")
+            for name in ("timestamp_granularities", "timestamp_granularities[]")
+            for part in parts.get(name, [])
+            if part[0] is None
+        ]
+    except (ValueError, UnicodeDecodeError) as exc:
+        return error(400, "invalid_request", message=f"{exc}: a single text field")
+    if language is not None and (
+        len(language) != 2 or not language.isascii() or not language.islower()
+    ):
+        return error(
+            400, "invalid_request", message="language: an ISO-639-1 code such as fr"
+        )
+    if response_format not in {"json", "text", "verbose_json"}:
+        return error(
+            400,
+            "invalid_request",
+            message="response_format: json, text or verbose_json (srt and vtt are "
+            "not supported)",
+        )
+    temperature: float | None = None
+    if temperature_text is not None:
+        try:
+            temperature = float(temperature_text)
+        except ValueError:
+            temperature = -1.0
+        if not 0 <= temperature <= 1:
+            return error(400, "invalid_request", message="temperature: 0 to 1")
+    if "word" in granularities:
+        return error(
+            400,
+            "invalid_request",
+            message="timestamp_granularities: word is not supported, only segment",
+        )
+    if any(value != "segment" for value in granularities) or (
+        granularities and response_format != "verbose_json"
+    ):
+        return error(
+            400,
+            "invalid_request",
+            message="timestamp_granularities: segment, with response_format "
+            "verbose_json",
+        )
+    if request.state.privacy == "strict":
+        return error(
+            503,
+            "strict_privacy_unavailable",
+            message="No owned transcription server is available for strict privacy "
+            "mode.",
+        )
+    if not gateway_transcription.configured():
+        return error(503, "transcription_unavailable")
+    store = ModelAccounting(request.state.key_store, request.state.api_key)
+    developer = request.state.api_key.id
+    try:
+        request_id = store.reserve(
+            developer, gateway_transcription.estimated_micro(len(audio))
+        )
+    except BudgetRefusal as exc:
+        return error(
+            429,
+            "budget_limit",
+            used=str(exc.used),
+            limit=str(exc.limit),
+            category=exc.category,
+        )
+    except KeyQuotaError as exc:
+        return error(429, "quota_exceeded", **exc.values)
+    except (PermissionError, ValueError):
+        return error(429, "quota_exceeded")
+    try:
+        result = await gateway_transcription.transcribe(
+            audio,
+            filename=filename or "audio",
+            content_type=file_type,
+            language=language,
+            temperature=temperature,
+            segments=response_format == "verbose_json",
+            timeout=300,
+        )
+    except gateway_transcription.ProviderLimit as exc:
+        # D5: a provider quota or rate refusal is reported as such, never as an outage.
+        store.finish(request_id, 0)
+        return error(
+            429,
+            "provider_limit",
+            message="the transcription provider refused for quota or rate limit",
+            provider_status=exc.status,
+        )
+    except gateway_transcription.AudioRefused:
+        store.finish(request_id, 0)
+        return error(
+            400, "invalid_request", message="file: the audio could not be decoded"
+        )
+    except gateway_transcription.ProviderUnavailable:
+        store.finish(request_id, 0)
+        return error(503, "transcription_unavailable")
+    except (RuntimeError, ValueError, KeyError, aiohttp.ClientError):
+        store.finish(request_id, 0)
+        return error(502, "provider_error")
+    # Without a measured duration the reservation is charged.
+    store.finish(request_id, result["cost_micro"], 0, 0)
+    logging.getLogger("atlas.api").info(
+        json.dumps(
+            {
+                "event": "api_transcription",
+                "key": developer,
+                "bytes": len(audio),
+                "seconds": result["duration"],
+                "format": response_format,
+            }
+        )
+    )
+    if response_format == "text":
+        return Response(result["text"], media_type="text/plain; charset=utf-8")
+    if response_format == "verbose_json":
+        return JSONResponse(
+            {
+                "task": "transcribe",
+                "language": result["language"],
+                "duration": result["duration"],
+                "text": result["text"],
+                "segments": result["segments"],
+            }
+        )
+    payload: dict[str, object] = {"text": result["text"]}
+    if result["language"] is not None:
+        payload["language"] = result["language"]
+    if result["duration"] is not None:
+        payload["duration"] = result["duration"]
+        payload["usage"] = {"type": "duration", "seconds": result["duration"]}
+    return JSONResponse(payload)
+
+
+@app.post("/audio/translations")
+async def translations(request: Request) -> Response:
+    missing = require(request, "model")
+    if missing is not None:
+        return missing
+    return error(
+        400,
+        "translation_not_supported",
+        message="audio translation to English is not supported; use "
+        "/audio/transcriptions, then translate the text with a chat model",
     )
 
 

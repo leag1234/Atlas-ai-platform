@@ -38,6 +38,8 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | Embeddings: `POST /embeddings` | Applied (model `atlas-embed`, see 4 bis) | n/a |
 | Images: generations, edits, variations | Not implemented | n/a |
 | Audio: speech (`POST /audio/speech`, local service) | Applied (`atlas-tts` when configured) | n/a |
+| Audio: transcriptions (`POST /audio/transcriptions`) | Applied (`atlas-transcribe` when configured, see 4 ter; `srt`, `vtt`, `prompt` and word timestamps refused) | n/a |
+| Audio: translations (`POST /audio/translations`) | Refused by name (`translation_not_supported`) | n/a |
 | Moderations | Not implemented | n/a |
 | Batch, Uploads, Fine-tuning, Evals, Vector stores | Not implemented | n/a |
 | Assistants, Threads, Runs (deprecated), Realtime, Containers | Not implemented | n/a |
