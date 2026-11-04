@@ -90,16 +90,16 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 
 | State | Parameters |
 |---|---|
-| Applied | `model`, `messages`, `system`, `max_tokens`, `temperature`, `top_p`, `top_k`, `stop_sequences`, `tools`, `tool_choice`, `stream`, `output_config.effort`, `metadata.user_id` |
-| Accepted, no effect | `cache_control` (Atlas caches repeated prompt starts by itself), `service_tier`, `thinking: {"type": "disabled"}` |
-| Refused | `thinking` enabled with a budget, `container`, `inference_geo`, `speed` |
+| Applied | `model`, `messages`, `system`, `max_tokens`, `temperature`, `top_p`, `top_k`, `stop_sequences`, `tools`, `tool_choice`, `stream`, `output_config.effort` (sets the reasoning effort), `thinking` (`enabled` with `budget_tokens` from 1024 to below `max_tokens`: up to 4096 low, up to 16384 medium, above high; `adaptive`: medium; `output_config.effort` wins), `metadata.user_id` |
+| Accepted, no effect | `cache_control` (Atlas caches repeated prompt starts by itself), `service_tier` |
+| Refused | `container`, `inference_geo`, `speed` |
 
 | Block or tool | State |
 |---|---|
 | `text`, `image` (base64 or url), `document` (text, PDF, content), `search_result` | Applied |
 | `tool_use`, `tool_result` | Applied |
 | `thinking`, `redacted_thinking` blocks in the history | Accepted and removed |
-| `thinking` blocks in answers | Not implemented |
+| `thinking` blocks in answers, when `thinking` is requested and the model reasons (signed with an opaque `signature`; streamed as `thinking_delta` then `signature_delta`, closed before the next block) | Applied |
 | `web_search` server tool (`web_search_20250305` and later): `server_tool_use`, `web_search_tool_result`, `usage.server_tool_use` | Applied |
 | `web_fetch`, code execution (`code_execution`, `bash_code_execution`, `text_editor_code_execution`), memory, computer use, MCP connector, `tool_search` | Not implemented |
 | Citations on text blocks | Not implemented |
@@ -116,6 +116,5 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 ## 6. Open items, in the order planned
 
 1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
-2. `thinking` blocks in Messages answers (`thinking` enabled is refused by name today).
-3. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
-4. The families outside chat (embeddings, images, audio, files, batches): phase 2.
+2. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
+3. The families outside chat (embeddings, images, audio, files, batches): phase 2.

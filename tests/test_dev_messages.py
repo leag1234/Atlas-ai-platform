@@ -83,6 +83,74 @@ class DevMessagesTests(unittest.TestCase):
             self.assertIn(named, reply.text)
         self.assertEqual(env.inputs, [])
 
+    def test_thinking_blocks_when_thinking_is_requested(self) -> None:
+        frames = [
+            {"choices": [{"index": 0, "delta": {"reasoning_content": "Bat is "}}]},
+            {"choices": [{"index": 0, "delta": {"reasoning_content": "ball + 1."}}]},
+            {"choices": [{"index": 0, "delta": {"content": "0.05"}}]},
+            {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+            {"choices": [], "usage": {"prompt_tokens": 50, "completion_tokens": 20}},
+        ]
+        raw = (
+            "".join("data: " + json.dumps(frame) + "\n\n" for frame in frames)
+            + "data: [DONE]\n\n"
+        ).encode()
+        body = {
+            "model": "atlas-code",
+            "max_tokens": 4000,
+            "messages": [{"role": "user", "content": "Ball price?"}],
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+        }
+        env = Environment()
+        self.addCleanup(env.close)
+        env.raw = raw
+        reply = env.client.post("/v1/messages", headers=env.headers, json=body)
+        self.assertEqual(reply.status_code, 200, reply.text)
+        content = reply.json()["content"]
+        self.assertEqual([block["type"] for block in content], ["thinking", "text"])
+        self.assertEqual(content[0]["thinking"], "Bat is ball + 1.")
+        self.assertTrue(content[0]["signature"])
+        self.assertEqual(json.loads(env.inputs[-1])["reasoning_effort"], "low")
+        streamed = env.client.post(
+            "/v1/messages", headers=env.headers, json=body | {"stream": True}
+        )
+        events = [
+            json.loads(line[5:])
+            for line in streamed.text.splitlines()
+            if line.startswith("data:")
+        ]
+        starts = [e for e in events if e["type"] == "content_block_start"]
+        self.assertEqual(
+            [(e["index"], e["content_block"]["type"]) for e in starts],
+            [(0, "thinking"), (1, "text")],
+        )
+        # Blocks never overlap: thinking is signed and stopped before text starts.
+        sequence = [
+            (e["type"], e.get("index"), (e.get("delta") or {}).get("type"))
+            for e in events
+            if e["type"].startswith("content_block")
+        ]
+        self.assertEqual(
+            sequence,
+            [
+                ("content_block_start", 0, None),
+                ("content_block_delta", 0, "thinking_delta"),
+                ("content_block_delta", 0, "thinking_delta"),
+                ("content_block_delta", 0, "signature_delta"),
+                ("content_block_stop", 0, None),
+                ("content_block_start", 1, None),
+                ("content_block_delta", 1, "text_delta"),
+                ("content_block_stop", 1, None),
+            ],
+        )
+        signature = next(
+            e["delta"]["signature"]
+            for e in events
+            if e["type"] == "content_block_delta"
+            and e["delta"]["type"] == "signature_delta"
+        )
+        self.assertEqual(signature, content[0]["signature"])
+
     def test_text_truncation_and_error_events(self) -> None:
         from services.orchestrator.dev_chat import Output
         from services.orchestrator.dev_input import messages
