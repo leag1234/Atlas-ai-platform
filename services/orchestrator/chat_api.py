@@ -34,6 +34,7 @@ from services.orchestrator.stream_client import sink_context, metadata_only_cont
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.chat_stream import response as stream_response
 from services.orchestrator.model import GatewayError
+from packages.provider_calls import track, use
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.daily_budget import (
     BudgetRefusal,
@@ -238,6 +239,7 @@ async def chat(request: Request) -> Response:
     elif request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
         return JSONResponse({"error": "origin_rejected"}, status_code=403)
     item, started = Interaction(), time.monotonic()
+    calls = track()
     status, code, payload = 200, "", None
     streaming = False
     detail = ""
@@ -357,10 +359,13 @@ async def chat(request: Request) -> Response:
             def settle(result: Interaction) -> None:
                 ledger.settle_cost(reservation, Decimal(str(result.cout_eur)))
                 if key_reservation is not None:
+                    # The reservation stays charged ('unknown') only when a provider
+                    # call may have consumed unmeasured tokens; a request that ended
+                    # before any provider call is charged its measured cost.
                     request.state.key_store.finish(
                         key_reservation,
                         int(Decimal(str(result.cout_eur)) * 1000000)
-                        if result.state == "done"
+                        if result.state == "done" or not calls.started
                         else None,
                         result.tokens["in"],
                         result.tokens["out"],
@@ -373,6 +378,7 @@ async def chat(request: Request) -> Response:
                 streaming = True
 
                 async def budgeted(p: ChatRequest, result: Interaction) -> None:
+                    use(calls)
                     try:
                         await process_request(p, result)
                     finally:

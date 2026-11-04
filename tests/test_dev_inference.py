@@ -6,7 +6,7 @@ import unittest
 
 import dev_gateway as gateway
 from services.orchestrator.dev_chat import ChatInput, Output
-from services.orchestrator.dev_inference import drive
+from services.orchestrator.dev_inference import drive, validated_drive
 from test_dev_chat import BODY
 from devapi_support import Environment
 
@@ -130,3 +130,26 @@ class DevInferenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(
             int(str(self.env.store.usage("alice")["charged_micro_eur"])), 1
         )
+
+    async def test_deadline_before_the_provider_call_is_not_charged(self) -> None:
+        for driver in (drive, validated_drive):
+            with self.subTest(driver=driver.__name__):
+                request = ChatInput.model_validate(BODY)
+                plan = gateway.prepare(request)
+                request_id = self.env.store.reserve("alice", plan.reserved)
+                frames = [
+                    f
+                    async for f in driver(
+                        self.env.store,
+                        "alice",
+                        request_id,
+                        plan,
+                        Output(request_id, request),
+                        monotonic() - 1,
+                    )
+                ]
+                self.assertIn("error", frames[-1])
+                self.assertEqual(self.env.inputs, [])
+                usage = self.env.store.usage("alice")
+                self.assertEqual(usage["charged_micro_eur"], 0)
+                self.assertEqual(usage["unknown_micro_eur"], 0)
