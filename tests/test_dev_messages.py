@@ -65,6 +65,24 @@ class DevMessagesTests(unittest.TestCase):
         self.assertEqual(body["messages"][-1]["tool_call_id"], block["id"])
         self.assertEqual(env.store.usage("alice")["unknown_micro_eur"], 0)
 
+    def test_unsupported_options_answer_a_named_refusal(self) -> None:
+        # Each refusal says what is unsupported, never a bare invalid_request.
+        env = Environment()
+        self.addCleanup(env.close)
+        image = {"type": "image", "source": {"type": "file", "file_id": "f"}}
+        for extra, named in (
+            ({"thinking": {"type": "enabled", "budget_tokens": 1024}}, "thinking"),
+            ({"output_config": {"effort": "max"}}, "effort"),
+            ({"tool_choice": {"type": "computer"}}, "tool_choice"),
+            ({"messages": [{"role": "user", "content": [image]}]}, "image source"),
+        ):
+            reply = env.client.post(
+                "/v1/messages", headers=env.headers, json=PAYLOAD | extra
+            )
+            self.assertEqual(reply.status_code, 400, reply.text)
+            self.assertIn(named, reply.text)
+        self.assertEqual(env.inputs, [])
+
     def test_text_truncation_and_error_events(self) -> None:
         from services.orchestrator.dev_chat import Output
         from services.orchestrator.dev_input import messages
