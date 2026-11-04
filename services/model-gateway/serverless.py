@@ -21,6 +21,11 @@ from provider_settings import (
     selected,
 )
 
+
+# Extra output room for the first attempt of a model with configured reasoning.
+# The orchestrator reserves and bounds the same room (/agent/config).
+REASONING_OUTPUT_TOKENS = {"low": 2000, "medium": 6000, "high": 12000}
+
 Task = Literal["text", "code", "vision"]
 
 
@@ -156,7 +161,7 @@ class ServerlessPolicy:
 
     def configuration(self) -> dict[str, object]:
         # Covers every primary/fallback pair, including an unknown primary failure.
-        return {
+        configuration: dict[str, object] = {
             key: str(
                 max(
                     Decimal(str(self.prices[self.models[role]][key]))
@@ -167,6 +172,20 @@ class ServerlessPolicy:
             )
             for key in ("input_eur_per_mtok", "output_eur_per_mtok")
         } | {"max_tokens": 2048, "gateway_reserves_quality": True}
+        if room := self.reasoning_room():
+            configuration["reasoning_output_tokens"] = room
+        return configuration
+
+    def reasoning_room(self) -> int:
+        """Largest first-attempt widening any configured reasoning may receive."""
+        return max(
+            (
+                REASONING_OUTPUT_TOKENS[effort]
+                for effort in getattr(self, "efforts", {}).values()
+                if effort != "none"
+            ),
+            default=0,
+        )
 
     def reserve(
         self, messages: list[dict[str, object]], tools: list[dict[str, object]]

@@ -25,11 +25,18 @@ def inline_fallback(
         "it": "Alcuni file richiesti non sono stati pubblicati. Il loro contenuto è riportato sopra.",
         "en": "Some requested files could not be published. Their content is provided above.",
     }
-    return (
-        answer_content(text, preserve_code=preserve_code)
-        + "\n\n"
-        + (partial_notices if partial else notices)[language]
-    )
+    empty_notices = {
+        "fr": "Aucun fichier n'a pu être publié et aucun contenu n'a pu être produit pour cette demande.",
+        "de": "Keine Datei konnte veröffentlicht werden, und für diese Anfrage konnte kein Inhalt erstellt werden.",
+        "es": "No se pudo publicar ningún archivo ni producir contenido para esta solicitud.",
+        "it": "Nessun file è stato pubblicato e non è stato possibile produrre contenuti per questa richiesta.",
+        "en": "No file was produced for download, and no content could be produced for this request.",
+    }
+    content = answer_content(text, preserve_code=preserve_code)
+    if not content.strip():
+        # Never point at content above when there is none.
+        return empty_notices[language]
+    return content + "\n\n" + (partial_notices if partial else notices)[language]
 
 
 def render_files(
