@@ -189,8 +189,11 @@ def serve_download(
             b"Content-Disposition: "
             + (b"inline" if inline else b"attachment")
             + b'; filename="'
-            + filename.encode("latin1")
-            + b'"',
+            # ASCII fallback without quotes or control characters, plus the exact
+            # UTF-8 name (RFC 6266/5987) so any file name is safe in the header.
+            + re.sub(r"[^A-Za-z0-9._ -]", "_", filename).encode("ascii")
+            + b"\"; filename*=UTF-8''"
+            + quote(filename, safe="").encode("ascii"),
             b"Connection: close",
         ]
         length = response.getheader("content-length")

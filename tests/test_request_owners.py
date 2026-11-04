@@ -265,7 +265,11 @@ class RelayTests(unittest.TestCase):
                 self.assertEqual(headers["x-content-type-options"], "nosniff")
                 self.assertEqual(
                     headers["content-disposition"],
-                    disposition + '; filename="' + name + '"',
+                    disposition
+                    + '; filename="'
+                    + name
+                    + "\"; filename*=UTF-8''"
+                    + name,
                 )
                 self.assertEqual(headers["cache-control"], "private, no-store")
 
