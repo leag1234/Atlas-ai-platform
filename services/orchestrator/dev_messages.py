@@ -54,6 +54,24 @@ class Wire:
             },
         ]
 
+    def citation(self, url: str, title: str) -> dict[str, Any]:
+        """A Messages web search citation for a retrieved url the answer quotes."""
+        snippet = next(
+            (
+                str(source.get("snippet", ""))
+                for source in self.output.citations
+                if source.get("url") == url
+            ),
+            "",
+        )
+        return {
+            "type": "web_search_result_location",
+            "url": url,
+            "title": title,
+            "encrypted_index": "",
+            "cited_text": snippet[:150],
+        }
+
     @staticmethod
     def signature(text: str) -> str:
         """Opaque signature of a thinking block; clients send it back unchanged."""
@@ -109,7 +127,16 @@ class Wire:
                 searches += 1
                 content += self.search_blocks(item)
             elif item["type"] == "message":
-                content.append({"type": "text", "text": item["content"][0]["text"]})
+                part = item["content"][0]
+                block: dict[str, Any] = {"type": "text", "text": part["text"]}
+                cited = [
+                    self.citation(note["url"], note.get("title", ""))
+                    for note in part.get("annotations", [])
+                    if note.get("type") == "url_citation"
+                ]
+                if cited:
+                    block["citations"] = cited
+                content.append(block)
             elif item["type"] == "reasoning":
                 text = item["content"][0]["text"]
                 content.append(
@@ -278,6 +305,20 @@ class Wire:
                         "type": "content_block_delta",
                         "index": self.block(event["output_index"]),
                         "delta": delta,
+                    }
+                )
+            elif kind == "response.output_text.annotation.added":
+                note = event["annotation"]
+                events.append(
+                    {
+                        "type": "content_block_delta",
+                        "index": self.block(event["output_index"]),
+                        "delta": {
+                            "type": "citations_delta",
+                            "citation": self.citation(
+                                note["url"], note.get("title", "")
+                            ),
+                        },
                     }
                 )
             elif kind == "response.reasoning_text.delta":

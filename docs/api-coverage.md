@@ -104,7 +104,8 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | `web_search` server tool (`web_search_20250305` and later): `server_tool_use`, `web_search_tool_result`, `usage.server_tool_use` | Applied |
 | `web_fetch` server tool (`web_fetch_20250910` and later): `server_tool_use`, `web_fetch_tool_result` (text document) or `web_fetch_tool_error`, `usage.server_tool_use.web_fetch_requests`; `max_uses`, `allowed_domains`, `blocked_domains`, `max_content_tokens`. Only addresses present in the conversation or in earlier search results are read (`url_not_allowed` otherwise); `citations` enabled refused by name; refused in strict privacy | Applied |
 | Code execution (`code_execution`, `bash_code_execution`, `text_editor_code_execution`), memory, computer use, MCP connector, `tool_search` | Not implemented |
-| Citations on text blocks | Not implemented |
+| Citations on text blocks: `web_search_result_location` when the answer quotes a searched page (streamed as `citations_delta`); citations sent back in history are accepted | Applied |
+| Citations on document blocks (`citations.enabled` on a document) | Not implemented |
 | Stream events: `message_start`, `content_block_start`, `content_block_delta` (`text_delta`, `input_json_delta`), `content_block_stop`, `message_delta`, `message_stop` | Applied |
 | `stop_reason: "stop_sequence"` with the sequence that stopped the text | Applied when the provider names the sequence (models served by Scaleway); `end_turn` otherwise (the Mistral API does not say which sequence matched) |
 
@@ -131,5 +132,5 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 ## 6. Open items, in the order planned
 
 1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
-2. Citations, and the remaining Responses stream events.
+2. Citations on document blocks.
 3. The other families outside chat (images, audio, files, batches): phase 2.
