@@ -42,7 +42,9 @@ class ChatInput(Request):
                     or not isinstance(p["text"], str)
                     for p in content
                 ):
-                    raise ValueError("unsupported_content")
+                    raise ValueError(
+                        "unsupported content: only text parts are accepted here"
+                    )
                 message["content"] = "\n".join(p["text"] for p in content)
         return value
 

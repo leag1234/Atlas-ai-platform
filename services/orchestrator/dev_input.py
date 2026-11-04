@@ -244,7 +244,10 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                         fields(part, "type image_url detail file_id")
                         if not isinstance(part.get("image_url"), str):
                             # file_id needs the Files API, not available yet.
-                            raise ValueError("unsupported_content")
+                            raise SemanticFieldError(
+                                "unsupported content: input_image needs image_url "
+                                "(file_id needs the Files API, not available yet)"
+                            )
                         image: dict[str, Any] = {"url": part["image_url"]}
                         if part.get("detail") in ("low", "high", "auto"):
                             image["detail"] = part["detail"]
@@ -253,7 +256,10 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                     if part.get("type") == "input_file":
                         fields(part, "type filename file_data file_url file_id")
                         if not isinstance(part.get("file_data"), str):
-                            raise ValueError("unsupported_content")
+                            raise SemanticFieldError(
+                                "unsupported content: input_file needs file_data "
+                                "(file_url and file_id are not supported yet)"
+                            )
                         parts.append(
                             {
                                 "type": "file",
@@ -273,7 +279,9 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                         or part.get("annotations")
                         or part.get("logprobs")
                     ):
-                        raise ValueError("unsupported_content")
+                        raise SemanticFieldError(
+                            "unsupported content part: " + str(part.get("type"))[:64]
+                        )
                     parts.append({"type": "text", "text": part["text"]})
                 content = joined(parts)
             messages.append({"role": item["role"], "content": content})
@@ -552,7 +560,9 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
     if isinstance(choice, dict):
         fields(choice, "type name")
         if choice["type"] != "function":
-            raise ValueError("unsupported_tool_choice")
+            raise SemanticFieldError(
+                "unsupported tool_choice type: " + str(choice["type"])[:64]
+            )
         choice = {"type": "function", "function": {"name": choice["name"]}}
     text = value.get("text", {})
     if not isinstance(text, dict):
@@ -587,7 +597,9 @@ def cache_hint(part: dict[str, Any]) -> None:
         cache = part["cache_control"]
         fields(cache, "type ttl")
         if cache["type"] != "ephemeral" or cache.get("ttl", "5m") not in ("5m", "1h"):
-            raise ValueError("unsupported_cache_hint")
+            raise SemanticFieldError(
+                "unsupported cache_control: use type ephemeral with ttl 5m or 1h"
+            )
 
 
 IMAGE_OMITTED = (
@@ -613,7 +625,9 @@ def tool_output_text(value: Any) -> str:
         elif part["type"] in ("input_image", "image"):
             parts.append(IMAGE_OMITTED)
         else:
-            raise ValueError("unsupported_tool_output")
+            raise SemanticFieldError(
+                "unsupported tool result part: " + str(part["type"])[:64]
+            )
     return "\n".join(parts)
 
 
@@ -624,7 +638,9 @@ def text_blocks(value: Any) -> str:
     for part in value:
         fields(part, "type text cache_control")
         if part["type"] != "text" or not isinstance(part["text"], str):
-            raise ValueError("unsupported_content")
+            raise SemanticFieldError(
+                "unsupported block here: " + str(part["type"])[:64] + " (text only)"
+            )
         cache_hint(part)
         parts.append(part["text"])
     return "\n".join(parts)
@@ -637,11 +653,16 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
         " stop_sequences top_p top_k cache_control service_tier",
     )
     if value.get("thinking", {"type": "disabled"}) != {"type": "disabled"}:
-        raise ValueError("unsupported_thinking")
+        raise SemanticFieldError(
+            "unsupported thinking: Atlas does not return thinking blocks yet; "
+            'leave thinking out or send {"type": "disabled"}'
+        )
     config = value.get("output_config", {})
     fields(config, "effort")
     if config.get("effort", "low") not in ("low", "medium", "high"):
-        raise ValueError("unsupported_effort")
+        raise SemanticFieldError(
+            "unsupported output_config.effort: use low, medium or high"
+        )
     metadata = value.get("metadata", {})
     if (
         not isinstance(metadata, dict)
@@ -695,7 +716,11 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
                 elif source.get("type") == "url" and isinstance(source.get("url"), str):
                     url = source["url"]
                 else:
-                    raise ValueError("unsupported_content")
+                    raise SemanticFieldError(
+                        "unsupported image source: "
+                        + str(source.get("type"))[:64]
+                        + " (base64 or url)"
+                    )
                 texts.append({"type": "image_url", "image_url": {"url": url}})
             elif kind == "document" and role == "user":
                 fields(block, "type source title context citations cache_control")
@@ -726,7 +751,9 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
                         }
                     )
                 else:
-                    raise ValueError("unsupported_content")
+                    raise SemanticFieldError(
+                        "unsupported document source: " + str(source.get("type"))[:64]
+                    )
             elif kind == "search_result" and role == "user":
                 fields(block, "type source title content citations cache_control")
                 texts.append(
@@ -766,7 +793,12 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
                     }
                 )
             else:
-                raise ValueError("unsupported_content")
+                raise SemanticFieldError(
+                    "unsupported content block for role "
+                    + str(role)[:16]
+                    + ": "
+                    + str(kind)[:64]
+                )
         if texts or calls or not content:
             converted.append(
                 {
@@ -809,7 +841,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
     if mode == "tool":
         selected = {"type": "function", "function": {"name": choice["name"]}}
     elif "name" in choice or selected is None:
-        raise ValueError("unsupported_tool_choice")
+        raise SemanticFieldError("unsupported tool_choice type: " + str(mode)[:64])
     disabled = choice.get("disable_parallel_tool_use", False)
     if not isinstance(disabled, bool):
         raise ValueError("invalid_parallel_choice")
