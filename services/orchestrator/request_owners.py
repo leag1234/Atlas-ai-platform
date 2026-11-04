@@ -2,8 +2,8 @@
 
 Every request writes its files under /home/user/requests/<request id>.  The files
 terminal mounts all of them, so a download link alone must not be enough to read a
-file: the front-door identity of the caller must be the identity that made the
-request.  Identities are stored as SHA-256 digests of the normalized e-mail (the
+recorded request's file: the front-door identity of the caller must be the
+identity that made the request.  Identities are stored as SHA-256 digests of the normalized e-mail (the
 front door asserts the same e-mail that Open WebUI forwards), never in clear.
 """
 
@@ -75,8 +75,14 @@ def record(request_id: str, identity: str | None) -> bool:
     return True
 
 
-def owns(request_id: str, identity: str | None) -> bool:
-    """Fail closed: an unknown request, an unusable identity or a store error is no."""
+def may_read(request_id: str, identity: str | None) -> bool:
+    """Whether ``identity`` may read the files of ``request_id``.
+
+    A request recorded with another owner is refused.  A request with no recorded
+    owner predates this binding (owner decision 2026-11-05): its existing links
+    keep working, as before, on the strength of the unguessable request id.  An
+    unusable identity or a store error is refused.
+    """
     if not REQUEST_ID.fullmatch(request_id) or not usable(identity):
         return False
     assert identity is not None
@@ -90,4 +96,4 @@ def owns(request_id: str, identity: str | None) -> bool:
             db.close()
     except (OSError, sqlite3.Error):
         return False
-    return row is not None and hmac.compare_digest(str(row[0]), digest(identity))
+    return row is None or hmac.compare_digest(str(row[0]), digest(identity))

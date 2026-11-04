@@ -115,12 +115,94 @@ def download_owned(header: bytes) -> bool:
     request_id = download_request(header)
     if request_id is None:
         return True
-    from services.orchestrator.request_owners import owns
+    from services.orchestrator.request_owners import may_read
 
     found = re.findall(rb"(?im)^x-atlas-user:[ \t]*([^\r\n]*)", header)
     if len(found) != 1:
         return False
-    return owns(request_id, found[0].strip().decode("latin1"))
+    return may_read(request_id, found[0].strip().decode("latin1"))
+
+
+# Types a browser shows without running anything; everything else is downloaded.
+INLINE_TYPES = (
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "text/plain",
+)
+MEDIA_TYPE = re.compile(
+    r"[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+(?:;[ ]?charset=[A-Za-z0-9_-]+)?"
+)
+NOT_FOUND = (
+    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
+    b"Cache-Control: private, no-store\r\nConnection: close\r\n\r\n"
+)
+
+
+def files_terminal() -> tuple[str, int]:
+    """The files terminal's loopback publisher, as the orchestrator reaches it."""
+    return "127.0.0.1", atlas_ports().port("terminal")
+
+
+def serve_download(
+    client: socket.socket, header: bytes, files: tuple[str, int]
+) -> None:
+    """Read one allowed download from the files terminal with its own key.
+
+    Stable mode grants Open WebUI users no access to the files terminal, so its
+    proxy (and the terminal tools it would offer in chats) is closed; the relay
+    serves the single allowed route itself, after the owner check.
+    """
+    import http.client
+    from urllib.parse import quote
+
+    method = header.split(b" ", 1)[0].decode("latin1").upper()
+    path = normalized_path(header)
+    key = os.environ.get("OPEN_TERMINAL_API_KEY", "")
+    if path is None or DOWNLOAD.fullmatch(path) is None or not key.strip():
+        client.sendall(NOT_FOUND)
+        return
+    relative = path.removeprefix("/api/v1/terminals/atlas-files/files/serve/")
+    connection = http.client.HTTPConnection(*files, timeout=30)
+    try:
+        connection.request(
+            method,
+            "/files/serve/" + quote(relative, safe="/"),
+            headers={"Authorization": "Bearer " + key, "Accept-Encoding": "identity"},
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            client.sendall(NOT_FOUND)
+            return
+        media = (response.getheader("content-type") or "").strip()
+        if not MEDIA_TYPE.fullmatch(media):
+            media = "application/octet-stream"
+        inline = media.split(";", 1)[0].lower() in INLINE_TYPES
+        filename = posixpath.basename(path)
+        head = [
+            b"HTTP/1.1 200 OK",
+            b"Content-Type: " + media.encode("latin1"),
+            b"X-Content-Type-Options: nosniff",
+            b"Cache-Control: private, no-store",
+            b"Content-Disposition: "
+            + (b"inline" if inline else b"attachment")
+            + b'; filename="'
+            + filename.encode("latin1")
+            + b'"',
+            b"Connection: close",
+        ]
+        length = response.getheader("content-length")
+        if length is not None and length.isdigit():
+            head.append(b"Content-Length: " + length.encode())
+        client.sendall(b"\r\n".join(head) + b"\r\n\r\n")
+        while chunk := response.read(65536):
+            client.sendall(chunk)
+    except (OSError, http.client.HTTPException):
+        client.sendall(NOT_FOUND)
+    finally:
+        connection.close()
 
 
 def stable_route_allowed(header: bytes) -> bool:
@@ -184,7 +266,7 @@ def loopback_forward(
 
 @contextmanager
 def loopback_html_injector(
-    binding: str, target: tuple[str, int]
+    binding: str, target: tuple[str, int], files: tuple[str, int] | None = None
 ) -> Iterator[tuple[str, int]]:
     """TCP relay that rewrites only the initial uncompressed HTML response.
 
@@ -304,10 +386,10 @@ def loopback_html_injector(
                             return
                         if not download_owned(header):
                             # Same answer as an unknown file: no owner oracle.
-                            client.sendall(
-                                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
-                                b"Cache-Control: private, no-store\r\nConnection: close\r\n\r\n"
-                            )
+                            client.sendall(NOT_FOUND)
+                            return
+                        if download_request(header) is not None:
+                            serve_download(client, header, files or files_terminal())
                             return
                         header = without_header(header, b"x-atlas-proxy-secret")
                         header = without_header(header, b"x-atlas-user-role")
