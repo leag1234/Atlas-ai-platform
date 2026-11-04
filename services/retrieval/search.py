@@ -1,6 +1,7 @@
 """Hybrid retrieval; this module never reads evaluation labels (POC-F2)."""
 
 from packages.limits import LimitError
+from packages.provider_calls import mark_started
 
 import json
 import logging
@@ -39,6 +40,7 @@ class Gateway:
         self.request_bytes = self.response_bytes = 0
 
     def post(self, operation: str, payload: dict[str, object]) -> object:
+        mark_started()
         data = json.dumps(payload, allow_nan=False).encode()
         self.request_bytes = len(data)
         self.response_bytes = 0

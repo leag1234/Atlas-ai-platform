@@ -4,6 +4,7 @@ from services.orchestrator.image_errors import read_error, decode_error
 from packages.profiles import PROFILES
 from packages import context_usage
 from packages.limits import LimitError
+from packages.provider_calls import mark_started
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
 import json
@@ -90,6 +91,10 @@ class GatewayError(PublicFailure):
         super().__init__(code)
 
 
+# Gateway endpoints that never call a model provider (configuration and health).
+FREE_PATHS = ("/agent/config", "/images/ready")
+
+
 class GatewayModel:
     def __init__(self, url: str, configuration: Configuration) -> None:
         self.url, self.configuration = url.rstrip("/"), configuration
@@ -165,6 +170,9 @@ class GatewayModel:
 
     @staticmethod
     async def post(url: str, payload: Message, timeout: float) -> Message:
+        if not url.endswith(FREE_PATHS):
+            # Conservative: any other gateway or retrieval call may reach a provider.
+            mark_started()
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False

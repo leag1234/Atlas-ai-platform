@@ -436,8 +436,10 @@ class JsonBudgetTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     calls, {"deadline": 0, "cancel": 1, "retry_disconnect": 2}[failure]
                 )
+                # A deadline before the first provider call sent nothing: no charge.
                 self.assertEqual(
-                    env.store.usage("alice")["unknown_micro_eur"], plan.reserved
+                    env.store.usage("alice")["unknown_micro_eur"],
+                    0 if failure == "deadline" else plan.reserved,
                 )
             finally:
                 env.close()

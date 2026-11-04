@@ -1,6 +1,7 @@
 """Gateway streaming boundary, invoked only after the harness reservation."""
 
 from packages.limits import LimitError
+from packages.provider_calls import mark_started
 
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -16,6 +17,7 @@ sink_context: ContextVar[Sink | None] = ContextVar("stream_sink", default=None)
 async def receive(
     url: str, payload: dict[str, object], timeout: float, sink: Sink
 ) -> dict[str, object]:
+    mark_started()
     total = 0
     result: dict[str, object] | None = None
     try:
