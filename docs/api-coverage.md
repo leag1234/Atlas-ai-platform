@@ -101,7 +101,8 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | `thinking`, `redacted_thinking` blocks in the history | Accepted and removed |
 | `thinking` blocks in answers, when `thinking` is requested and the model reasons (signed with an opaque `signature`; streamed as `thinking_delta` then `signature_delta`, closed before the next block) | Applied |
 | `web_search` server tool (`web_search_20250305` and later): `server_tool_use`, `web_search_tool_result`, `usage.server_tool_use` | Applied |
-| `web_fetch`, code execution (`code_execution`, `bash_code_execution`, `text_editor_code_execution`), memory, computer use, MCP connector, `tool_search` | Not implemented |
+| `web_fetch` server tool (`web_fetch_20250910` and later): `server_tool_use`, `web_fetch_tool_result` (text document) or `web_fetch_tool_error`, `usage.server_tool_use.web_fetch_requests`; `max_uses`, `allowed_domains`, `blocked_domains`, `max_content_tokens`. Only addresses present in the conversation or in earlier search results are read (`url_not_allowed` otherwise); `citations` enabled refused by name; refused in strict privacy | Applied |
+| Code execution (`code_execution`, `bash_code_execution`, `text_editor_code_execution`), memory, computer use, MCP connector, `tool_search` | Not implemented |
 | Citations on text blocks | Not implemented |
 | Stream events: `message_start`, `content_block_start`, `content_block_delta` (`text_delta`, `input_json_delta`), `content_block_stop`, `message_delta`, `message_stop` | Applied |
 | `stop_reason: "stop_sequence"` with the sequence that stopped the text | Applied when the provider names the sequence (models served by Scaleway); `end_turn` otherwise (the Mistral API does not say which sequence matched) |
@@ -129,5 +130,5 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 ## 6. Open items, in the order planned
 
 1. Code interpreter on Responses and Messages (needs a container per request, see the terminal isolation work).
-2. Anthropic `web_fetch`, citations, and the remaining Responses stream events.
+2. Citations, and the remaining Responses stream events.
 3. The other families outside chat (images, audio, files, batches): phase 2.

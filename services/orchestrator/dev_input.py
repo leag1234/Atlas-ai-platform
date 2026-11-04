@@ -721,6 +721,22 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
                         ),
                     }
                 )
+            elif kind == "web_fetch_tool_result" and role == "assistant":
+                result = block.get("content")
+                result = result if isinstance(result, dict) else {}
+                document = result.get("content")
+                document = document if isinstance(document, dict) else {}
+                source = document.get("source")
+                source = source if isinstance(source, dict) else {}
+                texts.append(
+                    {
+                        "type": "text",
+                        "text": "Fetched page "
+                        + str(result.get("url", ""))
+                        + ": "
+                        + str(source.get("data", result.get("error_code", "")))[:20000],
+                    }
+                )
             elif kind in ("thinking", "redacted_thinking") and role == "assistant":
                 # Reasoning of an earlier turn: the routed models cannot use another
                 # model's signed reasoning, and it is not part of the answer.
@@ -826,6 +842,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
             )
     tools = []
     hosted: list[str] = []
+    fetch_options: dict[str, Any] = {}
     for tool in value.get("tools", []):
         if str(tool.get("type", "")).startswith("web_search_"):
             # Server tool: Atlas runs the search between model turns (hosted_tools).
@@ -838,6 +855,33 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
             if "web_search" not in hosted:
                 hosted.append("web_search")
                 tools.append(SEARCH_FUNCTION)
+            continue
+        if str(tool.get("type", "")).startswith("web_fetch_"):
+            # Server tool: Atlas reads the page between model turns (hosted_tools).
+            from services.orchestrator.hosted_tools import FETCH_FUNCTION
+
+            fields(
+                tool,
+                "type name max_uses allowed_domains blocked_domains citations"
+                " max_content_tokens cache_control",
+            )
+            if (tool.get("citations") or {}).get("enabled"):
+                raise SemanticFieldError(
+                    "unsupported web_fetch citations: leave citations disabled"
+                )
+            if "web_fetch" not in hosted:
+                hosted.append("web_fetch")
+                tools.append(FETCH_FUNCTION)
+                fetch_options = {
+                    key: tool[key]
+                    for key in (
+                        "max_uses",
+                        "allowed_domains",
+                        "blocked_domains",
+                        "max_content_tokens",
+                    )
+                    if tool.get(key) is not None
+                }
             continue
         fields(tool, "name description input_schema cache_control")
         cache_hint(tool)
@@ -883,6 +927,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
             if value.get(source) not in (None, [])
         },
         **({"_hosted": hosted} if hosted else {}),
+        **({"_fetch": fetch_options} if "web_fetch" in hosted else {}),
     }
 
 
@@ -898,10 +943,13 @@ def responses(value: dict[str, Any]) -> ChatInput:
 
 def messages(value: dict[str, Any]) -> ChatInput:
     body = messages_body(value)
+    body.pop("_fetch", None)
     # Hosted tools run only on the routed key route; elsewhere they stay unavailable.
     if body.pop("_hosted", None):
         body["tools"] = [
-            tool for tool in body["tools"] if tool["function"]["name"] != "web_search"
+            tool
+            for tool in body["tools"]
+            if tool["function"]["name"] not in ("web_search", "web_fetch")
         ]
     return ChatInput.model_validate(body)
 
@@ -910,6 +958,7 @@ def text_only(body: dict[str, Any]) -> dict[str, Any]:
     """The body with media parts as text, for the checks of the text-only schema."""
     copy = dict(body, messages=[dict(m) for m in body["messages"]])
     copy.pop("_hosted", None)
+    copy.pop("_fetch", None)
     for message in copy["messages"]:
         if isinstance(message.get("content"), list):
             message["content"] = "\n".join(

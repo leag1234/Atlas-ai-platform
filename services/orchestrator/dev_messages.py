@@ -59,11 +59,53 @@ class Wire:
         """Opaque signature of a thinking block; clients send it back unchanged."""
         return "atlas-" + hashlib.sha256(text.encode()).hexdigest()
 
+    @staticmethod
+    def fetch_blocks(item: dict[str, Any]) -> list[dict[str, Any]]:
+        identifier = "srvtoolu_" + str(item["id"]).removeprefix("wf_")
+        result: dict[str, Any] = (
+            {"type": "web_fetch_tool_error", "error_code": item["error"]}
+            if "error" in item
+            else {
+                "type": "web_fetch_result",
+                "url": item["url"],
+                "content": {
+                    "type": "document",
+                    "source": {
+                        "type": "text",
+                        "media_type": "text/plain",
+                        "data": item.get("text", ""),
+                    },
+                },
+                "retrieved_at": item.get("retrieved_at", ""),
+            }
+        )
+        return [
+            {
+                "type": "server_tool_use",
+                "id": identifier,
+                "name": "web_fetch",
+                "input": {"url": item["url"]},
+            },
+            {
+                "type": "web_fetch_tool_result",
+                "tool_use_id": identifier,
+                "content": result,
+            },
+        ]
+
+    def hosted_blocks(self, item: dict[str, Any]) -> list[dict[str, Any]]:
+        if item["type"] == "web_fetch_call":
+            return self.fetch_blocks(item)
+        return self.search_blocks(item)
+
     def result(self) -> dict[str, Any]:
         content = []
-        searches = 0
+        searches = fetches = 0
         for item in self.core.items:
-            if item["type"] == "web_search_call":
+            if item["type"] == "web_fetch_call":
+                fetches += 1
+                content += self.fetch_blocks(item)
+            elif item["type"] == "web_search_call":
                 searches += 1
                 content += self.search_blocks(item)
             elif item["type"] == "message":
@@ -113,8 +155,13 @@ class Wire:
                 "input_tokens": usage["prompt_tokens"],
                 "output_tokens": usage["completion_tokens"],
                 **(
-                    {"server_tool_use": {"web_search_requests": searches}}
-                    if searches
+                    {
+                        "server_tool_use": {
+                            "web_search_requests": searches,
+                            **({"web_fetch_requests": fetches} if fetches else {}),
+                        }
+                    }
+                    if searches or fetches
                     else {}
                 ),
             },
@@ -168,14 +215,14 @@ class Wire:
                         "error": {"type": "api_error", "message": "provider_error"},
                     }
                 )
-            elif (
-                kind == "response.output_item.added"
-                and event["item"]["type"] == "web_search_call"
+            elif kind == "response.output_item.added" and event["item"]["type"] in (
+                "web_search_call",
+                "web_fetch_call",
             ):
                 continue
-            elif (
-                kind == "response.output_item.done"
-                and event["item"]["type"] == "web_search_call"
+            elif kind == "response.output_item.done" and event["item"]["type"] in (
+                "web_search_call",
+                "web_fetch_call",
             ):
                 index = event["output_index"]
                 if index in self.extra:
@@ -184,7 +231,7 @@ class Wire:
                 self.extra[index] = 1
                 first = self.block(index)
                 for offset, search_block in enumerate(
-                    self.search_blocks(event["item"])
+                    self.hosted_blocks(event["item"])
                 ):
                     events += [
                         {

@@ -804,6 +804,123 @@ class KeyResponsesTests(unittest.TestCase):
             )
             self.assertEqual(follow.status_code, 200, follow.text)
 
+    def test_hosted_web_fetch_on_messages(self) -> None:
+        """The Anthropic web_fetch server tool reads only addresses the conversation holds."""
+        target = {"url": "https://example.invalid/report"}
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            if body["messages"][-1]["role"] == "tool":
+                delta: dict[str, Any] = {"content": "The report says 42."}
+                reason = "stop"
+            else:
+                delta = {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_fetch",
+                            "type": "function",
+                            "function": {
+                                "name": "web_fetch",
+                                "arguments": json.dumps({"url": target["url"]}),
+                            },
+                        }
+                    ]
+                }
+                reason = "tool_calls"
+            for frame in (
+                {"choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": reason}]},
+                {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 3}},
+            ):
+                yield ("data: " + json.dumps(frame) + "\n\n").encode()
+            yield b"data: [DONE]\n\n"
+
+        fetched: list[str] = []
+
+        async def fake_fetch(
+            url: str, timeout: float, key_id: str, max_tokens: int | None
+        ) -> dict[str, Any]:
+            fetched.append(url)
+            return {"url": url, "text": "Result: 42.", "retrieved_at": "2026-11-04"}
+
+        headers = dict(self.headers, **{"anthropic-version": "2023-06-01"})
+        body: dict[str, Any] = {
+            "model": "atlas-code",
+            "max_tokens": 200,
+            "tools": [{"type": "web_fetch_20250910", "name": "web_fetch"}],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Summarize https://example.invalid/report please.",
+                }
+            ],
+        }
+        url = "/api/atlas/v1/messages"
+        with (
+            patch.object(gateway, "transport", transport),
+            patch("services.orchestrator.hosted_tools.web_fetch", fake_fetch),
+        ):
+            reply = self.client.post(url, headers=headers, json=body)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            result = reply.json()
+            self.assertEqual(
+                [b["type"] for b in result["content"]],
+                ["server_tool_use", "web_fetch_tool_result", "text"],
+            )
+            self.assertEqual(result["content"][0]["name"], "web_fetch")
+            fetch_result = result["content"][1]["content"]
+            self.assertEqual(fetch_result["type"], "web_fetch_result")
+            self.assertEqual(fetch_result["content"]["source"]["data"], "Result: 42.")
+            self.assertEqual(
+                result["usage"]["server_tool_use"],
+                {"web_search_requests": 0, "web_fetch_requests": 1},
+            )
+            self.assertEqual(fetched, ["https://example.invalid/report"])
+
+            streamed = self.client.post(
+                url, headers=headers, json=dict(body, stream=True)
+            )
+            starts = [
+                json.loads(line[6:])["content_block"]["type"]
+                for line in streamed.text.splitlines()
+                if line.startswith("data: ") and '"content_block_start"' in line
+            ]
+            self.assertEqual(
+                starts, ["server_tool_use", "web_fetch_tool_result", "text"]
+            )
+
+            # An address the model made up is refused, and nothing is fetched.
+            target["url"] = "https://attacker.invalid/?leak=secret"
+            refused = self.client.post(url, headers=headers, json=body).json()
+            self.assertEqual(
+                refused["content"][1]["content"],
+                {"type": "web_fetch_tool_error", "error_code": "url_not_allowed"},
+            )
+            self.assertEqual(len(fetched), 2)
+
+            # The blocks come back in the next turn's history.
+            follow = self.client.post(
+                url,
+                headers=headers,
+                json=dict(
+                    body,
+                    messages=[
+                        *body["messages"],
+                        {"role": "assistant", "content": result["content"]},
+                        {"role": "user", "content": "Thanks."},
+                    ],
+                ),
+            )
+            self.assertEqual(follow.status_code, 200, follow.text)
+
+            strict = self.client.post(
+                url, headers=dict(headers, **{"x-atlas-privacy": "strict"}), json=body
+            )
+            self.assertEqual(strict.status_code, 400, strict.text)
+            self.assertIn("Web fetch is not available", strict.text)
+
     def test_client_shell_and_apply_patch_tools(self) -> None:
         """The client-executed shell and apply_patch tools of the Responses API."""
         arguments = {

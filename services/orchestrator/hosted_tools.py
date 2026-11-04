@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 HOSTED_TOOLS = ("web_search", "web_search_preview")
+HOSTED_NAMES = ("web_search", "web_fetch")
 MAX_ROUNDS = 4
 SEARCH_FUNCTION = {
     "type": "function",
@@ -76,3 +77,87 @@ def search_query(arguments: str) -> str:
     except ValueError:
         return ""
     return str(value.get("query", "")) if isinstance(value, dict) else ""
+
+
+FETCH_FUNCTION = {
+    "type": "function",
+    "function": {
+        "name": "web_fetch",
+        "description": (
+            "Read a web page whose exact address appears in the conversation or in earlier "
+            "search results. Returns its text."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"url": {"type": "string"}},
+            "required": ["url"],
+        },
+    },
+}
+
+
+def fetch_url(arguments: str) -> str:
+    try:
+        value = json.loads(arguments)
+    except ValueError:
+        return ""
+    return str(value.get("url", "")) if isinstance(value, dict) else ""
+
+
+def domain_match(host: str, domains: list[str]) -> bool:
+    return any(host == d or host.endswith("." + d) for d in domains)
+
+
+def fetch_refusal(
+    url: str, seen: str, options: dict[str, Any], used: int
+) -> str | None:
+    """Error code when the page may not be read, as the Messages web_fetch tool reports it.
+
+    Only an address already present in the conversation or in earlier search results can
+    be read, so a page cannot make the model send data to an address of its choice.
+    """
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").lower()
+    if not url.startswith(("http://", "https://")) or not host:
+        return "invalid_input"
+    if isinstance(options.get("max_uses"), int) and used >= options["max_uses"]:
+        return "max_uses_exceeded"
+    if url not in seen and url.rstrip("/") not in seen:
+        return "url_not_allowed"
+    allowed = [str(d).lower() for d in options.get("allowed_domains") or []]
+    blocked = [str(d).lower() for d in options.get("blocked_domains") or []]
+    if (allowed and not domain_match(host, allowed)) or domain_match(host, blocked):
+        return "url_not_allowed"
+    return None
+
+
+async def web_fetch(
+    url: str, timeout: float, key_id: str, max_tokens: int | None
+) -> dict[str, Any]:
+    """Text of a page for the model, through the assistant's validated fetch."""
+    from services.orchestrator.tools import Fetch, Runtime
+    from services.orchestrator.cache import Cache
+
+    runtime = Runtime(
+        Cache(Path(os.environ.get("ATLAS_WEB_CACHE", "BRAIN/web-cache.sqlite"))),
+        Decimal(0),
+        "",
+    )
+    try:
+        page = await runtime.fetch(Fetch(url=url[:4096]), timeout)
+    except (ValueError, KeyError, TimeoutError, OSError, RuntimeError):
+        page = None
+    logging.getLogger("atlas.api").info(
+        json.dumps({"event": "api_hosted_fetch", "key": key_id, "ok": page is not None})
+    )
+    if page is None:
+        return {"url": url, "error": "url_not_accessible"}
+    text = str(page.get("text", ""))
+    if max_tokens:
+        text = text[: max_tokens * 4]
+    return {
+        "url": str(page.get("url", url)),
+        "text": text,
+        "retrieved_at": str(page.get("consulted_at", "")),
+    }
