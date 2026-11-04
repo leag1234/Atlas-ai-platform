@@ -221,13 +221,20 @@ async def prepare(request: ChatRequest, item: Interaction) -> bool:
                     ]
                     item.context_manifest["user_memory_tokens"] = tokens(content)
                 return False
-        except (ProjectError, aiohttp.ClientError, TimeoutError) as exc:
+        except ProjectError as exc:
             # Do not silently generate a personalized answer when the store failed.
-            answer = (
-                str(exc.body["message"])
-                if isinstance(exc, ProjectError)
-                else "Personal memory is unavailable. Please retry."
-            )
+            answer = str(exc.body["message"])
+        except (aiohttp.ClientError, TimeoutError) as exc:
+            # The store did not answer (for example while the instance restarts and the
+            # API standby serves requests): a retryable error, never a 200 answer that
+            # only says so (live measurement 2026-11-04: 54 such answers in 11 seconds).
+            from services.orchestrator.model import GatewayError
+
+            raise GatewayError(
+                "memory_unavailable",
+                503,
+                "Personal memory is unavailable. Please retry.",
+            ) from exc
     item.reponse, item.state = answer, "done"
     if sink := sink_context.get():
         await sink({"delta": {"content": answer}, "memory": True})
