@@ -237,10 +237,23 @@ class DevInputTests(unittest.TestCase):
             json.loads(request.messages[-1].content or ""), {"tool_error": "missing"}
         )
         self.assertFalse(request.parallel_tool_calls)
-        self.assertEqual(request.reasoning_effort, "none")
+        # output_config.effort is applied; thinking budgets map to an effort level.
+        self.assertEqual(request.reasoning_effort, "high")
+        without = {k: v for k, v in payload.items() if k != "output_config"}
+        for thinking, effort in (
+            ({"type": "disabled"}, "none"),
+            ({"type": "adaptive"}, "medium"),
+            ({"type": "enabled", "budget_tokens": 1024}, "low"),
+            ({"type": "enabled", "budget_tokens": 10000}, "medium"),
+            ({"type": "enabled", "budget_tokens": 20000}, "high"),
+        ):
+            body = without | {"thinking": thinking, "max_tokens": 32000}
+            self.assertEqual(messages(body).reasoning_effort, effort)
         extra: dict[str, Any]
         for extra in (
-            {"thinking": {"type": "adaptive"}},
+            {"thinking": {"type": "enabled", "budget_tokens": 512}},
+            {"thinking": {"type": "enabled", "budget_tokens": 10**6}},
+            {"thinking": {"type": "sometimes"}},
             {"output_config": {"format": {}}},
             {"metadata": {"tenant": "outside"}},
             {"system": [{"type": "image"}]},

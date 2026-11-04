@@ -652,10 +652,26 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
         "model messages system max_tokens tools tool_choice stream temperature metadata thinking output_config"
         " stop_sequences top_p top_k cache_control service_tier",
     )
-    if value.get("thinking", {"type": "disabled"}) != {"type": "disabled"}:
+    thinking = value.get("thinking", {"type": "disabled"})
+    fields(thinking, "type budget_tokens display")
+    effort = "none"
+    if thinking["type"] == "enabled":
+        budget = thinking.get("budget_tokens")
+        if (
+            type(budget) is not int
+            or budget < 1024
+            or budget >= int(value.get("max_tokens") or 0)
+        ):
+            raise SemanticFieldError(
+                "invalid thinking.budget_tokens: an integer from 1024, below max_tokens"
+            )
+        # The models take an effort level, not a token budget.
+        effort = "low" if budget <= 4096 else "medium" if budget <= 16384 else "high"
+    elif thinking["type"] == "adaptive":
+        effort = "medium"
+    elif thinking["type"] != "disabled":
         raise SemanticFieldError(
-            "unsupported thinking: Atlas does not return thinking blocks yet; "
-            'leave thinking out or send {"type": "disabled"}'
+            "unsupported thinking type: " + str(thinking["type"])[:64]
         )
     config = value.get("output_config", {})
     fields(config, "effort")
@@ -663,6 +679,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
         raise SemanticFieldError(
             "unsupported output_config.effort: use low, medium or high"
         )
+    effort = config.get("effort", effort)
     metadata = value.get("metadata", {})
     if (
         not isinstance(metadata, dict)
@@ -855,6 +872,7 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
         "tool_choice": selected,
         "parallel_tool_calls": not disabled,
         "temperature": value.get("temperature", 0),
+        "reasoning_effort": effort,
         **{
             target: value[source]
             for source, target in (

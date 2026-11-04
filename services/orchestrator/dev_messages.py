@@ -1,5 +1,6 @@
 """Messages events over the shared validated text/function stream."""
 
+import hashlib
 from typing import Any
 from pydantic_core import from_json
 from services.orchestrator.dev_chat import Output
@@ -9,7 +10,17 @@ from services.orchestrator.dev_responses import Wire as ResponsesWire
 class Wire:
     def __init__(self, output: Output, request: dict[str, Any]) -> None:
         self.output = output
-        self.core = ResponsesWire(output, request, reasoning=False)
+        # Thinking blocks only when the client asked for thinking, as Messages does.
+        thinking = request.get("thinking")
+        self.thinking = isinstance(thinking, dict) and thinking.get("type") in (
+            "enabled",
+            "adaptive",
+        )
+        self.core = ResponsesWire(output, request, reasoning=self.thinking)
+        # Messages blocks never overlap: the thinking block is signed and closed when
+        # the next block opens, and its end-of-answer events are then skipped.
+        self.thinking_open: int | None = None
+        self.closed: set[int] = set()
         # A web search is two Messages blocks (server_tool_use, web_search_tool_result)
         # for one Responses item: core output indexes are shifted accordingly.
         self.extra: dict[int, int] = {}
@@ -43,6 +54,11 @@ class Wire:
             },
         ]
 
+    @staticmethod
+    def signature(text: str) -> str:
+        """Opaque signature of a thinking block; clients send it back unchanged."""
+        return "atlas-" + hashlib.sha256(text.encode()).hexdigest()
+
     def result(self) -> dict[str, Any]:
         content = []
         searches = 0
@@ -52,6 +68,15 @@ class Wire:
                 content += self.search_blocks(item)
             elif item["type"] == "message":
                 content.append({"type": "text", "text": item["content"][0]["text"]})
+            elif item["type"] == "reasoning":
+                text = item["content"][0]["text"]
+                content.append(
+                    {
+                        "type": "thinking",
+                        "thinking": text,
+                        "signature": self.signature(text),
+                    }
+                )
             else:
                 # A truncated object is explicitly max_tokens, never a completed call.
                 args = from_json(
@@ -107,6 +132,35 @@ class Wire:
         events: list[dict[str, Any]] = []
         for event in self.core.feed(chunk):
             kind = event["type"]
+            if (
+                kind in ("response.reasoning_text.done", "response.output_item.done")
+                and event["output_index"] in self.closed
+            ):
+                continue
+            if (
+                kind == "response.output_item.added"
+                and event["item"]["type"] != "reasoning"
+                and self.thinking_open is not None
+            ):
+                index, self.thinking_open = self.thinking_open, None
+                self.closed.add(index)
+                text = self.core.items[index]["content"][0]["text"]
+                events += [
+                    {
+                        "type": "content_block_delta",
+                        "index": self.block(index),
+                        "delta": {
+                            "type": "signature_delta",
+                            "signature": self.signature(text),
+                        },
+                    },
+                    {"type": "content_block_stop", "index": self.block(index)},
+                ]
+            if (
+                kind == "response.output_item.added"
+                and event["item"]["type"] == "reasoning"
+            ):
+                self.thinking_open = event["output_index"]
             if kind == "error":
                 events.append(
                     {
@@ -145,7 +199,9 @@ class Wire:
             elif kind == "response.output_item.added":
                 item = event["item"]
                 block: dict[str, Any] = (
-                    {"type": "text", "text": ""}
+                    {"type": "thinking", "thinking": "", "signature": ""}
+                    if item["type"] == "reasoning"
+                    else {"type": "text", "text": ""}
                     if item["type"] == "message"
                     else {
                         "type": "tool_use",
@@ -175,6 +231,25 @@ class Wire:
                         "type": "content_block_delta",
                         "index": self.block(event["output_index"]),
                         "delta": delta,
+                    }
+                )
+            elif kind == "response.reasoning_text.delta":
+                events.append(
+                    {
+                        "type": "content_block_delta",
+                        "index": self.block(event["output_index"]),
+                        "delta": {"type": "thinking_delta", "thinking": event["delta"]},
+                    }
+                )
+            elif kind == "response.reasoning_text.done":
+                events.append(
+                    {
+                        "type": "content_block_delta",
+                        "index": self.block(event["output_index"]),
+                        "delta": {
+                            "type": "signature_delta",
+                            "signature": self.signature(event["text"]),
+                        },
                     }
                 )
             elif kind == "response.output_item.done":
