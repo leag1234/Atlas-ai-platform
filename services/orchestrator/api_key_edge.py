@@ -362,9 +362,21 @@ async def embeddings(request: Request) -> Response:
     missing = require(request, "model")
     if missing is not None:
         return missing
+    # Read with a bound, as the chat route does: a body is never held unbounded in memory.
+    body = bytearray()
     try:
-        raw = json.loads(await request.body())
-    except ValueError:
+        async with asyncio.timeout(5):
+            async for chunk in request.stream():
+                body.extend(chunk)
+                if len(body) > gateway_embeddings.MAX_BODY_BYTES:
+                    return error(
+                        413,
+                        "body_limit",
+                        measured=len(body),
+                        limit=gateway_embeddings.MAX_BODY_BYTES,
+                    )
+        raw = json.loads(body)
+    except (ValueError, TimeoutError):
         return error(400, "invalid_request")
     if not isinstance(raw, dict):
         return error(400, "invalid_request")
@@ -396,6 +408,15 @@ async def embeddings(request: Request) -> Response:
             measured=len(texts),
             limit=gateway_embeddings.MAX_INPUTS,
             unit="inputs",
+        )
+    total = sum(len(text.encode()) for text in texts)
+    if total > gateway_embeddings.MAX_TOTAL_BYTES:
+        return error(
+            400,
+            "input_limit",
+            measured=total,
+            limit=gateway_embeddings.MAX_TOTAL_BYTES,
+            unit="bytes",
         )
     longest = max(len(text.encode()) for text in texts)
     if longest > gateway_embeddings.MAX_INPUT_BYTES:

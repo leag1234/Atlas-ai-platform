@@ -123,7 +123,15 @@ def fetch_refusal(
         return "invalid_input"
     if isinstance(options.get("max_uses"), int) and used >= options["max_uses"]:
         return "max_uses_exceeded"
-    if url not in seen and url.rstrip("/") not in seen:
+    # Exact addresses only: a substring test would let https://a.co through when only
+    # https://a.com/... was given.
+    import re
+
+    present = {
+        found.rstrip(".,;:!?").rstrip("/")
+        for found in re.findall(r"https?://[^\s\"'<>()\[\]{}\\]+", seen)
+    }
+    if url.rstrip("/") not in present:
         return "url_not_allowed"
     allowed = [str(d).lower() for d in options.get("allowed_domains") or []]
     blocked = [str(d).lower() for d in options.get("blocked_domains") or []]

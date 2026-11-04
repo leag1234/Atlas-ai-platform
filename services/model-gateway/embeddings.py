@@ -16,6 +16,9 @@ from serverless import ServerlessPolicy
 MAX_INPUTS = 2048
 # Context of the embedding role (32768 tokens), counted as UTF-8 bytes / 4 like the chat routes.
 MAX_INPUT_BYTES = 4 * 32768
+# Per request: about two million tokens of text, within a bounded JSON body.
+MAX_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_BODY_BYTES = 16 * 1024 * 1024
 
 
 def price_micro(tokens: int) -> int:
