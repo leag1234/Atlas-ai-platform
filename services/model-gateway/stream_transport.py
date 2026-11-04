@@ -281,6 +281,7 @@ async def attempt(
                 endpoint + "/chat/completions",
                 json=provider_settings.request_options(
                     body,
+                    configured_effort=request.reasoning_effort,
                     role="vision"
                     if classify_task(request.messages) == "vision"
                     else ServerlessPolicy().public_profiles.get(request.profile or ""),

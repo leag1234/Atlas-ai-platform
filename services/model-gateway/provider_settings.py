@@ -114,11 +114,21 @@ def reasoning_control(provider: str | None = None) -> str | None:
 
 
 def request_options(
-    body: dict[str, Any], provider: str | None = None, *, role: str | None = None
+    body: dict[str, Any],
+    provider: str | None = None,
+    *,
+    role: str | None = None,
+    configured_effort: str = "none",
 ) -> dict[str, Any]:
+    """Provider-specific request body.
+
+    `configured_effort` is the operator-configured reasoning effort chosen by the
+    quality controller; a `reasoning_effort` found in the body (for example sent by
+    an API client) never enables reasoning on its own.
+    """
     name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     body = dict(body)
-    effort = str(body.get("reasoning_effort") or "none")
+    effort = configured_effort if configured_effort in REASONING_EFFORTS else "none"
     if name == "hetzner" and isinstance(messages := body.get("messages"), list):
         # Hetzner's chat template accepts system instructions only at the start.
         # Quality finalization/recovery adds instructions after tool evidence.

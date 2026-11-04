@@ -116,11 +116,17 @@ class ProviderFieldTests(unittest.TestCase):
             self.assertEqual(
                 request_options(body, "scaleway")["reasoning_effort"], "medium"
             )
-            thinking = request_options(body, "hetzner", role="text")
+            thinking = request_options(
+                body, "hetzner", role="text", configured_effort="medium"
+            )
             self.assertEqual(
                 thinking["chat_template_kwargs"], {"enable_thinking": True}
             )
             self.assertNotIn("reasoning_effort", thinking)
+            # A client-supplied effort alone never enables the template switch.
+            client = request_options(body, "hetzner", role="text")
+            self.assertEqual(client["chat_template_kwargs"], {"enable_thinking": False})
+            self.assertEqual(client["reasoning_effort"], "none")
             # Default none keeps today's Hetzner switch off and effort none.
             baseline = request_options(dict(body, reasoning_effort="none"), "hetzner")
             self.assertEqual(
