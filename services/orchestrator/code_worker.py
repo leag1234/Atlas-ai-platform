@@ -307,9 +307,14 @@ def perform(root: Path, action: str, args: dict[str, Any]) -> dict[str, Any]:
         old = read_text(path) if path.exists() else ""
         if action == "edit_file":
             before = args["old_text"]
-            if not before or old.count(before) != 1:
+            if not before and not old:
+                # Agents commonly create a file with an empty old_text: allowed only
+                # when the file is missing or empty, never to overwrite content.
+                updated = args["new_text"]
+            elif not before or old.count(before) != 1:
                 raise ValueError("old_text_must_exist_exactly_once")
-            updated = old.replace(before, args["new_text"], 1)
+            else:
+                updated = old.replace(before, args["new_text"], 1)
         else:
             updated = args["content"]
         if len(updated.encode()) > FILE_CAP:
