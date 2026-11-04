@@ -357,7 +357,13 @@ async def chat(request: Request) -> Response:
                     raise
 
             def settle(result: Interaction) -> None:
-                ledger.settle_cost(reservation, Decimal(str(result.cout_eur)))
+                measured = Decimal(str(result.cout_eur))
+                if result.state != "done" and calls.started:
+                    # A provider call may have consumed tokens that were never
+                    # measured: the daily cap keeps at least the reservation, as
+                    # the API key ledger does.
+                    measured = max(measured, reservation.amount)
+                ledger.settle_cost(reservation, measured)
                 if key_reservation is not None:
                     # The reservation stays charged ('unknown') only when a provider
                     # call may have consumed unmeasured tokens; a request that ended

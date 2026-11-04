@@ -865,6 +865,15 @@ class KeyTests(unittest.TestCase):
             (row["charged"], row["state"], row["input_tokens"]),
             (100000, "unknown", None),
         )
+        # The daily cap keeps the reservation too, not the unmeasured 0.
+        from services.orchestrator.daily_budget import DailyLedger
+
+        with sqlite3.connect(DailyLedger().path) as db:
+            measured = db.execute(
+                "SELECT COALESCE(SUM(measured_micro),0) FROM budget_ledger"
+                " WHERE kind='day'"
+            ).fetchone()[0]
+        self.assertEqual(measured, 100000)
 
     def test_http_expired_revoked_invalid_and_quota_before_provider(self) -> None:
         from dev_gateway import Plan
