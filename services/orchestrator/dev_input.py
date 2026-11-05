@@ -577,8 +577,12 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                                 for k, v in member.items()
                                 if k in {"parameters", "strict"}
                             },
-                            "description": description,
                             "name": namespace + "__" + name,
+                            **(
+                                {"description": description}
+                                if isinstance(description, str)
+                                else {}
+                            ),
                         },
                     }
                 )

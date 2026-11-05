@@ -241,7 +241,7 @@ class KeyResponsesTests(unittest.TestCase):
         reply = self.post(payload)
         self.assertEqual(reply.status_code, 400, reply.text)
         self.assertEqual(reply.json()["error"]["type"], "context_exceeded")
-        self.assertEqual(reply.json()["error"]["measured"], 1310956)
+        self.assertEqual(reply.json()["error"]["measured"], 1310952)
         self.assertEqual(reply.json()["error"]["limit"], 1048576)
 
     def test_model_aliases_default_to_code_and_refuse_raw_ids(self) -> None:
@@ -1328,6 +1328,27 @@ class KeyResponsesTests(unittest.TestCase):
             self.assertEqual(
                 functions[1]["function"]["description"], "Report the result."
             )
+
+            reply = self.post(
+                self.payload
+                | {
+                    "tools": [
+                        {
+                            "type": namespace["type"],
+                            "name": namespace["name"],
+                            "tools": [
+                                {
+                                    "type": "function",
+                                    "name": "report",
+                                    "parameters": {"type": "object"},
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+            self.assertNotIn("description", self.inputs[-1]["tools"][0]["function"])
 
     def test_codex_160_tools_json_and_streaming(self) -> None:
         """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""
