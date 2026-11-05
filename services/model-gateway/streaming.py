@@ -5,9 +5,10 @@ from packages.limits import LimitError, MalformedToolCall
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_provider import Completion, Usage
+from packages.validation import malformed_tool_name
 from stream_usage import validate_usage
 
 
@@ -93,14 +94,16 @@ class Frame(BaseModel):
 
 
 class StreamDecoder:
-    def __init__(self, allow_length: bool = False) -> None:
+    def __init__(self, allow_length: bool = False, ignore_calls: bool = False) -> None:
         self.allow_length = allow_length
+        self.ignore_calls = ignore_calls
         self.provider_id: str | None = None
         self.reasoning = ""
         self.buffer = bytearray()
         self.total = 0
         self.text = ""
         self.calls: dict[int, dict[str, str]] = {}
+        self.ignored_calls = False
         self.usage: dict[str, object] | None = None
         self.reason: str | None = None
         self.result: dict[str, object] | None = None
@@ -130,7 +133,27 @@ class StreamDecoder:
             if data == b"[DONE]":
                 self._done()
                 continue
-            frame = Frame.model_validate(json.loads(data))
+            payload = json.loads(data)
+            if self.ignore_calls and isinstance(payload, dict):
+                choices = payload.get("choices", [])
+                if isinstance(choices, list):
+                    for choice in choices:
+                        if not isinstance(choice, dict):
+                            continue
+                        delta = choice.get("delta")
+                        if isinstance(delta, dict):
+                            self.ignored_calls = (
+                                self.ignored_calls or "tool_calls" in delta
+                            )
+                            delta.pop("tool_calls", None)
+            try:
+                frame = Frame.model_validate(payload)
+            except ValidationError as error:
+                malformed = malformed_tool_name(error)
+                if malformed is not None:
+                    self.calls.clear()
+                    raise malformed from None
+                raise
             if frame.id:
                 if self.provider_id and frame.id != self.provider_id:
                     raise ValueError("provider_id_changed")
@@ -154,15 +177,19 @@ class StreamDecoder:
                         else:
                             self.reasoning += value
                 for call in delta.tool_calls:
+                    if self.ignore_calls:
+                        continue
                     target = self.calls.setdefault(
                         call.index, {"id": "", "name": "", "arguments": ""}
                     )
                     target["id"] += call.id
                     target["name"] += call.function.name
+                    if len(target["name"]) > 80:
+                        self.calls.clear()
+                        raise MalformedToolCall(len(target["name"]))
                     target["arguments"] += call.function.arguments
                     for key, maximum in (
                         ("id", 200),
-                        ("name", 80),
                         ("arguments", 16000),
                     ):
                         if len(target[key]) > maximum:
@@ -176,7 +203,11 @@ class StreamDecoder:
                                 maximum,
                                 key + " characters",
                             )
-                self.reason = choice.finish_reason
+                self.reason = (
+                    "stop"
+                    if self.ignore_calls and choice.finish_reason == "tool_calls"
+                    else choice.finish_reason
+                )
         return events
 
     def _done(self) -> None:

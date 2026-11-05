@@ -61,6 +61,20 @@ PATTERNS = {
 }
 # A requested file name such as notes.md selects documents only when nothing else matched and there is no repository.
 DOCUMENT_EXTENSION = r"\.(?:md|txt)\b"
+SOURCE_SUFFIXES = {
+    "py",
+    "js",
+    "ts",
+    "tsx",
+    "jsx",
+    "go",
+    "rs",
+    "java",
+    "c",
+    "cpp",
+    "sh",
+}
+OFFICE_FORMATS = {"pptx", "pdf", "docx", "xlsx"}
 
 
 class ToolSelectionError(ValueError):
@@ -79,6 +93,36 @@ class Switch(BaseModel):
     focus: str | None = None
 
 
+def office_format_requested(question: str) -> bool:
+    from services.orchestrator.file_content import requested_formats
+
+    return bool(set(requested_formats(question)) & OFFICE_FORMATS)
+
+
+def code_context(
+    question: str, files: list[dict[str, Any]], repository: bool = False
+) -> bool:
+    import unicodedata
+
+    if repository:
+        return True
+    if any(
+        str(file.get("relative_path", "")).lower().rsplit(".", 1)[-1] in SOURCE_SUFFIXES
+        for file in files
+    ):
+        return True
+    text = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", question.lower())
+        if not unicodedata.combining(character)
+    )
+    return any(
+        token.rsplit(".", 1)[-1] in SOURCE_SUFFIXES
+        for token in re.split(r"[^\w.]+", text)
+        if "." in token
+    )
+
+
 def select_group(
     question: str, files: list[dict[str, Any]], repository: bool = False
 ) -> str:
@@ -89,6 +133,8 @@ def select_group(
         for c in unicodedata.normalize("NFKD", question.lower())
         if not unicodedata.combining(c)
     )
+    if code_context(text, files, repository) and not office_format_requested(text):
+        return "code"
     for group, pattern in PATTERNS.items():
         if re.search(pattern, text):
             return group
@@ -106,19 +152,7 @@ def select_group(
         return "spreadsheets"
     if "pptx" in suffixes or any("presentation" in m for m in mimes):
         return "presentations"
-    if suffixes & {
-        "py",
-        "js",
-        "ts",
-        "tsx",
-        "jsx",
-        "go",
-        "rs",
-        "java",
-        "c",
-        "cpp",
-        "sh",
-    }:
+    if suffixes & SOURCE_SUFFIXES:
         return "code"
     if suffixes & {"docx", "pdf", "md", "txt", "html"} or any(
         m.startswith("text/") for m in mimes

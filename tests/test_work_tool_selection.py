@@ -97,6 +97,17 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(select_group("Update README.md", [], True), "code")
 
+    def test_code_context_wins_over_incidental_work_keywords(self) -> None:
+        python_file = dict(relative_path="worker.py")
+        self.assertEqual(
+            select_group("Explain the report command", [python_file]), "code"
+        )
+        self.assertEqual(select_group("Fix the CSV export in exporter.py", []), "code")
+        self.assertEqual(
+            select_group("Make a pptx of the results", [python_file]),
+            "presentations",
+        )
+
     async def test_switch_changes_next_model_step_without_granting_authority(
         self,
     ) -> None:

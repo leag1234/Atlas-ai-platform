@@ -10,7 +10,7 @@ import re
 import time
 import threading
 from typing import Any
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 import yaml
 
@@ -99,6 +99,19 @@ class CodeModel(GatewayModel):
 def configure_work_model(model: CodeModel, request: ChatRequest) -> None:
     """One request configuration for public Work and its measurement adapter."""
     model.configure_quality(request.model, request.max_tokens)
+
+
+def code_deliverable_pending(
+    question: str, group: str, deliverables: Sequence[object]
+) -> bool:
+    from packages.file_intent import produces_file
+    from services.orchestrator.work_tool_selection import office_format_requested
+
+    return (
+        produces_file(question, include_images=False)
+        and not (group == "code" and not office_format_requested(question))
+        and not deliverables
+    )
 
 
 CLAIM = re.compile(
@@ -787,11 +800,9 @@ async def process_work(
                     bool(execution.session.get("repository_id")),
                 )
             )
-            from packages.file_intent import produces_file
-
-            file_requested = produces_file(request.user_text, include_images=False)
-            tools.selection.deliverable_pending = lambda: (
-                file_requested and not tools.deliverables
+            selection = tools.selection
+            selection.deliverable_pending = lambda: code_deliverable_pending(
+                request.user_text, selection.group, tools.deliverables
             )
             if os.environ.get("ATLAS_REMOTE_RUNNERS") == "1":
                 targets = await broker.call(

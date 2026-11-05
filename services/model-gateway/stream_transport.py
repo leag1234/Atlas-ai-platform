@@ -249,7 +249,10 @@ async def attempt(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
-    decoder = StreamDecoder(allow_length=request.profile is not None)
+    decoder = StreamDecoder(
+        allow_length=request.profile is not None,
+        ignore_calls=answer_only,
+    )
     started = monotonic()
 
     def diagnostic(category: str, **details: object) -> None:
@@ -320,6 +323,8 @@ async def attempt(
         decoder.finish()
         assert decoder.result is not None
         result = decoder.result
+        if decoder.ignored_calls:
+            result["ignored_calls"] = True
         if (
             not str(result.get("text", "")).strip()
             and not result.get("calls")

@@ -47,6 +47,19 @@ from serverless import REASONING_OUTPUT_TOKENS, ServerlessPolicy, classify_task
 
 CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model context]\n"
 
+# These calls are the requested work itself; switch_tool_group is offered at
+# every Work step.
+ACTION_TOOLS = frozenset(
+    {
+        "terminal_command",
+        "publish_document",
+        "edit_file",
+        "write_file",
+        "run_command",
+        "switch_tool_group",
+    }
+)
+
 
 def trim_fetched_pages(
     messages: list[dict[str, object]],
@@ -298,7 +311,7 @@ async def stream_quality(
     # below; lacking funds must stop explicitly rather than promise a file.
     file_tools = any(
         isinstance(function := tool.get("function"), dict)
-        and function.get("name") in {"terminal_command", "publish_document"}
+        and function.get("name") in ACTION_TOOLS
         for tool in request.tools
     )
     terminal_failed = any(
@@ -704,6 +717,8 @@ async def stream_quality(
             continue
         for event in held_content:
             yield event
+        if malformed_name is not None and result.get("ignored_calls"):
+            raise MalformedToolCall(malformed_name.measured, index)
         usage = Usage.model_validate(result["usage"])
         if (
             usage.prompt_tokens > incoming
