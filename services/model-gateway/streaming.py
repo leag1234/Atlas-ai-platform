@@ -12,7 +12,7 @@ from stream_usage import validate_usage
 
 
 class FunctionDelta(BaseModel):
-    name: str = Field(default="", max_length=80)
+    name: str = Field(default="")
     arguments: str = Field(default="", max_length=16000)
 
 
@@ -93,8 +93,9 @@ class Frame(BaseModel):
 
 
 class StreamDecoder:
-    def __init__(self, allow_length: bool = False) -> None:
+    def __init__(self, allow_length: bool = False, ignore_calls: bool = False) -> None:
         self.allow_length = allow_length
+        self.ignore_calls = ignore_calls
         self.provider_id: str | None = None
         self.reasoning = ""
         self.buffer = bytearray()
@@ -104,6 +105,11 @@ class StreamDecoder:
         self.usage: dict[str, object] | None = None
         self.reason: str | None = None
         self.result: dict[str, object] | None = None
+
+    def _validate_call(self, call: CallDelta) -> None:
+        if len(call.function.name) > 80:
+            self.calls.clear()
+            raise MalformedToolCall(len(call.function.name))
 
     def feed(self, piece: bytes) -> list[dict[str, object]]:
         self.total += len(piece)
@@ -154,6 +160,9 @@ class StreamDecoder:
                         else:
                             self.reasoning += value
                 for call in delta.tool_calls:
+                    if self.ignore_calls:
+                        continue
+                    self._validate_call(call)
                     target = self.calls.setdefault(
                         call.index, {"id": "", "name": "", "arguments": ""}
                     )
@@ -162,7 +171,6 @@ class StreamDecoder:
                     target["arguments"] += call.function.arguments
                     for key, maximum in (
                         ("id", 200),
-                        ("name", 80),
                         ("arguments", 16000),
                     ):
                         if len(target[key]) > maximum:
@@ -176,7 +184,11 @@ class StreamDecoder:
                                 maximum,
                                 key + " characters",
                             )
-                self.reason = choice.finish_reason
+                self.reason = (
+                    "stop"
+                    if self.ignore_calls and choice.finish_reason == "tool_calls"
+                    else choice.finish_reason
+                )
         return events
 
     def _done(self) -> None:

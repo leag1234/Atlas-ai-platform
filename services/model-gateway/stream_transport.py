@@ -249,7 +249,10 @@ async def attempt(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
-    decoder = StreamDecoder(allow_length=request.profile is not None)
+    decoder = StreamDecoder(
+        allow_length=request.profile is not None,
+        ignore_calls=answer_only,
+    )
     started = monotonic()
 
     def diagnostic(category: str, **details: object) -> None:
