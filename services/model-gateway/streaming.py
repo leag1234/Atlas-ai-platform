@@ -168,6 +168,9 @@ class StreamDecoder:
                     )
                     target["id"] += call.id
                     target["name"] += call.function.name
+                    if len(target["name"]) > 80:
+                        self.calls.clear()
+                        raise MalformedToolCall(len(target["name"]))
                     target["arguments"] += call.function.arguments
                     for key, maximum in (
                         ("id", 200),

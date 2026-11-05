@@ -61,6 +61,97 @@ class AnswerOnlyCallTests(unittest.TestCase):
 
         self.assertIsInstance(context.exception, MalformedToolCall)
 
+    def test_default_decoder_rejects_long_name_streamed_in_pieces(self) -> None:
+        decoder = StreamDecoder()
+        name_piece = "x" * 30
+        with self.assertRaises(MalformedToolCall) as context:
+            decoder.feed(
+                frame(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call-pseudo",
+                                "type": "function",
+                                "function": {"name": name_piece},
+                            }
+                        ]
+                    }
+                )
+                + frame(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "type": "function",
+                                "function": {"name": name_piece},
+                            }
+                        ]
+                    }
+                )
+                + frame(
+                    {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "type": "function",
+                                "function": {"name": name_piece},
+                            }
+                        ]
+                    }
+                )
+            )
+
+        self.assertEqual(context.exception.measured, 90)
+
+    def test_ignore_calls_accepts_long_name_streamed_in_pieces(self) -> None:
+        decoder = StreamDecoder(ignore_calls=True)
+        name_piece = "x" * 30
+        events = decoder.feed(
+            frame({"content": "Useful answer."})
+            + frame(
+                {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-pseudo",
+                            "type": "function",
+                            "function": {"name": name_piece},
+                        }
+                    ]
+                }
+            )
+            + frame(
+                {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "type": "function",
+                            "function": {"name": name_piece},
+                        }
+                    ]
+                }
+            )
+            + frame(
+                {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "type": "function",
+                            "function": {"name": name_piece},
+                        }
+                    ]
+                }
+            )
+            + end("stop")
+        )
+        decoder.finish()
+
+        self.assertEqual(events, [{"delta": {"content": "Useful answer."}}])
+        assert decoder.result is not None
+        self.assertEqual(decoder.result["text"], "Useful answer.")
+        self.assertEqual(decoder.result["calls"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
