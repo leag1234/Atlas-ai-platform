@@ -13,11 +13,10 @@ import aiohttp
 import provider_settings
 
 MAX_FILE_BYTES = 25 * 1024 * 1024
-# Default transcription provider (owner proposal 2026-11-04, pending the owner's choice).
-DEFAULT_PROVIDER = "mistral"
-# Published price of the default model: 0.0035 USD per minute of audio (Voxtral Mini
-# Transcribe 3, https://docs.mistral.ai/inference/pricing, fetched 2026-11-04). Charged as a
-# conservative 0.004 EUR per minute so that the exchange rate never makes us charge less.
+# The default provider is the first preset of providers.yaml that declares a
+# transcription_model (owner decision 2026-11-05); ATLAS_TRANSCRIPTION_PROVIDER overrides it.
+# Its published price is 0.0035 USD per minute of audio (pricing page fetched 2026-11-04),
+# charged as a conservative 0.004 EUR per minute so the exchange rate never undercharges.
 CONSERVATIVE_MICRO_EUR_PER_MINUTE = 4000
 # Reservation before the call, when the duration is unknown: 128 kbit/s, at least one minute.
 ESTIMATE_BYTES_PER_SECOND = 16000
@@ -40,7 +39,17 @@ class ProviderUnavailable(Exception):
 
 
 def provider() -> str:
-    return os.environ.get("ATLAS_TRANSCRIPTION_PROVIDER", DEFAULT_PROVIDER)
+    configured = os.environ.get("ATLAS_TRANSCRIPTION_PROVIDER", "").strip()
+    if configured:
+        return configured
+    return next(
+        (
+            name
+            for name, preset in provider_settings.presets().items()
+            if preset.get("transcription_model")
+        ),
+        "",
+    )
 
 
 def model() -> str:
