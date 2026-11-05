@@ -77,6 +77,15 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
             "Fix the failing test; the expected output is in notes.txt",
         ):
             self.assertEqual(select_group(text, [], True), "code")
+        self.assertEqual(
+            select_group("Fix the bug in parser.py and update README.md", []), "code"
+        )
+        self.assertEqual(
+            select_group(
+                "Fix the failing test; the expected output is in notes.txt", [], True
+            ),
+            "code",
+        )
         for text in (
             "Write a markdown summary of the meeting",
             "Fais-moi un fichier md avec le compte rendu",
