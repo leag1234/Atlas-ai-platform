@@ -1239,6 +1239,96 @@ class KeyResponsesTests(unittest.TestCase):
                         follow.json()["output"][0]["content"][0]["text"], "done"
                     )
 
+    def test_namespace_description_is_kept(self) -> None:
+        """Namespace descriptions qualify every member function sent to the model."""
+        namespace = {
+            "type": "namespace",
+            "name": "multi_agent_v1",
+            "description": "Delegate work to specialist agents.",
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "delegate",
+                    "description": "Choose an agent and task.",
+                    "parameters": {"type": "object"},
+                },
+                {
+                    "type": "function",
+                    "name": "report",
+                    "parameters": {"type": "object"},
+                },
+            ],
+        }
+
+        payload = self.payload | {"tools": [namespace]}
+
+        async def transport(plan: gateway.Plan) -> AsyncGenerator[bytes, None]:
+            body = json.loads(plan.body)
+            self.inputs.append(body)
+            for delta, reason in (
+                ({"content": "done"}, None),
+                ({}, "stop"),
+            ):
+                yield (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": delta,
+                                    "finish_reason": reason,
+                                }
+                            ]
+                        }
+                    )
+                    + "\n\n"
+                ).encode()
+            yield b'data: {"choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
+
+        with patch.object(gateway, "transport", transport):
+            with self.assertNoLogs("atlas.responses", level="WARNING"):
+                reply = self.post(payload)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            functions = self.inputs[-1]["tools"]
+            self.assertEqual(
+                functions[0]["function"]["description"],
+                "Delegate work to specialist agents.\n\nChoose an agent and task.",
+            )
+            self.assertEqual(
+                functions[1]["function"]["description"],
+                "Delegate work to specialist agents.",
+            )
+
+            reply = self.post(
+                self.payload
+                | {
+                    "tools": [
+                        {
+                            "type": namespace["type"],
+                            "name": namespace["name"],
+                            "tools": [
+                                namespace["tools"][0],
+                                {
+                                    "type": "function",
+                                    "name": "report",
+                                    "description": "Report the result.",
+                                    "parameters": {"type": "object"},
+                                },
+                            ],
+                        }
+                    ]
+                }
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+            functions = self.inputs[-1]["tools"]
+            self.assertEqual(
+                functions[0]["function"]["description"], "Choose an agent and task."
+            )
+            self.assertEqual(
+                functions[1]["function"]["description"], "Report the result."
+            )
+
     def test_codex_160_tools_json_and_streaming(self) -> None:
         """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""
 
@@ -1316,6 +1406,7 @@ class KeyResponsesTests(unittest.TestCase):
                     {
                         "type": "function",
                         "name": "delegate",
+                        "description": "Choose an agent and task.",
                         "parameters": {"type": "object"},
                     }
                 ],
