@@ -71,6 +71,19 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(select_group("Continue", [], True), "code")
         self.assertEqual(select_group("Continue", []), "files")
 
+    def test_file_name_extensions_do_not_select_documents(self) -> None:
+        for text in (
+            "Fix the bug in parser.py and update README.md",
+            "Fix the failing test; the expected output is in notes.txt",
+        ):
+            self.assertEqual(select_group(text, [], True), "code")
+        for text in (
+            "Write a markdown summary of the meeting",
+            "Fais-moi un fichier md avec le compte rendu",
+            "Give me the result as a txt file",
+        ):
+            self.assertEqual(select_group(text, []), "documents")
+
     async def test_switch_changes_next_model_step_without_granting_authority(
         self,
     ) -> None:

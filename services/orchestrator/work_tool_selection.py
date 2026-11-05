@@ -55,7 +55,7 @@ PATTERNS = {
     "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
     "presentations": r"\b(pptx|slides?|presentation|presentacion|prasentation|diaporama)\b",
     "spreadsheets": r"\b(xlsx|csv|spreadsheet|workbook|excel|tableur|tabellen|foglio|hoja)\b",
-    "documents": r"\b(docx|pdf|markdown|md|txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
+    "documents": r"\b(docx|pdf|markdown|(?<![\w./\\-])md|(?<![\w./\\-])txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
     "code": r"\b(code|repository|repo|git|bug|function|python|javascript|fonction|codigo)\b",
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
 }
