@@ -95,11 +95,14 @@ class BudgetTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.reason, "loop_detected")
         self.assertEqual(tools.calls, 2)
+        outputs = [e["output"] for e in result.trace]
         nudges = [
-            e for e in result.trace if e["output"].get("error") == "repeated_call"
+            o
+            for o in outputs
+            if isinstance(o, dict) and o.get("error") == "repeated_call"
         ]
         self.assertEqual(len(nudges), 1)
-        self.assertEqual(nudges[0]["output"]["previous_result"], {"value": "1"})
+        self.assertEqual(nudges[0]["previous_result"], {"value": "1"})
 
     async def test_repeat_nudge_lets_the_model_change_course(self) -> None:
         class Recovering(Model):
