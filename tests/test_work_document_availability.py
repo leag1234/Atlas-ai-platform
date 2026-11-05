@@ -232,3 +232,28 @@ class DeliverableGroupGuardTests(unittest.TestCase):
         code = WorkToolSelection("code")
         code.deliverable_pending = lambda: True
         self.assertEqual(code.switch(json.dumps({"group": "files"}))["group"], "files")
+
+    def test_code_deliverable_lock_applies_only_to_office_formats(self) -> None:
+        from services.orchestrator.code_mode import code_deliverable_pending
+
+        self.assertFalse(
+            code_deliverable_pending(
+                "Create a downloadable file containing the Python script",
+                "code",
+                [],
+            )
+        )
+        self.assertTrue(
+            code_deliverable_pending(
+                "Create a downloadable file containing the Python script",
+                "documents",
+                [],
+            )
+        )
+        self.assertTrue(
+            code_deliverable_pending(
+                "Create a docx report from parser.py",
+                "code",
+                [],
+            )
+        )
