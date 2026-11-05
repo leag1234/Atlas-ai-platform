@@ -58,6 +58,26 @@ class DailyBudgetTests(unittest.TestCase):
             self.assertEqual(caught.exception.category, "global_monthly_cost")
             self.assertIn("Monthly", caught.exception.message)
 
+    def test_exempt_users_skip_user_caps_but_not_instance_caps(self) -> None:
+        env = {
+            "ATLAS_USER_MONTHLY_EUR": "1",
+            "ATLAS_GLOBAL_MONTHLY_EUR": "2.50",
+            "ATLAS_BUDGET_EXEMPT_USERS": " probe-a , probe-b",
+        }
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(os.environ, env, clear=True),
+        ):
+            ledger = DailyLedger(Path(root) / "ledger.sqlite")
+            ledger.reserve_cost("probe-a", Decimal("0.90"), "en")
+            ledger.reserve_cost("probe-a", Decimal("0.90"), "en")
+            with self.assertRaises(BudgetRefusal) as caught:
+                ledger.reserve_cost("a", Decimal("1.10"), "en")
+            self.assertEqual(caught.exception.category, "monthly_cost")
+            with self.assertRaises(BudgetRefusal) as caught:
+                ledger.reserve_cost("probe-b", Decimal("0.80"), "en")
+            self.assertEqual(caught.exception.category, "global_monthly_cost")
+
     def test_paris_midnight_and_month_rollover(self) -> None:
         env = {"ATLAS_USER_DAILY_EUR": "1", "ATLAS_USER_MONTHLY_EUR": "1"}
         with (
