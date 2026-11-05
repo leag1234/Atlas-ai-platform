@@ -298,21 +298,22 @@ def webui(name: str, persistent: bool) -> None:
     gateway = network_gateway()
     ports = atlas_ports()
     name = ports.name(name)
+    # Stable mode gives Open WebUI no files terminal at all: admins (the bootstrap
+    # account included) bypass connection grants, so a configured connection would
+    # hand them the whole shared volume, its terminal tools (terminal_id) and the
+    # key in the admin configuration. The relay serves the generated downloads
+    # itself and composer uploads use Open WebUI's own storage. An empty list
+    # overrides the connection in infra/chat-ui.env.
     os.environ["TERMINAL_SERVER_CONNECTIONS"] = json.dumps(
-        [
+        []
+        if stable_mode()
+        else [
             {
                 "id": "atlas-files",
                 "url": "http://open-terminal:" + str(ports.port("terminal")),
                 "key": os.environ["OPEN_TERMINAL_API_KEY"],
                 "auth_type": "bearer",
-                # Stable mode grants no user access: Open WebUI would otherwise
-                # proxy the whole shared volume and offer its tools (terminal_id)
-                # in chats. The UI relay serves the generated downloads itself.
-                "config": (
-                    {"chat_uploads": "default"}
-                    if stable_mode()
-                    else {"chat_uploads": "filesystem"}
-                ),
+                "config": {"chat_uploads": "filesystem"},
                 "enabled": True,
             }
         ]
