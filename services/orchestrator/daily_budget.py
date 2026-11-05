@@ -44,6 +44,12 @@ def _limit(name: str) -> Decimal | int | None:
     return value if value > 0 else None
 
 
+def _exempt_users() -> frozenset[str]:
+    """Budget buckets the owner exempts from per-user caps (test accounts)."""
+    raw = os.environ.get("ATLAS_BUDGET_EXEMPT_USERS", "")
+    return frozenset(item.strip() for item in raw.split(",") if item.strip())
+
+
 def user_from_headers(headers: object) -> str:
     """Read v0.11.3 legacy Open WebUI forwarded identity headers.
 
@@ -231,6 +237,8 @@ class DailyLedger:
     def reserve_cost(
         self, user: str, amount: Decimal, lang: str, *, user_limits: bool = True
     ) -> CostReservation:
+        # Exempt test accounts skip the per-user caps; instance caps still apply.
+        user_limits = user_limits and user not in _exempt_users()
         limits = (
             (
                 "daily_cost",

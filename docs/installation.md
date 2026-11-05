@@ -317,6 +317,8 @@ through Admin Panel, approve only intended users and disable signup when done.
 Keep the provider account's spending limits active. Stable guest deployments also
 support `ATLAS_USER_DAILY_EUR`, `ATLAS_GLOBAL_DAILY_EUR`,
 `ATLAS_USER_MONTHLY_EUR` and `ATLAS_GLOBAL_MONTHLY_EUR`; unset caps are disabled.
+`ATLAS_BUDGET_EXEMPT_USERS` (comma-separated budget identities, for test accounts)
+skips the per-user caps for those identities; the instance caps still apply.
 Configure retention and disk monitoring for documents, histories and logs.
 
 For a consistent Compose backup, stop writes and archive its persistent volumes.
