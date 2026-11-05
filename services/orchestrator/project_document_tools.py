@@ -14,6 +14,13 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from packages.doc_render.schema import Content
 from services.orchestrator.project_document_input import DocumentInput, normalize
+from packages.text_deliverables import (
+    TEXT_CHARACTER_LIMIT,
+    TEXT_MIMES,
+    TextDeliverableError,
+    validate_text,
+    visible_text,
+)
 
 
 class Arguments(BaseModel):
@@ -80,6 +87,16 @@ class Publish(Arguments):
     strategy: Literal["created", "regenerated", "edited_in_place"] = "created"
 
 
+class TextPublish(Arguments):
+    """MD/CSV/TXT/HTML: the content is the complete file text."""
+
+    path: str = Field(min_length=1, max_length=1024)
+    title: str | None = Field(default=None, min_length=1, max_length=4000)
+    content: str = Field(min_length=1, max_length=TEXT_CHARACTER_LIMIT)
+    sources: list[Input] = Field(max_length=100)
+    strategy: Literal["created", "regenerated", "edited_in_place"] = "created"
+
+
 class ModelPublish(DocumentInput):
     path: str = Field(min_length=1, max_length=1024)
     sources: list[Input] = Field(max_length=100)
@@ -98,7 +115,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": "Create a durable DOCX, XLSX, PPTX or PDF in project deliverables with a verified text preview. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support SUM and SUMIF with exact criteria and bounded local cell/range references, including numbered sheets. Each section is a sheet named 1, 2, etc.; first sheet starts with title and section heading, other sheets with the heading; table headers follow any paragraphs/bullets. Numeric table cells are numbers. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
+    "publish_document": "Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support SUM and SUMIF with exact criteria and bounded local cell/range references, including numbered sheets. Each section is a sheet named 1, 2, etc.; first sheet starts with title and section heading, other sheets with the heading; table headers follow any paragraphs/bullets. Numeric table cells are numbers. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
 }
 
 
@@ -184,6 +201,10 @@ async def execute(
         and isinstance(value.get("content"), str)
         and not value["content"].lstrip().startswith(("{", "["))
     )
+    if name == "publish_document" and text_output(value):
+        text_args = TextPublish.model_validate(value).model_dump(exclude_none=True)
+        await tools.execution.check()
+        return await publish(tools, text_args, timeout)
     if name == "publish_document":
         value = normalize(value)
     args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
@@ -218,6 +239,43 @@ async def execute(
     result = await tools.workspace.invoke(name, payload, timeout)
     await tools.execution.check()
     return dict(result)
+
+
+def text_output(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("path"), str)
+        and PurePosixPath(value["path"]).suffix.lower() in TEXT_MIMES
+    )
+
+
+def text_document(text: str, suffix: str, source_texts: list[str]) -> Any:
+    """Verify a text deliverable locally; its bytes are also its preview."""
+    from services.orchestrator.terminal_client import VerifiedDocument
+
+    failure = "Text deliverable verification failed: "
+    try:
+        visible = "".join(
+            visible_text(validate_text(text.encode("utf-8"), suffix), suffix).split()
+        )
+    except UnicodeEncodeError:
+        raise ValueError(failure + "text_not_utf8") from None
+    except TextDeliverableError as error:
+        raise ValueError(failure + error.code) from None
+    missing = [
+        " ".join(source.split())
+        for source in source_texts
+        if "".join(source.split()) not in visible
+    ]
+    if missing and suffix in {".csv", ".html"}:
+        raise ValueError(failure + "Source coverage verification failed")
+    if missing:
+        heading = "## Sources" if suffix == ".md" else "Sources"
+        text = "\n\n".join([text.rstrip("\n"), heading, *missing]) + "\n"
+    raw = text.encode("utf-8")
+    if len(raw) > 1048576:
+        raise ValueError(failure + "text_size_limit")
+    return VerifiedDocument(raw, raw, hashlib.sha256(raw).hexdigest())
 
 
 def include_sources(content: Content, texts: list[str]) -> Content:
@@ -264,7 +322,7 @@ async def publish(
         path.is_absolute()
         or any(part in {"", ".", ".."} for part in args["path"].split("/"))
         or "\\" in args["path"]
-        or path.suffix not in {".docx", ".xlsx", ".pptx", ".pdf"}
+        or path.suffix not in {".docx", ".xlsx", ".pptx", ".pdf", *TEXT_MIMES}
     ):
         raise ValueError("Invalid deliverable path or format")
 
@@ -307,19 +365,27 @@ async def publish(
         source_texts.extend(texts)
         versions.append(resolved["version"])
 
-    content = Content.model_validate(args["content"])
-    if append_sources:
-        content = include_sources(content, source_texts)
-    document = await asyncio.to_thread(
-        build_project_document,
-        content,
-        path.suffix,
-        source_texts,
-        max_bytes=16 * 1024 * 1024,
-        timeout=remaining(),
-    )
-    if path.suffix == ".xlsx" and any(
-        table.formulas for section in content.sections for table in section.tables
+    if path.suffix in TEXT_MIMES:
+        document = text_document(args["content"], path.suffix, source_texts)
+        content = None
+    else:
+        content = Content.model_validate(args["content"])
+        if append_sources:
+            content = include_sources(content, source_texts)
+        document = await asyncio.to_thread(
+            build_project_document,
+            content,
+            path.suffix,
+            source_texts,
+            max_bytes=16 * 1024 * 1024,
+            timeout=remaining(),
+        )
+    if (
+        content is not None
+        and path.suffix == ".xlsx"
+        and any(
+            table.formulas for section in content.sections for table in section.tables
+        )
     ):
         from packages.doc_render.spreadsheet import validate_sources
 

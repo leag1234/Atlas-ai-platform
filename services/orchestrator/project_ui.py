@@ -335,10 +335,19 @@ async def scoped_proxy(request: Request, path: str) -> Response:
                 "Accept-Ranges",
                 "Content-Range",
                 "Content-Length",
+                "Content-Security-Policy",
             )
             if name in reply.headers
         }
         response_headers["Cache-Control"] = "private, no-store"
+        response_headers["X-Content-Type-Options"] = "nosniff"
+        if reply.headers.get("Content-Type", "").lower().startswith(
+            "text/html"
+        ) and not response_headers.get("Content-Disposition", "").startswith(
+            "attachment"
+        ):
+            # Project content is never rendered as HTML on the Atlas origin.
+            response_headers["Content-Disposition"] = "attachment"
         upstream = reply
 
         async def content() -> AsyncIterator[bytes]:
