@@ -21,6 +21,7 @@ from urllib.parse import quote
 
 from psycopg.types.json import Jsonb
 
+from packages.text_deliverables import TEXT_MIMES, TextDeliverableError, validate_text
 from services.retrieval.project_file_inputs import relative_path
 from services.retrieval.project_identity import ProjectError
 from services.retrieval.project_ledger import append
@@ -69,6 +70,7 @@ PUBLICATION_MIMES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".pdf": "application/pdf",
+    **TEXT_MIMES,
 }
 
 # This fixed child receives document bytes only, with no service credentials.
@@ -102,6 +104,15 @@ sys.stdout.buffer.write(text)
 def reopen_artifact(content: bytes, suffix: str) -> bytes:
     if suffix not in PUBLICATION_MIMES or not content:
         raise ProjectError(422, "invalid_request", "Unsupported or empty artifact")
+    if suffix in TEXT_MIMES:
+        # Text deliverables are their own preview; no package parser runs.
+        try:
+            validate_text(content, suffix)
+        except TextDeliverableError as error:
+            raise ProjectError(
+                422, "invalid_request", "Artifact verification failed: " + error.code
+            ) from None
+        return content
     try:
         result = subprocess.run(
             [sys.executable, "-c", REOPEN_PROGRAM, suffix],
@@ -613,13 +624,15 @@ class ProjectFiles:
             )
         suffix = Path(metadata["path"]).suffix.lower()
         verified_preview = reopen_artifact(content, suffix)
-        detected = self.mime(content)
+        # Strict UTF-8 validation identifies text formats; libmagic guesses
+        # (text/x-*, application/json) are not a format check for them.
+        detected = None if suffix in TEXT_MIMES else self.mime(content)
         allowed = {PUBLICATION_MIMES[suffix]}
         if suffix != ".pdf":
             # libmagic reports ZIP or generic bytes for sorted Office packages.
             # Successful reopening above identifies the actual OOXML format.
             allowed.update({"application/zip", "application/octet-stream"})
-        if detected not in allowed:
+        if detected is not None and detected not in allowed:
             raise ProjectError(
                 422, "invalid_request", "Artifact MIME does not match format"
             )
@@ -892,13 +905,20 @@ class ProjectFiles:
                 "dependency_unavailable",
                 "Canonical bytes failed integrity verification",
             )
+        mime = version["mime"]
+        if version["origin"] == "work" and mime in TEXT_MIMES.values():
+            # Published text deliverables were verified as UTF-8.
+            mime += "; charset=utf-8"
         headers = {
-            "Content-Type": version["mime"],
+            "Content-Type": mime,
             "Accept-Ranges": "bytes",
             "Content-Disposition": "attachment; filename*=UTF-8''"
             + quote(file["relative_path"], safe=""),
             "X-Content-Type-Options": "nosniff",
         }
+        if version["mime"] == "text/html":
+            # Always a download; a browser that renders it anyway gets an opaque origin.
+            headers["Content-Security-Policy"] = "sandbox"
         status = 200
         if range_header:
             match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header)

@@ -690,6 +690,180 @@ class ProjectDeliverableTests(ProjectWorkTests):
             [],
         )
 
+    TEXT_SAMPLES = {
+        ".md": (
+            "text/markdown",
+            "# Findings\n\nExpected project content 42\n".encode(),
+        ),
+        ".csv": ("text/csv", b"item,amount\nExpected project content 42,42\n"),
+        ".txt": ("text/plain", "Expected project content 42 été\n".encode()),
+        ".html": (
+            "text/html",
+            b"<!doctype html><p>Expected project content 42</p><script>x()</script>",
+        ),
+    }
+
+    def test_text_formats_publish_download_headers_and_named_failures(self) -> None:
+        self.publication_setup()
+        self.assertEqual(self.acquire().status_code, 200)
+        for revision, (suffix, (mime, raw)) in enumerate(self.TEXT_SAMPLES.items()):
+            with self.subTest(format=suffix):
+                reply = self.publish(self.metadata(raw, suffix, revision), raw, raw)
+                self.assertEqual(reply.status_code, 201, reply.text)
+                value = reply.json()
+                self.validator.validate(
+                    value, self.contract["components"]["schemas"]["Deliverable"]
+                )
+                self.assertEqual(value["mime"], mime)
+                self.assertEqual(value["validation"]["status"], "passed")
+                download = self.request("GET", value["download_route"], "viewer")
+                self.assertEqual(download.status_code, 200)
+                self.assertEqual(download.content, raw)
+                self.assertEqual(
+                    download.headers["content-type"], mime + "; charset=utf-8"
+                )
+                self.assertEqual(
+                    download.headers["content-disposition"],
+                    "attachment; filename*=UTF-8''report" + suffix,
+                )
+                self.assertEqual(download.headers["x-content-type-options"], "nosniff")
+                self.assertEqual(
+                    download.headers.get("content-security-policy"),
+                    "sandbox" if suffix == ".html" else None,
+                )
+                preview = self.request(
+                    "GET",
+                    value["download_route"].removesuffix("download") + "preview",
+                    "viewer",
+                )
+                self.assertEqual(preview.status_code, 200)
+                self.assertEqual(preview.content, raw)
+                self.assertTrue(
+                    preview.headers["content-type"].startswith("text/plain")
+                )
+                self.assertEqual(preview.headers["x-content-type-options"], "nosniff")
+        listing = self.request(
+            "GET", self.project_path() + "/deliverables", "viewer"
+        ).json()["items"]
+        self.assertEqual(
+            sorted(item["mime"] for item in listing),
+            sorted(mime for mime, _ in self.TEXT_SAMPLES.values()),
+        )
+        for raw, suffix, code in (
+            (b"a,b\n1,2,3\n", ".csv", "csv_inconsistent_columns"),
+            (b'a,b\n"1,2\n', ".csv", "csv_parse_error"),
+            ("café".encode("latin-1"), ".md", "text_not_utf8"),
+            (b" \n\t\n", ".txt", "text_empty"),
+        ):
+            with self.subTest(failure=code):
+                refused = self.publish(self.metadata(raw, suffix, 4), raw, raw)
+                self.error(refused, 422, "invalid_request")
+                self.assertIn(code, refused.json()["message"])
+        raw = self.TEXT_SAMPLES[".md"][1]
+        self.error(
+            self.publish(self.metadata(raw, ".md", 4), raw, b"invented preview"),
+            422,
+            "invalid_request",
+        )
+        self.assertEqual(
+            len(
+                self.request(
+                    "GET", self.project_path() + "/deliverables", "viewer"
+                ).json()["items"]
+            ),
+            4,
+        )
+
+    def test_work_tools_publish_text_formats_with_source_coverage(self) -> None:
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+
+        self.publication_setup()
+        sources = self.selected_sources()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        accepted = {
+            "notes.md": "# Notes\n\nSynthesis only.\n",
+            "notes.txt": "First source evidence\nSecond source evidence\n",
+            "table.csv": "source,quote\n1,First source evidence\n2,Second source evidence\n",
+            "page.html": "<ul><li>First source evidence</li><li>Second source evidence</li></ul>",
+        }
+        refused = {
+            "missing.csv": ("source\nUnrelated\n", "Source coverage"),
+            "missing.html": ("<p>Unrelated</p>", "Source coverage"),
+            "ragged.csv": (
+                "a,b\nFirst source evidence\nSecond source evidence,x\n",
+                "csv_inconsistent_columns",
+            ),
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            tools = WorkTools(workspace, execution)
+
+            async def run() -> None:
+                for path, text in accepted.items():
+                    reply = await tools.execute(
+                        Call(
+                            str(uuid4()),
+                            "publish_document",
+                            json.dumps(dict(path=path, content=text, sources=sources)),
+                        ),
+                        60,
+                    )
+                    self.assertNotIn("error", reply, reply)
+                    self.assertIn("/preview", str(reply["text"]))
+                for path, (text, code) in refused.items():
+                    reply = await tools.execute(
+                        Call(
+                            str(uuid4()),
+                            "publish_document",
+                            json.dumps(dict(path=path, content=text, sources=sources)),
+                        ),
+                        60,
+                    )
+                    self.assertIn(code, str(reply.get("error")), reply)
+
+            asyncio.run(run())
+        self.assertEqual(len(tools.deliverables), 4)
+        downloaded = {
+            receipt["mime"]: self.request(
+                "GET", receipt["download_route"], "viewer"
+            ).content
+            for receipt in tools.deliverables
+        }
+        self.assertEqual(
+            downloaded["text/markdown"],
+            b"# Notes\n\nSynthesis only.\n\n## Sources\n\n"
+            b"First source evidence\n\nSecond source evidence\n",
+        )
+        self.assertEqual(downloaded["text/csv"], accepted["table.csv"].encode())
+        for receipt in tools.deliverables:
+            self.assertEqual(
+                receipt["source_version_ids"], [s["version"] for s in sources]
+            )
+
 
 class BoundedDeliverableTests(unittest.TestCase):
     def test_trusted_builder_reopens_all_formats_and_refuses_missing_source_content(
