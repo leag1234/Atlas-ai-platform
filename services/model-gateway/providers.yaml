@@ -33,12 +33,14 @@
     "sources": ["https://www.scaleway.com/en/docs/generative-apis/quickstart/", "https://www.scaleway.com/en/docs/generative-apis/faq/", "https://www.scaleway.com/en/pricing/model-as-a-service/"]
   },
   # Source: https://docs.mistral.ai/api/endpoint/chat; https://docs.mistral.ai/models/mistral-small-4-0-26-03; https://docs.mistral.ai/inference/pricing; fetched 2026-10-22.
+  # Transcription: https://docs.mistral.ai/api/endpoint/audio/transcriptions; fetched 2026-11-04.
   "mistral": {
     "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
     "api_key_env": "MISTRAL_API_KEY", "prompt_cache_key": true, "seed_field": "random_seed",
     "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
+    "transcription_model": "voxtral-mini-latest",
     "context": 262144,
     "price": {"currency": "USD", "input": 0.15, "output": 0.60},
     "note": "Vision not enabled by this preset; verify capabilities before overriding.",

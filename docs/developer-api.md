@@ -187,6 +187,38 @@ and is returned in `X-Atlas-TTS-Voice`. `response_format` is `mp3` (default) or 
 the edge answers 503 `tts_unavailable`; strict privacy mode remains supported because synthesis is
 local.
 
+## 4 ter. Speech to text
+
+When a transcription provider is configured, `POST /audio/transcriptions` is available in the
+OpenAI format and `atlas-transcribe` is listed by `GET /models`. Send `multipart/form-data`:
+
+```sh
+curl -s https://atlas.eu.com/api/atlas/v1/audio/transcriptions \
+  -H "Authorization: Bearer $ATLAS_API_KEY" \
+  -F model=whisper-1 -F language=fr -F file=@meeting.mp3
+```
+
+- `file` (required): one audio file of at most 25 MiB (413 `body_limit` with `measured` and
+  `limit` above that; the whole form is limited to 25 MiB + 64 KiB).
+- `model`: any name, served by `atlas-transcribe`.
+- `language` (optional): an ISO-639-1 code such as `fr`.
+- `response_format`: `json` (default: `text`, plus `language`, `duration` and
+  `usage.seconds` when the provider measures them), `text` (plain text) or `verbose_json`
+  (`task`, `language`, `duration`, `text`, `segments` with `start`, `end`, `text`). `srt` and
+  `vtt` are refused by name.
+- `temperature` (optional): 0 to 1.
+- `timestamp_granularities[]`: `segment` only, with `verbose_json`; `word` is refused by name.
+- `prompt` is refused by name; any other field is refused as an unsupported field.
+
+The audio is processed in memory by an EU provider and is never stored or logged, nor is the
+transcript. The request is charged by audio duration at 4 000 micro-euros per minute (a rounded-up
+pass-through of the provider's published price); request-count and daily quotas apply. Errors:
+429 `provider_limit` when the provider refuses for quota or rate (never reported as an outage),
+502 `provider_error`, 503 `transcription_unavailable`, 400 `invalid_request` when the audio cannot
+be decoded. Strict privacy mode answers 503 `strict_privacy_unavailable`: no owned transcription
+server exists yet. `POST /audio/translations` answers 400 `translation_not_supported`: transcribe,
+then translate the text with a chat model.
+
 ## 5. Tool calls
 
 Function definitions, tool-call history, tool results and `tool_choice` (`auto`, `none`, `required` or a
