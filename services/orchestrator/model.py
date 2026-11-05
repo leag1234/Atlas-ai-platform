@@ -470,18 +470,10 @@ class GatewayModel:
                             **tool,
                             "function": {
                                 **function,
-                                **(
-                                    {
-                                        "description": str(
-                                            function.get("description", "")
-                                        )
-                                        + Path("prompts/tool-quota.txt")
-                                        .read_text()
-                                        .format(remaining=remaining)
-                                    }
-                                    if "description" in function
-                                    else {}
-                                ),
+                                "description": str(function.get("description", ""))
+                                + Path("prompts/tool-quota.txt")
+                                .read_text()
+                                .format(remaining=remaining),
                             },
                         }
                     )

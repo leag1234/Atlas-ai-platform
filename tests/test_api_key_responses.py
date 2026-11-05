@@ -16,6 +16,7 @@ from serverless import ServerlessPolicy
 from services.orchestrator.api_keys import Store
 from services.orchestrator.chat_api import app
 from services.orchestrator.daily_budget import DailyLedger
+from services.orchestrator.dev_input import responses_body
 
 
 class KeyResponsesTests(unittest.TestCase):
@@ -241,7 +242,7 @@ class KeyResponsesTests(unittest.TestCase):
         reply = self.post(payload)
         self.assertEqual(reply.status_code, 400, reply.text)
         self.assertEqual(reply.json()["error"]["type"], "context_exceeded")
-        self.assertEqual(reply.json()["error"]["measured"], 1310952)
+        self.assertEqual(reply.json()["error"]["measured"], 1310956)
         self.assertEqual(reply.json()["error"]["limit"], 1048576)
 
     def test_model_aliases_default_to_code_and_refuse_raw_ids(self) -> None:
@@ -1348,7 +1349,26 @@ class KeyResponsesTests(unittest.TestCase):
                 }
             )
             self.assertEqual(reply.status_code, 200, reply.text)
-            self.assertNotIn("description", self.inputs[-1]["tools"][0]["function"])
+            converted = responses_body(
+                {
+                    "model": "atlas-code",
+                    "input": [],
+                    "tools": [
+                        {
+                            "type": namespace["type"],
+                            "name": namespace["name"],
+                            "tools": [
+                                {
+                                    "type": "function",
+                                    "name": "report",
+                                    "parameters": {"type": "object"},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
+            self.assertNotIn("description", converted["tools"][0]["function"])
 
     def test_codex_160_tools_json_and_streaming(self) -> None:
         """Recorded-shaped, fictional Codex 0.160 public Responses bodies."""

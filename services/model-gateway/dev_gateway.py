@@ -82,11 +82,6 @@ def prepare_api(
     # empty tool lists and an unrequested response_format with HTTP 422.
     if "response_format" not in request.model_fields_set:
         body.pop("response_format", None)
-    for tool in request.tools:
-        if "description" not in tool.function.model_fields_set:
-            body["tools"][request.tools.index(tool)]["function"].pop(
-                "description", None
-            )
     for message in body["messages"]:
         if not message.get("tool_calls"):
             message.pop("tool_calls", None)
