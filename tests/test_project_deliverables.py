@@ -60,7 +60,7 @@ class ProjectDeliverableTests(ProjectWorkTests):
                 (Jsonb(self.policy), self.org),
             )
 
-    def selected_sources(self) -> list[dict[str, str]]:
+    def selected_sources(self, conversation: str | None = None) -> list[dict[str, str]]:
         with store(self.app_dsn).scope(
             self.identity("editor"), self.org, self.project
         ) as scope:
@@ -81,7 +81,7 @@ class ProjectDeliverableTests(ProjectWorkTests):
             self.project_path() + "/work-sessions",
             "editor",
             dict(
-                conversation_id=self.conversation,
+                conversation_id=conversation or self.conversation,
                 folder_ids=[folder["id"]],
                 base_versions=[
                     dict(file_id=f["id"], version_id=f["version_id"]) for f in sources
@@ -210,6 +210,88 @@ class ProjectDeliverableTests(ProjectWorkTests):
             "GET", self.project_path() + "/deliverables", "viewer"
         ).json()["items"]
         self.assertEqual(len(listing), 4)
+
+    def test_deleting_conversation_preserves_published_deliverable(self) -> None:
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+
+        self.publication_setup()
+        authored = self.request(
+            "POST",
+            self.project_path() + "/conversations",
+            "editor",
+            {"title": "Fictional deliverable conversation"},
+        )
+        self.assertEqual(authored.status_code, 201, authored.text)
+        sources = self.selected_sources(authored.json()["id"])
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        args = dict(
+            path="fictional-findings.docx",
+            content=dict(
+                title="Fictional findings",
+                sections=[
+                    dict(
+                        heading="Evidence",
+                        paragraphs=["First source evidence", "Second source evidence"],
+                    )
+                ],
+            ),
+            sources=sources,
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            tools = WorkTools(workspace, execution)
+            reply = asyncio.run(
+                tools.execute(
+                    Call(
+                        str(uuid4()),
+                        "publish_document",
+                        json.dumps(args),
+                    ),
+                    60,
+                )
+            )
+        self.assertNotIn("error", reply, reply)
+        receipt = reply["deliverable"]
+        assert isinstance(receipt, dict)
+        deleted = self.request(
+            "DELETE",
+            self.project_path() + "/conversations/" + authored.json()["id"],
+            "editor",
+            match=0,
+        )
+        self.assertEqual(deleted.status_code, 204, deleted.text)
+        self.assertEqual(
+            self.request("GET", receipt["download_route"], "viewer").status_code,
+            200,
+        )
+        listing = self.request(
+            "GET", self.project_path() + "/deliverables", "viewer"
+        ).json()["items"]
+        self.assertIn(receipt["id"], [item["id"] for item in listing])
 
     def test_work_lifecycle_keeps_verified_links_after_real_worker_cleanup(
         self,

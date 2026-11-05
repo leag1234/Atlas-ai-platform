@@ -105,7 +105,12 @@ def guard(scope: Scope, method: str, tail: list[str]) -> None:
 
 
 def execute(
-    scope: Scope, method: str, tail: list[str], body: bytes, expected: str | None
+    scope: Scope,
+    method: str,
+    tail: list[str],
+    body: bytes,
+    expected: str | None,
+    checked: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
     from services.retrieval.project_sharing import execute as sharing
 
@@ -255,9 +260,24 @@ def execute(
             if method == "POST":
                 return 201, transcript.create(json.loads(body))
             if method == "GET":
+                checked = checked or {}
+                if "q" in checked:
+                    return 200, dict(
+                        items=transcript.search(
+                            checked["q"], checked.get("archived") == "1"
+                        ),
+                        next_cursor=None,
+                    )
                 return 200, dict(
-                    items=transcript.files.listing("conversation"), next_cursor=None
+                    items=transcript.listing(checked.get("archived") == "1"),
+                    next_cursor=None,
                 )
+        if len(tail) == 2 and tail[0] == "conversations":
+            if method == "PATCH":
+                return 200, transcript.patch(tail[1], json.loads(body), expected)
+            if method == "DELETE":
+                transcript.delete(tail[1], expected)
+                return 204, None
         if tail == ["conversations", "import"] and method == "POST":
             return 201, transcript.import_conversation(json.loads(body))
         if (
@@ -587,7 +607,9 @@ def dispatch(
                     "jobs",
                     "sources",
                 }
-                else execute(scope, method, tail, body, headers.get("if-match"))
+                else execute(
+                    scope, method, tail, body, headers.get("if-match"), checked
+                )
             )
         if (
             method == "GET"
@@ -648,6 +670,8 @@ def check_query(
         allowed.update({"session_id", "after"})
     if tail == ["events"] and method == "GET":
         allowed.add("after")
+    if tail == ["conversations"] and method == "GET":
+        allowed.update({"archived", "q"})
     if tail == ["ledger", "summary"] and method == "GET":
         allowed.add("session_id")
     if set(raw) - allowed or any(len(v) != 1 for v in raw.values()):
@@ -658,6 +682,10 @@ def check_query(
     if "session_id" in query:
         query["session_id"] = str(UUID(query["session_id"]))
     if "after" in query and (not query["after"].isdigit() or int(query["after"]) < 0):
+        raise ProjectError(422, "invalid_request")
+    if "archived" in query and query["archived"] != "1":
+        raise ProjectError(422, "invalid_request")
+    if "q" in query and not 1 <= len(query["q"].strip()) <= 200:
         raise ProjectError(422, "invalid_request")
     return query
 

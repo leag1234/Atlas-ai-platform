@@ -31,6 +31,30 @@ class ProjectUITests(unittest.TestCase):
         self.assertNotIn("innerHTML", script)
         self.assertNotIn("eval(", script)
 
+    def test_conversation_management_controls_are_localized(self) -> None:
+        client = TestClient(app)
+        script = client.get("/project-mode/client.js").text
+        locale = client.get("/project-mode/locale.js").text
+        keys = (
+            "searchConversations",
+            "noConversationMatch",
+            "conversationActions",
+            "renameConversation",
+            "deleteConversation",
+            "confirmDeleteConversation",
+        )
+        for key in (*keys, "archive", "restore", "archived"):
+            self.assertIn(f"'{key}'", script)
+        for key in keys:
+            line = next(
+                row for row in locale.splitlines() if row.strip().startswith(key + ":")
+            )
+            self.assertEqual(line.count("','"), 4, key)
+        self.assertIn("window.confirm(`${t('confirmDeleteConversation')}", script)
+        self.assertIn("'If-Match':`\"${conversation.revision}\"`", script)
+        self.assertIn("'/conversations?archived=1'", script)
+        self.assertIn("'q=' + encodeURIComponent(value)", script)
+
     def test_external_browser_origins_rejected(self) -> None:
         for application in (app, retrieval):
             client = TestClient(application)

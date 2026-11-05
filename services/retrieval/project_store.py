@@ -199,19 +199,31 @@ class Scope:
         if self.project is None:
             return
         owner = not tail or tail[0] in {"grants", "connectors"}
-        chat = tail in (["conversations"], ["context"]) or (
-            len(tail) == 3 and tail[0] == "conversations" and tail[2] == "share"
+        chat = (
+            tail in (["conversations"], ["context"])
+            or (
+                len(tail) == 2
+                and tail[0] == "conversations"
+                and method in {"PATCH", "DELETE"}
+            )
+            or (len(tail) == 3 and tail[0] == "conversations" and tail[2] == "share")
         )
         if method == "GET":
             return
-        if (
-            self.role == "viewer"
-            and len(tail) == 3
-            and tail[0] == "conversations"
-            and tail[2] == "share"
+        if self.role == "viewer" and (
+            (len(tail) == 3 and tail[0] == "conversations" and tail[2] == "share")
+            or (
+                len(tail) == 2
+                and tail[0] == "conversations"
+                and method in {"PATCH", "DELETE"}
+            )
         ):
             # A viewer's exception to read-only permissions is limited to their
             # own conversation. Resolve that authority before parsing input.
+            try:
+                UUID(tail[1])
+            except ValueError:
+                raise ProjectError(404, "not_found") from None
             own = self.db.execute(
                 "SELECT id FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind='conversation' AND id=%s AND data->>'owner_member_id'=%s",
                 (self.identity.org, self.project_id, tail[1], self.identity.member),

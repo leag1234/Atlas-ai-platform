@@ -16,6 +16,7 @@
   let memberships = [], projects = [], conversations = [], files = [], folders = [], selected = new Set(), turns = [], events = new Map(), session = null, action = 'chat', sending = false;
   let transcript, activity, composer, input, send, stop, uploads, sessionLabel, projectInfo;
   let projectTab = 'mine', projectSearch = '', projectSort = 'recent';
+  let archivedConversations = [], showArchived = false, conversationSearch = '', searchResults = null, searchTimer, searchSequence = 0;
   let booting = false;
   let replayAfter = 0, configuring = false, uploading = false;
   const liveRequests = new Set();
@@ -74,7 +75,7 @@
     if (identity && scope) sessionStorage.setItem(storageKey(), JSON.stringify(scope));
   }
   function cleanup() {
-    generation++; sideResize?.disconnect(); hostResize?.disconnect(); observedHost = null; lifecycle?.abort(); stream?.abort(); clearTimeout(polling);
+    generation++; sideResize?.disconnect(); hostResize?.disconnect(); observedHost = null; lifecycle?.abort(); stream?.abort(); clearTimeout(polling); clearTimeout(searchTimer);
     window.atlasSideView?.close(); document.body.classList.remove('atlas-project-open');
     document.querySelector('[data-atlas-project-host-main]')?.removeAttribute('inert');
     projectSummaries.clear(); events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined;
@@ -85,10 +86,10 @@
     select.value = selectedID || ''; select.addEventListener('change', guarded(() => change(select.value)));
     return field(key, select);
   }
-  async function nameDialog(key, submit, initial = '') {
+  async function nameDialog(key, submit, initial = '', maxLength = 120) {
     const dialog = node('dialog', null, 'atlas-project-dialog'), form = node('form'), name = node('input');
-    name.required = true; name.maxLength = 120; name.value = initial;
-    const create = node('button', t(key === 'renameProject' ? 'save' : 'create')); create.type = 'submit';
+    name.required = true; name.maxLength = maxLength; name.value = initial;
+    const create = node('button', t(key.startsWith('rename') ? 'save' : 'create')); create.type = 'submit';
     form.append(node('h2', t(key)), field('name', name), create, button('cancel', () => dialog.close())); dialog.append(form); root.append(dialog);
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     form.addEventListener('submit', guarded(async event => { event.preventDefault(); create.disabled = true; try { await submit(name.value.trim()); dialog.close(); } finally { create.disabled = false; } }));
@@ -289,19 +290,70 @@
     const prefix = text.slice(0, 60), end = prefix.lastIndexOf(' ');
     return (end > 0 ? prefix.slice(0, end) : '') + '…';
   }
+  // A private conversation is listed only to its author, so it names the caller.
+  function manageable(conversation) {
+    const author = [...conversations, ...archivedConversations].find(item => item.visibility !== 'shared')?.owner_member_id;
+    return conversation.visibility !== 'shared' || !author || conversation.owner_member_id === author;
+  }
+  function conversationQuery(value) { return base() + '/conversations?' + (showArchived ? 'archived=1&' : '') + 'q=' + encodeURIComponent(value); }
+  async function refreshConversations() {
+    const current = generation;
+    const [active, archived] = await Promise.all([list(base() + '/conversations'), showArchived ? list(base() + '/conversations?archived=1') : []]);
+    const results = conversationSearch ? await list(conversationQuery(conversationSearch)) : null;
+    checkScope(current); conversations = active; archivedConversations = archived; searchResults = results;
+    navigation(); renderConversationRows();
+  }
+  async function changeConversation(conversation, method, body) {
+    await request(base() + '/conversations/' + conversation.id, {method, headers:{'If-Match':`"${conversation.revision}"`}, body});
+    await refreshConversations();
+  }
   function conversationList() {
-    const list = node('section', null, 'atlas-project-conversations'); list.append(node('h2', t('conversations')));
-    for (const conversation of conversations) {
-      const row = node('button', null, 'atlas-project-conversation'); row.type = 'button'; row.dataset.conversation = conversation.id;
-      row.title = conversation.title; row.append(node('span', shortTitle(conversation.title)), node('small', relativeTime(conversation.updated_at || conversation.created_at)));
-      row.addEventListener('click', guarded(() => choose({org:scope.org,project:scope.project,conversation:conversation.id}))); list.append(row);
+    const section = node('section', null, 'atlas-project-conversations'), heading = node('div', null, 'atlas-project-conversations-heading');
+    const search = node('input'); search.type = 'search'; search.maxLength = 200; search.value = conversationSearch; search.placeholder = t('searchConversations'); search.setAttribute('aria-label', t('searchConversations')); search.dataset.conversationSearch = '';
+    search.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(guarded(async () => {
+        const value = search.value.trim(), current = generation, sequence = ++searchSequence;
+        const results = value ? await list(conversationQuery(value)) : null;
+        if (current !== generation || sequence !== searchSequence) return;
+        conversationSearch = value; searchResults = results; renderConversationRows();
+      }), 250);
+    });
+    const toggle = button(showArchived ? 'conversations' : 'archived', async () => { showArchived = !showArchived; conversationSearch = ''; searchResults = null; conversationList(); await refreshConversations(); });
+    toggle.setAttribute('aria-pressed', String(showArchived)); toggle.dataset.conversationArchived = '';
+    heading.append(node('h2', t(showArchived ? 'archived' : 'conversations')), search, toggle);
+    section.append(heading, node('div', null, 'atlas-project-conversation-rows'));
+    const previous = center.querySelector('.atlas-project-conversations');
+    if (previous) previous.replaceWith(section); else center.append(section);
+    renderConversationRows();
+  }
+  function renderConversationRows() {
+    const rows = center?.querySelector('.atlas-project-conversation-rows'); if (!rows) return;
+    rows.replaceChildren();
+    const source = showArchived ? archivedConversations : conversations;
+    const items = searchResults ? searchResults.map(result => ({...source.find(item => item.id === result.id), ...result})) : source;
+    for (const conversation of items) {
+      const row = node('div', null, 'atlas-project-conversation-row');
+      const open = node('button', null, 'atlas-project-conversation'); open.type = 'button'; open.dataset.conversation = conversation.id; open.title = conversation.title;
+      open.append(node('span', shortTitle(conversation.title)), node('small', relativeTime(conversation.updated_at || conversation.created_at)));
+      open.addEventListener('click', guarded(() => choose({org:scope.org,project:scope.project,conversation:conversation.id}))); row.append(open);
+      if (conversation.revision !== undefined && manageable(conversation)) {
+        const menu = node('details', null, 'atlas-project-conversation-menu'), summary = node('summary', '⋯'), actions = node('div', null, 'atlas-project-card-menu');
+        summary.setAttribute('aria-label', t('conversationActions')); summary.title = t('conversationActions');
+        actions.append(
+          button('renameConversation', () => nameDialog('renameConversation', name => changeConversation(conversation, 'PATCH', {title:name}), conversation.title, 200)),
+          button(conversation.archived ? 'restore' : 'archive', () => changeConversation(conversation, 'PATCH', {archived:!conversation.archived})),
+          button('deleteConversation', async () => { if (window.confirm(`${t('confirmDeleteConversation')}\n\n${conversation.title}`)) await changeConversation(conversation, 'DELETE'); }));
+        menu.append(summary, actions); row.append(menu);
+      }
+      if (conversation.snippet) row.append(node('p', conversation.snippet, 'atlas-project-detail atlas-project-conversation-snippet'));
+      rows.append(row);
     }
-    if (!conversations.length) list.append(node('p',t('noConversations')));
-    center.append(list);
+    if (!items.length) rows.append(node('p', t(searchResults ? 'noConversationMatch' : 'noConversations')));
   }
   async function choose(value) {
     cleanup(); lifecycle = new AbortController(); const current = generation;
-    scope = value; projects = []; conversations = []; files = []; folders = []; center.replaceChildren(); right.replaceChildren(); say(t('loading'));
+    scope = value; projects = []; conversations = []; files = []; folders = []; archivedConversations = []; showArchived = false; conversationSearch = ''; searchResults = null; center.replaceChildren(); right.replaceChildren(); say(t('loading'));
     for (const key of ['org', 'project', 'conversation', 'session']) if (value[key] && !uuid(value[key])) throw new Error(t('selectionError'));
     if (value.tasks && value.project) throw new Error(t('selectionError'));
     if (value.org && !memberships.some(m => m.org_id === value.org)) throw new Error(t('selectionError'));
@@ -311,7 +363,8 @@
       if (!projects.some(p => p.id === value.project)) throw new Error(t('selectionError'));
       projectInfo = {...projects.find(p => p.id === value.project), ...await api(base())}; action = 'chat';
       conversations = await list(base() + '/conversations');
-      if (value.conversation && !conversations.some(c => c.id === value.conversation)) throw new Error(t('selectionError'));
+      // An archived conversation stays readable; it is only hidden from the default list.
+      if (value.conversation && !conversations.some(c => c.id === value.conversation) && !(await list(base() + '/conversations?archived=1')).some(c => c.id === value.conversation)) throw new Error(t('selectionError'));
     }
     if (current !== generation) return;
     saveRoute(); navigation();

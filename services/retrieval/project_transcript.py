@@ -18,6 +18,10 @@ from services.retrieval.project_work_contract import validate
 from services.retrieval.project_policy import ConversationImport
 
 
+SEARCH_LIMIT = 50
+SNIPPET_LIMIT = 300
+
+
 def canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
@@ -41,6 +45,164 @@ class Transcript:
         self.files.put("conversation", value)
         self.scope.event("conversation_created", self.project)
         return value
+
+    def _own(self, conversation: str) -> dict[str, Any]:
+        """Resolve a conversation the caller may manage: invisible is 404, not authored is 403."""
+        value = self.files.get("conversation", conversation)
+        if value["owner_member_id"] != self.scope.identity.member:
+            raise ProjectError(403, "permission_denied")
+        return value
+
+    def patch(
+        self, conversation: str, data: Any, expected: str | None
+    ) -> dict[str, Any]:
+        value = self._own(conversation)
+        self.scope.match(value, expected)
+        if not isinstance(data, dict) or not data or set(data) - {"title", "archived"}:
+            raise ProjectError(422, "invalid_request")
+        if "title" in data:
+            title = data["title"]
+            if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
+                raise ProjectError(422, "invalid_request")
+            value["title"] = title.strip()
+        if "archived" in data:
+            if not isinstance(data["archived"], bool):
+                raise ProjectError(422, "invalid_request")
+            value["archived"] = data["archived"]
+        self.files.save(value)
+        self.scope.db.execute(
+            "INSERT INTO atlas_projects.audit(org_id,id,member_id,project_id,kind,details) VALUES(%s,gen_random_uuid(),%s,%s,'conversation_updated',%s)",
+            (
+                self.org,
+                self.scope.identity.member,
+                self.project,
+                Jsonb(dict(conversation_id=value["id"], fields=sorted(data))),
+            ),
+        )
+        return value
+
+    def delete(self, conversation: str, expected: str | None) -> None:
+        """Tombstone the conversation and its turns; project deliverables stay."""
+        value = self._own(conversation)
+        self.scope.match(value, expected)
+        turns = self.files.listing("turn", value["id"])
+        if any(turn["state"] == "running" for turn in turns):
+            raise ProjectError(
+                409,
+                "session_busy",
+                "Conversation busy; retry after the running turn completes",
+            )
+        for turn in turns:
+            self.files.tombstone(turn)
+            # Deleted content must not linger in the row until a purge.
+            turn["content_refs"] = []
+            self.files.save(turn)
+        self.files.tombstone(value)
+        self.files.save(value)
+        self.scope.db.execute(
+            "INSERT INTO atlas_projects.audit(org_id,id,member_id,project_id,kind,details) VALUES(%s,gen_random_uuid(),%s,%s,'conversation_deleted',%s)",
+            (
+                self.org,
+                self.scope.identity.member,
+                self.project,
+                Jsonb(
+                    dict(
+                        conversation_id=value["id"],
+                        turn_count=len(turns),
+                        purge_at=value["purge_at"],
+                    )
+                ),
+            ),
+        )
+
+    def listing(self, archived: bool = False) -> list[dict[str, Any]]:
+        """Visible conversations (own and shared); archived ones only on request."""
+        return [
+            value
+            for value in self.files.listing("conversation")
+            if bool(value.get("archived", False)) == archived
+        ]
+
+    def search(self, query: str, archived: bool = False) -> list[dict[str, Any]]:
+        """The caller's own conversations whose title or turn text contains query."""
+        needle = query.strip()
+        if not needle:
+            return []
+        folded = needle.lower()
+        pattern = (
+            "%"
+            + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            + "%"
+        )
+        rows = self.db.execute(
+            """SELECT c.id FROM atlas_projects.resources c
+            WHERE c.org_id=%s AND c.project_id=%s AND c.kind='conversation'
+            AND c.data->>'owner_member_id'=%s AND c.data->>'deleted_at' IS NULL
+            AND coalesce((c.data->>'archived')::boolean,false)=%s
+            AND (c.data->>'title' ILIKE %s ESCAPE '\\' OR EXISTS (
+              SELECT 1 FROM atlas_projects.resources t,
+              jsonb_array_elements(t.data->'content_refs') r
+              WHERE t.org_id=c.org_id AND t.project_id=c.project_id
+              AND t.kind='turn' AND t.parent_id=c.id
+              AND t.data->>'deleted_at' IS NULL AND r->>'text' ILIKE %s ESCAPE '\\'))
+            ORDER BY c.data->>'updated_at' DESC, c.id""",
+            (
+                self.org,
+                self.project,
+                self.scope.identity.member,
+                archived,
+                pattern,
+                pattern,
+            ),
+        ).fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                conversation = self._own(str(row["id"]))
+            except ProjectError as exc:
+                if exc.status not in {403, 404}:
+                    raise
+                continue
+            snippet = self._snippet(conversation, folded)
+            if snippet is None:
+                continue
+            result.append(
+                dict(
+                    id=conversation["id"],
+                    title=conversation["title"],
+                    updated_at=conversation["updated_at"],
+                    snippet=snippet,
+                )
+            )
+            if len(result) == SEARCH_LIMIT:
+                break
+        return result
+
+    def _snippet(self, conversation: dict[str, Any], folded: str) -> str | None:
+        for turn in self.files.listing("turn", conversation["id"]):
+            try:
+                # The same source check as reading turns: no text from lost sources.
+                self.sources(turn)
+            except ProjectError as exc:
+                if exc.status not in {403, 404, 409}:
+                    raise
+                continue
+            for ref in turn["content_refs"]:
+                text = ref.get("text") or ""
+                position = text.lower().find(folded)
+                if position >= 0:
+                    start = max(0, position - 60)
+                    end = min(len(text), position + len(folded) + 100)
+                    snippet = (
+                        ("…" if start else "")
+                        + " ".join(text[start:end].split())
+                        + ("…" if end < len(text) else "")
+                    )
+                    return snippet[:SNIPPET_LIMIT]
+        title = conversation["title"]
+        if folded in title.lower():
+            return " ".join(title.split())[:SNIPPET_LIMIT]
+        return None
 
     def import_conversation(self, data: dict[str, Any]) -> dict[str, Any]:
         """Persist browser-normalized native chat content without reading WebUI storage."""
