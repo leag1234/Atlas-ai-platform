@@ -92,6 +92,10 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
             "Give me the result as a txt file",
         ):
             self.assertEqual(select_group(text, []), "documents")
+        self.assertEqual(
+            select_group("Organize my .txt files into folders", []), "files"
+        )
+        self.assertEqual(select_group("Update README.md", [], True), "code")
 
     async def test_switch_changes_next_model_step_without_granting_authority(
         self,
