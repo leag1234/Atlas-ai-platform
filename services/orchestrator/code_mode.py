@@ -990,6 +990,7 @@ async def process_work(
         await asyncio.gather(renewal, return_exceptions=True)
         if model is not None:
             item.cout_eur = max(item.cout_eur, float(model.spent))
+            item.cost_complete = not model.work_unknown
         # A newer generation owns cleanup if recovery raced this turn. Never let
         # an old finally block destroy a newer workspace or release its slot.
         cleanup_authorized = True

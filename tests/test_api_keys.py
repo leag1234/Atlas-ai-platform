@@ -875,6 +875,32 @@ class KeyTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(measured, 100000)
 
+    def test_failed_turn_with_complete_cost_is_charged_its_measured_cost(
+        self,
+    ) -> None:
+        from services.orchestrator.model import GatewayModel
+
+        async def stopped(payload: Any, item: Any) -> None:
+            with patch("aiohttp.ClientSession.post", side_effect=OSError):
+                try:
+                    await GatewayModel.post("http://127.0.0.1:9/agent/complete", {}, 1)
+                except Exception:
+                    pass
+            # A Work turn stopped on a limit knows the cost of every call.
+            item.cout_eur, item.cost_complete = 0.02, True
+            raise RuntimeError("stopped on a limit")
+
+        row = self.assistant_settlement(stopped)
+        self.assertEqual((row["charged"], row["state"]), (20000, "complete"))
+        from services.orchestrator.daily_budget import DailyLedger
+
+        with sqlite3.connect(DailyLedger().path) as db:
+            measured = db.execute(
+                "SELECT COALESCE(SUM(measured_micro),0) FROM budget_ledger"
+                " WHERE kind='day'"
+            ).fetchone()[0]
+        self.assertEqual(measured, 20000)
+
     def test_http_expired_revoked_invalid_and_quota_before_provider(self) -> None:
         from dev_gateway import Plan
 
