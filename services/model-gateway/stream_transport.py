@@ -323,6 +323,8 @@ async def attempt(
         decoder.finish()
         assert decoder.result is not None
         result = decoder.result
+        if decoder.ignored_calls:
+            result["ignored_calls"] = True
         if (
             not str(result.get("text", "")).strip()
             and not result.get("calls")

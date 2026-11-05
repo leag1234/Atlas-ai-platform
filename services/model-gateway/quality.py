@@ -717,6 +717,8 @@ async def stream_quality(
             continue
         for event in held_content:
             yield event
+        if malformed_name is not None and result.get("ignored_calls"):
+            raise MalformedToolCall(malformed_name.measured, index)
         usage = Usage.model_validate(result["usage"])
         if (
             usage.prompt_tokens > incoming
