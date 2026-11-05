@@ -100,3 +100,60 @@ class FileToolBudgetTests(unittest.IsolatedAsyncioTestCase):
             answer = events[-1]["result"]
             assert isinstance(answer, dict)
             self.assertLessEqual(Decimal(str(answer["cost_eur"])), cap)
+
+    async def test_action_tools_survive_a_tight_budget(self) -> None:
+        tools = [
+            {"type": "function", "function": {"name": "edit_file"}},
+            {"type": "function", "function": {"name": "run_command"}},
+        ]
+        with patch.dict(os.environ, environment()):
+            policy = ServerlessPolicy()
+            req = request(tools=tools, max_tokens=3000)
+            model = policy.models[policy.public_profiles[str(req.profile)]]
+            bound = input_bound(req.messages, req.tools)
+            cap = policy.cost(model, bound, 3000) * Decimal("1.5")
+            seen: list[AgentRequest] = []
+
+            async def transport(
+                current: AgentRequest, model: str, timeout: float
+            ) -> AsyncGenerator[dict[str, object], None]:
+                seen.append(current)
+                yield result("Action result", 30)
+
+            with patch("stream_transport.attempt", transport):
+                _ = [
+                    event
+                    async for event in stream_quality(
+                        AgentProvider(), req.model_copy(update={"budget_eur": str(cap)})
+                    )
+                ]
+            self.assertEqual(seen[0].tool_choice, "auto")
+            self.assertEqual(seen[0].tools, tools)
+
+    async def test_web_search_only_is_still_answer_only_under_tight_budget(
+        self,
+    ) -> None:
+        tool = {"type": "function", "function": {"name": "web_search"}}
+        with patch.dict(os.environ, environment()):
+            policy = ServerlessPolicy()
+            req = request(tools=[tool], max_tokens=3000)
+            model = policy.models[policy.public_profiles[str(req.profile)]]
+            bound = input_bound(req.messages, req.tools)
+            cap = policy.cost(model, bound, 3000) * Decimal("1.5")
+            seen: list[AgentRequest] = []
+
+            async def transport(
+                current: AgentRequest, model: str, timeout: float
+            ) -> AsyncGenerator[dict[str, object], None]:
+                seen.append(current)
+                yield result("Search result", 30)
+
+            with patch("stream_transport.attempt", transport):
+                _ = [
+                    event
+                    async for event in stream_quality(
+                        AgentProvider(), req.model_copy(update={"budget_eur": str(cap)})
+                    )
+                ]
+            self.assertEqual(seen[0].tool_choice, "none")
+            self.assertEqual(seen[0].tools, [tool])
