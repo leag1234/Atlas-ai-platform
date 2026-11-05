@@ -94,13 +94,17 @@ class TranscriptionTests(unittest.TestCase):
             for name, value in fields:
                 grouped.setdefault(name, []).append(value)
             fields = grouped
+        # A form without a file part still needs a multipart body.
+        upload: Any = (
+            {"file": ("speech.wav", audio, "audio/wav")}
+            if audio is not None
+            else {"response_format": (None, "json")}
+        )
         return self.client.post(
             URL,
             headers=headers or self.headers,
             data=fields if fields is not None else {"model": "whisper-1"},
-            files={"file": ("speech.wav", audio, "audio/wav")}
-            if audio is not None
-            else {"response_format": (None, "json")},
+            files=upload,
         )
 
     def test_json_default_with_accounting(self) -> None:
