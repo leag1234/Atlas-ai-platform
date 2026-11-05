@@ -595,6 +595,7 @@ class ProjectContractTests(unittest.TestCase):
             "/memory": "get post delete",
             "/memory/{memory}": "patch delete",
             "/conversations": "get post",
+            "/conversations/{conversation}": "patch delete",
             "/conversations/{conversation}/turns": "get",
             "/context": "post",
             "/sources/{chunk_id}": "get",

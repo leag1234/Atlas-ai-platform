@@ -62,6 +62,16 @@
 .atlas-project-conversations h2 {margin-bottom:18px;}
 .atlas-project .atlas-project-conversation {display:flex;justify-content:space-between;align-items:center;gap:20px;border:0;border-bottom:1px solid var(--project-line);border-radius:0;width:100%;padding:18px 0;}
 .atlas-project-conversation small {color:var(--project-muted);font-size:12px;white-space:nowrap;}
+.atlas-project-conversations-heading {display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
+.atlas-project-conversations .atlas-project-conversations-heading h2 {margin:0 auto 0 0;}
+.atlas-project-conversations-heading input {flex:1 1 180px;max-width:320px;min-width:0;}
+.atlas-project-conversation-row {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;column-gap:12px;border-bottom:1px solid var(--project-line);}
+.atlas-project .atlas-project-conversation-row .atlas-project-conversation {border-bottom:0;}
+.atlas-project-conversation-snippet {grid-column:1 / -1;margin:-10px 0 14px;}
+.atlas-project-conversation-menu {position:relative;}
+.atlas-project-conversation-menu summary {list-style:none;cursor:pointer;padding:4px 10px;border-radius:8px;color:var(--project-muted);}
+.atlas-project-conversation-menu summary::-webkit-details-marker {display:none;}
+.atlas-project-conversation-menu .atlas-project-card-menu {position:absolute;right:0;top:100%;z-index:5;flex-direction:column;align-items:stretch;min-width:150px;padding:6px;background:var(--project-card);border:1px solid var(--project-line);border-radius:10px;box-shadow:0 3px 12px #00000014;}
 .atlas-project-right {border-left:1px solid var(--project-line);padding:32px 22px;overflow:auto;min-width:0;}
 .atlas-project-panels {display:grid;grid-template-columns:minmax(0,1fr);gap:20px;}
 .atlas-project-panel {min-width:0;padding-bottom:24px;border-bottom:1px solid var(--project-line);}

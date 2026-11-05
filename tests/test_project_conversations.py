@@ -10,6 +10,8 @@ from typing import cast, Any
 from unittest.mock import patch
 from uuid import uuid4
 
+import psycopg
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from services.retrieval.project_identity import sign
@@ -48,6 +50,227 @@ class ProjectConversationTests(ProjectIsolationTests):
             stream=True,
             file_version_ids=[],
             **changes,
+        )
+
+    def conversation_ids(self, role: str, query: str = "") -> list[str]:
+        response = self.request(
+            "GET", self.project_path() + "/conversations" + query, role
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return [item["id"] for item in response.json()["items"]]
+
+    def share_conversation(self, conversation: str, revision: int) -> None:
+        shared = self.request(
+            "POST",
+            self.project_path() + f"/conversations/{conversation}/share",
+            "viewer",
+            {"confirm": True},
+            match=revision,
+        )
+        self.assertEqual(shared.status_code, 200, shared.text)
+
+    def test_rename_archive_restore_and_authorization(self) -> None:
+        path = self.project_path() + f"/conversations/{self.conversation}"
+        # A private conversation is invisible to other members, as for reading.
+        self.error(
+            self.request("PATCH", path, "editor", {"title": "Denied"}, match=0),
+            404,
+            "not_found",
+        )
+        self.error(
+            self.request("PATCH", path, "viewer", {"title": "No match"}),
+            428,
+            "precondition_required",
+        )
+        self.error(
+            self.request("PATCH", path, "viewer", {"title": "No match"}, match=9),
+            409,
+            "revision_conflict",
+        )
+        for body in (
+            {},
+            {"title": "   "},
+            {"title": "x" * 201},
+            {"title": 7},
+            {"archived": "yes"},
+            {"title": "Fine", "owner_member_id": self.org},
+        ):
+            self.error(
+                self.request("PATCH", path, "viewer", body, match=0),
+                422,
+                "invalid_request",
+            )
+        renamed = self.request(
+            "PATCH",
+            path,
+            "viewer",
+            {"title": "  Renamed fictional briefing  "},
+            match=0,
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.text)
+        self.assertEqual(renamed.json()["title"], "Renamed fictional briefing")
+        self.assertEqual(renamed.json()["revision"], 1)
+        self.validator.validate(
+            renamed.json(), self.contract["components"]["schemas"]["Conversation"]
+        )
+        long_title = self.request(
+            "PATCH", path, "viewer", {"title": "y" * 200}, match=1
+        )
+        self.assertEqual(long_title.status_code, 200, long_title.text)
+        # Shared conversations are readable by others but still author-managed.
+        self.share_conversation(self.conversation, 2)
+        self.error(
+            self.request("PATCH", path, "editor", {"archived": True}, match=3),
+            403,
+            "permission_denied",
+        )
+        self.error(
+            self.request("DELETE", path, "editor", match=3),
+            403,
+            "permission_denied",
+        )
+        self.assertIn(self.conversation, self.conversation_ids("editor"))
+        archived = self.request("PATCH", path, "viewer", {"archived": True}, match=3)
+        self.assertEqual(archived.status_code, 200, archived.text)
+        self.assertTrue(archived.json()["archived"])
+        self.assertNotIn(self.conversation, self.conversation_ids("viewer"))
+        self.assertNotIn(self.conversation, self.conversation_ids("editor"))
+        self.assertIn(self.conversation, self.conversation_ids("viewer", "?archived=1"))
+        editor_private = self.request(
+            "POST",
+            self.project_path() + "/conversations",
+            "editor",
+            {"title": "Editor private"},
+        ).json()["id"]
+        self.assertNotIn(editor_private, self.conversation_ids("viewer"))
+        self.assertNotIn(editor_private, self.conversation_ids("viewer", "?archived=1"))
+        self.error(
+            self.request(
+                "GET", self.project_path() + "/conversations?archived=0", "viewer"
+            ),
+            422,
+            "invalid_request",
+        )
+        restored = self.request("PATCH", path, "viewer", {"archived": False}, match=4)
+        self.assertEqual(restored.status_code, 200, restored.text)
+        self.assertFalse(restored.json()["archived"])
+        self.assertIn(self.conversation, self.conversation_ids("viewer"))
+        self.error(
+            self.request(
+                "PATCH",
+                self.project_path() + "/conversations/not-a-conversation",
+                "viewer",
+                {"title": "Nope"},
+                match=0,
+            ),
+            404,
+            "not_found",
+        )
+
+    def test_delete_is_author_scoped_and_removes_turns(self) -> None:
+        self.assertEqual(self.begin().status_code, 201)
+        path = self.project_path() + f"/conversations/{self.conversation}"
+        # A running turn keeps the conversation until it completes.
+        self.error(self.request("DELETE", path, "viewer", match=1), 409, "session_busy")
+        self.assertEqual(self.broker("finish", self.finish_body()).status_code, 200)
+        self.error(self.request("DELETE", path, "editor", match=1), 404, "not_found")
+        self.error(self.request("DELETE", path, "viewer"), 428, "precondition_required")
+        self.error(
+            self.request("DELETE", path, "viewer", match=0), 409, "revision_conflict"
+        )
+        deleted = self.request("DELETE", path, "viewer", match=1)
+        self.assertEqual(deleted.status_code, 204, deleted.text)
+        self.error(self.request("GET", path + "/turns", "viewer"), 404, "not_found")
+        self.error(self.request("DELETE", path, "viewer", match=2), 404, "not_found")
+        self.assertNotIn(self.conversation, self.conversation_ids("viewer"))
+        self.assertNotIn(
+            self.conversation, self.conversation_ids("viewer", "?archived=1")
+        )
+        self.assertEqual(
+            self.request(
+                "GET", self.project_path() + "/conversations?q=Revenue", "viewer"
+            ).json()["items"],
+            [],
+        )
+        with psycopg.connect(self.admin_dsn, row_factory=dict_row) as db:
+            turns = db.execute(
+                "SELECT data FROM atlas_projects.resources WHERE kind='turn' AND parent_id=%s",
+                (self.conversation,),
+            ).fetchall()
+            self.assertTrue(turns)
+            for row in turns:
+                self.assertIsNotNone(row["data"]["deleted_at"])
+                self.assertEqual(row["data"]["content_refs"], [])
+            audit = db.execute(
+                "SELECT member_id,details FROM atlas_projects.audit WHERE kind='conversation_deleted'"
+            ).fetchall()
+            self.assertEqual(len(audit), 1)
+            self.assertEqual(audit[0]["details"]["conversation_id"], self.conversation)
+            self.assertEqual(audit[0]["details"]["turn_count"], len(turns))
+
+    def test_search_is_author_scoped_limited_and_snippets(self) -> None:
+        def create(role: str, title: str) -> dict[str, Any]:
+            return cast(
+                dict[str, Any],
+                self.request(
+                    "POST",
+                    self.project_path() + "/conversations",
+                    role,
+                    {"title": title},
+                ).json(),
+            )
+
+        first = create("viewer", "Fictional aurora plan")
+        other = create("editor", "Fictional aurora notes")
+        shared = self.request(
+            "POST",
+            self.project_path() + f"/conversations/{other['id']}/share",
+            "editor",
+            {"confirm": True},
+            match=0,
+        )
+        self.assertEqual(shared.status_code, 200, shared.text)
+        self.assertIn(other["id"], self.conversation_ids("viewer"))
+        self.assertEqual(self.begin().status_code, 201)
+        self.assertEqual(self.broker("finish", self.finish_body()).status_code, 200)
+        result = self.request(
+            "GET", self.project_path() + "/conversations?q=REVENUE%20rose", "viewer"
+        ).json()["items"]
+        self.assertEqual([item["id"] for item in result], [self.conversation])
+        self.assertEqual(set(result[0]), {"id", "title", "updated_at", "snippet"})
+        self.assertIn("Revenue rose by 12 percent", result[0]["snippet"])
+        self.validator.validate(
+            result[0],
+            self.contract["components"]["schemas"]["ConversationSearchResult"],
+        )
+        # Another member's conversation never matches, even when shared.
+        aurora = self.conversation_ids("viewer", "?q=AURORA")
+        self.assertEqual(aurora, [first["id"]])
+        self.assertEqual(self.conversation_ids("editor", "?q=aurora"), [other["id"]])
+        self.assertEqual(self.conversation_ids("viewer", "?q=%25"), [])
+        self.error(
+            self.request("GET", self.project_path() + "/conversations?q=%20", "viewer"),
+            422,
+            "invalid_request",
+        )
+        archived = self.request(
+            "PATCH",
+            self.project_path() + f"/conversations/{first['id']}",
+            "viewer",
+            {"archived": True},
+            match=0,
+        )
+        self.assertEqual(archived.status_code, 200, archived.text)
+        self.assertEqual(self.conversation_ids("viewer", "?q=aurora"), [])
+        self.assertEqual(
+            self.conversation_ids("viewer", "?archived=1&q=aurora"), [first["id"]]
+        )
+        for index in range(55):
+            create("viewer", f"Fictional aurora {index}")
+        limited = self.conversation_ids("viewer", "?q=aurora")
+        self.assertEqual(len(limited), 50)
+        self.assertEqual(
+            self.conversation_ids("viewer", "?q=aurora&limit=100"), limited
         )
 
     def test_imported_conversation_is_private_ordered_and_editor_only(self) -> None:

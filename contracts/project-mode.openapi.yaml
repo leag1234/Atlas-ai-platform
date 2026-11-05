@@ -1143,6 +1143,19 @@ paths:
           format: uuid
       - $ref: '#/components/parameters/Cursor'
       - $ref: '#/components/parameters/Limit'
+      - name: archived
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: ['1']
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
       responses:
         '200':
           description: Success
@@ -3193,6 +3206,95 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ConversationCreate'
+  /api/atlas/orgs/{org}/projects/{project}/conversations/{conversation}:
+    patch:
+      operationId: patch_api_atlas_orgs_org_projects_project_conversations_conversation
+      summary: Rename, archive or restore an authored conversation
+      x-roles:
+      - viewer
+      - editor
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: conversation
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversationPatch'
+      responses:
+        '200':
+          description: Updated conversation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
+        '428': {$ref: '#/components/responses/Error428'}
+        '429': {$ref: '#/components/responses/Error429'}
+        '503': {$ref: '#/components/responses/Error503'}
+    delete:
+      operationId: delete_api_atlas_orgs_org_projects_project_conversations_conversation
+      summary: Delete an authored conversation and its turns
+      x-roles:
+      - viewer
+      - editor
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: conversation
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Deleted
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
+        '428': {$ref: '#/components/responses/Error428'}
+        '429': {$ref: '#/components/responses/Error429'}
+        '503': {$ref: '#/components/responses/Error503'}
   /api/atlas/orgs/{org}/projects/{project}/conversations/import:
     post:
       operationId: importProjectConversation
@@ -7737,7 +7839,7 @@ components:
         title:
           type: string
           minLength: 1
-          maxLength: 120
+          maxLength: 200
           pattern: \S
         owner_member_id:
           type: string
@@ -7752,6 +7854,9 @@ components:
           - type: string
             minLength: 1
           - type: 'null'
+        archived:
+          type: boolean
+          description: Hidden from the default listing; only the author changes it.
       required:
       - id
       - created_at
@@ -10644,6 +10749,34 @@ components:
                 items: {type: string, format: uuid}
             required: [role, content, created_at, attachment_file_ids]
       required: [title, messages]
+    ConversationPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Author only. The title is trimmed and must keep 1 to 200 characters.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          pattern: \S
+        archived:
+          type: boolean
+    ConversationSearchResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        snippet:
+          type: string
+          maxLength: 300
+      required: [id, title, updated_at, snippet]
     ContextRequest:
       type: object
       additionalProperties: false
@@ -11875,7 +12008,9 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Conversation'
+            oneOf:
+            - $ref: '#/components/schemas/Conversation'
+            - $ref: '#/components/schemas/ConversationSearchResult'
         next_cursor:
           anyOf:
           - type: string
