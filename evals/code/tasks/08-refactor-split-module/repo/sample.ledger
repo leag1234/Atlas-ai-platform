@@ -1,0 +1,6 @@
+# date | debit account | credit account | amount | memo
+2026-01-03 | expenses:rent | assets:bank | 950.00 | January rent
+2026-01-15 | assets:bank | income:salary | 2,400.00 | Salary
+2026-02-03 | expenses:rent | assets:bank | 950.00 | February rent
+2026-02-10 | expenses:food | assets:cash | 42.35 | Market
+2026-02-11 | assets:cash | assets:bank | 100.00 | ATM

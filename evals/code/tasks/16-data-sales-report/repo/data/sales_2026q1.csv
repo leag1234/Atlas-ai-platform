@@ -1,0 +1,18 @@
+order_id,date,region,product,quantity,unit_price,status
+1001,2026-01-03,North,Desk lamp,2,39.90,paid
+1002,2026-01-04,south,Office chair,1,"1,299.00",paid
+1003,2026-01-04,North ,Desk lamp,1,39.90,refunded
+1004,2026-01-05,East,Monitor arm,3,89.50,paid
+
+1005,2026-01-07,East,Monitor arm,1,89.50,cancelled
+1006,2026-02-30,West,Desk lamp,1,39.90,paid
+1007,2026-02-01,West,Cable tray,10,12.345,PAID
+1008,2026-02-02,South,Office chair,0,1299.00,paid
+1009,2026-02-03,north,Standing desk,1,"2,450.00", Paid 
+1010,2026-02-04,East,Monitor arm,2,89.50,paid
+1010,2026-02-05,East,Monitor arm,2,79.50,paid
+1011,2026-03-01,West,Cable tray,abc,12.00,paid
+1012,2026-03-02,South,Desk lamp,4,39.90,returned
+1013,2026-03-03,South,Office chair,1,"1,299.00",refunded
+1014,2026-03-30,East,Standing desk,1,2450,paid
+1015,2026-03-31,West,Desk lamp,1,39.90

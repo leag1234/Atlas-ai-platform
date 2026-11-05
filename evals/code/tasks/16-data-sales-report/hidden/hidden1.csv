@@ -1,0 +1,16 @@
+order_id,date,region,product,quantity,unit_price,status
+A1,2026-05-02,ALPINE,"Rope, 30 m",3,"1,000.005",paid
+A2,2026-05-01,alpine,Carabiner,5,4.10,paid
+A3,2026-05-03,Coastal,Kayak,1,"12,345.671",refunded
+A4,2026-05-04,coastal ,Tent,1,500,paid
+A5,2026-05-05,Delta,Tent,2,250.00,paid
+A6,2026-05-06,Bravo,Tent,1,1000,paid
+A7,2026-05-07,Delta,Stove,1,10.00,paid
+A7,2026-05-08,Delta,Stove,1,10.00,cancelled
+A8,2026-04-30,Bravo,Lantern, 2 ,0,paid
+A9,2026-13-01,Bravo,Lantern,1,5,paid
+A10,2026-05-09,Bravo,Lantern,1,-5,paid
+A11,2026-05-10,Bravo,Lantern,1.5,5,paid
+A12,2026-05-11,Echo,Lantern,1,5,paid,extra
+A13,2026-W19-1,Echo,Lantern,1,5,paid
+A15,2026-05-12,charlie,Stove,1,500,paid
