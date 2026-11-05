@@ -538,11 +538,16 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                 }
             )
         elif kind == "namespace":
-            response_fields(tool, {"type", "name", "tools"}, "namespace_tool")
+            response_fields(
+                tool, {"type", "name", "description", "tools"}, "namespace_tool"
+            )
             namespace, members = tool.get("name"), tool.get("tools")
             if not isinstance(namespace, str) or not isinstance(members, list):
                 dropped("namespace_tool", {"invalid_namespace"})
                 continue
+            namespace_description = tool.get("description")
+            if not isinstance(namespace_description, str) or not namespace_description:
+                namespace_description = None
             for member in members:
                 if not isinstance(member, dict) or member.get("type") != "function":
                     dropped("namespace_tool", {"invalid_member"})
@@ -556,6 +561,13 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                 if not isinstance(name, str):
                     dropped("namespace_tool", {"invalid_member"})
                     continue
+                description = member.get("description")
+                if namespace_description is not None:
+                    description = (
+                        namespace_description + "\n\n" + description
+                        if isinstance(description, str)
+                        else namespace_description
+                    )
                 tools.append(
                     {
                         "type": "function",
@@ -563,9 +575,14 @@ def responses_body(value: dict[str, Any]) -> dict[str, Any]:
                             **{
                                 k: v
                                 for k, v in member.items()
-                                if k in {"description", "parameters", "strict"}
+                                if k in {"parameters", "strict"}
                             },
                             "name": namespace + "__" + name,
+                            **(
+                                {"description": description}
+                                if isinstance(description, str)
+                                else {}
+                            ),
                         },
                     }
                 )
