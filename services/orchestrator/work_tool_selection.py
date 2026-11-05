@@ -55,10 +55,12 @@ PATTERNS = {
     "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
     "presentations": r"\b(pptx|slides?|presentation|presentacion|prasentation|diaporama)\b",
     "spreadsheets": r"\b(xlsx|csv|spreadsheet|workbook|excel|tableur|tabellen|foglio|hoja)\b",
-    "documents": r"\b(docx|pdf|markdown|md|txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
+    "documents": r"\b(docx|pdf|markdown|(?<![\w./\\-])md|(?<![\w./\\-])txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
     "code": r"\b(code|repository|repo|git|bug|function|python|javascript|fonction|codigo)\b",
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
 }
+# A requested file name such as notes.md selects documents only when nothing else matched and there is no repository.
+DOCUMENT_EXTENSION = r"\.(?:md|txt)\b"
 
 
 class ToolSelectionError(ValueError):
@@ -90,6 +92,8 @@ def select_group(
     for group, pattern in PATTERNS.items():
         if re.search(pattern, text):
             return group
+    if not repository and re.search(DOCUMENT_EXTENSION, text):
+        return "documents"
     suffixes = {
         str(f.get("relative_path", "")).lower().rsplit(".", 1)[-1] for f in files
     }
