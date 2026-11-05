@@ -202,6 +202,7 @@ async def run(
     ]
     counts: Counter[str] = Counter()
     recent: list[tuple[str, str]] = []
+    nudged: set[tuple[str, str]] = set()
     quota_recovered = False
     protocol_recovered = False
     links_recovered = False
@@ -581,7 +582,47 @@ async def run(
                     raise Stop("fetch_limit")
                 recent.append((call.name, canonical))
                 if len(recent) >= 3 and recent[-1] == recent[-2] == recent[-3]:
-                    raise Stop("loop_detected")
+                    if (call.name, canonical) in nudged:
+                        raise Stop("loop_detected")
+                    # Third identical call in a row: answer it once without running
+                    # it, so the model can change course; a fourth one stops.
+                    nudged.add((call.name, canonical))
+                    nudge: Message = {
+                        "error": "repeated_call",
+                        "message": (
+                            "This exact call was already made twice in a row and its "
+                            "result will not change. Use the previous result, or change "
+                            "the arguments (for edit_file, read the file again and copy "
+                            "old_text exactly). Repeating it again stops the turn."
+                        ),
+                    }
+                    last = result.trace[-1] if result.trace else {}
+                    if last.get("tool") == call.name:
+                        previous = json.dumps(last.get("output"), ensure_ascii=False)
+                        if len(previous) <= 4000:
+                            nudge["previous_result"] = last.get("output")
+                    if references is not None:
+                        await references.retain(call, nudge, messages)
+                    else:
+                        messages.append(
+                            dict(
+                                role="tool",
+                                tool_call_id=call.id,
+                                content=json.dumps(nudge),
+                            )
+                        )
+                    result.trace.append(
+                        dict(
+                            tool=call.name,
+                            arguments=call.arguments,
+                            output=nudge,
+                            reused=True,
+                        )
+                    )
+                    logging.getLogger(__name__).info(
+                        json.dumps({"event": "repeated_call_nudge", "tool": call.name})
+                    )
+                    continue
                 reserve(tools.estimate(call))
                 result.tool_calls += 1
                 counts["web_search" if call.name == "web_images" else call.name] += 1
