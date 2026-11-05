@@ -461,7 +461,8 @@ async def chat(
     public_model: str | None = None,
 ) -> Response:
     # nginx allows 300 s on the API; long streamed agent turns need more than 120 s.
-    deadline = monotonic() + 300
+    started = monotonic()
+    deadline = started + 300
     try:
         body = bytearray()
         async with asyncio.timeout(120):
@@ -688,66 +689,143 @@ async def chat(
         # Chat streams hold one chunk back so the last JSON chunk before [DONE]
         # can name the model that served the answer (served_by).
         last: dict[str, Any] | None = None
-        if wire:
-            for event in wire.start():
-                yield (
-                    "event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n"
-                )
-        async with aclosing(run()) as frames:
-            async for chunk in frames:
-                if wire:
-                    try:
-                        events = wire.feed(chunk)
-                    except (ValueError, TypeError, KeyError):
-                        events = wire.feed({"error": {"message": "provider_error"}})
-                    for event in events:
-                        yield (
-                            "event: "
-                            + event["type"]
-                            + "\ndata: "
-                            + json.dumps(event)
-                            + "\n\n"
-                        )
-                elif "hosted" in chunk:
-                    # Searches run between turns; Chat Completions shows only the answer.
-                    continue
-                elif chunk.get("choices") != [] or parsed.stream_options.include_usage:
-                    if parsed.stream_options.include_usage and "error" not in chunk:
-                        chunk.setdefault("usage", None)
-                    if output.citations:
-                        # The final delta of a searched answer carries its citations.
-                        for choice in chunk.get("choices") or []:
-                            if choice.get("finish_reason") is not None:
-                                from services.orchestrator.dev_chat import url_citations
+        outcome = "complete"
+        error_type: str | None = None
+        frames_yielded = 0
+        bytes_yielded = 0
+        max_gap_s = 0.0
+        previous_yield = monotonic()
 
-                                found = url_citations(output.text, output.citations)
-                                if found:
-                                    choice["delta"] = dict(
-                                        choice.get("delta") or {}, annotations=found
+        def record_yield(frame: str) -> str:
+            nonlocal frames_yielded, bytes_yielded, max_gap_s, previous_yield
+            now = monotonic()
+            max_gap_s = max(max_gap_s, now - previous_yield)
+            previous_yield = now
+            frames_yielded += 1
+            bytes_yielded += len(frame)
+            return frame
+
+        try:
+            if wire:
+                for event in wire.start():
+                    yield record_yield(
+                        "event: "
+                        + event["type"]
+                        + "\ndata: "
+                        + json.dumps(event)
+                        + "\n\n"
+                    )
+            async with aclosing(run()) as frames:
+                async for chunk in frames:
+                    if wire:
+                        try:
+                            events = wire.feed(chunk)
+                        except (ValueError, TypeError, KeyError):
+                            events = wire.feed({"error": {"message": "provider_error"}})
+                        if any("error" in event for event in events):
+                            outcome = "error_frame"
+                            error_type = str(
+                                next(
+                                    event["error"].get("type", "provider_error")
+                                    for event in events
+                                    if "error" in event
+                                )
+                            )
+                        for event in events:
+                            yield record_yield(
+                                "event: "
+                                + event["type"]
+                                + "\ndata: "
+                                + json.dumps(event)
+                                + "\n\n"
+                            )
+                    elif "hosted" in chunk:
+                        # Searches run between turns; Chat Completions shows only the answer.
+                        continue
+                    elif (
+                        chunk.get("choices") != []
+                        or parsed.stream_options.include_usage
+                    ):
+                        if "error" in chunk:
+                            outcome = "error_frame"
+                            error_type = str(
+                                chunk["error"].get("type", "provider_error")
+                            )
+                        if parsed.stream_options.include_usage and "error" not in chunk:
+                            chunk.setdefault("usage", None)
+                        if output.citations:
+                            # The final delta of a searched answer carries its citations.
+                            for choice in chunk.get("choices") or []:
+                                if choice.get("finish_reason") is not None:
+                                    from services.orchestrator.dev_chat import (
+                                        url_citations,
                                     )
-                    if last is not None:
-                        yield "data: " + json.dumps(last) + "\n\n"
-                    last = chunk
-        if wire is not None and not getattr(
-            getattr(wire, "core", wire), "terminal", True
-        ):
-            # The provider stream ended without a final frame: end with a failure
-            # event instead of closing silently.
-            logging.getLogger("atlas.api").warning(
-                json.dumps({"event": "devapi_stream_unterminated"})
-            )
-            for event in wire.feed(
-                {"error": {"type": "server_error", "message": "provider_stream_ended"}}
+
+                                    found = url_citations(output.text, output.citations)
+                                    if found:
+                                        choice["delta"] = dict(
+                                            choice.get("delta") or {}, annotations=found
+                                        )
+                        if last is not None:
+                            yield record_yield("data: " + json.dumps(last) + "\n\n")
+                        last = chunk
+            if wire is not None and not getattr(
+                getattr(wire, "core", wire), "terminal", True
             ):
-                yield (
-                    "event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n"
+                # The provider stream ended without a final frame: end with a failure
+                # event instead of closing silently.
+                outcome = "unterminated"
+                logging.getLogger("atlas.api").warning(
+                    json.dumps({"event": "devapi_stream_unterminated"})
                 )
-        if wire is None:
-            if last is not None:
-                if output.served_by and "error" not in last:
-                    last["served_by"] = output.served_by
-                yield "data: " + json.dumps(last) + "\n\n"
-            yield "data: [DONE]\n\n"
+                for event in wire.feed(
+                    {
+                        "error": {
+                            "type": "server_error",
+                            "message": "provider_stream_ended",
+                        }
+                    }
+                ):
+                    yield record_yield(
+                        "event: "
+                        + event["type"]
+                        + "\ndata: "
+                        + json.dumps(event)
+                        + "\n\n"
+                    )
+            if wire is None:
+                if last is not None:
+                    if output.served_by and "error" not in last:
+                        last["served_by"] = output.served_by
+                    yield record_yield("data: " + json.dumps(last) + "\n\n")
+                yield record_yield("data: [DONE]\n\n")
+        except (GeneratorExit, asyncio.CancelledError):
+            outcome = "client_disconnect"
+            raise
+        except BaseException as exc:
+            outcome = "exception"
+            error_type = type(exc).__name__
+            raise
+        finally:
+            if outcome == "error_frame":
+                error_type = error_type or "provider_error"
+            elif outcome == "unterminated":
+                error_type = "provider_stream_ended"
+            logging.getLogger("atlas.api").warning(
+                json.dumps(
+                    {
+                        "event": "devapi_stream_end",
+                        "outcome": outcome,
+                        **({"error_type": error_type} if error_type else {}),
+                        "protocol": protocol,
+                        "model": public_model or raw_model or "atlas-code",
+                        "elapsed_s": round(monotonic() - started, 1),
+                        "frames": frames_yielded,
+                        "bytes": bytes_yielded,
+                        "max_gap_s": round(max_gap_s, 1),
+                    }
+                )
+            )
 
     if parsed.stream:
         headers = {"X-Accel-Buffering": "no"}
