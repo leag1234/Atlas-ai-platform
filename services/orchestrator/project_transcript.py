@@ -705,7 +705,16 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 message = item.reponse
             else:
                 message = "; ".join(item.erreurs) or item.state
-            error = ProjectError(422, "invalid_request", message).body
+            if item.work_failure:
+                error = ProjectError(422, "invalid_request", message).body
+            else:
+                # No known reason: the model or a dependency failed. Say so, never
+                # as a malformed request, and let the client retry the turn.
+                error = ProjectError(503, "dependency_unavailable", message).body
+                error["provider_outcome"] = (
+                    "failed" if "provider_error" in item.erreurs else "unknown"
+                )
+                error["retryable"] = True
     except asyncio.CancelledError:
         terminal = "cancelled"
         error = ProjectError(422, "invalid_request", "Turn cancelled by request").body

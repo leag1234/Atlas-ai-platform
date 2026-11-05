@@ -415,6 +415,47 @@ class ScopedProjectDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(finish["error"]["message"], "loop_detected")
         self.assertIn("loop_detected", finish["content_refs"][0]["text"])
 
+    async def test_failed_work_without_known_reason_is_a_retryable_outage(self) -> None:
+        from services.orchestrator.project_transcript import process_scoped_project
+
+        for known in (False, True):
+            with self.subTest(known=known):
+                state = self.state("work")
+                calls = AsyncMock(
+                    side_effect=[state, state["turn"], dict(state, replay=True)]
+                )
+
+                async def work(
+                    request: ChatRequest, item: Interaction, **kwargs: Any
+                ) -> None:
+                    item.state = "failed"
+                    item.reponse = "Work failed: provider_error"
+                    item.erreurs.append("provider_error")
+                    if known:
+                        item.work_failure = dict(category="time_limit", answer="")
+
+                with (
+                    patch(
+                        "services.orchestrator.project_transcript.TranscriptBroker.call",
+                        calls,
+                    ),
+                    patch(
+                        "services.orchestrator.code_mode.process_work", side_effect=work
+                    ),
+                ):
+                    await process_scoped_project(self.request("work"), Interaction())
+                error = calls.await_args_list[1].args[1]["error"]
+                if known:
+                    self.assertEqual(
+                        (error["status"], error["error"]), (422, "invalid_request")
+                    )
+                else:
+                    self.assertEqual(
+                        (error["status"], error["error"], error["provider_outcome"]),
+                        (503, "dependency_unavailable", "failed"),
+                    )
+                    self.assertTrue(error["retryable"])
+
     async def test_work_without_organization_never_reaches_legacy_engine(self) -> None:
         from services.orchestrator.project_chat import process_project
         from services.retrieval.project_identity import ProjectError
