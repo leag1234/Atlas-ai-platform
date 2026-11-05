@@ -151,9 +151,9 @@ def serve_download(
 ) -> None:
     """Read one allowed download from the files terminal with its own key.
 
-    Stable mode grants Open WebUI users no access to the files terminal, so its
-    proxy (and the terminal tools it would offer in chats) is closed; the relay
-    serves the single allowed route itself, after the owner check.
+    Stable mode configures no files terminal in Open WebUI, so it has no terminal
+    proxy, no terminal tools in chats and no key; the relay serves the single
+    allowed route itself, after the owner check.
     """
     import http.client
     from urllib.parse import quote

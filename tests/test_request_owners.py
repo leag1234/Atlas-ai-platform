@@ -281,7 +281,7 @@ class RelayTests(unittest.TestCase):
 
 
 class StableConnectionTests(unittest.TestCase):
-    def test_stable_ui_users_get_no_files_terminal_access(self) -> None:
+    def start(self, stable: bool) -> tuple[str, list[str]]:
         with (
             patch.dict(
                 os.environ,
@@ -291,16 +291,29 @@ class StableConnectionTests(unittest.TestCase):
                 "services.orchestrator.terminal_stack.network_gateway",
                 return_value="172.30.0.1",
             ),
-            patch.object(serving, "stable_mode", return_value=True),
+            patch.object(serving, "stable_mode", return_value=stable),
             patch.object(serving, "stable_webui_options", return_value=[]),
-            patch.object(serving, "docker_run"),
+            patch.object(serving, "docker_run") as run,
         ):
             serving.webui("test-ui", True)
-            connection = json.loads(os.environ["TERMINAL_SERVER_CONNECTIONS"])[0]
-        # No access_grants: Open WebUI makes the connection admin-only, so its
-        # terminal proxy and the chat terminal tools (terminal_id) are refused.
-        self.assertNotIn("access_grants", connection["config"])
-        self.assertEqual(connection["config"], {"chat_uploads": "default"})
+            value = os.environ["TERMINAL_SERVER_CONNECTIONS"]
+        return value, run.call_args.args[2]
+
+    def test_stable_web_ui_has_no_files_terminal_connection(self) -> None:
+        value, options = self.start(True)
+        # Admins bypass connection grants: any connection would give them the
+        # shared volume, its terminal tools and the key in the admin settings.
+        self.assertEqual(json.loads(value), [])
+        self.assertNotIn("test-only", value)
+        # Passed explicitly, so the connection in infra/chat-ui.env never applies.
+        index = options.index("TERMINAL_SERVER_CONNECTIONS")
+        self.assertEqual(options[index - 1], "-e")
+
+    def test_other_modes_keep_the_filesystem_connection(self) -> None:
+        value, _ = self.start(False)
+        connection = json.loads(value)[0]
+        self.assertEqual(connection["config"], {"chat_uploads": "filesystem"})
+        self.assertEqual(connection["key"], "test-only")
 
 
 class RecordingTests(unittest.TestCase):
