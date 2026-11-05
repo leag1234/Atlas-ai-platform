@@ -1,0 +1,12 @@
+timestamp,user_id,event
+2026-12-31T23:59:59-00:30,Ana,Login
+2027-01-01T00:29:59Z,ana,login
+2027-01-01T00:29:59Z,ANA,LOGIN
+2026-12-31T23:00:00Z,bo,search
+2027-01-01T10:00:00+14:00,cy,search
+2027-01-03T00:00:00+00:00,dee,export
+2027-01-03T00:00:00+00:00,dee,login
+2027-02-29T10:00:00Z,eve,login
+2027-01-03T12:00:00+05:30,bo,"search"
+"2027-01-03T12:00:00Z",fay,search,
+2027-01-03T12:00:00.5Z,fay,search

@@ -1,0 +1,4 @@
+order_id,date,region,product,quantity,unit_price,status
+X1,2026-01-01,North,Lamp,1,10,cancelled
+X2,bad,North,Lamp,1,10,paid
+

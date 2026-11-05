@@ -1,0 +1,60 @@
+CI run of commit HEAD on the CI runner
+$ sh ci.sh
+test_counts (test_daily.DailyTest.test_counts) ... FAIL
+test_day_of (test_daily.DailyTest.test_day_of) ... FAIL
+test_day_start (test_daily.DailyTest.test_day_start) ... FAIL
+test_window (test_daily.DailyTest.test_window) ... FAIL
+
+======================================================================
+FAIL: test_counts (test_daily.DailyTest.test_counts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_daily.py", line 19, in test_counts
+    self.assertEqual(daily_counts(stamps), {"2026-02-28": 1, "2026-03-01": 2, "2026-03-02": 1})
+AssertionError: {'2026-03-01': 2, '2026-03-02': 2} != {'2026-02-28': 1, '2026-03-01': 2, '2026-03-02': 1}
+- {'2026-03-01': 2, '2026-03-02': 2}
+?                                 ^
+
++ {'2026-02-28': 1, '2026-03-01': 2, '2026-03-02': 1}
+?  +++++++++++++++++                               ^
+
+
+======================================================================
+FAIL: test_day_of (test_daily.DailyTest.test_day_of)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_daily.py", line 12, in test_day_of
+    self.assertEqual(day_of(MARCH_1 - 1), "2026-02-28")
+AssertionError: '2026-03-01' != '2026-02-28'
+- 2026-03-01
++ 2026-02-28
+
+
+======================================================================
+FAIL: test_day_start (test_daily.DailyTest.test_day_start)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_daily.py", line 15, in test_day_start
+    self.assertEqual(day_start("2026-03-01"), MARCH_1)
+AssertionError: 1772280000 != 1772323200
+
+======================================================================
+FAIL: test_window (test_daily.DailyTest.test_window)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_daily.py", line 23, in test_window
+    self.assertEqual(window(stamps, "2026-03-01", "2026-03-01"), [MARCH_1, MARCH_1 + 86399])
+AssertionError: Lists differ: [1772323199, 1772323200] != [1772323200, 1772409599]
+
+First differing element 0:
+1772323199
+1772323200
+
+- [1772323199, 1772323200]
++ [1772323200, 1772409599]
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.010s
+
+FAILED (failures=4)
+exit status 1

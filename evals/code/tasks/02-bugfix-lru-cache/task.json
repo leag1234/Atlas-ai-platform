@@ -1,0 +1,1 @@
+{"id": "02-bugfix-lru-cache", "category": "bugfix", "title": "LRU cache evicts recently used entries", "time_budget_s": 600}

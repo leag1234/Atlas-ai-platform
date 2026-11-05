@@ -1,0 +1,4 @@
+{
+  "required": {"id": "string", "customer": "string", "lines": "array"},
+  "line": {"sku": "string", "quantity": "integer", "unit_price": "number"}
+}

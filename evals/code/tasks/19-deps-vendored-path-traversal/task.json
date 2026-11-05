@@ -1,0 +1,1 @@
+{"id": "19-deps-vendored-path-traversal", "category": "dependency-cve", "title": "Upgrade a vendored archive library with a path traversal advisory", "time_budget_s": 900}

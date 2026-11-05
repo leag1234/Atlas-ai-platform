@@ -1,0 +1,40 @@
+CI run of commit HEAD on the CI runner
+$ sh ci.sh
+test_bad (tests.test_validate.ValidateTest.test_bad) ... ERROR
+test_good (tests.test_validate.ValidateTest.test_good) ... ERROR
+
+======================================================================
+ERROR: test_bad (tests.test_validate.ValidateTest.test_bad)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_validate.py", line 12, in test_bad
+    errors({"id": 1, "lines": [{"sku": "s", "quantity": True}]}),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/orders/validate.py", line 22, in errors
+    schema = load_schema()
+             ^^^^^^^^^^^^^
+  File "/work/orders/validate.py", line 10, in load_schema
+    with open("orders/schemas/order.json", encoding="utf-8") as handle:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'orders/schemas/order.json'
+
+======================================================================
+ERROR: test_good (tests.test_validate.ValidateTest.test_good)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_validate.py", line 8, in test_good
+    self.assertEqual(errors({"id": "1", "customer": "c", "lines": [{"sku": "s", "quantity": 1, "unit_price": 2}]}), [])
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/orders/validate.py", line 22, in errors
+    schema = load_schema()
+             ^^^^^^^^^^^^^
+  File "/work/orders/validate.py", line 10, in load_schema
+    with open("orders/schemas/order.json", encoding="utf-8") as handle:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'orders/schemas/order.json'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+FAILED (errors=2)
+exit status 1

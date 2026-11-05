@@ -1,0 +1,40 @@
+CI run of commit HEAD on the CI runner
+$ sh ci.sh
+test_custom_alias (tests.test_aliases.AliasTest.test_custom_alias) ... ok
+test_add_tags (tests.test_tags.TagTest.test_add_tags) ... FAIL
+test_defaults_untouched (tests.test_tags.TagTest.test_defaults_untouched) ... FAIL
+test_extra (tests.test_tags.TagTest.test_extra) ... ok
+test_normalize (tests.test_tags.TagTest.test_normalize) ... ok
+
+======================================================================
+FAIL: test_add_tags (tests.test_tags.TagTest.test_add_tags)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_tags.py", line 16, in test_add_tags
+    self.assertEqual(add_tags({"tags": ["Blue", "blue", "GREY"]}), ["blue", "gray"])
+AssertionError: Lists differ: ['blue', 'gray', 't-shirt'] != ['blue', 'gray']
+
+First list contains 1 additional elements.
+First extra element 2:
+'t-shirt'
+
+- ['blue', 'gray', 't-shirt']
++ ['blue', 'gray']
+
+======================================================================
+FAIL: test_defaults_untouched (tests.test_tags.TagTest.test_defaults_untouched)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/tests/test_tags.py", line 13, in test_defaults_untouched
+    self.assertEqual(tagger.tags.DEFAULT_ALIASES, {"colour": "color", "grey": "gray"})
+AssertionError: {'colour': 'color', 'grey': 'gray', 'tee': 't-shirt'} != {'colour': 'color', 'grey': 'gray'}
+- {'colour': 'color', 'grey': 'gray', 'tee': 't-shirt'}
+?                                   ------------------
+
++ {'colour': 'color', 'grey': 'gray'}
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.001s
+
+FAILED (failures=2)
+exit status 1

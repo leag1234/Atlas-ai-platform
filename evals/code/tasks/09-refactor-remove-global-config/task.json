@@ -1,0 +1,1 @@
+{"id": "09-refactor-remove-global-config", "category": "refactor", "title": "Replace the global CONFIG dict with explicit settings", "time_budget_s": 900}
