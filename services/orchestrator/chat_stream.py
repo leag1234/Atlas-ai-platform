@@ -738,7 +738,7 @@ def response(
                             ),
                             "cost_eur": item.cout_eur,
                             "provider_model": item.provider_model,
-                            "reasoning_effort": payload.reasoning_effort,
+                            "reasoning_effort": item.reasoning_effort,
                             "max_output_tokens": payload.max_tokens,
                             "reasoning_retried": item.reasoning_retried,
                             "status": activity_labels["reasoning_fallback"]

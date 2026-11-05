@@ -496,6 +496,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         request._connector_scope["conversation"] = turn["conversation_id"]
     item.context_manifest = context["context_manifest"]
     item.request_id = "chatcmpl-" + turn["request_id"]
+    from services.orchestrator.request_owners import record as record_owner
+
+    record_owner(item.request_id, request._project_subject)
     sink = sink_context.get()
     if sink:
         for event in state["events"]:

@@ -789,6 +789,92 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 403, reply.text)
         self.assertEqual(reply.json()["error"]["missing_scope"], "model")
 
+    def assistant_settlement(self, process: Any, stream: bool = False) -> sqlite3.Row:
+        """Run one assistant-scope request through the key edge; return its key row."""
+        _, key = self.create()
+        with (
+            TestClient(app) as client,
+            patch("services.orchestrator.chat_api.process", process),
+        ):
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key},
+                json={
+                    "model": "atlas",
+                    "stream": stream,
+                    "messages": [{"role": "user", "content": "Hello"}],
+                },
+            )
+        # A stream reports the failure as an error event after its 200 header.
+        self.assertTrue(stream or reply.status_code != 200, reply.text)
+        self.assertNotIn('"finish_reason": "stop"', reply.text)
+        with sqlite3.connect(self.store.path) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                "SELECT charged,state,input_tokens,output_tokens FROM api_key_requests"
+            ).fetchall()
+        self.assertEqual(len(rows), 1)
+        row: sqlite3.Row = rows[0]
+        return row
+
+    def test_refusal_before_any_model_call_is_not_charged(self) -> None:
+        from services.orchestrator.model import GatewayError, GatewayModel
+
+        async def refused(payload: Any, item: Any) -> None:
+            # The free configuration call does not count as a provider call.
+            with patch("aiohttp.ClientSession.post", side_effect=OSError):
+                try:
+                    await GatewayModel.post("http://127.0.0.1:9/agent/config", {}, 1)
+                except Exception:
+                    pass
+            raise GatewayError(
+                "memory_unavailable", 503, "Personal memory is unavailable."
+            )
+
+        for stream in (False, True):
+            with self.subTest(stream=stream):
+                self.store.path.unlink()
+                self.store = Store(
+                    self.store.path, "test-pepper-" * 4, lambda: self.now[0]
+                )
+                with patch(
+                    "services.orchestrator.api_key_edge.configured_store",
+                    return_value=self.store,
+                ):
+                    row = self.assistant_settlement(refused, stream)
+                self.assertEqual(
+                    (row["charged"], row["state"], row["input_tokens"]),
+                    (0, "complete", 0),
+                )
+
+    def test_failure_after_a_provider_call_started_keeps_the_reservation(
+        self,
+    ) -> None:
+        from services.orchestrator.model import GatewayModel
+
+        async def aborted(payload: Any, item: Any) -> None:
+            with patch("aiohttp.ClientSession.post", side_effect=OSError):
+                try:
+                    await GatewayModel.post("http://127.0.0.1:9/agent/complete", {}, 1)
+                except Exception:
+                    pass
+            raise RuntimeError("stream interrupted")
+
+        row = self.assistant_settlement(aborted)
+        self.assertEqual(
+            (row["charged"], row["state"], row["input_tokens"]),
+            (100000, "unknown", None),
+        )
+        # The daily cap keeps the reservation too, not the unmeasured 0.
+        from services.orchestrator.daily_budget import DailyLedger
+
+        with sqlite3.connect(DailyLedger().path) as db:
+            measured = db.execute(
+                "SELECT COALESCE(SUM(measured_micro),0) FROM budget_ledger"
+                " WHERE kind='day'"
+            ).fetchone()[0]
+        self.assertEqual(measured, 100000)
+
     def test_http_expired_revoked_invalid_and_quota_before_provider(self) -> None:
         from dev_gateway import Plan
 

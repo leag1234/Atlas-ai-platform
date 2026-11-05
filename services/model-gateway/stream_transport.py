@@ -47,7 +47,7 @@ async def response_window(seconds: float) -> AsyncGenerator[None, None]:
 
 
 class StreamRequest(AgentRequest):
-    reasoning_effort: Literal["none", "low", "high"] = "none"
+    reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
 
 
 async def stream(
@@ -243,7 +243,9 @@ async def attempt(
         **provider_settings.json_options(request.response_format),
         "max_tokens": request.max_tokens,
         "temperature": 0,
-        "reasoning_effort": "none",
+        # Validation keeps client requests at none; only the quality controller
+        # sets a per-model configured effort on an internal attempt copy.
+        "reasoning_effort": request.reasoning_effort,
         "stream": True,
         "stream_options": {"include_usage": True},
     }
@@ -279,6 +281,7 @@ async def attempt(
                 endpoint + "/chat/completions",
                 json=provider_settings.request_options(
                     body,
+                    configured_effort=request.reasoning_effort,
                     role="vision"
                     if classify_task(request.messages) == "vision"
                     else ServerlessPolicy().public_profiles.get(request.profile or ""),

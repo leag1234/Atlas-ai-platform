@@ -138,7 +138,13 @@ async def validated_drive(
         yield provider_failure(exc)
     finally:
         if not settled:
-            store.finish(request_id, charged if known else None, incoming, outgoing)
+            # attempts == 0: the deadline passed before the first provider call.
+            store.finish(
+                request_id,
+                charged if known or attempts == 0 else None,
+                incoming,
+                outgoing,
+            )
         logging.getLogger("uvicorn.error").info(
             json.dumps(
                 {
@@ -184,9 +190,11 @@ async def drive(
                 yield chunk
         return
     settled, charged, started = False, None, monotonic()
+    called = False
     try:
         if deadline <= monotonic():
             raise TimeoutError("timeout")
+        called = True
         async with (
             asyncio.timeout(max(0, deadline - monotonic())),
             aclosing(gateway.events(plan)) as frames,
@@ -220,7 +228,8 @@ async def drive(
         yield provider_failure(exc)
     finally:
         if not settled:
-            store.finish(request_id, None)
+            # Nothing was sent when the deadline passed before the provider call.
+            store.finish(request_id, None if called else 0)
         logging.getLogger("uvicorn.error").info(
             json.dumps(
                 {

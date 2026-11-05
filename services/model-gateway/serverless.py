@@ -14,7 +14,17 @@ from typing import Literal
 
 import yaml
 
-from provider_settings import configure
+from provider_settings import (
+    REASONING_EFFORTS,
+    configure,
+    reasoning_control,
+    selected,
+)
+
+
+# Extra output room for the first attempt of a model with configured reasoning.
+# The orchestrator reserves and bounds the same room (/agent/config).
+REASONING_OUTPUT_TOKENS = {"low": 2000, "medium": 6000, "high": 12000}
 
 Task = Literal["text", "code", "vision"]
 
@@ -104,6 +114,43 @@ class ServerlessPolicy:
                 if not value.is_finite() or value < 0:
                     raise ValueError("invalid_price")
             self.models[role] = model
+        self.efforts = self.reasoning_efforts()
+
+    def reasoning_efforts(self) -> dict[str, str]:
+        """Configured reasoning effort per model; none unless an operator sets one.
+
+        Sources, last wins: the model's routing capabilities (`reasoning_effort`),
+        the selected provider preset (`reasoning_efforts`), then the JSON object
+        in ATLAS_REASONING_EFFORTS ({"<model id>": "none|low|medium|high"}).
+        """
+        preset = (selected() or {}).get("reasoning_efforts") or {}
+        raw = os.environ.get("ATLAS_REASONING_EFFORTS", "").strip()
+        try:
+            overrides = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            raise ValueError("invalid_reasoning_efforts") from None
+        if not isinstance(overrides, dict) or not isinstance(preset, dict):
+            raise ValueError("invalid_reasoning_efforts")
+        if set(overrides) - set(self.models.values()):
+            raise ValueError("unknown_reasoning_model")
+        efforts: dict[str, str] = {}
+        for role, entry in self.config.items():
+            model = self.models[role]
+            effort = overrides.get(
+                model,
+                preset.get(
+                    model,
+                    entry["capabilities"][model].get("reasoning_effort", "none"),
+                ),
+            )
+            if effort not in REASONING_EFFORTS:
+                raise ValueError("invalid_reasoning_effort")
+            if effort != "none" and reasoning_control() is None:
+                raise ValueError("reasoning_unsupported")
+            efforts[model] = max(
+                efforts.get(model, "none"), effort, key=REASONING_EFFORTS.index
+            )
+        return efforts
 
     def cost(self, model: str, incoming: int, outgoing: int) -> Decimal:
         price = self.prices[model]
@@ -114,7 +161,7 @@ class ServerlessPolicy:
 
     def configuration(self) -> dict[str, object]:
         # Covers every primary/fallback pair, including an unknown primary failure.
-        return {
+        configuration: dict[str, object] = {
             key: str(
                 max(
                     Decimal(str(self.prices[self.models[role]][key]))
@@ -125,6 +172,20 @@ class ServerlessPolicy:
             )
             for key in ("input_eur_per_mtok", "output_eur_per_mtok")
         } | {"max_tokens": 2048, "gateway_reserves_quality": True}
+        if room := self.reasoning_room():
+            configuration["reasoning_output_tokens"] = room
+        return configuration
+
+    def reasoning_room(self) -> int:
+        """Largest first-attempt widening any configured reasoning may receive."""
+        return max(
+            (
+                REASONING_OUTPUT_TOKENS[effort]
+                for effort in getattr(self, "efforts", {}).values()
+                if effort != "none"
+            ),
+            default=0,
+        )
 
     def reserve(
         self, messages: list[dict[str, object]], tools: list[dict[str, object]]

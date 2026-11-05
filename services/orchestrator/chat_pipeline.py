@@ -1713,8 +1713,12 @@ async def _process(
                 finally:
                     model.delivery_reserve = Decimal(0)
             # Preserve substantive first-pass evidence, never an invented recovery URL.
+            # A stopped pass carries a diagnostic, not content.
             if not tools.terminal.files:
-                result.text = first_result.text.strip() or result.text.strip()
+                if first_result.state == "done" and first_result.text.strip():
+                    result.text, result.state = first_result.text.strip(), "done"
+                else:
+                    result.text = result.text.strip()
         if deliver_files and tools.terminal is not None:
             from services.orchestrator.file_content import render_command
             from services.orchestrator.file_results import inline_fallback
@@ -1737,6 +1741,9 @@ async def _process(
                     ready = await recover_content(
                         model, request, item, result, missing, started
                     )
+                    if ready:
+                        # Recovered content replaces a stop diagnostic.
+                        result.state = "done"
                 command, paths = (
                     render_command(result.text, missing) if ready else ("", [])
                 )
@@ -1796,7 +1803,11 @@ async def _process(
                 if not any(url.endswith("." + ext) for url in tools.terminal.files)
             )
             if not tools.terminal.files or missing:
-                if not terminal_already_failed or file_recovery_attempted:
+                if result.state != "done":
+                    # A stopped run (output or cost budget, provider failure) has
+                    # no content above: keep its honest failure and status.
+                    pass
+                elif not terminal_already_failed or file_recovery_attempted:
                     result.text = inline_fallback(
                         result.text,
                         request.lang,
@@ -1811,7 +1822,7 @@ async def _process(
                     )
             else:
                 result.text = answer_content(result.text, preserve_code=preserve_code)
-        elif deliver_files:
+        elif deliver_files and result.state == "done":
             from services.orchestrator.file_results import inline_fallback
 
             result.text = inline_fallback(
@@ -1933,6 +1944,7 @@ async def _process(
         item.trace_tokens, item.answer_tokens = model.trace_tokens, model.answer_tokens
         item.token_split_estimated = model.token_split_estimated
         item.reasoning_retried = model.reasoning_retried
+        item.reasoning_effort = model.reasoning_used
         item.latence_ms["generation"] = model.generation_ms
         if model.observations and item.task_type != "imagegen":
             item.modele_utilise = model.observations[-1].provider

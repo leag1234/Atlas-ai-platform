@@ -42,7 +42,7 @@ from packages.tool_history import (
 from packages.profiles import PROFILES
 from packages.evidence import estimated_tokens
 from packages.images import image_info
-from serverless import ServerlessPolicy, classify_task
+from serverless import REASONING_OUTPUT_TOKENS, ServerlessPolicy, classify_task
 
 
 CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model context]\n"
@@ -420,6 +420,36 @@ async def stream_quality(
                     "reasoning_effort": "none" if index else request.reasoning_effort,
                 }
             )
+        # Configured reasoning applies to the first attempt only. Any recovery
+        # (empty or truncated answer, provider failure) and every later turn of a
+        # recovered answer run without reasoning, within the 3000-token bound.
+        current = current.model_copy(
+            update={
+                "reasoning_effort": "none"
+                if index or request.reasoning_disabled
+                else policy.efforts.get(model, "none")
+            }
+        )
+        if current.reasoning_effort != "none":
+            # Reasoning tokens count against max_tokens: without extra room a long
+            # document can spend the whole budget thinking and be cut mid-answer,
+            # after streaming started, where no retry is possible (2026-11-04).
+            # Widen only within the context and the cost budget, never refusing a
+            # turn that fitted before, and only while the bounded 3000-token
+            # recovery stays affordable: a widened attempt can end empty with
+            # finish_reason=length after spending all of it on reasoning.
+            widened = min(
+                current.max_tokens + REASONING_OUTPUT_TOKENS[current.reasoning_effort],
+                policy.config[role]["capabilities"][model]["context"] - incoming,
+            )
+            if (
+                widened > current.max_tokens
+                and spent
+                + policy.cost(model, incoming, widened)
+                + policy.cost(model, incoming, 3000)
+                <= budget
+            ):
+                current = current.model_copy(update={"max_tokens": widened})
         reserved = policy.cost(model, incoming, current.max_tokens)
         if spent + reserved > budget:
             raise ProviderLimitError(
@@ -906,6 +936,7 @@ async def stream_quality(
             "answer_tokens": answer_tokens,
             "token_split_estimated": estimated,
             "reasoning_retried": retried,
+            "reasoning_effort": current.reasoning_effort,
             "provider_retries": index,
         }
         if retry_completion_tokens:
@@ -925,7 +956,7 @@ async def stream_quality(
                     "event": "quality_usage",
                     "provider_model": model,
                     "profile": request.profile,
-                    "effort": request.reasoning_effort,
+                    "effort": current.reasoning_effort,
                     "trace_tokens": trace_tokens,
                     "answer_tokens": answer_tokens,
                     "token_split_estimated": estimated,

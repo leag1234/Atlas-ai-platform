@@ -34,6 +34,7 @@ from services.orchestrator.stream_client import sink_context, metadata_only_cont
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.chat_stream import response as stream_response
 from services.orchestrator.model import GatewayError
+from packages.provider_calls import track, use
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.daily_budget import (
     BudgetRefusal,
@@ -238,6 +239,7 @@ async def chat(request: Request) -> Response:
     elif request.headers.get("origin") not in (None, str(request.base_url).rstrip("/")):
         return JSONResponse({"error": "origin_rejected"}, status_code=403)
     item, started = Interaction(), time.monotonic()
+    calls = track()
     status, code, payload = 200, "", None
     streaming = False
     detail = ""
@@ -336,6 +338,19 @@ async def chat(request: Request) -> Response:
             user, ledger = user_from_headers(request.headers), DailyLedger()
             if payload._project_subject:
                 user = payload._project_subject
+            from services.orchestrator.request_owners import record as record_owner
+
+            # Bind this request's user-file directory to the caller before any file
+            # exists: the download relay serves it to this identity only.
+            record_owner(
+                item.request_id,
+                payload._project_subject
+                or (
+                    authenticated_key.subject
+                    if authenticated_key is not None
+                    else request.headers.get("x-openwebui-user-email")
+                ),
+            )
             reserve = Decimal("0.30" if payload.has_attachments else "0.10")
             if payload.code_mode and project_mode():
                 return public_error(ProjectError(409, "feature_not_available"))
@@ -355,12 +370,21 @@ async def chat(request: Request) -> Response:
                     raise
 
             def settle(result: Interaction) -> None:
-                ledger.settle_cost(reservation, Decimal(str(result.cout_eur)))
+                measured = Decimal(str(result.cout_eur))
+                if result.state != "done" and calls.started:
+                    # A provider call may have consumed tokens that were never
+                    # measured: the daily cap keeps at least the reservation, as
+                    # the API key ledger does.
+                    measured = max(measured, reservation.amount)
+                ledger.settle_cost(reservation, measured)
                 if key_reservation is not None:
+                    # The reservation stays charged ('unknown') only when a provider
+                    # call may have consumed unmeasured tokens; a request that ended
+                    # before any provider call is charged its measured cost.
                     request.state.key_store.finish(
                         key_reservation,
                         int(Decimal(str(result.cout_eur)) * 1000000)
-                        if result.state == "done"
+                        if result.state == "done" or not calls.started
                         else None,
                         result.tokens["in"],
                         result.tokens["out"],
@@ -373,6 +397,7 @@ async def chat(request: Request) -> Response:
                 streaming = True
 
                 async def budgeted(p: ChatRequest, result: Interaction) -> None:
+                    use(calls)
                     try:
                         await process_request(p, result)
                     finally:
@@ -541,7 +566,7 @@ async def chat(request: Request) -> Response:
                     if payload._connector_approvals
                     else {}
                 ),
-                "reasoning_effort": payload.reasoning_effort,
+                "reasoning_effort": item.reasoning_effort,
                 "max_output_tokens": payload.max_tokens,
                 "cost_eur": item.cout_eur,
                 "cost_kind": "reserved_upper_bound" if item.erreurs else "measured",

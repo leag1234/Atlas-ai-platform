@@ -80,31 +80,147 @@ def identity_allowed(header: bytes) -> bool:
     return re.search(rb"(?im)^authorization:[ \t]*Bearer sk-\S", header) is not None
 
 
-def stable_route_allowed(header: bytes) -> bool:
-    """Expose generated downloads, never the terminal's execution or browse API."""
-    method, target, _ = header.split(b" ", 2)
-    path = target.split(b"?", 1)[0].decode("latin1")
-    if project_mode() and legacy_project_route(path):
-        return False
+DOWNLOAD = re.compile(
+    r"/api/v1/terminals/atlas-files/files/serve/home/user/requests/"
+    r"(chatcmpl-[a-f0-9]{32})/[A-Za-z0-9][A-Za-z0-9_.-]*"
+)
+
+
+def normalized_path(header: bytes) -> str | None:
+    """The request path after repeated percent-decoding and dot removal."""
+    path = header.split(b" ", 2)[1].split(b"?", 1)[0].decode("latin1")
     for _ in range(8):
         decoded = unquote(path)
         if decoded == path:
             break
         path = decoded
     if unquote(path) != path or "\\" in path:
+        return None
+    return posixpath.normpath(path)
+
+
+def download_request(header: bytes) -> str | None:
+    """Request id of a generated-download route, as the relay resolves the path."""
+    path = normalized_path(header)
+    found = DOWNLOAD.fullmatch(path) if path is not None else None
+    return found.group(1) if found is not None else None
+
+
+def download_owned(header: bytes) -> bool:
+    """A generated download is served only to the identity that made the request.
+
+    Request ids are unguessable, but a link is not a credential: it is shared,
+    logged and kept in history.  Other routes are not download routes.
+    """
+    request_id = download_request(header)
+    if request_id is None:
+        return True
+    from services.orchestrator.request_owners import may_read
+
+    found = re.findall(rb"(?im)^x-atlas-user:[ \t]*([^\r\n]*)", header)
+    if len(found) != 1:
         return False
-    path = posixpath.normpath(path)
-    if path == "/api/v1/auths/signup":
+    return may_read(request_id, found[0].strip().decode("latin1"))
+
+
+# Types a browser shows without running anything; everything else is downloaded.
+INLINE_TYPES = (
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "text/plain",
+)
+MEDIA_TYPE = re.compile(
+    r"[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+(?:;[ ]?charset=[A-Za-z0-9_-]+)?"
+)
+NOT_FOUND = (
+    b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n"
+    b"Cache-Control: private, no-store\r\nConnection: close\r\n\r\n"
+)
+
+
+def files_terminal() -> tuple[str, int]:
+    """The files terminal's loopback publisher, as the orchestrator reaches it."""
+    return "127.0.0.1", atlas_ports().port("terminal")
+
+
+def serve_download(
+    client: socket.socket, header: bytes, files: tuple[str, int]
+) -> None:
+    """Read one allowed download from the files terminal with its own key.
+
+    Stable mode grants Open WebUI users no access to the files terminal, so its
+    proxy (and the terminal tools it would offer in chats) is closed; the relay
+    serves the single allowed route itself, after the owner check.
+    """
+    import http.client
+    from urllib.parse import quote
+
+    method = header.split(b" ", 1)[0].decode("latin1").upper()
+    path = normalized_path(header)
+    key = os.environ.get("OPEN_TERMINAL_API_KEY", "")
+    if path is None or DOWNLOAD.fullmatch(path) is None or not key.strip():
+        client.sendall(NOT_FOUND)
+        return
+    relative = path.removeprefix("/api/v1/terminals/atlas-files/files/serve/")
+    connection = http.client.HTTPConnection(*files, timeout=30)
+    try:
+        connection.request(
+            method,
+            "/files/serve/" + quote(relative, safe="/"),
+            headers={"Authorization": "Bearer " + key, "Accept-Encoding": "identity"},
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            client.sendall(NOT_FOUND)
+            return
+        media = (response.getheader("content-type") or "").strip()
+        if not MEDIA_TYPE.fullmatch(media):
+            media = "application/octet-stream"
+        inline = media.split(";", 1)[0].lower() in INLINE_TYPES
+        filename = posixpath.basename(path)
+        head = [
+            b"HTTP/1.1 200 OK",
+            b"Content-Type: " + media.encode("latin1"),
+            b"X-Content-Type-Options: nosniff",
+            b"Cache-Control: private, no-store",
+            b"Content-Disposition: "
+            + (b"inline" if inline else b"attachment")
+            + b'; filename="'
+            # ASCII fallback without quotes or control characters, plus the exact
+            # UTF-8 name (RFC 6266/5987) so any file name is safe in the header.
+            + re.sub(r"[^A-Za-z0-9._ -]", "_", filename).encode("ascii")
+            + b"\"; filename*=UTF-8''"
+            + quote(filename, safe="").encode("ascii"),
+            b"Connection: close",
+        ]
+        length = response.getheader("content-length")
+        if length is not None and length.isdigit():
+            head.append(b"Content-Length: " + length.encode())
+        client.sendall(b"\r\n".join(head) + b"\r\n\r\n")
+        while chunk := response.read(65536):
+            client.sendall(chunk)
+    except (OSError, http.client.HTTPException):
+        client.sendall(NOT_FOUND)
+    finally:
+        connection.close()
+
+
+def stable_route_allowed(header: bytes) -> bool:
+    """Expose generated downloads, never the terminal's execution or browse API."""
+    method, target, _ = header.split(b" ", 2)
+    if project_mode() and legacy_project_route(
+        target.split(b"?", 1)[0].decode("latin1")
+    ):
+        return False
+    path = normalized_path(header)
+    if path is None or path == "/api/v1/auths/signup":
         return False
     if path.startswith("/api/v1/terminals"):
         return method in (b"GET", b"HEAD") and (
-            path == "/api/v1/terminals"
-            or re.fullmatch(
-                r"/api/v1/terminals/atlas-files/files/serve/home/user/requests/"
-                r"chatcmpl-[a-f0-9]{32}/[A-Za-z0-9][A-Za-z0-9_.-]*",
-                path,
-            )
-            is not None
+            path == "/api/v1/terminals" or DOWNLOAD.fullmatch(path) is not None
         )
     return True
 
@@ -153,7 +269,7 @@ def loopback_forward(
 
 @contextmanager
 def loopback_html_injector(
-    binding: str, target: tuple[str, int]
+    binding: str, target: tuple[str, int], files: tuple[str, int] | None = None
 ) -> Iterator[tuple[str, int]]:
     """TCP relay that rewrites only the initial uncompressed HTML response.
 
@@ -270,6 +386,13 @@ def loopback_html_injector(
                             client.sendall(
                                 b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                             )
+                            return
+                        if not download_owned(header):
+                            # Same answer as an unknown file: no owner oracle.
+                            client.sendall(NOT_FOUND)
+                            return
+                        if download_request(header) is not None:
+                            serve_download(client, header, files or files_terminal())
                             return
                         header = without_header(header, b"x-atlas-proxy-secret")
                         header = without_header(header, b"x-atlas-user-role")

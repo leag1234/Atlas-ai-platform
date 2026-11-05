@@ -4,6 +4,7 @@ from services.orchestrator.image_errors import read_error, decode_error
 from packages.profiles import PROFILES
 from packages import context_usage
 from packages.limits import LimitError
+from packages.provider_calls import mark_started
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
 import json
@@ -34,6 +35,8 @@ class Configuration(BaseModel):
     output_eur_per_mtok: Decimal = Field(ge=0, allow_inf_nan=False)
     max_tokens: int = Field(gt=0, le=2048)
     gateway_reserves_quality: bool = False
+    # First-attempt output room the gateway may add for configured reasoning.
+    reasoning_output_tokens: int = Field(default=0, ge=0, le=12000)
 
 
 class WireCall(BaseModel):
@@ -71,6 +74,7 @@ class WireTurn(BaseModel):
     answer_tokens: int = Field(default=0, ge=0)
     token_split_estimated: bool = False
     reasoning_retried: bool = False
+    reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
     text: str = Field(max_length=128000)
     calls: list[WireCall] = Field(max_length=10)
 
@@ -88,6 +92,10 @@ class GatewayError(PublicFailure):
         self.retries = retries
         self.measurements = measurements or {}
         super().__init__(code)
+
+
+# Gateway endpoints that never call a model provider (configuration and health).
+FREE_PATHS = ("/agent/config", "/images/ready")
 
 
 class GatewayModel:
@@ -121,6 +129,8 @@ class GatewayModel:
         self.answer_tokens = 0
         self.token_split_estimated = False
         self.reasoning_retried = False
+        # Highest reasoning effort the gateway actually used for a delivered turn.
+        self.reasoning_used = "none"
         self.cost_ceiling: Decimal | None = None
         self.context_samples: list[dict[str, object]] = []
         from services.orchestrator.session_context import SessionContext
@@ -144,6 +154,13 @@ class GatewayModel:
         self.reasoning_effort = "none"
 
     @property
+    def reasoning_room(self) -> int:
+        """Reasoning widening the gateway may apply to this turn's first attempt."""
+        if not self.profile or self.reasoning_retried:
+            return 0
+        return self.configuration.reasoning_output_tokens
+
+    @property
     def allowance(self) -> Decimal:
         if self.cost_ceiling is not None:
             return max(
@@ -165,6 +182,9 @@ class GatewayModel:
 
     @staticmethod
     async def post(url: str, payload: Message, timeout: float) -> Message:
+        if not url.endswith(FREE_PATHS):
+            # Conservative: any other gateway or retrieval call may reach a provider.
+            mark_started()
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
@@ -382,10 +402,11 @@ class GatewayModel:
             # Hold the remaining allowance; the gateway reserves each actual attempt.
             primary_cost = (
                 incoming * self.configuration.input_eur_per_mtok
-                + self.max_tokens * self.configuration.output_eur_per_mtok
+                + (self.max_tokens + self.reasoning_room)
+                * self.configuration.output_eur_per_mtok
             ) / 1_000_000
             return Reservation(
-                incoming * 2 + self.max_tokens + 3000,
+                incoming * 2 + self.max_tokens + self.reasoning_room + 3000,
                 self.allowance
                 if self.configuration.gateway_reserves_quality
                 else max(primary_cost, self.allowance),
@@ -482,6 +503,8 @@ class GatewayModel:
                 reasoning_effort=self.reasoning_effort,
                 budget_eur=str(self.allowance),
             )
+            if self.reasoning_retried:
+                payload["reasoning_disabled"] = True
         if self.privacy == "strict":
             payload["privacy"] = "strict"
         if self.produces_files:
@@ -568,19 +591,19 @@ class GatewayModel:
                     "tokens",
                 )
             retry_tokens = result.retry_completion_tokens
-            if retry_tokens > min(
-                result.usage.completion_tokens, 3 * (self.max_tokens + 3000)
-            ):
+            # A widened reasoning attempt that ends empty is followed by the
+            # bounded recovery: both fit the limit (and the reservation).
+            output_limit = self.max_tokens + self.reasoning_room + 3000
+            if retry_tokens > min(result.usage.completion_tokens, 3 * output_limit):
                 raise ValueError("invalid_retry_usage")
             if (
                 self.profile
-                and result.usage.completion_tokens - retry_tokens
-                > self.max_tokens + 3000
+                and result.usage.completion_tokens - retry_tokens > output_limit
             ):
                 raise LimitError(
                     "output_budget",
                     result.usage.completion_tokens,
-                    self.max_tokens + 3000,
+                    output_limit,
                     "tokens including recovery",
                 )
             if self.sink is not None:
@@ -620,6 +643,11 @@ class GatewayModel:
             self.answer_tokens += result.answer_tokens
             self.token_split_estimated |= result.token_split_estimated
             self.reasoning_retried |= result.reasoning_retried
+            self.reasoning_used = max(
+                self.reasoning_used,
+                result.reasoning_effort,
+                key=("none", "low", "medium", "high").index,
+            )
             if result.reasoning_retried:
                 # Recovery can request tools; its following turn must finish
                 # without restarting the reasoning that already failed.

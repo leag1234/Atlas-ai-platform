@@ -305,17 +305,11 @@ def webui(name: str, persistent: bool) -> None:
                 "url": "http://open-terminal:" + str(ports.port("terminal")),
                 "key": os.environ["OPEN_TERMINAL_API_KEY"],
                 "auth_type": "bearer",
+                # Stable mode grants no user access: Open WebUI would otherwise
+                # proxy the whole shared volume and offer its tools (terminal_id)
+                # in chats. The UI relay serves the generated downloads itself.
                 "config": (
-                    {
-                        "chat_uploads": "default",
-                        "access_grants": [
-                            {
-                                "principal_type": "user",
-                                "principal_id": "*",
-                                "permission": "read",
-                            }
-                        ],
-                    }
+                    {"chat_uploads": "default"}
                     if stable_mode()
                     else {"chat_uploads": "filesystem"}
                 ),

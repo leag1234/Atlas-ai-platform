@@ -79,7 +79,9 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                 await self.hold.wait()
             action = self.scripts.get(engine, "ok")
             if action == "timeout":
-                await asyncio.sleep(0.2)
+                # Well past every deadline used below, so a loaded CI runner cannot
+                # make a timed-out engine look completed.
+                await asyncio.sleep(1.0)
                 return web.json_response(rows(engine))
             if action in {"403", "429"}:
                 return web.Response(status=int(action), headers={"Retry-After": "120"})
@@ -198,7 +200,8 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completed_wikipedia_is_preserved_at_web_deadline(self) -> None:
         self.scripts = {engine: "timeout" for engine in sx.ENGINES}
-        result = await self.search(query="deadline", timeout=0.12)
+        # Wikipedia answers at once; 0.5 s leaves it room on a loaded runner.
+        result = await self.search(query="deadline", timeout=0.5)
         self.assertEqual(result["outcome"], "partial_results")
         results = result["results"]
         assert isinstance(results, list)
