@@ -43,6 +43,9 @@ class Interaction:
     # Set only for a project Work turn that ended failed for an explainable reason:
     # {"category": ..., "answer": public answer text before the failure}.
     work_failure: dict[str, str] = field(default_factory=dict)
+    # True when cout_eur covers every provider call, failed ones included
+    # (Work charges an unknown call its full allowance): no reservation to keep.
+    cost_complete: bool = False
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

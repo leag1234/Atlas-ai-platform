@@ -371,7 +371,11 @@ async def chat(request: Request) -> Response:
 
             def settle(result: Interaction) -> None:
                 measured = Decimal(str(result.cout_eur))
-                if result.state != "done" and calls.started:
+                if (
+                    result.state != "done"
+                    and calls.started
+                    and not result.cost_complete
+                ):
                     # A provider call may have consumed tokens that were never
                     # measured: the daily cap keeps at least the reservation, as
                     # the API key ledger does.
@@ -384,7 +388,9 @@ async def chat(request: Request) -> Response:
                     request.state.key_store.finish(
                         key_reservation,
                         int(Decimal(str(result.cout_eur)) * 1000000)
-                        if result.state == "done" or not calls.started
+                        if result.state == "done"
+                        or not calls.started
+                        or result.cost_complete
                         else None,
                         result.tokens["in"],
                         result.tokens["out"],
