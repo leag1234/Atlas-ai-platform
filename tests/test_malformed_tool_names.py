@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from agent_provider import AgentProvider
 from packages.limits import ProviderFailure
-from quality import input_bound, stream_quality
+from quality import input_token_bound, stream_quality
 from serverless import ServerlessPolicy
 from serverless_support import environment
 from stream_transport import attempt
@@ -149,7 +149,8 @@ class MalformedToolNameTests(unittest.IsolatedAsyncioTestCase):
                     assert isinstance(bad.body, dict)
                     expected = policy.cost(
                         str(bad.body["model"]),
-                        input_bound(req.messages, req.tools),
+                        # Unknown usage is charged at the bytes/3 input estimate (2026-11-06).
+                        input_token_bound(req.messages, req.tools),
                         int(str(bad.body["max_tokens"])),
                     ) + policy.cost(str(good.body["model"]), 20, 8)
                     self.assertEqual(Decimal(str(answer["cost_eur"])), expected)
