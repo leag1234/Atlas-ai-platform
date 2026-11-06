@@ -2,7 +2,7 @@
 
 from services.orchestrator.code_verification import VerificationStatus
 
-from packages.profiles import PROFILES
+from packages.profiles import accepted_profile
 from packages.limits import LimitError
 
 import asyncio
@@ -48,7 +48,8 @@ class Limits:
 
             if not work_enabled() or not (
                 self.tokens is None
-                and self.profile in PROFILES
+                and self.profile is not None
+                and accepted_profile(self.profile)
                 and 0 <= self.tool_calls <= 1000
                 and 0 <= self.wall_clock <= 86400
                 and self.cost.is_finite()
@@ -58,7 +59,7 @@ class Limits:
             ):
                 raise ValueError("invalid_code_limits")
             return
-        if self.profile is not None and self.profile not in PROFILES:
+        if self.profile is not None and not accepted_profile(self.profile):
             raise ValueError("invalid_limits")
         if not (
             (

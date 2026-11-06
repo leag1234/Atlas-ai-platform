@@ -1,7 +1,7 @@
 """Model-independent client; provider selection and prices belong to the gateway."""
 
 from services.orchestrator.image_errors import read_error, decode_error
-from packages.profiles import PROFILES
+from packages.profiles import accepted_profile
 from packages import context_usage
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
@@ -46,6 +46,7 @@ class Configuration(BaseModel):
     gateway_reserves_quality: bool = False
     # First-attempt output room the gateway may add for configured reasoning.
     reasoning_output_tokens: int = Field(default=0, ge=0, le=12000)
+    profile_reasoning_output_tokens: dict[str, int] = Field(default_factory=dict)
 
 
 class WireCall(BaseModel):
@@ -140,7 +141,7 @@ class GatewayModel:
         has_attachments: bool = False,
         produces_files: bool = False,
     ) -> None:
-        if profile not in PROFILES:
+        if not accepted_profile(profile):
             raise ValueError("invalid_profile")
         self.profile, self.max_tokens = profile, max_tokens
         self.has_attachments = has_attachments
@@ -152,7 +153,9 @@ class GatewayModel:
         """Reasoning widening the gateway may apply to this turn's first attempt."""
         if not self.profile or self.reasoning_retried:
             return 0
-        return self.configuration.reasoning_output_tokens
+        return self.configuration.profile_reasoning_output_tokens.get(
+            self.profile, self.configuration.reasoning_output_tokens
+        )
 
     @property
     def allowance(self) -> Decimal:

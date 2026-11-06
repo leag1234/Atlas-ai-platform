@@ -107,11 +107,16 @@ class WorkAdapter:
     """Sequential callable; budget includes conservative unknown reservations."""
 
     def __init__(
-        self, subject: str, org: str, output: Path, budget: str = "3.00"
+        self,
+        subject: str,
+        org: str,
+        output: Path,
+        budget: str = "3.00",
+        profile: str = "atlas-qwen",
     ) -> None:
         self.subject, self.org, self.output = subject, org, output
         self.budget = Decimal(budget)
-        self.profile = "atlas-qwen"
+        self.profile = profile
         self.spent = Decimal(0)
         self.records: list[dict[str, Any]] = []
         self.consecutive_failures = 0

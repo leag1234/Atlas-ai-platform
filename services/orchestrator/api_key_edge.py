@@ -14,7 +14,7 @@ import aiohttp
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
-from packages.profiles import PROFILES
+from packages.profiles import accepted_profile, PROFILES
 from services.orchestrator.api_key_messages import install as install_messages
 from services.orchestrator.api_keys import (
     Principal,
@@ -320,7 +320,7 @@ async def chat(request: Request) -> Response:
     name = raw.get("model", default)
     if not isinstance(name, str):
         return error(400, "invalid_model")
-    if name == "atlas" or name in PROFILES:
+    if name == "atlas" or accepted_profile(name):
         # The Atlas assistant itself is not a routed usage: keep its own path.
         missing = require(request, "assistant")
         if missing is not None:
