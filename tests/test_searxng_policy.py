@@ -39,6 +39,7 @@ def rows(engine: str, count: int = 5) -> dict[str, object]:
 
 class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        self.port = int(os.environ.get("ATLAS_SEARXNG_TEST_PORT", "13780"))
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.cache = Cache(Path(self.directory.name) / "cache.sqlite")
@@ -50,7 +51,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             os.environ,
             {
                 "ATLAS_SEARCH_PROVIDER": "searxng",
-                "ATLAS_SEARXNG_URL": "http://127.0.0.1:13780",
+                "ATLAS_SEARXNG_URL": f"http://127.0.0.1:{self.port}",
             },
         )
         self.env.start()
@@ -65,7 +66,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         app.router.add_get("/search", self.handle)
         self.runner = web.AppRunner(app)
         await self.runner.setup()
-        await web.TCPSite(self.runner, "127.0.0.1", 13780).start()
+        await web.TCPSite(self.runner, "127.0.0.1", self.port).start()
         self.addAsyncCleanup(self.runner.cleanup)
 
     async def handle(self, request: web.Request) -> web.Response:
@@ -111,7 +112,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self, query: str = "public release", lang: str = "en", timeout: float = 2
     ) -> dict[str, object]:
         return await sx.search(
-            self.cache, "http://127.0.0.1:13780", query, lang, 5, False, timeout
+            self.cache, f"http://127.0.0.1:{self.port}", query, lang, 5, False, timeout
         )
 
     async def test_tier_one_and_wikipedia_parallel_then_cache(self) -> None:
@@ -170,7 +171,9 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(self.seen), 7)
                 if signal in {"403", "429"}:
                     self.assertGreater(
-                        self.state.circuits["http://127.0.0.1:13780:duckduckgo"].until
+                        self.state.circuits[
+                            f"http://127.0.0.1:{self.port}:duckduckgo"
+                        ].until
                         - time.monotonic(),
                         119,
                     )
@@ -200,8 +203,34 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_completed_wikipedia_is_preserved_at_web_deadline(self) -> None:
         self.scripts = {engine: "timeout" for engine in sx.ENGINES}
-        # Wikipedia answers at once; 0.5 s leaves it room on a loaded runner.
-        result = await self.search(query="deadline", timeout=0.5)
+        wikipedia_gate = asyncio.Event()
+        original_engine_search = sx.engine_search
+
+        async def gated_engine_search(
+            state: sx.State,
+            endpoint: str,
+            engine: str,
+            params: dict[str, str],
+            policy: sx.Policy,
+            deadline: float,
+        ) -> sx.Message:
+            if engine == "wikipedia":
+                result = await original_engine_search(
+                    state, endpoint, engine, params, policy, deadline
+                )
+                wikipedia_gate.set()
+                return result
+            await wikipedia_gate.wait()
+            return {
+                "engine": engine,
+                "outcome": "upstream_timeout",
+                "results": [],
+                "reason": "deadline",
+            }
+
+        with patch.object(sx, "engine_search", side_effect=gated_engine_search):
+            result = await self.search(query="deadline", timeout=0.12)
+        self.assertEqual(self.started, ["wikipedia"])
         self.assertEqual(result["outcome"], "partial_results")
         results = result["results"]
         assert isinstance(results, list)
@@ -280,7 +309,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             asyncio.create_task(
                 sx.engine_search(
                     self.state,
-                    "http://127.0.0.1:13780",
+                    f"http://127.0.0.1:{self.port}",
                     engine,
                     params,
                     sx.Policy(),
@@ -329,7 +358,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_independent_cooldowns_and_health_probes_over_http(self) -> None:
         params = {"q": "CERN", "language": "en", "format": "json"}
-        endpoint = "http://127.0.0.1:13780"
+        endpoint = f"http://127.0.0.1:{self.port}"
         state = self.state
 
         async def attempt(engine: str) -> dict[str, object]:
@@ -365,7 +394,9 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await attempt("qwant"))["reason"], "cooldown")
 
     async def test_news_keeps_wikipedia_in_general_category(self) -> None:
-        await sx.search(self.cache, "http://127.0.0.1:13780", "CERN", "de", 1, True, 2)
+        await sx.search(
+            self.cache, f"http://127.0.0.1:{self.port}", "CERN", "de", 1, True, 2
+        )
         wiki = next(
             request for request in self.seen if request["engines"] == "wikipedia"
         )
