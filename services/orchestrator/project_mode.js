@@ -956,7 +956,6 @@
     const recent = editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0));
     const chooseProject = project => importNativeChat(project, chatId);
     const createAndMove = async () => {
-      if (!root?.isConnected) await mount();
       return nameDialog('newProject', async name => {
       try {
         const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', {name, instructions:'', default_action:'chat'});
@@ -983,7 +982,10 @@
         item.addEventListener('click', guarded(() => chooseProject(project))); form.append(item);
       }
       const create = node('button', moveText('newProject')); create.type = 'button';
-      create.addEventListener('click', guarded(() => { dialog.close(); createAndMove(); })); form.append(create);
+      create.addEventListener('click', guarded(() => {
+        if (target.tagName === 'DIALOG') target.close(); else target.remove();
+        return createAndMove();
+      })); form.append(create);
       target.append(form);
     };
     if (window.innerWidth <= 480) {
