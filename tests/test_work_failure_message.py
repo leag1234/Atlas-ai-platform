@@ -4,6 +4,7 @@ import json
 import os
 import time
 import unittest
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -12,6 +13,8 @@ from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.chat_stream import response
 from services.orchestrator.code_mode import work_failure_category, work_failure_reply
 from services.orchestrator.interactions import Interaction
+from services.orchestrator.loop import Limits, Query, Reservation, Turn, run
+from services.orchestrator.model import GatewayError
 from services.orchestrator.project_transcript import process_scoped_project
 
 ORG = "07a8c69f-eed4-4935-926b-161de581488d"
@@ -88,6 +91,78 @@ class CategoryTests(unittest.TestCase):
                 self.assertEqual(
                     work_failure_category(reason, tool_failure=tool_failure), expected
                 )
+
+
+class LoopFailureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cost_budget_gateway_failure_is_a_budget_stop(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
+
+            class Model:
+                def estimate(self, messages: list[dict[str, object]]) -> Reservation:
+                    return Reservation(1, Decimal(0))
+
+                async def complete(
+                    self, messages: list[dict[str, object]], timeout: float
+                ) -> Turn:
+                    raise GatewayError("cost_budget", 429)
+
+            class Tools:
+                def estimate(self, call: object) -> Reservation:
+                    raise AssertionError("No tool needed")
+
+                async def execute(
+                    self, call: object, timeout: float
+                ) -> dict[str, object]:
+                    raise AssertionError("No tool needed")
+
+            result = await run(
+                Query(question="Fix the parser.", lang="en"),
+                Model(),
+                Tools(),
+                "system",
+                Limits(
+                    profile="atlas-qwen", tokens=None, code_mode=True, model_calls=1
+                ),
+            )
+
+        self.assertEqual(result.reason, "cost")
+        self.assertEqual(
+            work_failure_category(result.reason, tool_failure=False), "budget"
+        )
+
+    async def test_other_gateway_failure_stays_an_outage(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
+
+            class Model:
+                def estimate(self, messages: list[dict[str, object]]) -> Reservation:
+                    return Reservation(1, Decimal(0))
+
+                async def complete(
+                    self, messages: list[dict[str, object]], timeout: float
+                ) -> Turn:
+                    raise GatewayError("provider_error", 502)
+
+            class Tools:
+                def estimate(self, call: object) -> Reservation:
+                    raise AssertionError("No tool needed")
+
+                async def execute(
+                    self, call: object, timeout: float
+                ) -> dict[str, object]:
+                    raise AssertionError("No tool needed")
+
+            with self.assertRaises(GatewayError):
+                await run(
+                    Query(question="Fix the parser.", lang="en"),
+                    Model(),
+                    Tools(),
+                    "system",
+                    Limits(
+                        profile="atlas-qwen", tokens=None, code_mode=True, model_calls=1
+                    ),
+                )
+
+        self.assertIsNone(work_failure_category("provider_error", tool_failure=False))
 
     def test_reply_keeps_answer_and_never_raw_reason(self) -> None:
         item = Interaction(state="failed", reponse="Partial.\n\nWork failed: " + RAW)

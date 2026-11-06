@@ -19,7 +19,16 @@ from typing import Literal
 import aiohttp
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.orchestrator.loop import Call, Message, Reservation, Turn, PublicFailure
+from services.orchestrator.loop import (
+    Call,
+    GatewayError,
+    Message,
+    Reservation,
+    Turn,
+)
+
+__all__ = ["GatewayError"]
+
 from services.orchestrator.tools import declarations
 from services.orchestrator.stream_client import Sink, receive
 from services.orchestrator.narration import (
@@ -77,21 +86,6 @@ class WireTurn(BaseModel):
     reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
     text: str = Field(max_length=128000)
     calls: list[WireCall] = Field(max_length=10)
-
-
-class GatewayError(PublicFailure):
-    def __init__(
-        self,
-        code: str,
-        status: int,
-        detail: str = "",
-        retries: int = 0,
-        measurements: dict[str, object] | None = None,
-    ) -> None:
-        self.code, self.status, self.detail = code, status, detail
-        self.retries = retries
-        self.measurements = measurements or {}
-        super().__init__(code)
 
 
 # Gateway endpoints that never call a model provider (configuration and health).
