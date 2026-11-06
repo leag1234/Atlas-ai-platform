@@ -95,6 +95,10 @@ Comma-separated provider names enable ordered fallback. Inference receives selec
 conversation/document/image content; search providers receive search queries.
 Public websites are fetched subject to Atlas's network and robots rules.
 
+Set `ATLAS_WEBUI_IMAGE` to select the guest web UI container image. Its value
+must end with `@sha256:` followed by 64 hexadecimal characters; when unset, the
+pinned Open WebUI v0.11.3 default is used.
+
 ## 3. Start and verify the base services
 
 ```bash

@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from services.orchestrator.serving import (
+    WEBUI_IMAGE,
     main,
     project_runner,
     require_docker_image,
@@ -20,6 +21,46 @@ from services.orchestrator.serving import (
     stable_stop_allowed,
     stable_webui_options,
 )
+
+
+class WebuiImageTests(unittest.TestCase):
+    def test_default_image_is_unchanged_when_setting_is_unset(self) -> None:
+        self.assertEqual(
+            WEBUI_IMAGE,
+            "ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933",
+        )
+
+    def test_pinned_image_setting_is_used(self) -> None:
+        image = "example.invalid/atlas-ui:v1@sha256:" + "a" * 64
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from services.orchestrator.serving import WEBUI_IMAGE; print(WEBUI_IMAGE)",
+            ],
+            cwd=os.getcwd(),
+            env={**os.environ, "ATLAS_WEBUI_IMAGE": image},
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(result.stdout.strip(), image)
+
+    def test_tag_only_image_setting_is_refused(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import services.orchestrator.serving",
+            ],
+            cwd=os.getcwd(),
+            env={**os.environ, "ATLAS_WEBUI_IMAGE": "example.invalid/atlas-ui:v1"},
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ATLAS_WEBUI_IMAGE", result.stderr)
+        self.assertIn("64 hexadecimal", result.stderr)
 
 
 class ServingTests(unittest.TestCase):

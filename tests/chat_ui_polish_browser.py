@@ -22,6 +22,7 @@ from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.chat_stream import response
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.stream_client import sink_context
+from services.orchestrator.serving import WEBUI_IMAGE
 from services.orchestrator.webui import configure
 
 OUTPUT = Path("BRAIN/chat-ui-polish")
@@ -195,7 +196,7 @@ def guest_shell() -> Iterator[None]:
         )
     ]:
         options.extend(["-v", str(Path(source).resolve()) + ":" + target + ":ro"])
-    options.extend(["ghcr.io/open-webui/open-webui:v0.11.3", "/app/backend/start.sh"])
+    options.extend([WEBUI_IMAGE, "/app/backend/start.sh"])
     with patch.dict(
         os.environ,
         {
