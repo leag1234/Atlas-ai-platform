@@ -194,7 +194,7 @@ class ServerlessPolicy:
         primary = self.models[task]
         fallback_role = self.config[task]["fallback"]
         fallback = self.models[fallback_role]
-        incoming = (
+        incoming_bytes = (
             len(
                 json.dumps(
                     {"messages": messages, "tools": tools}, ensure_ascii=False
@@ -202,6 +202,7 @@ class ServerlessPolicy:
             )
             + 256
         )
+        incoming = (incoming_bytes + 2) // 3
         # Image pixel tokens can exceed compressed bytes; reserve worst supported image size.
         images = 0
         for message in messages:

@@ -47,6 +47,14 @@ def result(text: str, output: int, *, empty: bool = False) -> dict[str, object]:
 
 
 class ProfileTests(unittest.TestCase):
+    def test_input_token_bound_converts_bytes_conservatively(self) -> None:
+        from quality import input_bound, input_token_bound
+
+        messages: list[dict[str, object]] = [{"role": "user", "content": "e" * 3000}]
+        byte_bound = input_bound(messages, [])
+        token_bound = input_token_bound(messages, [])
+        self.assertEqual(token_bound, (byte_bound + 2) // 3)
+
     def test_internal_recovery_effort_survives_gateway_validation(self) -> None:
         from services.orchestrator.chat_schema import ChatRequest
 
@@ -145,7 +153,7 @@ class ProfileTests(unittest.TestCase):
 
     def test_profile_unknown_usage_reserves_full_context_after_prefix_hit(self) -> None:
         from services.orchestrator.model import Configuration, GatewayModel
-        from quality import input_bound
+        from quality import input_token_bound
 
         model = GatewayModel(
             "http://unused",
@@ -164,13 +172,13 @@ class ProfileTests(unittest.TestCase):
         reservation = model.estimate(messages)
         # A failed attempt has no measured usage: the gateway retains its byte
         # bound, even if an earlier completed turn measured a smaller prefix.
-        full_input = input_bound(messages, model.tools)
+        full_input = input_token_bound(messages, model.tools)
         self.assertGreaterEqual(reservation.tokens, 2 * full_input + 3000 + 3000)
         self.assertEqual(reservation.cost, Decimal("0.10"))
 
     def test_unknown_finalization_usage_includes_history_escaping(self) -> None:
         from services.orchestrator.model import Configuration, GatewayModel
-        from quality import input_bound
+        from quality import input_token_bound
 
         model = GatewayModel(
             "http://unused",
@@ -188,7 +196,7 @@ class ProfileTests(unittest.TestCase):
         ]
         reserved = model.estimate(messages)
         self.assertGreaterEqual(
-            reserved.tokens, 2 * input_bound(messages, model.tools) + 3000 + 3000
+            reserved.tokens, 2 * input_token_bound(messages, model.tools) + 3000 + 3000
         )
 
     def test_profiles_and_hard_caps(self) -> None:
@@ -220,7 +228,7 @@ class ProfileTests(unittest.TestCase):
 
 class RecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_held_answer_uses_full_request_deadline(self) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
         from serverless import ServerlessPolicy, classify_task
 
         seen: list[float] = []
@@ -249,7 +257,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ, environment()):
             policy = ServerlessPolicy()
             model = policy.models[classify_task(original.messages)]
-            incoming = input_bound(original.messages, original.tools)
+            incoming = input_token_bound(original.messages, original.tools)
             budget = policy.cost(
                 model, incoming, original.max_tokens
             ) * 2 + policy.cost(model, incoming, 3000)
@@ -395,7 +403,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Complete full-context recovery", str(events))
 
     async def test_none_profile_reserves_recovery_output_and_time(self) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
 
         attempts: list[tuple[AgentRequest, float]] = []
 
@@ -416,7 +424,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             original = request(timeout=120.0, max_tokens=3000)
             policy = ServerlessPolicy()
             model = policy.models["text"]
-            incoming = input_bound(original.messages, original.tools)
+            incoming = input_token_bound(original.messages, original.tools)
             # Enough for two useful attempts, but not the full initial allowance.
             budget = policy.cost(model, incoming, 8000) + policy.cost(
                 model, incoming, 3000
@@ -550,7 +558,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("The total is 42.", str(events[-1]))
 
     async def test_research_leaves_room_for_full_context_answer(self) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
         from serverless import classify_task
 
         tool = {"type": "function", "function": {"name": "web_search"}}
@@ -566,7 +574,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                         {"role": "tool", "content": "Measured duration: 12 seconds."},
                     ],
                 )
-                incoming = input_bound(req.messages, req.tools)
+                incoming = input_token_bound(req.messages, req.tools)
                 model = policy.models[classify_task(req.messages)]
                 one_turn = policy.cost(model, incoming, 3000)
                 seen: list[AgentRequest] = []
@@ -614,7 +622,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             yield result("Answer based on the retained source.", 20)
 
         fetch_id = "fetch-1"
-        source = "Synthetic fetched source sentence. " * 10000
+        source = "Synthetic fetched source sentence. " * 60000
         original = request(
             tools=[{"type": "function", "function": {"name": "web_fetch"}}],
             messages=[
@@ -677,7 +685,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_standard_full_answer_takes_priority_over_optional_recovery(
         self,
     ) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
 
         async def upstream(
             req: AgentRequest, model: str, timeout: float
@@ -696,7 +704,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             )
             budget = policy.cost(
                 policy.models["code"],
-                input_bound(original.messages, original.tools),
+                input_token_bound(original.messages, original.tools),
                 6000,
             )
             original = request(
@@ -740,10 +748,10 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, 1)
 
     async def test_complete_dense_document_uses_bounded_public_alternate(self) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
 
         original = request(
-            messages=[{"role": "user", "content": "Source section. " * 12000}],
+            messages=[{"role": "user", "content": "Source section. " * 40000}],
             profile="atlas-qwen",
         )
         calls = 0
@@ -757,7 +765,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(model, policy.models["fast"])
             self.assertLessEqual(
                 policy.cost(
-                    model, input_bound(req.messages, req.tools), req.max_tokens
+                    model, input_token_bound(req.messages, req.tools), req.max_tokens
                 ),
                 Decimal("0.10"),
             )
@@ -777,7 +785,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_unaffordable_primary_input_uses_configured_affordable_alternate(
         self,
     ) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
 
         async def upstream(
             req: AgentRequest, model: str, timeout: float
@@ -785,7 +793,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(model, policy.models["text"])
             self.assertLessEqual(
                 policy.cost(
-                    model, input_bound(req.messages, req.tools), req.max_tokens
+                    model, input_token_bound(req.messages, req.tools), req.max_tokens
                 ),
                 Decimal("0.03"),
             )
@@ -801,7 +809,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
                 messages=[
                     {
                         "role": "user",
-                        "content": "Write Python code. " + "evidence " * 3800,
+                        "content": "Write Python code. " + "evidence " * 12000,
                     }
                 ],
                 budget_eur="0.03",
@@ -809,7 +817,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(
                 policy.cost(
                     policy.models["code"],
-                    input_bound(original.messages, original.tools),
+                    input_token_bound(original.messages, original.tools),
                     1,
                 ),
                 Decimal("0.03"),
@@ -881,12 +889,12 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         async def upstream(
             req: AgentRequest, model: str, timeout: float
         ) -> AsyncGenerator[dict[str, object], None]:
-            from quality import input_bound
+            from quality import input_token_bound
 
             nonlocal spent
             calls.append(model)
             bound = policy.cost(
-                model, input_bound(req.messages, req.tools), req.max_tokens
+                model, input_token_bound(req.messages, req.tools), req.max_tokens
             )
             self.assertLessEqual(spent + bound, Decimal("0.07"))
             if len(calls) == 1:
@@ -936,11 +944,11 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         async def upstream(
             req: AgentRequest, model: str, timeout: float
         ) -> AsyncGenerator[dict[str, object], None]:
-            from quality import input_bound
+            from quality import input_token_bound
 
             self.assertLessEqual(
                 policy.cost(
-                    model, input_bound(req.messages, req.tools), req.max_tokens
+                    model, input_token_bound(req.messages, req.tools), req.max_tokens
                 ),
                 Decimal("0.06"),
             )
@@ -975,12 +983,12 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         async def upstream(
             req: AgentRequest, model: str, timeout: float
         ) -> AsyncGenerator[dict[str, object], None]:
-            from quality import input_bound
+            from quality import input_token_bound
 
             nonlocal calls, reserved
             calls += 1
             reserved += policy.cost(
-                model, input_bound(req.messages, req.tools), req.max_tokens
+                model, input_token_bound(req.messages, req.tools), req.max_tokens
             )
             self.assertLessEqual(reserved, Decimal("0.06"))
             if calls == 1:
@@ -1021,12 +1029,12 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         async def upstream(
             req: AgentRequest, model: str, timeout: float
         ) -> AsyncGenerator[dict[str, object], None]:
-            from quality import input_bound
+            from quality import input_token_bound
 
             nonlocal calls, reserved
             calls += 1
             reserved += policy.cost(
-                model, input_bound(req.messages, req.tools), req.max_tokens
+                model, input_token_bound(req.messages, req.tools), req.max_tokens
             )
             self.assertLessEqual(reserved, Decimal("0.10"))
             if calls == 1:
@@ -1419,12 +1427,12 @@ class ReservationDiagnosticTests(unittest.IsolatedAsyncioTestCase):
     async def test_alternate_can_deliver_with_less_than_full_output_allowance(
         self,
     ) -> None:
-        from quality import input_bound
+        from quality import input_token_bound
 
         seen = []
         original = request(
             profile="atlas-qwen",
-            messages=[{"role": "user", "content": "e" * 110000}],
+            messages=[{"role": "user", "content": "e" * 330000}],
             budget_eur="0.047",
         )
 
@@ -1435,7 +1443,7 @@ class ReservationDiagnosticTests(unittest.IsolatedAsyncioTestCase):
             self.assertLess(req.max_tokens, original.max_tokens)
             self.assertLessEqual(
                 policy.cost(
-                    model, input_bound(req.messages, req.tools), req.max_tokens
+                    model, input_token_bound(req.messages, req.tools), req.max_tokens
                 ),
                 Decimal("0.047"),
             )

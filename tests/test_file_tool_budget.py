@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from agent_provider import AgentProvider, AgentRequest
-from quality import input_bound, stream_quality
+from quality import input_token_bound, stream_quality
 from serverless import ServerlessPolicy
 from serverless_support import environment
 from test_quality_gateway import request, result
@@ -78,7 +78,7 @@ class FileToolBudgetTests(unittest.IsolatedAsyncioTestCase):
             policy = ServerlessPolicy()
             req = request(tools=[tool], max_tokens=3000)
             model = policy.models[policy.public_profiles[str(req.profile)]]
-            bound = input_bound(req.messages, req.tools)
+            bound = input_token_bound(req.messages, req.tools)
             cap = policy.cost(model, bound, 3000) * Decimal("1.5")
             seen: list[AgentRequest] = []
 
@@ -110,7 +110,7 @@ class FileToolBudgetTests(unittest.IsolatedAsyncioTestCase):
             policy = ServerlessPolicy()
             req = request(tools=tools, max_tokens=3000)
             model = policy.models[policy.public_profiles[str(req.profile)]]
-            bound = input_bound(req.messages, req.tools)
+            bound = input_token_bound(req.messages, req.tools)
             cap = policy.cost(model, bound, 3000) * Decimal("1.5")
             seen: list[AgentRequest] = []
 
@@ -138,7 +138,7 @@ class FileToolBudgetTests(unittest.IsolatedAsyncioTestCase):
             policy = ServerlessPolicy()
             req = request(tools=[tool], max_tokens=3000)
             model = policy.models[policy.public_profiles[str(req.profile)]]
-            bound = input_bound(req.messages, req.tools)
+            bound = input_token_bound(req.messages, req.tools)
             cap = policy.cost(model, bound, 3000) * Decimal("1.5")
             seen: list[AgentRequest] = []
 
@@ -157,3 +157,32 @@ class FileToolBudgetTests(unittest.IsolatedAsyncioTestCase):
                 ]
             self.assertEqual(seen[0].tool_choice, "none")
             self.assertEqual(seen[0].tools, [tool])
+
+    async def test_large_work_step_keeps_tools_at_qwen_prices(self) -> None:
+        tools = [{"type": "function", "function": {"name": "edit_file"}}]
+        req = request(
+            profile="atlas-qwen",
+            tools=tools,
+            max_tokens=3000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": "Edit the file.\n" + ("evidence " * 5000),
+                }
+            ],
+        )
+        seen: list[AgentRequest] = []
+
+        async def transport(
+            current: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            seen.append(current)
+            yield result("Work result", 30)
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", transport),
+        ):
+            _ = [event async for event in stream_quality(AgentProvider(), req)]
+        self.assertEqual(seen[0].tool_choice, "auto")
+        self.assertEqual(seen[0].tools, tools)

@@ -44,6 +44,9 @@ from packages.evidence import estimated_tokens
 from packages.images import image_info
 from serverless import REASONING_OUTPUT_TOKENS, ServerlessPolicy, classify_task
 
+# Conservative byte-to-token estimate used for cost and context reservations.
+BYTES_PER_TOKEN = 3
+
 
 CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model context]\n"
 
@@ -98,7 +101,7 @@ def trim_fetched_pages(
         if isinstance(data, dict) and isinstance(data.get("text"), str):
             pages.append((index, data["text"]))
     for index, text in sorted(pages, key=lambda page: len(page[1]), reverse=True):
-        while input_bound(trimmed, tools) > maximum:
+        while input_token_bound(trimmed, tools) > maximum:
             content = trimmed[index]["content"]
             assert isinstance(content, str)
             output = json.loads(content)
@@ -109,13 +112,13 @@ def trim_fetched_pages(
             retained_text = current.removesuffix(CONTEXT_TRUNCATION_MARKER)
             if not retained_text:
                 break
-            excess = input_bound(trimmed, tools) - maximum
-            retained = max(0, len(retained_text) - excess)
+            excess = input_token_bound(trimmed, tools) - maximum
+            retained = max(0, len(retained_text) - excess * BYTES_PER_TOKEN)
             data["text"] = retained_text[:retained] + CONTEXT_TRUNCATION_MARKER
             data["truncated"] = True
             data["context_truncated"] = True
             trimmed[index]["content"] = json.dumps(output, ensure_ascii=False)
-        if input_bound(trimmed, tools) <= maximum:
+        if input_token_bound(trimmed, tools) <= maximum:
             break
     return trimmed
 
@@ -184,7 +187,7 @@ def input_bound(
     messages: list[dict[str, object]], tools: list[dict[str, object]]
 ) -> int:
     normalized = copy.deepcopy(messages)
-    pixel_tokens = count = byte_count = pixels = 0
+    count = byte_count = pixels = 0
     for message in normalized:
         content = message.get("content")
         if not isinstance(content, list):
@@ -197,7 +200,6 @@ def input_bound(
                 raise ValueError("invalid_image")
             info = image_info(image["url"])
             width, height = int(info["width"]), int(info["height"])
-            pixel_tokens += ((width + 15) // 16 + 1) * ((height + 15) // 16) + 1
             count += 1
             byte_count += int(info["bytes"])
             pixels += width * height
@@ -221,9 +223,43 @@ def input_bound(
             for value in (normalized, final_messages(normalized))
         )
         + 256
-        + pixel_tokens
         + (1024 if count else 0)
     )
+
+
+def input_token_bound(
+    messages: list[dict[str, object]], tools: list[dict[str, object]]
+) -> int:
+    normalized = copy.deepcopy(messages)
+    pixel_tokens = count = 0
+    for message in normalized:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "image_url":
+                continue
+            image = part.get("image_url")
+            if not isinstance(image, dict) or not isinstance(image.get("url"), str):
+                raise ValueError("invalid_image")
+            info = image_info(image["url"])
+            width, height = int(info["width"]), int(info["height"])
+            pixel_tokens += ((width + 15) // 16 + 1) * ((height + 15) // 16) + 1
+            count += 1
+            image["url"] = "[image]"
+    byte_bound = (
+        max(
+            len(
+                json.dumps(
+                    {"messages": value, "tools": tools}, ensure_ascii=False
+                ).encode()
+            )
+            for value in (normalized, final_messages(normalized))
+        )
+        + 256
+        + (1024 if count else 0)
+    )
+    return (byte_bound + BYTES_PER_TOKEN - 1) // BYTES_PER_TOKEN + pixel_tokens
 
 
 async def complete(provider: AgentProvider, request: AgentRequest) -> dict[str, object]:
@@ -252,7 +288,7 @@ async def stream_quality(
     primary = policy.models[role]
     fallback_role = policy.config[role]["fallback"]
     budget = Decimal(request.budget_eur or "0.10")
-    incoming = input_bound(request.messages, request.tools)
+    incoming = input_token_bound(request.messages, request.tools)
     spent = Decimal(0)
     prompt_tokens = completion_tokens = trace_tokens = answer_tokens = 0
     retry_completion_tokens = 0
@@ -370,7 +406,7 @@ async def stream_quality(
             }
         )
         current = request
-        incoming = input_bound(request.messages, request.tools)
+        incoming = input_token_bound(request.messages, request.tools)
         logging.getLogger(__name__).info(
             json.dumps({"event": "quality_answer_budget", "remaining_eur": str(budget)})
         )
@@ -485,7 +521,7 @@ async def stream_quality(
             if messages != request.messages:
                 request = request.model_copy(update={"messages": messages})
                 current = current.model_copy(update={"messages": messages})
-                incoming = input_bound(request.messages, request.tools)
+                incoming = input_token_bound(request.messages, request.tools)
                 logging.getLogger(__name__).info(
                     json.dumps(
                         {
@@ -495,6 +531,7 @@ async def stream_quality(
                         }
                     )
                 )
+            # Context is measured in tokens, so use the same conservative conversion.
             if incoming + current.max_tokens > capabilities["context"]:
                 raise ContextExceeded(
                     incoming + current.max_tokens, capabilities["context"]
@@ -841,7 +878,7 @@ async def stream_quality(
                     ],
                 }
             )
-            incoming = input_bound(request.messages, request.tools)
+            incoming = input_token_bound(request.messages, request.tools)
         incomplete = result.get("finish_reason") == "length"
         trimmed = False
         if incomplete:

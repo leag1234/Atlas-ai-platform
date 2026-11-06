@@ -358,7 +358,7 @@ class GatewayModel:
         self.prompt_tokens = prompt_tokens
 
     def estimate(self, messages: list[Message]) -> Reservation:
-        incoming = (
+        incoming_bytes = (
             max(
                 len(
                     json.dumps(
@@ -376,6 +376,7 @@ class GatewayModel:
             )
             + 256
         )
+        incoming = (incoming_bytes + 2) // 3
         # Profile recovery retains the full input bound on unknown usage. A
         # previously measured prefix cannot shrink that possible reservation.
         if (
@@ -383,15 +384,15 @@ class GatewayModel:
             and self.prefix
             and messages[: len(self.prefix)] == self.prefix
         ):
-            incoming = (
-                self.prompt_tokens
-                + len(
+            byte_suffix = (
+                len(
                     json.dumps(
                         messages[len(self.prefix) :], ensure_ascii=False
                     ).encode()
                 )
                 + 256
             )
+            incoming = self.prompt_tokens + (byte_suffix + 2) // 3
         if self.profile:
             # Hold the remaining allowance; the gateway reserves each actual attempt.
             primary_cost = (
