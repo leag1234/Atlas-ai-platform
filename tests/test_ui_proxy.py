@@ -24,11 +24,20 @@ class Backend(BaseHTTPRequestHandler):
         type(self).headers_seen.append(
             {key.lower(): value for key, value in self.headers.items()}
         )
-        body = SHELL if self.path == "/" else b"plain"
+        if self.path == "/":
+            body = SHELL
+        elif self.path.startswith("/api/"):
+            body = b"<html><head></head><body>api</body></html>"
+        elif self.path == "/download":
+            body = b"<html><head></head><body>download</body></html>"
+        else:
+            body = b"plain"
         self.send_response(200)
         self.send_header(
             "Content-Type", "text/html" if self.path == "/" else "text/plain"
         )
+        if self.path == "/download":
+            self.send_header("Content-Disposition", "attachment")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -156,6 +165,17 @@ class UiProxyTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertIn(b"/static/atlas/chat-ui.js", data)
             self.assertTrue(data.startswith(b"<html><head><title>x</title>"))
+
+    def test_api_html_is_relayed_without_injection(self) -> None:
+        body = b"<html><head></head><body>api</body></html>"
+        self.assertEqual(
+            self.request("GET", "/api/html"),
+            (200, body),
+        )
+
+    def test_content_disposition_html_is_relayed_without_injection(self) -> None:
+        body = b"<html><head></head><body>download</body></html>"
+        self.assertEqual(self.request("GET", "/download"), (200, body))
 
     def test_other_responses_and_head_requests_pass_through(self) -> None:
         self.assertEqual(self.request("GET", "/api"), (200, b"plain"))
