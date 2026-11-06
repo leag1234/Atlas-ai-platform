@@ -494,14 +494,23 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
     )
     if request.work_session_id:
         body["work_session_id"] = request.work_session_id
-    state = await broker.call(
-        "begin",
-        dict(
-            request_id=str(UUID(item.request_id.removeprefix("chatcmpl-"))),
-            request=body,
-        ),
-        request._transcript_key,
-    )
+    try:
+        state = await broker.call(
+            "begin",
+            dict(
+                request_id=str(UUID(item.request_id.removeprefix("chatcmpl-"))),
+                request=body,
+            ),
+            request._transcript_key,
+        )
+    except ProjectError as exc:
+        logging.getLogger(__name__).warning(
+            "project_turn_replay_failed code=%s status=%s at=%s",
+            exc.body["error"],
+            exc.status,
+            failure_location(exc),
+        )
+        raise
     turn, context = state["turn"], state["context"]
     if request._connector_scope:
         request._connector_scope["conversation"] = turn["conversation_id"]
@@ -793,19 +802,35 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 if stored["turn"]["state"] != "cancelled":
                     raise
         # Begin replay is the contracted way to fetch the stored terminal event.
-        completed = await broker.call(
-            "begin",
-            dict(request_id=turn["request_id"], request=body),
-            request._transcript_key,
-        )
-        if sink:
-            for event in completed["events"]:
-                if (
-                    event.get("type") in {"recap", "error"}
-                    and event.get("turn_id") == turn["id"]
-                ):
-                    await sink({"project": event})
-        if completed["turn"]["state"] == "completed" and not request._scheduled_run:
-            from services.orchestrator.session_updates import schedule
+        try:
+            completed = await broker.call(
+                "begin",
+                dict(request_id=turn["request_id"], request=body),
+                request._transcript_key,
+            )
+        except ProjectError as exc:
+            logging.getLogger(__name__).warning(
+                "project_turn_replay_failed code=%s status=%s at=%s",
+                exc.body["error"],
+                exc.status,
+                failure_location(exc),
+            )
+            if terminal == "completed" and not request._scheduled_run:
+                from services.orchestrator.session_updates import schedule
 
-            schedule(broker, completed)
+                schedule(
+                    broker,
+                    {"turn": dict(turn, state="completed")},
+                )
+        else:
+            if sink:
+                for event in completed["events"]:
+                    if (
+                        event.get("type") in {"recap", "error"}
+                        and event.get("turn_id") == turn["id"]
+                    ):
+                        await sink({"project": event})
+            if completed["turn"]["state"] == "completed" and not request._scheduled_run:
+                from services.orchestrator.session_updates import schedule
+
+                schedule(broker, completed)
