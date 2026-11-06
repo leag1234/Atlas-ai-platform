@@ -88,6 +88,7 @@ class ServerlessPolicy:
     def __init__(self, *, allow_unpriced: bool = False) -> None:
         root = Path(__file__).parent
         routing = yaml.safe_load((root / "routing.yaml").read_text())
+        self.providers: dict[str, str] = {}
         self.config = routing["serverless"]
         self.public_profiles: dict[str, str] = routing["public_profiles"]
         hidden_roles: dict[str, dict[str, object]] = routing.get("hidden_roles", {})
@@ -116,7 +117,6 @@ class ServerlessPolicy:
         self.prices = yaml.safe_load((root / "pricing.yaml").read_text())["models"]
         self.config, self.prices = configure(self.config, self.prices)
         self.hidden_profiles: dict[str, str] = {}
-        self.providers: dict[str, str] = {}
         for profile, role in declared_hidden_profiles.items():
             if profile not in enabled_hidden_profiles():
                 continue
@@ -191,7 +191,8 @@ class ServerlessPolicy:
                 raise ValueError("invalid_reasoning_effort")
             if (
                 effort != "none"
-                and reasoning_control(self.providers.get(model)) is None
+                and reasoning_control(getattr(self, "providers", {}).get(model), model)
+                is None
             ):
                 raise ValueError("reasoning_unsupported")
             efforts[model] = max(

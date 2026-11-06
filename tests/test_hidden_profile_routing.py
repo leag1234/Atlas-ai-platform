@@ -123,6 +123,30 @@ class PolicyTests(unittest.TestCase):
             self.assertEqual(candidates[0], hidden_role)
             self.assertEqual(policy.models[candidates[0]], hidden_model)
 
+    def test_reasoning_is_supported_per_model(self) -> None:
+        for model, supported in (
+            ("mistral-large-4", True),
+            ("mistral-small-2603", False),
+        ):
+            with (
+                self.subTest(model=model),
+                patch.dict(
+                    os.environ,
+                    HIDDEN_ENVIRONMENT
+                    | {
+                        "ATLAS_PROVIDER": "mistral",
+                        "ATLAS_PROVIDER_API_KEY": "test-only",
+                    }
+                    | {"ATLAS_REASONING_EFFORTS": json.dumps({model: "low"})},
+                ),
+            ):
+                if supported:
+                    policy = ServerlessPolicy(allow_unpriced=True)
+                    self.assertEqual(policy.efforts[model], "low")
+                else:
+                    with self.assertRaisesRegex(ValueError, "reasoning_unsupported"):
+                        ServerlessPolicy(allow_unpriced=True)
+
     def test_provider_presets_do_not_replace_hidden_role(self) -> None:
         for provider in ("scaleway", "hetzner"):
             with (

@@ -318,6 +318,7 @@ async def attempt(
                         body,
                         provider=routed,
                         configured_effort=request.reasoning_effort,
+                        model=model,
                     )
                     if routed is not None
                     else provider_settings.request_options(
