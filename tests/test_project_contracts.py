@@ -267,6 +267,17 @@ class ProjectContractTests(unittest.TestCase):
             del invalid[field]
             with self.assertRaises(Invalid):
                 self.validator.validate(invalid, self.schemas["CommitAction"])
+
+    def test_work_limits_allow_80_tool_calls_and_81_model_calls(self) -> None:
+        valid = json.loads((EXAMPLES / "WorkLimits.valid.json").read_text())
+        valid.update(tool_calls=80, model_calls=81)
+        self.validator.validate(valid, self.schemas["WorkLimits"])
+        invalid = dict(valid, tool_calls=81)
+        with self.assertRaises(Invalid):
+            self.validator.validate(invalid, self.schemas["WorkLimits"])
+
+    def test_commit_snapshot_fields_are_validated(self) -> None:
+        value = json.loads((EXAMPLES / "CommitAction.valid.json").read_text())
         for field, replacement in (
             ("id", "not-a-uuid"),
             ("sha256", "not-a-hash"),

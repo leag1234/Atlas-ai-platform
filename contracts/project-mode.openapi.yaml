@@ -6615,11 +6615,11 @@ components:
         tool_calls:
           type: integer
           minimum: 1
-          maximum: 40
+          maximum: 80
         model_calls:
           type: integer
           minimum: 1
-          maximum: 41
+          maximum: 81
         wall_seconds:
           type: integer
           minimum: 1
