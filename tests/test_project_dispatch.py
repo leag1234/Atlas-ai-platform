@@ -415,6 +415,35 @@ class ScopedProjectDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(finish["error"]["message"], "loop_detected")
         self.assertIn("loop_detected", finish["content_refs"][0]["text"])
 
+    async def test_project_error_from_work_is_logged_and_reraised(self) -> None:
+        import logging
+        from services.orchestrator.project_transcript import process_scoped_project
+        from services.retrieval.project_identity import ProjectError
+
+        state = self.state("work")
+        calls = AsyncMock(side_effect=[state, state["turn"], dict(state, replay=True)])
+
+        async def work(request: ChatRequest, item: Interaction, **kwargs: Any) -> None:
+            raise ProjectError(503, "dependency_unavailable")
+
+        with (
+            self.assertLogs(
+                "services.orchestrator.project_transcript", logging.WARNING
+            ) as logs,
+            patch(
+                "services.orchestrator.project_transcript.TranscriptBroker.call", calls
+            ),
+            patch("services.orchestrator.code_mode.process_work", side_effect=work),
+            self.assertRaises(ProjectError),
+        ):
+            await process_scoped_project(self.request("work"), Interaction())
+
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("project_turn_failed kind=ProjectError", logs.output[0])
+        self.assertIn("code=dependency_unavailable", logs.output[0])
+        self.assertIn("status=503", logs.output[0])
+        self.assertRegex(logs.output[0], r"at=.*test_project_dispatch.py:\d+:work")
+
     async def test_failed_work_without_known_reason_is_a_retryable_outage(self) -> None:
         from services.orchestrator.project_transcript import process_scoped_project
 
