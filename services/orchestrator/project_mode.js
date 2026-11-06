@@ -917,20 +917,71 @@
     if (!deleted.ok) throw Object.assign(new Error('native_delete'), {status:deleted.status});
     location.assign(`/?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(project.id)}&conversation=${encodeURIComponent(imported.id)}`);
   }
-  async function moveMenu() {
-    const chatId = nativeChatId(); if (!chatId) return;
+  async function moveMenu(chatId) {
+    if (!chatId) return;
     projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
     const editable = projects.filter(project => !project.shared_with_me || project.role === 'owner' || project.role === 'editor');
-    const dialog = node('dialog',null,'atlas-project-dialog'), form = node('form'); form.append(node('h2',moveText('choose')));
-    if (editable.length > 8) { const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects'); form.append(search); }
-    for (const project of editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0))) form.append(button(project.name,() => importNativeChat(project,chatId)));
-    form.append(button('newProject',async () => { const name = window.prompt(t('newProject')); if (!name?.trim()) return; const project = await api(`/api/atlas/orgs/${scope.org}/projects`,'POST',{name:name.trim(),instructions:'',default_action:'chat'}); await importNativeChat(project,chatId); }),button('cancel',() => dialog.close()));
-    dialog.append(form); document.body.append(dialog); dialog.showModal();
+    const recent = editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0));
+    const chooseProject = project => importNativeChat(project, chatId);
+    const createAndMove = () => nameDialog('newProject', async name => {
+      try {
+        const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', {name, instructions:'', default_action:'chat'});
+        await importNativeChat(project, chatId);
+      } catch (error) {
+        if (error.status !== 429) throw error;
+        const advice = node('p', t('quotaProjectAdvice'));
+        root.append(advice, button('viewProjects', () => choose({org:scope.org})));
+      }
+    });
+    const projectControls = target => {
+      const form = node('form', null, 'atlas-project-move-form');
+      if (recent.length > 8) {
+        const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects');
+        search.addEventListener('input', () => {
+          const value = search.value.trim().toLowerCase();
+          for (const child of [...form.children]) if (child.dataset.projectId) child.hidden = !!value && !child.textContent.toLowerCase().includes(value);
+        });
+        form.append(search);
+      }
+      for (const project of recent) {
+        const item = node('button', project.name); item.type = 'button'; item.dataset.projectId = project.id;
+        item.addEventListener('click', guarded(() => chooseProject(project))); form.append(item);
+      }
+      const create = node('button', moveText('newProject')); create.type = 'button';
+      create.addEventListener('click', guarded(createAndMove)); form.append(create);
+      target.append(form);
+    };
+    if (window.innerWidth <= 480) {
+      const dialog = node('dialog',null,'atlas-project-dialog atlas-project-move-dialog');
+      dialog.append(node('h2', moveText('choose'))); projectControls(dialog);
+      const cancel = button('cancel', () => dialog.close()); dialog.append(cancel);
+      dialog.addEventListener('close', () => dialog.remove(), {once:true}); document.body.append(dialog); dialog.showModal();
+      return;
+    }
+    const panel = node('div', null, 'atlas-project-move-menu');
+    panel.setAttribute('role', 'menu'); panel.append(node('h2', moveText('choose'))); projectControls(panel);
+    document.body.append(panel);
+    const rect = panel.getBoundingClientRect(), itemRect = document.querySelector('[data-atlas-move-project]')?.getBoundingClientRect();
+    if (itemRect) {
+      panel.style.left = Math.max(8, Math.min(itemRect.right + 4, window.innerWidth - rect.width - 8)) + 'px';
+      panel.style.top = Math.max(8, Math.min(itemRect.bottom + 4, window.innerHeight - rect.height - 8)) + 'px';
+    }
+    const close = event => { if (!panel.contains(event.target) && !event.target.closest?.('[data-atlas-move-project]')) { panel.remove(); document.removeEventListener('click', close, true); } };
+    setTimeout(() => document.addEventListener('click', close, true), 0);
   }
-  function installMoveActions() {
-    if (owned || !scope?.org || !nativeChatId() || document.querySelector('[data-atlas-move-project]')) return;
-    const trigger = node('button',moveText('move'),'atlas-project-move'); trigger.type='button'; trigger.dataset.atlasMoveProject=''; trigger.addEventListener('click',guarded(moveMenu));
-    const title = document.querySelector('header, #chat-container'); (title || document.body).append(trigger);
+  function installMoveMenuItems() {
+    // Open WebUI v0.11.3 anchors: header menu #chat-context-menu-button; sidebar
+    // row a[href="/c/<id>"] with its localized "Chat Menu" trigger; menus render
+    // as .app-dropdown-menu (without role="menu"), while submenu portals use role="menu".
+    if (owned || !identity || !scope?.org || !document.body.classList.contains('atlas-project-enabled')) return;
+    for (const menu of document.querySelectorAll('.app-dropdown-menu')) {
+      if (menu.querySelector('[data-atlas-move-project]')) continue;
+      const row = document.activeElement?.closest('#sidebar-chat-group');
+      const chatId = row ? decodeURIComponent(new URL(row.querySelector('a[href^="/c/"]').href).pathname.match(/^\/c\/([^/?#]+)$/)?.[1] || '') : nativeChatId();
+      if (!chatId) continue;
+      const item = node('button', moveText('move')); item.type = 'button'; item.dataset.atlasMoveProject = '';
+      item.addEventListener('click', guarded(() => moveMenu(chatId))); menu.append(item);
+    }
   }
   function installNavigation() {
     if (owned || !identity || /^\/(auth|admin)/.test(location.pathname)) return;
@@ -981,7 +1032,7 @@
     document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {if (!control.parentElement.hidden) control.parentElement.hidden = true;});
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
-    installMoveActions();
+    installMoveMenuItems();
     if (root?.isConnected && !owned) {
       const main = hostMain();
       if (main) {
@@ -1086,6 +1137,7 @@
   let route = location.pathname;
   const watch = new MutationObserver(() => {
     installNavigation();
+    installMoveMenuItems();
     if (!identity && !booting && document.querySelector('#chat-input')) boot();
     if (location.pathname !== route) {
       const prior = route; route = location.pathname; cleanup(); root?.remove();
