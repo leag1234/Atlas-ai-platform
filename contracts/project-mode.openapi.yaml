@@ -5990,6 +5990,8 @@ components:
         last_event_seq:
           type: integer
           minimum: 0
+        events_truncated:
+          type: boolean
       required:
       - turn
       - context

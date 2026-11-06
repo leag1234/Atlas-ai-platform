@@ -553,6 +553,14 @@ def response(
                     item.erreurs.append("cancelled")
                 raise
             except ProjectError as exc:
+                from services.orchestrator.project_transcript import failure_location
+
+                logging.getLogger(__name__).warning(
+                    "project_stream_failed code=%s status=%s at=%s",
+                    exc.body["error"],
+                    exc.status,
+                    failure_location(exc),
+                )
                 item.state = "error"
                 item.erreurs.append(str(exc.body["error"]))
                 await queue.put({"error": exc.body})

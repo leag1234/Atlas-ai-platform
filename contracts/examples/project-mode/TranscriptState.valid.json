@@ -53,5 +53,6 @@
   },
   "replay": false,
   "events": [],
-  "last_event_seq": 0
+  "last_event_seq": 0,
+  "events_truncated": false
 }
