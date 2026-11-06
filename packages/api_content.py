@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from packages.attachment_reader import extract_bytes
-from packages.profiles import PROFILES
+from packages.profiles import accepted_profile, PROFILES
 
 
 class FileContentError(ValueError):
@@ -17,7 +17,7 @@ class FileContentError(ValueError):
 
 def assistant_name(name: object) -> bool:
     """The Atlas assistant and its profiles are served on Chat Completions only."""
-    return name == "atlas" or name in PROFILES
+    return name == "atlas" or (isinstance(name, str) and accepted_profile(name))
 
 
 def assistant_route_message() -> str:

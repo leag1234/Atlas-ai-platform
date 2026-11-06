@@ -1,6 +1,6 @@
 """OpenAI-compatible text/image chat; clients cannot alter tool budgets."""
 
-from packages.profiles import PROFILES, context_window
+from packages.profiles import accepted_profile, context_window, PROFILES
 from packages.file_intent import produces_file
 from packages.evidence import estimated_tokens
 from packages.language import LANGUAGES, conversation_language, status_language
@@ -256,7 +256,7 @@ class ChatRequest(VisionInput):
         self.file_version_ids = [str(UUID(v)) for v in self.file_version_ids]
         if len(set(self.file_version_ids)) != len(self.file_version_ids):
             raise ValueError("selector_conflict")
-        if self.model not in PROFILES:
+        if not accepted_profile(self.model):
             raise ValueError("invalid_profile")
         maximum = 6000
         if "max_tokens" not in self.model_fields_set:
