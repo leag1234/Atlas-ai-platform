@@ -142,6 +142,66 @@ class ProviderFieldTests(unittest.TestCase):
     def test_clients_cannot_select_an_effort(self) -> None:
         self.assertEqual(request(reasoning_effort="low").reasoning_effort, "none")
         self.assertTrue(request(reasoning_disabled=True).reasoning_disabled)
+        self.assertIsNone(request().reasoning_ceiling)
+
+    def test_reasoning_ceiling_is_optional(self) -> None:
+        payload = request(reasoning_ceiling="low").model_dump(
+            exclude={"messages", "tools"}
+        )
+        self.assertEqual(payload["reasoning_ceiling"], "low")
+        self.assertNotIn("reasoning_ceiling", request().model_dump())
+
+    def test_absent_ceiling_keeps_request_options_unchanged(self) -> None:
+        body = {"model": "m", "reasoning_effort": "none"}
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(request_options(body), body)
+            self.assertEqual(request_options(body, "scaleway"), body)
+
+    def test_provider_default_reasoning_respects_ceiling(self) -> None:
+        body = {"model": "m", "reasoning_effort": "none"}
+        with patch.dict(os.environ, {}, clear=True):
+            baseline = request_options(body)
+            self.assertEqual(baseline["reasoning_effort"], "none")
+            self.assertEqual(
+                request_options(body, reasoning_ceiling="low", reasoning_default=False)[
+                    "reasoning_effort"
+                ],
+                "none",
+            )
+            self.assertNotIn(
+                "reasoning_effort",
+                request_options(
+                    body,
+                    "mistral",
+                    reasoning_ceiling="low",
+                    reasoning_default=False,
+                ),
+            )
+
+        preset = dict(presets()["mistral"])
+        preset.update(reasoning_values=["low", "high"])
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch("provider_settings.presets", return_value={"mistral": preset}),
+        ):
+            self.assertEqual(
+                request_options(
+                    body,
+                    "mistral",
+                    reasoning_ceiling="medium",
+                    reasoning_default=None,
+                )["reasoning_effort"],
+                "low",
+            )
+            self.assertEqual(
+                request_options(
+                    body,
+                    "mistral",
+                    reasoning_ceiling="high",
+                    reasoning_default=None,
+                )["reasoning_effort"],
+                "low",
+            )
 
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
@@ -225,6 +285,15 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
             max_tokens=3000,
         )
         self.assertEqual([a.reasoning_effort for a in attempts], ["none"])
+        self.assertEqual(final["reasoning_effort"], "none")
+
+    async def test_reasoning_ceiling_caps_first_attempt_only(self) -> None:
+        attempts, final = await self.run_quality(
+            configured({"glm-5.2": "high"}),
+            [result("", 6000, length=True), result("Recovered answer.", 400)],
+            reasoning_ceiling="low",
+        )
+        self.assertEqual([a.reasoning_effort for a in attempts], ["low", "none"])
         self.assertEqual(final["reasoning_effort"], "none")
 
 
