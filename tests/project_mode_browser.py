@@ -63,9 +63,31 @@ def files() -> list[Path]:
     return [pdf, sheet]
 
 
+def assert_stable(page: Page) -> None:
+    page.evaluate("() => 1 + 1")
+    page.locator("#atlas-project-sidebar-list button").first.click()
+    expect(page.locator("#atlas-project-sidebar-list")).to_be_visible()
+    replacements = page.evaluate(
+        """() => {
+          const list = document.getElementById('atlas-project-sidebar-list');
+          let count = 0;
+          const observer = new MutationObserver(mutations => {
+            count += mutations.some(mutation => [...mutation.removedNodes].some(node => node.id === 'atlas-project-sidebar-list'));
+          });
+          observer.observe(document.body, {childList: true, subtree: true});
+          return new Promise(resolve => setTimeout(() => {
+            observer.disconnect();
+            resolve(count);
+          }, 3000));
+        }"""
+    )
+    assert replacements == 0, replacements
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--navigation-only", action="store_true")
+    parser.add_argument("--nav-loop-only", action="store_true")
     args = parser.parse_args()
     base = os.environ["ATLAS_PROJECT_BROWSER_URL"].rstrip("/")
     target = urlsplit(base)
@@ -93,6 +115,17 @@ def main() -> None:
             page.locator("#chat-input").wait_for(timeout=60000)
             page.keyboard.press("Escape")
             page.locator("#atlas-project-entry").click()
+            if args.nav_loop_only:
+                page.goto(base + "/?atlas_projects=1", wait_until="domcontentloaded")
+                page.locator("#chat-input").wait_for(timeout=60000)
+                expect(page.locator("#atlas-project-sidebar-list")).to_be_visible(
+                    timeout=5000
+                )
+                assert_stable(page)
+                page.set_viewport_size({"width": 390, "height": 844})
+                assert_stable(page)
+                print("project navigation loop, existing project: PASS (local only)")
+                return
             dialog(page, "New project", "Orion browser " + str(int(time.time())))
             dialog(page, "New session", "Document comparison")
             expect(page.locator(".atlas-project-center")).to_contain_text(
@@ -103,11 +136,18 @@ def main() -> None:
                 and "project=" in page.url
                 and "conversation=" in page.url
             )
+            assert_stable(page)
+            page.set_viewport_size({"width": 390, "height": 844})
+            assert_stable(page)
+            page.set_viewport_size({"width": 1440, "height": 960})
             page.screenshot(path=str(OUTPUT / "navigation.png"))
             page.reload(wait_until="domcontentloaded")
             expect(
                 page.locator(".atlas-project-left [aria-current=true]")
             ).to_have_text("Document comparison", timeout=30000)
+            assert_stable(page)
+            page.set_viewport_size({"width": 390, "height": 844})
+            assert_stable(page)
             if args.navigation_only:
                 print(
                     "project browser navigation, identity-scoped reload: PASS (local only)"

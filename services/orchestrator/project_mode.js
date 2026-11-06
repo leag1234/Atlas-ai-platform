@@ -943,11 +943,21 @@
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
-    const previous = document.getElementById('atlas-project-sidebar-list'); previous?.remove();
-    if (scope?.org && projects.length) {
+    const listedProjects = [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8);
+    const signature = JSON.stringify({
+      org: scope?.org,
+      projects: listedProjects.map(value => [value.id, value.name]),
+      project: scope?.project,
+      conversations: conversations.map(value => [value.id, shortTitle(value.title)]),
+      conversation: scope?.conversation
+    });
+    const previous = document.getElementById('atlas-project-sidebar-list');
+    if (scope?.org && projects.length && (!previous || previous.dataset.signature !== signature)) {
+      previous?.remove();
       const list = node('section', null, 'atlas-project-host-projects'); list.id = 'atlas-project-sidebar-list';
+      list.dataset.signature = signature;
       list.append(node('h2', t('projects')));
-      for (const value of [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8)) {
+      for (const value of listedProjects) {
         const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button';
         if (value.id === scope.project) row.setAttribute('aria-current','page');
         row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); list.append(row);
@@ -959,14 +969,16 @@
       }
       list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
       document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
+    } else if (previous && !(scope?.org && projects.length)) {
+      previous.remove();
     }
-    document.body.classList.add('atlas-project-enabled');
+    if (!document.body.classList.contains('atlas-project-enabled')) document.body.classList.add('atlas-project-enabled');
     const rail = document.querySelector('#sidebar');
     if (sidebar.id === 'pinned-menu-items-list' && rail && !rail.querySelector('[data-project-rail]')) {
       const entry = iconButton('projects','▦', async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id});}); entry.dataset.projectRail = ''; rail.append(entry);
       new ResizeObserver(entries => {entry.hidden = entries[0].contentRect.width > 100;}).observe(rail);
     }
-    document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {control.parentElement.hidden = true;});
+    document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {if (!control.parentElement.hidden) control.parentElement.hidden = true;});
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
     installMoveActions();
