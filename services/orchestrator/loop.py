@@ -164,6 +164,21 @@ class PublicFailure(RuntimeError):
     """A typed boundary failure whose user-facing detail must survive the loop."""
 
 
+class GatewayError(PublicFailure):
+    def __init__(
+        self,
+        code: str,
+        status: int,
+        detail: str = "",
+        retries: int = 0,
+        measurements: dict[str, object] | None = None,
+    ) -> None:
+        self.code, self.status, self.detail = code, status, detail
+        self.retries = retries
+        self.measurements = measurements or {}
+        super().__init__(code)
+
+
 async def run(
     query: Query,
     model: Model,
@@ -758,6 +773,10 @@ async def run(
     except LimitError as exc:
         result.state, result.reason, result.text = "stopped", exc.code, exc.detail
         return result
+    except GatewayError as exc:
+        if exc.code != "cost_budget" or not limits.code_mode:
+            raise
+        result.reason = "cost"
     except PublicFailure:
         raise
     except (ValueError, RuntimeError, OSError):
