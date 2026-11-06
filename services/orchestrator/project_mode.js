@@ -880,8 +880,9 @@
   let pendingMoveMenu = null;
   const sidebarChatId = target => {
     if (!(target instanceof Element) || target.closest('#chat-context-menu-button')) return null;
-    if (target.tagName !== 'BUTTON') return null;
-    for (let row = target.parentElement; row && row !== document.body; row = row.parentElement) {
+    const button = target.closest('button');
+    if (!button || button.closest('a[href^="/c/"]')) return null;
+    for (let row = button.parentElement; row && row !== document.body; row = row.parentElement) {
       if (row.id === 'sidebar') return null;
       const links = row.querySelectorAll('a[href^="/c/"]');
       if (!links.length) continue;
@@ -946,7 +947,9 @@
     const editable = projects.filter(project => !project.shared_with_me || project.role === 'owner' || project.role === 'editor');
     const recent = editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0));
     const chooseProject = project => importNativeChat(project, chatId);
-    const createAndMove = () => nameDialog('newProject', async name => {
+    const createAndMove = async () => {
+      if (!root?.isConnected) await mount();
+      return nameDialog('newProject', async name => {
       try {
         const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', {name, instructions:'', default_action:'chat'});
         await importNativeChat(project, chatId);
@@ -955,7 +958,8 @@
         const advice = node('p', t('quotaProjectAdvice'));
         root.append(advice, button('viewProjects', () => choose({org:scope.org})));
       }
-    });
+      });
+    };
     const projectControls = target => {
       const form = node('form', null, 'atlas-project-move-form');
       if (recent.length > 8) {
@@ -993,7 +997,7 @@
     setTimeout(() => document.addEventListener('click', close, true), 0);
   }
   function installMoveMenuItems() {
-    if (owned || !identity || !scope?.org || !document.body.classList.contains('atlas-project-enabled')) return;
+    if (owned || !identity || !scope?.org) return;
     if (!pendingMoveMenu || Date.now() - pendingMoveMenu.at >= 1500) return;
     for (const menu of document.querySelectorAll('.app-dropdown-menu')) {
       if (menu.querySelector('[data-atlas-move-project]')) continue;
