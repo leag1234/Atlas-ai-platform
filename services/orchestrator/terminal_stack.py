@@ -346,7 +346,13 @@ def loopback_html_injector(
                         ) as adapter:
                             adapter.settimeout(None)
                             adapter.sendall(project_header + marker + body)
-                            self.relay(client, adapter, header.split(b" ", 1)[0], False)
+                            self.relay(
+                                client,
+                                adapter,
+                                header.split(b" ", 1)[0],
+                                False,
+                                target_path,
+                            )
                         return
                     if header.split(b" ", 2)[1].startswith(b"/atlas-code/"):
                         forwarded = relay_header(header)
@@ -360,7 +366,13 @@ def loopback_html_injector(
                         ) as adapter:
                             adapter.settimeout(None)
                             adapter.sendall(forwarded + marker + body)
-                            self.relay(client, adapter, header.split(b" ", 1)[0], False)
+                            self.relay(
+                                client,
+                                adapter,
+                                header.split(b" ", 1)[0],
+                                False,
+                                target_path,
+                            )
                         return
                     if stable:
                         supplied_user = re.search(
@@ -418,7 +430,7 @@ def loopback_html_injector(
                         else:
                             header += b"\r\nConnection: close"
                     remote.sendall(header + marker + body)
-                    self.relay(client, remote, method, upgrade)
+                    self.relay(client, remote, method, upgrade, target_path)
             except OSError:
                 pass
             finally:
@@ -433,6 +445,7 @@ def loopback_html_injector(
             remote: socket.socket,
             method: bytes,
             upgrade: bool,
+            target_path: str,
         ) -> None:
             """Stream both directions at once; rewrite only a GET 200 HTML response."""
             response = b""
@@ -465,12 +478,18 @@ def loopback_html_injector(
                         length = re.search(rb"\r\ncontent-length: (\d+)", head, re.I)
                         status_ok = head.startswith((b"HTTP/1.1 200", b"HTTP/1.0 200"))
                         html = b"content-type: text/html" in head.lower()
+                        path = target_path.split("?", 1)[0]
+                        disposition = re.search(
+                            rb"(?im)^content-disposition:", head
+                        ) is not None
                         if (
                             method == b"GET"
                             and not upgrade
                             and status_ok
                             and html
                             and length
+                            and not path.startswith(("/api/", "/internal/"))
+                            and not disposition
                         ):
                             expected = int(length.group(1))
                         else:
