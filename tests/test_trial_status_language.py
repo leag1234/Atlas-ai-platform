@@ -17,6 +17,20 @@ from services.orchestrator.stream_client import sink_context
 
 
 class TrialStatusLanguageTests(unittest.IsolatedAsyncioTestCase):
+    def test_create_artifact_activity_has_every_service_translation(self) -> None:
+        labels = json.loads(Path("prompts/activity-labels.json").read_text())
+        expected = {
+            "fr": "Écriture de l'application…",
+            "en": "Writing the app…",
+            "de": "Die App wird geschrieben…",
+            "es": "Escribiendo la aplicación…",
+            "it": "Scrittura dell'app…",
+        }
+        self.assertEqual(set(labels), set(expected))
+        for language, translation in expected.items():
+            with self.subTest(language=language):
+                self.assertEqual(labels[language]["create_artifact"], translation)
+
     async def test_trial_locale_precedence_and_conversation_fallback(self) -> None:
         french = "Bonjour, explique pourquoi le ciel est bleu pendant la journée."
         english = "Please explain why the sky looks blue during the daytime."

@@ -6,6 +6,31 @@ import unittest
 
 
 class PromptPolicyTests(unittest.TestCase):
+    def test_artifact_prompt_is_english_and_self_contained(self) -> None:
+        prompt = Path("prompts/artifact.txt").read_text()
+        self.assertTrue(prompt.isascii())
+        self.assertIn("create_artifact is available", prompt)
+        self.assertIn("ONE self-contained HTML file", prompt)
+        self.assertIn("No CDN, no external URL", prompt)
+        self.assertIn("Interface language: the user's language", prompt)
+        self.assertIn("identifiers and comments stay in English", prompt)
+        self.assertIn("If the result is artifact_invalid", prompt)
+
+    def test_chat_agent_keeps_code_rules_and_adds_deliverable_defaults(self) -> None:
+        prompt = Path("prompts/chat-agent.txt").read_text()
+        self.assertIn("Generated code is always English", prompt)
+        self.assertIn("visible labels remain French", prompt)
+        addition = "Code deliverables: a requested language, framework or platform is always used;"
+        self.assertIn(addition, prompt)
+        self.assertGreater(
+            prompt.index("visible labels remain French"),
+            prompt.index("Generated code is always English"),
+        )
+        self.assertGreater(
+            prompt.index(addition),
+            prompt.index("visible labels remain French"),
+        )
+
     def test_disposition_and_size(self) -> None:
         owner = Path("contracts/m25-owner.txt").read_text()
         disposition = owner.split("Layer 1, **Disposition**")[1].split("```")[1].strip()
