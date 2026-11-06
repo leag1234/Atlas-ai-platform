@@ -19,8 +19,8 @@ class Closed(BaseModel):
 
 
 class WorkLimits(Closed):
-    tool_calls: int = Field(ge=1, le=40)
-    model_calls: int = Field(ge=1, le=41)
+    tool_calls: int = Field(ge=1, le=80)
+    model_calls: int = Field(ge=1, le=81)
     wall_seconds: int = Field(ge=1, le=1200)
     cost_eur: float = Field(ge=0, le=3, allow_inf_nan=False)
     per_call_eur: float = Field(ge=0, le=0.1, allow_inf_nan=False)
