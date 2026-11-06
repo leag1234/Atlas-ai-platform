@@ -13,11 +13,16 @@ from urllib.parse import quote
 import http.client
 import threading
 import time
+from collections import Counter
 
 from fastapi.testclient import TestClient
 
 from services.orchestrator import artifact_store
-from services.orchestrator.artifact_routes import PREVIEW_CSP
+from services.orchestrator.artifact_routes import (
+    DOWNLOAD_HEADERS,
+    PREVIEW_CSP,
+    PREVIEW_HEADERS,
+)
 from services.orchestrator.artifact_tokens import issue_token
 from services.orchestrator.chat_api import app
 from services.orchestrator.terminal_stack import loopback_html_injector
@@ -211,6 +216,31 @@ class ArtifactRouteTests(unittest.TestCase):
         self.assertEqual(response.headers["content-security-policy"], "sandbox")
         self.assertEqual(response.headers["cache-control"], "private, no-store")
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+
+    def test_isolation_headers_are_set_exactly_once(self) -> None:
+        open_response = self.client.get(
+            f"/api/atlas/artifacts/{self.artifact_id}/versions/1/open",
+            headers=self.owner(),
+            follow_redirects=False,
+        )
+        self.assertEqual(open_response.status_code, 303)
+        token = open_response.headers["location"].split("/")[4]
+        preview = self.client.get(self.preview_url(token), headers=self.owner())
+        self.assertEqual(preview.status_code, 200)
+        download = self.client.get(
+            f"/api/atlas/artifacts/{self.artifact_id}/versions/1/download",
+            headers=self.owner(),
+        )
+        self.assertEqual(download.status_code, 200)
+
+        for response, expected_headers in (
+            (preview, PREVIEW_HEADERS),
+            (download, DOWNLOAD_HEADERS),
+        ):
+            raw_headers = response.headers.raw
+            counts = Counter(name.lower() for name, _ in raw_headers)
+            for name in expected_headers:
+                self.assertEqual(counts[name.lower().encode()], 1, name)
 
     def test_open_foreign_owner_is_404(self) -> None:
         response = self.client.get(

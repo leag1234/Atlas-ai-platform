@@ -56,6 +56,8 @@ DOWNLOAD_HEADERS = {
     "Content-Security-Policy": "sandbox",
     "Cache-Control": "private, no-store",
 }
+PREVIEW_HEADER_NAMES = frozenset(name.lower().encode() for name in PREVIEW_HEADERS)
+DOWNLOAD_HEADER_NAMES = frozenset(name.lower().encode() for name in DOWNLOAD_HEADERS)
 STORAGE_SHIM = (
     b"<script>(function(){var f=function(t){var s={};"
     b"Object.defineProperty(s,'length',{get:function(){return Object.keys(s).length}});"
@@ -274,8 +276,7 @@ class ArtifactHeadersMiddleware:
                     headers = [
                         (name, value)
                         for name, value in headers
-                        if name.lower()
-                        not in {name.lower() for name in PREVIEW_HEADERS}
+                        if name.lower() not in PREVIEW_HEADER_NAMES
                         and name.lower() != b"content-security-policy"
                     ]
                     headers.append(
@@ -287,8 +288,7 @@ class ArtifactHeadersMiddleware:
                     headers = [
                         (name, value)
                         for name, value in headers
-                        if name.lower()
-                        not in {name.lower() for name in DOWNLOAD_HEADERS}
+                        if name.lower() not in DOWNLOAD_HEADER_NAMES
                     ]
                     headers.extend(
                         (name.encode(), value.encode())
