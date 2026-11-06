@@ -1120,6 +1120,59 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Decimal(str(answer["cost_eur"])), expected)
         self.assertEqual(answer["usage"], {"prompt_tokens": 40, "completion_tokens": 2})
 
+    async def test_dense_provider_usage_is_accepted_up_to_byte_bound(self) -> None:
+        from quality import input_bound, input_token_bound
+
+        original = request(messages=[{"role": "user", "content": "0" * 3000}])
+        prompt_tokens = input_bound(original.messages, original.tools) - 1
+        self.assertGreater(
+            prompt_tokens, input_token_bound(original.messages, original.tools)
+        )
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            event = result("Dense input answer.", 20)
+            terminal = event["result"]
+            assert isinstance(terminal, dict)
+            terminal["usage"]["prompt_tokens"] = prompt_tokens
+            yield event
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+        ):
+            events = [
+                event async for event in stream_quality(AgentProvider(), original)
+            ]
+        answer = events[-1]["result"]
+        assert isinstance(answer, dict)
+        self.assertEqual(answer["usage"]["prompt_tokens"], prompt_tokens)
+
+    async def test_provider_usage_above_byte_bound_is_rejected(self) -> None:
+        from quality import input_bound
+
+        original = request(messages=[{"role": "user", "content": "0" * 3000}])
+        prompt_tokens = input_bound(original.messages, original.tools) + 1
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            event = result("Dense input answer.", 20)
+            terminal = event["result"]
+            assert isinstance(terminal, dict)
+            terminal["usage"]["prompt_tokens"] = prompt_tokens
+            yield event
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "provider_usage_exceeds_reservation"
+            ):
+                _ = [event async for event in stream_quality(AgentProvider(), original)]
+
     async def test_empty_trace_logs_default_regression_and_recovers_same_route(
         self,
     ) -> None:

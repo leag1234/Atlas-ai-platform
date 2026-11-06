@@ -262,6 +262,26 @@ def input_token_bound(
     return (byte_bound + BYTES_PER_TOKEN - 1) // BYTES_PER_TOKEN + pixel_tokens
 
 
+def input_usage_ceiling(
+    messages: list[dict[str, object]], tools: list[dict[str, object]]
+) -> int:
+    pixel_tokens = 0
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "image_url":
+                continue
+            image = part.get("image_url")
+            if not isinstance(image, dict) or not isinstance(image.get("url"), str):
+                raise ValueError("invalid_image")
+            info = image_info(image["url"])
+            width, height = int(info["width"]), int(info["height"])
+            pixel_tokens += ((width + 15) // 16 + 1) * ((height + 15) // 16) + 1
+    return input_bound(messages, tools) + pixel_tokens
+
+
 async def complete(provider: AgentProvider, request: AgentRequest) -> dict[str, object]:
     async with aclosing(
         stream_quality(provider, request, complete_response=True)
@@ -289,6 +309,7 @@ async def stream_quality(
     fallback_role = policy.config[role]["fallback"]
     budget = Decimal(request.budget_eur or "0.10")
     incoming = input_token_bound(request.messages, request.tools)
+    incoming_ceiling = input_usage_ceiling(request.messages, request.tools)
     spent = Decimal(0)
     prompt_tokens = completion_tokens = trace_tokens = answer_tokens = 0
     retry_completion_tokens = 0
@@ -407,6 +428,7 @@ async def stream_quality(
         )
         current = request
         incoming = input_token_bound(request.messages, request.tools)
+        incoming_ceiling = input_usage_ceiling(request.messages, request.tools)
         logging.getLogger(__name__).info(
             json.dumps({"event": "quality_answer_budget", "remaining_eur": str(budget)})
         )
@@ -688,7 +710,7 @@ async def stream_quality(
             )
             if failed_usage is not None:
                 if (
-                    failed_usage.prompt_tokens > incoming
+                    failed_usage.prompt_tokens > incoming_ceiling
                     or failed_usage.completion_tokens > current.max_tokens
                 ):
                     raise RuntimeError("provider_usage_exceeds_reservation") from None
@@ -758,7 +780,7 @@ async def stream_quality(
             raise MalformedToolCall(malformed_name.measured, index)
         usage = Usage.model_validate(result["usage"])
         if (
-            usage.prompt_tokens > incoming
+            usage.prompt_tokens > incoming_ceiling
             or usage.completion_tokens > current.max_tokens
         ):
             raise RuntimeError("provider_usage_exceeds_reservation")
@@ -879,6 +901,7 @@ async def stream_quality(
                 }
             )
             incoming = input_token_bound(request.messages, request.tools)
+            incoming_ceiling = input_usage_ceiling(request.messages, request.tools)
         incomplete = result.get("finish_reason") == "length"
         trimmed = False
         if incomplete:
