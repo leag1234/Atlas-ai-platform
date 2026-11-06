@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 from decimal import Decimal
@@ -36,6 +37,16 @@ from services.orchestrator.project_ui import (
 from services.orchestrator.stream_client import sink_context
 from services.retrieval.project_identity import ProjectError
 from services.retrieval.project_work_contract import validate
+
+
+def failure_location(exc: BaseException) -> str:
+    import traceback
+
+    frames = traceback.extract_tb(exc.__traceback__)[-3:]
+    return " < ".join(
+        f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+        for frame in reversed(frames)
+    )
 
 
 class TranscriptBroker(ExecutionBroker):
@@ -721,21 +732,20 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         raise
     except ProjectError as exc:
         error = exc.body
+        logging.getLogger(__name__).warning(
+            "project_turn_failed kind=ProjectError code=%s status=%s at=%s",
+            exc.body["error"],
+            exc.status,
+            failure_location(exc),
+        )
         raise
     except Exception as exc:
         from packages.configuration import temporarily_unavailable
-        import logging
 
-        import traceback
-
-        frames = traceback.extract_tb(exc.__traceback__)[-3:]
         logging.getLogger(__name__).warning(
             "project_turn_failed kind=%s at=%s",
             type(exc).__name__,
-            " < ".join(
-                f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
-                for frame in reversed(frames)
-            ),
+            failure_location(exc),
         )
         item.state = "failed"
         item.work_failure = {}
