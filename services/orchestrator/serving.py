@@ -8,6 +8,7 @@ ends without an accepted stop so systemd can restart it.
 
 import os
 import json
+import re
 import signal
 import secrets
 import subprocess
@@ -39,7 +40,15 @@ from services.retrieval.pipeline import ingest
 from services.retrieval.search import Gateway
 from services.retrieval.store import Store
 
-WEBUI_IMAGE = "ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933"
+# The guest UI image is configurable but must always be pinned by digest.
+WEBUI_IMAGE = (
+    os.environ.get("ATLAS_WEBUI_IMAGE")
+    or "ghcr.io/open-webui/open-webui:v0.11.3@sha256:41daa0cf2561a5d4c8d1ff31ee2a98d93ab4d3ac2605cac69366ff6a3374a933"
+)
+if re.fullmatch(r".+@sha256:[0-9a-f]{64}", WEBUI_IMAGE) is None:
+    raise RuntimeError(
+        "invalid_configuration: ATLAS_WEBUI_IMAGE must end with @sha256: followed by 64 hexadecimal characters"
+    )
 SEARXNG_IMAGE = "searxng/searxng:2026.10.17-1c10abe2d@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e"
 RUNNER_IMAGE = "atlas-project-runner:local"
 
