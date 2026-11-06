@@ -20,6 +20,7 @@ from services.orchestrator.cache import Cache
 from services.orchestrator.chat_pipeline import ChatTools
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call
+from services.orchestrator.loop import Message
 from services.orchestrator.model import GatewayError
 from services.orchestrator.tools import Runtime, Search
 
@@ -213,7 +214,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             params: dict[str, str],
             policy: sx.Policy,
             deadline: float,
-        ) -> sx.Message:
+        ) -> Message:
             if engine == "wikipedia":
                 result = await original_engine_search(
                     state, endpoint, engine, params, policy, deadline
