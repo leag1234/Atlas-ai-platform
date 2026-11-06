@@ -90,7 +90,7 @@
     const dialog = node('dialog', null, 'atlas-project-dialog'), form = node('form'), name = node('input');
     name.required = true; name.maxLength = maxLength; name.value = initial;
     const create = node('button', t(key.startsWith('rename') ? 'save' : 'create')); create.type = 'submit';
-    form.append(node('h2', t(key)), field('name', name), create, button('cancel', () => dialog.close())); dialog.append(form); root.append(dialog);
+    form.append(node('h2', t(key)), field('name', name), create, button('cancel', () => dialog.close())); dialog.append(form); (root?.isConnected ? root : document.body).append(dialog);
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     form.addEventListener('submit', guarded(async event => { event.preventDefault(); create.disabled = true; try { await submit(name.value.trim()); dialog.close(); } finally { create.disabled = false; } }));
     dialog.showModal(); name.focus();
@@ -877,6 +877,30 @@
   };
   const moveText = key => (moveLabels[(window.atlasProjectLocale.language() || 'en').slice(0,2)] || moveLabels.en)[key];
   const nativeChatId = () => (location.pathname.match(/^\/c\/([^/?#]+)$/) || [])[1] || null;
+  let pendingMoveMenu = null;
+  const sidebarChatId = target => {
+    if (!(target instanceof Element) || target.closest('#chat-context-menu-button')) return null;
+    const button = target.closest('button');
+    if (!button || button.closest('a[href^="/c/"]')) return null;
+    for (let row = button.parentElement; row && row !== document.body; row = row.parentElement) {
+      if (row.id === 'sidebar') return null;
+      const links = row.querySelectorAll('a[href^="/c/"]');
+      if (!links.length) continue;
+      if (links.length !== 1) return null;
+      return decodeURIComponent(new URL(links[0].href).pathname.match(/^\/c\/([^/?#]+)$/)?.[1] || '');
+    }
+    return null;
+  };
+  const recordMoveMenuTrigger = event => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('#chat-context-menu-button')) pendingMoveMenu = {chatId:nativeChatId(),at:Date.now()};
+    else {
+      const chatId = sidebarChatId(target);
+      pendingMoveMenu = chatId ? {chatId,at:Date.now()} : null;
+    }
+  };
+  document.addEventListener('pointerdown', recordMoveMenuTrigger, true);
+  document.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') recordMoveMenuTrigger(event); }, true);
   function nativeBranch(chat) {
     const history = chat?.chat?.history || chat?.history || {};
     const messages = history.messages || {};
@@ -911,26 +935,88 @@
       const uploaded = await jsonResponse(await request(projectBase + '/files?folder_id=' + folder.id,{method:'POST',body:data}),generation);
       transferred.set(id,uploaded.file.id);
     }
-    const messages = branch.map((message,index) => ({role:message.role,content:message.content.trim(),created_at:new Date(message.timestamp || message.created_at || Date.now() + index).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)}));
+    let previousCreatedAt = 0;
+    const messages = branch.map((message,index) => {
+      const raw = message.timestamp || message.created_at || Date.now() + index;
+      let createdAt = typeof raw === 'number' ? (raw < 1e12 ? raw * 1000 : raw) : Date.parse(raw);
+      if (Number.isNaN(createdAt)) createdAt = Date.now() + index;
+      if (createdAt <= previousCreatedAt) createdAt = previousCreatedAt + 1;
+      previousCreatedAt = createdAt;
+      return {role:message.role,content:message.content.trim(),created_at:new Date(createdAt).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)};
+    });
     const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
     const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
     if (!deleted.ok) throw Object.assign(new Error('native_delete'), {status:deleted.status});
     location.assign(`/?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(project.id)}&conversation=${encodeURIComponent(imported.id)}`);
   }
-  async function moveMenu() {
-    const chatId = nativeChatId(); if (!chatId) return;
+  async function moveMenu(chatId) {
+    if (!chatId) return;
     projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
     const editable = projects.filter(project => !project.shared_with_me || project.role === 'owner' || project.role === 'editor');
-    const dialog = node('dialog',null,'atlas-project-dialog'), form = node('form'); form.append(node('h2',moveText('choose')));
-    if (editable.length > 8) { const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects'); form.append(search); }
-    for (const project of editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0))) form.append(button(project.name,() => importNativeChat(project,chatId)));
-    form.append(button('newProject',async () => { const name = window.prompt(t('newProject')); if (!name?.trim()) return; const project = await api(`/api/atlas/orgs/${scope.org}/projects`,'POST',{name:name.trim(),instructions:'',default_action:'chat'}); await importNativeChat(project,chatId); }),button('cancel',() => dialog.close()));
-    dialog.append(form); document.body.append(dialog); dialog.showModal();
+    const recent = editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0));
+    const chooseProject = project => importNativeChat(project, chatId);
+    const createAndMove = async () => {
+      return nameDialog('newProject', async name => {
+      try {
+        const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', {name, instructions:'', default_action:'chat'});
+        await importNativeChat(project, chatId);
+      } catch (error) {
+        if (error.status !== 429) throw error;
+        const advice = node('p', t('quotaProjectAdvice'));
+        root.append(advice, button('viewProjects', () => choose({org:scope.org})));
+      }
+      });
+    };
+    const projectControls = target => {
+      const form = node('form', null, 'atlas-project-move-form');
+      if (recent.length > 8) {
+        const search = node('input'); search.type = 'search'; search.placeholder = t('searchProjects');
+        search.addEventListener('input', () => {
+          const value = search.value.trim().toLowerCase();
+          for (const child of [...form.children]) if (child.dataset.projectId) child.hidden = !!value && !child.textContent.toLowerCase().includes(value);
+        });
+        form.append(search);
+      }
+      for (const project of recent) {
+        const item = node('button', project.name); item.type = 'button'; item.dataset.projectId = project.id;
+        item.addEventListener('click', guarded(() => chooseProject(project))); form.append(item);
+      }
+      const create = node('button', moveText('newProject')); create.type = 'button';
+      create.addEventListener('click', guarded(() => {
+        if (target.tagName === 'DIALOG') target.close(); else target.remove();
+        return createAndMove();
+      })); form.append(create);
+      target.append(form);
+    };
+    if (window.innerWidth <= 480) {
+      const dialog = node('dialog',null,'atlas-project-dialog atlas-project-move-dialog');
+      dialog.append(node('h2', moveText('choose'))); projectControls(dialog);
+      const cancel = button('cancel', () => dialog.close()); dialog.append(cancel);
+      dialog.addEventListener('close', () => dialog.remove(), {once:true}); document.body.append(dialog); dialog.showModal();
+      return;
+    }
+    const panel = node('div', null, 'atlas-project-move-menu');
+    panel.setAttribute('role', 'menu'); panel.append(node('h2', moveText('choose'))); projectControls(panel);
+    document.body.append(panel);
+    const rect = panel.getBoundingClientRect(), itemRect = document.querySelector('[data-atlas-move-project]')?.getBoundingClientRect();
+    if (itemRect) {
+      panel.style.left = Math.max(8, Math.min(itemRect.right + 4, window.innerWidth - rect.width - 8)) + 'px';
+      panel.style.top = Math.max(8, Math.min(itemRect.bottom + 4, window.innerHeight - rect.height - 8)) + 'px';
+    }
+    const close = event => { if (!panel.contains(event.target) && !event.target.closest?.('[data-atlas-move-project]')) { panel.remove(); document.removeEventListener('click', close, true); } };
+    setTimeout(() => document.addEventListener('click', close, true), 0);
   }
-  function installMoveActions() {
-    if (owned || !scope?.org || !nativeChatId() || document.querySelector('[data-atlas-move-project]')) return;
-    const trigger = node('button',moveText('move'),'atlas-project-move'); trigger.type='button'; trigger.dataset.atlasMoveProject=''; trigger.addEventListener('click',guarded(moveMenu));
-    const title = document.querySelector('header, #chat-container'); (title || document.body).append(trigger);
+  function installMoveMenuItems() {
+    if (owned || !identity || !scope?.org) return;
+    if (!pendingMoveMenu || Date.now() - pendingMoveMenu.at >= 1500) return;
+    for (const menu of document.querySelectorAll('.app-dropdown-menu')) {
+      if (menu.querySelector('[data-atlas-move-project]')) continue;
+      const chatId = pendingMoveMenu.chatId;
+      const item = node('button', moveText('move')); item.type = 'button'; item.dataset.atlasMoveProject = '';
+      item.addEventListener('click', guarded(() => moveMenu(chatId))); menu.append(item);
+      pendingMoveMenu = null;
+      break;
+    }
   }
   function installNavigation() {
     if (owned || !identity || /^\/(auth|admin)/.test(location.pathname)) return;
@@ -981,7 +1067,7 @@
     document.querySelectorAll('[aria-controls="sidebar-folders-content"]').forEach(control => {if (!control.parentElement.hidden) control.parentElement.hidden = true;});
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
-    installMoveActions();
+    installMoveMenuItems();
     if (root?.isConnected && !owned) {
       const main = hostMain();
       if (main) {
@@ -1086,6 +1172,7 @@
   let route = location.pathname;
   const watch = new MutationObserver(() => {
     installNavigation();
+    installMoveMenuItems();
     if (!identity && !booting && document.querySelector('#chat-input')) boot();
     if (location.pathname !== route) {
       const prior = route; route = location.pathname; cleanup(); root?.remove();

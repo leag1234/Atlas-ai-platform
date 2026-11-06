@@ -106,6 +106,11 @@
 .atlas-project-dialog::backdrop {background:#0005;}
 .atlas-project-dialog label,.atlas-project-dialog input {display:block;width:100%;margin:14px 0;}
 .atlas-project-dialog button {margin-right:8px;cursor:pointer;}
+.atlas-project-move-menu {position:fixed;z-index:80;display:grid;gap:2px;min-width:220px;max-width:min(360px,90vw);max-height:70vh;overflow:auto;padding:6px;border:1px solid var(--project-line);border-radius:12px;background:var(--project-bg);color:var(--project-ink);box-shadow:0 12px 32px #0003;}
+.atlas-project-move-menu h2,.atlas-project-move-dialog h2 {font-size:13px;padding:6px 8px;color:var(--project-muted);}
+.atlas-project-move-menu input,.atlas-project-move-dialog input[type=search] {width:100%;margin:0 0 4px;padding:6px 8px;font-size:13px;}
+.atlas-project-move-menu button,.atlas-project-move-dialog form button {display:block;width:100%;border:0;border-radius:8px;padding:7px 8px;font-size:14px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.atlas-project-move-menu button:hover,.atlas-project-move-dialog form button:hover {background:var(--project-hover);}
 .atlas-project-nav-row {display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:4px 12px;}
 .atlas-project-nav-row button {background:transparent;color:inherit;border:0;cursor:pointer;border-radius:8px;padding:8px;font:inherit;}
 .atlas-project-nav-row button:first-child {flex:1;text-align:left;}
