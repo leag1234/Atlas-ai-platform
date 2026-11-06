@@ -262,7 +262,11 @@ class WorkToolSelection:
             extra += ("propose_scheduled_task",)
         if self.scheduled_publication:
             extra += ("publish_scheduled_file",)
-        return (*CORE, *extra, *group[: 5 - len(extra)])
+        selected_group = group if self.group == "code" else group[: 5 - len(extra)]
+        names = (*CORE, *extra, *selected_group)
+        if len(names) > 16:
+            raise ValueError("Work tool selection exceeds the gateway capacity")
+        return names
 
     def declarations(self) -> list[dict[str, object]]:
         # The model asks for declarations at the next dispatch. Already-issued

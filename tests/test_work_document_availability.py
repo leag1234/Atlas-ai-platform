@@ -73,7 +73,7 @@ class DocumentAvailabilityTests(unittest.IsolatedAsyncioTestCase):
                 selection = WorkToolSelection(group)
                 selection.memory_enabled = selection.reopen_enabled = True
                 tools = selection.declarations()
-                self.assertLessEqual(len(tools), 8)
+                self.assertLessEqual(len(tools), 16)
                 self.assertIn("read_document", selection.names)
                 self.assertIn("publish_document", selection.names)
                 self.assertIn("project_memory", selection.names)

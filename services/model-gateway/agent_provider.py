@@ -77,7 +77,7 @@ class Completion(BaseModel):
 class AgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     messages: list[dict[str, object]] = Field(min_length=1, max_length=100)
-    tools: list[dict[str, object]] = Field(min_length=0, max_length=8)
+    tools: list[dict[str, object]] = Field(min_length=0, max_length=16)
     tool_choice: Literal["auto", "none"] | dict[str, object] = Field(
         default="auto", exclude_if=lambda value: value == "auto"
     )

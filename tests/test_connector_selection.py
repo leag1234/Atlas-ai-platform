@@ -210,7 +210,7 @@ class SelectionTests(unittest.IsolatedAsyncioTestCase):
         last = selection.groups[group][-1]
         work.switch(json.dumps(dict(group=group, focus=last)))
         declarations = work.declarations()
-        self.assertLessEqual(len(declarations), 8)
+        self.assertLessEqual(len(declarations), 16)
         self.assertIn(last, work.names)
         self.assertNotIn(group, WorkToolSelection("files").groups)
         self.assertNotIn("approve", work.names)

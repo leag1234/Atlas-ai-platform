@@ -32,7 +32,7 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
         for group in GROUPS:
             selection = WorkToolSelection(group)
             tools = selection.declarations()
-            self.assertLessEqual(len(tools), 8)
+            self.assertLessEqual(len(tools), 16)
             names = [f["name"] for t in tools if isinstance(f := t["function"], dict)]
             self.assertEqual(names[:3], list(CORE))
             self.assertEqual(len(names), len(set(names)))
@@ -44,6 +44,37 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
                     timeout=30.0,
                 )
             )
+
+    def test_project_code_group_offers_every_code_tool(self) -> None:
+        selection = WorkToolSelection("code")
+        selection.reopen_enabled = True
+        selection.memory_enabled = True
+        selection.schedules_enabled = True
+        from services.orchestrator.schedule_tools import ScheduleTools
+
+        selection.catalog["propose_scheduled_task"] = ScheduleTools(
+            None,
+            {},
+            "UTC",
+            "en",
+        ).declaration()
+        declarations = selection.declarations()
+        names = [
+            f["name"] for t in declarations if isinstance(f := t["function"], dict)
+        ]
+        self.assertEqual(names[:3], list(CORE))
+        for name in (
+            "reopen_result",
+            "project_memory",
+            "propose_scheduled_task",
+            "edit_file",
+            "run_command",
+            "read_file",
+            "write_file",
+            "search",
+        ):
+            self.assertIn(name, names)
+        self.assertLessEqual(len(names), 16)
 
     def test_deterministic_request_priority_and_content_fallback(self) -> None:
         for text, expected in (

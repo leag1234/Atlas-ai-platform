@@ -162,7 +162,7 @@ class SkillToolTests(unittest.IsolatedAsyncioTestCase):
                 selection.reopen_enabled
             ) = True
             selection.catalog["load_skill"] = (await SkillTools.connect()).declaration()
-            self.assertLessEqual(len(selection.declarations()), 8)
+            self.assertLessEqual(len(selection.declarations()), 16)
             self.assertIn("load_skill", selection.names)
             selection.switch(json.dumps({"group": "code", "focus": "run_command"}))
             selection.declarations()
