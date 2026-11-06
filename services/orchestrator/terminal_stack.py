@@ -479,9 +479,9 @@ def loopback_html_injector(
                         status_ok = head.startswith((b"HTTP/1.1 200", b"HTTP/1.0 200"))
                         html = b"content-type: text/html" in head.lower()
                         path = target_path.split("?", 1)[0]
-                        disposition = re.search(
-                            rb"(?im)^content-disposition:", head
-                        ) is not None
+                        disposition = (
+                            re.search(rb"(?im)^content-disposition:", head) is not None
+                        )
                         if (
                             method == b"GET"
                             and not upgrade
