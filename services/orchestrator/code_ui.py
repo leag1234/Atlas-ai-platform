@@ -73,7 +73,13 @@ def project_only() -> bool:
 # Superseded project interfaces: closed whenever project mode is on.
 LEGACY_PROJECT_PREFIXES = ("/projects", "/code", "/atlas-code")
 # Chat capabilities: closed only on a project-only instance.
-CHAT_PREFIXES = ("/api/v1/terminals", "/api/v1/files", "/images")
+CHAT_PREFIXES = (
+    "/api/v1/terminals",
+    "/api/v1/files",
+    "/images",
+    "/api/atlas/artifacts",
+    "/api/atlas/preview",
+)
 
 
 def legacy_project_route(path: str) -> bool:

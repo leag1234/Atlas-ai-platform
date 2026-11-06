@@ -18,6 +18,7 @@ from contextlib import contextmanager, nullcontext
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 from urllib.error import HTTPError, URLError
 
@@ -196,6 +197,24 @@ def require_stable_configuration() -> None:
         )
         if os.environ["ATLAS_TRUSTED_EMAIL_HEADER"] != "X-Atlas-User":
             raise RuntimeError("invalid_configuration: ATLAS_TRUSTED_EMAIL_HEADER")
+    if os.environ.get("ATLAS_ARTIFACTS") == "1":
+        if len(os.environ.get("ATLAS_PREVIEW_SIGNING_KEY", "").encode()) < 32:
+            raise RuntimeError("invalid_configuration: ATLAS_PREVIEW_SIGNING_KEY")
+        origin = os.environ.get("ATLAS_PREVIEW_ORIGIN", "").strip()
+        if origin:
+            parsed = urlsplit(origin)
+            local = parsed.hostname in {"localhost", "127.0.0.1"}
+            if (
+                parsed.scheme != "https" and not (local and parsed.scheme == "http")
+            ) or not parsed.netloc:
+                raise RuntimeError("invalid_configuration: ATLAS_PREVIEW_ORIGIN")
+            if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+                raise RuntimeError("invalid_configuration: ATLAS_PREVIEW_ORIGIN")
+            ancestors = os.environ.get("ATLAS_PREVIEW_FRAME_ANCESTORS", "").split()
+            if not ancestors or origin in ancestors:
+                raise RuntimeError(
+                    "invalid_configuration: ATLAS_PREVIEW_FRAME_ANCESTORS"
+                )
 
 
 OPENWEBUI_KEY_ENDPOINTS = (
