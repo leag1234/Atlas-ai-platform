@@ -22,7 +22,16 @@ _EXPLANATION = re.compile(
     r"\b(?:comment|how|wie|como|come)\b.{0,40}\b(?:faire|make|machen|hacer|fare)\b"
     r"|\b(?:explique|explain|why|pourquoi|compare|erklare|spieg\w*|explica|perche|perche)\b"
 )
-_OFFICE = re.compile(r"\b(?:pdf|docx|xlsx|pptx|csv)\b")
+_OFFICE = re.compile(
+    r"\b(?:presentation|prasentation|presentacion|presentazione"
+    r"|slides?|diapositives?|folien|diapositivas?|diapositive"
+    r"|powerpoint|pptx"
+    r"|word|docx"
+    r"|excel|xlsx|spreadsheet|tableur|feuille de calcul"
+    r"|tabellenkalkulation|hoja de calculo|foglio di calcolo"
+    r"|pdf)\b"
+)
+_EXPLICIT_WEB = re.compile(r"\b(?:html|page web|web page|webseite|pagina web)\b")
 _ATTACHMENT_OR_IMAGE = re.compile(
     r"\[attachment:|<attached_files>|\b(?:attachment|attached|piece jointe"
     r"|anhang|adjunto|allegato|image|imagen|immagine|bild|photo|foto)\b"
@@ -71,12 +80,13 @@ def app_intent(text: str, history: Sequence[Mapping[str, object]]) -> Intent | N
     normalized = _normalized(text)
     if not normalized:
         return None
+    if _OFFICE.search(normalized) and not _EXPLICIT_WEB.search(normalized):
+        return None
     if any(
         pattern.search(normalized)
         for pattern in (
             _NON_WEB,
             _EXPLANATION,
-            _OFFICE,
             _ATTACHMENT_OR_IMAGE,
             _DRAWING,
             _TITLE_REQUEST,

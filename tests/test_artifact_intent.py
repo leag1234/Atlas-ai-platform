@@ -67,6 +67,24 @@ class ArtifactIntentTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(app_intent(text, ()))
 
+    def test_office_formats_are_not_app_requests_in_five_languages(self) -> None:
+        requests = (
+            "Fais une présentation PowerPoint sur le climat",
+            "Make a PowerPoint presentation about climate",
+            "Erstelle eine PowerPoint-Präsentation über das Klima",
+            "Haz una presentación de PowerPoint sobre el clima",
+            "Fai una presentazione PowerPoint sul clima",
+        )
+        for text in requests:
+            with self.subTest(text=text):
+                self.assertIsNone(app_intent(text, ()))
+
+    def test_explicit_web_request_wins_over_office_format(self) -> None:
+        self.assertEqual(
+            app_intent("Create a presentation as an HTML page", ()),
+            "create",
+        )
+
     def test_history_states(self) -> None:
         self.assertEqual(app_intent("Ajoute un bouton", HISTORY), "modify")
         self.assertEqual(app_intent("Make it green", HISTORY), "modify")
