@@ -21,7 +21,7 @@ OUTPUT = ROOT / "BRAIN/project-move-menu"
 def native_chat(page: Page, title: str) -> str:
     chat = api(page, "/api/v1/chats/")
     item = next(value for value in chat["items"] if value["title"] == title)
-    return item["id"]
+    return str(item["id"])
 
 
 def open_row_menu(page: Page, chat_id: str) -> Locator:
@@ -35,8 +35,10 @@ def open_row_menu(page: Page, chat_id: str) -> Locator:
     box = item.bounding_box()
     assert box is not None and box["width"] > 0 and box["height"] > 0
     assert box["x"] >= 0 and box["y"] >= 0
-    assert box["x"] + box["width"] <= page.viewport_size["width"]
-    assert box["y"] + box["height"] <= page.viewport_size["height"]
+    viewport = page.viewport_size
+    assert viewport is not None
+    assert box["x"] + box["width"] <= viewport["width"]
+    assert box["y"] + box["height"] <= viewport["height"]
     return item
 
 
