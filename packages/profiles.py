@@ -1,6 +1,7 @@
 """Published public model selector contract, independent of provider identifiers."""
 
 import json
+import os
 from pathlib import Path
 
 
@@ -102,6 +103,36 @@ def load_profiles() -> tuple[str, ...]:
 PROFILES = load_profiles()
 
 
+def load_hidden_profiles() -> tuple[str, ...]:
+    contract = Path(__file__).resolve().parents[1] / "contracts/m21-profiles.json"
+    models = json.loads(contract.read_text()).get("hidden_models", [])
+    if (
+        not isinstance(models, list)
+        or any(not isinstance(name, str) or not name for name in models)
+        or len(set(models)) != len(models)
+    ):
+        raise ValueError("invalid_hidden_profiles")
+    hidden = tuple(models)
+    if set(hidden) & set(PROFILES):
+        raise ValueError("invalid_hidden_profiles")
+    return hidden
+
+
+HIDDEN_PROFILES = load_hidden_profiles()
+
+
+def enabled_hidden_profiles() -> tuple[str, ...]:
+    raw = os.environ.get("ATLAS_HIDDEN_PROFILES", "").strip()
+    names = tuple(name.strip() for name in raw.split(",") if name.strip())
+    if set(names) - set(HIDDEN_PROFILES):
+        raise ValueError("unknown_hidden_profile")
+    return names
+
+
+def accepted_profile(name: str) -> bool:
+    return name in PROFILES or name in enabled_hidden_profiles()
+
+
 def context_window(profile: str, *, vision: bool = False) -> int:
     """Resolve the active gateway model's declared capacity, including overrides."""
     import os
@@ -109,6 +140,18 @@ def context_window(profile: str, *, vision: bool = False) -> int:
 
     path = Path(__file__).resolve().parents[1] / "services/model-gateway/routing.yaml"
     routing = yaml.safe_load(path.read_text())
+    if profile in enabled_hidden_profiles():
+        if vision:
+            role = "vision"
+            entry = routing["serverless"][role]
+        else:
+            role = routing["hidden_profiles"][profile]
+            entry = routing["hidden_roles"][role]
+        model = os.environ.get(entry["env"], entry["model"])
+        window = entry["capabilities"][model]["context"]
+        if type(window) is not int or window <= 0:
+            raise ValueError("invalid_context_window")
+        return window
     if provider := os.environ.get("ATLAS_PROVIDER"):
         preset = yaml.safe_load(path.with_name("providers.yaml").read_text())[provider]
         declared = preset["context"]

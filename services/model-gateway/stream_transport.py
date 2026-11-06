@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import hashlib
 from time import monotonic
 from typing import Literal
 
@@ -181,7 +182,9 @@ async def stream(
 
 
 async def provider_error_message(
-    response: aiohttp.ClientResponse, request: AgentRequest
+    response: aiohttp.ClientResponse,
+    request: AgentRequest,
+    key: str | None = None,
 ) -> str | None:
     # Error bodies are untrusted and may be HTML or oversized. Read a bounded
     # JSON envelope, and retain only its message, never the body or exception.
@@ -201,7 +204,7 @@ async def provider_error_message(
     if not isinstance(message, str):
         return None
     # Providers can echo credentials, URLs or rejected input in their message.
-    sensitive = [provider_settings.api_key()]
+    sensitive = [provider_settings.api_key() if key is None else key]
     for entry in request.messages:
         content = entry.get("content")
         if isinstance(content, str):
@@ -224,10 +227,27 @@ async def attempt(
     # may turn an exhausted output allowance into an HTTP failure/retry (D5).
     if request.max_tokens < 1:
         raise ProviderLimitError("output_budget", 1, request.max_tokens, "tokens")
+    policy = ServerlessPolicy()
+    routed = None if request.privacy == "strict" else policy.providers.get(model)
     endpoint = (
         provider_settings.owned_endpoint()
         if request.privacy == "strict"
-        else provider_settings.endpoint()
+        else (
+            provider_settings.validate_endpoint(
+                str(provider_settings.preset_value(routed, "base_url"))
+            )
+            if routed is not None
+            else provider_settings.endpoint()
+        )
+    )
+    key = (
+        provider_settings.owned_api_key()
+        if request.privacy == "strict"
+        else (
+            provider_settings.api_key_for(routed)
+            if routed is not None
+            else provider_settings.api_key()
+        )
     )
     answer_only = request.profile is not None and request.tool_choice == "none"
     body = {
@@ -240,7 +260,7 @@ async def attempt(
             if request.tools and not answer_only
             else {}
         ),
-        **provider_settings.json_options(request.response_format),
+        **provider_settings.json_options(request.response_format, routed),
         "max_tokens": request.max_tokens,
         "temperature": 0,
         # Validation keeps client requests at none; only the quality controller
@@ -253,6 +273,17 @@ async def attempt(
         allow_length=request.profile is not None,
         ignore_calls=answer_only,
     )
+    if routed is not None:
+        if provider_settings.preset_value(routed, "prompt_cache_key") is True:
+            body["prompt_cache_key"] = hashlib.sha256(
+                json.dumps(
+                    request.messages[0], sort_keys=True, ensure_ascii=False
+                ).encode()
+            ).hexdigest()
+        if provider_settings.preset_value(routed, "seed_field") and "seed" in body:
+            body[str(provider_settings.preset_value(routed, "seed_field"))] = body.pop(
+                "seed"
+            )
     started = monotonic()
 
     def diagnostic(category: str, **details: object) -> None:
@@ -282,25 +313,26 @@ async def attempt(
         ) as session:
             async with session.post(
                 endpoint + "/chat/completions",
-                json=provider_settings.request_options(
-                    body,
-                    configured_effort=request.reasoning_effort,
-                    role="vision"
-                    if classify_task(request.messages) == "vision"
-                    else ServerlessPolicy().public_profiles.get(request.profile or ""),
-                ),
-                headers={
-                    "Authorization": "Bearer "
-                    + (
-                        provider_settings.owned_api_key()
-                        if request.privacy == "strict"
-                        else provider_settings.api_key()
+                json=(
+                    provider_settings.request_options(
+                        body,
+                        provider=routed,
+                        configured_effort=request.reasoning_effort,
                     )
-                },
+                    if routed is not None
+                    else provider_settings.request_options(
+                        body,
+                        configured_effort=request.reasoning_effort,
+                        role="vision"
+                        if classify_task(request.messages) == "vision"
+                        else policy.public_profiles.get(request.profile or ""),
+                    )
+                ),
+                headers={"Authorization": "Bearer " + key},
                 allow_redirects=False,
             ) as response:
                 if response.status != 200:
-                    message = await provider_error_message(response, request)
+                    message = await provider_error_message(response, request, key)
                     diagnostic(
                         "http",
                         status=response.status,

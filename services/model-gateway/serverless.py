@@ -1,6 +1,6 @@
 """M8 task policy: validated capabilities and conservative two-attempt reservation."""
 
-from packages.profiles import PROFILES
+from packages.profiles import HIDDEN_PROFILES, PROFILES, enabled_hidden_profiles
 from packages.limits import ProviderLimitError
 from packages.context_limit import ContextExceeded
 
@@ -16,7 +16,9 @@ import yaml
 
 from provider_settings import (
     REASONING_EFFORTS,
+    api_key_for,
     configure,
+    presets,
     reasoning_control,
     selected,
 )
@@ -88,12 +90,43 @@ class ServerlessPolicy:
         routing = yaml.safe_load((root / "routing.yaml").read_text())
         self.config = routing["serverless"]
         self.public_profiles: dict[str, str] = routing["public_profiles"]
+        hidden_roles: dict[str, dict[str, object]] = routing.get("hidden_roles", {})
+        declared_hidden_profiles: dict[str, str] = routing.get("hidden_profiles", {})
+        if set(declared_hidden_profiles) != set(HIDDEN_PROFILES):
+            raise ValueError("invalid_hidden_profiles")
+        if any(
+            role not in hidden_roles or role in self.config
+            for role in declared_hidden_profiles.values()
+        ):
+            raise ValueError("invalid_hidden_roles")
+        for entry in hidden_roles.values():
+            provider = entry.get("provider")
+            preset = presets().get(str(provider), {}) if provider is not None else {}
+            if (
+                not provider
+                or not preset.get("base_url")
+                or not preset.get("api_key_env")
+                or entry.get("fallback") not in self.config
+            ):
+                raise ValueError("invalid_hidden_roles")
         if set(self.public_profiles) != set(PROFILES) or any(
             role not in self.config for role in self.public_profiles.values()
         ):
             raise ValueError("invalid_public_profiles")
         self.prices = yaml.safe_load((root / "pricing.yaml").read_text())["models"]
         self.config, self.prices = configure(self.config, self.prices)
+        self.hidden_profiles: dict[str, str] = {}
+        self.providers: dict[str, str] = {}
+        for profile, role in declared_hidden_profiles.items():
+            if profile not in enabled_hidden_profiles():
+                continue
+            entry = hidden_roles[role]
+            provider = str(entry["provider"])
+            if not api_key_for(provider):
+                raise ValueError("provider_key_missing")
+            self.config[role] = entry
+            self.hidden_profiles[profile] = role
+            self.providers[str(entry["model"])] = provider
         self.models: dict[str, str] = {}
         for role, entry in self.config.items():
             model = os.environ.get(entry["env"], entry["model"])
@@ -114,7 +147,18 @@ class ServerlessPolicy:
                 if not value.is_finite() or value < 0:
                     raise ValueError("invalid_price")
             self.models[role] = model
+            if provider := entry.get("provider"):
+                existing = self.providers.get(model)
+                if existing is not None and existing != provider:
+                    raise ValueError("model_provider_conflict")
+                self.providers[model] = str(provider)
+            elif model in self.providers:
+                raise ValueError("model_provider_conflict")
         self.efforts = self.reasoning_efforts()
+
+    @property
+    def profile_roles(self) -> dict[str, str]:
+        return self.public_profiles | self.hidden_profiles
 
     def reasoning_efforts(self) -> dict[str, str]:
         """Configured reasoning effort per model; none unless an operator sets one.
@@ -145,7 +189,10 @@ class ServerlessPolicy:
             )
             if effort not in REASONING_EFFORTS:
                 raise ValueError("invalid_reasoning_effort")
-            if effort != "none" and reasoning_control() is None:
+            if (
+                effort != "none"
+                and reasoning_control(self.providers.get(model)) is None
+            ):
                 raise ValueError("reasoning_unsupported")
             efforts[model] = max(
                 efforts.get(model, "none"), effort, key=REASONING_EFFORTS.index
@@ -174,6 +221,8 @@ class ServerlessPolicy:
         } | {"max_tokens": 2048, "gateway_reserves_quality": True}
         if room := self.reasoning_room():
             configuration["reasoning_output_tokens"] = room
+        if profile_room := self.profile_reasoning_room():
+            configuration["profile_reasoning_output_tokens"] = profile_room
         return configuration
 
     def reasoning_room(self) -> int:
@@ -181,11 +230,20 @@ class ServerlessPolicy:
         return max(
             (
                 REASONING_OUTPUT_TOKENS[effort]
-                for effort in getattr(self, "efforts", {}).values()
+                for role, entry in self.config.items()
+                if role not in self.hidden_profiles.values()
+                for effort in (self.efforts.get(self.models[role], "none"),)
                 if effort != "none"
             ),
             default=0,
         )
+
+    def profile_reasoning_room(self) -> dict[str, int]:
+        return {
+            profile: REASONING_OUTPUT_TOKENS[self.efforts[self.models[role]]]
+            for profile, role in self.hidden_profiles.items()
+            if self.efforts.get(self.models[role], "none") != "none"
+        }
 
     def reserve(
         self, messages: list[dict[str, object]], tools: list[dict[str, object]]

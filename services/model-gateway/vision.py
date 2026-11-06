@@ -4,7 +4,7 @@ import provider_settings
 
 from packages.limits import LimitError, ProviderLimitError
 
-from packages.profiles import PROFILES
+from packages.profiles import accepted_profile
 
 import asyncio
 import json
@@ -38,7 +38,7 @@ class VisionRequest(VisionInput):
 
     @model_validator(mode="after")
     def deadline_limit(self) -> Self:
-        if self.profile is not None and self.profile not in PROFILES:
+        if self.profile is not None and not accepted_profile(self.profile):
             raise ValueError("invalid_profile")
         if self.timeout > 120:
             raise LimitError("timeout_budget", int(self.timeout * 1000), 120000, "ms")

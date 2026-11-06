@@ -90,10 +90,12 @@ def preset_value(provider: str, key: str) -> Any:
     return preset.get(key)
 
 
-def json_options(response_format: object) -> dict[str, Any]:
+def json_options(
+    response_format: object, provider: str | None = None
+) -> dict[str, Any]:
     # Internal state requests fall back to instructions on unverified providers.
     # Explicit developer-API response_format continues to pass through unchanged.
-    name = os.environ.get("ATLAS_PROVIDER", "")
+    name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     if response_format and (
         not name or presets().get(name, {}).get("json_response_format") is True
     ):
