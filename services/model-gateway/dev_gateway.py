@@ -118,6 +118,13 @@ def prepare_api(
             # Greedy sampling ignores top_p and top_k, and one routed provider refuses them with it.
             payload.pop("top_p", None)
             payload.pop("top_k", None)
+            greedy_top_p = provider_settings.preset_value(
+                target.provider, "greedy_top_p"
+            )
+            if payload.get("temperature") == 0 and isinstance(
+                greedy_top_p, (int, float)
+            ):
+                payload["top_p"] = greedy_top_p
         seed_field = provider_settings.preset_value(target.provider, "seed_field")
         if seed_field and "seed" in payload:
             payload[seed_field] = payload.pop("seed")
