@@ -969,7 +969,7 @@
       }
       list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
       document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
-    } else if (previous) {
+    } else if (previous && !(scope?.org && projects.length)) {
       previous.remove();
     }
     if (!document.body.classList.contains('atlas-project-enabled')) document.body.classList.add('atlas-project-enabled');
