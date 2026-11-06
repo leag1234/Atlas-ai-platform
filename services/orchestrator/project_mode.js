@@ -90,7 +90,7 @@
     const dialog = node('dialog', null, 'atlas-project-dialog'), form = node('form'), name = node('input');
     name.required = true; name.maxLength = maxLength; name.value = initial;
     const create = node('button', t(key.startsWith('rename') ? 'save' : 'create')); create.type = 'submit';
-    form.append(node('h2', t(key)), field('name', name), create, button('cancel', () => dialog.close())); dialog.append(form); root.append(dialog);
+    form.append(node('h2', t(key)), field('name', name), create, button('cancel', () => dialog.close())); dialog.append(form); (root?.isConnected ? root : document.body).append(dialog);
     dialog.addEventListener('close', () => dialog.remove(), { once: true });
     form.addEventListener('submit', guarded(async event => { event.preventDefault(); create.disabled = true; try { await submit(name.value.trim()); dialog.close(); } finally { create.disabled = false; } }));
     dialog.showModal(); name.focus();
@@ -935,7 +935,15 @@
       const uploaded = await jsonResponse(await request(projectBase + '/files?folder_id=' + folder.id,{method:'POST',body:data}),generation);
       transferred.set(id,uploaded.file.id);
     }
-    const messages = branch.map((message,index) => ({role:message.role,content:message.content.trim(),created_at:new Date(message.timestamp || message.created_at || Date.now() + index).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)}));
+    let previousCreatedAt = 0;
+    const messages = branch.map((message,index) => {
+      const raw = message.timestamp || message.created_at || Date.now() + index;
+      let createdAt = typeof raw === 'number' ? (raw < 1e12 ? raw * 1000 : raw) : Date.parse(raw);
+      if (Number.isNaN(createdAt)) createdAt = Date.now() + index;
+      if (createdAt <= previousCreatedAt) createdAt = previousCreatedAt + 1;
+      previousCreatedAt = createdAt;
+      return {role:message.role,content:message.content.trim(),created_at:new Date(createdAt).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)};
+    });
     const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
     const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
     if (!deleted.ok) throw Object.assign(new Error('native_delete'), {status:deleted.status});
@@ -975,7 +983,7 @@
         item.addEventListener('click', guarded(() => chooseProject(project))); form.append(item);
       }
       const create = node('button', moveText('newProject')); create.type = 'button';
-      create.addEventListener('click', guarded(createAndMove)); form.append(create);
+      create.addEventListener('click', guarded(() => { dialog.close(); createAndMove(); })); form.append(create);
       target.append(form);
     };
     if (window.innerWidth <= 480) {
