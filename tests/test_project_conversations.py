@@ -15,6 +15,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from services.retrieval.project_identity import sign
+from services.retrieval.project_transcript import Transcript, canonical
 from services.retrieval.project_scoped_api import store
 from services.retrieval.project_work import empty_usage
 
@@ -538,6 +539,77 @@ class ProjectConversationTests(ProjectIsolationTests):
             self.identity("viewer"), self.org, self.project
         ) as scope:
             self.assertAlmostEqual(scope.usage("daily_model_eur"), 0.02)
+
+    def test_long_replay_keeps_terminal_event_within_size_bound(self) -> None:
+        first = self.begin(key="bounded")
+        self.assertEqual(first.status_code, 201, first.text)
+        turn = first.json()["turn"]
+        with store(self.app_dsn).scope(
+            self.identity("viewer"), self.org, self.project
+        ) as scope:
+            transcript = Transcript(scope)
+            for index in range(150):
+                transcript.progress(
+                    turn,
+                    dict(
+                        version=1,
+                        session_id=None,
+                        type="plan",
+                        status="running",
+                        label=f"Progress {index}",
+                        tool=None,
+                        plan=[],
+                        approval_id=None,
+                        job_id=None,
+                        text="p" * 3000,
+                        error=None,
+                        output=dict(detail="o" * 3000),
+                    ),
+                )
+        self.assertEqual(self.broker("finish", self.finish_body()).status_code, 200)
+        replay = self.broker(
+            "begin",
+            dict(request_id=str(uuid4()), request=self.payload()),
+            key="bounded",
+        )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        state = replay.json()
+        self.assertTrue(state["replay"])
+        self.assertTrue(state["events_truncated"])
+        self.assertEqual(
+            sum(event.get("type") == "recap" for event in state["events"]), 1
+        )
+        self.assertEqual(
+            [event for event in state["events"] if event.get("type")][-1]["type"],
+            "recap",
+        )
+        self.assertLessEqual(len(canonical(state["events"])), 120_000)
+        self.assertEqual(
+            [event["seq"] for event in state["events"]],
+            sorted(event["seq"] for event in state["events"]),
+        )
+        self.validator.validate(
+            state, self.contract["components"]["schemas"]["TranscriptState"]
+        )
+
+    def test_small_replay_is_unchanged(self) -> None:
+        self.assertEqual(self.begin(key="small").status_code, 201)
+        self.assertEqual(self.broker("finish", self.finish_body()).status_code, 200)
+        replay = self.broker(
+            "begin",
+            dict(request_id=str(uuid4()), request=self.payload()),
+            key="small",
+        )
+        self.assertEqual(replay.status_code, 200, replay.text)
+        state = replay.json()
+        self.assertTrue(state["replay"])
+        self.assertEqual(
+            sum(event.get("type") == "recap" for event in state["events"]), 1
+        )
+        self.assertNotIn("events_truncated", state)
+        self.validator.validate(
+            state, self.contract["components"]["schemas"]["TranscriptState"]
+        )
 
     def test_conflicts_and_other_member_cannot_finish(self) -> None:
         self.assertEqual(self.begin(key="turn").status_code, 201)

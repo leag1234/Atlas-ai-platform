@@ -808,7 +808,8 @@ REQ-PROJ-03/04/07: three private POST routes; no existing public request or resp
      `request_id: UUID`, `request: ProjectChatRequest` (existing schema).
    - Closed response `TranscriptState`, all fields required:
      `turn: Turn`, `context: Context`, `replay: boolean`,
-     `events: array<ProjectEvent>` (maximum 100), `last_event_seq: integer >= 0`.
+     `events: array<ProjectEvent>` (maximum 100), `last_event_seq: integer >= 0`,
+     `events_truncated: boolean` (optional, replay only).
    - First use returns 201 and atomically creates a running canonical turn with
      the question, exact selected versions, action and current context revision.
      Resolve scope, conversation, selected files, source restrictions and policy
@@ -818,7 +819,11 @@ REQ-PROJ-03/04/07: three private POST routes; no existing public request or resp
      Same key/body returns 200 with the existing turn and replay=true, even if a
      caller generated another request_id; the original server binding wins.
      Different body returns 409 idempotency_conflict. Replays never dispatch.
-     Further replay uses existing project events with after/Last-Event-ID.
+     Further replay uses existing project events with after/Last-Event-ID. A replay
+     always carries the turn's terminal recap/error events, keeps the most recent
+     progress events, and drops the oldest progress events first when their
+     canonical JSON exceeds 120000 bytes; it then sets `events_truncated=true`.
+     Terminal events are never dropped for this bound.
 
 2. `/internal/atlas/transcript/finish`
    - Closed request `TranscriptFinish`, all fields required:

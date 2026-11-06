@@ -20,6 +20,7 @@ from services.retrieval.project_policy import ConversationImport
 
 SEARCH_LIMIT = 50
 SNIPPET_LIMIT = 300
+REPLAY_EVENT_LIMIT = 120_000
 
 
 def canonical(value: Any) -> bytes:
@@ -472,8 +473,20 @@ class Transcript:
     ) -> dict[str, Any]:
         from packages.session_context import transport_context
 
+        query = (
+            "SELECT data FROM ("
+            "SELECT seq,data FROM atlas_projects.transcript_progress "
+            "WHERE org_id=%s AND project_id=%s AND turn_id=%s "
+            "UNION ALL SELECT seq,data FROM atlas_projects.ledger_events "
+            "WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s "
+            "UNION ALL SELECT seq,data FROM atlas_projects.work_progress "
+            "WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s"
+            ") e ORDER BY seq"
+        )
+        if not replay:
+            query += " LIMIT 100"
         rows = self.db.execute(
-            "SELECT data FROM (SELECT seq,data FROM atlas_projects.transcript_progress WHERE org_id=%s AND project_id=%s AND turn_id=%s UNION ALL SELECT seq,data FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s UNION ALL SELECT seq,data FROM atlas_projects.work_progress WHERE org_id=%s AND project_id=%s AND data->>'request_id'=%s) e ORDER BY seq LIMIT 100",
+            query,
             (
                 self.org,
                 self.project,
@@ -487,12 +500,35 @@ class Transcript:
             ),
         ).fetchall()
         events = [r["data"] for r in rows]
+        truncated = False
+        if replay:
+            terminal = [
+                event
+                for event in events
+                if event.get("type") in {"recap", "error"}
+                and event.get("turn_id") == turn["id"]
+            ]
+            progress = [
+                event
+                for event in events
+                if event.get("type") not in {"recap", "error"}
+                or event.get("turn_id") != turn["id"]
+            ]
+            retained = terminal
+            for event in reversed(progress):
+                candidate = [event, *retained]
+                if len(canonical(candidate)) > REPLAY_EVENT_LIMIT:
+                    truncated = True
+                    continue
+                retained = candidate
+            events = sorted(retained, key=lambda event: event["seq"])
         return dict(
             turn=turn,
             context=transport_context(context),
             replay=replay,
             events=events,
             last_event_seq=max((e["seq"] for e in events), default=0),
+            **({"events_truncated": True} if truncated else {}),
         )
 
     def begin(self, data: dict[str, Any], key: str) -> tuple[int, Any]:
