@@ -983,11 +983,18 @@ class ProjectWorkHTTPTests(ProjectWorkTests):
         )
         item = Interaction()
         model = MagicMock(spec=CodeModel)
-        model.spent, model.input_tokens, model.output_tokens, model.work_unknown = (
+        (
+            model.spent,
+            model.input_tokens,
+            model.output_tokens,
+            model.work_unknown,
+            model.work_unknown_eur,
+        ) = (
             Decimal(0),
             0,
             0,
             False,
+            Decimal(0),
         )
 
         async def turn(*args: Any) -> CodeResult:
@@ -1038,6 +1045,10 @@ class ProjectWorkHTTPTests(ProjectWorkTests):
         self.assertIsNone(session["lease"])
         self.assertEqual(session["state"], "completed")
         self.assertEqual(session["usage"]["tool_calls"], 2)
+        self.assertEqual(session["usage"]["cost_eur"], 0)
+        self.assertEqual(session["usage"]["unknown_eur"], 0)
+        self.assertFalse(session["usage"]["tokens_estimated"])
+        self.assertTrue(item.cost_complete)
         self.assertGreater(session["last_event_seq"], 0)
         with store(self.app_dsn).scope(
             self.identity("editor"), self.org, self.project
@@ -1045,6 +1056,109 @@ class ProjectWorkHTTPTests(ProjectWorkTests):
             self.assertEqual(scope.usage("concurrent_jobs"), 0)
             self.assertEqual(scope.usage("temporary_bytes"), 0)
             self.assertEqual(scope.usage("monthly_model_eur"), 0)
+
+    def test_failed_then_successful_work_call_reports_conservative_usage(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from decimal import Decimal
+        from services.orchestrator.chat_schema import ChatRequest
+        from services.orchestrator.code_mode import CodeModel, process_work
+        from services.orchestrator.loop import CodeResult, Call
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.code_workspace import volume
+        import subprocess
+
+        self.policy["quotas"]["per_turn"]["expanded_bytes"] = 50
+        with psycopg.connect(self.admin_dsn) as db:
+            db.execute(
+                "UPDATE atlas_projects.installation SET ceilings=%s",
+                (Jsonb(self.policy),),
+            )
+            db.execute(
+                "UPDATE atlas_projects.organizations SET policy=%s",
+                (Jsonb(self.policy),),
+            )
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            value = files.get("work_session", self.session["id"])
+            value["effective_limits"] = self.policy["quotas"]["per_turn"]
+            files.save(value)
+        request = ChatRequest.model_validate(
+            dict(
+                messages=[dict(role="user", content="Create a note")],
+                project_id=self.project,
+                conversation_id=self.conversation,
+            )
+        )
+        item = Interaction()
+        model = MagicMock(spec=CodeModel)
+        (
+            model.spent,
+            model.input_tokens,
+            model.output_tokens,
+            model.work_unknown,
+            model.work_unknown_eur,
+        ) = (
+            Decimal("0.12"),
+            120,
+            30,
+            True,
+            Decimal("0.10"),
+        )
+
+        async def turn(*args: Any) -> CodeResult:
+            tools = args[2]
+            written = await tools.execute(
+                Call(
+                    "write",
+                    "write_file",
+                    '{"path":"note.txt","content":"A useful note"}',
+                ),
+                30,
+            )
+            self.assertNotIn("error", written)
+            return CodeResult(
+                text="Created the requested note in the workspace.",
+                state="done",
+                tool_calls=1,
+                model_calls=2,
+            )
+
+        self.addCleanup(
+            subprocess.run, ["docker", "volume", "rm", volume()], capture_output=True
+        )
+        with (
+            patch.object(CodeModel, "connect", AsyncMock(return_value=model)),
+            patch("services.orchestrator.code_mode.execute_turn", side_effect=turn),
+        ):
+            asyncio.run(
+                process_work(
+                    request,
+                    item,
+                    subject="editor",
+                    org_id=self.org,
+                    project_id=self.project,
+                    session_id=self.session["id"],
+                )
+            )
+        self.assertEqual(item.state, "done")
+        self.assertEqual(item.cout_eur, 0.12)
+        self.assertTrue(item.cost_complete)
+        session = self.request(
+            "GET",
+            self.project_path() + "/work-sessions/" + self.session["id"],
+            "editor",
+        ).json()
+        usage = session["usage"]
+        self.assertEqual(usage["tool_calls"], 1)
+        self.assertEqual(usage["model_calls"], 2)
+        self.assertEqual(usage["input_tokens"], 120)
+        self.assertEqual(usage["output_tokens"], 30)
+        self.assertEqual(usage["cost_eur"], 0.12)
+        self.assertEqual(usage["unknown_eur"], 0.10)
+        self.assertTrue(usage["tokens_estimated"])
 
     def test_restart_cleanup_failure_retains_reservations(self) -> None:
         self.require_real_worker()

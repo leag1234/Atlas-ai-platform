@@ -66,6 +66,7 @@ class CodeModel(GatewayModel):
     work_cost: Decimal | None = None
     work_per_call: Decimal = Decimal("0.10")
     work_unknown: bool = False
+    work_unknown_eur: Decimal = Decimal(0)
     work_check: Callable[[], Awaitable[None]] | None = None
 
     @property
@@ -93,6 +94,7 @@ class CodeModel(GatewayModel):
             # Failed/canceled provider usage is unknown: retain the reservation.
             self.spent = max(self.spent, before + reserved)
             self.work_unknown = True
+            self.work_unknown_eur += reserved
             raise
 
 
@@ -1001,7 +1003,7 @@ async def process_work(
         await asyncio.gather(renewal, return_exceptions=True)
         if model is not None:
             item.cout_eur = max(item.cout_eur, float(model.spent))
-            item.cost_complete = not model.work_unknown
+            item.cost_complete = True
         # A newer generation owns cleanup if recovery raced this turn. Never let
         # an old finally block destroy a newer workspace or release its slot.
         cleanup_authorized = True
@@ -1034,18 +1036,18 @@ async def process_work(
             async def finish() -> None:
                 await workspace.cleanup()
                 usage = nearby_usage
-                if result is not None and model is not None and not model.work_unknown:
+                if result is not None and model is not None:
                     usage = dict(
                         tool_calls=result.tool_calls,
                         model_calls=result.model_calls,
                         elapsed_seconds=time.monotonic() - started,
                         cost_eur=float(model.spent),
                         reserved_eur=0,
-                        unknown_eur=0,
+                        unknown_eur=float(model.work_unknown_eur),
                         stored_bytes=0,
                         input_tokens=model.input_tokens,
                         output_tokens=model.output_tokens,
-                        tokens_estimated=False,
+                        tokens_estimated=model.work_unknown,
                         **(
                             {"context": dispatch.context}
                             if dispatch is not None and dispatch.context is not None
