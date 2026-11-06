@@ -57,6 +57,8 @@ from services.orchestrator.connectors import router as connector_router
 from services.orchestrator.code_api import router as code_router
 
 from services.orchestrator.image_store import router as image_router
+from services.orchestrator.artifact_routes import router as artifact_router
+from services.orchestrator.artifact_routes import ArtifactHeadersMiddleware
 
 from services.orchestrator.app import app as harness_app
 from services.orchestrator.user_memory_ui import router as user_memory_router
@@ -74,9 +76,11 @@ from services.orchestrator.project_scheduler import lifespan as scheduler_lifesp
 
 app = FastAPI(title="ATLAS chat", lifespan=scheduler_lifespan)
 app.add_middleware(ProjectGate)
+app.add_middleware(ArtifactHeadersMiddleware)
 app.mount("/harness", harness_app)
 
 app.include_router(image_router)
+app.include_router(artifact_router)
 
 app.include_router(mcp_router)
 app.include_router(connector_router)

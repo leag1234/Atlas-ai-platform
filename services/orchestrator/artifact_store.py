@@ -34,6 +34,7 @@ class ArtifactError(Exception):
 class ArtifactVersion:
     artifact_id: str
     version: int
+    filename: str
     content: bytes
     size_bytes: int
     sha256: str
@@ -261,9 +262,10 @@ def read(
                 raise ArtifactError("artifact_not_found")
             selected = int(row[1]) if version is None else version
             version_row = db.execute(
-                "SELECT size_bytes, sha256, created_at FROM versions "
-                "WHERE artifact_id = ? AND version = ?",
-                (artifact_id, selected),
+                "SELECT a.filename, v.size_bytes, v.sha256, v.created_at "
+                "FROM artifacts a JOIN versions v ON v.artifact_id = a.id "
+                "AND v.version = ? WHERE a.id = ?",
+                (selected, artifact_id),
             ).fetchone()
         finally:
             db.close()
@@ -271,10 +273,47 @@ def read(
         raise ArtifactError("artifact_store_unavailable") from exc
     if version_row is None:
         raise ArtifactError("artifact_not_found")
-    size_bytes, expected_sha, created_at = version_row
+    filename, size_bytes, expected_sha, created_at = version_row
+    return _read_version(
+        artifact_id, selected, filename, size_bytes, expected_sha, created_at
+    )
+
+
+def read_unowned(artifact_id: str, version: int) -> ArtifactVersion:
+    """Read one token-bound version for the separated preview host."""
+
+    try:
+        db = _connect()
+        try:
+            version_row = db.execute(
+                "SELECT a.filename, v.size_bytes, v.sha256, v.created_at "
+                "FROM artifacts a JOIN versions v ON v.artifact_id = a.id "
+                "AND v.version = ? WHERE a.id = ?",
+                (version, artifact_id),
+            ).fetchone()
+        finally:
+            db.close()
+    except sqlite3.Error as exc:
+        raise ArtifactError("artifact_store_unavailable") from exc
+    if version_row is None:
+        raise ArtifactError("artifact_not_found")
+    filename, size_bytes, expected_sha, created_at = version_row
+    return _read_version(
+        artifact_id, version, filename, size_bytes, expected_sha, created_at
+    )
+
+
+def _read_version(
+    artifact_id: str,
+    version: int,
+    filename: str,
+    size_bytes: int,
+    expected_sha: str,
+    created_at: int,
+) -> ArtifactVersion:
     if created_at + _limits()[3] * 86400 <= int(time.time()):
         raise ArtifactError("artifact_not_found")
-    path = _blob_path(artifact_id, selected)
+    path = _blob_path(artifact_id, version)
     if not _safe_path(path) or not path.is_file():
         raise ArtifactError("artifact_unavailable")
     try:
@@ -287,7 +326,7 @@ def read(
     ):
         raise ArtifactError("artifact_unavailable")
     return ArtifactVersion(
-        artifact_id, selected, content, len(content), str(expected_sha)
+        artifact_id, version, filename, content, len(content), str(expected_sha)
     )
 
 
