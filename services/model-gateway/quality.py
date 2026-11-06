@@ -522,6 +522,7 @@ async def stream_quality(
             ):
                 current = current.model_copy(update={"max_tokens": widened})
         reserved = policy.cost(model, incoming, current.max_tokens)
+        unknown_reserved = policy.cost(model, incoming_ceiling, current.max_tokens)
         if spent + reserved > budget:
             raise ProviderLimitError(
                 "cost_budget",
@@ -721,8 +722,8 @@ async def stream_quality(
                 completion_tokens += failed_usage.completion_tokens
                 retry_completion_tokens += failed_usage.completion_tokens
             else:
-                spent += reserved
-                prompt_tokens += incoming
+                spent += unknown_reserved
+                prompt_tokens += incoming_ceiling
                 completion_tokens += current.max_tokens
                 retry_completion_tokens += current.max_tokens
                 estimated = True
