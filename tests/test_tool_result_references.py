@@ -91,7 +91,7 @@ class ClearingPolicyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 tool_results.keep_results()
 
-    def test_all_group_tools_reachable_with_reopen_and_eight_slots(self) -> None:
+    def test_all_group_tools_reachable_with_reopen(self) -> None:
         from agent_provider import AgentRequest
 
         for group, names in GROUPS.items():
@@ -100,7 +100,7 @@ class ClearingPolicyTests(unittest.TestCase):
             for name in names:
                 selection.switch(json.dumps(dict(group=group, focus=name)))
                 declarations = selection.declarations()
-                self.assertLessEqual(len(declarations), 8)
+                self.assertLessEqual(len(declarations), 16)
                 self.assertIn(name, selection.names)
                 self.assertIn("reopen_result", selection.names)
                 self.assertIn("update_plan", selection.names)

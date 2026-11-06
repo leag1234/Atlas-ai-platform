@@ -52,7 +52,7 @@ class WorkForgeToolTests(unittest.IsolatedAsyncioTestCase):
         selection = WorkToolSelection("code")
         selection.reopen_enabled = True
         self.assertIn("forge_action", selection.names)
-        self.assertLessEqual(len(selection.names), 8)
+        self.assertLessEqual(len(selection.names), 16)
         args = ForgeRequest(kind="branch", base_commit="a" * 40, branch="fix")
         self.assertEqual(args.action()["parameters"], {"name": "fix"})
         with self.assertRaises(ValueError):

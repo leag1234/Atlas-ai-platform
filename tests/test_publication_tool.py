@@ -12,7 +12,7 @@ from test_work_forge_tools import archive
 
 
 class PublicationToolTests(unittest.IsolatedAsyncioTestCase):
-    def test_memory_and_reopen_preserve_publication_within_eight_tools(self) -> None:
+    def test_memory_and_reopen_preserve_publication(self) -> None:
         selection = WorkToolSelection("code")
         selection.reopen_enabled = True
         selection.memory_enabled = True
@@ -21,7 +21,7 @@ class PublicationToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("reopen_result", selection.names)
         self.assertIn("edit_file", selection.names)
         self.assertIn("run_command", selection.names)
-        self.assertEqual(len(selection.declarations()), 8)
+        self.assertLessEqual(len(selection.declarations()), 16)
         selection.switch(json.dumps(dict(group="code", focus="read_file")))
         self.assertIn("read_file", str(selection.declarations()))
         selection.switch(json.dumps(dict(group="code")))

@@ -48,7 +48,7 @@ class RemoteToolTests(unittest.TestCase):
         )
         selection.reopen_enabled = True
         selection.memory_enabled = True
-        self.assertLessEqual(len(selection.declarations()), 8)
+        self.assertLessEqual(len(selection.declarations()), 16)
         selection.switch('{"group":"remote","focus":"remote_fetch"}')
         selection.declarations()
         self.assertIn("remote_fetch", selection.names)

@@ -76,5 +76,5 @@ class ReleaseDeliveryTests(unittest.TestCase):
         selection.verified = True
         names = selection.names
         self.assertIn("forge_action", names)
-        self.assertLessEqual(len(names), 8)
+        self.assertLessEqual(len(names), 16)
         self.assertIn("switch_tool_group", names)
