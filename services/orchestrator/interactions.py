@@ -27,6 +27,7 @@ class Interaction:
     terminal_failed_commands: int = 0
     files: list[str] = field(default_factory=list)
     file_strategies: list[str] = field(default_factory=list)
+    artifacts: list[dict[str, int | str]] = field(default_factory=list)
     documents: list[dict[str, str | int | bool]] = field(default_factory=list)
     uploaded_images: list[str] = field(default_factory=list)
     provider_model: str = ""

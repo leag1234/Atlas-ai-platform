@@ -126,7 +126,8 @@ class AgentRequest(BaseModel):
                 or self.tool_choice.get("type") != "function"
                 or not isinstance(function, dict)
                 or set(function) != {"name"}
-                or function.get("name") not in {"terminal_command", "publish_document"}
+                or function.get("name")
+                not in {"terminal_command", "publish_document", "create_artifact"}
                 or not any(
                     declared.get("name") == function["name"]
                     for tool in self.tools
