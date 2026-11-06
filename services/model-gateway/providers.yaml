@@ -16,6 +16,7 @@
     "code_model": "Qwen/Qwen3.8-27B",
     "code_thinking": true,
     "reasoning_control": "enable_thinking",
+    "reasoning_values": [],
     "code_models": {"Qwen/Qwen3.8-27B": {"context": 262144, "price": {"currency": "EUR", "input": 0, "output": 0}, "source": "https://docs.hetzner.com/general/company-and-policy/experiments/inference/", "verified_at": "2026-10-26"}},
     "request_options": {"reasoning_effort": "none", "chat_template_kwargs": {"enable_thinking": false}},
     "price": {"currency": "EUR", "input": 0, "output": 0},
@@ -26,6 +27,7 @@
     "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Scaleway", "api_key_env": "SCW_GENERATIVE_API_KEY", "base_url": "https://api.scaleway.ai/v1",
+    "reasoning_values": [],
     "text_model": "qwen3.5-397b-a17b", "vision_model": "gemma-4-26b-a4b-it",
     "context": 262144,
     "price": {"currency": "EUR", "input": 0.60, "output": 3.60},
@@ -43,6 +45,7 @@
     "greedy_top_p": 1,
     "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
     "reasoning_control": "reasoning_effort",
+    "reasoning_values": [],
     "reasoning_models": ["mistral-large-4"],
     "transcription_model": "voxtral-mini-latest",
     "context": 262144,
@@ -54,6 +57,7 @@
   "ionos": {
     "verification": "in progress",
     "name": "IONOS AI Model Hub", "base_url": "https://openai.inference.de-txl.ionos.com/v1",
+    "reasoning_values": [],
     "text_model": "Qwen/Qwen3.5-9B", "vision_model": "Qwen/Qwen3.5-9B",
     "context": 262144, "price": null, "unverified": ["price"],
     "sources": ["https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation", "https://docs.ionos.com/cloud/ai/ai-model-hub/models/llms/qwen3-5-9b"]
@@ -64,6 +68,7 @@
     "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "OVHcloud AI Endpoints", "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    "reasoning_values": [],
     "text_model": "Qwen3.5-397B-A17B", "vision_model": "Qwen2.5-VL-72B-Instruct",
     "context": {"text": 262144, "vision": 32768}, "price": null, "unverified": ["price"],
     "sources": ["https://www.ovhcloud.com/en/public-cloud/ai-endpoints/catalog/", "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-structured-output"]
@@ -72,6 +77,7 @@
   "local": {
     "json_response_format": true,
     "name": "Local Ollama (CPU supported, GPU recommended)", "base_url": "http://ollama:11434/v1",
+    "reasoning_values": [],
     "text_model": "qwen3:0.6b", "vision_model": null,
     "context": 32768, "price": {"currency": "EUR", "input": 0, "output": 0},
     "note": "No token billing; hardware and electricity are excluded. Small default is for a startup demonstration, with substantially weaker answers.",
@@ -80,6 +86,7 @@
   # Source: https://huggingface.co/docs/inference-providers/tasks/chat-completion; https://huggingface.co/docs/inference-providers/pricing; fetched 2026-10-22.
   "huggingface": {
     "name": "Hugging Face Inference Providers (outside EU)", "base_url": "https://router.huggingface.co/v1",
+    "reasoning_values": [],
     "text_model": "openai/gpt-oss-120b", "vision_model": null,
     "context": 32768, "price": null, "unverified": ["route-dependent price", "context (conservative Atlas limit)"],
     "sources": ["https://huggingface.co/docs/inference-providers/tasks/chat-completion", "https://huggingface.co/docs/inference-providers/pricing"]
@@ -87,6 +94,7 @@
   # Source: https://api-docs.deepseek.com/; https://api-docs.deepseek.com/quick_start/pricing; fetched 2026-10-22.
   "deepseek": {
     "name": "DeepSeek (outside EU)", "base_url": "https://api.deepseek.com",
+    "reasoning_values": [],
     "text_model": "deepseek-flash", "vision_model": null,
     "context": 32768, "price": null, "unverified": ["price (pricing page redirected to quickstart)", "context (conservative Atlas limit)"],
     "sources": ["https://api-docs.deepseek.com/", "https://api-docs.deepseek.com/quick_start/pricing"]
@@ -94,12 +102,14 @@
   # Source: operator-supplied; unverified; fetched 2026-10-22.
   "other": {
     "name": "Other OpenAI-compatible endpoint (enter settings)", "base_url": null,
+    "reasoning_values": [],
     "text_model": null, "vision_model": null, "context": 32768, "price": null,
     "unverified": ["operator-supplied URL, model, capabilities and prices"], "sources": []
   },
   # Source: operator-supplied; strict privacy requires a fully owner-controlled endpoint.
   "owned-vllm": {
     "name": "Owned OpenAI-compatible vLLM endpoint", "base_url": null,
+    "reasoning_values": [],
     "api_key_env": "ATLAS_OWNED_VLLM_API_KEY",
     "text_model": "owned-vllm-model", "vision_model": null,
     "context": 262144, "price": {"currency": "EUR", "input": 0, "output": 0},

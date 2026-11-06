@@ -110,6 +110,7 @@ class GatewayModel:
         self.generation_ms = 0.0
         self.sink: Sink | None = None
         self.reasoning_effort = "none"
+        self.reasoning_ceiling: Literal["none", "low", "medium", "high"] | None = None
         self.stream_turn = 0
         self.profile: str | None = None
         self.max_tokens = configuration.max_tokens
@@ -502,6 +503,8 @@ class GatewayModel:
             )
             if self.reasoning_retried:
                 payload["reasoning_disabled"] = True
+            if self.reasoning_ceiling is not None:
+                payload["reasoning_ceiling"] = self.reasoning_ceiling
         if self.privacy == "strict":
             payload["privacy"] = "strict"
         if self.produces_files:

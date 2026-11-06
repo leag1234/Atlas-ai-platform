@@ -228,6 +228,9 @@ async def attempt(
     if request.max_tokens < 1:
         raise ProviderLimitError("output_budget", 1, request.max_tokens, "tokens")
     policy = ServerlessPolicy()
+    role = next(
+        (name for name, model_ in policy.models.items() if model_ == model), None
+    )
     routed = None if request.privacy == "strict" else policy.providers.get(model)
     endpoint = (
         provider_settings.owned_endpoint()
@@ -321,12 +324,28 @@ async def attempt(
                         body,
                         provider=routed,
                         configured_effort=request.reasoning_effort,
+                        reasoning_ceiling=request.reasoning_ceiling,
+                        reasoning_default=(
+                            role is not None
+                            and policy.config[role]["capabilities"][model].get(
+                                "reasoning_default"
+                            )
+                            is True
+                        ),
                         model=model,
                     )
                     if routed is not None
                     else provider_settings.request_options(
                         body,
                         configured_effort=request.reasoning_effort,
+                        reasoning_ceiling=request.reasoning_ceiling,
+                        reasoning_default=(
+                            role is not None
+                            and policy.config[role]["capabilities"][model].get(
+                                "reasoning_default"
+                            )
+                            is True
+                        ),
                         role="vision"
                         if classify_task(request.messages) == "vision"
                         else policy.public_profiles.get(request.profile or ""),

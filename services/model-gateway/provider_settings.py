@@ -127,6 +127,8 @@ def request_options(
     *,
     role: str | None = None,
     configured_effort: str = "none",
+    reasoning_ceiling: str | None = None,
+    reasoning_default: bool = False,
     model: str | None = None,
 ) -> dict[str, Any]:
     """Provider-specific request body.
@@ -195,6 +197,26 @@ def request_options(
                 "enable_thinking": True,
             }
             body.pop("reasoning_effort", None)
+    elif reasoning_ceiling in REASONING_EFFORTS:
+        preset = presets().get(name, {})
+        if reasoning_default is True:
+            values = preset.get("reasoning_values")
+            if not isinstance(values, list):
+                raise ValueError("reasoning_values_missing")
+            accepted = tuple(
+                value
+                for value in values
+                if isinstance(value, str) and value in REASONING_EFFORTS
+            )
+            if not accepted:
+                return body
+            ceiling = REASONING_EFFORTS.index(reasoning_ceiling)
+            allowed = [
+                value for value in accepted if REASONING_EFFORTS.index(value) <= ceiling
+            ]
+            body["reasoning_effort"] = min(
+                allowed or accepted, key=REASONING_EFFORTS.index
+            )
     return body
 
 
