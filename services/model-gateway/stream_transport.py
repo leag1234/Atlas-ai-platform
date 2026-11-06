@@ -326,11 +326,11 @@ async def attempt(
                         configured_effort=request.reasoning_effort,
                         reasoning_ceiling=request.reasoning_ceiling,
                         reasoning_default=(
-                            role is not None
-                            and policy.config[role]["capabilities"][model].get(
+                            policy.config[role]["capabilities"][model].get(
                                 "reasoning_default"
                             )
-                            is True
+                            if role is not None
+                            else None
                         ),
                         model=model,
                     )
@@ -340,11 +340,11 @@ async def attempt(
                         configured_effort=request.reasoning_effort,
                         reasoning_ceiling=request.reasoning_ceiling,
                         reasoning_default=(
-                            role is not None
-                            and policy.config[role]["capabilities"][model].get(
+                            policy.config[role]["capabilities"][model].get(
                                 "reasoning_default"
                             )
-                            is True
+                            if role is not None
+                            else None
                         ),
                         role="vision"
                         if classify_task(request.messages) == "vision"

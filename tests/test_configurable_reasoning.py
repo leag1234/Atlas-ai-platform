@@ -163,7 +163,9 @@ class ProviderFieldTests(unittest.TestCase):
             baseline = request_options(body)
             self.assertEqual(baseline["reasoning_effort"], "none")
             self.assertEqual(
-                request_options(body, reasoning_ceiling="low")["reasoning_effort"],
+                request_options(body, reasoning_ceiling="low", reasoning_default=False)[
+                    "reasoning_effort"
+                ],
                 "none",
             )
             self.assertNotIn(
@@ -172,12 +174,12 @@ class ProviderFieldTests(unittest.TestCase):
                     body,
                     "mistral",
                     reasoning_ceiling="low",
-                    reasoning_default=True,
+                    reasoning_default=False,
                 ),
             )
 
         preset = dict(presets()["mistral"])
-        preset.update(reasoning_default=True, reasoning_values=["low", "high"])
+        preset.update(reasoning_values=["low", "high"])
         with (
             patch.dict(os.environ, {}, clear=True),
             patch("provider_settings.presets", return_value={"mistral": preset}),
@@ -187,7 +189,7 @@ class ProviderFieldTests(unittest.TestCase):
                     body,
                     "mistral",
                     reasoning_ceiling="medium",
-                    reasoning_default=True,
+                    reasoning_default=None,
                 )["reasoning_effort"],
                 "low",
             )
@@ -196,7 +198,7 @@ class ProviderFieldTests(unittest.TestCase):
                     body,
                     "mistral",
                     reasoning_ceiling="high",
-                    reasoning_default=True,
+                    reasoning_default=None,
                 )["reasoning_effort"],
                 "low",
             )
