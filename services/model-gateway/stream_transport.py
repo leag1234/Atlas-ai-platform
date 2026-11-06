@@ -274,6 +274,9 @@ async def attempt(
         ignore_calls=answer_only,
     )
     if routed is not None:
+        greedy_top_p = provider_settings.preset_value(routed, "greedy_top_p")
+        if isinstance(greedy_top_p, (int, float)):
+            body["top_p"] = greedy_top_p
         if provider_settings.preset_value(routed, "prompt_cache_key") is True:
             body["prompt_cache_key"] = hashlib.sha256(
                 json.dumps(

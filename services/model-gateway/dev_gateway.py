@@ -114,7 +114,10 @@ def prepare_api(
             stream=True,
             stream_options={"include_usage": True},
         )
-        if not payload.get("temperature"):
+        greedy_top_p = provider_settings.preset_value(target.provider, "greedy_top_p")
+        if payload.get("temperature") == 0 and isinstance(greedy_top_p, (int, float)):
+            payload["top_p"] = greedy_top_p
+        elif not payload.get("temperature"):
             # Greedy sampling ignores top_p and top_k, and one routed provider refuses them with it.
             payload.pop("top_p", None)
             payload.pop("top_k", None)

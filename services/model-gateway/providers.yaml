@@ -39,6 +39,8 @@
     "verification": "verified 2026-10-23 by acceptance test",
     "name": "Mistral", "base_url": "https://api.mistral.ai/v1",
     "api_key_env": "MISTRAL_API_KEY", "prompt_cache_key": true, "seed_field": "random_seed",
+    # Source: live provider answer 2026-11-06: top_p must be 1 with greedy sampling.
+    "greedy_top_p": 1,
     "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
     "reasoning_control": "reasoning_effort",
     "reasoning_models": ["mistral-large-4"],

@@ -62,15 +62,23 @@ class SamplingTests(unittest.TestCase):
 
     def test_top_p_is_not_sent_with_greedy_sampling(self) -> None:
         for body in plans(RawChatInput.model_validate(raw(top_p=0.9, top_k=40))):
-            self.assertNotIn("top_p", body)
-            self.assertNotIn("top_k", body)
+            if body["provider"] == "mistral":
+                self.assertEqual(body["top_p"], 1)
+                self.assertEqual(body["top_k"], 40)
+            else:
+                self.assertNotIn("top_p", body)
+                self.assertNotIn("top_k", body)
         for body in plans(RawChatInput.model_validate(raw(top_p=0.9, temperature=0.3))):
             self.assertEqual(body["top_p"], 0.9)
 
     def test_unset_options_are_not_sent(self) -> None:
         for body in plans(RawChatInput.model_validate(raw())):
-            for name in ("top_p", "stop", "seed", "random_seed", "top_k", "n"):
+            for name in ("stop", "seed", "random_seed", "top_k", "n"):
                 self.assertNotIn(name, body)
+            if body["provider"] == "mistral":
+                self.assertEqual(body["top_p"], 1)
+            else:
+                self.assertNotIn("top_p", body)
 
     def test_max_completion_tokens_is_max_tokens(self) -> None:
         body = raw(max_completion_tokens=33)
