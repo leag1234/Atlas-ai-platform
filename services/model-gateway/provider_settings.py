@@ -90,10 +90,12 @@ def preset_value(provider: str, key: str) -> Any:
     return preset.get(key)
 
 
-def json_options(response_format: object) -> dict[str, Any]:
+def json_options(
+    response_format: object, provider: str | None = None
+) -> dict[str, Any]:
     # Internal state requests fall back to instructions on unverified providers.
     # Explicit developer-API response_format continues to pass through unchanged.
-    name = os.environ.get("ATLAS_PROVIDER", "")
+    name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     if response_format and (
         not name or presets().get(name, {}).get("json_response_format") is True
     ):
@@ -104,12 +106,18 @@ def json_options(response_format: object) -> dict[str, Any]:
 REASONING_EFFORTS = ("none", "low", "medium", "high")
 
 
-def reasoning_control(provider: str | None = None) -> str | None:
+def reasoning_control(
+    provider: str | None = None, model: str | None = None
+) -> str | None:
     """How a provider turns reasoning on: the effort field, a template switch, or not at all."""
     name = os.environ.get("ATLAS_PROVIDER", "") if provider is None else provider
     if name in ("", "scaleway"):
         return "reasoning_effort"
-    control = presets().get(name, {}).get("reasoning_control")
+    preset = presets().get(name, {})
+    models = preset.get("reasoning_models")
+    if models is not None and model not in models:
+        return None
+    control = preset.get("reasoning_control")
     return control if control in ("reasoning_effort", "enable_thinking") else None
 
 
@@ -119,6 +127,7 @@ def request_options(
     *,
     role: str | None = None,
     configured_effort: str = "none",
+    model: str | None = None,
 ) -> dict[str, Any]:
     """Provider-specific request body.
 
@@ -176,7 +185,7 @@ def request_options(
     if effort != "none":
         # A configured per-model effort (serverless.ServerlessPolicy.efforts).
         # The policy refuses it at load time for a provider without a control.
-        control = reasoning_control(name)
+        control = reasoning_control(name, model)
         if control == "reasoning_effort":
             body["reasoning_effort"] = effort
         elif control == "enable_thinking":

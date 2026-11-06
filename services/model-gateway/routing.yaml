@@ -56,3 +56,18 @@ public_profiles:
   atlas-qwen: text
   atlas-glm: code
   atlas-deepseek: fast
+
+# Roles bound to their own provider preset (providers.yaml), merged into the serverless
+# policy only for profiles enabled by ATLAS_HIDDEN_PROFILES. Source: Mistral models API and
+# https://docs.mistral.ai/models/mistral-large-4-0, consulted 2026-11-06.
+hidden_roles:
+  mistral:
+    provider: mistral
+    env: MISTRAL_PROFILE_MODEL
+    model: mistral-large-4
+    fallback: code
+    capabilities:
+      mistral-large-4: {context: 1048576, tools: true, vision: false, reasoning_effort: low}
+
+hidden_profiles:
+  atlas-mistral: mistral

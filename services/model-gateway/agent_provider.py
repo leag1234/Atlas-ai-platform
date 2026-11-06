@@ -4,7 +4,7 @@ import provider_settings
 
 from packages.limits import LimitError, ProviderLimitError, MalformedToolCall
 
-from packages.profiles import PROFILES
+from packages.profiles import accepted_profile
 
 import asyncio
 import json
@@ -131,7 +131,7 @@ class AgentRequest(BaseModel):
                 )
             ):
                 raise ValueError("invalid_required_file_tool")
-        if self.profile is not None and self.profile not in PROFILES:
+        if self.profile is not None and not accepted_profile(self.profile):
             raise ValueError("invalid_profile")
         deadline = (
             300

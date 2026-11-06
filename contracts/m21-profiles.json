@@ -4,6 +4,9 @@
     "atlas-glm",
     "atlas-deepseek"
   ],
+  "hidden_models": [
+    "atlas-mistral"
+  ],
   "max_output_tokens": 6000,
   "max_seconds": 120,
   "attachment_max_seconds": 300,

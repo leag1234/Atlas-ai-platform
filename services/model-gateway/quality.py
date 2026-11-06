@@ -239,6 +239,15 @@ def work_step(tools: list[dict[str, object]]) -> bool:
     )
 
 
+def profile_candidates(
+    policy: ServerlessPolicy, profile: str, default_role: str
+) -> list[str]:
+    roles = [policy.profile_roles.get(profile, default_role)]
+    if profile not in policy.hidden_profiles:
+        roles.extend(policy.public_profiles.values())
+    return list(dict.fromkeys(roles))
+
+
 async def complete(provider: AgentProvider, request: AgentRequest) -> dict[str, object]:
     async with aclosing(
         stream_quality(provider, request, complete_response=True)
@@ -260,7 +269,7 @@ async def stream_quality(
     role = (
         "vision"
         if task == "vision"
-        else policy.public_profiles.get(request.profile or "", task)
+        else policy.profile_roles.get(request.profile or "", task)
     )
     primary = policy.models[role]
     fallback_role = policy.config[role]["fallback"]
@@ -294,7 +303,9 @@ async def stream_quality(
                 # eligible; no input sampling or larger cost allowance is permitted.
                 affordable_roles = [
                     candidate
-                    for candidate in dict.fromkeys(policy.public_profiles.values())
+                    for candidate in profile_candidates(
+                        policy, request.profile or "", task
+                    )
                     if incoming + 1
                     <= policy.config[candidate]["capabilities"][
                         policy.models[candidate]
