@@ -11,6 +11,7 @@ import os
 import zlib
 from time import monotonic
 from pathlib import Path
+from math import ceil
 
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from answer_content import (
@@ -46,6 +47,10 @@ from serverless import REASONING_OUTPUT_TOKENS, ServerlessPolicy, classify_task
 
 
 CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model context]\n"
+
+# Work steps contain source and tool output, which averages about three bytes
+# per token; other requests keep the conservative byte-for-token reservation.
+WORK_BYTES_PER_TOKEN = 3
 
 # These calls are the requested work itself; switch_tool_group is offered at
 # every Work step.
@@ -226,6 +231,14 @@ def input_bound(
     )
 
 
+def work_step(tools: list[dict[str, object]]) -> bool:
+    return any(
+        isinstance(function := tool.get("function"), dict)
+        and function.get("name") == "switch_tool_group"
+        for tool in tools
+    )
+
+
 async def complete(provider: AgentProvider, request: AgentRequest) -> dict[str, object]:
     async with aclosing(
         stream_quality(provider, request, complete_response=True)
@@ -252,7 +265,12 @@ async def stream_quality(
     primary = policy.models[role]
     fallback_role = policy.config[role]["fallback"]
     budget = Decimal(request.budget_eur or "0.10")
-    incoming = input_bound(request.messages, request.tools)
+    input_bytes = input_bound(request.messages, request.tools)
+    incoming = (
+        ceil(input_bytes / WORK_BYTES_PER_TOKEN)
+        if work_step(request.tools)
+        else input_bytes
+    )
     spent = Decimal(0)
     prompt_tokens = completion_tokens = trace_tokens = answer_tokens = 0
     retry_completion_tokens = 0
@@ -370,7 +388,12 @@ async def stream_quality(
             }
         )
         current = request
-        incoming = input_bound(request.messages, request.tools)
+        input_bytes = input_bound(request.messages, request.tools)
+        incoming = (
+            ceil(input_bytes / WORK_BYTES_PER_TOKEN)
+            if work_step(request.tools)
+            else input_bytes
+        )
         logging.getLogger(__name__).info(
             json.dumps({"event": "quality_answer_budget", "remaining_eur": str(budget)})
         )
@@ -485,7 +508,12 @@ async def stream_quality(
             if messages != request.messages:
                 request = request.model_copy(update={"messages": messages})
                 current = current.model_copy(update={"messages": messages})
-                incoming = input_bound(request.messages, request.tools)
+                input_bytes = input_bound(request.messages, request.tools)
+                incoming = (
+                    ceil(input_bytes / WORK_BYTES_PER_TOKEN)
+                    if work_step(request.tools)
+                    else input_bytes
+                )
                 logging.getLogger(__name__).info(
                     json.dumps(
                         {
@@ -651,7 +679,7 @@ async def stream_quality(
             )
             if failed_usage is not None:
                 if (
-                    failed_usage.prompt_tokens > incoming
+                    failed_usage.prompt_tokens > input_bytes
                     or failed_usage.completion_tokens > current.max_tokens
                 ):
                     raise RuntimeError("provider_usage_exceeds_reservation") from None
@@ -721,7 +749,7 @@ async def stream_quality(
             raise MalformedToolCall(malformed_name.measured, index)
         usage = Usage.model_validate(result["usage"])
         if (
-            usage.prompt_tokens > incoming
+            usage.prompt_tokens > input_bytes
             or usage.completion_tokens > current.max_tokens
         ):
             raise RuntimeError("provider_usage_exceeds_reservation")
@@ -841,7 +869,12 @@ async def stream_quality(
                     ],
                 }
             )
-            incoming = input_bound(request.messages, request.tools)
+            input_bytes = input_bound(request.messages, request.tools)
+            incoming = (
+                ceil(input_bytes / WORK_BYTES_PER_TOKEN)
+                if work_step(request.tools)
+                else input_bytes
+            )
         incomplete = result.get("finish_reason") == "length"
         trimmed = False
         if incomplete:
