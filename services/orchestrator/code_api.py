@@ -1,5 +1,7 @@
 """Owner-only audit retrieval and approval answers."""
 
+import logging
+import time
 from pathlib import Path
 from typing import Any
 from fastapi import APIRouter, Request
@@ -10,6 +12,8 @@ from services.orchestrator.code_tools import gate
 from services.orchestrator.code_workspace import enabled, session_key, state_dir
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/code/ui")
@@ -78,6 +82,8 @@ class ExecutionBroker:
 
     private_prefix = "/internal/atlas/execution/"
     success_statuses: tuple[int, ...] = (200,)
+    # The first call builds turn context from the files just uploaded.
+    execution_timeouts = {"begin": 60, "remote": 55}
 
     def __init__(self, subject: str, org: str, project: str) -> None:
         self.subject, self.org, self.project = subject, org, project
@@ -95,11 +101,12 @@ class ExecutionBroker:
         secret = os.environ.get("ATLAS_PROJECT_EXECUTION_SECRET", "")
         if len(secret.encode()) < 32:
             raise ProjectError(503, "dependency_unavailable")
+        started = time.monotonic()
         try:
             async with aiohttp.ClientSession(
                 trust_env=False,
                 timeout=aiohttp.ClientTimeout(
-                    total=55 if operation == "remote" else 10
+                    total=self.execution_timeouts.get(operation, 10)
                 ),
             ) as client:
                 resolved = await broker_identity(
@@ -125,7 +132,14 @@ class ExecutionBroker:
                         error.body = result
                         raise error
                     return result
-        except (aiohttp.ClientError, TimeoutError):
+        except (aiohttp.ClientError, TimeoutError) as failure:
+            cause = "timeout" if isinstance(failure, TimeoutError) else "network"
+            logger.warning(
+                "project_broker_failed operation=%s cause=%s elapsed_s=%.1f",
+                operation,
+                cause,
+                time.monotonic() - started,
+            )
             raise ProjectError(503, "dependency_unavailable") from None
 
     async def public(
