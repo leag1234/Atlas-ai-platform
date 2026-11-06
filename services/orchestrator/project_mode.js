@@ -877,6 +877,29 @@
   };
   const moveText = key => (moveLabels[(window.atlasProjectLocale.language() || 'en').slice(0,2)] || moveLabels.en)[key];
   const nativeChatId = () => (location.pathname.match(/^\/c\/([^/?#]+)$/) || [])[1] || null;
+  let pendingMoveMenu = null;
+  const sidebarChatId = target => {
+    if (!(target instanceof Element) || target.closest('#chat-context-menu-button')) return null;
+    if (target.tagName !== 'BUTTON') return null;
+    for (let row = target.parentElement; row && row !== document.body; row = row.parentElement) {
+      if (row.id === 'sidebar') return null;
+      const links = row.querySelectorAll('a[href^="/c/"]');
+      if (!links.length) continue;
+      if (links.length !== 1) return null;
+      return decodeURIComponent(new URL(links[0].href).pathname.match(/^\/c\/([^/?#]+)$/)?.[1] || '');
+    }
+    return null;
+  };
+  const recordMoveMenuTrigger = event => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('#chat-context-menu-button')) pendingMoveMenu = {chatId:nativeChatId(),at:Date.now()};
+    else {
+      const chatId = sidebarChatId(target);
+      pendingMoveMenu = chatId ? {chatId,at:Date.now()} : null;
+    }
+  };
+  document.addEventListener('pointerdown', recordMoveMenuTrigger, true);
+  document.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') recordMoveMenuTrigger(event); }, true);
   function nativeBranch(chat) {
     const history = chat?.chat?.history || chat?.history || {};
     const messages = history.messages || {};
@@ -970,17 +993,15 @@
     setTimeout(() => document.addEventListener('click', close, true), 0);
   }
   function installMoveMenuItems() {
-    // Open WebUI v0.11.3 anchors: header menu #chat-context-menu-button; sidebar
-    // row a[href="/c/<id>"] with its localized "Chat Menu" trigger; menus render
-    // as .app-dropdown-menu (without role="menu"), while submenu portals use role="menu".
     if (owned || !identity || !scope?.org || !document.body.classList.contains('atlas-project-enabled')) return;
+    if (!pendingMoveMenu || Date.now() - pendingMoveMenu.at >= 1500) return;
     for (const menu of document.querySelectorAll('.app-dropdown-menu')) {
       if (menu.querySelector('[data-atlas-move-project]')) continue;
-      const row = document.activeElement?.closest('#sidebar-chat-group');
-      const chatId = row ? decodeURIComponent(new URL(row.querySelector('a[href^="/c/"]').href).pathname.match(/^\/c\/([^/?#]+)$/)?.[1] || '') : nativeChatId();
-      if (!chatId) continue;
+      const chatId = pendingMoveMenu.chatId;
       const item = node('button', moveText('move')); item.type = 'button'; item.dataset.atlasMoveProject = '';
       item.addEventListener('click', guarded(() => moveMenu(chatId))); menu.append(item);
+      pendingMoveMenu = null;
+      break;
     }
   }
   function installNavigation() {

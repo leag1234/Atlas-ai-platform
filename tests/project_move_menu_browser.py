@@ -60,6 +60,15 @@ def open_header_menu(page: Page) -> Locator:
     return item
 
 
+def assert_menu_has_no_move_item(page: Page, trigger: Locator) -> None:
+    trigger.click()
+    expect(page.locator(".app-dropdown-menu").last).to_be_visible()
+    expect(page.locator(".app-dropdown-menu [data-atlas-move-project]")).to_have_count(
+        0
+    )
+    page.keyboard.press("Escape")
+
+
 def move_from_menu(page: Page, item: Locator, project_name: str) -> None:
     item.click()
     submenu = page.locator(".atlas-project-move-menu")
@@ -82,7 +91,7 @@ def create_from_menu(page: Page, item: Locator, project_name: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    args = parser.parse_args()
+    parser.parse_args()
     base = os.environ["ATLAS_PROJECT_BROWSER_URL"].rstrip("/")
     target = urlsplit(base)
     assert target.hostname in {"127.0.0.1", "localhost"}
@@ -119,22 +128,27 @@ def main() -> None:
             page.locator("#chat-input").wait_for(timeout=60000)
 
             first_id = create_native_chat(page, "Move source one")
+            second_id = create_native_chat(page, "Move source two")
+            page.goto(base + f"/c/{first_id}", wait_until="domcontentloaded")
+            page.locator("#chat-input").wait_for(timeout=60000)
+            assert_menu_has_no_move_item(page, page.locator("#user-avatar"))
+            assert_menu_has_no_move_item(page, page.locator("#input-menu-button"))
             for theme in ("light", "dark"):
                 page.emulate_media(color_scheme=theme)
                 item = open_row_menu(page, first_id)
                 page.screenshot(path=str(OUTPUT / f"row-{theme}.png"))
                 page.keyboard.press("Escape")
-            item = open_row_menu(page, first_id)
+            item = open_row_menu(page, second_id)
             move_from_menu(page, item, "Move target")
-            assert api(page, f"/api/v1/chats/{first_id}")["detail"] == "Not found"
+            assert api(page, f"/api/v1/chats/{second_id}")["detail"] == "Not found"
+            assert api(page, f"/api/v1/chats/{first_id}")["id"] == first_id
 
-            second_id = create_native_chat(page, "Move source two")
-            page.goto(base + f"/c/{second_id}", wait_until="domcontentloaded")
+            page.goto(base + f"/c/{first_id}", wait_until="domcontentloaded")
             page.locator("#chat-input").wait_for(timeout=60000)
             item = open_header_menu(page)
             created = "Created by menu " + str(int(time.time()))
             create_from_menu(page, item, created)
-            assert api(page, f"/api/v1/chats/{second_id}")["detail"] == "Not found"
+            assert api(page, f"/api/v1/chats/{first_id}")["detail"] == "Not found"
 
             third_id = create_native_chat(page, "Move source three")
             page.set_viewport_size({"width": 390, "height": 844})
