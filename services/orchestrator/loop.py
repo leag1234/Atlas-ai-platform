@@ -774,7 +774,7 @@ async def run(
         result.state, result.reason, result.text = "stopped", exc.code, exc.detail
         return result
     except GatewayError as exc:
-        if exc.code != "cost_budget":
+        if exc.code != "cost_budget" or not limits.code_mode:
             raise
         result.reason = "cost"
     except PublicFailure:
