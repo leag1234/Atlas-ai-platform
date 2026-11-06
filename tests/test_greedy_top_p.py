@@ -82,6 +82,7 @@ class DevGatewayGreedyTopPTests(unittest.TestCase):
         body = json.loads(plan.body)
         self.assertEqual(body["temperature"], 0)
         self.assertEqual(body["top_p"], 1)
+        self.assertNotIn("top_k", body)
 
     def test_other_preset_drops_top_p(self) -> None:
         import dev_gateway

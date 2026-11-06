@@ -64,10 +64,9 @@ class SamplingTests(unittest.TestCase):
         for body in plans(RawChatInput.model_validate(raw(top_p=0.9, top_k=40))):
             if body["provider"] == "mistral":
                 self.assertEqual(body["top_p"], 1)
-                self.assertEqual(body["top_k"], 40)
             else:
                 self.assertNotIn("top_p", body)
-                self.assertNotIn("top_k", body)
+            self.assertNotIn("top_k", body)
         for body in plans(RawChatInput.model_validate(raw(top_p=0.9, temperature=0.3))):
             self.assertEqual(body["top_p"], 0.9)
 
