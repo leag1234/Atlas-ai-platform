@@ -901,6 +901,24 @@ class KeyTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(measured, 20000)
 
+    def test_failed_work_turn_settles_its_conservative_cost(self) -> None:
+        async def stopped(payload: Any, item: Any) -> None:
+            # A failed provider call retains its allowance in the conservative cost.
+            item.cout_eur, item.cost_complete = 0.12, True
+            raise RuntimeError("provider failed")
+
+        with patch.dict(os.environ, {"ATLAS_CODE_COST_EUR": "1"}):
+            row = self.assistant_settlement(stopped)
+        self.assertEqual((row["charged"], row["state"]), (120000, "complete"))
+        from services.orchestrator.daily_budget import DailyLedger
+
+        with sqlite3.connect(DailyLedger().path) as db:
+            measured = db.execute(
+                "SELECT COALESCE(SUM(measured_micro),0) FROM budget_ledger"
+                " WHERE kind='day'"
+            ).fetchone()[0]
+        self.assertEqual(measured, 120000)
+
     def test_http_expired_revoked_invalid_and_quota_before_provider(self) -> None:
         from dev_gateway import Plan
 
