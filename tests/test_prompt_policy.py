@@ -98,6 +98,7 @@ class M25FingerprintCoverageTests(unittest.TestCase):
 class PromptPolicyTests(unittest.TestCase):
     def test_artifact_prompt_is_english_and_self_contained(self) -> None:
         prompt = Path("prompts/artifact.txt").read_text()
+        normalized_prompt = " ".join(prompt.split())
         self.assertTrue(prompt.isascii())
         self.assertIn("create_artifact is available", prompt)
         self.assertIn("ONE self-contained HTML file", prompt)
@@ -109,6 +110,14 @@ class PromptPolicyTests(unittest.TestCase):
         self.assertIn("Interface language: the user's language", prompt)
         self.assertIn("identifiers and comments stay in English", prompt)
         self.assertIn("If the result is artifact_invalid", prompt)
+        self.assertIn(
+            'Games end with a clear in-page message (the user-language equivalent of "Game over" with the score) and a visible restart button',
+            normalized_prompt,
+        )
+        self.assertIn(
+            "in plain words for a non-technical user: no milliseconds, frame rates or code terms",
+            normalized_prompt,
+        )
 
     def test_artifact_prompt_keeps_deliverable_defaults(self) -> None:
         prompt = Path("prompts/artifact.txt").read_text()
