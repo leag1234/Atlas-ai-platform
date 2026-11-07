@@ -1,0 +1,71 @@
+{
+  "cases": [
+    {
+      "id": "B1",
+      "name": "Snake",
+      "language": "fr",
+      "create": "Fais-moi un jeu de snake jouable au clavier et au doigt.",
+      "change": "Rends le serpent vert et ajoute un réglage de vitesse.",
+      "interaction": "keyboard",
+      "version_pattern": "vitesse",
+      "ready": {
+        "selector": "canvas",
+        "visible": true
+      }
+    },
+    {
+      "id": "B2",
+      "name": "Pomodoro",
+      "language": "en",
+      "create": "Build a pomodoro timer: 25 min work, 5 min break, start, pause and reset.",
+      "change": "Add a long break every 4 pomodoros and show the count.",
+      "interaction": "timer",
+      "version_pattern": "long break",
+      "ready": {
+        "selector": "button",
+        "text": "start",
+        "visible": true
+      }
+    },
+    {
+      "id": "B3",
+      "name": "Bill splitter",
+      "language": "fr",
+      "create": "Crée une calculatrice pour partager une addition : montant, pourboire en %, nombre de personnes.",
+      "change": "Arrondis au centime supérieur et ajoute le choix de la devise.",
+      "interaction": "form",
+      "version_pattern": "devise",
+      "ready": {
+        "selector": "input[type=number]",
+        "minimum": 3
+      }
+    },
+    {
+      "id": "B4",
+      "name": "Flashcards",
+      "language": "de",
+      "create": "Erstelle Lernkarten Deutsch-Französisch mit 10 Karten, Umdrehen per Klick.",
+      "change": "Füge einen Zähler für richtige Antworten hinzu.",
+      "interaction": "flashcards",
+      "version_pattern": "richtig",
+      "ready": {
+        "selector": "button, [role=button], .card",
+        "visible": true
+      }
+    },
+    {
+      "id": "B5",
+      "name": "Chart",
+      "language": "it",
+      "create": "Crea un grafico a barre con questi dati: Lun 12, Mar 15, Mer 9, Gio 20, Ven 14, con un pulsante per ordinarli.",
+      "change": "Aggiungi un interruttore tra barre e linea.",
+      "interaction": "chart",
+      "version_pattern": "linea",
+      "ready": {
+        "selector": "button",
+        "text": "ordin",
+        "visible": true
+      }
+    }
+  ]
+}
