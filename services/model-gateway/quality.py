@@ -696,7 +696,7 @@ async def stream_quality(
             received_bytes = (
                 exc.received_bytes if isinstance(exc, TransientProviderError) else None
             )
-            if received_bytes is None and failed_usage is not None:
+            if failed_usage is not None:
                 if (
                     failed_usage.prompt_tokens > input_bytes
                     or failed_usage.completion_tokens > current.max_tokens
@@ -710,7 +710,7 @@ async def stream_quality(
                 prompt_tokens += failed_usage.prompt_tokens
                 completion_tokens += failed_usage.completion_tokens
                 retry_completion_tokens += failed_usage.completion_tokens
-            elif received_bytes is None or received_bytes > 0:
+            elif received_bytes != 0:
                 spent += reserved
                 prompt_tokens += incoming
                 completion_tokens += current.max_tokens

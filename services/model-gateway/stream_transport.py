@@ -313,44 +313,48 @@ async def attempt(
         )
 
     try:
+        try:
+            payload = (
+                provider_settings.request_options(
+                    body,
+                    provider=routed,
+                    configured_effort=request.reasoning_effort,
+                    reasoning_ceiling=request.reasoning_ceiling,
+                    reasoning_default=(
+                        policy.config[role]["capabilities"][model].get(
+                            "reasoning_default"
+                        )
+                        if role is not None
+                        else None
+                    ),
+                    model=model,
+                )
+                if routed is not None
+                else provider_settings.request_options(
+                    body,
+                    configured_effort=request.reasoning_effort,
+                    reasoning_ceiling=request.reasoning_ceiling,
+                    reasoning_default=(
+                        policy.config[role]["capabilities"][model].get(
+                            "reasoning_default"
+                        )
+                        if role is not None
+                        else None
+                    ),
+                    role="vision"
+                    if classify_task(request.messages) == "vision"
+                    else policy.public_profiles.get(request.profile or ""),
+                )
+            )
+        except ValueError:
+            raise TransientProviderError("provider_error", received_bytes=0) from None
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=_response_timeout.get() or timeout),
             trust_env=False,
         ) as session:
             async with session.post(
                 endpoint + "/chat/completions",
-                json=(
-                    provider_settings.request_options(
-                        body,
-                        provider=routed,
-                        configured_effort=request.reasoning_effort,
-                        reasoning_ceiling=request.reasoning_ceiling,
-                        reasoning_default=(
-                            policy.config[role]["capabilities"][model].get(
-                                "reasoning_default"
-                            )
-                            if role is not None
-                            else None
-                        ),
-                        model=model,
-                    )
-                    if routed is not None
-                    else provider_settings.request_options(
-                        body,
-                        configured_effort=request.reasoning_effort,
-                        reasoning_ceiling=request.reasoning_ceiling,
-                        reasoning_default=(
-                            policy.config[role]["capabilities"][model].get(
-                                "reasoning_default"
-                            )
-                            if role is not None
-                            else None
-                        ),
-                        role="vision"
-                        if classify_task(request.messages) == "vision"
-                        else policy.public_profiles.get(request.profile or ""),
-                    )
-                ),
+                json=payload,
                 headers={"Authorization": "Bearer " + key},
                 allow_redirects=False,
             ) as response:
