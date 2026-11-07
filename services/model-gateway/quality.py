@@ -693,6 +693,9 @@ async def stream_quality(
             failed_usage = (
                 exc.usage if isinstance(exc, TransientProviderError) else None
             )
+            received_bytes = (
+                exc.received_bytes if isinstance(exc, TransientProviderError) else None
+            )
             if failed_usage is not None:
                 if (
                     failed_usage.prompt_tokens > input_bytes
@@ -700,12 +703,14 @@ async def stream_quality(
                 ):
                     raise RuntimeError("provider_usage_exceeds_reservation") from None
                 spent += policy.cost(
-                    model, failed_usage.prompt_tokens, failed_usage.completion_tokens
+                    model,
+                    failed_usage.prompt_tokens,
+                    failed_usage.completion_tokens,
                 )
                 prompt_tokens += failed_usage.prompt_tokens
                 completion_tokens += failed_usage.completion_tokens
                 retry_completion_tokens += failed_usage.completion_tokens
-            else:
+            elif received_bytes != 0:
                 spent += reserved
                 prompt_tokens += incoming
                 completion_tokens += current.max_tokens
