@@ -511,7 +511,20 @@ def response(
                         and item.state == "failed"
                         and bool(item.work_failure)
                     )
-                    if item.state != "done" and not work_failed:
+                    limit_refusal = (
+                        item.state != "done"
+                        and bool(item.erreurs)
+                        and any(
+                            error in {"output_budget", "cost", "cost_budget"}
+                            for error in item.erreurs
+                        )
+                    )
+                    if limit_refusal:
+                        from services.orchestrator.code_mode import WORK_FAILURE
+
+                        words = WORK_FAILURE.get(language, WORK_FAILURE["en"])
+                        item.reponse = str(words["budget"])
+                    elif item.state != "done" and not work_failed:
                         raise RuntimeError("request_stopped")
                     if not payload.atlas_ui and not payload.code_mode:
                         await content(item.reponse, final=True)
