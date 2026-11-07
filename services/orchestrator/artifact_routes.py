@@ -59,12 +59,15 @@ DOWNLOAD_HEADERS = {
 PREVIEW_HEADER_NAMES = frozenset(name.lower().encode() for name in PREVIEW_HEADERS)
 DOWNLOAD_HEADER_NAMES = frozenset(name.lower().encode() for name in DOWNLOAD_HEADERS)
 STORAGE_SHIM = (
-    b"<script>(function(){var f=function(t){var s={};"
-    b"Object.defineProperty(s,'length',{get:function(){return Object.keys(s).length}});"
-    b"try{t.setItem('__atlas','1');t.removeItem('__atlas');return null}catch(e){"
-    b"return s}};for(var n of ['localStorage','sessionStorage']){"
+    b"<script>(function(){var f=function(){var s={};"
+    b"Object.defineProperty(s,'length',{get:function(){return Object.keys(s).filter(function(k){return k!=='length'&&k!=='getItem'&&k!=='setItem'&&k!=='removeItem'&&k!=='clear'&&k!=='key'}).length}});"
+    b"s.getItem=function(k){return Object.prototype.hasOwnProperty.call(s,k)?s[k]:null};"
+    b"s.setItem=function(k,v){s[k]=String(v)};s.removeItem=function(k){delete s[k]};"
+    b"s.clear=function(){Object.keys(s).forEach(function(k){if(k!=='length'&&k!=='getItem'&&k!=='setItem'&&k!=='removeItem'&&k!=='clear'&&k!=='key')delete s[k]})};"
+    b"s.key=function(i){return Object.keys(s).filter(function(k){return k!=='length'&&k!=='getItem'&&k!=='setItem'&&k!=='removeItem'&&k!=='clear'&&k!=='key'})[i]||null};return s};"
+    b"for(var n of ['localStorage','sessionStorage']){"
     b"try{window[n].getItem('__atlas')}catch(e){"
-    b"(function(){var s=f(window[n]);Object.defineProperty(window,n,{value:s})})()}}})();</script>"
+    b"Object.defineProperty(window,n,{value:f()})}}})();</script>"
 )
 
 
