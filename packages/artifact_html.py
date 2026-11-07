@@ -63,6 +63,12 @@ NAVIGATION_API_PATTERNS = (
     "location.reload(",
 )
 
+DIALOG_API_PATTERNS = (
+    "alert(",
+    "confirm(",
+    "prompt(",
+)
+
 EXTERNAL_URL_PATTERN = re.compile(
     r"(?:https?|wss?)://[^\s'\"<>]+|(?<![\w:/])//[^\s'\"<>]+", re.IGNORECASE
 )
@@ -199,6 +205,8 @@ class _Validator(html.parser.HTMLParser):
             self._find_script_problem(text, pattern, "network_api")
         for pattern in NAVIGATION_API_PATTERNS:
             self._find_script_problem(text, pattern, "navigation_api")
+        for pattern in DIALOG_API_PATTERNS:
+            self._find_script_problem(text, pattern, "dialog_api")
         for match in EXTERNAL_URL_PATTERN.finditer(text):
             if match.group(0) not in ALLOWED_NAMESPACES:
                 self._add_script_problem(match.start(), "external_reference")
