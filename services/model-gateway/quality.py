@@ -43,6 +43,7 @@ from packages.tool_history import (
 from packages.profiles import PROFILES
 from packages.evidence import estimated_tokens
 from packages.images import image_info
+from provider_settings import REASONING_EFFORTS
 from serverless import REASONING_OUTPUT_TOKENS, ServerlessPolicy, classify_task
 
 
@@ -474,7 +475,11 @@ async def stream_quality(
             update={
                 "reasoning_effort": "none"
                 if index or request.reasoning_disabled
-                else policy.efforts.get(model, "none")
+                else min(
+                    policy.efforts.get(model, "none"),
+                    request.reasoning_ceiling or "high",
+                    key=REASONING_EFFORTS.index,
+                )
             }
         )
         if current.reasoning_effort != "none":

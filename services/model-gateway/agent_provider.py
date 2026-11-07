@@ -97,6 +97,9 @@ class AgentRequest(BaseModel):
     reasoning_effort: Literal["none", "low", "medium", "high"] = Field(
         default="none", exclude_if=lambda value: value == "none"
     )
+    reasoning_ceiling: Literal["none", "low", "medium", "high"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     # Set by the orchestrator once a reasoning recovery happened: the following
     # turns of the same answer must not restart the reasoning that already failed.
     reasoning_disabled: bool = Field(
@@ -149,6 +152,7 @@ class AgentRequest(BaseModel):
                 or self.max_tokens != 2048
                 or self.budget_eur is not None
                 or self.reasoning_effort == "high"
+                or self.reasoning_ceiling is not None
             ):
                 raise ValueError("invalid_legacy_profile")
             self.reasoning_effort = "none"
