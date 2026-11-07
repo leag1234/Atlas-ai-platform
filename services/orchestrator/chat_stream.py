@@ -196,6 +196,13 @@ def response(
                     }
                     | drawing_references(item)
                     | {
+                        f"/api/atlas/artifacts/{artifact['id']}/versions/"
+                        f"{artifact['version']}/{action}"
+                        for artifact in item.artifacts
+                        if "id" in artifact and "version" in artifact
+                        for action in ("open", "download")
+                    }
+                    | {
                         str(chunk["source"])
                         for chunk in item.chunks_recuperes
                         if chunk.get("source")

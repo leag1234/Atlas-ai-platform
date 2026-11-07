@@ -78,6 +78,14 @@ from services.orchestrator.image_tool import (
     unavailable_reply,
 )
 from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
+from services.orchestrator import artifact_store
+from packages.artifact_intent import app_intent
+from services.orchestrator.artifact_tools import (
+    ArtifactToolRuntime,
+    compose_answer,
+    current_artifact_message,
+    declarations as artifact_declarations,
+)
 from services.orchestrator.appearance import (
     is_appearance_request,
     is_simple_drawing_request,
@@ -243,6 +251,7 @@ class ChatTools(Runtime):
         self.shopping_searches: dict[str, list[Message]] = {}
         self.model: GatewayModel | None = None
         self.terminal = None
+        self.artifacts: ArtifactToolRuntime | None = None
         if os.environ.get("ATLAS_TERMINAL_ENABLED") == "1":
             from services.orchestrator.terminal_client import TerminalClient
 
@@ -272,8 +281,18 @@ class ChatTools(Runtime):
                 urls.append(arguments["url"])
         except (ValueError, AttributeError):
             pass
-        if sink:
+        if sink and call.name != "create_artifact":
             await sink({"phase": "tool_started", "tool": call.name, "urls": urls})
+        if call.name == "create_artifact":
+            if self.artifacts is None:
+                return {"error": "tool_unavailable"}
+            try:
+                return dict(await self.artifacts.execute(call, timeout))
+            except ValidationError as exc:
+                return {
+                    "error": "invalid_arguments",
+                    "message": describe_validation(exc),
+                }
         if call.name in {"terminal_command", "publish_document"}:
             from services.orchestrator.terminal_client import Command, Publish
 
@@ -1032,6 +1051,32 @@ async def _process(
 ) -> None:
     from services.orchestrator.person_lookup import person_name, lookup
 
+    artifact_history: list[dict[str, object]] = [
+        {"role": message.role, "content": message.text} for message in request.messages
+    ]
+    artifact_eligible = (
+        os.environ.get("ATLAS_ARTIFACTS") == "1"
+        and not request.continuation
+        and not request.has_attachments
+        and not any(message.images for message in request.messages)
+    )
+    artifact_current = (
+        current_artifact_message(
+            artifact_history, getattr(request, "daily_user", "unknown")
+        )
+        if artifact_eligible
+        else None
+    )
+    artifact_intent = (
+        app_intent(request.user_text, artifact_history) if artifact_eligible else None
+    )
+    if (
+        artifact_eligible
+        and artifact_current is not None
+        and "dessine" in request.user_text.casefold()
+    ):
+        artifact_intent = "modify"
+
     if (
         not request.continuation
         and not request.has_attachments
@@ -1044,6 +1089,8 @@ async def _process(
         tools.daily_lang = request.lang
         await lookup(request, item, tools, name)
         return
+    if artifact_intent is not None:
+        item.task_type = "artifact"
     technical_diagram = not request.continuation and diagram.requested(
         request.user_text
     )
@@ -1052,6 +1099,7 @@ async def _process(
     )
     if (
         images_enabled()
+        and artifact_intent is None
         and not technical_diagram
         and not is_spatial_drawing_request(request.user_text)
         and not explaining_image
@@ -1110,7 +1158,7 @@ async def _process(
 
     if not request.continuation and not request.has_attachments:
         visual_calls = strategy(request.user_text)
-        if visual_calls:
+        if visual_calls and artifact_intent is None:
             await finish_visual(request, item, visual_calls)
             return
     drawing = (
@@ -1121,14 +1169,19 @@ async def _process(
             or (not images_enabled() and not explicit_image_request(request.user_text))
         )
         and is_simple_drawing_request(request.user_text)
+        and artifact_intent is None
     )
-    if drawing:
+    if drawing and artifact_intent is None:
         request = request.model_copy(
             update={"lang": simple_drawing_language(request.user_text, request.lang)}
         )
         await _process_simple_drawing(request, item)
         return
-    if not images_enabled() and explicit_image_request(request.user_text):
+    if (
+        not images_enabled()
+        and artifact_intent is None
+        and explicit_image_request(request.user_text)
+    ):
         item.reponse, item.state, item.task_type = (
             unavailable_reply(request.lang),
             "done",
@@ -1229,7 +1282,7 @@ async def _process(
             vision_item.reponse,
             Decimal(str(vision_item.cout_eur)),
         )
-    elif images_in_history and not request.has_attachments:
+    elif images_in_history and not request.has_attachments and artifact_intent is None:
         await process_vision(request, item)
         return
     started = time.monotonic()
@@ -1239,6 +1292,8 @@ async def _process(
     )
     if followup and os.environ.get("ATLAS_TERMINAL_ENABLED") != "1":
         model.tools = []
+    elif artifact_intent is not None:
+        model.tools.extend(artifact_declarations())
     elif (
         not appearance
         and not technical_diagram
@@ -1286,6 +1341,11 @@ async def _process(
     from packages.file_intent import produces_file, requests_file_delivery
 
     produces_files = produces_file(request.user_text)
+    artifact_turn = artifact_intent is not None
+    produces_files = produces_files or artifact_turn
+    artifact_cost = Decimal(
+        "0.30" if request.has_attachments or produces_files else "0.10"
+    )
     from packages.file_intent import edits_attachment
 
     # Editing an attached file means returning it: keep the file tools (J43).
@@ -1321,17 +1381,20 @@ async def _process(
         model.tools = []
     model.configure_quality(
         request.model,
-        request.max_tokens,
+        int(os.environ.get("ATLAS_ARTIFACT_MAX_TOKENS", "16000"))
+        if artifact_intent is not None
+        else request.max_tokens,
         has_attachments=request.has_attachments,
         produces_files=produces_files,
     )
+    if artifact_intent == "create":
+        model.required_file_tool = "create_artifact"
     model.cost_ceiling = cost_limit
     model.spent = image_cost
     item.reasoning_effort = request.reasoning_effort
     model.local_enabled = os.environ.get("GPU_LOCAL", "0") == "1"
-    item.cout_eur = (
-        0.30 if request.has_attachments or produces_files else 0.10
-    )  # Reserved until ledger returns.
+    item.cout_eur = 0.30 if request.has_attachments or produces_files else 0.10
+    # Reserved until ledger returns.
     tools = ChatTools(
         item,
         request.user_text,
@@ -1361,6 +1424,29 @@ async def _process(
         if tools.skills.entries and not appearance:
             model.tools = offer(model.tools, tools.skills.declaration())
     tools.model = model
+    if artifact_intent is not None:
+        current = artifact_current.get("current_artifact") if artifact_current else None
+        current_artifact_id = (
+            str(current.get("artifact_id"))
+            if isinstance(current, dict) and current.get("artifact_id") is not None
+            else None
+        )
+        current_version = (
+            int(current["version"])
+            if isinstance(current, dict) and current.get("version") is not None
+            else None
+        )
+        tools.artifacts = ArtifactToolRuntime(
+            getattr(request, "daily_user", "unknown"),
+            item.request_id,
+            current_artifact_id,
+            current_version,
+        )
+        if artifact_intent != "create":
+            tools.artifacts.forced = False
+        sink = sink_context.get()
+        if sink:
+            await sink({"phase": "tool_started", "tool": "create_artifact", "urls": []})
     tools.terminal_code_disabled = structured_presentation
     file_context = ""
     terminal_error = ""
@@ -1438,6 +1524,8 @@ async def _process(
     attachment_history: list[dict[str, object]] = [
         {"role": m.role, "content": m.text} for m in request.messages[:-1]
     ]
+    if artifact_current is not None:
+        attachment_history.append(dict(artifact_current))
     if image_context is not None:
         attachment_history.append(
             {
@@ -1489,6 +1577,7 @@ async def _process(
             + (Path("prompts/followup.txt").read_text() if followup else "")
             + language_instruction(request.lang)
             + (instruction() if links else "")
+            + (Path("prompts/artifact.txt").read_text() if artifact_intent else "")
             + (policy_instruction() if image_discussion else "")
             + extended_instruction()
             + (guest_capability_instruction() if not images_enabled() else "")
@@ -1505,11 +1594,7 @@ async def _process(
                 profile=request.model,
                 tool_calls=0 if appearance else max(0, 10 - len(attachment_sources)),
                 tokens=None,
-                cost=cost_limit
-                if cost_limit is not None
-                else Decimal(
-                    "0.30" if request.has_attachments or produces_files else "0.10"
-                ),
+                cost=cost_limit if cost_limit is not None else artifact_cost,
                 has_attachments=request.has_attachments,
                 produces_files=produces_files,
                 wall_clock=max(
@@ -1529,9 +1614,13 @@ async def _process(
             else None,
             retry_web=True,
             initial_calls=discovery,
-            terminal_tools=frozenset({"generate_image"})
-            if not followup
-            else frozenset(),
+            terminal_tools=(
+                frozenset({"generate_image", "create_artifact"})
+                if artifact_turn
+                else frozenset({"generate_image"})
+                if not followup
+                else frozenset()
+            ),
         )
         if (
             appearance
@@ -1561,11 +1650,7 @@ async def _process(
                 model,
                 tools,
                 started,
-                cost_limit
-                if cost_limit is not None
-                else Decimal(
-                    "0.30" if request.has_attachments or produces_files else "0.10"
-                ),
+                cost_limit if cost_limit is not None else artifact_cost,
                 request.timeout_seconds
                 if wall_clock_limit is None
                 else wall_clock_limit,
@@ -1846,6 +1931,47 @@ async def _process(
             result.state,
             float(result.cost + image_cost),
         )
+        artifact_success = None
+        for event in reversed(result.trace):
+            output = event.get("output")
+            if (
+                event.get("tool") == "create_artifact"
+                and isinstance(output, dict)
+                and output.get("ok") is True
+            ):
+                artifact_success = event
+                break
+        if (
+            artifact_turn
+            and artifact_success is not None
+            and tools.artifacts is not None
+            and tools.artifacts.current_artifact_id is not None
+            and tools.artifacts.current_version is not None
+        ):
+            arguments = json.loads(str(artifact_success.get("arguments", "{}")))
+            stored = artifact_store.read(
+                tools.artifacts.current_artifact_id,
+                tools.artifacts.identity,
+                tools.artifacts.current_version,
+            )
+            item.reponse = compose_answer(
+                result.text,
+                str(arguments.get("summary", "")),
+                tools.artifacts.current_artifact_id,
+                tools.artifacts.current_version,
+                str(arguments.get("title", "")),
+                str(arguments.get("filename", "")),
+                request.lang,
+            )
+            item.artifacts = [
+                {
+                    "id": tools.artifacts.current_artifact_id,
+                    "version": tools.artifacts.current_version,
+                    "bytes": stored.size_bytes,
+                    "sha256": stored.sha256,
+                }
+            ]
+            item.latence_ms["artifact_ready"] = (time.monotonic() - started) * 1000
         if notice and model.sink:
             await model.sink({"delta": {"content": "\n\n" + notice}})
         if tools.terminal is not None:
