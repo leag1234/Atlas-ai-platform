@@ -6,10 +6,16 @@
 </head>
 <body>
   <h1>Storage probe</h1>
+  <p id="marker">Storage fixture ready</p>
+  <button id="run" type="button">Run</button>
+  <p id="result">not-run</p>
   <script>
-    localStorage.setItem("score", "42");
-    document.body.dataset.score = localStorage.getItem("score");
-    location.href = "about:blank";
+    document.getElementById("run").addEventListener("click", () => {
+      localStorage.setItem("score", "42");
+      document.body.dataset.score = localStorage.getItem("score");
+      document.getElementById("result").textContent = "allowed";
+      location.href = "about:blank";
+    });
   </script>
 </body>
 </html>
