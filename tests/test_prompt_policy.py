@@ -102,6 +102,10 @@ class PromptPolicyTests(unittest.TestCase):
         self.assertIn("create_artifact is available", prompt)
         self.assertIn("ONE self-contained HTML file", prompt)
         self.assertIn("No CDN, no external URL", prompt)
+        self.assertIn(
+            "Never use alert, confirm or prompt; show messages, game over and questions inside the page",
+            prompt,
+        )
         self.assertIn("Interface language: the user's language", prompt)
         self.assertIn("identifiers and comments stay in English", prompt)
         self.assertIn("If the result is artifact_invalid", prompt)
