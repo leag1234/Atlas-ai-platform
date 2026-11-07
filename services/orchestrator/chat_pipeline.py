@@ -1056,13 +1056,14 @@ async def _process(
     ]
     artifact_eligible = (
         os.environ.get("ATLAS_ARTIFACTS") == "1"
+        and bool(getattr(request, "artifact_owner", ""))
         and not request.continuation
         and not request.has_attachments
         and not any(message.images for message in request.messages)
     )
     artifact_current = (
         current_artifact_message(
-            artifact_history, getattr(request, "daily_user", "unknown")
+            artifact_history, getattr(request, "artifact_owner", "")
         )
         if artifact_eligible
         else None
@@ -1439,7 +1440,7 @@ async def _process(
             else None
         )
         tools.artifacts = ArtifactToolRuntime(
-            getattr(request, "daily_user", "unknown"),
+            getattr(request, "artifact_owner", ""),
             item.request_id,
             current_artifact_id,
             current_version,
