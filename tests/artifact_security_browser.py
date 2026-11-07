@@ -10,7 +10,7 @@ import time
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from urllib.parse import quote
 
 from playwright.sync_api import Browser, BrowserContext, Page, Response, sync_playwright
@@ -147,7 +147,6 @@ def open_side_view(page: Page, artifact: dict[str, int | str], title: str) -> No
     }
     page.evaluate("descriptor => window.atlasSideView.open(descriptor)", descriptor)
     frame = page.frame_locator(".atlas-side-frame")
-    frame.locator("body").wait_for(timeout=10000)
     frame.locator("#marker").wait_for(timeout=10000)
 
 
@@ -162,9 +161,12 @@ def frame_result(page: Page) -> str:
 
 
 def frame_state(page: Page) -> dict[str, Any]:
-    frame = page.frames[-1]
-    state: dict[str, Any] = frame.evaluate("window.__atlasSecurity")
-    return state
+    state = (
+        page.frame_locator(".atlas-side-frame")
+        .locator("#result")
+        .evaluate("() => window.__atlasSecurity")
+    )
+    return cast(dict[str, Any], state)
 
 
 def assert_no_attacker_hits(attacker: AttackerServer, label: str) -> None:
@@ -185,7 +187,7 @@ def assert_network_security(page: Page, attacker: AttackerServer) -> None:
 
 
 def click_network_controls(page: Page, attacker: AttackerServer) -> None:
-    frame = page.frames[-1]
+    frame = page.frame_locator(".atlas-side-frame")
     frame.locator("#submit-form").click(timeout=2000)
     frame.locator("#top-link").click(timeout=2000)
     frame.locator("#blank-link").click(timeout=2000)
@@ -230,6 +232,8 @@ def assert_tab_network(tab: Page, attacker: AttackerServer) -> None:
     tab.wait_for_timeout(500)
     result = tab.locator("#result").inner_text()
     assert result == "blocked:", result
+    state = tab.evaluate("window.__atlasSecurity")
+    assert state["access"] == EXPECTED_ACCESS, state
     assert_no_attacker_hits(attacker, "open-in-tab network")
     assert len(tab.context.pages) == 2, "a tab popup was opened"
 
@@ -255,18 +259,20 @@ def assert_refusals(page: Page, artifact: dict[str, int | str]) -> None:
 
 def assert_stopped_notice(page: Page, attacker: AttackerServer, path: str) -> None:
     run_fixture(page)
-    assert frame_result(page) == "allowed:", frame_result(page)
+    assert frame_result(page) == "allowed", frame_result(page)
     page.wait_for_timeout(2000)
     assert attacker.count(path) == 1, (path, dict(attacker.hits))
-    assert page.locator(".atlas-side-stopped").is_visible()
+    stopped = page.locator(".atlas-side-stopped")
+    stopped.wait_for(timeout=5000)
+    assert stopped.is_visible()
 
 
 def assert_storage_shim(page: Page, artifact: dict[str, int | str]) -> None:
-    frame = page.frames[-1]
+    frame = page.frame_locator(".atlas-side-frame")
     expect_heading(frame)
     run_fixture(page)
     assert frame.locator("body").get_attribute("data-score") == "42"
-    assert frame_result(page) == "allowed:", frame_result(page)
+    assert frame_result(page) == "allowed", frame_result(page)
     page.get_by_role("button", name="Restart app").click()
     restarted_frame = page.frame_locator(".atlas-side-frame")
     restarted_frame.locator("h1").wait_for(timeout=5000)
