@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import tempfile
 import unittest
@@ -107,25 +108,55 @@ class ArtifactToolsTests(unittest.TestCase):
         assert reference is not None
         self.assertEqual(reference.title, "Open Snake")
         current = current_artifact_message(messages, "user@example.test")
+        assert current is not None
         self.assertEqual(
-            current,
+            current.message,
             {
-                "current_artifact": {
-                    "artifact_id": artifact_id,
-                    "version": 1,
-                    "title": "Open Snake",
-                    "filename": "snake.html",
-                    "content": HTML,
-                }
+                "role": "system",
+                "content": (
+                    "Current app (update it with create_artifact and its "
+                    "artifact_id): "
+                    + json.dumps(
+                        {
+                            "current_artifact": {
+                                "artifact_id": artifact_id,
+                                "version": 1,
+                                "title": "Open Snake",
+                                "filename": "snake.html",
+                                "content": HTML,
+                            }
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
             },
         )
         self.assertEqual(
-            current_artifact_message(messages, "other@example.test"),
+            current.artifact,
             {
-                "current_artifact": None,
-                "note": "previous app no longer stored (30-day retention)",
+                "artifact_id": artifact_id,
+                "version": 1,
+                "title": "Open Snake",
+                "filename": "snake.html",
+                "content": HTML,
             },
         )
+        missing = current_artifact_message(messages, "other@example.test")
+        assert missing is not None
+        self.assertEqual(
+            missing.message,
+            {
+                "role": "system",
+                "content": json.dumps(
+                    {
+                        "current_artifact": None,
+                        "note": "previous app no longer stored (30-day retention)",
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        )
+        self.assertIsNone(missing.artifact)
 
     def test_current_artifact_omits_oversized_source(self) -> None:
         large = "<html><body>" + ("x" * 100000) + "</body></html>"
@@ -142,7 +173,7 @@ class ArtifactToolsTests(unittest.TestCase):
         ]
         current = current_artifact_message(messages, "user@example.test")
         assert current is not None
-        artifact = current["current_artifact"]
+        artifact = current.artifact
         assert isinstance(artifact, dict)
         self.assertNotIn("content", artifact)
         self.assertEqual(artifact["note"], "source too large to include")

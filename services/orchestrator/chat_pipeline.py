@@ -1428,15 +1428,16 @@ async def _process(
             model.tools = offer(model.tools, tools.skills.declaration())
     tools.model = model
     if artifact_intent is not None:
-        current = artifact_current.get("current_artifact") if artifact_current else None
+        current = artifact_current.artifact if artifact_current else None
         current_artifact_id = (
             str(current.get("artifact_id"))
             if isinstance(current, dict) and current.get("artifact_id") is not None
             else None
         )
         current_version = (
-            int(current["version"])
-            if isinstance(current, dict) and current.get("version") is not None
+            int(version)
+            if isinstance(current, dict)
+            and isinstance((version := current.get("version")), int)
             else None
         )
         tools.artifacts = ArtifactToolRuntime(
@@ -1528,7 +1529,7 @@ async def _process(
         {"role": m.role, "content": m.text} for m in request.messages[:-1]
     ]
     if artifact_current is not None:
-        attachment_history.append(dict(artifact_current))
+        attachment_history.append(dict(artifact_current.message))
     if image_context is not None:
         attachment_history.append(
             {

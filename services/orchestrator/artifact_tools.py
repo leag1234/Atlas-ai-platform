@@ -113,6 +113,17 @@ class ArtifactReference:
     title: str
 
 
+@dataclass(frozen=True)
+class CurrentArtifact:
+    message: Message
+    artifact: dict[str, object] | None
+
+
+CURRENT_ARTIFACT_PREFIX = (
+    "Current app (update it with create_artifact and its artifact_id): "
+)
+
+
 def parse_history_reference(messages: list[Message]) -> ArtifactReference | None:
     reference: ArtifactReference | None = None
     for message in messages[:-1]:
@@ -132,7 +143,7 @@ def parse_history_reference(messages: list[Message]) -> ArtifactReference | None
 
 def current_artifact_message(
     messages: list[Message], identity: str | None
-) -> Message | None:
+) -> CurrentArtifact | None:
     reference = parse_history_reference(messages)
     if reference is None:
         return None
@@ -141,10 +152,19 @@ def current_artifact_message(
             reference.artifact_id, identity, reference.version
         )
     except ArtifactError:
-        return {
-            "current_artifact": None,
-            "note": "previous app no longer stored (30-day retention)",
-        }
+        return CurrentArtifact(
+            {
+                "role": "system",
+                "content": json.dumps(
+                    {
+                        "current_artifact": None,
+                        "note": "previous app no longer stored (30-day retention)",
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+            None,
+        )
     artifact: dict[str, object] = {
         "artifact_id": version.artifact_id,
         "version": version.version,
@@ -155,7 +175,14 @@ def current_artifact_message(
         artifact["content"] = version.content.decode("utf-8")
     else:
         artifact["note"] = "source too large to include"
-    return {"current_artifact": artifact}
+    return CurrentArtifact(
+        {
+            "role": "system",
+            "content": CURRENT_ARTIFACT_PREFIX
+            + json.dumps({"current_artifact": artifact}, ensure_ascii=False),
+        },
+        artifact,
+    )
 
 
 def clean_summary(summary: str) -> str:

@@ -269,12 +269,24 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             run, _ = await self.process(
                 self.request("Dessine le bouton en rouge.", history),
                 Result("Changed.", "done", cost=Decimal("0.01")),
+                artifact_owner="user@example.test",
             )
         model = run.call_args.args[1]
         self.assertIn(
             "create_artifact", [tool["function"]["name"] for tool in model.tools]
         )
-        self.assertIn("current_artifact", run.call_args.kwargs["history"][-1])
+        history = run.call_args.kwargs["history"]
+        self.assertTrue(
+            all(
+                isinstance(message, dict)
+                and message.get("role") is not None
+                and message.get("content") is not None
+                for message in history
+            )
+        )
+        self.assertEqual(history[-1]["role"], "system")
+        self.assertIn("current_artifact", str(history[-1]["content"]))
+        self.assertIn(artifact_id, str(history[-1]["content"]))
 
     async def test_dessine_reaches_tool_loop_with_current_artifact_images_disabled(
         self,
@@ -295,12 +307,24 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             run, _ = await self.process(
                 self.request("Dessine le bouton en rouge.", history),
                 Result("Changed.", "done", cost=Decimal("0.01")),
+                artifact_owner="user@example.test",
             )
         model = run.call_args.args[1]
         self.assertIn(
             "create_artifact", [tool["function"]["name"] for tool in model.tools]
         )
-        self.assertIn("current_artifact", run.call_args.kwargs["history"][-1])
+        history = run.call_args.kwargs["history"]
+        self.assertTrue(
+            all(
+                isinstance(message, dict)
+                and message.get("role") is not None
+                and message.get("content") is not None
+                for message in history
+            )
+        )
+        self.assertEqual(history[-1]["role"], "system")
+        self.assertIn("current_artifact", str(history[-1]["content"]))
+        self.assertIn(artifact_id, str(history[-1]["content"]))
 
     async def test_daily_reservation_remains_text_ceiling(self) -> None:
         from decimal import Decimal
