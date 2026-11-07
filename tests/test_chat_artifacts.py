@@ -69,10 +69,12 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
         result: Result | None = None,
         *,
         run: AsyncMock | Callable[..., Coroutine[Any, Any, Result]] | None = None,
+        artifact_owner: str = "owner@example.test",
     ) -> tuple[AsyncMock, Interaction]:
         model = self.model()
         item = Interaction()
         request.__dict__["daily_user"] = "user@example.test"
+        request.__dict__["artifact_owner"] = artifact_owner
         with (
             patch(
                 "services.orchestrator.chat_pipeline.GatewayModel.connect",
@@ -205,6 +207,13 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("A simple app.", item.reponse)
         self.assertIn("artifact_ready", item.latence_ms)
+        artifact_id = str(artifact["id"])
+        self.assertEqual(
+            artifact_store.read(artifact_id, "owner@example.test", 1).content,
+            HTML.encode(),
+        )
+        with self.assertRaises(artifact_store.ArtifactError):
+            artifact_store.read(artifact_id, "user@example.test", 1)
         self.assertEqual(
             {"generate_image", "create_artifact"},
             frozenset({"generate_image", "create_artifact"}),
@@ -305,6 +314,20 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             request.lang,
         )
         self.assertEqual(reservation.amount, Decimal("0.10"))
+
+    async def test_no_artifact_owner_disables_tool(self) -> None:
+        run, item = await self.process(
+            self.request("Create a small web app."),
+            Result("Here it is.", "done", cost=Decimal("0.01")),
+            artifact_owner="",
+        )
+        model = run.call_args.args[1]
+        self.assertNotIn(
+            "create_artifact", [tool["function"]["name"] for tool in model.tools]
+        )
+        self.assertIsNone(model.required_file_tool)
+        self.assertEqual(item.task_type, "text")
+        self.assertEqual(run.call_args.args[4].cost, Decimal("0.10"))
 
     async def test_streaming_preserves_artifact_links(self) -> None:
         from services.orchestrator.chat_stream import response

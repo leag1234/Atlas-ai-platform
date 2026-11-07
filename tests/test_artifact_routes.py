@@ -18,6 +18,7 @@ import time
 from collections import Counter
 
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from services.orchestrator import artifact_store
 from services.orchestrator.artifact_routes import (
@@ -80,7 +81,7 @@ class ArtifactRouteTests(unittest.TestCase):
     def preview_url(self, token: str, filename: str = "probe.html") -> str:
         return f"/api/atlas/preview/{token}/{quote(filename, safe='')}"
 
-    def assert_preview_headers(self, response: TestClient) -> None:
+    def assert_preview_headers(self, response: Response) -> None:
         self.assertEqual(
             response.headers["content-security-policy"], PREVIEW_CSP + "'self'"
         )
