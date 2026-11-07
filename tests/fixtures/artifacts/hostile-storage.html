@@ -9,12 +9,13 @@
   <p id="marker">Storage fixture ready</p>
   <button id="run" type="button">Run</button>
   <p id="result">not-run</p>
+  <p id="stored"></p>
   <script>
+    document.getElementById("stored").textContent = String(localStorage.getItem("score"));
     document.getElementById("run").addEventListener("click", () => {
       localStorage.setItem("score", "42");
       document.body.dataset.score = localStorage.getItem("score");
       document.getElementById("result").textContent = "allowed";
-      location.href = "about:blank";
     });
   </script>
 </body>

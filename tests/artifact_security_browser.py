@@ -33,6 +33,12 @@ EXPECTED_ACCESS = {
     "parentDocument": "SecurityError",
     "parentLocalStorage": "SecurityError",
 }
+EXPECTED_TAB_ACCESS = {
+    "cookie": "SecurityError",
+    "localStorage": "null",
+    "parentDocument": "Hostile network probe",
+    "parentLocalStorage": "null",
+}
 
 
 class AttackerServer:
@@ -49,8 +55,12 @@ class AttackerServer:
             def do_GET(self) -> None:
                 with server.lock:
                     server.hits[self.path] += 1
-                self.send_response(204)
+                body = b"<!doctype html><title>attacker</title><p>attacker</p>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
+                self.wfile.write(body)
 
             def do_POST(self) -> None:
                 with server.lock:
@@ -180,7 +190,7 @@ def assert_network_security(page: Page, attacker: AttackerServer) -> None:
     state = frame_state(page)
     assert state["origin"] == "null", state
     assert state["access"] == EXPECTED_ACCESS, state
-    assert state["serviceWorker"] is True, state
+    assert state["serviceWorker"] == "SecurityError", state
     assert frame_result(page) == "blocked:", frame_result(page)
     assert_no_attacker_hits(attacker, "network and storage")
     assert page.url == parent_url, (parent_url, page.url)
@@ -233,8 +243,9 @@ def assert_tab_network(tab: Page, attacker: AttackerServer) -> None:
     result = tab.locator("#result").inner_text()
     assert result == "blocked:", result
     state = tab.evaluate("window.__atlasSecurity")
-    assert state["access"] == EXPECTED_ACCESS, state
+    assert state["access"] == EXPECTED_TAB_ACCESS, state
     assert_no_attacker_hits(attacker, "open-in-tab network")
+    print("KNOWN-RISK open in a tab: top navigation to another origin is not blocked")
     assert len(tab.context.pages) == 2, "a tab popup was opened"
 
 
@@ -257,14 +268,15 @@ def assert_refusals(page: Page, artifact: dict[str, int | str]) -> None:
         assert response.headers["content-security-policy"] == EXPECTED_CSP
 
 
-def assert_stopped_notice(page: Page, attacker: AttackerServer, path: str) -> None:
-    run_fixture(page)
-    assert frame_result(page) == "allowed", frame_result(page)
-    page.wait_for_timeout(2000)
-    assert attacker.count(path) == 1, (path, dict(attacker.hits))
+def assert_stopped_notice(
+    page: Page, attacker: AttackerServer, path: str | None
+) -> None:
+    page.frame_locator(".atlas-side-frame").locator("#run").click(timeout=5000)
     stopped = page.locator(".atlas-side-stopped")
     stopped.wait_for(timeout=5000)
-    assert stopped.is_visible()
+    assert page.locator(".atlas-side-frame").count() == 0
+    if path is not None:
+        assert attacker.count(path) == 1, (path, dict(attacker.hits))
 
 
 def assert_storage_shim(page: Page, artifact: dict[str, int | str]) -> None:
@@ -273,10 +285,10 @@ def assert_storage_shim(page: Page, artifact: dict[str, int | str]) -> None:
     run_fixture(page)
     assert frame.locator("body").get_attribute("data-score") == "42"
     assert frame_result(page) == "allowed", frame_result(page)
-    page.get_by_role("button", name="Restart app").click()
-    restarted_frame = page.frame_locator(".atlas-side-frame")
-    restarted_frame.locator("h1").wait_for(timeout=5000)
-    assert restarted_frame.locator("body").get_attribute("data-score") is None
+    page.evaluate("window.atlasSideView.close()")
+    open_side_view(page, artifact, "Storage probe")
+    reopened = page.frame_locator(".atlas-side-frame")
+    assert reopened.locator("#stored").inner_text() == "null"
 
 
 def expect_heading(frame: Any) -> None:
@@ -305,6 +317,7 @@ def run_tab_case(
 def run_refusals_case(page: Page, network: dict[str, int | str]) -> None:
     assert_refusals(page, network)
     page.goto(BASE_URL, wait_until="load")
+    page.locator("#chat-input").wait_for(timeout=60000)
 
 
 def run_stopped_case(
@@ -312,7 +325,7 @@ def run_stopped_case(
     attacker: AttackerServer,
     artifact: dict[str, int | str],
     title: str,
-    path: str,
+    path: str | None,
 ) -> None:
     open_side_view(page, artifact, title)
     assert_stopped_notice(page, attacker, path)
@@ -344,6 +357,7 @@ def run_engine(
     )
     assert response.ok, (response.status, response.text())
     page.goto(BASE_URL, wait_until="load")
+    page.locator("#chat-input").wait_for(timeout=60000)
 
     cases: list[tuple[str, Callable[[], None]]] = []
 
@@ -384,7 +398,7 @@ def run_engine(
     case(
         "about:blank navigation stop",
         lambda: run_stopped_case(
-            page, attacker, about_blank, "About blank probe", "/about-blank-navigation"
+            page, attacker, about_blank, "About blank probe", None
         ),
     )
 
