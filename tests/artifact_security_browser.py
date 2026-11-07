@@ -10,7 +10,7 @@ import time
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 from playwright.sync_api import Browser, BrowserContext, Page, Response, sync_playwright
@@ -133,10 +133,21 @@ def open_link(artifact: dict[str, int | str], title: str) -> str:
 
 
 def open_side_view(page: Page, artifact: dict[str, int | str], title: str) -> None:
-    response = page.goto(BASE_URL + open_link(artifact, title), wait_until="load")
-    assert response is not None and response.status == 303, response and response.status
-    page.locator(".atlas-side-frame").wait_for(timeout=10000)
-    page.locator(".atlas-side-frame").wait_for(timeout=10000)
+    artifact_id = str(artifact["id"])
+    version = int(artifact["version"])
+    src = f"/api/atlas/artifacts/{artifact_id}/versions/{version}/open"
+    descriptor = {
+        "kind": "app",
+        "artifact": artifact_id,
+        "version": version,
+        "src": src,
+        "download": f"/api/atlas/artifacts/{artifact_id}/versions/{version}/download",
+        "title": title,
+        "slot": "top",
+    }
+    page.evaluate("descriptor => window.atlasSideView.open(descriptor)", descriptor)
+    frame = page.frame_locator(".atlas-side-frame")
+    frame.locator("body").wait_for(timeout=10000)
 
 
 def frame_state(page: Page) -> dict[str, Any]:
@@ -259,7 +270,54 @@ def expect_heading(frame: Any) -> None:
     frame.locator("h1").wait_for(timeout=5000)
 
 
-def run_engine(browser: Browser, attacker: AttackerServer, engine: str) -> None:
+def run_network_case(
+    page: Page, attacker: AttackerServer, network: dict[str, int | str]
+) -> None:
+    open_side_view(page, network, "Network probe")
+    assert_network_security(page, attacker)
+    click_network_controls(page, attacker)
+
+
+def run_tab_case(
+    context: BrowserContext,
+    page: Page,
+    attacker: AttackerServer,
+    network: dict[str, int | str],
+) -> None:
+    tab = open_in_tab(context, page, network)
+    assert_tab_network(tab, attacker)
+    tab.close()
+
+
+def run_refusals_case(page: Page, network: dict[str, int | str]) -> None:
+    assert_refusals(page, network)
+    page.goto(BASE_URL, wait_until="load")
+
+
+def run_stopped_case(
+    page: Page,
+    attacker: AttackerServer,
+    artifact: dict[str, int | str],
+    title: str,
+    path: str,
+) -> None:
+    open_side_view(page, artifact, title)
+    assert_stopped_notice(page, attacker, path)
+    page.evaluate("window.atlasSideView.close()")
+
+
+def run_storage_case(page: Page, storage: dict[str, int | str]) -> None:
+    open_side_view(page, storage, "Storage probe")
+    assert_storage_shim(page, storage)
+    page.evaluate("window.atlasSideView.close()")
+
+
+def run_engine(
+    browser: Browser,
+    attacker: AttackerServer,
+    engine: str,
+    failures: list[tuple[str, BaseException]],
+) -> None:
     attacker.reset()
     context = browser.new_context(
         viewport={"width": 1500, "height": 1000},
@@ -274,35 +332,57 @@ def run_engine(browser: Browser, attacker: AttackerServer, engine: str) -> None:
     assert response.ok, (response.status, response.text())
     page.goto(BASE_URL, wait_until="load")
 
+    cases: list[tuple[str, Callable[[], None]]] = []
+
+    def case(name: str, run: Callable[[], None]) -> None:
+        cases.append((name, run))
+
     network = seed("hostile-network.html", attacker.url)
-    open_side_view(page, network, "Network probe")
-    assert_network_security(page, attacker)
-    click_network_controls(page, attacker)
-
-    tab = open_in_tab(context, page, network)
-    assert_tab_network(tab, attacker)
-    tab.close()
-
-    assert_refusals(page, network)
-    page.goto(BASE_URL, wait_until="load")
+    case(
+        "S1-S12 mode (a)",
+        lambda: run_network_case(page, attacker, network),
+    )
+    case(
+        "open in a tab",
+        lambda: run_tab_case(context, page, attacker, network),
+    )
+    case(
+        "preview refusals",
+        lambda: run_refusals_case(page, network),
+    )
 
     navigation = seed("hostile-navigation.html", attacker.url)
-    open_side_view(page, navigation, "Navigation probe")
-    assert_stopped_notice(page, attacker, "/self-navigation")
-    page.evaluate("window.atlasSideView.close()")
+    case(
+        "self-navigation stop",
+        lambda: run_stopped_case(
+            page, attacker, navigation, "Navigation probe", "/self-navigation"
+        ),
+    )
 
     refresh = seed("hostile-refresh.html", attacker.url)
-    open_side_view(page, refresh, "Refresh probe")
-    assert_stopped_notice(page, attacker, "/meta-refresh")
-    page.evaluate("window.atlasSideView.close()")
+    case(
+        "meta-refresh stop",
+        lambda: run_stopped_case(
+            page, attacker, refresh, "Refresh probe", "/meta-refresh"
+        ),
+    )
 
     storage = seed("hostile-storage.html", attacker.url)
-    open_side_view(page, storage, "Storage probe")
-    assert_storage_shim(page, storage)
-    page.evaluate("window.atlasSideView.close()")
+    case(
+        "storage shim",
+        lambda: run_storage_case(page, storage),
+    )
 
-    context.close()
-    print(f"PASS {engine}: S1-S12 mode (a); S13 not run (T12 absent)")
+    try:
+        for name, run in cases:
+            try:
+                run()
+                print(f"PASS {engine}: {name}")
+            except BaseException as error:
+                failures.append((f"{engine}: {name}", error))
+                print(f"FAIL {engine}: {name}: {error}")
+    finally:
+        context.close()
 
 
 def engine_available(playwright: Any, engine: str) -> bool:
@@ -338,7 +418,7 @@ def main() -> None:
                     args=["--no-sandbox"] if engine == "chromium" else [],
                 )
                 try:
-                    run_engine(browser, attacker, engine)
+                    run_engine(browser, attacker, engine, failures)
                 except BaseException as error:
                     failures.append((engine, error))
                     print(f"FAIL {engine}: {error}")
