@@ -91,6 +91,9 @@ HISTORY_REFERENCE_PATTERN = re.compile(
 MAX_CURRENT_ARTIFACT_BYTES = 96 * 1024
 MAX_PROBLEMS = 10
 MAX_DETAIL_CHARS = 80
+PROBLEM_DETAILS = {
+    "dialog_api": "show the message inside the page",
+}
 
 
 def declarations() -> list[Message]:
@@ -277,11 +280,14 @@ class ArtifactToolRuntime:
                     {
                         "code": problem.code,
                         "line": problem.line,
-                        "detail": arguments.content.splitlines()[problem.line - 1][
-                            :MAX_DETAIL_CHARS
-                        ]
-                        if problem.line <= len(arguments.content.splitlines())
-                        else "",
+                        "detail": PROBLEM_DETAILS.get(
+                            problem.code,
+                            arguments.content.splitlines()[problem.line - 1][
+                                :MAX_DETAIL_CHARS
+                            ]
+                            if problem.line <= len(arguments.content.splitlines())
+                            else "",
+                        ),
                     }
                     for problem in problems[:MAX_PROBLEMS]
                 ],

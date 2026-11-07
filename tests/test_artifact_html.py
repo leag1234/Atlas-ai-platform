@@ -142,6 +142,23 @@ location = "https://example.test";
             ],
         )
 
+    def test_reports_dialog_api_patterns_with_lines(self) -> None:
+        content = """<html><body>
+<script>
+alert("Game over");
+window.confirm("Play again?");
+prompt("Name");
+</script>
+</body></html>"""
+        self.assertEqual(
+            validate(content),
+            [
+                Problem("dialog_api", 3),
+                Problem("dialog_api", 4),
+                Problem("dialog_api", 5),
+            ],
+        )
+
     def test_256_kib_document_validates_under_200_ms(self) -> None:
         block = "<p>Atlas self-contained artefact test data.</p>\n"
         content = (

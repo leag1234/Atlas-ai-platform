@@ -79,6 +79,31 @@ class ArtifactToolsTests(unittest.TestCase):
         self.assertEqual(second["error"], "artifact_rejected")
         self.assertFalse(runtime.offered)
 
+    def test_execute_reports_dialog_with_page_message_guidance(self) -> None:
+        content = "<html><body><script>alert('Game over');</script></body></html>"
+        arguments = {
+            "title": "Snake",
+            "filename": "snake.html",
+            "content": content,
+            "summary": "A simple game.",
+        }
+        runtime = ArtifactToolRuntime("user@example.test", "request-1")
+        first = asyncio.run(
+            runtime.execute(Call("call-1", "create_artifact", json.dumps(arguments)), 1)
+        )
+        assert isinstance(first, dict)
+        self.assertEqual(first["error"], "artifact_invalid")
+        self.assertEqual(
+            first["problems"],
+            [
+                {
+                    "code": "dialog_api",
+                    "line": 1,
+                    "detail": "show the message inside the page",
+                }
+            ],
+        )
+
     def test_execute_maps_store_errors_and_respects_current_id(self) -> None:
         runtime = ArtifactToolRuntime("user@example.test", "request-1")
         unknown = asyncio.run(runtime.execute(call(HTML, "0" * 32), 1))
