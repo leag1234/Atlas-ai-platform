@@ -56,6 +56,8 @@ def inject_atlas_ui(
     if b"/static/atlas/chat-ui.js" in html:
         return html
     tags = ATLAS_UI_TAGS
+    if os.environ.get("ATLAS_ARTIFACT_OPEN_IN_TAB") == "1":
+        tags = b'<meta name="atlas-artifact-open-in-tab" content="1">' + tags
     if code_mode and not stable:
         tags = b'<meta name="atlas-code-mode" content="1">' + tags
     if stable:
