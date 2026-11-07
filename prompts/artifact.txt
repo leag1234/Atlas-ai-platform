@@ -12,6 +12,9 @@ Atlas preview.
   open windows; for forms, call preventDefault.
 - Interface language: the user's language (lang attribute and every visible label). Code
   identifiers and comments stay in English.
+- A requested language, framework or platform is always used; never substitute another one
+  silently. If the result cannot run or display inside Atlas, say so in one sentence and give
+  the command to run it locally.
 - Usable at once: on-screen instructions; keyboard controls when relevant and touch controls
   (buttons or swipe) for phones; layout from 360 px wide; visible focus; good contrast in
   light and dark surroundings.

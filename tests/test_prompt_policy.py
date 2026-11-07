@@ -16,19 +16,21 @@ class PromptPolicyTests(unittest.TestCase):
         self.assertIn("identifiers and comments stay in English", prompt)
         self.assertIn("If the result is artifact_invalid", prompt)
 
-    def test_chat_agent_keeps_code_rules_and_adds_deliverable_defaults(self) -> None:
+    def test_artifact_prompt_keeps_deliverable_defaults(self) -> None:
+        prompt = Path("prompts/artifact.txt").read_text()
+        self.assertIn(
+            "A requested language, framework or platform is always used", prompt
+        )
+        self.assertIn("say so in one sentence and give", prompt)
+        self.assertIn("the command to run it locally", prompt)
+
+    def test_chat_agent_keeps_code_rules(self) -> None:
         prompt = Path("prompts/chat-agent.txt").read_text()
         self.assertIn("Generated code is always English", prompt)
         self.assertIn("visible labels remain French", prompt)
-        addition = "Code deliverables: a requested language, framework or platform is always used;"
-        self.assertIn(addition, prompt)
         self.assertGreater(
             prompt.index("visible labels remain French"),
             prompt.index("Generated code is always English"),
-        )
-        self.assertGreater(
-            prompt.index(addition),
-            prompt.index("visible labels remain French"),
         )
 
     def test_disposition_and_size(self) -> None:
