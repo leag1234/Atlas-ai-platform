@@ -18,7 +18,7 @@ import time
 from collections import Counter
 
 from fastapi.testclient import TestClient
-from httpx2 import Response
+from httpx import Response
 
 from services.orchestrator import artifact_store
 from services.orchestrator.artifact_routes import (
