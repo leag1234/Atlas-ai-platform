@@ -78,9 +78,9 @@
     const access = {};
     for (const [name, expression] of [
       ["cookie", "document.cookie"],
-      ["localStorage", "localStorage.atlas"],
+      ["localStorage", "localStorage.getItem(\"atlas\")"],
       ["parentDocument", "parent.document.title"],
-      ["parentLocalStorage", "parent.localStorage.atlas"],
+      ["parentLocalStorage", "parent.localStorage.getItem(\"atlas\")"],
     ]) {
       try {
         access[name] = String(eval(expression));
@@ -92,7 +92,13 @@
       attempts,
       access,
       origin: self.origin,
-      serviceWorker: navigator.serviceWorker !== undefined,
+      serviceWorker: (() => {
+        try {
+          return navigator.serviceWorker !== undefined;
+        } catch (error) {
+          return error.name;
+        }
+      })(),
     };
       setResult(true);
     }
