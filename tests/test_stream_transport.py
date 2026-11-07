@@ -277,9 +277,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(diagnostic["provider_error_type"], "invalid_request_error")
         self.assertEqual(diagnostic["provider_error_code"], "bad_shape")
         self.assertEqual(diagnostic["provider_error_param"], "tools")
-        self.assertEqual(
-            diagnostic["provider_error_message"], "The request shape is invalid."
-        )
+        self.assertNotIn("provider_error_message", diagnostic)
         self.assertEqual(diagnostic["request_model"], ServerlessPolicy().models["text"])
         self.assertEqual(diagnostic["request_messages"], 2)
         self.assertEqual(diagnostic["request_tools"], 1)
@@ -326,10 +324,87 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             "provider_error_type",
             "provider_error_code",
             "provider_error_param",
-            "provider_error_message",
         ):
             self.assertNotIn(field, diagnostic)
         self.assertNotIn("provider body", str(logs.output))
+        self.assertNotIn("private-question", str(logs.output))
+
+    async def test_http_400_detail_error_logs_filtered_identifiers_only(self) -> None:
+        from agent_provider import AgentRequest
+        from stream_transport import attempt
+
+        class ErrorContent(Content):
+            async def iter_chunked(self, size: int) -> AsyncIterator[bytes]:
+                yield (
+                    b'{"detail":{"type":"invalid_request_error","code":"bad_shape",'
+                    b'"param":"tools[0].function.name",'
+                    b'"message":"private-question sk-test-secret"}}'
+                )
+
+        session = Session()
+        session.response.status = 400
+        session.response.content = ErrorContent()
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.aiohttp.ClientSession", return_value=session),
+            self.assertLogs("stream_transport", level="WARNING") as logs,
+        ):
+            with self.assertRaises(RuntimeError):
+                _ = [
+                    event
+                    async for event in attempt(
+                        AgentRequest(
+                            messages=[{"role": "user", "content": "private-question"}],
+                            tools=[],
+                            timeout=5.0,
+                        ),
+                        ServerlessPolicy().models["text"],
+                        5.0,
+                    )
+                ]
+        diagnostic = json.loads(logs.records[0].getMessage())
+        self.assertEqual(diagnostic["provider_error_type"], "invalid_request_error")
+        self.assertEqual(diagnostic["provider_error_code"], "bad_shape")
+        self.assertEqual(diagnostic["provider_error_param"], "tools[0].function.name")
+        self.assertNotIn("provider_error_message", diagnostic)
+        self.assertNotIn("private-question", str(logs.output))
+        self.assertNotIn("sk-test-secret", str(logs.output))
+
+    async def test_http_400_rejects_unsafe_provider_identifiers(self) -> None:
+        from agent_provider import AgentRequest
+        from stream_transport import attempt
+
+        class ErrorContent(Content):
+            async def iter_chunked(self, size: int) -> AsyncIterator[bytes]:
+                yield (
+                    b'{"error":{"type":"invalid request","code":"x" * 81,'
+                    b'"param":"tools[0] private-question","message":"unsafe"}}'
+                )
+
+        session = Session()
+        session.response.status = 400
+        session.response.content = ErrorContent()
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.aiohttp.ClientSession", return_value=session),
+            self.assertLogs("stream_transport", level="WARNING") as logs,
+        ):
+            with self.assertRaises(RuntimeError):
+                _ = [
+                    event
+                    async for event in attempt(
+                        AgentRequest(
+                            messages=[{"role": "user", "content": "private-question"}],
+                            tools=[],
+                            timeout=5.0,
+                        ),
+                        ServerlessPolicy().models["text"],
+                        5.0,
+                    )
+                ]
+        diagnostic = json.loads(logs.records[0].getMessage())
+        for field in ("type", "code", "param", "message"):
+            self.assertNotIn(f"provider_error_{field}", diagnostic)
         self.assertNotIn("private-question", str(logs.output))
 
     async def test_answer_only_preserves_tool_schemas_at_http_boundary(self) -> None:

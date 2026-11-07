@@ -246,16 +246,18 @@ async def provider_rejection_details(
         return details
     if not isinstance(value, dict):
         return details
-    error = value.get("error")
-    if not isinstance(error, dict):
-        return details
-    for field in ("type", "code", "param"):
-        error_value = error.get(field)
-        if isinstance(error_value, (str, int, float, bool)) or error_value is None:
-            details[f"provider_error_{field}"] = error_value
-    message = error.get("message")
-    if isinstance(message, str):
-        details["provider_error_message"] = message[:200]
+    candidates = [value.get("error"), value.get("detail")]
+    for error in candidates:
+        if not isinstance(error, dict):
+            continue
+        for field in ("type", "code", "param"):
+            error_value = error.get(field)
+            if (
+                isinstance(error_value, str)
+                and re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,80}", error_value)
+                and f"provider_error_{field}" not in details
+            ):
+                details[f"provider_error_{field}"] = error_value
     return details
 
 
