@@ -242,10 +242,39 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
                 "content": f"/api/atlas/artifacts/{artifact_id}/versions/1/open",
             }
         ]
-        run, _ = await self.process(
-            self.request("Dessine le bouton en rouge.", history),
-            Result("Changed.", "done", cost=Decimal("0.01")),
+        with patch(
+            "services.orchestrator.chat_pipeline.images_enabled", return_value=True
+        ):
+            run, _ = await self.process(
+                self.request("Dessine le bouton en rouge.", history),
+                Result("Changed.", "done", cost=Decimal("0.01")),
+            )
+        model = run.call_args.args[1]
+        self.assertIn(
+            "create_artifact", [tool["function"]["name"] for tool in model.tools]
         )
+        self.assertIn("current_artifact", run.call_args.kwargs["history"][-1])
+
+    async def test_dessine_reaches_tool_loop_with_current_artifact_images_disabled(
+        self,
+    ) -> None:
+        created = artifact_store.create(
+            "user@example.test", "Runner", "runner.html", HTML.encode(), "request-1"
+        )
+        artifact_id = str(created["id"])
+        history = [
+            {
+                "role": "assistant",
+                "content": f"/api/atlas/artifacts/{artifact_id}/versions/1/open",
+            }
+        ]
+        with patch(
+            "services.orchestrator.chat_pipeline.images_enabled", return_value=False
+        ):
+            run, _ = await self.process(
+                self.request("Dessine le bouton en rouge.", history),
+                Result("Changed.", "done", cost=Decimal("0.01")),
+            )
         model = run.call_args.args[1]
         self.assertIn(
             "create_artifact", [tool["function"]["name"] for tool in model.tools]

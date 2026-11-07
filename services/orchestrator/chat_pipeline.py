@@ -1099,6 +1099,7 @@ async def _process(
     )
     if (
         images_enabled()
+        and artifact_intent is None
         and not technical_diagram
         and not is_spatial_drawing_request(request.user_text)
         and not explaining_image
