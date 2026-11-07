@@ -319,6 +319,12 @@ html[data-atlas-style="arrondi"] body.atlas-side-open div:has(> #sidebar) { padd
 /* Sandboxed documents fill only their own slot. */
 .atlas-side-frame { flex:1; min-height:100px; width:100%; border:0; background:white; }
 .atlas-side-fallback, .atlas-side-error { padding:10px; background:var(--atlas-surface); color:var(--atlas-text); }
+/* App status surfaces stay muted in both themes and never cover the frame. */
+.atlas-side-version { color:var(--atlas-text); font-size:12px; }
+.atlas-side-banner, .atlas-side-notice, .atlas-side-stopped { padding:8px 10px; color:var(--atlas-text); background:var(--atlas-surface); border-bottom:1px solid var(--atlas-border); font-size:12px; }
+.atlas-side-banner { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.atlas-side-notice { border-bottom:0; }
+.atlas-side-stopped { display:flex; flex-direction:column; gap:8px; }
 /* Editor and preview use independent scrolling; source retains monospace. */
 .atlas-side-markdown { display:flex; flex:1; min-height:0; }
 .atlas-side-editor { flex:1; min-width:0; width:50%; resize:none; padding:12px; color:var(--atlas-text); background:var(--atlas-surface); font-family:ui-monospace,monospace; font-size:13px; border:0; }
