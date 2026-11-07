@@ -220,6 +220,47 @@ async def provider_error_message(
     return message[:300]
 
 
+async def provider_rejection_details(
+    response: aiohttp.ClientResponse,
+    request: AgentRequest,
+    body: dict[str, object],
+) -> dict[str, object]:
+    details: dict[str, object] = {
+        "request_model": body["model"],
+        "request_messages": len(request.messages),
+        "request_tools": len(request.tools),
+        "request_tool_choice_type": type(request.tool_choice).__name__,
+        "request_max_tokens": request.max_tokens,
+        "request_body_keys": list(body),
+    }
+    if not 400 <= response.status < 500:
+        return details
+    raw = bytearray()
+    try:
+        async for piece in response.content.iter_chunked(2048):
+            if len(raw) + len(piece) > 2048:
+                break
+            raw.extend(piece)
+        value = json.loads(raw)
+    except (ValueError, aiohttp.ClientError, TimeoutError):
+        return details
+    if not isinstance(value, dict):
+        return details
+    candidates = [value.get("error"), value.get("detail")]
+    for error in candidates:
+        if not isinstance(error, dict):
+            continue
+        for field in ("type", "code", "param"):
+            error_value = error.get(field)
+            if (
+                isinstance(error_value, str)
+                and re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,80}", error_value)
+                and f"provider_error_{field}" not in details
+            ):
+                details[f"provider_error_{field}"] = error_value
+    return details
+
+
 async def attempt(
     request: AgentRequest, model: str, timeout: float
 ) -> AsyncGenerator[dict[str, object], None]:
@@ -360,9 +401,13 @@ async def attempt(
             ) as response:
                 if response.status != 200:
                     message = await provider_error_message(response, request, key)
+                    rejection = await provider_rejection_details(
+                        response, request, payload
+                    )
                     diagnostic(
                         "http",
                         status=response.status,
+                        **rejection,
                         **(
                             {"provider_message": message} if message is not None else {}
                         ),
