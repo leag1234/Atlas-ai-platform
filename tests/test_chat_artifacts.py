@@ -60,6 +60,7 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
         model.produces_files = False
         model.required_file_tool = None
         model.max_tokens = 6000
+        model.reasoning_ceiling = None
         return model
 
     async def process(
@@ -112,6 +113,7 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             model.configure_quality.call_args.args[1],
             16000,
         )
+        self.assertEqual(model.reasoning_ceiling, "none")
         self.assertEqual(run.call_args.args[4].cost, Decimal("0.30"))
         self.assertIn(Path("prompts/artifact.txt").read_text(), run.call_args.args[3])
         self.assertEqual(item.task_type, "artifact")
@@ -134,6 +136,7 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             Path("prompts/artifact.txt").read_text(), run.call_args.args[3]
         )
         self.assertEqual(model.max_tokens, 6000)
+        self.assertIsNone(model.reasoning_ceiling)
         self.assertEqual(run.call_args.args[4].cost, Decimal("0.10"))
         self.assertEqual(item.task_type, "text")
 

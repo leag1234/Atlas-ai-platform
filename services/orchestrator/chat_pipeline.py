@@ -1389,6 +1389,8 @@ async def _process(
     )
     if artifact_intent == "create":
         model.required_file_tool = "create_artifact"
+    if artifact_intent is not None:
+        model.reasoning_ceiling = "none"
     model.cost_ceiling = cost_limit
     model.spent = image_cost
     item.reasoning_effort = request.reasoning_effort
