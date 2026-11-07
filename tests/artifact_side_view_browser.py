@@ -60,6 +60,7 @@ def main() -> None:
         expect(page.locator(".atlas-side-notice")).to_contain_text(
             "Temporary preview: data entered in the app is not kept."
         )
+        expect(page.get_by_role("button", name="Open in your browser")).to_be_hidden()
         with page.expect_download() as download:
             page.get_by_role("button", name="Download", exact=True).click()
         assert download.value.url.endswith(DOWNLOAD)

@@ -1,6 +1,7 @@
 """REQ-PROJ-08: scoped owned route, fail-closed assets and shell injection."""
 
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import aiohttp
@@ -61,6 +62,25 @@ class ProjectSurfaceTests(unittest.TestCase):
         self.assertIn(b"/project-mode/client.js", injected)
         self.assertEqual(inject_atlas_ui(injected), injected)
         self.assertEqual(injected.split(b"</head>")[1], shell.split(b"</head>")[1])
+
+    def test_artifact_open_in_tab_is_injected_only_when_enabled(self) -> None:
+        shell = b"<html><head></head></html>"
+        self.assertNotIn(b'name="atlas-artifact-open-in-tab"', inject_atlas_ui(shell))
+        with patch.dict("os.environ", {"ATLAS_ARTIFACT_OPEN_IN_TAB": "1"}):
+            self.assertIn(
+                b'<meta name="atlas-artifact-open-in-tab" content="1">',
+                inject_atlas_ui(shell),
+            )
+
+    def test_chat_ui_gates_open_in_tab_on_injected_setting(self) -> None:
+        source = (
+            Path(__file__)
+            .parents[1]
+            .joinpath("services/orchestrator/chat-ui.js")
+            .read_text(encoding="utf-8")
+        )
+        self.assertIn('meta[name="atlas-artifact-open-in-tab"]', source)
+        self.assertIn('slot?.descriptor?.kind !== "app"', source)
 
 
 class HostIdentityEncodingTests(unittest.IsolatedAsyncioTestCase):

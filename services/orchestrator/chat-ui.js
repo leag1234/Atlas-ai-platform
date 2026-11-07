@@ -794,7 +794,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     setWidth(stored || innerWidth * .45);
     const browser = button(text(1), () => { const src = slots.get(active)?.descriptor?.src; if (src) window.open(safeURL(src), "_blank", "noopener,noreferrer"); });
     const saving = button(label("Download"), () => slots.get(active)?.download?.());
-    const refresh = () => { const slot = slots.get(active); title.textContent = slot?.descriptor?.title || label("Side view"); browser.hidden = !slot?.descriptor?.src; saving.hidden = !slot?.download; header.querySelectorAll("[data-slot-select]").forEach(node => node.setAttribute("aria-pressed", String(node.dataset.slotSelect === active))); };
+    const openInTabEnabled = document.querySelector('meta[name="atlas-artifact-open-in-tab"]')?.content === "1";
+    const refresh = () => { const slot = slots.get(active); title.textContent = slot?.descriptor?.title || label("Side view"); browser.hidden = !openInTabEnabled || slot?.descriptor?.kind !== "app" || !slot?.descriptor?.src; saving.hidden = !slot?.download; header.querySelectorAll("[data-slot-select]").forEach(node => node.setAttribute("aria-pressed", String(node.dataset.slotSelect === active))); };
     const remove = name => {
       const slot = slots.get(name); if (!slot) return;
       slot.disposed = true; slot.cleanup.forEach(fn => fn()); slot.node.remove(); slots.delete(name);
