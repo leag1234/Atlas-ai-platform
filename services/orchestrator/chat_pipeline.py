@@ -1381,7 +1381,7 @@ async def _process(
         model.tools = []
     model.configure_quality(
         request.model,
-        int(os.environ.get("ATLAS_ARTIFACT_MAX_TOKENS", "16000"))
+        min(int(os.environ.get("ATLAS_ARTIFACT_MAX_TOKENS", "6000")), 6000)
         if artifact_intent is not None
         else request.max_tokens,
         has_attachments=request.has_attachments,

@@ -111,7 +111,7 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.required_file_tool, "create_artifact")
         self.assertEqual(
             model.configure_quality.call_args.args[1],
-            16000,
+            6000,
         )
         self.assertEqual(model.reasoning_ceiling, "none")
         self.assertEqual(run.call_args.args[4].cost, Decimal("0.30"))
@@ -121,6 +121,15 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             [event for event in events if event.get("phase") == "tool_started"],
             [{"phase": "tool_started", "tool": "create_artifact", "urls": []}],
         )
+
+    async def test_artifact_max_tokens_is_clamped_to_gateway_limit(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_ARTIFACT_MAX_TOKENS": "12000"}):
+            run, _ = await self.process(
+                self.request("Create a small web app."),
+                Result("Here it is.", "done", cost=Decimal("0.01")),
+            )
+        model = run.call_args.args[1]
+        self.assertEqual(model.configure_quality.call_args.args[1], 6000)
 
     async def test_feature_off_is_byte_identical(self) -> None:
         os.environ.pop("ATLAS_ARTIFACTS")
