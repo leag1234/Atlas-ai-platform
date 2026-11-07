@@ -208,6 +208,28 @@ class LoopFailureTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_budget_refusal_streams_localized_explanation(self) -> None:
+        async def process(payload: ChatRequest, item: Interaction) -> None:
+            item.state = "stopped"
+            item.erreurs.append("output_budget")
+            item.reponse = "Explicit stop: output_budget. provider_error"
+
+        request = ChatRequest.model_validate(
+            {
+                "ui_locale": "fr",
+                "stream": True,
+                "messages": [{"role": "user", "content": "Crée une application."}],
+            }
+        )
+        wire, events = await wire_events(request, process)
+        self.assertFalse(any("error" in event for event in events))
+        self.assertEqual(
+            visible(events), "la limite de budget de ce tour a été atteinte"
+        )
+        self.assertEqual(events[-1]["choices"][0]["finish_reason"], "stop")  # type: ignore[index]
+        self.assertNotIn("RuntimeError", wire)
+        self.assertNotIn("provider_error", wire)
+
     async def test_failed_work_turn_streams_localized_explanation(self) -> None:
         expected = {
             "fr": "Le travail n'a pas abouti : les tests n'ont pas réussi.",
