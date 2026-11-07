@@ -1381,7 +1381,7 @@ async def _process(
         model.tools = []
     model.configure_quality(
         request.model,
-        int(os.environ.get("ATLAS_ARTIFACT_MAX_TOKENS", "16000"))
+        min(int(os.environ.get("ATLAS_ARTIFACT_MAX_TOKENS", "6000")), 6000)
         if artifact_intent is not None
         else request.max_tokens,
         has_attachments=request.has_attachments,
@@ -1389,6 +1389,8 @@ async def _process(
     )
     if artifact_intent == "create":
         model.required_file_tool = "create_artifact"
+    if artifact_intent is not None:
+        model.reasoning_ceiling = "none"
     model.cost_ceiling = cost_limit
     model.spent = image_cost
     item.reasoning_effort = request.reasoning_effort

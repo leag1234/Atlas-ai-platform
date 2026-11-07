@@ -157,6 +157,19 @@ class ProviderFieldTests(unittest.TestCase):
             self.assertEqual(request_options(body), body)
             self.assertEqual(request_options(body, "scaleway"), body)
 
+    def test_scaleway_ceiling_none_sends_explicit_effort(self) -> None:
+        body = {"model": "m", "reasoning_effort": "none"}
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                request_options(
+                    body,
+                    "scaleway",
+                    reasoning_ceiling="none",
+                    reasoning_default=None,
+                )["reasoning_effort"],
+                "none",
+            )
+
     def test_provider_default_reasoning_respects_ceiling(self) -> None:
         body = {"model": "m", "reasoning_effort": "none"}
         with patch.dict(os.environ, {}, clear=True):
