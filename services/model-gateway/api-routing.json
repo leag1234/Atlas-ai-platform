@@ -23,6 +23,12 @@
       "low": [
         {
           "provider": "mistral",
+          "model": "mistral-large-4",
+          "effort": "low",
+          "context": 1048576
+        },
+        {
+          "provider": "mistral",
           "model": "zai-glm-5-3",
           "effort": "low",
           "context": 1048576

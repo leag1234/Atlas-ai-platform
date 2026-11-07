@@ -15,6 +15,9 @@ from serverless_support import environment
 from services.orchestrator.chat_api import app
 from test_prompt_policy import PromptPolicyTests
 
+# Owner ruling 2026-11-07: this prompt is feature-gated and absent from public corpus requests.
+M25_FINGERPRINT_EXEMPT_PROMPTS = frozenset({Path("prompts/artifact.txt")})
+
 
 def main() -> None:
     checks = PromptPolicyTests()
@@ -81,7 +84,7 @@ def main() -> None:
     assert corpus["prompt_hashes"] == {
         path.as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(Path("prompts").iterdir())
-        if path.is_file()
+        if path.is_file() and path not in M25_FINGERPRINT_EXEMPT_PROMPTS
     }, "public_corpus_measured_with_different_prompts"
     before = [6.5, 5.6, 5.4]
     after = corpus_means(corpus["cases"])

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +24,7 @@ from services.orchestrator.artifact_routes import (
     DOWNLOAD_HEADERS,
     PREVIEW_CSP,
     PREVIEW_HEADERS,
+    STORAGE_SHIM,
 )
 from services.orchestrator.artifact_tokens import issue_token
 from services.orchestrator.chat_api import app
@@ -118,6 +121,45 @@ class ArtifactRouteTests(unittest.TestCase):
         self.assertEqual(preview.status_code, 200)
         self.assertIn(b"localStorage", preview.content)
         self.assert_preview_headers(preview)
+
+    def test_storage_shim_replaces_inaccessible_storage(self) -> None:
+        script = (
+            STORAGE_SHIM.decode("utf-8")
+            .removeprefix("<script>")
+            .removesuffix("</script>")
+        )
+        node = shutil.which("node")
+        if node is None:
+            self.assertIn("Object.defineProperty(window,n,{value:f()})", script)
+            return
+        harness = """
+const vm = require('node:vm');
+const context = vm.createContext({window: {}, require});
+const window = context.window;
+vm.runInContext(`
+Object.defineProperty(window, 'localStorage', {configurable: true, get() { throw new Error('SecurityError'); }});
+Object.defineProperty(window, 'sessionStorage', {configurable: true, get() { throw new Error('SecurityError'); }});
+`, context);
+vm.runInContext(process.argv[1], context);
+for (const name of ['localStorage', 'sessionStorage']) {
+  const storage = window[name];
+  storage.setItem('first', '1');
+  storage.setItem('second', '2');
+  if (storage.getItem('first') !== '1' || storage.length !== 2) throw new Error(name + ': values');
+  if (storage.key(1) !== 'second') throw new Error(name + ': key');
+  storage.removeItem('first');
+  if (storage.getItem('first') !== null || storage.length !== 1) throw new Error(name + ': remove');
+  storage.clear();
+  if (storage.length !== 0 || storage.key(0) !== null) throw new Error(name + ': clear');
+}
+"""
+        subprocess.run(
+            [node, "-"],
+            input=harness.replace("process.argv[1]", repr(script)),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
     def test_mode_a_requires_owner(self) -> None:
         token = self.token()
