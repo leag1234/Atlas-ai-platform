@@ -853,7 +853,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       } },
       html: { async open(slot, descriptor) {
         const source = descriptor.content ?? (descriptor.src ? await fetchText(descriptor.src, slot) : "");
-        if (slot.disposed) return; frame(slot).srcdoc = source;
+        if (slot.disposed) return; const node = frame(slot); node.srcdoc = source; slot.content.append(node);
         slot.download = () => download(source, "preview.html", "text/html");
       } },
       app: { async open(slot, descriptor) {
@@ -886,7 +886,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.content.prepend(notice);
         const timer = setTimeout(() => { notice.hidden = false; }, 4000);
         node.addEventListener("error", () => { notice.hidden = false; });
-        node.src = url; slot.cleanup.push(() => clearTimeout(timer));
+        node.src = url; slot.content.append(node); slot.cleanup.push(() => clearTimeout(timer));
       } },
       markdown: { async open(slot, descriptor) {
         const { marked } = await import("/static/atlas/vendor/marked/marked.esm.js");
