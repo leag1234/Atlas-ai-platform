@@ -2,8 +2,21 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="refresh" content="0; url=__ATTACKER__/meta-refresh">
   <title>Hostile refresh probe</title>
 </head>
-<body><p>Temporary hostile page.</p></body>
+<body>
+  <h1>Refresh probe</h1>
+  <p id="marker">Refresh fixture ready</p>
+  <button id="run" type="button">Run</button>
+  <p id="result">not-run</p>
+  <script>
+    document.getElementById("run").addEventListener("click", () => {
+      document.getElementById("result").textContent = "allowed";
+      const refresh = document.createElement("meta");
+      refresh.httpEquiv = "refresh";
+      refresh.content = "0; url=__ATTACKER__/meta-refresh";
+      document.head.append(refresh);
+    });
+  </script>
+</body>
 </html>

