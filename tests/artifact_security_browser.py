@@ -261,8 +261,17 @@ def expect_heading(frame: Any) -> None:
 
 def run_engine(browser: Browser, attacker: AttackerServer, engine: str) -> None:
     attacker.reset()
-    context = browser.new_context(viewport={"width": 1500, "height": 1000})
+    context = browser.new_context(
+        viewport={"width": 1500, "height": 1000},
+        extra_http_headers=TRUSTED_HEADERS,
+    )
     page = context.new_page()
+    response = page.request.post(
+        BASE_URL + "/api/v1/auths/signin",
+        headers=TRUSTED_HEADERS,
+        data={"email": TRUSTED_HEADERS["X-Atlas-User"], "password": ""},
+    )
+    assert response.ok, (response.status, response.text())
     page.goto(BASE_URL, wait_until="load")
 
     network = seed("hostile-network.html", attacker.url)
@@ -322,6 +331,7 @@ def main() -> None:
             if not engines:
                 raise SystemExit("no Playwright browser engine is installed")
             print("Engines: " + ", ".join(engines))
+            failures: list[tuple[str, BaseException]] = []
             for engine in engines:
                 browser = getattr(playwright, engine).launch(
                     headless=True,
@@ -329,8 +339,13 @@ def main() -> None:
                 )
                 try:
                     run_engine(browser, attacker, engine)
+                except BaseException as error:
+                    failures.append((engine, error))
+                    print(f"FAIL {engine}: {error}")
                 finally:
                     browser.close()
+            if failures:
+                raise SystemExit(1)
     finally:
         attacker.stop()
 
