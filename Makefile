@@ -217,3 +217,7 @@ project-install: ## provision project organization/admin and explicit legacy own
 .PHONY: test-project-browser
 test-project-browser: ## keyless project UI contracts; requires Playwright Chromium installed
 	@PYTHONPATH=.:tests:services/model-gateway python3 -m unittest discover -s tests -p 'project_composer_browser.py' -v
+
+.PHONY: test-artifact-security
+test-artifact-security: ## artifact preview browser security suite; supervisor supplies the stack
+	@PYTHONPATH=.:tests:services/model-gateway python3 tests/artifact_security_browser.py

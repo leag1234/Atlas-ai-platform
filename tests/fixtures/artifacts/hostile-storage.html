@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hostile storage probe</title>
+</head>
+<body>
+  <h1>Storage probe</h1>
+  <script>
+    localStorage.setItem("score", "42");
+    document.body.dataset.score = localStorage.getItem("score");
+    location.href = "about:blank";
+  </script>
+</body>
+</html>
