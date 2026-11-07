@@ -718,6 +718,55 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     "Ansicht kann nicht geöffnet werden",
     "No se puede abrir la vista",
     "Impossibile aprire la vista"
+  ],
+  "App preview": [
+    "App preview",
+    "Aperçu de l'application",
+    "App-Vorschau",
+    "Vista previa de la aplicación",
+    "Anteprima dell'app"
+  ],
+  "Version {n}": [
+    "Version {n}",
+    "Version {n}",
+    "Version {n}",
+    "Versión {n}",
+    "Versione {n}"
+  ],
+  "New version available": [
+    "New version available",
+    "Nouvelle version disponible",
+    "Neue Version verfügbar",
+    "Nueva versión disponible",
+    "Nuova versione disponibile"
+  ],
+  "Reload": [
+    "Reload",
+    "Recharger",
+    "Neu laden",
+    "Recargar",
+    "Ricarica"
+  ],
+  "Temporary preview: data entered in the app is not kept.": [
+    "Temporary preview: data entered in the app is not kept.",
+    "Aperçu temporaire : les données saisies ne sont pas conservées.",
+    "Temporäre Vorschau: Eingegebene Daten werden nicht gespeichert.",
+    "Vista previa temporal: los datos introducidos no se conservan.",
+    "Anteprima temporanea: i dati inseriti non vengono conservati."
+  ],
+  "The app tried to open another page and was stopped.": [
+    "The app tried to open another page and was stopped.",
+    "L'application a tenté d'ouvrir une autre page ; elle a été arrêtée.",
+    "Die App wollte eine andere Seite öffnen und wurde angehalten.",
+    "La aplicación intentó abrir otra página y se detuvo.",
+    "L'app ha tentato di aprire un'altra pagina ed è stata fermata."
+  ],
+  "Restart app": [
+    "Restart app",
+    "Relancer l'application",
+    "App neu starten",
+    "Reiniciar la aplicación",
+    "Riavvia l'app"
   ]
 };
     const label = value => sideLabels[value]?.[Math.max(0,["en","fr","de","es","it"].indexOf((localStorage.getItem("locale") || localStorage.getItem("atlas-ui-language") || navigator.language || "fr").split("-")[0]))] || value;
@@ -777,7 +826,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       }
       return slot;
     };
-    const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; slot.content.append(node); return node; };
+    const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; return node; };
     // Marked is only a parser. Rebuild its output from an allowlist in an inert document.
     const sanitize = html => {
       const parsed = new DOMParser().parseFromString(html, "text/html"), result = document.createDocumentFragment();
@@ -804,8 +853,32 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       } },
       html: { async open(slot, descriptor) {
         const source = descriptor.content ?? (descriptor.src ? await fetchText(descriptor.src, slot) : "");
-        if (slot.disposed) return; frame(slot).srcdoc = source;
+        if (slot.disposed) return; const node = frame(slot); node.srcdoc = source; slot.content.append(node);
         slot.download = () => download(source, "preview.html", "text/html");
+      } },
+      app: { async open(slot, descriptor) {
+        const node = frame(slot); node.allow = ""; node.title = `${label("App preview")} ${descriptor.title || ""}`.trim(); node.src = descriptor.src;
+        const version = element("span", "atlas-side-version", label("Version {n}").replace("{n}", String(descriptor.version)));
+        const notice = element("p", "atlas-side-notice", label("Temporary preview: data entered in the app is not kept."));
+        let loads = 0;
+        node.addEventListener("load", () => {
+          if (slot.disposed) return;
+          loads += 1;
+          if (loads === 1) { node.focus(); return; }
+          node.remove();
+          const stopped = element("div", "atlas-side-stopped");
+          stopped.append(element("p", "", label("The app tried to open another page and was stopped.")), button("Restart app", () => open(descriptor).catch(() => {})));
+          slot.content.append(stopped);
+        });
+        const markInteracted = () => { if (document.activeElement === node) slot.interacted = true; };
+        node.addEventListener("focusin", markInteracted);
+        window.addEventListener("blur", markInteracted);
+        slot.cleanup.push(() => window.removeEventListener("blur", markInteracted));
+        slot.toolbar.append(version);
+        slot.content.append(node, notice);
+        slot.download = () => {
+          const link = element("a"); link.href = descriptor.download; link.download = ""; link.click();
+        };
       } },
       url: { async open(slot, descriptor) {
         const url = safeURL(descriptor.src), node = frame(slot), notice = element("p", "atlas-side-fallback", text(2)); notice.hidden = true;
@@ -813,7 +886,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.content.prepend(notice);
         const timer = setTimeout(() => { notice.hidden = false; }, 4000);
         node.addEventListener("error", () => { notice.hidden = false; });
-        node.src = url; slot.cleanup.push(() => clearTimeout(timer));
+        node.src = url; slot.content.append(node); slot.cleanup.push(() => clearTimeout(timer));
       } },
       markdown: { async open(slot, descriptor) {
         const { marked } = await import("/static/atlas/vendor/marked/marked.esm.js");
@@ -881,7 +954,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       if (pane.hidden) priorFocus = document.activeElement;
       // Replace contents without removing the slot or its split proportions.
       const old = ensure(name); old.disposed = true; old.cleanup.forEach(fn => fn());
-      const slot = { ...old, cleanup: [], disposed: false, descriptor: { ...descriptor }, download: null }; slots.set(name, slot);
+      const slot = { ...old, cleanup: [], disposed: false, descriptor: { ...descriptor }, download: null, interacted: false }; slots.set(name, slot);
       slot.content.replaceChildren(); while (slot.toolbar.children.length > 2) slot.toolbar.lastChild.remove();
       slot.caption.textContent = descriptor.title || descriptor.kind; pane.hidden = false; document.body.classList.add("atlas-side-open"); active = name; refresh();
       try { await views[descriptor.kind].open(slot, descriptor); }
@@ -910,19 +983,41 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       document.querySelectorAll('.chat-assistant .markdown-prose a[href], .user-message .markdown-prose a[href]').forEach(node => {
         if (seen.has(node)) return;
         const url = new URL(node.href, location.href), transport = new URLSearchParams(url.hash.slice(1));
-        if (Object.hasOwn(views, transport.get("atlas-view"))) {
+        const kind = transport.get("atlas-view");
+        if (Object.hasOwn(views, kind)) {
+          let descriptor = null;
+          if (kind === "app") {
+            const artifact = transport.get("artifact"), version = Number(transport.get("version"));
+            const match = url.pathname.match(/^\/api\/atlas\/artifacts\/([0-9a-f]{32})\/versions\/([1-9][0-9]{0,3})\/open$/);
+            if (url.origin !== location.origin || !match || match[1] !== artifact || Number(match[2]) !== version) return;
+            descriptor = { kind, artifact, version, src: url.pathname, download: url.pathname.replace(/\/open$/, "/download"), title: transport.get("title") || node.textContent, slot: transport.get("slot") || "top" };
+          } else {
+            descriptor = { kind, src: url.origin + url.pathname + url.search, title: transport.get("title") || node.textContent, slot: transport.get("slot") || "top" };
+            if (url.origin === location.origin) descriptor.src = url.pathname + url.search;
+          }
           seen.add(node);
-          const descriptor = { kind: transport.get("atlas-view"), src: url.origin + url.pathname + url.search, title: transport.get("title") || node.textContent, slot: transport.get("slot") || "top" };
-          // Normalize same-origin URLs to match the optional span descriptor.
-          if (url.origin === location.origin) descriptor.src = url.pathname + url.search;
           const message = node.closest('[id^="message-"]') || node.closest(".chat-assistant");
           const identity = `${location.pathname}:${message?.id || ""}:${JSON.stringify(descriptor)}`;
           const placeholder = element("span", "atlas-view"); placeholder.hidden = true;
-          placeholder.dataset.atlasView = descriptor.kind; placeholder.dataset.src = descriptor.src; placeholder.dataset.title = descriptor.title; placeholder.dataset.slot = descriptor.slot;
+          placeholder.dataset.atlasView = descriptor.kind; placeholder.dataset.src = descriptor.src || ""; placeholder.dataset.title = descriptor.title; placeholder.dataset.slot = descriptor.slot;
+          if (descriptor.artifact) { placeholder.dataset.artifact = descriptor.artifact; placeholder.dataset.version = String(descriptor.version); }
           seen.add(placeholder); node.before(placeholder);
           node.classList.add("atlas-side-chip"); node.textContent = text(0);
           node.addEventListener("click", event => { event.preventDefault(); open(descriptor).catch(() => {}); });
-          if (!opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
+          if (descriptor.kind !== "app" && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
+          if (descriptor.kind === "app") {
+            const messages = [...document.querySelectorAll(".chat-assistant")], last = messages[messages.length - 1];
+            const current = slots.get(descriptor.slot === "bottom" ? "bottom" : "top");
+            if (current?.descriptor?.kind === "app" && current.descriptor.artifact === descriptor.artifact && descriptor.version > current.descriptor.version) {
+              if (current.interacted) {
+                if (!current.node.querySelector(".atlas-side-banner")) {
+                  const banner = element("div", "atlas-side-banner");
+                  banner.append(element("span", "", label("New version available")), button("Reload", () => open(descriptor).catch(() => {})));
+                  current.content.prepend(banner);
+                }
+              } else open(descriptor).catch(() => {});
+            } else if (message === last || message?.contains(last)) open(descriptor).catch(() => {});
+          }
           return;
         }
         const path = url.pathname, match = path.match(/\.(pdf|md)$/i); if (!match) return; seen.add(node);
