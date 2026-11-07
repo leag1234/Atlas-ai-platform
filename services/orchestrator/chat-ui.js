@@ -826,7 +826,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       }
       return slot;
     };
-    const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; slot.content.append(node); return node; };
+    const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; return node; };
     // Marked is only a parser. Rebuild its output from an allowlist in an inert document.
     const sanitize = html => {
       const parsed = new DOMParser().parseFromString(html, "text/html"), result = document.createDocumentFragment();
@@ -857,7 +857,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.download = () => download(source, "preview.html", "text/html");
       } },
       app: { async open(slot, descriptor) {
-        const node = frame(slot); node.allow = ""; node.title = `${label("App preview")} ${descriptor.title || ""}`.trim();
+        const node = frame(slot); node.allow = ""; node.title = `${label("App preview")} ${descriptor.title || ""}`.trim(); node.src = descriptor.src;
         const version = element("span", "atlas-side-version", label("Version {n}").replace("{n}", String(descriptor.version)));
         const notice = element("p", "atlas-side-notice", label("Temporary preview: data entered in the app is not kept."));
         let loads = 0;
@@ -876,7 +876,6 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.cleanup.push(() => window.removeEventListener("blur", markInteracted));
         slot.toolbar.append(version);
         slot.content.append(node, notice);
-        node.src = descriptor.src;
         slot.download = () => {
           const link = element("a"); link.href = descriptor.download; link.download = ""; link.click();
         };

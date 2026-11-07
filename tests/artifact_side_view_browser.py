@@ -54,6 +54,8 @@ def main() -> None:
         expect(page.frame_locator(".atlas-side-frame").locator("h1")).to_have_text(
             "Version one"
         )
+        assert page.locator(".atlas-side-stopped").count() == 0
+        assert page.evaluate("window.atlasSideView.loads") == 1
         expect(page.locator(".atlas-side-version")).to_have_text("Version 1")
         expect(page.locator(".atlas-side-notice")).to_contain_text(
             "Temporary preview: data entered in the app is not kept."
