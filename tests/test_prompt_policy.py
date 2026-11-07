@@ -1,11 +1,128 @@
 """Enforce the owner disposition verbatim and reject public case patches."""
 
+import hashlib
+import json
+import os
+from decimal import Decimal
 from pathlib import Path
 import re
 import unittest
+from unittest.mock import AsyncMock, patch
+
+from services.orchestrator.chat_pipeline import _process
+from services.orchestrator.chat_schema import ChatRequest
+from services.orchestrator.interactions import Interaction
+from services.orchestrator.loop import Result
+from services.orchestrator.model import Configuration, GatewayModel
+
+
+class ArtifactPromptIsolationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_artifact_prompt_is_absent_when_feature_is_unset(self) -> None:
+        artifact_prompt = Path("prompts/artifact.txt").read_text()
+        for question in (
+            "Please explain why the sky looks blue during the daytime.",
+            "Create a small web app.",
+        ):
+            with self.subTest(question=question):
+                prompts = []
+
+                async def runner(
+                    query: object,
+                    model: object,
+                    tools: object,
+                    prompt: str,
+                    limits: object,
+                    **kwargs: object,
+                ) -> Result:
+                    prompts.append(prompt)
+                    return Result(text="Useful answer.", state="done")
+
+                model = GatewayModel(
+                    "http://127.0.0.1",
+                    Configuration(
+                        input_eur_per_mtok=Decimal("0"),
+                        output_eur_per_mtok=Decimal("0"),
+                        max_tokens=128,
+                    ),
+                )
+                with (
+                    patch.object(
+                        os,
+                        "environ",
+                        {
+                            key: value
+                            for key, value in os.environ.items()
+                            if key != "ATLAS_ARTIFACTS"
+                        },
+                    ),
+                    patch.object(
+                        GatewayModel, "connect", AsyncMock(return_value=model)
+                    ),
+                    patch("services.orchestrator.chat_pipeline.run", runner),
+                ):
+                    await _process(
+                        ChatRequest.model_validate(
+                            {"messages": [{"role": "user", "content": question}]}
+                        ),
+                        Interaction(),
+                    )
+                self.assertEqual(len(prompts), 1)
+                self.assertNotIn(artifact_prompt, prompts[0])
+
+
+class M25FingerprintCoverageTests(unittest.TestCase):
+    def test_gate_fails_when_any_non_exempt_prompt_changes(self) -> None:
+        from m25_gate import M25_FINGERPRINT_EXEMPT_PROMPTS
+
+        corpus = json.loads(Path("reports/m25-corpus.json").read_text())
+        paths = {
+            path
+            for path in Path("prompts").iterdir()
+            if path.is_file() and path not in M25_FINGERPRINT_EXEMPT_PROMPTS
+        }
+        self.assertTrue(paths)
+        actual_hashes = {
+            path.as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in paths
+        }
+        self.assertEqual(corpus["prompt_hashes"], actual_hashes)
+        for path in paths:
+            with self.subTest(path=path):
+                changed_hashes = dict(actual_hashes)
+                changed_hashes[path.as_posix()] = hashlib.sha256(
+                    path.read_bytes() + b"\nchanged"
+                ).hexdigest()
+                self.assertNotEqual(changed_hashes, actual_hashes)
 
 
 class PromptPolicyTests(unittest.TestCase):
+    def test_artifact_prompt_is_english_and_self_contained(self) -> None:
+        prompt = Path("prompts/artifact.txt").read_text()
+        self.assertTrue(prompt.isascii())
+        self.assertIn("create_artifact is available", prompt)
+        self.assertIn("ONE self-contained HTML file", prompt)
+        self.assertIn("No CDN, no external URL", prompt)
+        self.assertIn("Interface language: the user's language", prompt)
+        self.assertIn("identifiers and comments stay in English", prompt)
+        self.assertIn("If the result is artifact_invalid", prompt)
+
+    def test_artifact_prompt_keeps_deliverable_defaults(self) -> None:
+        prompt = Path("prompts/artifact.txt").read_text()
+        self.assertIn(
+            "A requested language, framework or platform is always used", prompt
+        )
+        self.assertIn("say so in one sentence and give", prompt)
+        self.assertIn("the command to run it locally", prompt)
+
+    def test_chat_agent_keeps_code_rules(self) -> None:
+        prompt = Path("prompts/chat-agent.txt").read_text()
+        self.assertIn("Generated code is always English", prompt)
+        self.assertIn("visible labels remain French", prompt)
+        self.assertGreater(
+            prompt.index("visible labels remain French"),
+            prompt.index("Generated code is always English"),
+        )
+
     def test_disposition_and_size(self) -> None:
         owner = Path("contracts/m25-owner.txt").read_text()
         disposition = owner.split("Layer 1, **Disposition**")[1].split("```")[1].strip()
