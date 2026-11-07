@@ -413,6 +413,7 @@ class Frame(BaseModel):
 
 
 async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
+    started = False
     try:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=60 if plan.fallback else 120),
@@ -440,9 +441,10 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                 if response.status != 200:
                     raise RuntimeError("provider_error")
                 async for piece in response.content.iter_chunked(16384):
+                    started = True
                     yield piece
     except (aiohttp.ClientError, TimeoutError):
-        raise TransientProviderError("provider_error") from None
+        raise TransientProviderError("provider_error", started=started) from None
 
 
 async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
@@ -628,12 +630,13 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
         emitted = True
         yield _settle(held[-1], attempts)
         return
-    except TransientProviderError:
+    except TransientProviderError as exc:
         # Never append a second answer to frames the client already received.
         if emitted or plan.fallback is None:
             for frame in held if not emitted else []:
                 yield frame
             raise
+        failed_primary_started = exc.started
     except Exception:
         # Keep the stream shape of a failed attempt: frames held back while
         # waiting for visible content still reach the client before the error.
@@ -645,7 +648,8 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     async with aclosing(attempt_events(plan.fallback)) as attempt:
         async for frame in attempt:
             if "cost_micro_eur" in frame:
-                # Failed primary usage is unknown: keep its conservative bound.
-                frame["cost_micro_eur"] += plan.attempt_bound
+                if failed_primary_started:
+                    # Failed primary usage is unknown: keep its conservative bound.
+                    frame["cost_micro_eur"] += plan.attempt_bound
                 _settle(frame, attempts)
             yield frame
