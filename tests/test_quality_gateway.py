@@ -1088,6 +1088,72 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, 2)
         self.assertIn("result", events[-1])
 
+    async def test_validation_failure_before_bytes_settles_at_zero(self) -> None:
+        from provider_retry import TransientProviderError
+
+        calls = 0
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise TransientProviderError("provider_error", received_bytes=0)
+            yield result("Recovered answer", 20)
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+            self.assertLogs("quality", level="WARNING") as logs,
+        ):
+            events = [
+                e
+                async for e in stream_quality(AgentProvider(), request(max_tokens=500))
+            ]
+        diagnostic = json.loads(logs.records[0].getMessage())
+        answer = events[-1]["result"]
+        assert isinstance(answer, dict)
+        self.assertEqual(diagnostic["reserved_unknown_eur"], "0")
+        self.assertFalse(diagnostic["final_usage_measured"])
+        policy = ServerlessPolicy()
+        self.assertEqual(
+            Decimal(str(answer["cost_eur"])),
+            policy.cost(policy.models["text"], 20, 20),
+        )
+        self.assertEqual(answer["usage"]["prompt_tokens"], 20)
+        self.assertEqual(answer["usage"]["completion_tokens"], 20)
+
+    async def test_midstream_failure_keeps_unknown_reservation(self) -> None:
+        from provider_retry import TransientProviderError
+
+        calls = 0
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise TransientProviderError("provider_error", received_bytes=1)
+            yield result("Recovered answer", 20)
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+            self.assertLogs("quality", level="WARNING") as logs,
+        ):
+            events = [
+                e
+                async for e in stream_quality(AgentProvider(), request(max_tokens=500))
+            ]
+        diagnostic = json.loads(logs.records[0].getMessage())
+        answer = events[-1]["result"]
+        assert isinstance(answer, dict)
+        self.assertGreater(Decimal(diagnostic["reserved_unknown_eur"]), 0)
+        self.assertFalse(diagnostic["final_usage_measured"])
+        self.assertGreater(Decimal(str(answer["cost_eur"])), 0)
+
     async def test_empty_stop_uses_alternate_and_measured_usage(self) -> None:
         models: list[str] = []
 

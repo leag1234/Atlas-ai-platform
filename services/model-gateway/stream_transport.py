@@ -436,6 +436,8 @@ async def attempt(
         diagnostic("validation", **details)
         if isinstance(exc, json.JSONDecodeError) or str(exc) == "empty_stream":
             raise TransientProviderError(
-                "provider_error", finish_reason=decoder.reason
+                "provider_error",
+                finish_reason=decoder.reason,
+                received_bytes=decoder.total,
             ) from None
         raise RuntimeError("provider_error") from None

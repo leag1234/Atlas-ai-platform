@@ -22,11 +22,13 @@ class TransientProviderError(RuntimeError):
         usage: Usage | None = None,
         finish_reason: str | None = None,
         started: bool = False,
+        received_bytes: int | None = None,
     ) -> None:
         super().__init__(code)
         self.usage = usage
         self.finish_reason = finish_reason
         self.started = started
+        self.received_bytes = received_bytes
 
 
 class ProviderResponseError(RuntimeError):
