@@ -200,7 +200,7 @@ def request_options(
     elif reasoning_ceiling in REASONING_EFFORTS:
         if reasoning_default is False:
             return body
-        preset = presets().get(name, {})
+        preset = presets().get(name or "scaleway", {})
         values = preset.get("reasoning_values")
         if not isinstance(values, list):
             raise ValueError("reasoning_values_missing")
