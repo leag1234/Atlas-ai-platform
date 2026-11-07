@@ -22,6 +22,17 @@ class ApiRoutingTests(unittest.TestCase):
             self.assertEqual(entries[0].model, model)
             self.assertEqual(entries[1].provider, "scaleway")
 
+    def test_atlas_code_low_routes_mistral_large_first(self) -> None:
+        _, entries = targets("atlas-code", "low")
+        self.assertEqual(
+            [(entry.provider, entry.model, entry.effort) for entry in entries],
+            [
+                ("mistral", "mistral-large-4", "low"),
+                ("mistral", "zai-glm-5-3", "low"),
+                ("scaleway", "deepseek-v4-flash-0731", None),
+            ],
+        )
+
     def test_unknown_client_defaults_to_code_but_raw_is_refused(self) -> None:
         self.assertEqual(select_public_model("claude-fictional"), "atlas-code")
         self.assertEqual(select_public_model("gpt-fictional"), "atlas-code")
@@ -150,8 +161,9 @@ class RoutedContextTests(unittest.TestCase):
         ):
             plan = dev_gateway.prepare_api(request, "atlas-code", "key-test")
             self.assertLessEqual(plan.reserved, dev_gateway.call_cap())
-        self.assertIsNone(plan.fallback)
-        self.assertEqual(_json.loads(plan.body)["model"], "zai-glm-5-3")
+        assert plan.fallback is not None
+        self.assertEqual(_json.loads(plan.body)["model"], "mistral-large-4")
+        self.assertEqual(plan.fallback.model, "zai-glm-5-3")
 
     def test_body_larger_than_every_context_is_refused_as_context(self) -> None:
         import dev_gateway
@@ -414,7 +426,7 @@ class RoutedReasoningOnlyRetryTests(unittest.TestCase):
                 return [event async for event in dev_gateway.events(plan)]
 
         events = asyncio.run(collect())
-        self.assertEqual(events[-1]["served_by"], "scaleway/deepseek-v4-flash-0731")
+        self.assertEqual(events[-1]["served_by"], "mistral/zai-glm-5-3")
         self.assertEqual(
             events[-1]["usage"],
             {"prompt_tokens": 40, "completion_tokens": 10, "total_tokens": 50},
