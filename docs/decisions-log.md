@@ -1848,3 +1848,7 @@ case tables against2026-09-20; name unpatched losses>2 as suspected disposition
 side effects and propose general corrections, never patches. Retry C03/GLM
 technical failures as transient; if persistent, record not run rather than blocking.
 Original owner wording is archived verbatim in docs/decisions-log.md.
+
+2026-11-07 — Owner ruling: `prompts/artifact.txt` is exempt from the M25 public-corpus prompt fingerprint.
+It is feature-gated by `ATLAS_ARTIFACTS=1` and app intent; no public corpus case is an app request.
+Every other file in `prompts/` remains covered by the fingerprint.
