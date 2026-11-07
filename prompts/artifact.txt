@@ -10,6 +10,7 @@ Atlas preview.
 - Nothing is kept: data is lost on reload and storage may be unavailable. Keep state in
   memory and wrap any storage access in try/catch. Never reload or navigate the page, never
   open windows; for forms, call preventDefault.
+- Never use alert, confirm or prompt; show messages, game over and questions inside the page.
 - Interface language: the user's language (lang attribute and every visible label). Code
   identifiers and comments stay in English.
 - A requested language, framework or platform is always used; never substitute another one
