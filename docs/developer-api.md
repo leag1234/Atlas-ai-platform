@@ -334,6 +334,26 @@ Extended thinking and hosted tools (web search, code execution) are not availabl
 - One writer per file or git branch. Two agents never edit the same files.
 - Watch `GET /usage` during the first runs.
 
+### What a coding project costs
+
+Figures measured on our own development work so far (November 2026), with Codex CLI agents on
+`atlas-dev`:
+
+- A coding agent sends 35,000 to 50,000 tokens of context per step and gets a few hundred tokens back;
+  most of that context is served from the provider cache. One step costs about 1 to 2 euro cents. A day
+  of work by several agents on one project costs a few tens of euros.
+- On a benchmark of 20 small coding tasks (same Codex harness, same hidden checks), the cost per solved
+  task compares as follows with the OpenAI API at equal quality:
+
+| Solved | Atlas | OpenAI API | OpenAI cost, compared with Atlas |
+|---|---|---|---|
+| 19 of 20 | `atlas-dev`, effort `high` | GPT-6.1-sol | about 1.4 times |
+| 17 of 20 | `atlas-dev`, effort `low` | GPT-5.3-codex | about 4.7 times |
+
+OpenAI costs are computed from the tokens of each run and OpenAI's public prices. These tasks are short
+and well specified: long tasks on large codebases are not measured yet. We keep measuring cost and
+quality on different projects and will update these figures.
+
 ### OpenAI and Anthropic compatibility
 
 The goal is the full OpenAI and Anthropic APIs. [API coverage](api-coverage.md) lists every route,
