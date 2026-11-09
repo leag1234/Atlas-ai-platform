@@ -92,6 +92,18 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(switch, dict)
         self.assertIn("research", switch["parameters"]["properties"]["group"]["enum"])
 
+    def test_research_is_offered_only_once_enabled(self) -> None:
+        selection = WorkToolSelection("files")
+        switch = selection.catalog["switch_tool_group"]["function"]
+        assert isinstance(switch, dict)
+        self.assertNotIn(
+            "research", switch["parameters"]["properties"]["group"]["enum"]
+        )
+        self.assertNotIn("research (", switch["description"])
+        selection.enable_research()
+        self.assertIn("research", switch["parameters"]["properties"]["group"]["enum"])
+        self.assertIn("research (web search/fetch)", switch["description"])
+
     def test_strict_privacy_removes_research_and_refuses_direct_web_calls(self) -> None:
         selection = WorkToolSelection("research")
         selection.disable_research()

@@ -179,6 +179,8 @@ class WorkToolSelection:
             raise ValueError("Unknown Work tool group")
         self.groups = dict(GROUPS)
         self.remote_enabled = group == "remote"
+        # Web tools join only when the Work turn has web access (never in strict privacy).
+        self.research_enabled = group == "research"
         self.group = group
         self.pending: str | None = None
         # Set by the Work turn: true while the request asks for a file that was not produced yet.
@@ -208,7 +210,7 @@ class WorkToolSelection:
         )
         switch_schema = Switch.model_json_schema()
         switch_schema["properties"]["group"]["enum"] = [
-            g for g in self.groups if g != "remote"
+            g for g in self.groups if g not in {"remote", "research"}
         ]
         from packages.tool_results import declaration
 
@@ -220,20 +222,43 @@ class WorkToolSelection:
             type="function",
             function=dict(
                 name="switch_tool_group",
-                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize), research (web search/fetch). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
+                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
                 parameters=switch_schema,
             ),
         )
 
         if self.remote_enabled:
             self.enable_remote()
+        if self.research_enabled:
+            self.enable_research()
+
+    def offered_groups(self) -> list[str]:
+        return [
+            g
+            for g in self.groups
+            if (g != "remote" or self.remote_enabled)
+            and (g != "research" or self.research_enabled)
+        ]
+
+    def enable_research(self) -> None:
+        if "research" not in self.groups:
+            return
+        switch = self.catalog["switch_tool_group"]["function"]
+        if not isinstance(switch, dict):
+            raise ValueError("Invalid switch declaration")
+        if not self.research_enabled or "research (" not in switch["description"]:
+            switch["description"] = switch["description"].replace(
+                ". Keeps plan", ", research (web search/fetch). Keeps plan", 1
+            )
+        self.research_enabled = True
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
 
     def enable_remote(self) -> None:
         self.remote_enabled = True
         switch = self.catalog["switch_tool_group"]["function"]
         if not isinstance(switch, dict):
             raise ValueError("Invalid switch declaration")
-        switch["parameters"]["properties"]["group"]["enum"] = list(self.groups)
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
         switch["description"] = switch["description"].replace(
             "files (list/read/search/write/organize).",
             "files (list/read/search/write/organize), remote (list targets/run/status/fetch on a granted machine).",
@@ -245,19 +270,16 @@ class WorkToolSelection:
         switch = self.catalog["switch_tool_group"]["function"]
         if not isinstance(switch, dict):
             raise ValueError("Invalid switch declaration")
-        switch["parameters"]["properties"]["group"]["enum"] = [
-            g for g in self.groups if g != "remote" or self.remote_enabled
-        ]
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
         switch["description"] += " Connector groups: " + str(selection.labels)
 
     def disable_research(self) -> None:
+        self.research_enabled = False
         self.groups.pop("research", None)
         switch = self.catalog["switch_tool_group"]["function"]
         if not isinstance(switch, dict):
             raise ValueError("Invalid switch declaration")
-        switch["parameters"]["properties"]["group"]["enum"] = [
-            g for g in self.groups if g != "remote" or self.remote_enabled
-        ]
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
         if self.group == "research":
             self.group = "files"
             self.focus = None

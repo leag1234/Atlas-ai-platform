@@ -812,6 +812,7 @@ async def process_work(
                 from services.orchestrator.chat_pipeline import ChatTools
 
                 tools.web = ChatTools(item, request.user_text)
+                selection.enable_research()
             selection.deliverable_pending = lambda: code_deliverable_pending(
                 request.user_text, selection.group, tools.deliverables
             )
