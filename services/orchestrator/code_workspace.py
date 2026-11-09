@@ -23,6 +23,19 @@ def enabled() -> bool:
     ) and os.environ.get("ATLAS_STABLE") != "1"
 
 
+def work_carry_enabled() -> bool:
+    """Keep a Work session's workspace from one turn to the next (option B)."""
+    return os.environ.get("ATLAS_WORK_CARRY") == "1"
+
+
+def work_carry_days() -> int:
+    """Carry directories older than this many days expire at workspace prepare."""
+    try:
+        return max(1, int(os.environ.get("ATLAS_WORK_CARRY_DAYS", "7")))
+    except ValueError:
+        return 7
+
+
 def work_enabled() -> bool:
     """Project Work sessions may run: the owner runtime, or the guest runtime opted in.
 
@@ -167,7 +180,85 @@ class Workspace:
             return project_mode()
         return enabled()
 
-    async def cleanup(self) -> None:
+    def carry_path(self) -> str:
+        return "/workspace/" + self.scope_key + ".carry"
+
+    def carry_script(self, expanded_bytes: int | None) -> str:
+        """Trusted root copy of the current generation into the carry directory."""
+        return (
+            "import os, shutil\n"
+            "SKIP={'.git','__pycache__','.pytest_cache','node_modules'}\n"
+            "def size(path):\n"
+            "    total=0\n"
+            "    for parent,directories,files in os.walk(path):\n"
+            "        directories[:]=[d for d in directories if d not in SKIP and not os.path.islink(os.path.join(parent,d))]\n"
+            "        for name in files:\n"
+            "            child=os.path.join(parent,name)\n"
+            "            if os.path.islink(child):\n"
+            "                continue\n"
+            "            try:\n"
+            "                total+=os.lstat(child).st_size\n"
+            "            except OSError:\n"
+            "                pass\n"
+            "    return total\n"
+            "def copy(source,destination):\n"
+            "    os.makedirs(destination, exist_ok=True)\n"
+            "    count=0\n"
+            "    for parent,directories,files in os.walk(source):\n"
+            "        directories[:]=[d for d in directories if d not in SKIP and not os.path.islink(os.path.join(parent,d))]\n"
+            "        for name in directories:\n"
+            "            child=os.path.join(parent,name)\n"
+            "            if not os.path.islink(child):\n"
+            "                os.makedirs(os.path.join(destination, os.path.relpath(child, source)), exist_ok=True)\n"
+            "        for name in files:\n"
+            "            child=os.path.join(parent,name)\n"
+            "            if os.path.islink(child):\n"
+            "                continue\n"
+            "            target=os.path.join(destination, os.path.relpath(child, source))\n"
+            "            shutil.copy2(child, target, follow_symlinks=False)\n"
+            "            os.chown(target, 1000, 1000, follow_symlinks=False)\n"
+            "            count+=1\n"
+            "    return count\n"
+            "source='/workspace/" + self.key + "'\n"
+            "carry='" + self.carry_path() + "'\n"
+            "if os.path.lexists(carry):\n"
+            "    shutil.rmtree(carry)\n"
+            "limit="
+            + (str(int(expanded_bytes)) if expanded_bytes is not None else "None")
+            + "\n"
+            "if os.path.isdir(source) and (limit is None or size(source) <= limit):\n"
+            "    copy(source, carry)\n"
+            "    print('carried')\n"
+            "else:\n"
+            "    print('work_carry_dropped')\n"
+        )
+
+    def restore_carry_script(self) -> str:
+        """Trusted root copy of the carry content over the new generation."""
+        return (
+            "import os, shutil\n"
+            "carry='" + self.carry_path() + "'\n"
+            "target='/workspace/" + self.key + "'\n"
+            "count=0\n"
+            "if os.path.isdir(carry):\n"
+            "    for parent,directories,files in os.walk(carry):\n"
+            "        for name in directories:\n"
+            "            child=os.path.join(parent,name)\n"
+            "            if not os.path.islink(child):\n"
+            "                os.makedirs(os.path.join(target, os.path.relpath(child, carry)), exist_ok=True)\n"
+            "        for name in files:\n"
+            "            child=os.path.join(parent,name)\n"
+            "            if os.path.islink(child):\n"
+            "                continue\n"
+            "            destination=os.path.join(target, os.path.relpath(child, carry))\n"
+            "            os.makedirs(os.path.dirname(destination), exist_ok=True)\n"
+            "            shutil.copy2(child, destination, follow_symlinks=False)\n"
+            "            os.chown(destination, 1000, 1000, follow_symlinks=False)\n"
+            "            count+=1\n"
+            "print(count)\n"
+        )
+
+    async def cleanup(self, keep_carry: bool = False) -> None:
         """Remove every worker and scratch generation for this authorized session."""
         if not self.scoped:
             raise ValueError("scoped_cleanup_required")
@@ -208,6 +299,27 @@ class Workspace:
             "    own(path)\n"
             "    shutil.rmtree(path)\n"
         )
+        if keep_carry:
+            await self._docker(
+                [
+                    "--user",
+                    "0:0",
+                    "--cap-add",
+                    "CHOWN",
+                    "--mount",
+                    f"type=volume,src={volume()},dst=/workspace",
+                ],
+                self.carry_script(self.limits.get("expanded_bytes")),
+                b"",
+                120,
+            )
+        else:
+            cleanup_source += (
+                "carry='" + self.carry_path() + "'\n"
+                "if os.path.lexists(carry):\n"
+                "    own(carry)\n"
+                "    shutil.rmtree(carry)\n"
+            )
         await self._docker(
             [
                 "--user",
@@ -228,6 +340,25 @@ class Workspace:
         root = state_dir() / self.scope_key
         if root.exists():
             shutil.rmtree(root)
+
+    async def restore_carry(self) -> int:
+        """Copy a kept carry over the new generation directory; return file count."""
+        if not self.scoped:
+            raise ValueError("scoped_cleanup_required")
+        raw = await self._docker(
+            [
+                "--user",
+                "0:0",
+                "--cap-add",
+                "CHOWN",
+                "--mount",
+                f"type=volume,src={volume()},dst=/workspace",
+            ],
+            self.restore_carry_script(),
+            b"",
+            120,
+        )
+        return int(raw.decode().strip() or 0)
 
     def metadata(self) -> dict[str, Any]:
         return (
@@ -258,16 +389,34 @@ class Workspace:
                 "--mount",
                 f"type=volume,src={volume()},dst=/workspace",
             ],
-            "import os; p='/workspace/"
+            "import os, shutil, time\n"
+            "p='/workspace/"
             + self.key
-            + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)"
+            + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)\n"
+            # Carries expire: a session still active touches its carry directory
+            # mtime on every turn, so only abandoned carries age out.
             # With registry egress, HOME and package caches live in a sibling directory,
             # mounted at /home/atlas, so the workspace itself stays empty for its first snapshot.
             + (
-                "; os.makedirs(p + '.home', exist_ok=True); os.chown(p + '.home',1000,1000)"
+                "os.makedirs(p + '.home', exist_ok=True); os.chown(p + '.home',1000,1000)\n"
                 if self.egress
                 else ""
-            ),
+            )
+            # Carries sit next to their session scope (org/project/session/workspace.carry,
+            # four levels down) and expire: an active session rewrites its carry each turn.
+            + "cutoff=time.time()-"
+            + str(work_carry_days() * 86400)
+            + "\n"
+            "for parent, directories, _ in os.walk('/workspace'):\n"
+            "    depth=parent[len('/workspace'):].count('/')\n"
+            "    for name in list(directories):\n"
+            "        carry=os.path.join(parent, name)\n"
+            "        if name.endswith('.carry') and not os.path.islink(carry):\n"
+            "            directories.remove(name)\n"
+            "            if os.path.getmtime(carry) < cutoff:\n"
+            "                shutil.rmtree(carry)\n"
+            "    if depth >= 3:\n"
+            "        directories[:]=[d for d in directories if d.endswith('.carry')]\n",
             b"",
             # Same bounded allowance as cleanup: a cold container start can exceed 30 s.
             120,
