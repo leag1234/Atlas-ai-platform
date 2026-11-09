@@ -21,7 +21,12 @@ from urllib.parse import quote
 
 from psycopg.types.json import Jsonb
 
-from packages.text_deliverables import TEXT_MIMES, TextDeliverableError, validate_text
+from packages.text_deliverables import (
+    CODE_MIMES,
+    TEXT_MIMES,
+    TextDeliverableError,
+    validate_text,
+)
 from services.retrieval.project_file_inputs import relative_path
 from services.retrieval.project_identity import ProjectError
 from services.retrieval.project_ledger import append
@@ -71,6 +76,7 @@ PUBLICATION_MIMES = {
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".pdf": "application/pdf",
     **TEXT_MIMES,
+    **CODE_MIMES,
 }
 
 # This fixed child receives document bytes only, with no service credentials.
@@ -104,10 +110,19 @@ sys.stdout.buffer.write(text)
 def reopen_artifact(content: bytes, suffix: str) -> bytes:
     if suffix not in PUBLICATION_MIMES or not content:
         raise ProjectError(422, "invalid_request", "Unsupported or empty artifact")
-    if suffix in TEXT_MIMES:
+    if suffix in TEXT_MIMES or suffix in CODE_MIMES:
         # Text deliverables are their own preview; no package parser runs.
         try:
-            validate_text(content, suffix)
+            if suffix in TEXT_MIMES:
+                validate_text(content, suffix)
+            else:
+                text = content.decode("utf-8")
+                if not text.strip():
+                    raise TextDeliverableError("text_empty")
+        except UnicodeDecodeError:
+            raise ProjectError(
+                422, "invalid_request", "Artifact verification failed: text_not_utf8"
+            ) from None
         except TextDeliverableError as error:
             raise ProjectError(
                 422, "invalid_request", "Artifact verification failed: " + error.code
@@ -626,7 +641,9 @@ class ProjectFiles:
         verified_preview = reopen_artifact(content, suffix)
         # Strict UTF-8 validation identifies text formats; libmagic guesses
         # (text/x-*, application/json) are not a format check for them.
-        detected = None if suffix in TEXT_MIMES else self.mime(content)
+        detected = (
+            None if suffix in TEXT_MIMES or suffix in CODE_MIMES else self.mime(content)
+        )
         allowed = {PUBLICATION_MIMES[suffix]}
         if suffix != ".pdf":
             # libmagic reports ZIP or generic bytes for sorted Office packages.
