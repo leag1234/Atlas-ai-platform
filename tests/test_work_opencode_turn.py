@@ -253,6 +253,7 @@ class EmitChangesTests(unittest.IsolatedAsyncioTestCase):
         await emit_changes(tools, Workspace())  # type: ignore[arg-type]
         self.assertEqual(len(tools.events), 1)
         self.assertEqual(tools.events[0]["tool"], "write_file")
+        self.assertEqual(tools.events[0]["label"], "Changes: x.py")
         self.assertIn("diff --git", tools.events[0]["output"]["diff"])
 
     async def test_no_baseline_no_event(self) -> None:
@@ -267,3 +268,19 @@ class EmitChangesTests(unittest.IsolatedAsyncioTestCase):
                 raise AssertionError("no event expected")
 
         await emit_changes(Tools(), Workspace())  # type: ignore[arg-type]
+
+
+class FilePatchesTests(unittest.TestCase):
+    def test_split_per_file_without_caches(self) -> None:
+        from services.orchestrator.work_opencode_turn import file_patches
+
+        patch = (
+            "diff --git a/f1/a.py b/f1/a.py\n--- a/f1/a.py\n+++ b/f1/a.py\n@@ -1 +1 @@\n-x\n+y\n"
+            "diff --git a/f1/pkg/__pycache__/a.cpython-312.pyc b/f1/pkg/__pycache__/a.cpython-312.pyc\n"
+            "new file mode 100644\nGIT binary patch\nliteral 3\nzcmX\n\n"
+            "diff --git a/f1/b.py b/f1/b.py\nnew file mode 100644\n--- /dev/null\n+++ b/f1/b.py\n@@ -0,0 +1 @@\n+z\n"
+        )
+        sections = file_patches(patch)
+        self.assertEqual([path for path, _ in sections], ["f1/a.py", "f1/b.py"])
+        self.assertTrue(sections[1][1].startswith("diff --git a/f1/b.py"))
+        self.assertNotIn("__pycache__", "".join(section for _, section in sections))
