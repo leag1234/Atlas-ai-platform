@@ -618,6 +618,7 @@ class ProjectContractTests(unittest.TestCase):
             "/events": "get",
             "/jobs": "get",
             "/repositories": "post",
+            "/repositories/connectors": "get",
             "/repositories/{repository}/actions": "post",
             "/skill-references": "get post",
             "/local-reads": "post",

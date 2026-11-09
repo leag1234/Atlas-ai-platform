@@ -166,6 +166,77 @@ class ReleaseUITests(unittest.TestCase):
         f.mount("&session=" + SESSION)
         expect(f.page.locator("[data-approval]")).to_have_count(1)
 
+    def test_publication_card_shows_verification_diff_and_pr_link(self) -> None:
+        from project_composer_browser import (
+            ORG,
+            PROJECT,
+            CONVERSATION,
+            SESSION,
+            VERSION,
+        )
+
+        PULL_REQUEST_URL = "https://forge.example/org/demo/pull/1"
+        f = self.fixture
+        approval = dict(
+            id=VERSION,
+            action_kind="publish_change",
+            paths=["totals.py"],
+            destination={"kind": "server"},
+            maximum_bytes=40,
+            expires_at="2099-01-01T00:00:00Z",
+            decision="allowed",
+            action_digest="a" * 64,
+            publication=dict(
+                branch="atlas/change",
+                target="main",
+                message="Update totals",
+                title="Update totals",
+                body="Verified change",
+                base_commit="b" * 40,
+                verification={"status": "passed"},
+                pull_request_url=PULL_REQUEST_URL,
+                diff=[
+                    dict(
+                        status="modified",
+                        path="totals.py",
+                        diff="+ total = 59",
+                    )
+                ],
+            ),
+        )
+        f.approvals.append(approval)
+        f.turns.append(
+            dict(
+                id=VERSION,
+                request_id=SESSION,
+                action="work",
+                state="completed",
+                content_refs=[],
+            )
+        )
+        f.events.append(
+            dict(
+                org_id=ORG,
+                project_id=PROJECT,
+                conversation_id=CONVERSATION,
+                request_id=SESSION,
+                version=1,
+                seq=1,
+                type="approval",
+                status="awaiting_approval",
+                output={"approval": approval},
+            )
+        )
+        f.mount("&session=" + SESSION)
+        card = f.page.locator("[data-approval]")
+        expect(card).to_contain_text("Branche: atlas/change")
+        expect(card).to_contain_text("Message de commit: Update totals")
+        expect(card).to_contain_text("Tests: Validé")
+        expect(card).to_contain_text("Modifié: totals.py")
+        expect(card.locator("pre")).to_have_text("+ total = 59")
+        link = card.get_by_role("link", name="https://forge.example/org/demo/pull/1")
+        self.assertEqual(link.get_attribute("href"), PULL_REQUEST_URL)
+
     def test_finished_answer_has_one_closed_step_group_and_no_diagnostics(self) -> None:
         from project_composer_browser import ORG, PROJECT, CONVERSATION, SESSION
 

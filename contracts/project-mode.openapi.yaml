@@ -4127,6 +4127,60 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RepositoryImportRequest'
+  /api/atlas/orgs/{org}/projects/{project}/repositories/connectors:
+    get:
+      operationId: get_api_atlas_orgs_org_projects_project_repository_connectors
+      summary: List operator-configured repository connectors allowed for this project
+      x-roles:
+      - viewer
+      - editor
+      - owner
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryConnectorPage'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '410':
+          $ref: '#/components/responses/Error410'
+        '413':
+          $ref: '#/components/responses/Error413'
+        '416':
+          $ref: '#/components/responses/Error416'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '502':
+          $ref: '#/components/responses/Error502'
+        '503':
+          $ref: '#/components/responses/Error503'
+        '504':
+          $ref: '#/components/responses/Error504'
   /api/atlas/orgs/{org}/projects/{project}/repositories:
     post:
       operationId: post_api_atlas_orgs_org_projects_project_repositories
@@ -12079,6 +12133,48 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Job'
+        next_cursor:
+          anyOf:
+          - type: string
+            minLength: 1
+          - type: 'null'
+      required:
+      - items
+      - next_cursor
+    RepositoryConnector:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        forge:
+          type: string
+          enum:
+          - github
+          - forgejo
+          - gitea
+        remote_ref:
+          type: string
+          format: uri
+          pattern: ^https://[^/@]+/[^@?#]+$
+        repository:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - id
+      - forge
+      - remote_ref
+      - repository
+    RepositoryConnectorPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RepositoryConnector'
         next_cursor:
           anyOf:
           - type: string

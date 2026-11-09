@@ -609,8 +609,14 @@
     if (value.publication) {
       const publication = value.publication;
       for (const [label, text] of [['Branch', publication.branch], ['Target', publication.target], ['Commit message', publication.message], ['PR title', publication.title], ['PR body', publication.body], ['Base commit', publication.base_commit]]) card.append(node('p', `${t(label)}: ${text}`));
+      if (publication.verification) card.append(node('p', `${t('Tests')}: ${t(publication.verification.status)}`));
+      if (publication.pull_request_url) { const link = node('a', publication.pull_request_url); link.href = publication.pull_request_url; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link); }
       const changes = node('ul');
-      for (const change of publication.diff) changes.append(node('li', `${t(change.status)}: ${change.path}`));
+      for (const change of publication.diff) {
+        const item = node('li', `${t(change.status)}: ${change.path}`);
+        if (change.diff) item.append(node('pre', change.diff));
+        changes.append(item);
+      }
       card.append(changes);
     }
     if (value.decision !== 'pending') { card.dataset.decided = 'true'; card.append(node('p', t(value.decision))); }
@@ -831,10 +837,16 @@
       const item = deliverables.find(d => d.file_version_id === file.version_id);
       if (item) {const card = fileCard(item); card.append(iconButton('remove','×',() => confirmChange('removeFile',{file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(card);continue;}
       const row = node('div',null,'atlas-project-file'); row.dataset.fileId = file.id;
-      const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; open.title = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision}))); filePanel.append(row);
+      const open = button('preview',() => previewFile(file)); open.textContent = file.relative_path; open.title = file.relative_path; row.append(open,iconButton('remove','×',() => confirmChange('removeFile', {file_id:file.id,path:file.relative_path,base_version:file.version_id,revision:file.revision})));
+      if (file.origin) row.append(node('p', `${t('Source')}: ${file.origin}`, 'atlas-project-detail'));
+      filePanel.append(row);
     }
     for (const item of deliverables.filter(d => !files.some(f => f.version_id === d.file_version_id))) filePanel.append(fileCard(item));
-    panels.append(filePanel, scheduledPanel(panelData.scheduled));
+    const repositorySection = node('section',null,'atlas-project-panel'); repositorySection.dataset.panel = 'repository';
+    const repositoryHeading = node('div',null,'atlas-project-panel-heading'); repositoryHeading.append(node('h2',t('Repository')));
+    if (projectInfo.role === 'owner' || projectInfo.role === 'editor') repositoryHeading.append(button('Repository',repositoryPanel));
+    repositorySection.append(repositoryHeading);
+    panels.append(filePanel, repositorySection, scheduledPanel(panelData.scheduled));
     if (memory.length) {
       const memoryPanel = node('section',null,'atlas-project-panel'); memoryPanel.dataset.panel = 'memory'; memoryPanel.append(node('h2',t('memory')));
       for (const entry of memory) { const row = node('div',null,'atlas-project-memory'); row.append(node('p',entry.text),iconButton('remove','×',() => confirmChange('removeMemory',{memory_id:entry.id,text:entry.text,revision:entry.revision}))); memoryPanel.append(row); } panels.append(memoryPanel);
@@ -1130,6 +1142,57 @@
       } finally { submit.disabled = false; }
     }));
     form.append(generate, publicKey, submit); panel.append(picker('project',projects,scope.project,async project => {scope.project = project; await reload();}), entries, form, status, button('close', () => dialog.close())); dialog.append(panel); root.append(dialog); dialog.addEventListener('close', () => { publicKey.textContent = ''; dialog.remove(); }, {once:true}); dialog.showModal(); await reload();
+  }
+
+  async function repositoryPanel() {
+    const current = generation;
+    const dialog = node('dialog', null, 'atlas-project-dialog'), panel = node('section');
+    dialog.dataset.repositoryPanel = '';
+    panel.append(node('h2', t('Repository')));
+    const status = node('p'); status.setAttribute('role', 'status');
+    const form = node('form');
+    const connector = node('select'); connector.name = 'connector_id'; connector.required = true;
+    const folder = node('select'); folder.name = 'folder_id'; folder.required = true;
+    for (const [key, control] of [['Connector', connector], ['Folder', folder]]) form.append(field(key, control));
+    const issue = node('button', t('Approve import')); issue.type = 'submit'; form.append(issue);
+    const cancel = node('button', t('Cancel')); cancel.type = 'button'; cancel.addEventListener('click', () => dialog.close()); form.append(cancel);
+    const approvalCard = node('section');
+    panel.append(form, status, approvalCard);
+    async function reload() {
+      const [repositories, connectors] = await Promise.all([list(base() + '/repositories'), list(base() + '/repositories/connectors')]); checkScope(current);
+      connector.replaceChildren();
+      for (const item of connectors) connector.append(new Option(item.repository, item.id));
+      folder.replaceChildren();
+      for (const item of folders.filter(value => value.locality === 'server' && value.model_use === 'allow')) folder.append(new Option(item.name, item.id));
+      approvalCard.replaceChildren();
+      for (const repository of repositories) {
+        const row = node('article'); row.dataset.repositoryId = repository.id;
+        row.append(node('strong', repository.remote_ref || repository.name || repository.id), node('p', `${t('Branch')}: ${repository.branch || t('unknown')}`, 'atlas-project-detail'));
+        approvalCard.append(row);
+      }
+    }
+    form.addEventListener('submit', guarded(async event => {
+      event.preventDefault(); issue.disabled = true; status.textContent = t('loading');
+      try {
+        const data = Object.fromEntries(new FormData(form));
+        const approval = await api(base() + '/repositories/import-approvals', 'POST', data); checkScope(current);
+        const selected = connectors.find(item => item.id === data.connector_id);
+        const card = node('article'); card.dataset.importApproval = approval.id;
+        card.append(node('h3', t('Import approval')), node('p', `${t('Repository')}: ${selected?.repository || data.connector_id}`), node('p', `${t('Branch')}: ${approval.branch || t('unknown')}`), node('p', `${t('Files')}: ${approval.paths.length}`));
+        const approve = node('button', t('Approve')); approve.type = 'button';
+        approve.addEventListener('click', guarded(async () => {
+          approve.disabled = cancel.disabled = true;
+          try { await api(base() + '/repositories', 'POST', {...data, approval_id: approval.id}); status.textContent = t('Saved'); dialog.close(); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); }
+          catch (error) { approve.disabled = cancel.disabled = false; throw error; }
+        }));
+        card.append(approve, cancel); approvalCard.replaceChildren(card);
+      } catch (error) {
+        const key = error.status === 403 ? 'connectorNotAllowed' : error.status === 409 ? 'revisionConflict' : error.status >= 502 ? 'forgeUnavailable' : 'failure';
+        status.textContent = t(key); throw error;
+      } finally { issue.disabled = false; }
+    }));
+    dialog.append(panel); root.append(dialog); dialog.addEventListener('close', () => dialog.remove(), {once: true}); dialog.showModal(); connector.focus();
+    await reload();
   }
   async function boot() {
     if (location.pathname.startsWith('/admin/settings')) {try {await adminEntry();} catch(error) {showFailure(error);} return;}

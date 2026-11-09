@@ -202,6 +202,83 @@
   const changeLabels = {"changeInstructions": ["Update the project instructions", "Modifier les instructions du projet", "Projektanweisungen ändern", "Modificar las instrucciones del proyecto", "Modifica le istruzioni del progetto"], "removeFile": ["Remove this project file", "Retirer ce fichier du projet", "Diese Projektdatei entfernen", "Quitar este archivo del proyecto", "Rimuovi questo file dal progetto"], "removeMemory": ["Delete this project memory entry", "Supprimer cette entrée de mémoire du projet", "Diesen Projektspeichereintrag löschen", "Eliminar esta entrada de memoria del proyecto", "Elimina questa voce di memoria del progetto"], "changeApproval": ["Request approval before changing the original.", "Demander mon approbation avant de modifier l’original.", "Vor Änderung des Originals meine Genehmigung einholen.", "Pedir mi aprobación antes de modificar el original.", "Chiedi la mia approvazione prima di modificare l’originale."]};
   for (const [key,values] of Object.entries(changeLabels)) {keys.push(key); Object.keys(rows).forEach((language,index) => rows[language].push(values[index]));}
   const adminLabels = {
+  "Repository URL": [
+    "Repository URL",
+    "URL du dépôt",
+    "Repository-URL",
+    "URL del repositorio",
+    "URL del repository"
+  ],
+  "Connector": [
+    "Connector",
+    "Connecteur",
+    "Connector",
+    "Conector",
+    "Connettore"
+  ],
+  "Folder": [
+    "Folder",
+    "Dossier",
+    "Ordner",
+    "Carpeta",
+    "Cartella"
+  ],
+  "Import approval": [
+    "Import approval",
+    "Approbation d’importation",
+    "Importgenehmigung",
+    "Aprobación de importación",
+    "Approvazione di importazione"
+  ],
+  "Approve import": [
+    "Approve import",
+    "Approuver l’importation",
+    "Import genehmigen",
+    "Aprobar importación",
+    "Approva importazione"
+  ],
+  "connectorNotAllowed": [
+    "Connector not allowed",
+    "Connecteur non autorisé",
+    "Connector nicht erlaubt",
+    "Conector no permitido",
+    "Connettore non consentito"
+  ],
+  "revisionConflict": [
+    "Revision conflict",
+    "Conflit de révision",
+    "Revisionskonflikt",
+    "Conflicto de revisión",
+    "Conflitto di revisione"
+  ],
+  "forgeUnavailable": [
+    "Forge unavailable",
+    "Forge indisponible",
+    "Forge nicht verfügbar",
+    "Forge no disponible",
+    "Forge non disponibile"
+  ],
+  "testsNotVerified": [
+    "Tests not verified",
+    "Tests non vérifiés",
+    "Tests nicht verifiziert",
+    "Pruebas no verificadas",
+    "Test non verificati"
+  ],
+  "Tests": [
+    "Tests",
+    "Tests",
+    "Tests",
+    "Pruebas",
+    "Test"
+  ],
+  "not run": [
+    "not run",
+    "non exécutés",
+    "nicht ausgeführt",
+    "no ejecutadas",
+    "non eseguiti"
+  ],
   "Remote targets": [
     "Remote targets",
     "Cibles distantes",
