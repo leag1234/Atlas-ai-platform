@@ -97,10 +97,13 @@ class FakeWorkspace:
 class FakeBroker:
     def __init__(self) -> None:
         self.org, self.project = "org", "project"
+        self.files: list[dict[str, object]] = []
 
     async def public(self, method: str, path: str) -> tuple[int, dict[str, object]]:
         if path == "files/f1":
             return 200, {"id": "f1", "folder_id": "folder-a", "relative_path": "old.py"}
+        if path == "files":
+            return 200, {"items": list(self.files), "next_cursor": None}
         return 200, {
             "items": [
                 {"id": "folder-a", "revision": 7},
@@ -366,6 +369,8 @@ class FakeApprovalBroker:
     ) -> tuple[int, dict[str, object]]:
         if path == "files/f1":
             return 200, dict(self.file)
+        if path == "files":
+            return 200, {"items": [dict(self.file)], "next_cursor": None}
         if path.startswith("work-sessions/"):
             decision = self.decisions.pop(0) if self.decisions else "pending"
             return 200, {
@@ -621,3 +626,23 @@ class FreshRevisionAndRefusalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen, [3, 4, 4])
         self.assertEqual([s["path"] for s in report["saved"]], ["a.py", "c.py"])
         self.assertTrue(report["skipped"][0]["reason"].startswith("refused"))
+
+
+class ExistingPathTests(unittest.IsolatedAsyncioTestCase):
+    async def test_new_file_already_in_project_is_a_modification(self) -> None:
+        files = {"folder-a/new.py": b"x = 2\n"}
+        workspace = FakeWorkspace(PATCH, files)
+        execution = FakeExecution()
+        execution.broker.files = [
+            {"id": "f9", "folder_id": "folder-a", "relative_path": "new.py"}
+        ]
+        tools = FakeTools()
+        with (
+            mock.patch.dict(os.environ, {"ATLAS_WORK_SAVE": "1"}),
+            mock.patch.object(terminal_client, "ProjectPublisher", FakePublisher),
+        ):
+            report = await work_save.save_new_files(
+                execution, workspace, tools, execution.session["base_file_versions"]
+            )
+        self.assertNotIn("new.py", [s["path"] for s in report["saved"]])
+        self.assertIn("folder-a/new.py", report["modified"])

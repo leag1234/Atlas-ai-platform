@@ -114,6 +114,30 @@ def base_workspace_paths(base: Any) -> set[str]:
     return paths
 
 
+async def project_file_paths(execution: Any) -> dict[str, dict[str, Any]]:
+    """Project files keyed by workspace path (<folder_id>/<relative_path>)."""
+    paths: dict[str, dict[str, Any]] = {}
+    cursor: str | None = None
+    for _ in range(20):
+        status, page = await execution.broker.public(
+            "GET", "files" + ("?cursor=" + cursor if cursor else "")
+        )
+        if status != 200:
+            break
+        for file in page.get("items", []):
+            if file.get("folder_id") and file.get("relative_path"):
+                key = str(
+                    PurePosixPath(str(file["folder_id"])) / str(file["relative_path"])
+                )
+                paths[key] = dict(
+                    file_id=file["id"], relative_path=file["relative_path"]
+                )
+        cursor = page.get("next_cursor")
+        if not cursor:
+            break
+    return paths
+
+
 async def save_new_files(
     execution: Any, workspace: Any, tools: Any, base: Any
 ) -> dict[str, Any]:
@@ -154,6 +178,7 @@ async def _export_and_save_new_files(
         str(v["version_id"]) for v in execution.session["base_file_versions"]
     ]
     publisher = ProjectPublisher(execution)
+    existing = await project_file_paths(execution)
     for path in new_paths:
         parts = path.split("/", 1)
         if len(parts) != 2 or parts[0] not in folders_by_id:
@@ -161,6 +186,11 @@ async def _export_and_save_new_files(
             continue
         folder_id, relative = parts
         if path in bases:
+            continue
+        if path in existing:
+            # Created by an earlier turn of this session (kept workspace), so
+            # already a project file: saving it is an overwrite, with approval.
+            report["modified"].append(path)
             continue
         if path in binary:
             report["skipped"].append({"path": path, "reason": "binary"})
@@ -241,20 +271,9 @@ async def save_modified_files(
     modified = report.get("modified") or []
     if not modified:
         return
-    # Session base versions carry ids only: read each file once for its place.
-    bases: dict[str, dict[str, Any]] = {}
-    for entry in execution.session.get("base_file_versions") or []:
-        if not isinstance(entry, dict) or not entry.get("file_id"):
-            continue
-        status, base_file = await execution.broker.public(
-            "GET", "files/" + str(entry["file_id"])
-        )
-        if status == 200:
-            key = str(
-                PurePosixPath(str(base_file["folder_id"]))
-                / str(base_file["relative_path"])
-            )
-            bases[key] = dict(entry, relative_path=base_file["relative_path"])
+    # Session base versions carry ids only, and files saved by earlier turns of
+    # the session are not in its base: resolve paths against the project files.
+    bases = await project_file_paths(execution)
     deadline = time.monotonic() + 300
     for path in modified:
         entry = bases.get(path)
