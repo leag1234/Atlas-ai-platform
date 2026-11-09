@@ -16,7 +16,15 @@ from pydantic import BaseModel, ConfigDict
 
 from services.orchestrator.code_tools import declarations
 
-Group = Literal["documents", "spreadsheets", "presentations", "code", "files", "remote"]
+Group = Literal[
+    "documents",
+    "spreadsheets",
+    "presentations",
+    "code",
+    "files",
+    "research",
+    "remote",
+]
 CORE = ("update_plan", "request_approval", "switch_tool_group")
 GROUPS: dict[str, tuple[str, ...]] = {
     "remote": ("list_targets", "remote_run", "remote_status", "remote_fetch"),
@@ -52,6 +60,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "search",
     ),
     "files": ("list_dir", "read_file", "search", "write_file", "organize_files"),
+    "research": ("web_search", "web_fetch"),
 }
 PATTERNS = {
     "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
@@ -60,6 +69,7 @@ PATTERNS = {
     "documents": r"\b(docx|pdf|markdown|(?<![\w./\\-])md|(?<![\w./\\-])txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
     "code": r"\b(code|repository|repo|git|bug|function|python|javascript|fonction|codigo)\b",
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
+    "research": r"\b(web|internet|online|search|fetch|browse|recherche|rechercher|chercher|recherche web|buscar|busca|buscar en la web|suche|suchen|im web)\b",
 }
 # A requested file name such as notes.md selects documents only when nothing else matched and there is no repository.
 DOCUMENT_EXTENSION = r"\.(?:md|txt)\b"
@@ -169,6 +179,8 @@ class WorkToolSelection:
             raise ValueError("Unknown Work tool group")
         self.groups = dict(GROUPS)
         self.remote_enabled = group == "remote"
+        # Web tools join only when the Work turn has web access (never in strict privacy).
+        self.research_enabled = group == "research"
         self.group = group
         self.pending: str | None = None
         # Set by the Work turn: true while the request asks for a file that was not produced yet.
@@ -186,9 +198,19 @@ class WorkToolSelection:
             for t in declarations(scoped=True)
             if isinstance(t["function"], dict)
         }
+        from services.orchestrator.tools import declarations as chat_declarations
+
+        self.catalog.update(
+            {
+                str(t["function"]["name"]): t
+                for t in chat_declarations()
+                if isinstance(t["function"], dict)
+                and t["function"]["name"] in {"web_search", "web_fetch"}
+            }
+        )
         switch_schema = Switch.model_json_schema()
         switch_schema["properties"]["group"]["enum"] = [
-            g for g in self.groups if g != "remote"
+            g for g in self.groups if g not in {"remote", "research"}
         ]
         from packages.tool_results import declaration
 
@@ -207,13 +229,36 @@ class WorkToolSelection:
 
         if self.remote_enabled:
             self.enable_remote()
+        if self.research_enabled:
+            self.enable_research()
+
+    def offered_groups(self) -> list[str]:
+        return [
+            g
+            for g in self.groups
+            if (g != "remote" or self.remote_enabled)
+            and (g != "research" or self.research_enabled)
+        ]
+
+    def enable_research(self) -> None:
+        if "research" not in self.groups:
+            return
+        switch = self.catalog["switch_tool_group"]["function"]
+        if not isinstance(switch, dict):
+            raise ValueError("Invalid switch declaration")
+        if not self.research_enabled or "research (" not in switch["description"]:
+            switch["description"] = switch["description"].replace(
+                ". Keeps plan", ", research (web search/fetch). Keeps plan", 1
+            )
+        self.research_enabled = True
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
 
     def enable_remote(self) -> None:
         self.remote_enabled = True
         switch = self.catalog["switch_tool_group"]["function"]
         if not isinstance(switch, dict):
             raise ValueError("Invalid switch declaration")
-        switch["parameters"]["properties"]["group"]["enum"] = list(self.groups)
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
         switch["description"] = switch["description"].replace(
             "files (list/read/search/write/organize).",
             "files (list/read/search/write/organize), remote (list targets/run/status/fetch on a granted machine).",
@@ -225,10 +270,19 @@ class WorkToolSelection:
         switch = self.catalog["switch_tool_group"]["function"]
         if not isinstance(switch, dict):
             raise ValueError("Invalid switch declaration")
-        switch["parameters"]["properties"]["group"]["enum"] = [
-            g for g in self.groups if g != "remote" or self.remote_enabled
-        ]
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
         switch["description"] += " Connector groups: " + str(selection.labels)
+
+    def disable_research(self) -> None:
+        self.research_enabled = False
+        self.groups.pop("research", None)
+        switch = self.catalog["switch_tool_group"]["function"]
+        if not isinstance(switch, dict):
+            raise ValueError("Invalid switch declaration")
+        switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
+        if self.group == "research":
+            self.group = "files"
+            self.focus = None
 
     @property
     def names(self) -> tuple[str, ...]:
