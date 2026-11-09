@@ -18,6 +18,45 @@ TEXT_MIMES = {
     ".txt": "text/plain",
     ".html": "text/html",
 }
+# Common source and configuration files a Work turn may create in the
+# workspace; all are published as plain text.
+CODE_MIMES = {
+    ".py": "text/x-python",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".ts": "text/typescript",
+    ".tsx": "text/typescript",
+    ".jsx": "text/javascript",
+    ".json": "application/json",
+    ".yaml": "text/yaml",
+    ".yml": "text/yaml",
+    ".toml": "text/toml",
+    ".ini": "text/plain",
+    ".cfg": "text/plain",
+    ".sh": "text/x-shellscript",
+    ".go": "text/x-go",
+    ".rs": "text/x-rust",
+    ".java": "text/x-java-source",
+    ".kt": "text/x-kotlin",
+    ".c": "text/x-c",
+    ".h": "text/x-c",
+    ".cpp": "text/x-c++",
+    ".hpp": "text/x-c++",
+    ".cs": "text/x-csharp",
+    ".rb": "text/x-ruby",
+    ".php": "text/x-php",
+    ".swift": "text/x-swift",
+    ".sql": "text/x-sql",
+    ".css": "text/css",
+    ".scss": "text/x-scss",
+    ".xml": "text/xml",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".html": "text/html",
+}
+# Extensionless build files are plain text too.
+CODE_BASENAMES = {"dockerfile": "text/plain", "makefile": "text/plain"}
 # Same bound as the model-facing Markdown content of Office deliverables.
 TEXT_CHARACTER_LIMIT = 220000
 

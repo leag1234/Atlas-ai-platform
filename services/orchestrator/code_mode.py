@@ -862,6 +862,28 @@ async def process_work(
                 if terminal == "failed":
                     item.erreurs.append(engine_result.reason)
                     item.reponse += "\n\nWork failed: " + engine_result.reason
+                from services.orchestrator.work_save import save_turn_files
+
+                saved = await save_turn_files(
+                    execution,
+                    workspace,
+                    tools,
+                    execution.session["base_file_versions"],
+                    engine_result.state,
+                )
+                from services.orchestrator.file_results import project_deliverable_links
+
+                for receipt in saved.get("receipts", []):
+                    links = project_deliverable_links(
+                        receipt, broker.org, broker.project
+                    )
+                    if links not in item.reponse:
+                        item.reponse += "\n\n" + links
+                if saved["modified"]:
+                    item.reponse += (
+                        "\n\nChanged project files not saved yet (approval needed): "
+                        + ", ".join(saved["modified"])
+                    )
                 await tools.emit(
                     "recap",
                     label="Work turn complete"
@@ -1055,6 +1077,26 @@ async def process_work(
                         else "\n\n".join(dict.fromkeys(delivered)),
                     )
                 item.reponse += "\n\nWork failed: " + reason
+            from services.orchestrator.work_save import save_turn_files
+
+            saved = await save_turn_files(
+                execution,
+                workspace,
+                tools,
+                execution.session["base_file_versions"],
+                result.state,
+            )
+            from services.orchestrator.file_results import project_deliverable_links
+
+            for receipt in saved.get("receipts", []):
+                links = project_deliverable_links(receipt, broker.org, broker.project)
+                if links not in item.reponse:
+                    item.reponse += "\n\n" + links
+            if saved["modified"]:
+                item.reponse += (
+                    "\n\nChanged project files not saved yet (approval needed): "
+                    + ", ".join(saved["modified"])
+                )
             await tools.emit(
                 "recap",
                 label="Work turn complete"
