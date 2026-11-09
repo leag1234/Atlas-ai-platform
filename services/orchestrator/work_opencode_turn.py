@@ -10,6 +10,7 @@ driver, and returns the terminal bookkeeping values for process_work.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -63,25 +64,48 @@ def _label(tool: str, detail: Any) -> str:
     return label if len(label) <= 120 else label[:119] + "…"
 
 
+CACHE_PARTS = ("__pycache__/", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/")
+
+
+def file_patches(patch: str) -> list[tuple[str, str]]:
+    """Split a git patch into (path, section) pairs, without build caches.
+
+    Work events carry at most 16000 characters of diff, like the loop's
+    per-edit diffs; one section per file keeps each change whole, and test
+    runs leave compiled caches that are not changes.
+    """
+    sections: list[tuple[str, str]] = []
+    for chunk in re.split(r"(?m)^(?=diff --git )", patch):
+        if not chunk.startswith("diff --git "):
+            continue
+        header = chunk.split("\n", 1)[0]
+        match = re.match(r"diff --git a/(\S+) b/", header)
+        path = match.group(1) if match else header[11:]
+        if any(part in path + "/" for part in CACHE_PARTS) or path.endswith(".pyc"):
+            continue
+        sections.append((path, chunk))
+    return sections
+
+
 async def emit_changes(tools: WorkTools, workspace: Workspace) -> None:
-    """Emit the turn's changes as one diff, like the loop's edit events.
+    """Emit the turn's changes as diffs, one event per file, like the loop.
 
     The engine edits files with its own tools, so no per-edit diff exists. The
-    workspace computes the patch against its turn baseline; the Work stream and
-    the UI receive it as a completed write_file event.
+    workspace computes the patch against its turn baseline; each file's
+    section reaches the Work stream and the UI as a completed write_file event.
     """
     baseline = str(workspace.metadata().get("baseline", ""))
     if not baseline:
         return
     exported = await workspace.invoke("export", {"baseline": baseline}, 60)
     patch = "" if exported.get("error") else str(exported.get("patch") or "")
-    if patch.strip():
+    for path, section in file_patches(patch):
         await tools.emit(
             "tool",
             tool="write_file",
             status="completed",
-            label="Changes",
-            output={"diff": patch},
+            label="Changes: " + path.split("/", 1)[-1][:100],
+            output={"diff": section},
         )
 
 
