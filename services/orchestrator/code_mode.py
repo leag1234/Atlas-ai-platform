@@ -18,7 +18,13 @@ from packages.ports import atlas_ports
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.code_tools import CodeTools, WorkTools, declarations
 from services.orchestrator.code_verification import annotate, explicit_tests
-from services.orchestrator.code_workspace import Audit, Workspace, enabled, redact
+from services.orchestrator.code_workspace import (
+    Audit,
+    Workspace,
+    enabled,
+    redact,
+    work_carry_enabled,
+)
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import (
     CodeResult,
@@ -590,6 +596,8 @@ class WorkExecution:
         if imported.get("error"):
             raise ValueError(str(imported["error"]))
         workspace.save(dict(baseline=imported["baseline"], plan=[]))
+        if work_carry_enabled():
+            await workspace.restore_carry()
 
 
 async def cleanup_work(
@@ -1101,7 +1109,7 @@ async def process_work(
                 request.location = None
 
             async def finish() -> None:
-                await workspace.cleanup()
+                await workspace.cleanup(keep_carry=work_carry_enabled())
                 usage = nearby_usage
                 if result is not None and model is not None:
                     usage = dict(
