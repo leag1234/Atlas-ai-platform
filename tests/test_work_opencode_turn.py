@@ -97,6 +97,12 @@ class TokenPricesTests(unittest.TestCase):
 
 
 class RunOpencodeTurnTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        # The changes export is covered by EmitChangesTests.
+        patcher = mock.patch.object(turn_module, "emit_changes", mock.AsyncMock())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     async def test_event_mapping_and_dedupe(self) -> None:
         events = [
             {"kind": "text", "text": "partial"},
@@ -220,3 +226,44 @@ class RunOpencodeTurnTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EmitChangesTests(unittest.IsolatedAsyncioTestCase):
+    async def test_patch_against_baseline_is_emitted_once(self) -> None:
+        from services.orchestrator.work_opencode_turn import emit_changes
+
+        class Workspace:
+            def metadata(self) -> dict[str, Any]:
+                return {"baseline": "a" * 40}
+
+            async def invoke(
+                self, action: str, args: dict[str, Any], timeout: float
+            ) -> dict[str, Any]:
+                assert action == "export" and args == {"baseline": "a" * 40}
+                return {"patch": "diff --git a/x.py b/x.py\n", "archive": ""}
+
+        class Tools:
+            def __init__(self) -> None:
+                self.events: list[dict[str, Any]] = []
+
+            async def emit(self, kind: str, **data: Any) -> None:
+                self.events.append(dict(data, kind=kind))
+
+        tools = Tools()
+        await emit_changes(tools, Workspace())  # type: ignore[arg-type]
+        self.assertEqual(len(tools.events), 1)
+        self.assertEqual(tools.events[0]["tool"], "write_file")
+        self.assertIn("diff --git", tools.events[0]["output"]["diff"])
+
+    async def test_no_baseline_no_event(self) -> None:
+        from services.orchestrator.work_opencode_turn import emit_changes
+
+        class Workspace:
+            def metadata(self) -> dict[str, Any]:
+                return {}
+
+        class Tools:
+            async def emit(self, kind: str, **data: Any) -> None:
+                raise AssertionError("no event expected")
+
+        await emit_changes(Tools(), Workspace())  # type: ignore[arg-type]
