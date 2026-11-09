@@ -15,7 +15,7 @@ import yaml
 from services.orchestrator.work_remote_tools import execute, snapshot
 from services.orchestrator.loop import Call
 from services.orchestrator.work_tool_selection import WorkToolSelection, select_group
-from services.runner.contract import Target, SCHEMAS
+from services.runner.contract import RemoteRun, Target, SCHEMAS
 from services.runner.results import bounded, report
 from services.runner.policy import RunnerError, prefix_rule
 from test_project_contracts import SchemaValidator
@@ -90,6 +90,29 @@ class RemoteToolTests(unittest.TestCase):
         )
         self.assertEqual(result["error"], "runner_cd_chain_not_supported")
         self.assertIn("cwd", result["next_step"])
+
+    def test_remote_run_normalizes_unusable_cwd_to_synced_root(self) -> None:
+        folder_id = str(uuid.uuid4())
+        cases = {
+            "": ".",
+            ".": ".",
+            folder_id: ".",
+            "/" + folder_id: ".",
+            "tests/": "tests",
+            "./tests": "tests",
+        }
+        for value, expected in cases.items():
+            with self.subTest(cwd=value):
+                self.assertEqual(
+                    RemoteRun.model_validate(
+                        dict(target="target", command="true", cwd=value)
+                    ).cwd,
+                    expected,
+                )
+        with self.assertRaises(ValueError):
+            RemoteRun.model_validate(
+                dict(target="target", command="true", cwd="../outside")
+            )
 
     def test_list_targets_documents_synced_project_root(self) -> None:
         import asyncio

@@ -766,11 +766,22 @@ async def run(
                     try:
                         arguments = json.loads(call.arguments)
                         command = str(arguments.get("command", "the requested command"))
-                        target = str(arguments.get("target", "the target"))
+                        target = str(
+                            output.get(
+                                "target_name", arguments.get("target", "the target")
+                            )
+                        )
                     except (TypeError, ValueError):
                         command, target = "the requested command", "the target"
-                    result.text = (
-                        f"waiting for your approval to run {command} on {target}"
+                    waiting = {
+                        "fr": "en attente de votre approbation pour exécuter {command} sur {target}",
+                        "en": "waiting for your approval to run {command} on {target}",
+                        "de": "wartet auf Ihre Freigabe, um {command} auf {target} auszuführen",
+                        "es": "esperando tu aprobación para ejecutar {command} en {target}",
+                        "it": "in attesa della tua approvazione per eseguire {command} su {target}",
+                    }
+                    result.text = waiting[query.lang].format(
+                        command=command, target=target
                     )
                     result.state = "done"
                     return result

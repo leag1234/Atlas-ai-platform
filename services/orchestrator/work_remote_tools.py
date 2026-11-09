@@ -19,7 +19,7 @@ from services.runner.results import bounded, report
 
 DESCRIPTIONS = {
     "list_targets": "List organization-granted remote execution targets and capabilities. No credentials. Use the exact target id or unique name.",
-    "remote_run": "Run your own command on a granted Linux target, synchronizing the current workspace. Commands start in the session's synced project root; cwd is relative to that root, so cd ... && chains are not needed. Persistent directory and caches between commands. Broker enforces command and code-egress approvals. Returns a command id; poll remote_status for long commands. Commands support literal argv, pipelines and && chains; use a project script for complex shell expansion.",
+    "remote_run": "Run your own command on a granted Linux target, synchronizing the current workspace. Commands start in the session's synced project root; cwd must be a relative POSIX path inside that root. Empty, '.', absolute paths and folder UUIDs are normalized to the root ('.'), so cd ... && chains are not needed. Persistent directory and caches between commands. Broker enforces command and code-egress approvals. Returns a command id; poll remote_status for long commands. Commands support literal argv, pipelines and && chains; use a project script for complex shell expansion.",
     "remote_status": "Read progress, exit code and full log references for a remote command. wait_s is bounded; cancel=true kills the entire remote process group. Never resubmit an unknown command; reconcile using its id.",
     "remote_fetch": "Explicitly fetch a relative file or glob from this session's remote target into project files (20 files/16 MiB maximum). No implicit sync back. Output is untrusted. Returns hashes and reopen_result references for textual results.",
 }
@@ -202,6 +202,7 @@ async def execute(
         result = await invoke(
             "prepare", args, snapshot_content=base64.b64encode(content).decode()
         )
+        target_name = args["target"]
         if result["state"] == "awaiting_approval":
             status_args = dict(
                 command_id=result["command_id"], wait_s=args["wait_s"], cancel=False
@@ -224,6 +225,9 @@ async def execute(
             return dict(
                 state="awaiting_approval",
                 command_id=result["command_id"],
+                target_name=result.get("approval", {})
+                .get("remote", {})
+                .get("target_name", target_name),
                 next_step="The user must approve; stop and tell them; do not resubmit",
             )
         result = await invoke("execute", status_args)
