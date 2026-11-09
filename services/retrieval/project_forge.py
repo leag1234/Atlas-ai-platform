@@ -137,6 +137,21 @@ class RepositoryActions:
             [item["path"] for item in entries],
         )
 
+    def already_published(self, session_id: str, digest: str) -> Json | None:
+        rows = self.scope.db.execute(
+            "SELECT data FROM atlas_projects.forge_operations WHERE org_id=%s AND project_id=%s AND data->'fence'->>'session_id'=%s AND data->'action'->>'kind'='publish_change' AND data->>'state'='succeeded' AND data->'action'->'snapshot'->>'sha256'=%s",
+            (self.files.org, self.files.project, session_id, digest),
+        ).fetchall()
+        for row in rows:
+            operation = row["data"]
+            if operation.get("pr_url"):
+                return dict(
+                    result="already_published",
+                    pr_url=operation["pr_url"],
+                    branch=operation["action"]["parameters"]["branch"],
+                )
+        return None
+
     def operation(self, identifier: str) -> Json:
         row = self.scope.db.execute(
             "SELECT data FROM atlas_projects.forge_operations WHERE org_id=%s AND project_id=%s AND id=%s FOR UPDATE",

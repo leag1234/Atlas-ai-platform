@@ -90,6 +90,10 @@ def execute_forge(scope: Scope, data: dict[str, Any]) -> dict[str, Any]:
                 ):
                     raise ProjectError(409, "revision_conflict")
                 snapshot_files(content, digest)
+                if action["kind"] == "publish_change":
+                    existing = broker.already_published(fence["session_id"], digest)
+                    if existing is not None:
+                        return existing
                 folder = broker.files.get(
                     "folder", scope.project_data["deliverables_folder_id"]
                 )
