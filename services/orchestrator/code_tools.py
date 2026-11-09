@@ -370,6 +370,56 @@ def approval_arguments(arguments: str) -> dict[str, Any]:
 FILE_TOOLS = ("edit_file", "write_file")
 
 
+async def wait_for_approval(
+    execution: Any, tools: Any, approval: dict[str, Any], timeout: float
+) -> str:
+    """Wait for the broker's decision on a pending approval (bounded).
+
+    Shared by the scoped request_approval tool and the end-of-turn overwrite
+    approvals: emits the running/completed "approval" events and polls the
+    work session until the decision lands or the deadline expires.
+    """
+    await tools.emit(
+        "approval",
+        tool="request_approval",
+        label="Approval required",
+        status="running",
+        output=dict(approval=approval),
+    )
+    # Canonical mutations consume the authoritative decision. A tool
+    # response is never a capability or permission to bypass the broker.
+    deadline = time.monotonic() + min(timeout, 120)
+    decision = "expired"
+    while time.monotonic() < deadline:
+        await execution.check()
+        status, session = await execution.broker.public(
+            "GET", "work-sessions/" + execution.session["id"]
+        )
+        if status != 200:
+            from services.retrieval.project_identity import ProjectError
+
+            raise ProjectError(status, str(session.get("error", "not_found")))
+        current = next(
+            (a for a in session["pending_approvals"] if a["id"] == approval["id"]),
+            None,
+        )
+        if current is None:
+            decision = "denied"
+            break
+        if current["decision"] != "pending":
+            decision = current["decision"]
+            break
+        await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
+    await tools.emit(
+        "approval",
+        tool="request_approval",
+        label="Approval " + decision,
+        status="completed",
+        output=dict(approval=approval),
+    )
+    return decision
+
+
 class WorkTools(CodeTools):
     """Adapt existing tool events once, before retrieval allocates durable sequences."""
 
@@ -677,48 +727,7 @@ class WorkTools(CodeTools):
                     destination=dict(kind="server", ref=self.execution.broker.project),
                 ),
             )
-            await self.emit(
-                "approval",
-                tool=call.name,
-                label="Approval required",
-                status="running",
-                output=dict(approval=approval),
-            )
-            # Canonical mutations consume the authoritative decision. A tool
-            # response is never a capability or permission to bypass the broker.
-            deadline = time.monotonic() + min(timeout, 120)
-            decision = "expired"
-            while time.monotonic() < deadline:
-                await self.execution.check()
-                status, session = await self.execution.broker.public(
-                    "GET", "work-sessions/" + self.execution.session["id"]
-                )
-                if status != 200:
-                    from services.retrieval.project_identity import ProjectError
-
-                    raise ProjectError(status, str(session.get("error", "not_found")))
-                current = next(
-                    (
-                        a
-                        for a in session["pending_approvals"]
-                        if a["id"] == approval["id"]
-                    ),
-                    None,
-                )
-                if current is None:
-                    decision = "denied"
-                    break
-                if current["decision"] != "pending":
-                    decision = current["decision"]
-                    break
-                await asyncio.sleep(min(0.25, max(0, deadline - time.monotonic())))
-            await self.emit(
-                "approval",
-                tool=call.name,
-                label="Approval " + decision,
-                status="completed",
-                output=dict(approval=approval),
-            )
+            decision = await wait_for_approval(self.execution, self, approval, timeout)
             return dict(
                 approval_id=approval["id"],
                 action_digest=approval["action_digest"],

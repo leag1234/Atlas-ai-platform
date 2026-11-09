@@ -11,11 +11,13 @@ from typing import Any
 from unittest import mock
 
 from services.orchestrator import terminal_client, work_save
+from services.orchestrator.code_tools import wait_for_approval
 from services.orchestrator.work_save import (
     archive_files,
     base_workspace_paths,
     enabled,
     parse_patch,
+    save_modified_files,
     save_new_files,
     save_turn_files,
     skip_reason,
@@ -95,8 +97,13 @@ class FakeWorkspace:
 class FakeBroker:
     def __init__(self) -> None:
         self.org, self.project = "org", "project"
+        self.files: list[dict[str, object]] = []
 
     async def public(self, method: str, path: str) -> tuple[int, dict[str, object]]:
+        if path == "files/f1":
+            return 200, {"id": "f1", "folder_id": "folder-a", "relative_path": "old.py"}
+        if path == "files":
+            return 200, {"items": list(self.files), "next_cursor": None}
         return 200, {
             "items": [
                 {"id": "folder-a", "revision": 7},
@@ -328,6 +335,207 @@ class SettingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([s["path"] for s in report["saved"]], ["new.py"])
 
 
+class FakeApprovalBroker:
+    """Broker with call() for approvals and public() for files/session/versions."""
+
+    def __init__(self, decisions: list[str], post_status: int = 201) -> None:
+        self.org, self.project = "org", "project"
+        self.decisions = list(decisions)
+        self.post_status = post_status
+        self.approval_calls: list[dict[str, object]] = []
+        self.posts: list[tuple[str, bytes, dict[str, str]]] = []
+        self.file = {
+            "id": "f1",
+            "folder_id": "folder-a",
+            "relative_path": "old.py",
+            "version_id": "v1",
+            "revision": 9,
+        }
+
+    async def call(self, operation: str, data: dict[str, object]) -> dict[str, object]:
+        assert operation == "approvals"
+        self.approval_calls.append(data)
+        return {
+            "id": "ap-" + str(max(1, len(self.approval_calls))),
+            "action_digest": "d",
+        }
+
+    async def public(
+        self,
+        method: str,
+        path: str,
+        body: bytes = b"",
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        if path == "files/f1":
+            return 200, dict(self.file)
+        if path == "files":
+            return 200, {"items": [dict(self.file)], "next_cursor": None}
+        if path.startswith("work-sessions/"):
+            decision = self.decisions.pop(0) if self.decisions else "pending"
+            return 200, {
+                "pending_approvals": [
+                    {
+                        "id": "ap-" + str(len(self.approval_calls)),
+                        "decision": decision,
+                    }
+                ]
+            }
+        if method == "POST" and path == "files/f1/versions":
+            self.posts.append((path, body, dict(headers or {})))
+            if self.post_status == 201:
+                return 201, {"id": "v2", "file_id": "f1"}
+            return self.post_status, {"error": "revision_conflict"}
+        raise AssertionError(path)
+
+
+class FakeApprovalExecution:
+    def __init__(self, broker: FakeApprovalBroker) -> None:
+        self.broker = broker
+        self.session = {
+            "id": "s1",
+            "base_file_versions": [{"file_id": "f1", "version_id": "v1"}],
+            "lease": {"holder_member_id": "member-1", "generation": 1},
+        }
+
+    def fence(self) -> dict[str, object]:
+        return {"session_id": "s1", "request_id": "r1", "generation": 1}
+
+    async def check(self) -> None:
+        return None
+
+
+class FakeEmitTools:
+    def __init__(self) -> None:
+        self.deliverables: list[dict[str, object]] = []
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    async def emit(self, kind: str, **data: object) -> None:
+        self.events.append((kind, data))
+
+
+class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
+    def report(self) -> dict[str, Any]:
+        return {
+            "saved": [],
+            "skipped": [],
+            "not_saved": [],
+            "modified": ["folder-a/old.py"],
+        }
+
+    async def test_approved_posts_version_with_if_match_and_approval_id(self) -> None:
+        broker = FakeApprovalBroker(["allowed"])
+        tools = FakeEmitTools()
+        report = self.report()
+        with mock.patch(
+            "services.orchestrator.code_tools.asyncio.sleep", new=mock.AsyncMock()
+        ):
+            await save_modified_files(
+                FakeApprovalExecution(broker),
+                tools,
+                report,
+                {"folder-a/old.py": b"new\n"},
+            )
+        self.assertEqual(len(broker.approval_calls), 1)
+        call = broker.approval_calls[0]
+        self.assertEqual(call["action_kind"], "overwrite")
+        self.assertEqual(call["maximum_bytes"], 4)
+        self.assertEqual(call["approver_member_id"], "member-1")
+        self.assertEqual(call["destination"], {"kind": "server", "ref": "project"})
+        self.assertEqual(
+            call["effects"],
+            {
+                "file_id": "f1",
+                "folder_id": "folder-a",
+                "path": "old.py",
+                "base_version": "v1",
+                "revision": 9,
+                "sha256": __import__("hashlib").sha256(b"new\n").hexdigest(),
+                "size_bytes": 4,
+            },
+        )
+        self.assertEqual(len(broker.posts), 1)
+        _, body, headers = broker.posts[0]
+        self.assertEqual(headers["If-Match"], '"9"')
+        self.assertIn(b'name="base_version"', body)
+        self.assertIn(b"v1", body)
+        self.assertIn(b'name="approval_id"', body)
+        self.assertIn(b"ap-1", body)
+        self.assertIn(b"new\n", body)
+        self.assertEqual(report["saved_modified"][0]["file_version_id"], "v2")
+        # A new version is reported on its own, not as a publication receipt.
+        self.assertEqual(len(tools.deliverables), 0)
+        kinds = [kind for kind, _ in tools.events]
+        self.assertEqual(kinds, ["approval", "approval"])
+        self.assertEqual(tools.events[0][1]["status"], "running")
+        self.assertEqual(tools.events[1][1]["status"], "completed")
+
+    async def test_denied_and_expired_do_not_post(self) -> None:
+        for decision in ("denied", "expired"):
+            with self.subTest(decision=decision):
+                broker = FakeApprovalBroker([decision])
+                tools = FakeEmitTools()
+                report = self.report()
+                with mock.patch(
+                    "services.orchestrator.code_tools.asyncio.sleep",
+                    new=mock.AsyncMock(),
+                ):
+                    await save_modified_files(
+                        FakeApprovalExecution(broker),
+                        tools,
+                        report,
+                        {"folder-a/old.py": b"new\n"},
+                    )
+                self.assertEqual(broker.posts, [])
+                self.assertNotIn("saved_modified", report)
+                self.assertEqual(report["not_saved"][0]["reason"], decision)
+
+    async def test_post_error_is_reported_not_raised(self) -> None:
+        broker = FakeApprovalBroker(["allowed"], post_status=409)
+        tools = FakeEmitTools()
+        report = self.report()
+        with mock.patch(
+            "services.orchestrator.code_tools.asyncio.sleep", new=mock.AsyncMock()
+        ):
+            await save_modified_files(
+                FakeApprovalExecution(broker),
+                tools,
+                report,
+                {"folder-a/old.py": b"new\n"},
+            )
+        self.assertEqual(len(broker.posts), 1)
+        self.assertNotIn("saved_modified", report)
+        self.assertTrue(report["not_saved"][0]["reason"].startswith("post_failed"))
+
+    async def test_non_allowed_type_is_skipped_without_approval(self) -> None:
+        broker = FakeApprovalBroker(["allowed"])
+        tools = FakeEmitTools()
+        report = self.report()
+        execution = FakeApprovalExecution(broker)
+        base_versions = execution.session["base_file_versions"]
+        assert isinstance(base_versions, list)
+        base_entry = base_versions[0]
+        assert isinstance(base_entry, dict)
+        base_entry["relative_path"] = "old.png"
+        broker.file["relative_path"] = "old.png"
+        report["modified"] = ["folder-a/old.png"]
+        await save_modified_files(
+            execution, tools, report, {"folder-a/old.png": b"\x89PNG"}
+        )
+        self.assertEqual(broker.approval_calls, [])
+        self.assertEqual(report["not_saved"][0]["reason"], "type")
+
+    async def test_wait_helper_serves_request_approval(self) -> None:
+        broker = FakeApprovalBroker(["allowed"])
+        broker.approval_calls.append({})
+        tools = FakeEmitTools()
+        decision = await wait_for_approval(
+            FakeApprovalExecution(broker), tools, {"id": "ap-1"}, 120
+        )
+        self.assertEqual(decision, "allowed")
+        self.assertEqual([kind for kind, _ in tools.events], ["approval", "approval"])
+
+
 class ArchiveTests(unittest.TestCase):
     def test_archive_files_reads_exact_bytes(self) -> None:
         raw = base64.b64decode(make_archive({"a/b.py": b"print(1)\n"}))
@@ -418,3 +626,23 @@ class FreshRevisionAndRefusalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen, [3, 4, 4])
         self.assertEqual([s["path"] for s in report["saved"]], ["a.py", "c.py"])
         self.assertTrue(report["skipped"][0]["reason"].startswith("refused"))
+
+
+class ExistingPathTests(unittest.IsolatedAsyncioTestCase):
+    async def test_new_file_already_in_project_is_a_modification(self) -> None:
+        files = {"folder-a/new.py": b"x = 2\n"}
+        workspace = FakeWorkspace(PATCH, files)
+        execution = FakeExecution()
+        execution.broker.files = [
+            {"id": "f9", "folder_id": "folder-a", "relative_path": "new.py"}
+        ]
+        tools = FakeTools()
+        with (
+            mock.patch.dict(os.environ, {"ATLAS_WORK_SAVE": "1"}),
+            mock.patch.object(terminal_client, "ProjectPublisher", FakePublisher),
+        ):
+            report = await work_save.save_new_files(
+                execution, workspace, tools, execution.session["base_file_versions"]
+            )
+        self.assertNotIn("new.py", [s["path"] for s in report["saved"]])
+        self.assertIn("folder-a/new.py", report["modified"])
