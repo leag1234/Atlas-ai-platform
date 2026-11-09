@@ -253,7 +253,6 @@ class Workspace:
             "            destination=os.path.join(target, os.path.relpath(child, carry))\n"
             "            os.makedirs(os.path.dirname(destination), exist_ok=True)\n"
             "            shutil.copy2(child, destination, follow_symlinks=False)\n"
-            "            os.chown(destination, 1000, 1000, follow_symlinks=False)\n"
             "            count+=1\n"
             "print(count)\n"
         )
@@ -346,11 +345,11 @@ class Workspace:
         if not self.scoped:
             raise ValueError("scoped_cleanup_required")
         raw = await self._docker(
+            # The generation directory belongs to uid 1000 and Work containers keep
+            # no capability, so root could not write there: restore as its owner.
             [
                 "--user",
-                "0:0",
-                "--cap-add",
-                "CHOWN",
+                "1000:1000",
                 "--mount",
                 f"type=volume,src={volume()},dst=/workspace",
             ],

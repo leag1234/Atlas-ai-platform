@@ -83,7 +83,8 @@ class CarryScriptTests(unittest.TestCase):
         script = self.workspace.restore_carry_script()
         self.assertIn("carry='" + self.workspace.carry_path() + "'", script)
         self.assertIn("target='/workspace/" + self.workspace.key + "'", script)
-        self.assertIn("os.chown(destination, 1000, 1000", script)
+        # Restored as uid 1000, the owner of the generation: no chown.
+        self.assertNotIn("os.chown", script)
         self.assertIn("print(count)", script)
 
     def test_prepare_bootstrap_expires_old_carries(self) -> None:
@@ -151,15 +152,22 @@ class CarryScriptTests(unittest.TestCase):
         self.assertIn("shutil.rmtree(carry)", sources[0])
 
     def test_restore_carry_returns_file_count(self) -> None:
+        mounts: list[list[str]] = []
+
         async def fake_docker(
             mount: list[str], source: str, payload: bytes, timeout: float
         ) -> bytes:
+            mounts.append(mount)
             return b"7\n"
 
         self.workspace._docker = fake_docker  # type: ignore[method-assign]
         import asyncio
 
         self.assertEqual(asyncio.run(self.workspace.restore_carry()), 7)
+        # Work containers keep no capability: root could not write into the
+        # uid 1000 generation directory (staging, 2026-11-09).
+        self.assertEqual(mounts[0][:2], ["--user", "1000:1000"])
+        self.assertNotIn("--cap-add", mounts[0])
 
 
 class SnapshotCarryTests(unittest.IsolatedAsyncioTestCase):
