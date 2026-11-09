@@ -8061,7 +8061,9 @@ components:
           type: string
           format: uuid
         network:
-          const: false
+          enum:
+            - registries
+            - false
         device_available:
           const: false
       required:

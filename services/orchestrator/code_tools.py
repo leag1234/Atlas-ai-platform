@@ -85,7 +85,7 @@ DESCRIPTIONS = {
     "search": "Search literal text recursively, returning bounded file:line matches.",
     "edit_file": "Replace old_text exactly once; fails if absent or ambiguous; an empty old_text creates a missing or empty file; returns unified diff.",
     "write_file": "Write a UTF-8 workspace file, at most 256 KiB; returns unified diff.",
-    "run_command": "Run a shell command in the workspace with no network or credentials. Return exit code and bounded output. Run tests to verify your changes.",
+    "run_command": "Run a shell command in the workspace. Network access is disabled unless the owner enables filtered registry egress. Return exit code and bounded output. Run tests to verify your changes.",
     "update_plan": "Replace the pinned task list with pending, in_progress, or completed items.",
     "request_approval": "Pause until the owner allows or denies the named action, or the approval expires. Approval does not grant network access.",
 }

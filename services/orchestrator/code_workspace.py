@@ -1,6 +1,7 @@
 """Docker isolation and persistent state for owner Code mode workspaces."""
 
 import asyncio
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ from uuid import UUID, uuid4
 from packages.ports import atlas_ports
 from services.orchestrator.terminal_stack import IMAGE
 from services.orchestrator import code_worker
+from services.orchestrator import work_egress
 
 
 def enabled() -> bool:
@@ -155,6 +157,8 @@ class Workspace:
             self.key = self.scope_key + "/g" + str(generation)
         self.metadata_path = state_dir() / (self.key + ".json")
         self.metadata_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.egress = work_egress.enabled()
+        self.proxy_host = work_egress.proxy_host(self.key)
 
     def available(self) -> bool:
         if self.scoped:
@@ -167,6 +171,7 @@ class Workspace:
         """Remove every worker and scratch generation for this authorized session."""
         if not self.scoped:
             raise ValueError("scoped_cleanup_required")
+        await self._stop_egress()
         listed = await asyncio.create_subprocess_exec(
             "docker",
             "ps",
@@ -241,6 +246,8 @@ class Workspace:
     async def prepare(self) -> None:
         if not self.available():
             raise ValueError("code_mode_disabled")
+        if self.egress:
+            await self._start_egress()
         # Trusted bootstrap creates only a session directory in the named volume.
         await self._docker(
             [
@@ -253,7 +260,7 @@ class Workspace:
             ],
             "import os; p='/workspace/"
             + self.key
-            + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)",
+            + "'; os.makedirs(p + '/.atlas-home', exist_ok=True); os.chown(p,1000,1000); os.chown(p + '/.atlas-home',1000,1000)",
             b"",
             # Same bounded allowance as cleanup: a cold container start can exceed 30 s.
             120,
@@ -315,43 +322,7 @@ class Workspace:
         self, mount: list[str], source: str, payload: bytes, timeout: float
     ) -> bytes:
         name = atlas_ports().name("atlas-code-" + uuid4().hex)
-        args = [
-            "docker",
-            "run",
-            "--rm",
-            "-i",
-            "--name",
-            name,
-            "--network",
-            "none",
-            "--cap-drop",
-            "ALL",
-            "--security-opt",
-            "no-new-privileges:true",
-            "--read-only",
-            "--memory",
-            "768m",
-            "--memory-swap",
-            "768m",
-            "--cpus",
-            "1",
-            "--pids-limit",
-            "64",
-            "--tmpfs",
-            "/tmp:rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
-            *(["--label", "atlas.work=" + self.scope_key] if self.scoped else []),
-            *mount,
-            "--entrypoint",
-            "/usr/bin/env",
-            IMAGE,
-            "-i",
-            "PATH=/usr/local/bin:/usr/bin:/bin",
-            "HOME=/tmp",
-            "LANG=C.UTF-8",
-            "python3",
-            "-c",
-            source,
-        ]
+        args = self.docker_arguments(mount, source, name)
         process = await asyncio.create_subprocess_exec(
             *args,
             stdin=asyncio.subprocess.PIPE,
@@ -381,3 +352,199 @@ class Workspace:
             if process.returncode is None:
                 process.kill()
                 await process.wait()
+
+    def docker_arguments(
+        self, mount: list[str], source: str, name: str | None = None
+    ) -> list[str]:
+        name = atlas_ports().name("atlas-code-" + uuid4().hex) if name is None else name
+        network = (
+            work_egress.internal_network_name(atlas_ports().base)
+            if self.egress
+            else "none"
+        )
+        memory = "2g" if self.egress else "768m"
+        pids_limit = "256" if self.egress else "64"
+        environment = (
+            [
+                "HOME=/workspace/.atlas-home",
+                "PIP_USER=1",
+                "PIP_CACHE_DIR=/workspace/.atlas-home/pip",
+                "npm_config_prefix=/workspace/.atlas-home/npm",
+                "npm_config_cache=/workspace/.atlas-home/npm-cache",
+            ]
+            if self.egress
+            else []
+        )
+        proxy = (
+            [
+                "HTTP_PROXY=http://" + self.proxy_host + ":3128",
+                "HTTPS_PROXY=http://" + self.proxy_host + ":3128",
+                "NO_PROXY=localhost,127.0.0.1,::1",
+            ]
+            if self.egress
+            else []
+        )
+        args = [
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--name",
+            name,
+            "--network",
+            network,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--read-only",
+            "--memory",
+            memory,
+            "--memory-swap",
+            memory,
+            "--cpus",
+            "1",
+            "--pids-limit",
+            pids_limit,
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
+            *(["--label", "atlas.work=" + self.scope_key] if self.scoped else []),
+            *mount,
+            "--entrypoint",
+            "/usr/bin/env",
+            IMAGE,
+            "-i",
+            "PATH=/usr/local/bin:/usr/bin:/bin",
+            *environment,
+            *proxy,
+            "LANG=C.UTF-8",
+            "python3",
+            "-c",
+            source,
+        ]
+        return args
+
+    def access_log_path(self, log_dir: Path) -> Path:
+        return log_dir / (hashlib.sha256(self.key.encode()).hexdigest() + ".log")
+
+    def prepare_access_log(self, log_dir: Path) -> Path:
+        log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        access_log = self.access_log_path(log_dir)
+        access_log.touch(exist_ok=True)
+        os.chown(access_log, 13, 13)
+        os.chmod(access_log, 0o620)
+        return access_log
+
+    def egress_proxy_arguments(self, access_log: Path) -> list[str]:
+        return [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            atlas_ports().name(work_egress.proxy_name(self.key)),
+            "--network",
+            work_egress.internal_network_name(atlas_ports().base),
+            "--network-alias",
+            self.proxy_host,
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--read-only",
+            "--memory",
+            "128m",
+            "--memory-swap",
+            "128m",
+            "--pids-limit",
+            "64",
+            "--tmpfs",
+            "/var/spool/squid:rw,noexec,nosuid,size=16m,uid=13,gid=13",
+            "--tmpfs",
+            "/run:rw,noexec,nosuid,size=1m,uid=13,gid=13",
+            "--mount",
+            f"type=bind,src={access_log},dst=/var/log/squid/access.log",
+            "--label",
+            "atlas.work=" + (self.scope_key or self.key),
+            "-e",
+            "SQUID_CONFIG="
+            + work_egress.squid_configuration(self.scope_key or self.key),
+            "--entrypoint",
+            "/bin/sh",
+            work_egress.PROXY_IMAGE,
+            "-c",
+            "printf '%s' \"$SQUID_CONFIG\" > /tmp/squid.conf && squid -z && exec squid -N -f /tmp/squid.conf",
+        ]
+
+    async def _start_egress(self) -> None:
+        internal_network = work_egress.internal_network_name(atlas_ports().base)
+        external_network = work_egress.external_network_name(atlas_ports().base)
+        created_internal = await asyncio.create_subprocess_exec(
+            "docker",
+            "network",
+            "create",
+            "--internal",
+            "--label",
+            "atlas.owner=work-egress",
+            internal_network,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await created_internal.communicate()
+        if created_internal.returncode and b"already exists" not in stderr:
+            raise RuntimeError("Work egress internal network creation failed")
+        created_external = await asyncio.create_subprocess_exec(
+            "docker",
+            "network",
+            "create",
+            "--label",
+            "atlas.owner=work-egress",
+            external_network,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await created_external.communicate()
+        if created_external.returncode and b"already exists" not in stderr:
+            raise RuntimeError("Work egress upstream network creation failed")
+        log_dir = Path(
+            os.environ.get(
+                "ATLAS_WORK_EGRESS_LOG_DIR",
+                state_dir() / "work-egress-logs",
+            )
+        )
+        access_log = self.prepare_access_log(log_dir)
+        started = await asyncio.create_subprocess_exec(
+            *self.egress_proxy_arguments(access_log),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await started.communicate()
+        if started.returncode:
+            await self._stop_egress()
+            raise RuntimeError("Work egress proxy start failed")
+        connected = await asyncio.create_subprocess_exec(
+            "docker",
+            "network",
+            "connect",
+            external_network,
+            atlas_ports().name(work_egress.proxy_name(self.key)),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await connected.communicate()
+        if connected.returncode:
+            await self._stop_egress()
+            raise RuntimeError("Work egress upstream connection failed")
+
+    async def _stop_egress(self) -> None:
+        if not self.egress:
+            return
+        name = atlas_ports().name(work_egress.proxy_name(self.key))
+        removed = await asyncio.create_subprocess_exec(
+            "docker",
+            "rm",
+            "-f",
+            name,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await removed.wait()

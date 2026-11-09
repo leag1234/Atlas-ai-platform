@@ -161,9 +161,23 @@ def command(root: Path, text: str, timeout: float, memory_mb: int) -> dict[str, 
         cwd=root,
         env={
             "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": "/tmp",
+            "HOME": os.environ.get("HOME", "/tmp"),
             "LANG": "C.UTF-8",
             "PYTHONDONTWRITEBYTECODE": "1",
+            **{
+                key: value
+                for key, value in os.environ.items()
+                if key
+                in {
+                    "PIP_USER",
+                    "PIP_CACHE_DIR",
+                    "npm_config_prefix",
+                    "npm_config_cache",
+                    "HTTP_PROXY",
+                    "HTTPS_PROXY",
+                    "NO_PROXY",
+                }
+            },
         },
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
