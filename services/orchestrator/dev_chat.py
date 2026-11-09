@@ -3,6 +3,7 @@
 from packages.limits import LimitError
 
 import json
+import logging
 import time
 from typing import Any, Literal
 from pydantic import Field, model_validator
@@ -352,13 +353,20 @@ class Output:
                         raise ValueError("tool_choice_violated")
                     if bool(st.calls) != (st.reason == "tool_calls"):
                         raise ValueError("inconsistent_finish")
+                    declared = {t.function.name for t in self.request.tools}
                     for c in st.calls.values():
-                        if c["function"]["name"] not in {
-                            t.function.name for t in self.request.tools
-                        } or not isinstance(
-                            json.loads(c["function"]["arguments"]), dict
-                        ):
+                        if not isinstance(json.loads(c["function"]["arguments"]), dict):
                             raise ValueError("invalid_tool_call")
+                        if c["function"]["name"] not in declared:
+                            # Like the OpenAI API, pass a call to an undeclared tool through:
+                            # the client answers that the tool is unknown and the model
+                            # corrects itself. Rejecting the whole answer stopped agent
+                            # sessions (incident 2026-11-09, model calling apply_patch).
+                            logging.getLogger(__name__).warning(
+                                "devapi_undeclared_tool_call name=%s declared=%s",
+                                c["function"]["name"][:64],
+                                ",".join(sorted(declared))[:256],
+                            )
                         json.dumps(
                             json.loads(c["function"]["arguments"]), allow_nan=False
                         )

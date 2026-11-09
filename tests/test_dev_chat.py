@@ -112,6 +112,44 @@ class DevChatTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             Output("test", ChatInput.model_validate(BODY)).result()
 
+    def test_undeclared_tool_call_passes_through_instead_of_failing(self) -> None:
+        # Incident 2026-11-09: a model called an undeclared tool (apply_patch) and the
+        # whole answer failed, stopping agent sessions. It now reaches the client.
+        request = ChatInput.model_validate(BODY)
+        call = {
+            "index": 0,
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "apply_patch", "arguments": '{"patch": "x"}'},
+        }
+        with self.assertLogs("services.orchestrator.dev_chat", "WARNING") as logs:
+            frames = Output("test", request).feed(
+                {
+                    "choices": [
+                        {"delta": {"tool_calls": [call]}, "finish_reason": "tool_calls"}
+                    ]
+                }
+            )
+        self.assertIn("apply_patch", json.dumps(frames))
+        self.assertIn("devapi_undeclared_tool_call", logs.output[0])
+
+    def test_tool_call_with_non_object_arguments_still_fails(self) -> None:
+        request = ChatInput.model_validate(BODY)
+        call = {
+            "index": 0,
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "save_value", "arguments": "[1, 2]"},
+        }
+        with self.assertRaises(ValueError):
+            Output("test", request).feed(
+                {
+                    "choices": [
+                        {"delta": {"tool_calls": [call]}, "finish_reason": "tool_calls"}
+                    ]
+                }
+            )
+
     def test_forced_function_cannot_silently_become_text(self) -> None:
         request = ChatInput.model_validate(
             BODY
