@@ -286,7 +286,7 @@ class RemoteWork:
         session = self.session(target, work_session)
         command_digest = hashlib.sha256(args["command"].encode()).hexdigest()
         pending = self.scope.db.execute(
-            "SELECT data FROM atlas_projects.runner_commands WHERE org_id=%s AND project_id=%s AND data->>'work_session_id'=%s AND data->>'target_id'=%s AND data->>'command_digest'=%s AND data->>'cwd'=%s AND data->>'code_digest'=%s AND data->>'state'='awaiting_approval'",
+            "SELECT data FROM atlas_projects.runner_commands WHERE org_id=%s AND project_id=%s AND data->>'work_session_id'=%s AND data->>'target_id'=%s AND data->>'command_digest'=%s AND data->>'cwd'=%s AND data->>'state'='awaiting_approval' ORDER BY data->>'created_at' DESC",
             (
                 self.registry.org,
                 self.scope.project_id,
@@ -294,11 +294,33 @@ class RemoteWork:
                 target_id,
                 command_digest,
                 args["cwd"],
-                digest,
             ),
         ).fetchall()
         if pending:
-            return self.result(dict(pending[0]["data"]))
+            command = dict(pending[0]["data"])
+            if command["code_digest"] == digest:
+                return self.result(command)
+            folder = self.files.get(
+                "folder", self.scope.project_data["deliverables_folder_id"]
+            )
+            snapshot = self.files.create_file(
+                folder["id"],
+                "runner-snapshot-" + command["id"] + "-" + digest[:12] + ".json",
+                raw,
+                folder["revision"],
+            )
+            command["code_digest"] = digest
+            command["snapshot"] = dict(
+                file_id=snapshot["id"], version_id=snapshot["version_id"]
+            )
+            if command.get("approval_id"):
+                approval = self.work.approval(command["approval_id"])["data"]
+                approval["remote"]["code_digest"] = digest
+                approval["version_refs"] = [command["snapshot"]]
+                approval["maximum_bytes"] = len(raw)
+                self.work.update_approval(approval)
+            self.registry.save("commands", command)
+            return self.result(command)
         unresolved = self.scope.db.execute(
             "SELECT data FROM atlas_projects.runner_commands WHERE org_id=%s AND project_id=%s AND data->>'runner_session_id'=%s AND data->>'state'='unknown'",
             (self.registry.org, self.scope.project_id, session["id"]),
@@ -448,6 +470,16 @@ class RemoteWork:
             # Confirmation is a browser-only decision; the model cannot supply it.
             approval["remote"]["project_rule"] = prefix_rule(command["command"])
         approval["decision"] = "allowed" if data["allow"] else "denied"
+        if data["allow"]:
+            _, grant = self.registry.granted(command["target_id"])
+            if not grant["code_egress_approved_at"]:
+                grant["code_egress_approved_at"] = timestamp()
+                self.registry.save("grants", grant)
+                command["binding"] = self.binding(
+                    self.registry.get("targets", command["target_id"]), grant
+                )
+                self.registry.save("commands", command)
+                self.audit("runner_code_egress_approved", command)
         self.work.update_approval(approval)
         self.audit(
             "runner_command_approved" if data["allow"] else "runner_command_denied",

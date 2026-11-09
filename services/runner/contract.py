@@ -88,14 +88,25 @@ class RemoteRun(Input):
     def relative(cls, value: str) -> str:
         from pathlib import PurePosixPath
 
+        if not value or value == "." or value.startswith("/") or _is_uuid(value):
+            return "."
         if (
-            value.startswith("/")
-            or ".." in PurePosixPath(value).parts
+            ".." in PurePosixPath(value).parts
             or "\\" in value
             or any(ord(c) < 32 for c in value)
         ):
             raise ValueError("invalid_cwd")
-        return value
+        return str(PurePosixPath(value))
+
+
+def _is_uuid(value: str) -> bool:
+    from uuid import UUID
+
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 class RemoteStatus(Input):

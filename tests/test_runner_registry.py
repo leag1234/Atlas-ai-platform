@@ -211,10 +211,23 @@ class RunnerRegistryTests(ProjectWorkTests):
                 ]
             )
         )
+        return self.prepare_raw(
+            target,
+            command,
+            base64.b64encode(raw).decode(),
+        )
+
+    def prepare_raw(
+        self,
+        target: dict[str, Any],
+        command: str,
+        snapshot_content: str,
+        cwd: str = ".",
+    ) -> Any:
         return self.remote(
             "prepare",
-            dict(target=target["id"], command=command, wait_s=0),
-            snapshot_content=base64.b64encode(raw).decode(),
+            dict(target=target["id"], command=command, cwd=cwd, wait_s=0),
+            snapshot_content=snapshot_content,
         )
 
     def test_runner_startup_discovery_and_actionable_switch_errors(self) -> None:
@@ -263,7 +276,7 @@ class RunnerRegistryTests(ProjectWorkTests):
         self.assertIsNone(tools.selection.pending)
 
         # The grant is committed after acquisition and before turn-start discovery.
-        target = self.register()
+        target = self.register("rules")
         listing = asyncio.run(
             execution.broker.call(
                 "remote", dict(execution.fence(), operation="list", arguments={})
@@ -308,7 +321,7 @@ class RunnerRegistryTests(ProjectWorkTests):
         from services.orchestrator.loop import Call
         from services.orchestrator.work_tool_selection import WorkToolSelection
 
-        target = self.register()
+        target = self.register("rules")
         fixture = self
 
         class Client:
@@ -358,7 +371,7 @@ class RunnerRegistryTests(ProjectWorkTests):
         from services.orchestrator.work_tool_selection import WorkToolSelection
         from services.retrieval.project_work_contract import validate
 
-        target = self.register()
+        target = self.register("rules")
         fixture = self
         archive = io.BytesIO()
         with tarfile.open(fileobj=archive, mode="w:gz") as tar:
@@ -381,40 +394,21 @@ class RunnerRegistryTests(ProjectWorkTests):
             org = fixture.org
             project = fixture.project
             approval: dict[str, Any] | None = None
-            first_status_seen = False
             calls: list[tuple[str, str]] = []
 
             async def call(
                 self, operation: str, data: dict[str, Any]
             ) -> dict[str, Any]:
-                if (
-                    operation == "remote"
-                    and data["operation"] == "status"
-                    and self.approval
-                    and self.approval["decision"] == "pending"
-                    and self.first_status_seen
-                ):
-                    self.first_status_seen = False
-                    decision = fixture.request(
-                        "POST",
-                        fixture.project_path()
-                        + "/approvals/"
-                        + self.approval["id"]
-                        + "/decision",
-                        "editor",
-                        dict(allow=True, action_digest=self.approval["action_digest"]),
-                    )
-                    fixture.assertEqual(decision.status_code, 200, decision.text)
-                    self.approval = None
-                    self.approved = True
                 response = fixture.broker(operation, data)
                 fixture.assertEqual(response.status_code, 200, response.text)
                 value = dict(response.json())
                 if operation == "remote":
                     self.calls.append((operation, data["operation"]))
-                    if data["operation"] == "status":
-                        self.first_status_seen = True
-                if operation == "remote" and data["operation"] == "prepare":
+                if (
+                    operation == "remote"
+                    and data["operation"] == "prepare"
+                    and "approval" in value
+                ):
                     self.approval = value["approval"]
                     validate("Approval", self.approval)
                 return value
@@ -462,6 +456,14 @@ class RunnerRegistryTests(ProjectWorkTests):
             )
         )
         self.assertEqual(duplicate["command_id"], command_id)
+        assert client.approval is not None
+        decision = self.request(
+            "POST",
+            self.project_path() + "/approvals/" + client.approval["id"] + "/decision",
+            "editor",
+            dict(allow=True, action_digest=client.approval["action_digest"]),
+        )
+        self.assertEqual(decision.status_code, 200, decision.text)
         resumed = asyncio.run(
             tools.execute(
                 Call(
@@ -477,6 +479,82 @@ class RunnerRegistryTests(ProjectWorkTests):
         self.assertEqual(resumed["state"], "succeeded", resumed)
         self.assertIn("remote Work adapter acceptance", str(resumed["output"]))
         self.assertTrue(resumed["log_file_id"])
+        self.assertEqual(client.calls.count(("remote", "execute")), 1, client.calls)
+        third = asyncio.run(
+            tools.execute(
+                Call(
+                    "third",
+                    "remote_run",
+                    json.dumps(
+                        dict(target=target["id"], command="cat demo.txt", wait_s=10)
+                    ),
+                ),
+                30,
+            )
+        )
+        self.assertEqual(third["state"], "succeeded", third)
+        self.assertNotEqual(third["command_id"], command_id)
+        self.assertNotIn("approval", third)
+        self.assertEqual(client.calls.count(("remote", "prepare")), 4, client.calls)
+        self.assertEqual(client.calls.count(("remote", "execute")), 2, client.calls)
+        closed = self.remote("close", {})
+        self.assertEqual(closed.status_code, 200, closed.text)
+
+    def test_runner_cwd_normalization_and_pending_reuse_survives_code_change(
+        self,
+    ) -> None:
+        from services.retrieval.project_scoped_api import store
+
+        target = self.register()
+        folder_id = str(uuid4())
+        raw = canonical(
+            dict(
+                files=[
+                    dict(
+                        path="demo.txt",
+                        mode="100644",
+                        content=base64.b64encode(b"first\n").decode(),
+                    )
+                ]
+            )
+        )
+        first = self.prepare_raw(
+            target,
+            "cat demo.txt",
+            base64.b64encode(raw).decode(),
+            cwd=folder_id,
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.json()["state"], "awaiting_approval", first.text)
+        command_id = first.json()["command_id"]
+        changed = canonical(
+            dict(
+                files=[
+                    dict(
+                        path="demo.txt",
+                        mode="100644",
+                        content=base64.b64encode(b"second\n").decode(),
+                    )
+                ]
+            )
+        )
+        second = self.prepare_raw(
+            target,
+            "cat demo.txt",
+            base64.b64encode(changed).decode(),
+            cwd="/" + folder_id,
+        )
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json()["command_id"], command_id, second.text)
+        with store(self.app_dsn).scope(
+            self.identity("editor", self.project), self.org, self.project
+        ) as scope:
+            row = scope.db.execute(
+                "SELECT data FROM atlas_projects.runner_commands WHERE id=%s",
+                (command_id,),
+            ).fetchone()
+            assert row is not None
+            self.assertEqual(row["data"]["cwd"], ".")
         closed = self.remote("close", {})
         self.assertEqual(closed.status_code, 200, closed.text)
 
