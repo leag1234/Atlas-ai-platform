@@ -1,5 +1,6 @@
 """Tests for the opencode Work engine driver (no network beyond a local fake)."""
 
+import asyncio
 import json
 import unittest
 from typing import Any
@@ -185,12 +186,6 @@ class PermissionResponseTests(unittest.TestCase):
 class FakeOpencode:
     """Minimal fake opencode server: SSE stream plus the REST endpoints."""
 
-    def __init__(self, events: list[dict[str, Any]]):
-        self.events = events
-        self.aborted: list[str] = []
-        self.permissions: list[tuple[str, str]] = []
-        self.prompts: list[dict[str, Any]] = []
-
     def app(self) -> web.Application:
         app = web.Application()
         app.router.add_post("/session", self.create_session)
@@ -217,11 +212,22 @@ class FakeOpencode:
         return web.json_response({})
 
     async def stream(self, request: web.Request) -> web.StreamResponse:
+        self.stream_opened.set()
         response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await response.prepare(request)
+        if self.hold_stream:
+            await self.hold_stream.wait()
         await response.write(sse(*self.events))
         await response.write_eof()
         return response
+
+    def __init__(self, events: list[dict[str, Any]], hold_stream: bool = False):
+        self.events = events
+        self.hold_stream = asyncio.Event() if hold_stream else None
+        self.stream_opened = asyncio.Event()
+        self.aborted: list[str] = []
+        self.permissions: list[tuple[str, str]] = []
+        self.prompts: list[dict[str, Any]] = []
 
 
 class DriverTests(unittest.IsolatedAsyncioTestCase):
@@ -358,6 +364,107 @@ class DriverTests(unittest.IsolatedAsyncioTestCase):
         )
         result, _ = await self._run(fake)
         self.assertEqual(result["outcome"], "error")
+
+    async def test_event_stream_opened_before_prompt(self) -> None:
+        fake = FakeOpencode(
+            [{"type": "session.idle", "properties": {"sessionID": "sess-1"}}]
+        )
+        prompt_seen = asyncio.Event()
+
+        original_prompt = fake.prompt_async
+
+        async def prompt_async(request: web.Request) -> web.Response:
+            self.assertTrue(fake.stream_opened.is_set())
+            prompt_seen.set()
+            return await original_prompt(request)
+
+        fake.prompt_async = prompt_async  # type: ignore[method-assign]
+        result, _ = await self._run(fake)
+        self.assertTrue(prompt_seen.is_set())
+        self.assertEqual(result["outcome"], "complete")
+
+    async def test_foreign_session_events_ignored(self) -> None:
+        fake = FakeOpencode(
+            [
+                {"type": "session.idle", "properties": {"sessionID": "other"}},
+                {
+                    "type": "message.part.updated",
+                    "properties": {
+                        "sessionID": "other",
+                        "part": {"type": "text", "text": "not ours"},
+                    },
+                },
+                {
+                    "type": "message.part.updated",
+                    "properties": {
+                        "part": {
+                            "type": "text",
+                            "text": "ours",
+                            "sessionID": "sess-1",
+                        }
+                    },
+                },
+                {"type": "session.idle", "properties": {"sessionID": "sess-1"}},
+            ]
+        )
+        result, emitted = await self._run(fake)
+        self.assertEqual(result["outcome"], "complete")
+        self.assertEqual([e["kind"] for e in emitted], ["text", "turn_end"])
+        self.assertEqual(emitted[0]["text"], "ours")
+
+    async def test_budget_checked_on_step_finish_payload(self) -> None:
+        fake = FakeOpencode(
+            [
+                {
+                    "type": "message.part.updated",
+                    "properties": {
+                        "sessionID": "sess-1",
+                        "part": {
+                            "type": "step-finish",
+                            "tokens": {"input": 10, "output": 5},
+                            "cost": 0.5,
+                        },
+                    },
+                },
+                {"type": "session.idle", "properties": {"sessionID": "sess-1"}},
+            ]
+        )
+        result, emitted = await self._run(fake, cost_limit=0.3)
+        self.assertEqual(result["outcome"], "aborted_budget")
+        self.assertEqual(fake.aborted, ["sess-1"])
+        self.assertEqual(emitted, [])
+
+    async def test_silent_stream_aborts_on_time(self) -> None:
+        fake = FakeOpencode([], hold_stream=True)
+        emitted: list[dict[str, Any]] = []
+
+        async def emit(event: dict[str, Any]) -> None:
+            emitted.append(event)
+
+        async with TestServer(fake.app()) as server:
+            driver = OpencodeDriver(
+                str(server.make_url("/")), "pw", emit, time_limit=0.2
+            )
+            result = await asyncio.wait_for(driver.run("fix the tests"), timeout=10)
+        self.assertEqual(result["outcome"], "aborted_time")
+        self.assertEqual(fake.aborted, ["sess-1"])
+
+    def test_permission_patterns_list(self) -> None:
+        event = map_event(
+            {
+                "type": "permission.asked",
+                "properties": {
+                    "id": "perm-9",
+                    "sessionID": "s1",
+                    "type": "bash",
+                    "patterns": ["rm -rf /", "git push"],
+                    "pattern": "ignored",
+                    "title": "also ignored",
+                },
+            }
+        )
+        assert event is not None
+        self.assertEqual(event["pattern"], "rm -rf /, git push")
 
 
 if __name__ == "__main__":

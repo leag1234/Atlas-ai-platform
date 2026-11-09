@@ -7,6 +7,7 @@ stays Atlas's: this driver maps opencode server events to Atlas Work events and
 enforces the turn's own time and cost ceilings by aborting the opencode session.
 """
 
+import asyncio
 import base64
 import json
 import os
@@ -90,12 +91,17 @@ def map_event(payload: dict[str, Any]) -> dict[str, Any] | None:
             }
         return None
     if kind == "permission.asked":
+        patterns = info.get("patterns")
+        if isinstance(patterns, list) and patterns:
+            pattern = ", ".join(str(p) for p in patterns)
+        else:
+            pattern = str(info.get("pattern") or info.get("title") or "")
         return {
             "kind": "permission",
             "permission_id": info.get("id"),
             "session_id": info.get("sessionID"),
             "tool": info.get("type") or info.get("permission"),
-            "pattern": _short(info.get("pattern") or info.get("title")),
+            "pattern": _short(pattern),
         }
     if kind == "session.idle":
         return {"kind": "turn_end", "session_id": info.get("sessionID")}
@@ -207,6 +213,14 @@ class OpencodeDriver:
             json={"response": response},
         )
 
+    def _payload_session_id(self, payload: dict[str, Any]) -> Any:
+        info = payload.get("properties") or {}
+        session_id = info.get("sessionID")
+        if session_id is None:
+            part = info.get("part") or {}
+            session_id = part.get("sessionID")
+        return session_id
+
     async def run(self, prompt: str) -> dict[str, Any]:
         """Run one turn; return outcome, cost and the mapped events."""
         events: list[dict[str, Any]] = []
@@ -217,55 +231,79 @@ class OpencodeDriver:
                 http, "POST", "/session", json={"title": "atlas-work"}
             )
             session_id = created["id"]
-            await self._request(
-                http,
-                "POST",
-                "/session/" + session_id + "/prompt_async",
-                json={
-                    "model": {
-                        "providerID": self.provider,
-                        "modelID": self.model_id,
-                    },
-                    "parts": [{"type": "text", "text": prompt}],
-                },
-            )
-            async with http.get(
+            stream = await http.get(
                 self.base_url + "/event",
                 headers={"Authorization": self.auth},
-            ) as stream:
-                async for line in stream.content:
-                    decoded = line.decode("utf-8", "replace").strip()
-                    if not decoded.startswith("data:"):
-                        continue
-                    payload = json.loads(decoded[5:])
-                    usage = step_usage(payload)
-                    if usage is not None:
-                        self.input_tokens += usage[0]
-                        self.output_tokens += usage[1]
-                        self.cost += usage[2]
-                    mapped = map_event(payload)
-                    if mapped is None:
-                        continue
-                    events.append(mapped)
-                    await self.emit(mapped)
-                    if mapped["kind"] == "permission":
-                        await self._answer_permission(http, mapped)
-                    elif mapped["kind"] == "turn_end":
-                        break
-                    elif mapped["kind"] == "error":
-                        outcome = "error"
-                        break
-                    if self.cost_limit and self.cost >= Decimal(str(self.cost_limit)):
-                        outcome = "aborted_budget"
-                        await self._abort(http, session_id)
-                        break
-                    if (
-                        self.time_limit
-                        and time.monotonic() - started >= self.time_limit
-                    ):
-                        outcome = "aborted_time"
-                        await self._abort(http, session_id)
-                        break
+            )
+            try:
+                await self._request(
+                    http,
+                    "POST",
+                    "/session/" + session_id + "/prompt_async",
+                    json={
+                        "model": {
+                            "providerID": self.provider,
+                            "modelID": self.model_id,
+                        },
+                        "parts": [{"type": "text", "text": prompt}],
+                    },
+                )
+                async with stream:
+                    while True:
+                        remaining = (
+                            self.time_limit - (time.monotonic() - started)
+                            if self.time_limit
+                            else None
+                        )
+                        if remaining is not None and remaining <= 0:
+                            outcome = "aborted_time"
+                            await self._abort(http, session_id)
+                            break
+                        try:
+                            if remaining is None:
+                                line = await stream.content.readline()
+                            else:
+                                line = await asyncio.wait_for(
+                                    stream.content.readline(), timeout=remaining
+                                )
+                        except asyncio.TimeoutError:
+                            outcome = "aborted_time"
+                            await self._abort(http, session_id)
+                            break
+                        decoded = line.decode("utf-8", "replace").strip()
+                        if not decoded.startswith("data:"):
+                            continue
+                        payload = json.loads(decoded[5:])
+                        payload_session = self._payload_session_id(payload)
+                        if payload_session is not None and str(payload_session) != str(
+                            session_id
+                        ):
+                            continue
+                        usage = step_usage(payload)
+                        if usage is not None:
+                            self.input_tokens += usage[0]
+                            self.output_tokens += usage[1]
+                            self.cost += usage[2]
+                        if self.cost_limit and self.cost >= Decimal(
+                            str(self.cost_limit)
+                        ):
+                            outcome = "aborted_budget"
+                            await self._abort(http, session_id)
+                            break
+                        mapped = map_event(payload)
+                        if mapped is None:
+                            continue
+                        events.append(mapped)
+                        await self.emit(mapped)
+                        if mapped["kind"] == "permission":
+                            await self._answer_permission(http, mapped)
+                        elif mapped["kind"] == "turn_end":
+                            break
+                        elif mapped["kind"] == "error":
+                            outcome = "error"
+                            break
+            finally:
+                stream.close()
         return {
             "outcome": outcome,
             "cost": float(self.cost),
