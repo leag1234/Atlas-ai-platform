@@ -31,7 +31,7 @@ MCP tools or files. Speech services use separate local endpoints.
 | Tool calls | Partial | Developer API accepts function definitions, tool-call history, client tool results and `auto`/`none`/`required`/named selection; supports parallel-call control. Clients execute functions. Hosted OpenAI tools are absent; the chat assistant runs its own configured tools. |
 | Images | Partial | Chat accepts image content and provides Atlas-specific image upload/display/generation flows. Developer input is text only. No OpenAI `/v1/images/generations`, edits or variations endpoint. |
 | Files | Not supported | No OpenAI `/v1/files` lifecycle. The web assistant reads attachments and creates downloads through its own document/file services. |
-| Embeddings | Not supported | No public OpenAI `/v1/embeddings` endpoint. Retrieval uses an internal CPU gateway with a different `/embeddings` contract. |
+| Embeddings | Supported | `POST /embeddings` in OpenAI format with model `atlas-embed` (Qwen3 Embedding 8B on Scaleway): `input` string or list, `encoding_format` `float` or `base64`, optional `dimensions` (4096 by default). Up to 2048 inputs, 32768 tokens each, 8 MiB of text per request. Charged per input token on the key; listed in `GET /models`. Any model name is served by `atlas-embed`. |
 | Audio | Partial | Optional services expose `/v1/audio/speech` (Piper, WAV/MP3) and `/v1/audio/transcriptions` (local Whisper, JSON/text). These are separate from the developer API. No Realtime API. |
 | Authentication and keys | Supported | Developer API accepts `Authorization: Bearer` or `x-api-key`; if both are present they must match. Keys can be revoked, are stored as hashes and have individual daily quotas. |
 | Limits and errors | Partial | Atlas enforces its own request, context, cost and time limits. Developer errors, including unsupported routes, use `error.type` and `error.message`; error codes and headers are not a complete OpenAI match. Daily quota errors do not include `Retry-After`. |
@@ -180,7 +180,7 @@ reach the cost limit sooner than ordinary text requests.
 | --- | --- |
 | 400 | Invalid/unsupported input, body/context limit or cost reservation too large. |
 | 401 | Missing, invalid, conflicting or revoked credentials. |
-| 404 | Unsupported endpoint; JSON `error.type` and `error.message`, including embeddings, files and image generation. |
+| 404 | Unsupported endpoint; JSON `error.type` and `error.message`, including files and image generation. |
 | 429 | Developer daily request or monetary quota exhausted; no `Retry-After` header. |
 | 502 | Provider failure or invalid final JSON/schema output in a non-streamed inference response. |
 | 503 | Request setup unavailable, including missing configuration or setup timeout. |
