@@ -219,6 +219,26 @@ be decoded. Strict privacy mode answers 503 `strict_privacy_unavailable`: no own
 server exists yet. `POST /audio/translations` answers 400 `translation_not_supported`: transcribe,
 then translate the text with a chat model.
 
+## 4 quater. Embeddings
+
+`POST /embeddings` follows the OpenAI format. Use the model `atlas-embed` (Qwen3 Embedding 8B, served by
+Scaleway in Europe):
+
+```sh
+curl https://atlas.eu.com/api/atlas/v1/embeddings \
+  -H "Authorization: Bearer $ATLAS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "atlas-embed", "input": ["Bonjour", "Hello"]}'
+```
+
+- `input`: a non-empty string or a list of up to 2048 non-empty strings, 32768 tokens each, 8 MiB of
+  text per request.
+- `encoding_format`: `float` (default) or `base64`.
+- `dimensions`: optional; vectors have 4096 dimensions by default. A smaller value returns shorter
+  vectors, useful for storage (for example in pgvector).
+- Cost: input tokens only, at the provider price (0.10 EUR per million tokens, excluding tax), counted
+  on the key like any other request.
+- Use the same model and the same `dimensions` for indexing and for queries.
+
 ## 5. Tool calls
 
 Function definitions, tool-call history, tool results and `tool_choice` (`auto`, `none`, `required` or a
