@@ -762,6 +762,18 @@ async def run(
                     result.text = "".join(answer_parts)
                     result.state = "done"
                     return result
+                if output.get("state") == "awaiting_approval":
+                    try:
+                        arguments = json.loads(call.arguments)
+                        command = str(arguments.get("command", "the requested command"))
+                        target = str(arguments.get("target", "the target"))
+                    except (TypeError, ValueError):
+                        command, target = "the requested command", "the target"
+                    result.text = (
+                        f"waiting for your approval to run {command} on {target}"
+                    )
+                    result.state = "done"
+                    return result
     except Stop as exc:
         result.reason = str(exc)
     except ValidationError as exc:

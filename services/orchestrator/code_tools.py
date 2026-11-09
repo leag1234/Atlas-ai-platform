@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 import time
@@ -572,8 +573,17 @@ class WorkTools(CodeTools):
                 )
             except ProjectError as exc:
                 result = dict(exc.body)
-            except (ValueError, OSError, RuntimeError, TimeoutError):
-                result = dict(error="invalid_or_unavailable_remote_operation")
+            except (ValueError, OSError, RuntimeError, TimeoutError) as exc:
+                code = str(exc) or exc.__class__.__name__
+                logging.getLogger(__name__).warning(
+                    "remote tool failure class=%s code=%s",
+                    exc.__class__.__name__,
+                    code,
+                )
+                result = dict(
+                    error=code,
+                    next_step="Correct the command or target from this error; do not resend an identical request.",
+                )
             await self.emit(
                 "tool",
                 tool=call.name,

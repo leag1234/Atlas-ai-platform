@@ -44,6 +44,8 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "code": (
         "edit_file",
         "run_command",
+        "remote_run",
+        "remote_status",
         "forge_action",
         "read_file",
         "write_file",

@@ -94,6 +94,63 @@ class CategoryTests(unittest.TestCase):
 
 
 class LoopFailureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_awaiting_remote_approval_ends_turn_with_visible_message(
+        self,
+    ) -> None:
+        from services.orchestrator.loop import Call
+
+        class Model:
+            def estimate(self, messages: list[dict[str, object]]) -> Reservation:
+                return Reservation(1, Decimal(0))
+
+            async def complete(
+                self, messages: list[dict[str, object]], timeout: float
+            ) -> Turn:
+                return Turn(
+                    "",
+                    (
+                        Call(
+                            "run",
+                            "remote_run",
+                            json.dumps(
+                                dict(
+                                    target="linux-target",
+                                    command="python3 -m unittest -v",
+                                    wait_s=0,
+                                )
+                            ),
+                        ),
+                    ),
+                )
+
+        class Tools:
+            def estimate(self, call: object) -> Reservation:
+                return Reservation(1, Decimal(0))
+
+            async def execute(self, call: object, timeout: float) -> dict[str, object]:
+                return dict(
+                    state="awaiting_approval",
+                    command_id="command",
+                    next_step="The user must approve; stop and tell them; do not resubmit",
+                )
+
+        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
+            result = await run(
+                Query(question="Run the tests.", lang="en"),
+                Model(),
+                Tools(),
+                "system",
+                Limits(
+                    profile="atlas-qwen", tokens=None, code_mode=True, model_calls=1
+                ),
+            )
+
+        self.assertEqual(result.state, "done")
+        self.assertEqual(
+            result.text,
+            "waiting for your approval to run python3 -m unittest -v on linux-target",
+        )
+
     async def test_cost_budget_gateway_failure_is_a_budget_stop(self) -> None:
         with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
 
