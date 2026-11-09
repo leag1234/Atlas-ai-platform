@@ -419,7 +419,7 @@ class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
         }
 
     async def test_approved_posts_version_with_if_match_and_approval_id(self) -> None:
-        broker = FakeApprovalBroker(["approved"])
+        broker = FakeApprovalBroker(["allowed"])
         tools = FakeEmitTools()
         report = self.report()
         with mock.patch(
@@ -486,7 +486,7 @@ class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(report["not_saved"][0]["reason"], decision)
 
     async def test_post_error_is_reported_not_raised(self) -> None:
-        broker = FakeApprovalBroker(["approved"], post_status=409)
+        broker = FakeApprovalBroker(["allowed"], post_status=409)
         tools = FakeEmitTools()
         report = self.report()
         with mock.patch(
@@ -503,7 +503,7 @@ class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(report["not_saved"][0]["reason"].startswith("post_failed"))
 
     async def test_non_allowed_type_is_skipped_without_approval(self) -> None:
-        broker = FakeApprovalBroker(["approved"])
+        broker = FakeApprovalBroker(["allowed"])
         tools = FakeEmitTools()
         report = self.report()
         execution = FakeApprovalExecution(broker)
@@ -521,13 +521,13 @@ class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["not_saved"][0]["reason"], "type")
 
     async def test_wait_helper_serves_request_approval(self) -> None:
-        broker = FakeApprovalBroker(["approved"])
+        broker = FakeApprovalBroker(["allowed"])
         broker.approval_calls.append({})
         tools = FakeEmitTools()
         decision = await wait_for_approval(
             FakeApprovalExecution(broker), tools, {"id": "ap-1"}, 120
         )
-        self.assertEqual(decision, "approved")
+        self.assertEqual(decision, "allowed")
         self.assertEqual([kind for kind, _ in tools.events], ["approval", "approval"])
 
 

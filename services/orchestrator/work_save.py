@@ -319,7 +319,8 @@ async def save_modified_files(
         decision = await wait_for_approval(
             execution, tools, approval, min(120, remaining)
         )
-        if decision != "approved":
+        # The broker records an accepted approval as "allowed".
+        if decision != "allowed":
             report.setdefault("not_saved", []).append(
                 {"path": path, "reason": decision}
             )
