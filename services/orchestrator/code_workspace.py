@@ -444,6 +444,8 @@ class Workspace:
 
     def prepare_access_log(self, log_dir: Path) -> Path:
         log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Docker bind mounts need an absolute source path; the state directory may be relative.
+        log_dir = log_dir.resolve()
         access_log = self.access_log_path(log_dir)
         access_log.touch(exist_ok=True)
         os.chown(access_log, 13, 13)
@@ -540,7 +542,10 @@ class Workspace:
         _, stderr = await started.communicate()
         if started.returncode:
             await self._stop_egress()
-            raise RuntimeError("Work egress proxy start failed")
+            raise RuntimeError(
+                "Work egress proxy start failed: "
+                + str(redact(stderr.decode("utf-8", "replace")[-500:]))
+            )
         connected = await asyncio.create_subprocess_exec(
             "docker",
             "network",
