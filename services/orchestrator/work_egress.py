@@ -31,6 +31,20 @@ def enabled() -> bool:
     return os.environ.get("ATLAS_WORK_EGRESS") == EGRESS_MODE
 
 
+def allowed_hosts() -> frozenset[str]:
+    """Registry hosts, plus the Atlas API host when the opencode engine is on.
+
+    The opencode engine calls the Atlas API through the session proxy; that host
+    is the only addition, and only while ATLAS_WORK_ENGINE selects the engine.
+    """
+    if os.environ.get("ATLAS_WORK_ENGINE") != "opencode":
+        return ALLOWED_HOSTS
+    host = urlsplit(os.environ.get("ATLAS_WORK_ENGINE_API_BASE", "")).hostname or ""
+    if not host:
+        return ALLOWED_HOSTS
+    return ALLOWED_HOSTS | {host.lower()}
+
+
 def internal_network_name(port_base: int) -> str:
     return "atlas-work-egress" if port_base == 0 else f"atlas-work-egress-{port_base}"
 
@@ -79,7 +93,7 @@ def decide(
     try:
         ip_address(normalized)
     except ValueError:
-        if normalized not in ALLOWED_HOSTS:
+        if normalized not in allowed_hosts():
             return EgressDecision(False, "host_not_allowed")
     else:
         return EgressDecision(False, "ip_literal_denied")
@@ -101,7 +115,7 @@ def decide(
 
 
 def squid_configuration(session_label: str) -> str:
-    allowed = " ".join(sorted(ALLOWED_HOSTS))
+    allowed = " ".join(sorted(allowed_hosts()))
     safe_label = session_label.replace('"', "'")
     return f"""http_port {PROXY_PORT}
 acl allowed_hosts dstdomain {allowed}

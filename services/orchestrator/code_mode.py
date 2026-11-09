@@ -813,6 +813,63 @@ async def process_work(
 
                 tools.web = ChatTools(item, request.user_text)
                 selection.enable_research()
+            from services.orchestrator.work_opencode_turn import (
+                engine_turn_selected,
+                run_opencode_turn,
+            )
+
+            if engine_turn_selected(selection):
+                engine_result = await run_opencode_turn(
+                    request,
+                    item,
+                    tools,
+                    workspace,
+                    limits,
+                    selection.research_enabled,
+                )
+                if collect_workspace is not None:
+                    await collect_workspace(workspace)
+                item.reponse = engine_result.text
+                item.state = engine_result.state
+                item.cout_eur = engine_result.cost_eur
+                item.tokens = {
+                    "in": engine_result.input_tokens,
+                    "out": engine_result.output_tokens,
+                }
+                terminal = "completed" if engine_result.state == "done" else "failed"
+                # Released with the turn below: the engine's usage reaches the
+                # project ledger like the loop's.
+                nearby_usage = dict(
+                    tool_calls=engine_result.tool_calls,
+                    model_calls=0,
+                    elapsed_seconds=time.monotonic() - started,
+                    cost_eur=engine_result.cost_eur,
+                    reserved_eur=0,
+                    unknown_eur=0,
+                    stored_bytes=0,
+                    input_tokens=engine_result.input_tokens,
+                    output_tokens=engine_result.output_tokens,
+                    tokens_estimated=False,
+                )
+                if terminal == "failed":
+                    item.erreurs.append(engine_result.reason)
+                    item.reponse += "\n\nWork failed: " + engine_result.reason
+                await tools.emit(
+                    "recap",
+                    label="Work turn complete"
+                    if terminal == "completed"
+                    else "Work failed: " + engine_result.reason,
+                    status=terminal,
+                    output=dict(
+                        text=item.reponse,
+                        steps=engine_result.tool_calls,
+                        cost_eur=item.cout_eur,
+                        file_version_ids=[
+                            r["file_version_id"] for r in tools.deliverables
+                        ],
+                    ),
+                )
+                return
             selection.deliverable_pending = lambda: code_deliverable_pending(
                 request.user_text, selection.group, tools.deliverables
             )
