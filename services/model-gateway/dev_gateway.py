@@ -435,16 +435,20 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                     logging.getLogger(__name__).warning(
                         "devapi_provider_credit", extra={"provider": plan.provider}
                     )
-                    raise TransientProviderError("provider_quota")
+                    raise TransientProviderError("provider_quota", detail="http_402")
                 if response.status == 429 or response.status >= 500:
-                    raise TransientProviderError("provider_error")
+                    raise TransientProviderError(
+                        "provider_error", detail=f"http_{response.status}"
+                    )
                 if response.status != 200:
                     raise RuntimeError("provider_error")
                 async for piece in response.content.iter_chunked(16384):
                     started = True
                     yield piece
-    except (aiohttp.ClientError, TimeoutError):
-        raise TransientProviderError("provider_error", started=started) from None
+    except (aiohttp.ClientError, TimeoutError) as exc:
+        raise TransientProviderError(
+            "provider_error", started=started, detail=type(exc).__name__
+        ) from None
 
 
 async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
@@ -637,6 +641,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                 yield frame
             raise
         failed_primary_started = exc.started
+        fallback_reason = f"{exc} {exc.detail}".strip()
     except Exception:
         # Keep the stream shape of a failed attempt: frames held back while
         # waiting for visible content still reach the client before the error.
@@ -644,7 +649,17 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
             for frame in held:
                 yield frame
         raise
-    logging.getLogger(__name__).warning("devapi_transient_fallback")
+    # The reason and both targets are in the message itself: the service log
+    # format prints the message only, and the provider alert needs the cause.
+    logging.getLogger(__name__).warning(
+        "devapi_transient_fallback from=%s/%s to=%s/%s reason=%s started=%s",
+        plan.provider,
+        plan.model,
+        plan.fallback.provider if plan.fallback else "",
+        plan.fallback.model if plan.fallback else "",
+        fallback_reason[:80],
+        failed_primary_started,
+    )
     async with aclosing(attempt_events(plan.fallback)) as attempt:
         async for frame in attempt:
             if "cost_micro_eur" in frame:
