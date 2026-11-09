@@ -203,8 +203,10 @@ async def _wait_healthy(url: str, password: str, timeout: float) -> None:
 async def start(workspace: Workspace, model_id: str) -> EngineContainer:
     """Start one engine container for a turn and wait for its health endpoint.
 
-    The workspace is prepared first: that creates the session directory and,
-    with registry egress, the session's proxy on the internal network.
+    The caller has already prepared the workspace (process_work does it before
+    any tool runs): that created the session directory and, with registry
+    egress, the session's proxy. Preparing again would start a second proxy
+    under the same name and fail the turn.
     """
     if not work_egress.enabled():
         raise RuntimeError("missing_configuration: ATLAS_WORK_EGRESS")
@@ -212,7 +214,6 @@ async def start(workspace: Workspace, model_id: str) -> EngineContainer:
     if not api_key:
         raise RuntimeError("missing_configuration: ATLAS_WORK_ENGINE_API_KEY")
     base = api_base()
-    await workspace.prepare()
     password = secrets.token_urlsafe(24)
     name = container_name()
     network = work_egress.internal_network_name(atlas_ports().base)

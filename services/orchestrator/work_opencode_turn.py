@@ -63,6 +63,28 @@ def _label(tool: str, detail: Any) -> str:
     return label if len(label) <= 120 else label[:119] + "…"
 
 
+async def emit_changes(tools: WorkTools, workspace: Workspace) -> None:
+    """Emit the turn's changes as one diff, like the loop's edit events.
+
+    The engine edits files with its own tools, so no per-edit diff exists. The
+    workspace computes the patch against its turn baseline; the Work stream and
+    the UI receive it as a completed write_file event.
+    """
+    baseline = str(workspace.metadata().get("baseline", ""))
+    if not baseline:
+        return
+    exported = await workspace.invoke("export", {"baseline": baseline}, 60)
+    patch = "" if exported.get("error") else str(exported.get("patch") or "")
+    if patch.strip():
+        await tools.emit(
+            "tool",
+            tool="write_file",
+            status="completed",
+            label="Changes",
+            output={"diff": patch},
+        )
+
+
 async def run_opencode_turn(
     request: ChatRequest,
     item: Interaction,
@@ -138,6 +160,7 @@ async def run_opencode_turn(
         outcome = await driver.run(request.user_text)
     finally:
         await stop(engine.name)
+    await emit_changes(tools, workspace)
 
     state, reason = {
         "complete": ("done", ""),
