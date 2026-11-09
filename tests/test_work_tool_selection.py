@@ -69,6 +69,8 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
             "propose_scheduled_task",
             "edit_file",
             "run_command",
+            "remote_run",
+            "remote_status",
             "read_file",
             "write_file",
             "search",

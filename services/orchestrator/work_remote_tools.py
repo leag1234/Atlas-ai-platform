@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import re
 import tarfile
 import time
 from pathlib import PurePosixPath
@@ -18,7 +19,7 @@ from services.runner.results import bounded, report
 
 DESCRIPTIONS = {
     "list_targets": "List organization-granted remote execution targets and capabilities. No credentials. Use the exact target id or unique name.",
-    "remote_run": "Run your own command on a granted Linux target, synchronizing the current workspace. Persistent directory and caches between commands. Broker enforces command and code-egress approvals. Returns a command id; poll remote_status for long commands. Commands support literal argv, pipelines and && chains; use a project script for complex shell expansion. Default cwd is the repository root.",
+    "remote_run": "Run your own command on a granted Linux target, synchronizing the current workspace. Commands start in the session's synced project root; cwd is relative to that root, so cd ... && chains are not needed. Persistent directory and caches between commands. Broker enforces command and code-egress approvals. Returns a command id; poll remote_status for long commands. Commands support literal argv, pipelines and && chains; use a project script for complex shell expansion.",
     "remote_status": "Read progress, exit code and full log references for a remote command. wait_s is bounded; cancel=true kills the entire remote process group. Never resubmit an unknown command; reconcile using its id.",
     "remote_fetch": "Explicitly fetch a relative file or glob from this session's remote target into project files (20 files/16 MiB maximum). No implicit sync back. Output is untrusted. Returns hashes and reopen_result references for textual results.",
 }
@@ -157,10 +158,19 @@ async def execute(
         )
 
     if name == "list_targets":
-        return await invoke("list", args)
+        listed = await invoke("list", args)
+        listed["working_directory"] = (
+            "Commands start in the session's synced project root; cwd is relative to it."
+        )
+        return listed
     if name == "remote_fetch":
         return await references(tools, await invoke("fetch", args))
     if name == "remote_run":
+        if re.match(r"\s*cd\s+.+&&", args["command"]):
+            return dict(
+                error="runner_cd_chain_not_supported",
+                next_step="Remove the leading cd chain and set cwd relative to the synced project root.",
+            )
         exported = await tools.workspace.invoke(
             "export",
             dict(baseline=tools.workspace.metadata()["baseline"]),
@@ -192,12 +202,18 @@ async def execute(
         result = await invoke(
             "prepare", args, snapshot_content=base64.b64encode(content).decode()
         )
+        if result["state"] == "awaiting_approval":
+            status_args = dict(
+                command_id=result["command_id"], wait_s=args["wait_s"], cancel=False
+            )
+            result = await invoke("status", status_args)
+            args = status_args
         if result["state"] == "denied":
             return dict(error="runner_policy_denied", **bounded(result))
         status_args = dict(
             command_id=result["command_id"], wait_s=args["wait_s"], cancel=False
         )
-        if result.get("approval"):
+        if result.get("approval", {}).get("decision") == "pending":
             await tools.emit(
                 "approval",
                 tool=name,
@@ -205,17 +221,11 @@ async def execute(
                 status="running",
                 output=dict(approval=result["approval"]),
             )
-            deadline = time.monotonic() + min(120, timeout)
-            while time.monotonic() < deadline:
-                await execution.check()
-                result = await invoke("status", status_args)
-                if result["approval"]["decision"] != "pending":
-                    break
-                await asyncio.sleep(0.25)
-            if result["approval"]["decision"] != "allowed":
-                return dict(
-                    error="approval_" + result["approval"]["decision"], state="not_sent"
-                )
+            return dict(
+                state="awaiting_approval",
+                command_id=result["command_id"],
+                next_step="The user must approve; stop and tell them; do not resubmit",
+            )
         result = await invoke("execute", status_args)
         args = status_args
     result = await invoke("status", args)

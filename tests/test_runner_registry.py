@@ -381,6 +381,8 @@ class RunnerRegistryTests(ProjectWorkTests):
             org = fixture.org
             project = fixture.project
             approval: dict[str, Any] | None = None
+            first_status_seen = False
+            calls: list[tuple[str, str]] = []
 
             async def call(
                 self, operation: str, data: dict[str, Any]
@@ -389,7 +391,10 @@ class RunnerRegistryTests(ProjectWorkTests):
                     operation == "remote"
                     and data["operation"] == "status"
                     and self.approval
+                    and self.approval["decision"] == "pending"
+                    and self.first_status_seen
                 ):
+                    self.first_status_seen = False
                     decision = fixture.request(
                         "POST",
                         fixture.project_path()
@@ -401,9 +406,14 @@ class RunnerRegistryTests(ProjectWorkTests):
                     )
                     fixture.assertEqual(decision.status_code, 200, decision.text)
                     self.approval = None
+                    self.approved = True
                 response = fixture.broker(operation, data)
                 fixture.assertEqual(response.status_code, 200, response.text)
                 value = dict(response.json())
+                if operation == "remote":
+                    self.calls.append((operation, data["operation"]))
+                    if data["operation"] == "status":
+                        self.first_status_seen = True
                 if operation == "remote" and data["operation"] == "prepare":
                     self.approval = value["approval"]
                     validate("Approval", self.approval)
@@ -433,9 +443,40 @@ class RunnerRegistryTests(ProjectWorkTests):
                 30,
             )
         )
-        self.assertEqual(result["state"], "succeeded", result)
-        self.assertIn("remote Work adapter acceptance", str(result["output"]))
-        self.assertTrue(result["log_file_id"])
+        self.assertEqual(result["state"], "awaiting_approval", result)
+        self.assertTrue(result["command_id"])
+        next_step = result["next_step"]
+        assert isinstance(next_step, str)
+        self.assertIn("do not resubmit", next_step)
+        command_id = result["command_id"]
+        duplicate = asyncio.run(
+            tools.execute(
+                Call(
+                    "run-again",
+                    "remote_run",
+                    json.dumps(
+                        dict(target=target["id"], command="cat demo.txt", wait_s=10)
+                    ),
+                ),
+                30,
+            )
+        )
+        self.assertEqual(duplicate["command_id"], command_id)
+        resumed = asyncio.run(
+            tools.execute(
+                Call(
+                    "approve",
+                    "remote_run",
+                    json.dumps(
+                        dict(target=target["id"], command="cat demo.txt", wait_s=10)
+                    ),
+                ),
+                30,
+            )
+        )
+        self.assertEqual(resumed["state"], "succeeded", resumed)
+        self.assertIn("remote Work adapter acceptance", str(resumed["output"]))
+        self.assertTrue(resumed["log_file_id"])
         closed = self.remote("close", {})
         self.assertEqual(closed.status_code, 200, closed.text)
 

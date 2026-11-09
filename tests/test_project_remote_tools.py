@@ -8,10 +8,12 @@ import tarfile
 import unittest
 import uuid
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import yaml
 
-from services.orchestrator.work_remote_tools import snapshot
+from services.orchestrator.work_remote_tools import execute, snapshot
+from services.orchestrator.loop import Call
 from services.orchestrator.work_tool_selection import WorkToolSelection, select_group
 from services.runner.contract import Target, SCHEMAS
 from services.runner.results import bounded, report
@@ -22,6 +24,95 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RemoteToolTests(unittest.TestCase):
+    def test_work_tools_return_named_remote_error_and_next_step(self) -> None:
+        import asyncio
+
+        from services.orchestrator.code_tools import WorkTools
+
+        async def fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise ValueError("runner_target_unavailable")
+
+        class Execution:
+            broker = MagicMock()
+            session = dict(id="s", environment={})
+            request_id = "r"
+
+            async def check(self) -> None:
+                return None
+
+        with patch(
+            "services.orchestrator.work_remote_tools.execute",
+            side_effect=fail,
+        ):
+            tools = WorkTools(MagicMock(), Execution())
+            emitter = patch.object(tools, "emit", new=AsyncMock())
+            emitter.start()
+            self.addCleanup(emitter.stop)
+            result = asyncio.run(
+                tools.execute(
+                    Call(
+                        "run",
+                        "remote_run",
+                        json.dumps(dict(target="target", command="true", wait_s=0)),
+                    ),
+                    1,
+                )
+            )
+        self.assertEqual(result["error"], "runner_target_unavailable")
+        next_step = result["next_step"]
+        assert isinstance(next_step, str)
+        self.assertIn("Correct the command or target", next_step)
+
+    def test_remote_run_rejects_leading_cd_chain_and_documents_cwd(self) -> None:
+        import asyncio
+
+        class Tools:
+            execution = None
+            workspace = None
+            remote_references = None
+
+            async def emit(self, *args: Any, **kwargs: Any) -> None:
+                return None
+
+        result = asyncio.run(
+            execute(
+                Tools(),
+                "remote_run",
+                json.dumps(
+                    dict(
+                        target="target",
+                        command="cd internal-uuid && python3 -m unittest -v",
+                        wait_s=0,
+                    )
+                ),
+                1,
+            )
+        )
+        self.assertEqual(result["error"], "runner_cd_chain_not_supported")
+        self.assertIn("cwd", result["next_step"])
+
+    def test_list_targets_documents_synced_project_root(self) -> None:
+        import asyncio
+
+        class Execution:
+            class Broker:
+                @staticmethod
+                async def call(operation: str, data: dict[str, Any]) -> dict[str, Any]:
+                    return dict(items=[])
+
+            broker = Broker()
+
+            def fence(self) -> dict[str, Any]:
+                return {}
+
+            session: dict[str, Any] = {}
+
+        class Tools:
+            execution = Execution()
+
+        result = asyncio.run(execute(Tools(), "list_targets", "{}", 1))
+        self.assertIn("synced project root", result["working_directory"])
+
     def test_contract_examples_validate_and_credentials_are_not_model_arguments(
         self,
     ) -> None:

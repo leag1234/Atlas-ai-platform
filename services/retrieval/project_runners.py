@@ -284,6 +284,21 @@ class RemoteWork:
             grant["allow_rules"],
         )
         session = self.session(target, work_session)
+        command_digest = hashlib.sha256(args["command"].encode()).hexdigest()
+        pending = self.scope.db.execute(
+            "SELECT data FROM atlas_projects.runner_commands WHERE org_id=%s AND project_id=%s AND data->>'work_session_id'=%s AND data->>'target_id'=%s AND data->>'command_digest'=%s AND data->>'cwd'=%s AND data->>'code_digest'=%s AND data->>'state'='awaiting_approval'",
+            (
+                self.registry.org,
+                self.scope.project_id,
+                work_session["id"],
+                target_id,
+                command_digest,
+                args["cwd"],
+                digest,
+            ),
+        ).fetchall()
+        if pending:
+            return self.result(dict(pending[0]["data"]))
         unresolved = self.scope.db.execute(
             "SELECT data FROM atlas_projects.runner_commands WHERE org_id=%s AND project_id=%s AND data->>'runner_session_id'=%s AND data->>'state'='unknown'",
             (self.registry.org, self.scope.project_id, session["id"]),
@@ -303,7 +318,7 @@ class RemoteWork:
             code_digest=digest,
             decision=mode,
             state="denied" if mode == "denied" else "awaiting_approval",
-            command_digest=hashlib.sha256(args["command"].encode()).hexdigest(),
+            command_digest=command_digest,
             binding=self.binding(target, grant),
             exit_code=None,
             bytes_sent=0,
