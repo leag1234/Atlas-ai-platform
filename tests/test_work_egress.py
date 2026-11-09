@@ -3,6 +3,7 @@ import tempfile
 from pathlib import Path
 import hashlib
 import unittest
+import uuid
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -142,6 +143,18 @@ class WorkEgressTests(unittest.TestCase):
                 self.assertEqual(args[args.index("--cap-drop") + 1], "ALL")
                 self.assertIn("/tmp:rw,nosuid,size=8m", args)
                 self.assertNotIn("squid -z", args[-1])
+
+    def test_access_log_path_is_absolute_for_docker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            cwd = os.getcwd()
+            os.chdir(directory)
+            try:
+                workspace = Workspace(str(uuid.uuid4()))
+                with patch("os.chown"), patch("os.chmod"):
+                    access_log = workspace.prepare_access_log(Path("relative/logs"))
+            finally:
+                os.chdir(cwd)
+            self.assertTrue(access_log.is_absolute())
 
 
 if __name__ == "__main__":
