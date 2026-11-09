@@ -3,8 +3,8 @@
 At the end of a project Work turn, the files the turn created in the workspace
 become project files without approval (docs/17-project-mode.md 4.5: new
 deliverables within the requested task need no approval). Modified existing
-project files are step A2 (overwrite approval) and are only listed in the
-recap. Behind ATLAS_WORK_SAVE=1, default off.
+project files are step A2: each one is saved as a new version only after the
+owner approves the overwrite. Behind ATLAS_WORK_SAVE=1, default off.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import io
 import os
 import re
 import tarfile
+import time
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
@@ -117,6 +118,13 @@ async def save_new_files(
     execution: Any, workspace: Any, tools: Any, base: Any
 ) -> dict[str, Any]:
     """Publish the turn's new workspace files as project files, strategy created."""
+    report, _ = await _export_and_save_new_files(execution, workspace, tools, base)
+    return report
+
+
+async def _export_and_save_new_files(
+    execution: Any, workspace: Any, tools: Any, base: Any
+) -> tuple[dict[str, Any], dict[str, bytes]]:
     from services.orchestrator.terminal_client import ProjectPublisher, VerifiedDocument
     from services.retrieval.project_identity import ProjectError
 
@@ -128,11 +136,11 @@ async def save_new_files(
     }
     baseline = str(workspace.metadata().get("baseline", ""))
     if not baseline:
-        return report
+        return report, {}
     exported = await workspace.invoke("export", {"baseline": baseline}, 60)
     if exported.get("error"):
         report["error"] = str(exported["error"])
-        return report
+        return report, {}
     new_paths, modified, binary = parse_patch(str(exported.get("patch") or ""))
     report["modified"] = modified
     contents = archive_files(base64.b64decode(exported["archive"], validate=True))
@@ -140,7 +148,7 @@ async def save_new_files(
     status, folders = await execution.broker.public("GET", "folders")
     if status != 200:
         report["error"] = "folders_unavailable"
-        return report
+        return report, {}
     folders_by_id = {str(f["id"]): f for f in folders["items"]}
     source_version_ids = [
         str(v["version_id"]) for v in execution.session["base_file_versions"]
@@ -214,7 +222,164 @@ async def save_new_files(
                 "file_version_id": receipt["file_version_id"],
             }
         )
-    return report
+    return report, contents
+
+
+async def save_modified_files(
+    execution: Any, tools: Any, report: dict[str, Any], contents: dict[str, bytes]
+) -> None:
+    """Save modified base files as new versions, each behind an overwrite approval.
+
+    Project mode 4.5: overwriting existing content requires the owner's
+    approval, so every modified file gets one scoped approval (same broker
+    call and wait loop as request_approval) before its version is posted.
+    Never fails the turn: every outcome is recorded in the report.
+    """
+    from services.orchestrator.code_tools import wait_for_approval
+    from services.retrieval.project_identity import ProjectError
+
+    modified = report.get("modified") or []
+    if not modified:
+        return
+    # Session base versions carry ids only: read each file once for its place.
+    bases: dict[str, dict[str, Any]] = {}
+    for entry in execution.session.get("base_file_versions") or []:
+        if not isinstance(entry, dict) or not entry.get("file_id"):
+            continue
+        status, base_file = await execution.broker.public(
+            "GET", "files/" + str(entry["file_id"])
+        )
+        if status == 200:
+            key = str(
+                PurePosixPath(str(base_file["folder_id"]))
+                / str(base_file["relative_path"])
+            )
+            bases[key] = dict(entry, relative_path=base_file["relative_path"])
+    deadline = time.monotonic() + 300
+    for path in modified:
+        entry = bases.get(path)
+        if entry is None:
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": "no_base_file"}
+            )
+            continue
+        content = contents.get(path)
+        if content is None:
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": "missing"}
+            )
+            continue
+        if not allowed_type(str(entry.get("relative_path"))):
+            report.setdefault("not_saved", []).append({"path": path, "reason": "type"})
+            continue
+        status, file = await execution.broker.public(
+            "GET", "files/" + str(entry["file_id"])
+        )
+        if status != 200:
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": "file_unavailable"}
+            )
+            continue
+        effect = dict(
+            file_id=str(file["id"]),
+            folder_id=str(file["folder_id"]),
+            path=str(file["relative_path"]),
+            base_version=str(file["version_id"]),
+            revision=int(file["revision"]),
+            sha256=hashlib.sha256(content).hexdigest(),
+            size_bytes=len(content),
+        )
+        try:
+            approval = await execution.broker.call(
+                "approvals",
+                dict(
+                    execution.fence(),
+                    action_kind="overwrite",
+                    effects=effect,
+                    maximum_bytes=len(content),
+                    approver_member_id=execution.session["lease"]["holder_member_id"],
+                    destination=dict(kind="server", ref=execution.broker.project),
+                ),
+            )
+        except ProjectError as error:
+            report.setdefault("not_saved", []).append(
+                {
+                    "path": path,
+                    "reason": "approval_failed: "
+                    + str(error.args[-1] if error.args else error)[:80],
+                }
+            )
+            continue
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": "expired"}
+            )
+            continue
+        decision = await wait_for_approval(
+            execution, tools, approval, min(120, remaining)
+        )
+        if decision != "approved":
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": decision}
+            )
+            continue
+        boundary = "atlas-" + uuid4().hex
+        body = b"".join(
+            [
+                b"--" + boundary.encode() + b"\r\n",
+                b'Content-Disposition: form-data; name="base_version"\r\n\r\n',
+                str(effect["base_version"]).encode() + b"\r\n",
+                b"--" + boundary.encode() + b"\r\n",
+                b'Content-Disposition: form-data; name="approval_id"\r\n\r\n',
+                str(approval["id"]).encode() + b"\r\n",
+                b"--" + boundary.encode() + b"\r\n",
+                (
+                    b'Content-Disposition: form-data; name="file"; filename="'
+                    + PurePosixPath(path).name.encode()
+                    + b'"\r\nContent-Type: application/octet-stream\r\n\r\n'
+                ),
+                content + b"\r\n",
+                b"--" + boundary.encode() + b"--\r\n",
+            ]
+        )
+        try:
+            status, version = await execution.broker.public(
+                "POST",
+                "files/" + str(file["id"]) + "/versions",
+                body=body,
+                headers={
+                    "Content-Type": "multipart/form-data; boundary=" + boundary,
+                    "If-Match": '"' + str(file["revision"]) + '"',
+                },
+            )
+        except ProjectError as error:
+            report.setdefault("not_saved", []).append(
+                {
+                    "path": path,
+                    "reason": "post_failed: "
+                    + str(error.args[-1] if error.args else error)[:80],
+                }
+            )
+            continue
+        if status != 201:
+            report.setdefault("not_saved", []).append(
+                {
+                    "path": path,
+                    "reason": "post_failed: "
+                    + str(version.get("error", "unknown"))[:80],
+                }
+            )
+            continue
+        # A new version is not a publication receipt: it is reported on its own.
+        report.setdefault("saved_modified", []).append(
+            {
+                "path": str(file["relative_path"]),
+                "folder_id": str(file["folder_id"]),
+                "file_id": str(file["id"]),
+                "file_version_id": version["id"],
+            }
+        )
 
 
 async def save_turn_files(
@@ -223,4 +388,9 @@ async def save_turn_files(
     """Save new files only when the setting is on and the turn state is done."""
     if not enabled() or state != "done":
         return {"saved": [], "skipped": [], "not_saved": [], "modified": []}
-    return await save_new_files(execution, workspace, tools, base)
+    report, contents = await _export_and_save_new_files(
+        execution, workspace, tools, base
+    )
+    if report.get("modified") and contents:
+        await save_modified_files(execution, tools, report, contents)
+    return report

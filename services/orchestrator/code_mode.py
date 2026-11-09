@@ -879,10 +879,20 @@ async def process_work(
                     )
                     if links not in item.reponse:
                         item.reponse += "\n\n" + links
-                if saved["modified"]:
+                for entry in saved.get("saved_modified", []):
                     item.reponse += (
-                        "\n\nChanged project files not saved yet (approval needed): "
-                        + ", ".join(saved["modified"])
+                        "\n\nSaved modified project file: "
+                        + f"/api/atlas/orgs/{broker.org}/projects/{broker.project}"
+                        + f"/files/{entry['file_id']}/content?version={entry['file_version_id']}"
+                    )
+                denied = [
+                    str(entry.get("path", ""))
+                    for entry in saved.get("not_saved", [])
+                    if isinstance(entry, dict)
+                ]
+                if denied:
+                    item.reponse += (
+                        "\n\nNot saved (approval denied/expired): " + ", ".join(denied)
                     )
                 await tools.emit(
                     "recap",
@@ -1092,10 +1102,20 @@ async def process_work(
                 links = project_deliverable_links(receipt, broker.org, broker.project)
                 if links not in item.reponse:
                     item.reponse += "\n\n" + links
-            if saved["modified"]:
+            for entry in saved.get("saved_modified", []):
                 item.reponse += (
-                    "\n\nChanged project files not saved yet (approval needed): "
-                    + ", ".join(saved["modified"])
+                    "\n\nSaved modified project file: "
+                    + f"/api/atlas/orgs/{broker.org}/projects/{broker.project}"
+                    + f"/files/{entry['file_id']}/content?version={entry['file_version_id']}"
+                )
+            denied = [
+                str(entry.get("path", ""))
+                for entry in saved.get("not_saved", [])
+                if isinstance(entry, dict)
+            ]
+            if denied:
+                item.reponse += "\n\nNot saved (approval denied/expired): " + ", ".join(
+                    denied
                 )
             await tools.emit(
                 "recap",
