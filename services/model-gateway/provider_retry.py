@@ -23,8 +23,11 @@ class TransientProviderError(RuntimeError):
         finish_reason: str | None = None,
         started: bool = False,
         received_bytes: int | None = None,
+        detail: str = "",
     ) -> None:
         super().__init__(code)
+        # Short, key-free cause for logs: an HTTP status or an exception class.
+        self.detail = detail
         self.usage = usage
         self.finish_reason = finish_reason
         self.started = started
