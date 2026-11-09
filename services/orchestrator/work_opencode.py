@@ -270,6 +270,10 @@ class OpencodeDriver:
                             outcome = "aborted_time"
                             await self._abort(http, session_id)
                             break
+                        if not line:
+                            # The server closed the stream before the turn ended.
+                            outcome = "error"
+                            break
                         decoded = line.decode("utf-8", "replace").strip()
                         if not decoded.startswith("data:"):
                             continue

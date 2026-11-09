@@ -469,3 +469,31 @@ class DriverTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StreamEndTests(unittest.IsolatedAsyncioTestCase):
+    async def test_closed_stream_ends_the_turn_as_error(self) -> None:
+        async def create(request: web.Request) -> web.Response:
+            return web.json_response({"id": "sess-1"})
+
+        async def prompt(request: web.Request) -> web.Response:
+            return web.json_response({})
+
+        async def stream(request: web.Request) -> web.StreamResponse:
+            response = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await response.prepare(request)
+            await response.write(b'data: {"type": "server.connected"}\n\n')
+            return response
+
+        app = web.Application()
+        app.router.add_post("/session", create)
+        app.router.add_post("/session/sess-1/prompt_async", prompt)
+        app.router.add_get("/event", stream)
+
+        async def emit(event: dict[str, Any]) -> None:
+            return None
+
+        async with TestServer(app) as server:
+            driver = OpencodeDriver(str(server.make_url("")), "pw", emit)
+            result = await asyncio.wait_for(driver.run("hello"), timeout=5)
+        self.assertEqual(result["outcome"], "error")
