@@ -260,7 +260,14 @@ class Workspace:
             ],
             "import os; p='/workspace/"
             + self.key
-            + "'; os.makedirs(p + '/.atlas-home', exist_ok=True); os.chown(p,1000,1000); os.chown(p + '/.atlas-home',1000,1000)",
+            + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)"
+            # With registry egress, HOME and package caches live in a sibling directory,
+            # mounted at /home/atlas, so the workspace itself stays empty for its first snapshot.
+            + (
+                "; os.makedirs(p + '.home', exist_ok=True); os.chown(p + '.home',1000,1000)"
+                if self.egress
+                else ""
+            ),
             b"",
             # Same bounded allowance as cleanup: a cold container start can exceed 30 s.
             120,
@@ -308,6 +315,14 @@ class Workspace:
                 "1000:1000",
                 "--mount",
                 f"type=volume,src={volume()},dst=/workspace,volume-subpath={self.key}",
+                *(
+                    [
+                        "--mount",
+                        f"type=volume,src={volume()},dst=/home/atlas,volume-subpath={self.key}.home",
+                    ]
+                    if self.egress
+                    else []
+                ),
             ],
             source,
             json.dumps({"action": action, "args": args}).encode(),
@@ -366,11 +381,11 @@ class Workspace:
         pids_limit = "256" if self.egress else "64"
         environment = (
             [
-                "HOME=/workspace/.atlas-home",
+                "HOME=/home/atlas",
                 "PIP_USER=1",
-                "PIP_CACHE_DIR=/workspace/.atlas-home/pip",
-                "npm_config_prefix=/workspace/.atlas-home/npm",
-                "npm_config_cache=/workspace/.atlas-home/npm-cache",
+                "PIP_CACHE_DIR=/home/atlas/pip",
+                "npm_config_prefix=/home/atlas/npm",
+                "npm_config_cache=/home/atlas/npm-cache",
             ]
             if self.egress
             else []

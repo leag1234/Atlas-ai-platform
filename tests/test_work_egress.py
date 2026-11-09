@@ -105,9 +105,9 @@ class WorkEgressTests(unittest.TestCase):
             self.assertIn(f"HTTP_PROXY=http://{workspace.proxy_host}:3128", args)
             self.assertIn(f"HTTPS_PROXY=http://{workspace.proxy_host}:3128", args)
             self.assertIn("NO_PROXY=localhost,127.0.0.1,::1", args)
-            self.assertIn("HOME=/workspace/.atlas-home", args)
+            self.assertIn("HOME=/home/atlas", args)
             self.assertIn("PIP_USER=1", args)
-            self.assertIn("npm_config_prefix=/workspace/.atlas-home/npm", args)
+            self.assertIn("npm_config_prefix=/home/atlas/npm", args)
 
     def test_egress_proxy_identity_is_session_unique(self) -> None:
         first = Workspace(str(uuid4()))
