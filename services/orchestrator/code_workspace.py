@@ -461,6 +461,9 @@ class Workspace:
             work_egress.internal_network_name(atlas_ports().base),
             "--network-alias",
             self.proxy_host,
+            # Squid cannot switch users without capabilities: run it as its own user.
+            "--user",
+            "13:13",
             "--cap-drop",
             "ALL",
             "--security-opt",
@@ -472,6 +475,8 @@ class Workspace:
             "128m",
             "--pids-limit",
             "64",
+            "--tmpfs",
+            "/tmp:rw,nosuid,size=8m",
             "--tmpfs",
             "/var/spool/squid:rw,noexec,nosuid,size=16m,uid=13,gid=13",
             "--tmpfs",
@@ -487,7 +492,7 @@ class Workspace:
             "/bin/sh",
             work_egress.PROXY_IMAGE,
             "-c",
-            "printf '%s' \"$SQUID_CONFIG\" > /tmp/squid.conf && squid -z && exec squid -N -f /tmp/squid.conf",
+            "printf '%s' \"$SQUID_CONFIG\" > /tmp/squid.conf && exec squid -N -f /tmp/squid.conf",
         ]
 
     async def _start_egress(self) -> None:

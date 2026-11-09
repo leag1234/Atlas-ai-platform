@@ -136,6 +136,12 @@ class WorkEgressTests(unittest.TestCase):
                 mount = args[args.index("--mount") + 1]
                 self.assertIn(f"src={access_log}", mount)
                 self.assertIn("dst=/var/log/squid/access.log", mount)
+                # Squid runs as its own user without capabilities, with a writable /tmp,
+                # and starts a single process (verified live on staging, 2026-11-09).
+                self.assertEqual(args[args.index("--user") + 1], "13:13")
+                self.assertEqual(args[args.index("--cap-drop") + 1], "ALL")
+                self.assertIn("/tmp:rw,nosuid,size=8m", args)
+                self.assertNotIn("squid -z", args[-1])
 
 
 if __name__ == "__main__":
