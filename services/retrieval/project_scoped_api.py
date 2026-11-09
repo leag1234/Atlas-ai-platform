@@ -297,6 +297,30 @@ def execute(
                 data["conversation_id"], data["query"], [], data.get("work_session_id")
             )
         work = Work(scope)
+        if tail == ["repositories", "connectors"] and method == "GET":
+            try:
+                configured = json.loads(os.environ.get("ATLAS_FORGE_CONNECTORS", "{}"))
+            except json.JSONDecodeError:
+                raise ProjectError(503, "dependency_unavailable") from None
+            allowed = set(scope.policy.get("connector_allowlist", []))
+            connectors = []
+            for identifier, connector in configured.items():
+                if identifier not in allowed or not isinstance(connector, dict):
+                    continue
+                if not all(
+                    isinstance(connector.get(key), str) and connector[key]
+                    for key in ("forge", "remote_ref", "repository")
+                ):
+                    continue
+                connectors.append(
+                    {
+                        "id": identifier,
+                        "forge": connector["forge"],
+                        "remote_ref": connector["remote_ref"],
+                        "repository": connector["repository"],
+                    }
+                )
+            return 200, dict(items=connectors, next_cursor=None)
         if tail in (["repositories"], ["repositories", "import-approvals"]):
             from services.retrieval.project_repository_import import RepositoryImports
 

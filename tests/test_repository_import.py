@@ -35,7 +35,15 @@ class RepositoryImportTests(unittest.TestCase):
             os.environ,
             {
                 "ATLAS_FORGE_CONNECTORS": json.dumps(
-                    {fixture.connector: {"forge": "github"}}
+                    {
+                        fixture.connector: {
+                            "forge": "github",
+                            "remote_ref": fixture.repository["remote_ref"],
+                            "api_url": "https://forge.example/api",
+                            "repository": "org/demo",
+                            "token_env": "ATLAS_FORGE_TOKEN_TEST",
+                        }
+                    }
                 )
             },
         )
@@ -72,6 +80,24 @@ class RepositoryImportTests(unittest.TestCase):
             self.case.project_path() + "/approvals/" + approval["id"] + "/decision",
             "editor",
             dict(allow=True, action_digest=approval["action_digest"]),
+        )
+
+    def test_connector_listing_is_allowlisted_and_safe(self) -> None:
+        result = self.case.request("GET", self.path + "/connectors", "viewer")
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(
+            result.json(),
+            {
+                "items": [
+                    {
+                        "id": self.fixture.connector,
+                        "forge": "github",
+                        "remote_ref": self.fixture.repository["remote_ref"],
+                        "repository": "org/demo",
+                    }
+                ],
+                "next_cursor": None,
+            },
         )
 
     def test_public_import_requires_exact_decision_and_consumes_once(self) -> None:

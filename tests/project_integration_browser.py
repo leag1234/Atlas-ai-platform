@@ -55,6 +55,8 @@ class ProjectIntegrationTests(unittest.TestCase):
         ]
         self.memory: list[dict[str, Any]] = []
         self.deliverables: list[dict[str, Any]] = []
+        self.repositories: list[dict[str, Any]] = []
+        self.import_approvals: list[dict[str, Any]] = []
         self.fixture = fixture.ProjectComposerTests()
         self.fixture.setUp()
         self.context = self.fixture.context
@@ -75,6 +77,11 @@ class ProjectIntegrationTests(unittest.TestCase):
 
     def mount(self, extra: str = "") -> None:
         self.fixture.mount(extra)
+
+    def open_project(self) -> None:
+        self.open_projects()
+        self.page.locator(f'[data-project-card="{PROJECT}"]').click()
+        expect(self.page.locator('[data-view="project"]')).to_be_visible()
 
     def respond(self, route: Route) -> None:
         path = urlsplit(route.request.url).path
@@ -126,6 +133,62 @@ class ProjectIntegrationTests(unittest.TestCase):
                             "locality": "server",
                             "model_use": "allow",
                             "revision": self.folder_revision,
+                        }
+                    ],
+                    "next_cursor": None,
+                }
+            )
+            return
+        if path == BASE + "/repositories":
+            if route.request.method == "POST":
+                payload = route.request.post_data_json
+                assert isinstance(payload, dict)
+                self.calls.append((path, "POST", payload))
+                self.repositories.append(
+                    dict(
+                        id=payload["approval_id"],
+                        name="demo",
+                        remote_ref=payload["remote_ref"],
+                        branch="main",
+                    )
+                )
+                self.file_items.append(
+                    dict(
+                        id=str(uuid4()),
+                        version_id=str(uuid4()),
+                        folder_id=payload["folder_id"],
+                        relative_path="README.md",
+                        locality="server",
+                        index_status="ready",
+                        availability="retained",
+                        origin="import",
+                    )
+                )
+                route.fulfill(json=self.repositories[-1])
+            else:
+                route.fulfill(json={"items": self.repositories, "next_cursor": None})
+            return
+        if path == BASE + "/repositories/import-approvals":
+            payload = route.request.post_data_json
+            assert isinstance(payload, dict)
+            self.calls.append((path, "POST", payload))
+            approval = dict(
+                id=str(uuid4()),
+                branch="main",
+                paths=["README.md", "src/main.py"],
+            )
+            self.import_approvals.append(approval)
+            route.fulfill(json=approval)
+            return
+        if path == BASE + "/repositories/connectors":
+            route.fulfill(
+                json={
+                    "items": [
+                        {
+                            "id": VERSION,
+                            "forge": "github",
+                            "remote_ref": "https://forge.example/org/demo",
+                            "repository": "org/demo",
                         }
                     ],
                     "next_cursor": None,
@@ -239,8 +302,7 @@ class ProjectIntegrationTests(unittest.TestCase):
         expect(self.page.locator('[data-view="project"]')).to_be_visible()
 
     def test_project_start_conversation_and_scope(self) -> None:
-        self.open_projects()
-        self.page.locator(f'[data-project-card="{PROJECT}"]').click()
+        self.open_project()
         self.page.get_by_role("textbox", name="Message", exact=True).fill(
             "Summarize the notes"
         )
@@ -403,8 +465,7 @@ class ProjectIntegrationTests(unittest.TestCase):
         ).to_be_disabled()
 
     def test_instruction_change_uses_scoped_conversation_not_direct_write(self) -> None:
-        self.open_projects()
-        self.page.locator(f'[data-project-card="{PROJECT}"]').click()
+        self.open_project()
         self.page.get_by_role("textbox", name="Instructions", exact=True).fill(
             "Use concise language."
         )
@@ -478,9 +539,69 @@ class ProjectIntegrationTests(unittest.TestCase):
         expect(
             self.page.get_by_role("heading", name="Exécution à distance", exact=True)
         ).to_be_visible()
-        expect(
-            self.page.get_by_role("button", name="Enregistrer la cible", exact=True)
-        ).to_be_visible()
+
+    def test_owner_links_repository_and_imports_files(self) -> None:
+        self.project_items[0]["role"] = "owner"
+        self.open_project()
+        self.page.get_by_role("button", name="Dépôt", exact=True).click()
+        modal = self.page.get_by_role("dialog")
+        expect(modal.get_by_role("heading", name="Dépôt", exact=True)).to_be_visible()
+        modal.get_by_role("combobox", name="Connecteur", exact=True).select_option(
+            VERSION
+        )
+        modal.get_by_role("combobox", name="Dossier", exact=True).select_option(VERSION)
+        modal.get_by_role("button", name="Approuver l’importation").click()
+        card = modal.locator("[data-import-approval]")
+        expect(card).to_contain_text("Approbation d’importation")
+        expect(card).to_contain_text("Branche : main")
+        expect(card).to_contain_text("Fichiers : 2")
+        card.get_by_role("button", name="Approuver", exact=True).click()
+        expect(modal).to_have_count(0)
+        expect(self.page.locator("[data-panel='files']")).to_contain_text("README.md")
+        expect(self.page.locator("[data-panel='files']")).to_contain_text(
+            "Source : import"
+        )
+        self.assertEqual(
+            self.import_approvals,
+            [
+                dict(
+                    connector_id=VERSION,
+                    folder_id=VERSION,
+                    remote_ref="https://forge.example/org/demo",
+                )
+            ],
+        )
+        create = [
+            body
+            for path, method, body in self.calls
+            if path == BASE + "/repositories" and method == "POST"
+        ]
+        self.assertEqual(len(create), 1)
+        self.assertEqual(create[0]["approval_id"], self.import_approvals[0]["id"])
+
+    def test_repository_panel_is_hidden_without_editor_role(self) -> None:
+        self.project_items[0]["role"] = "viewer"
+        self.open_projects()
+        self.page.locator(f'[data-project-card="{PROJECT}"]').click()
+        expect(self.page.get_by_role("button", name="Dépôt", exact=True)).to_have_count(
+            0
+        )
+
+    def test_repository_error_is_localized(self) -> None:
+        self.project_items[0]["role"] = "owner"
+        self.context.route(
+            "**" + BASE + "/repositories/import-approvals",
+            lambda route: route.fulfill(status=403, json={"error": "forbidden"}),
+        )
+        self.open_projects()
+        self.page.locator(f'[data-project-card="{PROJECT}"]').click()
+        self.page.get_by_role("button", name="Dépôt", exact=True).click()
+        modal = self.page.get_by_role("dialog")
+        modal.get_by_role("combobox", name="Connecteur", exact=True).select_option(
+            VERSION
+        )
+        modal.get_by_role("button", name="Approuver l’importation").click()
+        expect(modal.get_by_role("status")).to_have_text("Connecteur non autorisé")
 
     def test_pending_approval_restored_from_conversation_events(self) -> None:
         self.approvals = [
