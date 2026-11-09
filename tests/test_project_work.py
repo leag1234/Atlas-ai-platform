@@ -1057,6 +1057,124 @@ class ProjectWorkHTTPTests(ProjectWorkTests):
             self.assertEqual(scope.usage("temporary_bytes"), 0)
             self.assertEqual(scope.usage("monthly_model_eur"), 0)
 
+    def test_work_fetch_cites_only_same_conversation_source(self) -> None:
+        self.require_real_worker()
+        import asyncio
+        from decimal import Decimal
+        from unittest.mock import AsyncMock, MagicMock
+        from services.orchestrator.chat_schema import ChatRequest
+        from services.orchestrator.code_mode import CodeModel, process_work
+        from services.orchestrator.loop import Call, Reservation, Turn
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.code_workspace import volume
+        import subprocess
+
+        self.policy["quotas"]["per_turn"]["expanded_bytes"] = 50
+        with psycopg.connect(self.admin_dsn) as db:
+            db.execute(
+                "UPDATE atlas_projects.installation SET ceilings=%s",
+                (Jsonb(self.policy),),
+            )
+            db.execute(
+                "UPDATE atlas_projects.organizations SET policy=%s",
+                (Jsonb(self.policy),),
+            )
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            value = files.get("work_session", self.session["id"])
+            value["effective_limits"] = self.policy["quotas"]["per_turn"]
+            files.save(value)
+        request = ChatRequest.model_validate(
+            dict(
+                messages=[
+                    dict(
+                        role="user",
+                        content="Fetch https://fixture.test/page and summarize it",
+                    )
+                ],
+                project_id=self.project,
+                conversation_id=self.conversation,
+                project_action="work",
+                work_session_id=self.session["id"],
+            )
+        )
+        item = Interaction()
+        model = MagicMock(spec=CodeModel)
+        (
+            model.spent,
+            model.input_tokens,
+            model.output_tokens,
+            model.work_unknown,
+            model.work_unknown_eur,
+            model.estimate,
+        ) = (
+            Decimal(0),
+            0,
+            0,
+            False,
+            Decimal(0),
+            lambda messages: Reservation(0, Decimal(0)),
+        )
+        fetched = "https://fixture.test/page"
+        unfetched = "https://unfetched.test/page"
+
+        async def complete(messages: list[Any], timeout: float) -> Turn:
+            if not any(message.get("role") == "tool" for message in messages):
+                return Turn(
+                    "",
+                    (
+                        Call(
+                            "fetch",
+                            "web_fetch",
+                            '{"url":"https://fixture.test/page","query":"fixture"}',
+                        ),
+                    ),
+                    Reservation(0, Decimal(0)),
+                )
+            self.assertTrue(any(message.get("role") == "tool" for message in messages))
+            return Turn(
+                "The fixture page says its content is public. "
+                f"Source: {fetched}. Also see {unfetched}."
+            )
+
+        self.addCleanup(
+            subprocess.run, ["docker", "volume", "rm", volume()], capture_output=True
+        )
+        with (
+            patch.object(CodeModel, "connect", AsyncMock(return_value=model)),
+            patch.object(model, "complete", AsyncMock(side_effect=complete)),
+            patch(
+                "services.orchestrator.chat_pipeline.ChatTools.fetch",
+                AsyncMock(
+                    return_value={
+                        "url": fetched,
+                        "consulted_at": "2026-11-09T00:00:00Z",
+                        "text": "Fixture page content",
+                    }
+                ),
+            ),
+        ):
+            asyncio.run(
+                process_work(
+                    request,
+                    item,
+                    subject="editor",
+                    org_id=self.org,
+                    project_id=self.project,
+                    session_id=self.session["id"],
+                )
+            )
+        self.assertEqual(item.state, "done")
+        self.assertEqual(item.erreurs, [])
+        self.assertIn(fetched, item.reponse)
+        self.assertNotIn(unfetched, item.reponse)
+        self.assertIn(fetched, item.retrieved_urls)
+        self.assertNotIn(unfetched, item.retrieved_urls)
+        self.assertIn(fetched, item.tool_urls)
+        self.assertNotIn(unfetched, item.tool_urls)
+
     def test_failed_then_successful_work_call_reports_conservative_usage(self) -> None:
         import asyncio
         from unittest.mock import AsyncMock, MagicMock

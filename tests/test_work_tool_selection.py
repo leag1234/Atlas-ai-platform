@@ -1,6 +1,7 @@
 """Work group selection and live next-step switching, without provider calls."""
 
 import json
+import asyncio
 import unittest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -78,6 +79,50 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(name, names)
         self.assertLessEqual(len(names), 16)
 
+    def test_research_group_lists_web_tools_and_stays_within_capacity(self) -> None:
+        selection = WorkToolSelection("research")
+        self.assertEqual(selection.names, (*CORE, "web_search", "web_fetch"))
+        declarations = selection.declarations()
+        names = [
+            f["name"] for t in declarations if isinstance(f := t["function"], dict)
+        ]
+        self.assertEqual(names, [*CORE, "web_search", "web_fetch"])
+        self.assertLessEqual(len(names), 8)
+        switch = selection.catalog["switch_tool_group"]["function"]
+        assert isinstance(switch, dict)
+        self.assertIn("research", switch["parameters"]["properties"]["group"]["enum"])
+
+    def test_strict_privacy_removes_research_and_refuses_direct_web_calls(self) -> None:
+        selection = WorkToolSelection("research")
+        selection.disable_research()
+        self.assertNotIn("research", selection.groups)
+        self.assertEqual(selection.group, "files")
+        switch = selection.catalog["switch_tool_group"]["function"]
+        assert isinstance(switch, dict)
+        self.assertNotIn(
+            "research", switch["parameters"]["properties"]["group"]["enum"]
+        )
+
+        execution = MagicMock()
+        execution.check = AsyncMock()
+        execution.broker.call = AsyncMock()
+        tools = WorkTools(MagicMock(), execution)
+        tools.selection = selection
+        with patch.object(tools, "emit", new=AsyncMock()) as emit:
+            result = asyncio.run(
+                tools.execute(Call("fetch", "web_fetch", '{"url":"https://a.test"}'), 1)
+            )
+        self.assertEqual(
+            result,
+            {
+                "error": "tool_not_selected",
+                "group": "files",
+                "next_step": "Use switch_tool_group to select the required tools",
+            },
+        )
+        emit.assert_not_awaited()
+        execution.broker.call.assert_not_awaited()
+
     def test_deterministic_request_priority_and_content_fallback(self) -> None:
         for text, expected in (
             ("WRITE THE MEMO", "documents"),
@@ -85,6 +130,7 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
             ("Répare le code", "code"),
             ("Export XLSX", "spreadsheets"),
             ("Déplace les fichiers", "files"),
+            ("Search the web for the latest fixture", "research"),
             ("Make DOCX from XLSX", "spreadsheets"),
         ):
             self.assertEqual(select_group(text, []), expected)

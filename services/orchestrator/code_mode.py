@@ -795,6 +795,9 @@ async def process_work(
                 if status != 200:
                     raise ProjectError(status, str(file.get("error", "not_found")))
                 selected_files.append(file)
+            status, project = await broker.public("GET", "")
+            if status != 200:
+                raise ProjectError(status, str(project.get("error", "not_found")))
             tools.selection = WorkToolSelection(
                 select_group(
                     request.user_text,
@@ -803,6 +806,12 @@ async def process_work(
                 )
             )
             selection = tools.selection
+            if str(project.get("privacy", "standard")) == "strict":
+                selection.disable_research()
+            else:
+                from services.orchestrator.chat_pipeline import ChatTools
+
+                tools.web = ChatTools(item, request.user_text)
             selection.deliverable_pending = lambda: code_deliverable_pending(
                 request.user_text, selection.group, tools.deliverables
             )

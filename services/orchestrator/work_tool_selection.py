@@ -16,7 +16,15 @@ from pydantic import BaseModel, ConfigDict
 
 from services.orchestrator.code_tools import declarations
 
-Group = Literal["documents", "spreadsheets", "presentations", "code", "files", "remote"]
+Group = Literal[
+    "documents",
+    "spreadsheets",
+    "presentations",
+    "code",
+    "files",
+    "research",
+    "remote",
+]
 CORE = ("update_plan", "request_approval", "switch_tool_group")
 GROUPS: dict[str, tuple[str, ...]] = {
     "remote": ("list_targets", "remote_run", "remote_status", "remote_fetch"),
@@ -52,6 +60,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "search",
     ),
     "files": ("list_dir", "read_file", "search", "write_file", "organize_files"),
+    "research": ("web_search", "web_fetch"),
 }
 PATTERNS = {
     "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
@@ -60,6 +69,7 @@ PATTERNS = {
     "documents": r"\b(docx|pdf|markdown|(?<![\w./\\-])md|(?<![\w./\\-])txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
     "code": r"\b(code|repository|repo|git|bug|function|python|javascript|fonction|codigo)\b",
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
+    "research": r"\b(web|internet|online|search|fetch|browse|recherche|rechercher|chercher|recherche web|buscar|busca|buscar en la web|suche|suchen|im web)\b",
 }
 # A requested file name such as notes.md selects documents only when nothing else matched and there is no repository.
 DOCUMENT_EXTENSION = r"\.(?:md|txt)\b"
@@ -186,6 +196,16 @@ class WorkToolSelection:
             for t in declarations(scoped=True)
             if isinstance(t["function"], dict)
         }
+        from services.orchestrator.tools import declarations as chat_declarations
+
+        self.catalog.update(
+            {
+                str(t["function"]["name"]): t
+                for t in chat_declarations()
+                if isinstance(t["function"], dict)
+                and t["function"]["name"] in {"web_search", "web_fetch"}
+            }
+        )
         switch_schema = Switch.model_json_schema()
         switch_schema["properties"]["group"]["enum"] = [
             g for g in self.groups if g != "remote"
@@ -200,7 +220,7 @@ class WorkToolSelection:
             type="function",
             function=dict(
                 name="switch_tool_group",
-                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
+                description="Select tools for the next step: documents (read/compare/convert/publish), spreadsheets or presentations (read/convert/commands/publish), code (read/search/edit/write/test repository scratch), files (list/read/search/write/organize), research (web search/fetch). Keeps plan, approval and reopen_result tools. Supply optional focus with any tool from the selected group to bring it into the four available group slots. Does not grant permissions.",
                 parameters=switch_schema,
             ),
         )
@@ -229,6 +249,18 @@ class WorkToolSelection:
             g for g in self.groups if g != "remote" or self.remote_enabled
         ]
         switch["description"] += " Connector groups: " + str(selection.labels)
+
+    def disable_research(self) -> None:
+        self.groups.pop("research", None)
+        switch = self.catalog["switch_tool_group"]["function"]
+        if not isinstance(switch, dict):
+            raise ValueError("Invalid switch declaration")
+        switch["parameters"]["properties"]["group"]["enum"] = [
+            g for g in self.groups if g != "remote" or self.remote_enabled
+        ]
+        if self.group == "research":
+            self.group = "files"
+            self.focus = None
 
     @property
     def names(self) -> tuple[str, ...]:

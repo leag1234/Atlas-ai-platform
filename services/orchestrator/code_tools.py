@@ -388,6 +388,7 @@ class WorkTools(CodeTools):
         self.skills: Any = None
         self.schedules: Any = None
         self.nearby: Any = None
+        self.web: Any = None
         self.remote_references: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
@@ -472,6 +473,22 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if call.name in {"web_search", "web_fetch"}:
+            if self.web is None:
+                result: dict[str, object] = {
+                    "error": "tool_unavailable",
+                    "reason": "strict_privacy",
+                }
+            else:
+                result = dict(await self.web.execute(call, timeout))
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return result
         if call.name == "publish_scheduled_file":
             arguments = json.loads(call.arguments)
             return dict(
