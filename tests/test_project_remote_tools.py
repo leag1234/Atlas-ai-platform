@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tarfile
 import unittest
+import uuid
 from typing import Any
 
 import yaml
@@ -150,8 +151,14 @@ class RemoteToolTests(unittest.TestCase):
         self.assertEqual(
             services["runner"]["environment"]["ATLAS_RUNNER_FIREWALL"], "1"
         )
-        worker = (ROOT / "services/orchestrator/code_workspace.py").read_text()
-        self.assertIn('"--network",\n            "none"', worker)
+        # Work workers stay networkless unless the operator opts in to registry egress.
+        from unittest import mock
+        from services.orchestrator import code_workspace
+
+        with mock.patch.dict("os.environ", {"ATLAS_WORK_EGRESS": ""}):
+            workspace = code_workspace.Workspace(str(uuid.uuid4()))
+            args = workspace.docker_arguments([], "pass", "atlas-code-test")
+        self.assertEqual(args[args.index("--network") + 1], "none")
 
 
 if __name__ == "__main__":

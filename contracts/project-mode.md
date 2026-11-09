@@ -312,8 +312,15 @@ Work ceilings: 40 tools, 41 model calls, 1200 seconds, EUR 3/turn and EUR 0.10
 per gateway call. Worker ceilings: 200 MiB expanded bytes, 20000 archive entries,
 256 KiB text-tool input, 32 KiB command output, 120 seconds and 512 MiB per command.
 Attachment ingress remains 16 MiB/file, extracted text at most 4 Mi characters.
-Keep networkless workers, no credentials/host mounts/capabilities, read-only root,
-bounded tmpfs/PIDs/CPU/memory and explicit container removal on cancel.
+Workers remain credential-free, capability-free, read-only and explicitly removed
+on cancel. Network is off by default. With the operator opt-in
+`ATLAS_WORK_EGRESS=registries`, Work joins a dedicated internal network whose
+pinned proxy allows only the configured registry hosts; IP literals and private,
+loopback, link-local or metadata resolutions are denied. Proxy logs contain time,
+session label, host, bytes and decision, never URL paths or bodies. This mode
+raises command memory to 2 GiB and the PID limit to 256 while preserving all
+other containment. `environment.network` reports `registries` or `false`.
+Otherwise workers remain networkless with bounded tmpfs/PIDs/CPU/memory.
 Ordinary Chat retains 120 seconds, file requests 300 seconds and their existing
 profile-specific cost rules (file-request ceiling EUR 0.30); Work ceilings must
 be shown before send. Any lower organization/project limit wins.

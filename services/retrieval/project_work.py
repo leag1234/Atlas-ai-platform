@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import os
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -37,6 +38,10 @@ def empty_usage() -> dict[str, Any]:
         output_tokens=0,
         tokens_estimated=False,
     )
+
+
+def registry_egress_enabled() -> bool:
+    return os.environ.get("ATLAS_WORK_EGRESS") == "registries"
 
 
 class Work:
@@ -166,7 +171,7 @@ class Work:
             environment=dict(
                 location="server",
                 workspace_id=workspace,
-                network=False,
+                network="registries" if registry_egress_enabled() else False,
                 device_available=False,
             ),
         )
