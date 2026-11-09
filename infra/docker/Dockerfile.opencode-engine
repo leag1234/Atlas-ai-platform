@@ -1,9 +1,11 @@
 # Per-turn opencode engine container for the Work engine (step 1c).
 # Built on the same Work image as the terminal workers; adds only Node and
 # the pinned opencode CLI. The opencode-ai npm package ships its binary
-# through platform-specific optional dependencies, so no postinstall script
-# is required and --ignore-scripts is safe.
+# through platform-specific optional dependencies; its postinstall script
+# links the binary for this platform, so install scripts must run.
 FROM ghcr.io/open-webui/open-terminal@sha256:3d52176700f2442e20556ef129ae980613389be773e269cf7fa0118f3b55669d
+
+USER root
 
 RUN if ! command -v node >/dev/null 2>&1; then \
         apt-get update \
@@ -11,4 +13,6 @@ RUN if ! command -v node >/dev/null 2>&1; then \
         && rm -rf /var/lib/apt/lists/*; \
     fi
 
-RUN npm install -g --ignore-scripts opencode-ai@1.19.5
+RUN npm install -g opencode-ai@1.19.5
+
+USER 1000:1000
