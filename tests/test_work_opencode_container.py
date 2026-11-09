@@ -125,7 +125,8 @@ class StartStopTests(unittest.IsolatedAsyncioTestCase):
             mock.patch.object(container, "_wait_healthy", mock.AsyncMock()) as healthy,
         ):
             engine = await container.start(workspace, "atlas-code")  # type: ignore[arg-type]
-        self.assertEqual(workspace.prepared, 1)
+        # process_work prepared the workspace; the engine must not prepare again.
+        self.assertEqual(workspace.prepared, 0)
         self.assertEqual(engine.url, "http://172.30.0.5:4096")
         run_args, run_env = calls[0]
         self.assertEqual(run_args[:3], ("docker", "run", "-d"))
