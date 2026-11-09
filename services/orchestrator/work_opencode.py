@@ -158,6 +158,7 @@ class OpencodeDriver:
         research: bool = False,
         provider: str = "atlas",
         model_id: str = "",
+        token_prices: tuple[Decimal, Decimal] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.auth = basic_auth_header(password)
@@ -168,6 +169,9 @@ class OpencodeDriver:
         self.research = research
         self.provider = provider
         self.model_id = model_id
+        # EUR per million input and output tokens. opencode reports cost 0 for a
+        # provider without a price table, so the turn ceiling uses these rates.
+        self.token_prices = token_prices
         self.cost = Decimal(0)
         self.input_tokens = 0
         self.output_tokens = 0
@@ -212,6 +216,15 @@ class OpencodeDriver:
             + str(mapped.get("permission_id")),
             json={"response": response},
         )
+
+    def _step_cost(self, usage: tuple[int, int, Decimal]) -> Decimal:
+        if usage[2] > 0 or self.token_prices is None:
+            return usage[2]
+        million = Decimal(1_000_000)
+        return (
+            Decimal(usage[0]) * self.token_prices[0]
+            + Decimal(usage[1]) * self.token_prices[1]
+        ) / million
 
     def _payload_session_id(self, payload: dict[str, Any]) -> Any:
         info = payload.get("properties") or {}
@@ -287,7 +300,7 @@ class OpencodeDriver:
                         if usage is not None:
                             self.input_tokens += usage[0]
                             self.output_tokens += usage[1]
-                            self.cost += usage[2]
+                            self.cost += self._step_cost(usage)
                         if self.cost_limit and self.cost >= Decimal(
                             str(self.cost_limit)
                         ):

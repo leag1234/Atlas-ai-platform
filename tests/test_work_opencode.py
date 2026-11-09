@@ -497,3 +497,21 @@ class StreamEndTests(unittest.IsolatedAsyncioTestCase):
             driver = OpencodeDriver(str(server.make_url("")), "pw", emit)
             result = await asyncio.wait_for(driver.run("hello"), timeout=5)
         self.assertEqual(result["outcome"], "error")
+
+
+class StepCostTests(unittest.TestCase):
+    def test_tokens_priced_when_opencode_reports_zero(self) -> None:
+        from decimal import Decimal
+
+        async def emit(event: dict[str, Any]) -> None:
+            return None
+
+        driver = OpencodeDriver(
+            "http://x", "pw", emit, token_prices=(Decimal("2"), Decimal("8"))
+        )
+        self.assertEqual(
+            driver._step_cost((1_000_000, 500_000, Decimal(0))), Decimal("6")
+        )
+        self.assertEqual(driver._step_cost((10, 10, Decimal("0.5"))), Decimal("0.5"))
+        unpriced = OpencodeDriver("http://x", "pw", emit)
+        self.assertEqual(unpriced._step_cost((10, 10, Decimal(0))), Decimal(0))

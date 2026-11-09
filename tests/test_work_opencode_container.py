@@ -61,11 +61,15 @@ class DockerArgumentsTests(unittest.TestCase):
         self.assertNotIn("-p", args)
         self.assertNotIn("--publish", args)
         self.assertNotIn("--add-host", args)
+        self.assertEqual(args[args.index("--entrypoint") + 1], "opencode")
+        self.assertEqual(args[-5:-4], ["serve"])
 
     def test_workspace_subpath_and_label(self) -> None:
         args = arguments()
         mount = args[args.index("--mount") + 1]
-        self.assertTrue(mount.endswith(",volume-subpath=org/project/session/ws/g1"))
+        self.assertTrue(
+            mount.endswith(",volume-nocopy,volume-subpath=org/project/session/ws/g1")
+        )
         self.assertIn("atlas.work=org/project/session/ws", args)
 
     def test_secrets_are_names_only(self) -> None:

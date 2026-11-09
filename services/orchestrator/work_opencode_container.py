@@ -120,7 +120,7 @@ def docker_arguments(
         "--mount",
         "type=volume,src="
         + volume()
-        + ",dst=/workspace,volume-subpath="
+        + ",dst=/workspace,volume-nocopy,volume-subpath="
         + workspace.key,
         "--workdir",
         "/workspace",
@@ -136,8 +136,10 @@ def docker_arguments(
         "OPENCODE_CONFIG_CONTENT=" + config_content,
         *(part for variable in SECRET_VARIABLES for part in ("-e", variable)),
         *(part for variable in OPENCODE_DISABLE_VARIABLES for part in ("-e", variable)),
-        IMAGE,
+        # The Work image entrypoint starts its own terminal service: bypass it.
+        "--entrypoint",
         "opencode",
+        IMAGE,
         "serve",
         "--hostname",
         "0.0.0.0",
