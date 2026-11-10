@@ -1,5 +1,6 @@
 """Citation provenance uses retrieved tool results, never assistant history."""
 
+from contextvars import ContextVar
 import re
 from urllib.parse import urlparse
 
@@ -102,7 +103,16 @@ def person_citations(text: str, evidence_urls: set[str]) -> str:
     return "".join(cleaned)
 
 
+# URLs the user wrote in this conversation's messages. Repeating an address the
+# user supplied is not a claim of a fetched source (D7 covers model citations),
+# so the guard keeps them. Set per request by chat_pipeline.process.
+user_urls: ContextVar[frozenset[str]] = ContextVar(
+    "atlas_user_urls", default=frozenset()
+)
+
+
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
+    retrieved = set(retrieved) | user_urls.get()
     from services.orchestrator.citation_fragments import tool_citations
     from services.orchestrator.mermaid_check import FENCE
 

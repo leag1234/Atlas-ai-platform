@@ -691,9 +691,20 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     checking = grounding.current.set(check)
     sink = sink_context.get()
     held = sink_context.set(_HeldAnswer(sink)) if check and sink else None
+    from services.orchestrator.source_truth import urls as text_urls, user_urls
+
+    supplied = user_urls.set(
+        frozenset(
+            url
+            for message in request.messages
+            if message.role == "user"
+            for url in text_urls(message.text)
+        )
+    )
     try:
         await _process_request(request, item)
     finally:
+        user_urls.reset(supplied)
         if held is not None:
             sink_context.reset(held)
         grounding.current.reset(checking)
