@@ -43,8 +43,9 @@ class VoiceConfigTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 401)
 
     def test_transcriptions_refused_when_stt_is_off(self) -> None:
-        with patch.dict(os.environ, {"ATLAS_STT": "0"}, clear=False), patch(
-            "services.orchestrator.voice_ui.browser_user", signed_in
+        with (
+            patch.dict(os.environ, {"ATLAS_STT": "0"}, clear=False),
+            patch("services.orchestrator.voice_ui.browser_user", signed_in),
         ):
             response = self.client.post(
                 "/api/atlas/voice/transcriptions",
@@ -58,8 +59,9 @@ class VoiceConfigTests(unittest.TestCase):
         self.assertEqual(response.json()["error"], "stt_unavailable")
 
     def test_speech_refused_when_tts_is_off(self) -> None:
-        with patch.dict(os.environ, {"ATLAS_TTS": "0"}, clear=False), patch(
-            "services.orchestrator.voice_ui.browser_user", signed_in
+        with (
+            patch.dict(os.environ, {"ATLAS_TTS": "0"}, clear=False),
+            patch("services.orchestrator.voice_ui.browser_user", signed_in),
         ):
             response = self.client.post(
                 "/api/atlas/voice/speech",
