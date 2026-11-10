@@ -195,6 +195,22 @@ STEP_LIMITS = {
 }
 
 
+def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str, str]:
+    """Tool errors still open at the end of a Work turn.
+
+    A group switch refused because the requested file did not exist yet is
+    steering, not a failure: once the turn has published a file it is settled
+    (a researched summary delivered its file and was still reported failed,
+    staging 2026-11-10).
+    """
+    if (
+        deliverables
+        and failures.get("switch_tool_group") == "deliverable_group_required"
+    ):
+        return {k: v for k, v in failures.items() if k != "switch_tool_group"}
+    return failures
+
+
 def work_failure_category(reason: str, *, tool_failure: bool) -> str | None:
     """Map a failed Work turn reason to a public category; None is an outage."""
     if tool_failure:
@@ -291,6 +307,10 @@ async def execute_turn(
         skill_messages=tools.skills.instructions
         if isinstance(tools, WorkTools) and tools.skills is not None
         else None,
+        # A Work turn answers with its last statement. What the agent says between
+        # tool calls ("I will first…", "that failed, let me retry…") is progress,
+        # not the answer: it was glued in front of the result without a space.
+        final_only=isinstance(tools, WorkTools),
     )
     assert isinstance(result, CodeResult)
     if isinstance(tools, WorkTools):
@@ -1074,7 +1094,14 @@ async def process_work(
                     item.reponse += "\n\n" + links
             item.cout_eur = float(model.spent)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
-            reason = result.reason or next(iter(tools.validation_failures.values()), "")
+            reason = result.reason or next(
+                iter(
+                    open_failures(
+                        tools.validation_failures, tools.deliverables
+                    ).values()
+                ),
+                "",
+            )
             terminal = (
                 "completed" if result.state == "done" and not reason else "failed"
             )

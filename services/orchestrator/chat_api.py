@@ -403,6 +403,11 @@ async def chat(request: Request) -> Response:
             payload.__dict__["daily_ledger"] = ledger
             payload.__dict__["daily_user"] = user
             payload.__dict__["artifact_owner"] = artifact_owner
+            # The interface forwards its own conversation id: a chat that reached
+            # Work keeps the same workspace on its later turns.
+            native_chat = request.headers.get("x-openwebui-chat-id", "")
+            if re.fullmatch(r"[A-Za-z0-9:_-]{1,120}", native_chat):
+                payload.__dict__["native_chat_id"] = native_chat
             item.question = payload.user_text
             if payload.stream:
                 streaming = True

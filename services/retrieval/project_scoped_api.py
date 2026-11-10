@@ -196,8 +196,15 @@ def execute(
                     ProjectCreate.model_validate_json(body).model_dump()
                 )
             if method == "GET":
+                include_hidden = (checked or {}).get("include_hidden") == "1"
                 rows = scope.db.execute(
-                    "SELECT * FROM atlas_projects.projects WHERE org_id=%s ORDER BY data->>'created_at',id",
+                    "SELECT * FROM atlas_projects.projects WHERE org_id=%s"
+                    + (
+                        ""
+                        if include_hidden
+                        else " AND coalesce((data->>'hidden')::boolean,false)=false"
+                    )
+                    + " ORDER BY data->>'created_at',id",
                     (org,),
                 ).fetchall()
                 return 200, {
@@ -278,6 +285,20 @@ def execute(
             if method == "DELETE":
                 transcript.delete(tail[1], expected)
                 return 204, None
+        if (
+            len(tail) == 2
+            and tail[0] == "conversations"
+            and tail[1] == "chat-binding"
+            and method == "GET"
+        ):
+            checked = checked or {}
+            chat_id = checked.get("chat_conversation_id", "")
+            if not 1 <= len(chat_id) <= 120:
+                raise ProjectError(422, "invalid_request")
+            bound = transcript.chat_binding(chat_id)
+            if bound is None:
+                raise ProjectError(404, "not_found")
+            return 200, bound
         if tail == ["conversations", "import"] and method == "POST":
             return 201, transcript.import_conversation(json.loads(body))
         if (
@@ -694,8 +715,17 @@ def check_query(
         allowed.update({"session_id", "after"})
     if tail == ["events"] and method == "GET":
         allowed.add("after")
+    if tail == ["projects"] and method == "GET":
+        allowed.add("include_hidden")
     if tail == ["conversations"] and method == "GET":
         allowed.update({"archived", "q"})
+    if (
+        len(tail) == 2
+        and tail[0] == "conversations"
+        and tail[1] == "chat-binding"
+        and method == "GET"
+    ):
+        allowed.add("chat_conversation_id")
     if tail == ["ledger", "summary"] and method == "GET":
         allowed.add("session_id")
     if set(raw) - allowed or any(len(v) != 1 for v in raw.values()):
@@ -708,6 +738,13 @@ def check_query(
     if "after" in query and (not query["after"].isdigit() or int(query["after"]) < 0):
         raise ProjectError(422, "invalid_request")
     if "archived" in query and query["archived"] != "1":
+        raise ProjectError(422, "invalid_request")
+    if "include_hidden" in query and query["include_hidden"] != "1":
+        raise ProjectError(422, "invalid_request")
+    if (
+        "chat_conversation_id" in query
+        and not 1 <= len(query["chat_conversation_id"]) <= 120
+    ):
         raise ProjectError(422, "invalid_request")
     if "q" in query and not 1 <= len(query["q"].strip()) <= 200:
         raise ProjectError(422, "invalid_request")

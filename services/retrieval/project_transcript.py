@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any
+from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
@@ -73,7 +74,16 @@ class Transcript:
     ) -> dict[str, Any]:
         value = self._own(conversation)
         self.scope.match(value, expected)
-        if not isinstance(data, dict) or not data or set(data) - {"title", "archived"}:
+        if (
+            not isinstance(data, dict)
+            or not data
+            or set(data)
+            - {
+                "title",
+                "archived",
+                "chat_binding",
+            }
+        ):
             raise ProjectError(422, "invalid_request")
         if "title" in data:
             title = data["title"]
@@ -84,6 +94,29 @@ class Transcript:
             if not isinstance(data["archived"], bool):
                 raise ProjectError(422, "invalid_request")
             value["archived"] = data["archived"]
+        if "chat_binding" in data:
+            binding = data["chat_binding"]
+            if not isinstance(binding, dict) or set(binding) != {
+                "chat_conversation_id",
+                "work_session_id",
+            }:
+                raise ProjectError(422, "invalid_request")
+            chat_id = binding["chat_conversation_id"]
+            session_id = binding["work_session_id"]
+            if (
+                not isinstance(chat_id, str)
+                or not 1 <= len(chat_id) <= 120
+                or not isinstance(session_id, str)
+            ):
+                raise ProjectError(422, "invalid_request")
+            try:
+                UUID(session_id)
+            except ValueError:
+                raise ProjectError(422, "invalid_request") from None
+            value["chat_binding"] = {
+                "chat_conversation_id": chat_id,
+                "work_session_id": str(UUID(session_id)),
+            }
         self.files.save(value)
         self.scope.db.execute(
             "INSERT INTO atlas_projects.audit(org_id,id,member_id,project_id,kind,details) VALUES(%s,gen_random_uuid(),%s,%s,'conversation_updated',%s)",
@@ -137,6 +170,17 @@ class Transcript:
             for value in self.files.listing("conversation")
             if bool(value.get("archived", False)) == archived
         ]
+
+    def chat_binding(self, chat_conversation_id: str) -> dict[str, Any] | None:
+        """The project conversation and Work session bound to a native chat id."""
+        for value in self.files.listing("conversation"):
+            binding = value.get("chat_binding")
+            if (
+                isinstance(binding, dict)
+                and binding.get("chat_conversation_id") == chat_conversation_id
+            ):
+                return value
+        return None
 
     def search(self, query: str, archived: bool = False) -> list[dict[str, Any]]:
         """The caller's own conversations whose title or turn text contains query."""

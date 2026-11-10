@@ -193,6 +193,17 @@ class DocumentAvailabilityTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class SettledSwitchRefusalTests(unittest.TestCase):
+    def test_refused_switch_is_settled_once_a_file_is_published(self) -> None:
+        from services.orchestrator.code_mode import open_failures
+
+        refused = {"switch_tool_group": "deliverable_group_required"}
+        self.assertEqual(open_failures(refused, []), refused)
+        self.assertEqual(open_failures(refused, [{"deliverable_id": "d1"}]), {})
+        other = {"switch_tool_group": "invalid_tool_group", "run_command": "denied"}
+        self.assertEqual(open_failures(other, [{"deliverable_id": "d1"}]), other)
+
+
 class DeliverableGroupGuardTests(unittest.TestCase):
     def selection(self, pending: bool) -> WorkToolSelection:
         selection = WorkToolSelection("documents")
@@ -213,6 +224,27 @@ class DeliverableGroupGuardTests(unittest.TestCase):
         self.assertIn("publish_document", refused.exception.result["next_step"])
         self.assertEqual(selection.group, "documents")
         self.assertIsNone(selection.pending)
+
+    def test_one_research_visit_is_allowed_before_the_file(self) -> None:
+        from services.orchestrator.work_tool_selection import ToolSelectionError
+
+        selection = self.selection(True)
+        selection.enable_research()
+        first = selection.switch(json.dumps({"group": "research"}))
+        self.assertEqual(first["group"], "research")
+        self.assertIn("publish_document", first["next_step"])
+        selection.declarations()
+        self.assertEqual(
+            selection.switch(json.dumps({"group": "documents"}))["group"], "documents"
+        )
+        selection.declarations()
+        # A second visit, or research never enabled, still waits for the file.
+        with self.assertRaises(ToolSelectionError):
+            selection.switch(json.dumps({"group": "research"}))
+        offline = self.selection(True)
+        offline.disable_research()
+        with self.assertRaises((ToolSelectionError, ValueError)):
+            offline.switch(json.dumps({"group": "research"}))
 
     def test_switch_is_free_once_the_file_exists_or_none_was_requested(self) -> None:
         self.assertEqual(

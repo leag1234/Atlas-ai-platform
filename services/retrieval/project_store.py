@@ -207,6 +207,11 @@ class Scope:
                 and method in {"PATCH", "DELETE"}
             )
             or (len(tail) == 3 and tail[0] == "conversations" and tail[2] == "share")
+            or (
+                len(tail) == 2
+                and tail[0] == "conversations"
+                and tail[1] == "chat-binding"
+            )
         )
         if method == "GET":
             return
@@ -468,6 +473,7 @@ class Scope:
             state="active",
             default_action=data["default_action"],
             privacy=data["privacy"],
+            hidden=bool(data.get("hidden", False)),
             instructions_file_id=str(uuid4()),
             memory_revision=0,
             deliverables_folder_id=str(uuid4()),
