@@ -45,7 +45,11 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.directory.cleanup)
         self.cache = Cache(Path(self.directory.name) / "cache.sqlite")
         self.state = sx.State()
-        self.state_patch = patch.object(sx, "shared_state", return_value=self.state)
+        # Resolved on every call: a subtest may swap in a fresh state while
+        # requests of the previous subtest are still in flight on the old one.
+        self.state_patch = patch.object(
+            sx, "shared_state", side_effect=lambda *args, **kwargs: self.state
+        )
         self.state_patch.start()
         self.addCleanup(self.state_patch.stop)
         self.env = patch.dict(
@@ -195,7 +199,10 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             ("invalid", "upstream_timeout", 2),
         ):
             with self.subTest(action=action):
-                self.state.circuits.clear()
+                # A fresh state, not circuits.clear(): requests still in flight
+                # after the 0.12 s timeout case used to recreate circuits in
+                # cooldown, and under load the next case read upstream_blocked.
+                self.state = sx.State()
                 self.scripts = {engine: action for engine in (*sx.ENGINES, "wikipedia")}
                 result = await self.search(query=action, timeout=timeout)
                 self.assertEqual(result["outcome"], expected)
