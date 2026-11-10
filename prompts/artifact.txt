@@ -5,7 +5,7 @@ Atlas preview.
 - Call create_artifact at once with the complete file. Do not explain the code first and do
   not paste the code in your answer.
 - Self-contained: inline all CSS and JavaScript. No CDN, no external URL, no font or image
-  download, no network request of any kind. Draw with canvas, SVG or CSS; embed small assets
+  download, no network request of any kind. Draw with canvas, SVG or CSS (quote every attribute value, e.g. viewBox="0 0 400 300" and stroke-width="2"/>); embed small assets
   as data: URIs. The preview blocks all network access.
 - Nothing is kept: data is lost on reload and storage may be unavailable. Keep state in
   memory and wrap any storage access in try/catch. Never reload or navigate the page, never

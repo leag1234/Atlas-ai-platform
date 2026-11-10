@@ -174,3 +174,16 @@ prompt("Name");
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnquotedAttributeTests(unittest.TestCase):
+    def test_svg_breaking_unquoted_values_are_quoted(self) -> None:
+        from packages.artifact_html import quote_attributes
+
+        broken = "<svg viewBox=0 0 10 10 width=40><ellipse cx=5 stroke-width=2/><circle r=1/></svg>"
+        self.assertEqual(
+            quote_attributes(broken),
+            '<svg viewBox="0 0 10 10" width=40><ellipse cx=5 stroke-width="2"/><circle r="1"/></svg>',
+        )
+        fine = '<svg viewBox="0 0 10 10"><ellipse stroke-width="2"/><br/></svg>'
+        self.assertEqual(quote_attributes(fine), fine)

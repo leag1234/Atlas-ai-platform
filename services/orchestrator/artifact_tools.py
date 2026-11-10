@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from packages.artifact_html import validate
+from packages.artifact_html import quote_attributes, validate
 from services.orchestrator import artifact_store
 from services.orchestrator.artifact_store import ArtifactError
 from services.orchestrator.loop import Call, Message
@@ -272,6 +272,7 @@ class ArtifactToolRuntime:
             )
         if arguments.artifact_id != self.current_artifact_id:
             return self._failure("artifact_unknown")
+        arguments.content = quote_attributes(arguments.content)
         problems = validate(arguments.content)
         if problems:
             return self._failure(
