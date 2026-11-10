@@ -186,7 +186,13 @@ class StreamDecoderTests(unittest.TestCase):
                 }
             )
             body = b"".join(
-                frame({"tool_calls": [{"index": 0, "function": {"arguments": "x" * 4000}}]})
+                frame(
+                    {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": "x" * 4000}}
+                        ]
+                    }
+                )
                 for _ in range(size // 4000)
             )
             return head + body
