@@ -964,7 +964,7 @@
       if (Number.isNaN(createdAt)) createdAt = Date.now() + index;
       if (createdAt <= previousCreatedAt) createdAt = previousCreatedAt + 1;
       previousCreatedAt = createdAt;
-      return {role:message.role,content:message.content.trim(),created_at:new Date(createdAt).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean),parts:nativeParts(message,chat).map(part => part.type === 'file' ? {type:'file', file_id:transferred.get(part.file_id)} : part).filter(part => part.type !== 'file' || part.file_id)};
+      return {role:message.role,content:message.content.trim(),created_at:new Date(createdAt).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean),parts:nativeParts(message,chat).map(part => part.type === 'file' ? {...part, file_id: transferred.get(part.file_id)} : part).filter(part => part.type !== 'file' || part.file_id).map(part => part.type === 'file' ? {type:'file', file_id:transferred.get(part.file_id)} : part).filter(part => part.type !== 'file' || part.file_id)};
     });
     const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
     const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
