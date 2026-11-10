@@ -10,6 +10,7 @@ limit applies, not the chat 120 s limit.
 from __future__ import annotations
 
 import asyncio
+import re
 import logging
 import os
 from typing import Any
@@ -252,6 +253,33 @@ async def _ensure_work_session(
     return str(session["id"])
 
 
+_DELIVERED_KINDS = (
+    ("docx", r"\bdocx\b|\bword\b", "Word document"),
+    ("xlsx", r"\bxlsx\b|\bexcel\b", "Excel workbook"),
+    ("pptx", r"\bpptx\b|\bpowerpoint\b", "PowerPoint presentation"),
+    ("pdf", r"\bpdf\b", "PDF document"),
+)
+
+
+def delivered_file_hint(request: ChatRequest) -> str:
+    """For a change request, name the kind of file this conversation delivered last.
+
+    "Add a sentence and update the document" does not say Word again: without
+    this the changed letter came back as a text file (staging 2026-11-10). The
+    hint goes to Work only; the person never sees it.
+    """
+    for message in reversed(request.conversation_messages[:-1]):
+        text = message.text.lower()
+        for extension, pattern, name in _DELIVERED_KINDS:
+            if re.search(pattern, text):
+                return (
+                    f"\n\n(This continues the {name} delivered earlier in this "
+                    f"conversation: write the updated document in full and deliver "
+                    f"it as a .{extension} file.)"
+                )
+    return ""
+
+
 async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     """Create (once per user) the hidden scratch project and a Work session bound
     to this conversation, then run the turn through process_work. Returns True
@@ -351,10 +379,25 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             "conversation_id": bound_conversation,
             "project_action": "work",
             "work_session_id": session_id,
-            "messages": [ChatMessage(role="user", content=request.user_text)],
+            # The earlier turns of this chat come along (text only, the last ten):
+            # without them a change request found "an empty workspace" and asked
+            # which document was meant (staging 2026-11-10).
+            "messages": [
+                *(
+                    ChatMessage(role=message.role, content=message.text[:8000])
+                    for message in request.conversation_messages[:-1][-10:]
+                    if message.role in {"user", "assistant"} and message.text.strip()
+                ),
+                ChatMessage(
+                    role="user",
+                    content=request.user_text
+                    + (delivered_file_hint(request) if follow_up else ""),
+                ),
+            ],
         }
     )
     scoped._project_subject = subject
+    scoped.__dict__["approvals_unattended"] = True
     before = (item.state, list(item.erreurs), item.reponse)
     failure = ""
     try:

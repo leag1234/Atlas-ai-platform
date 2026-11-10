@@ -198,17 +198,19 @@ STEP_LIMITS = {
 def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str, str]:
     """Tool errors still open at the end of a Work turn.
 
-    A group switch refused because the requested file did not exist yet is
-    steering, not a failure: once the turn has published a file it is settled
-    (a researched summary delivered its file and was still reported failed,
-    staging 2026-11-10).
+    A refused read changes nothing and the model saw the error: it is a result,
+    not a failure (a script that ran was reported failed for one read of a
+    missing path, staging 2026-11-10). A group switch refused because the
+    requested file did not exist yet is steering: once the turn has published a
+    file it is settled.
     """
+    settled = {"read_file"}
     if (
         deliverables
         and failures.get("switch_tool_group") == "deliverable_group_required"
     ):
-        return {k: v for k, v in failures.items() if k != "switch_tool_group"}
-    return failures
+        settled.add("switch_tool_group")
+    return {tool: error for tool, error in failures.items() if tool not in settled}
 
 
 def work_failure_category(reason: str, *, tool_failure: bool) -> str | None:
@@ -709,6 +711,8 @@ async def process_work(
         dispatch.generation = execution.session["lease"]["generation"]
     workspace = execution.workspace()
     tools = WorkTools(workspace, execution, sink_context.get())
+    # Set by the chat when Work runs behind it: no approval card can be answered there.
+    tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,
@@ -812,6 +816,16 @@ async def process_work(
             model.work_check = execution.check
             model.work_cost = limits.cost
             model.work_per_call = Decimal(str(ceiling["per_call_eur"]))
+            from packages.file_intent import produces_file
+
+            # A requested file is written in one call: the gateway then allows
+            # that call up to 300 s instead of 120 (the per-call cost stays ours).
+            from packages.work_intent import work_reason
+
+            model.produces_files = (
+                produces_file(request.user_text, include_images=False)
+                or work_reason(request.user_text) == "file"
+            )
             from services.orchestrator.work_tool_selection import (
                 WorkToolSelection,
                 select_group,
@@ -840,6 +854,7 @@ async def process_work(
                 from services.orchestrator.chat_pipeline import ChatTools
 
                 tools.web = ChatTools(item, request.user_text)
+                tools.web_lang = request.lang
                 selection.enable_research()
             from services.orchestrator.work_opencode_turn import (
                 engine_turn_selected,
@@ -916,7 +931,7 @@ async def process_work(
                     for entry in saved.get("not_saved", [])
                     if isinstance(entry, dict)
                 ]
-                if denied:
+                if denied and not tools.approvals_unattended:
                     item.reponse += not_saved_line(request.lang) + ", ".join(denied)
                 await tools.emit(
                     "recap",
@@ -1152,7 +1167,7 @@ async def process_work(
                 for entry in saved.get("not_saved", [])
                 if isinstance(entry, dict)
             ]
-            if denied:
+            if denied and not tools.approvals_unattended:
                 item.reponse += not_saved_line(request.lang) + ", ".join(denied)
             await tools.emit(
                 "recap",

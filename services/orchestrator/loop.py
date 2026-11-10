@@ -319,7 +319,16 @@ async def run(
                 received = await invoke(
                     model.complete(
                         messages,
-                        min(120, remaining()) if limits.code_mode else remaining(),
+                        # A call that writes a requested file gets 240 s: the gateway
+                        # gives a first attempt half of it, and a whole researched
+                        # document needs more than 60 s (cut twice on staging,
+                        # 2026-11-10; the retry then had no budget left).
+                        min(
+                            240 if getattr(model, "produces_files", False) else 120,
+                            remaining(),
+                        )
+                        if limits.code_mode
+                        else remaining(),
                     )
                 )
                 if not isinstance(received, Turn):
@@ -543,7 +552,10 @@ async def run(
                     quota
                     and limits.profile
                     and not quota_recovered
-                    and not limits.code_mode
+                    # In Work the step ceiling stays a hard stop; a research quota is
+                    # told to the model once, as in the chat, so that it writes with
+                    # what it has (a researched note died here, staging 2026-11-10).
+                    and (not limits.code_mode or quota != "tool_calls")
                 ):
                     quota_recovered = True
                     for denied in pending_calls[pending_calls.index(call) :]:

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 import logging
 import os
 import re
@@ -370,6 +371,23 @@ def approval_arguments(arguments: str) -> dict[str, Any]:
 FILE_TOOLS = ("edit_file", "write_file")
 
 
+def with_search_language(call: Any, language: str) -> Any:
+    """A web search without its language takes the conversation's.
+
+    The search arguments require one; a model that left it out ended the whole
+    Work turn on a validation error (staging 2026-11-10).
+    """
+    if call.name != "web_search":
+        return call
+    try:
+        arguments = json.loads(call.arguments)
+    except ValueError:
+        return call
+    if not isinstance(arguments, dict) or arguments.get("lang"):
+        return call
+    return replace(call, arguments=json.dumps(dict(arguments, lang=language)))
+
+
 async def wait_for_approval(
     execution: Any, tools: Any, approval: dict[str, Any], timeout: float
 ) -> str:
@@ -439,6 +457,8 @@ class WorkTools(CodeTools):
         self.schedules: Any = None
         self.nearby: Any = None
         self.web: Any = None
+        self.web_lang = "en"
+        self.approvals_unattended = False
         self.remote_references: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
@@ -530,7 +550,11 @@ class WorkTools(CodeTools):
                     "reason": "strict_privacy",
                 }
             else:
-                result = dict(await self.web.execute(call, timeout))
+                result = dict(
+                    await self.web.execute(
+                        with_search_language(call, self.web_lang), timeout
+                    )
+                )
             await self.emit(
                 "tool",
                 tool=call.name,
