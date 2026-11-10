@@ -269,3 +269,29 @@ class WorkSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("invalid synthetic input", str(result))
         execution.broker.call.assert_not_awaited()
         self.assertEqual(tools.selection.group, "documents")
+
+
+class CodeSignalTests(unittest.TestCase):
+    def test_code_signals_select_code(self) -> None:
+        from services.orchestrator.work_tool_selection import select_group
+
+        for question in (
+            "lance python3 -m pytest",
+            "installe requests avec pip puis lance les tests unitaires",
+            "write a node script that parses this csv",
+            "fix the failing unit tests",
+            "écris un script bash qui sauvegarde le dossier",
+        ):
+            with self.subTest(question=question):
+                self.assertEqual(select_group(question, [], False), "code")
+
+    def test_documents_and_files_keep_their_groups(self) -> None:
+        from services.orchestrator.work_tool_selection import select_group
+
+        self.assertEqual(
+            select_group("rename the files in this folder", [], False), "files"
+        )
+        self.assertEqual(select_group("write a report as docx", [], False), "documents")
+        self.assertEqual(
+            select_group("make a presentation about python", [], False), "presentations"
+        )

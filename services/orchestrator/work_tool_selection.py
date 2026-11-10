@@ -71,6 +71,13 @@ PATTERNS = {
     "files": r"\b(files?|folder|organize|move|rename|fichiers?|dossier|dateien|archivos?)\b",
     "research": r"\b(web|internet|online|search|fetch|browse|recherche|rechercher|chercher|recherche web|buscar|busca|buscar en la web|suche|suchen|im web)\b",
 }
+# Strong code signals win over file-type words (csv, folder): a request to run
+# python3, pip or the unit tests is a code task even when it names a CSV file.
+CODE_SIGNALS = (
+    r"\b(python\d*(?:\.\d+)?|pip3?|pytest|unittest|npm|npx|yarn|pnpm|nodejs|node|cargo"
+    r"|bash|shell|unit ?tests?|tests? unitaires?|compiler?|compile[sd]?|refactor\w*"
+    r"|commit|pull request|git)\b"
+)
 # A requested file name such as notes.md selects documents only when nothing else matched and there is no repository.
 DOCUMENT_EXTENSION = r"\.(?:md|txt)\b"
 SOURCE_SUFFIXES = {
@@ -128,6 +135,8 @@ def code_context(
         for character in unicodedata.normalize("NFKD", question.lower())
         if not unicodedata.combining(character)
     )
+    if re.search(CODE_SIGNALS, text):
+        return True
     return any(
         token.rsplit(".", 1)[-1] in SOURCE_SUFFIXES
         for token in re.split(r"[^\w.]+", text)
