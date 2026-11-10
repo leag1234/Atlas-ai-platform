@@ -110,7 +110,9 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "create_artifact", [tool["function"]["name"] for tool in model.tools]
         )
-        self.assertEqual(model.required_file_tool, "create_artifact")
+        # Never forced: a forced call is decoded under a JSON grammar that
+        # corrupts long HTML arguments (see chat_pipeline).
+        self.assertIsNone(model.required_file_tool)
         self.assertEqual(
             model.configure_quality.call_args.args[1],
             6000,

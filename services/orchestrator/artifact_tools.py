@@ -93,6 +93,8 @@ MAX_PROBLEMS = 10
 MAX_DETAIL_CHARS = 80
 PROBLEM_DETAILS = {
     "dialog_api": "show the message inside the page",
+    "script_syntax": "this script does not parse (check braces, brackets, "
+    "parentheses and quotes); send the complete corrected file",
 }
 
 

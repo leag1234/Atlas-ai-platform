@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import shutil
 import time
 import unittest
+from unittest.mock import patch
 
-from packages.artifact_html import Problem, validate
+from packages.artifact_html import Problem, script_syntax_error, validate
 
 
 class ArtifactHtmlTests(unittest.TestCase):
@@ -174,6 +176,42 @@ prompt("Name");
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PAGE = "<!doctype html>\n<html><body><button id=play>Play</button>\n<script{kind}>{code}</script></body></html>"
+
+
+@unittest.skipUnless(shutil.which("node"), "Node.js parses the scripts")
+class ScriptSyntaxTests(unittest.TestCase):
+    def test_a_script_that_does_not_parse_is_a_problem(self) -> None:
+        # Staging 2026-11-10: a drum machine lost one closing brace; the page
+        # showed its title and no grid.
+        broken = "function play(){switch(1){case 1:{break}}function grid(){}grid();"
+        self.assertEqual(
+            validate(PAGE.format(kind="", code=broken)), [Problem("script_syntax", 3)]
+        )
+        self.assertIsNotNone(script_syntax_error(broken))
+
+    def test_valid_modern_scripts_pass(self) -> None:
+        code = "const steps=[...Array(16).keys()];const first=steps?.[0]??0;class Kit{#gain=1;play=()=>`${first}`}new Kit().play();"
+        self.assertEqual(validate(PAGE.format(kind="", code=code)), [])
+        self.assertIsNone(script_syntax_error(""))
+
+    def test_module_and_data_scripts_are_not_parsed_as_classic_scripts(self) -> None:
+        self.assertEqual(
+            validate(PAGE.format(kind=" type=module", code="export const a = 1;")), []
+        )
+        self.assertEqual(
+            validate(
+                PAGE.format(kind=' type="application/json"', code='{"steps": 16}')
+            ),
+            [],
+        )
+
+    def test_without_node_the_check_is_skipped(self) -> None:
+        with patch("packages.artifact_html.shutil.which", return_value=None):
+            self.assertIsNone(script_syntax_error("function ("))
+            self.assertEqual(validate(PAGE.format(kind="", code="function (")), [])
 
 
 class UnquotedAttributeTests(unittest.TestCase):

@@ -1403,8 +1403,12 @@ async def _process(
         has_attachments=request.has_attachments,
         produces_files=produces_files,
     )
-    if artifact_intent == "create":
-        model.required_file_tool = "create_artifact"
+    # The app tool is never forced through tool_choice. Providers then decode the
+    # arguments under a JSON grammar: measured on staging (2026-11-10), one model
+    # stopped at the first double quote (a 26-character file, rejected until the
+    # turn failed) and another avoided double quotes altogether (unquoted
+    # attributes, broken selectors, unbalanced braces). The app prompt asks for
+    # the call; the same models then write a complete, valid file.
     if artifact_intent is not None:
         model.reasoning_ceiling = "none"
     model.cost_ceiling = cost_limit
