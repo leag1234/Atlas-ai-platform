@@ -1,4 +1,4 @@
-/* Dictation and read-aloud for the chat and project composers.
+/* Read-aloud for project turns (the chat uses the native dictation and read-aloud).
    Each capability is offered only when the installation enables it. */
 (() => {
   'use strict';
@@ -72,7 +72,7 @@
   };
   const readAloud = async button => {
     if (audio) { audio.pause(); audio = null; button.setAttribute('aria-pressed', 'false'); button.setAttribute('aria-label', t().readAloud); button.title = t().readAloud; return; }
-    const bubble = button.closest('[id^="message-"], .atlas-project-turn');
+    const bubble = button.closest('.atlas-project-turn');
     const content = bubble?.querySelector('.markdown-prose, .answer, pre.answer');
     const text = content?.innerText?.trim();
     if (!text) return;
