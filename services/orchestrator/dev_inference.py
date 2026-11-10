@@ -157,9 +157,17 @@ async def validated_drive(
                     "charged_micro_eur": charged if known else None,
                     "reserved_micro_eur": plan.reserved,
                     "usage": output.usage,
+                    # Who answered, against what the route planned first: a
+                    # fallback (and its price) is visible per request.
+                    "planned": request_target(plan),
+                    "served_by": getattr(output, "served_by", None),
                 }
             )
         )
+
+
+def request_target(plan: gateway.Plan) -> str | None:
+    return plan.provider + "/" + plan.model if plan.provider else None
 
 
 def provider_failure(exc: BaseException) -> dict[str, dict[str, str]]:
@@ -241,6 +249,10 @@ async def drive(
                     "charged_micro_eur": charged,
                     "reserved_micro_eur": plan.reserved,
                     "usage": output.usage,
+                    # Who answered, against what the route planned first: a
+                    # fallback (and its price) is visible per request.
+                    "planned": request_target(plan),
+                    "served_by": getattr(output, "served_by", None),
                 }
             )
         )
