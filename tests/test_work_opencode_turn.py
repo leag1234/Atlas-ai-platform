@@ -284,3 +284,15 @@ class FilePatchesTests(unittest.TestCase):
         self.assertEqual([path for path, _ in sections], ["f1/a.py", "f1/b.py"])
         self.assertTrue(sections[1][1].startswith("diff --git a/f1/b.py"))
         self.assertNotIn("__pycache__", "".join(section for _, section in sections))
+
+
+class RepositorySessionTests(unittest.TestCase):
+    def test_repository_session_keeps_the_loop(self) -> None:
+        from types import SimpleNamespace
+
+        from services.orchestrator.work_opencode_turn import engine_turn_selected
+
+        selection = SimpleNamespace(group="code")
+        with mock.patch.dict(os.environ, {"ATLAS_WORK_ENGINE": "opencode"}):
+            self.assertTrue(engine_turn_selected(selection))
+            self.assertFalse(engine_turn_selected(selection, repository=True))

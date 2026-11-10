@@ -40,10 +40,16 @@ class OpencodeTurnResult:
     tool_calls: int
 
 
-def engine_turn_selected(selection: Any) -> bool:
-    """The opencode engine runs only for code turns when the setting is on."""
+def engine_turn_selected(selection: Any, repository: bool = False) -> bool:
+    """The opencode engine runs only for code turns when the setting is on.
+
+    A session linked to a forge repository keeps Atlas's loop: forge
+    publication (branch, commit, pull request) is an Atlas tool the engine
+    is not offered yet, and that flow already works on the loop.
+    """
     return (
         engine_selected()
+        and not repository
         and selection is not None
         and getattr(selection, "group", None) == "code"
     )
