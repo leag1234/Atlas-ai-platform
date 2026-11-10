@@ -169,7 +169,7 @@ class StreamDecoderTests(unittest.TestCase):
         )
         self.assertEqual(decoder.result["text"], "")
 
-    def test_an_app_fits_in_one_tool_call_and_runaway_arguments_stop(self) -> None:
+    def test_tool_arguments_are_bounded_by_max_tokens_not_characters(self) -> None:
         from packages.limits import LimitError
 
         def call(size: int) -> bytes:
@@ -191,14 +191,21 @@ class StreamDecoderTests(unittest.TestCase):
             )
             return head + body
 
-        decoder = StreamDecoder()
-        decoder.feed(call(40000) + end("tool_calls"))
+        # A 120000-character app in one call decodes.
+        decoder = StreamDecoder(max_tokens=16000)
+        decoder.feed(call(120000) + end("tool_calls"))
         decoder.finish()
         assert decoder.result is not None
-        self.assertEqual(len(decoder.result["calls"][0]["arguments"]), 40000)
+        self.assertEqual(len(decoder.result["calls"][0]["arguments"]), 120000)
+        # A provider that never stops is cut by the raw stream cap.
         with self.assertRaises(LimitError) as caught:
-            StreamDecoder().feed(call(68000))
-        self.assertEqual(caught.exception.code, "tool_limit")
+            StreamDecoder(max_tokens=100).feed(call(900000))
+        self.assertEqual(caught.exception.code, "stream_limit_or_trailing_data")
+
+    def test_raw_stream_cap_scales_with_max_tokens(self) -> None:
+        envelope = frame({"content": "a"})
+        decoder = StreamDecoder(max_tokens=16000)
+        decoder.feed(envelope * (1200000 // len(envelope)))
 
     def test_missing_usage_finish_or_done_cannot_be_success(self) -> None:
         for suffix in [

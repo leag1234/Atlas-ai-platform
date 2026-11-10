@@ -14,7 +14,7 @@ from stream_usage import validate_usage
 
 class FunctionDelta(BaseModel):
     name: str = Field(default="", max_length=80)
-    arguments: str = Field(default="", max_length=65536)
+    arguments: str = Field(default="", max_length=1048576)
 
 
 class CallDelta(BaseModel):
@@ -93,10 +93,23 @@ class Frame(BaseModel):
     usage: dict[str, object] | None = None
 
 
+STREAM_BYTES_PER_TOKEN = 1024
+
+
 class StreamDecoder:
-    def __init__(self, allow_length: bool = False, ignore_calls: bool = False) -> None:
+    def __init__(
+        self,
+        allow_length: bool = False,
+        ignore_calls: bool = False,
+        max_tokens: int | None = None,
+    ) -> None:
         self.allow_length = allow_length
         self.ignore_calls = ignore_calls
+        # The output is bounded by max_tokens (usage is checked against it).
+        # The raw stream cap only guards memory against a provider that never
+        # stops: each streamed token costs a few hundred bytes of SSE envelope,
+        # so the cap scales with max_tokens instead of cutting a long answer.
+        self.max_tokens = max_tokens
         self.provider_id: str | None = None
         self.reasoning = ""
         self.buffer = bytearray()
@@ -110,7 +123,10 @@ class StreamDecoder:
 
     def feed(self, piece: bytes) -> list[dict[str, object]]:
         self.total += len(piece)
-        maximum = 8000000 if self.allow_length else 800000
+        maximum = max(
+            8000000 if self.allow_length else 800000,
+            (self.max_tokens or 0) * STREAM_BYTES_PER_TOKEN,
+        )
         if self.total > maximum:
             raise LimitError(
                 "stream_limit_or_trailing_data", self.total, maximum, "bytes"
@@ -188,10 +204,9 @@ class StreamDecoder:
                         self.calls.clear()
                         raise MalformedToolCall(len(target["name"]))
                     target["arguments"] += call.function.arguments
-                    for key, maximum in (
-                        ("id", 200),
-                        ("arguments", 65536),
-                    ):
+                    # Arguments have no length cap of their own: an app is
+                    # written in one call, and max_tokens bounds the output.
+                    for key, maximum in (("id", 200),):
                         if len(target[key]) > maximum:
                             if key == "name":
                                 measured = len(target[key])
