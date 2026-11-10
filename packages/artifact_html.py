@@ -5,7 +5,11 @@ from __future__ import annotations
 import html.parser
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
 from packages.text_deliverables import TextDeliverableError, validate_text
 
@@ -90,6 +94,41 @@ class Problem:
     line: int
 
 
+CLASSIC_SCRIPT_TYPES = frozenset(
+    {"", "text/javascript", "application/javascript", "text/ecmascript"}
+)
+
+
+def script_syntax_error(text: str) -> str | None:
+    """The syntax error of a classic script, or None when it parses.
+
+    A script that does not parse leaves the app without its behaviour (staging
+    2026-11-10: a missing brace, the page showed its title and no controls). The
+    script is parsed, never run, by Node.js when it is on the PATH; without
+    Node.js the check is skipped.
+    """
+    node = shutil.which("node")
+    if node is None or not text.strip():
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "script.js"
+            path.write_text(text, encoding="utf-8")
+            result = subprocess.run(
+                [node, "--check", str(path)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode == 0:
+        return None
+    match = re.search(r"SyntaxError: (.*)", result.stderr)
+    return (match.group(1) if match else "syntax error")[:80]
+
+
 class _Validator(html.parser.HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -100,6 +139,7 @@ class _Validator(html.parser.HTMLParser):
         self._script_start = 1
         self._script_text: list[str] = []
         self._in_script = False
+        self._script_classic = True
         self._style_start = 1
         self._style_text: list[str] = []
         self._in_style = False
@@ -130,6 +170,8 @@ class _Validator(html.parser.HTMLParser):
             self._script_start = line
             self._script_text = []
             self._in_script = True
+            kind = (self._attribute_map(attrs).get("type") or "").strip().lower()
+            self._script_classic = kind in CLASSIC_SCRIPT_TYPES
         elif tag == "style":
             self._style_start = line
             self._style_text = []
@@ -212,6 +254,8 @@ class _Validator(html.parser.HTMLParser):
                 self._add_script_problem(match.start(), "external_reference")
         for match in LOCATION_ASSIGNMENT_PATTERN.finditer(text):
             self._add_script_problem(match.start(), "navigation_api")
+        if self._script_classic and script_syntax_error(text) is not None:
+            self.problems.append(Problem("script_syntax", self._script_start))
         self._script_text = []
 
     def _find_script_problem(self, text: str, pattern: str, code: str) -> None:
