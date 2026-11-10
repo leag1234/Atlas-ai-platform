@@ -477,3 +477,25 @@ async def save_turn_files(
         ][:20],
     )
     return report
+
+
+SAVED = {
+    "fr": "Fichier du projet mis à jour : ",
+    "de": "Projektdatei aktualisiert: ",
+    "es": "Archivo del proyecto actualizado: ",
+    "it": "File del progetto aggiornato: ",
+}
+NOT_SAVED = {
+    "fr": "Non enregistrés (approbation refusée ou expirée) : ",
+    "de": "Nicht gespeichert (Freigabe abgelehnt oder abgelaufen): ",
+    "es": "No guardados (aprobación denegada o caducada): ",
+    "it": "Non salvati (approvazione negata o scaduta): ",
+}
+
+
+def saved_line(lang: str) -> str:
+    return "\n\n" + SAVED.get(lang, "Project file updated: ")
+
+
+def not_saved_line(lang: str) -> str:
+    return "\n\n" + NOT_SAVED.get(lang, "Not saved (approval denied or expired): ")
