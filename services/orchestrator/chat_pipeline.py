@@ -1361,8 +1361,12 @@ async def _process(
     from packages.file_intent import edits_attachment
 
     # Editing an attached file means returning it: keep the file tools (J43).
-    deliver_files = requests_file_delivery(request.user_text) or (
-        bool(request.documents) and edits_attachment(request.user_text)
+    # An app turn delivers its app in the side panel: no file publication is
+    # expected, so the missing-file notice must not be appended (an SVG drawing
+    # also reads as a file request).
+    deliver_files = not artifact_turn and (
+        requests_file_delivery(request.user_text)
+        or (bool(request.documents) and edits_attachment(request.user_text))
     )
     from services.orchestrator.file_content import requested_formats
 

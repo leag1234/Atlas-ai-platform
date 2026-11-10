@@ -252,3 +252,25 @@ def validate(content: str) -> list[Problem]:
     parser = _Validator()
     parser.feed(text)
     return parser.finalize()
+
+
+# Models sometimes write attribute values without quotes. Two forms break SVG
+# drawings (staging 2026-11-10): an unquoted value right before "/>" swallows
+# the slash (stroke-width=2/> reads as "2/", the element stays open and the
+# following shapes are lost), and an unquoted viewBox keeps only its first
+# number. Rejecting made the model resend the same HTML until the loop guard
+# stopped the turn, so Atlas quotes those values itself before validation.
+_UNQUOTED_VIEWBOX = re.compile(
+    r"(\bviewBox=)(-?[\d.]+(?:[\s,]+-?[\d.]+){3})(?=[\s/>])", re.IGNORECASE
+)
+_UNQUOTED_BEFORE_CLOSE = re.compile(r"(<[A-Za-z][^<>]*?\s[\w:.-]+=)([^\s\"'<>=`/]+)/>")
+
+
+def quote_attributes(text: str) -> str:
+    """Quote the unquoted attribute values that break SVG parsing."""
+    text = _UNQUOTED_VIEWBOX.sub(lambda m: m[1] + '"' + m[2] + '"', text)
+    previous = None
+    while previous != text:
+        previous = text
+        text = _UNQUOTED_BEFORE_CLOSE.sub(lambda m: m[1] + '"' + m[2] + '"/>', text)
+    return text
