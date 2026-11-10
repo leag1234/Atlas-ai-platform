@@ -60,6 +60,16 @@ receive token usage in the final chunk before `[DONE]`. Responses report the mod
 accepted; responses to `atlas-dev` still report `atlas-code` in `model`. Both direct models try Mistral first and fall back to Scaleway when it is unavailable; the
 assistant runs on Scaleway.
 
+`GET /models` also lists one precise id per routing target, for example `mistral/zai-glm-5-3`,
+`mistral/mistral-large-4` or `scaleway/glm-5.2`, with `owned_by` set to the provider. Calling such an
+id uses that target only: no fallback to another model. Send `"fallback": false` on an alias request
+(`atlas-chat`, `atlas-code`…) to use the first target only. In both cases, when the provider fails,
+the error carries its cause — 429 `rate_limit` (with `Retry-After` when the provider sent one), 402
+`provider_quota`, 503 `provider_unavailable`, 504 `provider_timeout` — as a JSON error with `type`,
+`message` and `provider_status`; the answer never comes from another model. `served_by` (the
+`X-Atlas-Served-By` header and the response field) names the target that answered on every response,
+pinned or not, and pricing and the ledger use the pinned target's price.
+
 **Assistant or direct model.** The assistant adds its own instructions and tools: it searches the web
 and cites what it retrieved, reads attached documents, and answers in the user's language. You do not
 control its system prompt. A direct model does exactly what your messages ask, with your own system

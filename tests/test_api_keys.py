@@ -641,6 +641,8 @@ class KeyTests(unittest.TestCase):
                 "services.orchestrator.dev_inference.gateway.events", side_effect=frames
             ),
         ):
+            from services.orchestrator.api_key_edge import transcription_configured
+
             models = client.get("/api/atlas/v1/models", headers=headers).json()
             ids = [m["id"] for m in models["data"]]
             self.assertEqual(
@@ -651,9 +653,18 @@ class KeyTests(unittest.TestCase):
                     "atlas-dev",
                     "atlas-code-2026-10-30",
                     "atlas-chat-2026-10-30",
+                    "mistral/zai-glm-5-3-flash",
+                    "scaleway/deepseek-v4-flash-0731",
+                    "mistral/mistral-large-4",
+                    "mistral/zai-glm-5-3",
+                    "scaleway/glm-5.2",
                     "atlas-embed",
+                    *(["atlas-transcribe"] if transcription_configured() else []),
                 ],
             )
+            pinned = {m["id"]: m["owned_by"] for m in models["data"] if "/" in m["id"]}
+            self.assertEqual(pinned["mistral/zai-glm-5-3"], "mistral")
+            self.assertEqual(pinned["scaleway/glm-5.2"], "scaleway")
             _, assistant = self.create(scopes=["assistant"])
             rejected = client.post(
                 "/api/atlas/v1/chat/completions",
@@ -760,6 +771,116 @@ class KeyTests(unittest.TestCase):
         self.assertIn("fictional-call", reply.text)
         self.assertEqual(seen[0].messages[0].content[1]["type"], "image_url")
         self.assertEqual(seen[0].tools[0].function.name, "describe")
+
+    def test_pinned_model_failure_returns_429_with_retry_after_and_no_fallback(
+        self,
+    ) -> None:
+        from dev_gateway import Plan
+        from provider_retry import TransientProviderError
+
+        _, key = self.create(scopes=["model"])
+        plan = Plan(
+            "{}",
+            "https://example.invalid/v1",
+            1000,
+            Decimal(1),
+            Decimal(1),
+            provider="mistral",
+            model="zai-glm-5-3",
+        )
+        calls = 0
+
+        async def failing(plan: Plan) -> AsyncIterator[dict[str, Any]]:
+            nonlocal calls
+            calls += 1
+            raise TransientProviderError(
+                "provider_error", detail="http_429", status=429, retry_after="7"
+            )
+            yield {}
+
+        with (
+            TestClient(app) as client,
+            patch(
+                "services.orchestrator.dev_inference.gateway.prepare_api",
+                return_value=plan,
+            ),
+            patch(
+                "services.orchestrator.dev_inference.gateway.events",
+                side_effect=failing,
+            ),
+        ):
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key},
+                json={
+                    "model": "mistral/zai-glm-5-3",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                },
+            )
+        self.assertEqual(reply.status_code, 429, reply.text)
+        self.assertEqual(reply.headers.get("Retry-After"), "7")
+        self.assertEqual(reply.json()["error"]["type"], "rate_limit")
+        self.assertEqual(reply.json()["error"]["provider_status"], 429)
+        self.assertEqual(calls, 1)
+
+    def test_fallback_false_on_an_alias_uses_the_first_target_only(self) -> None:
+        from dev_gateway import Plan
+
+        _, key = self.create(scopes=["model"])
+        plan = Plan(
+            "{}",
+            "https://example.invalid/v1",
+            1000,
+            Decimal(1),
+            Decimal(1),
+            provider="mistral",
+            model="zai-glm-5-3",
+        )
+        seen: list[dict[str, Any]] = []
+
+        def prepare_public(request: Any, usage: str, *_: str, **kwargs: Any) -> Plan:
+            seen.append({"usage": usage, **kwargs})
+            return plan
+
+        async def frames(plan: Plan) -> AsyncIterator[dict[str, Any]]:
+            yield {
+                "choices": [
+                    {"index": 0, "delta": {"content": "56"}, "finish_reason": None}
+                ]
+            }
+            yield {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+            yield {
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+                "cost_micro_eur": 12,
+                "served_by": "mistral/zai-glm-5-3",
+            }
+
+        with (
+            TestClient(app) as client,
+            patch(
+                "services.orchestrator.dev_inference.gateway.prepare_api",
+                side_effect=prepare_public,
+            ),
+            patch(
+                "services.orchestrator.dev_inference.gateway.events", side_effect=frames
+            ),
+        ):
+            reply = client.post(
+                "/api/atlas/v1/chat/completions",
+                headers={"Authorization": "Bearer " + key},
+                json={
+                    "model": "atlas-chat",
+                    "fallback": False,
+                    "messages": [{"role": "user", "content": "7 times 8"}],
+                },
+            )
+        self.assertEqual(reply.status_code, 200, reply.text)
+        self.assertEqual(seen[0]["usage"], "atlas-chat")
+        self.assertIs(seen[0]["pinned"], False)
+        self.assertIs(seen[0]["fallback"], False)
+        self.assertEqual(reply.json()["served_by"], "mistral/zai-glm-5-3")
+        self.assertEqual(reply.headers.get("X-Atlas-Served-By"), "mistral/zai-glm-5-3")
 
     def test_unknown_raw_model_is_rejected_before_dispatch(self) -> None:
         _, key = self.create(scopes=["model"])

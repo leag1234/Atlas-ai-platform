@@ -69,7 +69,13 @@ def _cache_key(api_key_id: str, body: dict[str, Any]) -> str:
 
 
 def prepare_api(
-    request: Any, usage: str, api_key_id: str, *, strict: bool = False
+    request: Any,
+    usage: str,
+    api_key_id: str,
+    *,
+    strict: bool = False,
+    pinned: bool = False,
+    fallback: bool = True,
 ) -> Plan:
     """Freeze a public usage route; raw IDs never enter this decision."""
     body = request.model_dump(exclude_none=True, by_alias=True)
@@ -91,7 +97,7 @@ def prepare_api(
     effort = str(body.get("reasoning_effort", "none"))
     # Several choices (n) multiply the output the provider may bill.
     outgoing = request.max_tokens * getattr(request, "n", 1)
-    _, entries = targets(usage, effort, strict=strict)
+    _, entries = targets(usage, effort, strict=strict, pinned=pinned)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
     # A requested JSON format gets one corrective attempt, like the code route.
     retry_margin = 512 if request.validate_output else 0
@@ -173,15 +179,15 @@ def prepare_api(
             min(incoming + retry_margin, fitting[0].context), outgoing
         ),
     )
-    if len(plans) > 1:
-        fallback = plans[1]
+    if len(plans) > 1 and fallback:
+        fallback_plan = plans[1]
         if strict:
-            fallback = replace(fallback, fallback=None)
+            fallback_plan = replace(fallback_plan, fallback=None)
         primary = replace(
             primary,
             fallback=replace(
-                fallback,
-                attempt_bound=fallback.charge(
+                fallback_plan,
+                attempt_bound=fallback_plan.charge(
                     min(incoming + retry_margin, fitting[1].context), outgoing
                 ),
             ),
@@ -442,10 +448,15 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                     logging.getLogger(__name__).warning(
                         "devapi_provider_credit", extra={"provider": plan.provider}
                     )
-                    raise TransientProviderError("provider_quota", detail="http_402")
+                    raise TransientProviderError(
+                        "provider_quota", detail="http_402", status=402
+                    )
                 if response.status == 429 or response.status >= 500:
                     raise TransientProviderError(
-                        "provider_error", detail=f"http_{response.status}"
+                        "provider_error",
+                        detail=f"http_{response.status}",
+                        status=response.status,
+                        retry_after=response.headers.get("Retry-After"),
                     )
                 if response.status != 200:
                     raise RuntimeError("provider_error")
@@ -453,8 +464,15 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                     started = True
                     yield piece
     except (aiohttp.ClientError, TimeoutError) as exc:
+        if isinstance(exc, TimeoutError):
+            raise TransientProviderError(
+                "provider_timeout",
+                started=started,
+                detail=type(exc).__name__,
+                status=504,
+            ) from None
         raise TransientProviderError(
-            "provider_error", started=started, detail=type(exc).__name__
+            "provider_error", started=started, detail=type(exc).__name__, status=503
         ) from None
 
 

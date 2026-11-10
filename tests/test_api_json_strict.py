@@ -156,6 +156,21 @@ class PerRouteSupportTableTests(unittest.TestCase):
                 with self.subTest(model=name, effort=effort):
                     self.assertTrue(supports_structured_output(name, effort))
 
+    def test_pinned_ids_follow_their_provider_support(self) -> None:
+        from api_routing import pinned_target
+        from provider_settings import presets
+
+        for name in ("mistral/zai-glm-5-3", "scaleway/glm-5.2"):
+            target = pinned_target(name)
+            if target is None:
+                continue
+            with self.subTest(name=name):
+                expected = (
+                    presets().get(target.provider, {}).get("json_response_format")
+                    is True
+                )
+                self.assertEqual(supports_structured_output(name, "none"), expected)
+
     def test_unsupported_provider_route_is_reported(self) -> None:
         with patch(
             "api_routing.config",
