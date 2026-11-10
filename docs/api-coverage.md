@@ -50,7 +50,7 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 
 | State | Parameters |
 |---|---|
-| Applied | `messages`, `model`, `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `max_tokens`, `max_completion_tokens`, `n` (up to 8 choices), `logprobs`, `top_logprobs`, `response_format`, `tools`, `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `stream`, `stream_options`, `web_search_options` (hosted web search), legacy `functions` and `function_call` (mapped to tools) |
+| Applied | `messages`, `model`, `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `max_tokens`, `max_completion_tokens`, `n` (up to 8 choices), `logprobs`, `top_logprobs`, `response_format` (strict `json_schema` guaranteed per public route or refused with 400 `unsupported_parameter`), `tools`, `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `stream`, `stream_options`, `web_search_options` (hosted web search), legacy `functions` and `function_call` (mapped to tools) |
 | Accepted, no effect | `store` (reported as false), `metadata`, `user`, `safety_identifier`, `service_tier`, `verbosity`, `prompt_cache_key`, `prompt_cache_retention` |
 | Refused | `logit_bias` (no hosted provider applies it), `audio`, `modalities`, `prediction`, `moderation`, `prompt_cache_options` |
 

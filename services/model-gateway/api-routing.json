@@ -1,9 +1,13 @@
 {
-  "version": "2026-10-30",
+  "version": "2026-11-10",
   "aliases": {
     "atlas-code-2026-10-30": "atlas-code",
     "atlas-chat-2026-10-30": "atlas-chat",
     "atlas-dev": "atlas-code"
+  },
+  "structured_output": {
+    "mistral": true,
+    "scaleway": true
   },
   "usages": {
     "atlas-code": {

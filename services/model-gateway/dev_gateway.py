@@ -93,6 +93,8 @@ def prepare_api(
     outgoing = request.max_tokens * getattr(request, "n", 1)
     _, entries = targets(usage, effort, strict=strict)
     incoming = len(json.dumps(body, ensure_ascii=False).encode()) + 512
+    # A requested JSON format gets one corrective attempt, like the code route.
+    retry_margin = 512 if request.validate_output else 0
     # Estimate tokens as bytes / 4. The reservation remains conservative in
     # bytes, but is clamped to each target's advertised context.
     estimated_tokens = incoming // 4
@@ -154,17 +156,22 @@ def prepare_api(
     plans = [one(entry) for entry in fitting]
     bound = sum(
         (
-            plan.charge(min(incoming, target.context), outgoing)
+            plan.charge(min(incoming + retry_margin, target.context), outgoing)
             for plan, target in zip(plans, fitting)
         ),
         0,
     )
+    if request.validate_output:
+        # The corrective attempt stays inside the same reservation.
+        bound *= 2
     if bound > call_cap():
         raise LimitError("cost_budget", bound, call_cap(), "microEUR")
     primary = replace(
         plans[0],
         reserved=bound,
-        attempt_bound=plans[0].charge(min(incoming, fitting[0].context), outgoing),
+        attempt_bound=plans[0].charge(
+            min(incoming + retry_margin, fitting[0].context), outgoing
+        ),
     )
     if len(plans) > 1:
         fallback = plans[1]
@@ -175,7 +182,7 @@ def prepare_api(
             fallback=replace(
                 fallback,
                 attempt_bound=fallback.charge(
-                    min(incoming, fitting[1].context), outgoing
+                    min(incoming + retry_margin, fitting[1].context), outgoing
                 ),
             ),
         )
