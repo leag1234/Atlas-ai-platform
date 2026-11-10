@@ -194,6 +194,7 @@ class WorkToolSelection:
         self.pending: str | None = None
         # Set by the Work turn: true while the request asks for a file that was not produced yet.
         self.deliverable_pending: Callable[[], bool] | None = None
+        self.researched_before_file = False
         self.focus: str | None = None
         self.pending_focus: str | None = None
         self.verified = False
@@ -369,11 +370,29 @@ class WorkToolSelection:
             and "publish_document" in self.groups.get(current, ())
             and "publish_document" not in self.groups[selected.group]
         ):
+            # A factual document may need its facts first: one visit to the
+            # research group is allowed before the file exists (a summary asked
+            # in the chat failed here, staging 2026-11-10). Any other group, or a
+            # second visit, still has to wait for the file.
+            if (
+                selected.group == "research"
+                and self.research_enabled
+                and not self.researched_before_file
+            ):
+                self.researched_before_file = True
+                self.pending, self.pending_focus = selected.group, selected.focus
+                return dict(
+                    group=self.pending,
+                    tools=list((*CORE, *self.groups[self.pending])),
+                    next_step=f"Research now, then switch back to the {current} group and call publish_document.",
+                )
             raise ToolSelectionError(
                 "a file was requested and not produced yet",
                 error="deliverable_group_required",
                 group=current,
-                next_step=f"Stay in the {current} group: read the source there, then call publish_document with the content. Do not switch groups before the file exists.",
+                # Without an attached source the agent gave up here (staging
+                # 2026-11-10): say what to do in that case too.
+                next_step=f"Stay in the {current} group. If a source is attached, read it there; otherwise write the content from your own knowledge now. Then call publish_document. Do not switch groups before the file exists.",
             )
         self.pending, self.pending_focus = selected.group, selected.focus
         return dict(group=self.pending, tools=list((*CORE, *self.groups[self.pending])))

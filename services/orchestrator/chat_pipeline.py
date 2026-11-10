@@ -804,10 +804,6 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             item,
         )
         return
-    from services.orchestrator.chat_work import escalate_to_work
-
-    if await escalate_to_work(request, item):
-        return
     from services.orchestrator.narration import clean_answer
     from services.orchestrator.title import is_title_task, title_response
 
@@ -823,6 +819,12 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
     ):
         language = requested_language(request.user_text) or language
     request = request.model_copy(update={"lang": language})
+    # After the interface's own auxiliary tasks (title) and with the conversation
+    # language known: a turn that needs running code or a real file goes to Work.
+    from services.orchestrator.chat_work import escalate_to_work
+
+    if await escalate_to_work(request, item):
+        return
     from services.orchestrator.location import location_dependent
 
     if not request.continuation and location_dependent(request.user_text):

@@ -291,6 +291,10 @@ async def execute_turn(
         skill_messages=tools.skills.instructions
         if isinstance(tools, WorkTools) and tools.skills is not None
         else None,
+        # A Work turn answers with its last statement. What the agent says between
+        # tool calls ("I will first…", "that failed, let me retry…") is progress,
+        # not the answer: it was glued in front of the result without a space.
+        final_only=isinstance(tools, WorkTools),
     )
     assert isinstance(result, CodeResult)
     if isinstance(tools, WorkTools):

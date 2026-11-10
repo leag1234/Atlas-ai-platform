@@ -195,6 +195,7 @@ async def run(
     references: ResultReferences | None = None,
     skill_messages: list[Message] | None = None,
     include_intermediate: bool = True,
+    final_only: bool = False,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -344,7 +345,9 @@ async def run(
                     raise ValueError("empty_model_response")
                 from services.orchestrator.narration import raw_tool_call
 
-                complete_text = "".join([*answer_parts, turn.text])
+                complete_text = (
+                    turn.text if final_only else "".join([*answer_parts, turn.text])
+                )
                 declared = getattr(model, "tools", None)
                 offered = {
                     str(function["name"])
@@ -759,7 +762,14 @@ async def run(
                         }
                     )
                 if call.name in terminal_tools and "error" not in output:
-                    result.text = "".join(answer_parts)
+                    result.text = (
+                        next(
+                            (part for part in reversed(answer_parts) if part.strip()),
+                            "",
+                        )
+                        if final_only
+                        else "".join(answer_parts)
+                    )
                     result.state = "done"
                     return result
                 if output.get("state") == "awaiting_approval":

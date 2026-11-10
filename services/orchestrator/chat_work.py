@@ -9,13 +9,15 @@ limit applies, not the chat 120 s limit.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
+from uuid import uuid4
 
 import aiohttp
 
-from packages.work_intent import needs_work
+from packages.work_intent import continues_work, work_reason
 from services.orchestrator.chat_pipeline import retrieval_url
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
 from services.orchestrator.interactions import Interaction
@@ -37,8 +39,8 @@ def work_gate_open() -> bool:
     return project_mode() and work_enabled()
 
 
-def should_escalate(request: ChatRequest) -> bool:
-    """Routing decision for a plain chat turn (no project, no code mode)."""
+def eligible(request: ChatRequest) -> bool:
+    """A plain chat turn that may reach Work: no project, no code mode, no attachment."""
     if not chat_work_enabled() or not work_gate_open():
         return False
     if request.project_id is not None or request.org_id is not None:
@@ -47,13 +49,22 @@ def should_escalate(request: ChatRequest) -> bool:
         return False
     if request.continuation or request.has_attachments:
         return False
-    if any(message.images for message in request.messages):
+    # The interface sends its own tasks (title, tags, suggestions) through the
+    # same endpoint, quoting the conversation: they are never the user's request.
+    if request.user_text.lstrip().startswith("### Task:"):
+        return False
+    return not any(message.images for message in request.messages)
+
+
+def should_escalate(request: ChatRequest) -> bool:
+    """Routing decision for a first turn: the request itself needs Work."""
+    if not eligible(request):
         return False
     history = [
         {"role": message.role, "content": message.text}
         for message in request.messages[:-1]
     ]
-    return needs_work(request.user_text, history)
+    return work_reason(request.user_text, history) is not None
 
 
 async def _identity(client: aiohttp.ClientSession, subject: str) -> dict[str, Any]:
@@ -68,15 +79,22 @@ async def _public(
     method: str,
     path: str,
     body: dict[str, Any] | None = None,
+    revision: object = None,
 ) -> tuple[int, dict[str, Any]]:
     from services.orchestrator.project_ui import bounded_json, broker_identity
 
     resolved = await broker_identity(client, subject, *(_org_project(path)))
+    headers = {"X-Atlas-Project-Identity": str(resolved["identity"])}
+    if method != "GET":
+        # Every mutating project request carries its own idempotency key.
+        headers["Idempotency-Key"] = str(uuid4())
+    if revision is not None:
+        headers["If-Match"] = f'"{revision}"'
     async with client.request(
         method,
         retrieval_url() + path,
         json=body,
-        headers={"X-Atlas-Project-Identity": str(resolved["identity"])},
+        headers=headers,
         allow_redirects=False,
     ) as reply:
         result = await bounded_json(reply)
@@ -176,6 +194,7 @@ async def _bind_conversation(
     conversation_id: str,
     chat_conversation_id: str,
     work_session_id: str,
+    revision: object,
 ) -> None:
     status, _ = await _public(
         client,
@@ -188,33 +207,26 @@ async def _bind_conversation(
                 "work_session_id": work_session_id,
             }
         },
+        revision=revision,
     )
     if status != 200:
         raise RuntimeError("scratch_binding_unavailable")
 
 
-async def _ensure_conversation(
-    client: aiohttp.ClientSession,
-    subject: str,
-    org: str,
-    project: str,
-    chat_conversation_id: str | None,
-) -> tuple[str, str | None]:
-    """Bind once per chat conversation: reuse the stored mapping on later turns."""
-    if chat_conversation_id:
-        bound = await _find_binding(client, subject, org, project, chat_conversation_id)
-        if bound is not None:
-            return bound["conversation_id"], bound["work_session_id"]
+async def _create_conversation(
+    client: aiohttp.ClientSession, subject: str, org: str, project: str, title: str
+) -> tuple[str, object]:
+    """A project conversation for this chat; returns its id and revision."""
     status, created = await _public(
         client,
         subject,
         "POST",
         f"/api/atlas/orgs/{org}/projects/{project}/conversations",
-        {"title": "Chat"},
+        {"title": title},
     )
     if status not in (200, 201) or not isinstance(created.get("id"), str):
         raise RuntimeError("scratch_conversation_unavailable")
-    return str(created["id"]), None
+    return str(created["id"]), created.get("revision", 0)
 
 
 async def _ensure_work_session(
@@ -244,22 +256,29 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     """Create (once per user) the hidden scratch project and a Work session bound
     to this conversation, then run the turn through process_work. Returns True
     when the turn was handed to Work."""
-    if not should_escalate(request):
+    if not eligible(request):
         return False
+    chat_conversation_id = str(getattr(request, "native_chat_id", "") or "") or None
+    reason = work_reason(request.user_text)
+    # A change or a rerun in a conversation that already reached Work goes back
+    # to its workspace; anything else stays an ordinary chat turn.
+    follow_up = reason is None and continues_work(request.user_text)
+    if reason is None and not (follow_up and chat_conversation_id):
+        return False
+    # The same subject as the project interface (the verified email), so the
+    # links to the produced files open for the person who asked. The budget
+    # identity (an interface user id) is another member and got 404 on them.
     subject = str(
         getattr(request, "_project_subject", None)
-        or getattr(request, "daily_user", "")
+        or getattr(request, "artifact_owner", "")
         or ""
     ).strip()
-    if not subject or subject == "unknown":
+    if not subject or "@" not in subject:
         logger.info(
             "chat_work_fallback conversation=%s reason=no_subject",
             request.conversation_id or "unknown",
         )
         return False
-    chat_conversation_id = (
-        str(request.conversation_id) if request.conversation_id else None
-    )
     try:
         async with aiohttp.ClientSession(
             trust_env=False, timeout=aiohttp.ClientTimeout(total=30)
@@ -273,6 +292,17 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
                 )
                 return False
             org = str(memberships[0]["org_id"])
+            if follow_up:
+                known = await _find_scratch_project(client, subject, org)
+                bound = (
+                    await _find_binding(
+                        client, subject, org, known, str(chat_conversation_id)
+                    )
+                    if known is not None
+                    else None
+                )
+                if bound is None:
+                    return False
             project = await _ensure_scratch_project(client, subject, org)
             existing = (
                 await _find_binding(client, subject, org, project, chat_conversation_id)
@@ -285,8 +315,9 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
                     existing["work_session_id"],
                 )
             else:
-                bound_conversation, _ = await _ensure_conversation(
-                    client, subject, org, project, chat_conversation_id
+                title = " ".join(request.user_text.split())[:80] or "Chat"
+                bound_conversation, revision = await _create_conversation(
+                    client, subject, org, project, title
                 )
                 session_id = await _ensure_work_session(
                     client, subject, org, project, bound_conversation
@@ -300,17 +331,18 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
                         bound_conversation,
                         chat_conversation_id,
                         session_id,
+                        revision,
                     )
     except (aiohttp.ClientError, TimeoutError, RuntimeError, ValueError) as exc:
         logger.warning(
-            "chat_work_fallback conversation=%s reason=setup_failed error=%s",
+            "chat_work_fallback conversation=%s reason=setup_failed error=%s step=%s",
             chat_conversation_id or "unknown",
             type(exc).__name__,
+            str(exc)[:40] if isinstance(exc, RuntimeError) else "",
         )
         return False
 
     from services.orchestrator.code_mode import process_work, work_failure_reply
-    from services.orchestrator.project_transcript import work_dispatch
 
     scoped = request.model_copy(
         update={
@@ -323,7 +355,8 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
         }
     )
     scoped._project_subject = subject
-    dispatch = work_dispatch.get()
+    before = (item.state, list(item.erreurs), item.reponse)
+    failure = ""
     try:
         await process_work(
             scoped,
@@ -333,16 +366,35 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             project_id=project,
             session_id=session_id,
         )
-    finally:
-        if dispatch is not None:
-            pass
-    if item.state == "failed":
-        reply = work_failure_reply(item, scoped.lang)
-        if reply is not None:
-            item.reponse = reply
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any Work failure falls back to the chat
+        failure = type(exc).__name__
+    if failure or item.state != "done":
+        reply = None if failure else work_failure_reply(item, scoped.lang)
+        logger.warning(
+            "chat_work_incomplete conversation=%s state=%s errors=%s exception=%s explained=%s",
+            chat_conversation_id or "unknown",
+            item.state,
+            ",".join(str(error) for error in item.erreurs)[:120],
+            failure,
+            reply is not None,
+        )
+        if reply is not None and item.work_failure.get("category") != "tool_error":
+            # A known limit (time, steps, budget) or failing tests: the explanation,
+            # with what was produced, is the finished answer of this turn.
+            item.reponse, item.task_type, item.state = reply, "work", "done"
+            item.work_failure = {}
+            return True
+        # Anything else: the chat answers by itself, as it did before Work existed
+        # behind it. The person never gets a raw failure for a turn the chat can answer.
+        item.state, item.erreurs, item.reponse = before[0], before[1], before[2]
+        item.work_failure = {}
+        return False
     item.task_type = "work"
     logger.info(
-        "chat_work_escalated conversation=%s session=%s",
+        "chat_work_escalated reason=%s conversation=%s session=%s",
+        reason or "follow_up",
         chat_conversation_id or "unknown",
         session_id,
     )

@@ -214,6 +214,27 @@ class DeliverableGroupGuardTests(unittest.TestCase):
         self.assertEqual(selection.group, "documents")
         self.assertIsNone(selection.pending)
 
+    def test_one_research_visit_is_allowed_before_the_file(self) -> None:
+        from services.orchestrator.work_tool_selection import ToolSelectionError
+
+        selection = self.selection(True)
+        selection.enable_research()
+        first = selection.switch(json.dumps({"group": "research"}))
+        self.assertEqual(first["group"], "research")
+        self.assertIn("publish_document", first["next_step"])
+        selection.declarations()
+        self.assertEqual(
+            selection.switch(json.dumps({"group": "documents"}))["group"], "documents"
+        )
+        selection.declarations()
+        # A second visit, or research never enabled, still waits for the file.
+        with self.assertRaises(ToolSelectionError):
+            selection.switch(json.dumps({"group": "research"}))
+        offline = self.selection(True)
+        offline.disable_research()
+        with self.assertRaises((ToolSelectionError, ValueError)):
+            offline.switch(json.dumps({"group": "research"}))
+
     def test_switch_is_free_once_the_file_exists_or_none_was_requested(self) -> None:
         self.assertEqual(
             self.selection(False).switch(json.dumps({"group": "files"}))["group"],

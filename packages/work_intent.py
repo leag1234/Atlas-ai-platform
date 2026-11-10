@@ -1,110 +1,88 @@
-"""Classification of plain-chat turns that need Work (build/run code) behind them."""
+"""Which plain-chat turns need Work behind them.
+
+The chat answers by itself whenever it can. A turn goes to Work only when the
+answer needs something the chat cannot do: running code or tests, producing a
+real file (Word, Excel, PowerPoint, PDF, CSV), or building a program on a
+runtime other than a single web page. Precision comes first: an ordinary
+question that merely contains "test", "code" or "application" stays in the chat.
+"""
 
 from __future__ import annotations
 
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
+from typing import Literal
+
+Reason = Literal["run", "file", "build", "follow_up"]
 
 _ATTACHMENT_TAG = re.compile(
-    r"\[attachment: [^\n]*\]|<attached_files>.*?</attached_files>", re.S | re.M
+    r"\[attachment: [^\n]*\]|<attached_files>.*?</attached_files>", re.S | re.I
 )
 
-# Requests to build, run, test or process with code, or to use a machine.
-_WORK_SIGNALS = re.compile(
-    r"\b(?:"
-    # run / execute code or tests
-    r"run|execute|executes?|lance|lancer|execute|lanzar|ausfuehren|ausfuehren|esegui"
-    r"|test|tests|testing|pytest|unittest|unit ?tests?|testes? unitaires?"
-    r"|debug|debugge|depane|depannage|arregla|corrige le bug|bugfix"
-    r"|compile|compiler|build|builde|construis|construire|builds?"
-    # write code / scripts / apps beyond a small single-file artifact
-    r"|code|codage|programme|program|programmer|programmi|programa|programar"
-    r"|script|scripts|schreibe|erstelle|escribe|scrivi"
-    r"|function|fonction|fonctionne|def |class |api|endpoint"
-    r"|app|application|website|site web|web app|webapp|backend|frontend|fullstack"
-    r"|game|jeu|spiel|juego|gioco|snake|tetris|pong|demineur|morpion|sudoku|2048"
-    r"|drum ?machine|boite a rythmes|step sequencer|synthetiseur|synthesizer|synthétiseur"
-    r"|simulateur|simulator|simulador|simulatore"
-    r"|algorithm|algorithme|algo|algoritmo|algoritmo"
-    r"|scrape|scraper|scraping|web ?scraping|crawl|crawler"
-    r"|automate|automation|automatise|automatiza|automatisier"
-    r"|refactor|refactorise|refactoriser|refactored"
-    r"|migrate|migration|migra"
-    r"|deploy|deploie|deploiement|deployement|despliega|bereitstellen"
-    r"|install|installe|installieren|instalar|installa"
-    r"|pip3?|npm|npx|yarn|pnpm|nodejs|node |cargo|rustc|go build|javac|mvn|gradle"
-    r"|python\d*(?:\.\d+)?|bash|shell|zsh|powershell|terminal|command line|ligne de commande"
-    r"|sql|query|requete|abfrage"
-    r"|data ?process|processe|traite|analys[ei]|analyse|analyser|analisis|analyse de donnees"
-    r"|dataset|dataframe|pandas|numpy|machine learning|ml|model training|entraîne|entraine"
-    r"|docker|container|kubernetes|k8s|vm|virtual machine|machine virtuelle"
-    r"|server|serveur|host|heberger|hoste"
-    r"|cli|tool|outil|plugin|extension|add-on|addon"
-    r"|bot|chatbot|discord|telegram|slack|whatsapp"
-    r"|api rest|rest api|graphql|websocket"
-    r"|git|repo|repository|commit|pull request|merge"
-    r"|ci|cd|pipeline|github actions|gitlab ci"
-    r"|database|base de donnees|datenbank|banco de datos"
-    r"|registered machine|machine enregistrée|enregistree|build server|serveur de build"
-    r"|remote|target|runner|machine distante"
-    r")\b"
+# "How do I…", "explain…", "what is…": a question about the subject, not a request to do it.
+_HOW_TO = re.compile(
+    r"\b(?:comment (?:faire|creer|ecrire|lancer|executer|generer|on|puis|est|je)|how (?:do|does|can|to|would|should)"
+    r"|explique\w*|explain\w*|pourquoi|why|c'est quoi|qu'est[- ]ce|what is|what are|what does"
+    r"|difference|quelle est|quel est|wie kann|wie macht|warum|erklar\w*|como (?:se|puedo|hago)"
+    r"|por que|come (?:si|posso)|perche|spiega\w*)\b"
 )
 
-# Questions, explanations, writing, translation: never Work.
-_EXPLAIN_SIGNALS = re.compile(
-    r"\b(?:"
-    r"explique|explain|expliquer|erklare|erklären|explica|spiega|spiegare"
-    r"|comment (?:faire|marche|fonctionne)|how (?:does|do|to)|pourquoi|why|was ist|was sind"
-    r"|quelle est|quel est|what is|what are|defin[ei]|definition"
-    r"|compare|comparer|vergleich|compara|confronta|vs\.?|versus"
-    r"|résume|resume|résumer|summarize|resumir|zusammenfassen|riassumi"
-    r"|traduis|translate|tradurre|übersetze|traduce|traduci"
-    r"|écris un (?:texte|essai|poème|histoire|article|mail|email|lettre)"
-    r"|write a (?:text|essay|poem|story|article|email|letter|blog)"
-    r"|rédige|rédiger|redige|verfasse|scrivi un|escribe un"
-    r")\b"
+_RUN_VERB = (
+    r"(?:execute[sz]?|executer|lance[sz]?|lancer|fais tourner|faire tourner|teste[sz]?|tester"
+    r"|run|runs|running|test|ejecuta\w*|prueba|fuhre|ausfuhr\w*|esegui\w*|prova)"
+)
+_CODE_OBJECT = (
+    r"(?:scripts?|tests? unitaires?|unit tests?|(?:les|the|mes|my|ces|these) tests|pytest|unittest"
+    r"|(?:ce|le|this|the|mon|my) (?:code|programme|program)|code python|python|bash|commande shell"
+    r"|shell command|notebook|requete sql|sql query|benchmark)"
+)
+_RUN = re.compile(
+    rf"\b{_RUN_VERB}\b.{{0,60}}\b{_CODE_OBJECT}\b"
+    # "…et lance-le", "…and run it"
+    rf"|\b(?:et|puis|and|then|und|y|e)\s+{_RUN_VERB}[- ]?(?:le|la|les|it|them|lo|es|sie)\b"
+    # "make sure the tests pass", "vérifie que pytest passe"
+    r"|\b(?:tests?|pytest|unittest)\b.{0,30}\b(?:pass(?:es|ent|e)?|reussi\w*|green|verts?)\b"
 )
 
-_QUESTION = re.compile(
-    r"^\s*(?:can you|could you|please|peux[- ]tu|pouvez[- ]vous|kannst du|puedes|potresti|können sie"
-    r"|why|pourquoi|warum|porque|perche|what|quoi|was|que|wie|comment|how)\b|\?\s*$"
+_CREATE_VERB = (
+    r"(?:cree[sz]?|creer|genere[sz]?|generer|fais|faites|faire|redige[sz]?|rediger|ecris|ecrivez|ecrire"
+    r"|prepare[sz]?|preparer|produis|produire|exporte[sz]?|exporter|fabrique[sz]?|etabli[sr]\w*"
+    r"|donne[sz]?[- ]moi|fournis\w*|code[sz]?|coder|developpe[sz]?|developper|programme[sz]?|programmer"
+    r"|construis|construire|make|create|generate|write|prepare|produce|export|build|draft|code"
+    r"|develop|implement|give me|erstelle?|schreibe?|generiere|baue|crea|genera|escribe|prepara"
+    r"|haz|redacta|scrivi|costruisci)"
+)
+_FILE_KIND = (
+    r"(?:(?:document|fichier|format|lettre|rapport|courrier|file|datei|documento|archivo)\s+(?:word|excel|powerpoint|pdf|csv)"
+    r"|(?:word|excel|powerpoint|pdf|csv)\s+(?:document|file|spreadsheet|sheet|workbook|presentation|datei|dokument)"
+    r"|(?:tableau|classeur|feuille|tableur)\s+excel|presentation\s+powerpoint"
+    r"|au format (?:word|excel|powerpoint|pdf|csv)|en (?:word|pdf|excel|powerpoint)"
+    r"|(?:in|as|im|als|en|in formato)\s+(?:a\s+)?(?:word|pdf|excel|powerpoint)(?:\s+format)?"
+    r"|docx|xlsx|pptx|powerpoint)"
+)
+_FILE = re.compile(
+    rf"\b{_CREATE_VERB}\b.{{0,160}}?(?:(?<![\w.]){_FILE_KIND}\b|[\w-]+\.(?:docx|xlsx|pptx|pdf|csv)\b)"
 )
 
-# A question about code is an explanation, not a build request.
-_CODE_EXPLAIN = re.compile(
-    r"\b(?:explique|explain|erkläre|explica|spiega|comment|how|pourquoi|why|was|difference|compare|comparer|vergleich|compara|confronta|vs|versus)\b"
-    r".{0,60}\b(?:python|javascript|java|rust|go|sql|code|function|fonction|class|api|git|html|css)\b"
-    r"|\b(?:python|javascript|java|rust|sql|code|function|fonction|class|api|git|html|css)\b"
-    r".{0,60}\b(?:explique|explain|erkläre|explica|spiega|comment|how|pourquoi|why|was|difference|compare|comparer|vergleich|compara|confronta|vs|versus)\b"
+# A program that is more than one web page: a named non-web runtime or a server-side thing.
+_PROGRAM = r"(?:jeu|game|spiel|juego|gioco|app|application|api|bot|serveur|server|backend|site|outil|tool|cli|scraper|projet|project|service)"
+_RUNTIME = (
+    r"(?:python|pygame|tkinter|flask|django|fastapi|node(?:\.?js)?|express|rust|golang|java|kotlin"
+    r"|c\+\+|c#|php|ruby|postgres\w*|sqlite|mysql|docker\w*|discord|telegram|base de donnees|database|api rest|rest api)"
+)
+_BUILD = re.compile(
+    rf"\b{_CREATE_VERB}\b.{{0,80}}?\b{_PROGRAM}\b.{{0,80}}?(?<!\w){_RUNTIME}(?!\w)"
+    rf"|\b{_CREATE_VERB}\b.{{0,80}}?(?<!\w){_RUNTIME}(?!\w).{{0,40}}?\b{_PROGRAM}\b"
+    r"|\b(?:scrape[sz]?|scraper|crawle?[sz]?)\b.{0,40}\b(?:site|page|url|website)\b"
 )
 
-# Small single-file web artifacts already handled by the artifact panel.
-_SMALL_ARTIFACT = re.compile(
-    r"\b(?:html|css|javascript|js|svg|canvas|page web|web page|landing page|single file"
-    r"|fichier unique|eine datei|un seul fichier|una pagina|eine seite)\b"
-)
-
-# Apps beyond a small single HTML artifact: games, machines, bots, servers.
-_APP_BEYOND_ARTIFACT = re.compile(
-    r"\b(?:app|application|game|jeu|spiel|juego|gioco|snake|tetris|pong|demineur"
-    r"|morpion|sudoku|2048|drum ?machine|boite a rythmes|step sequencer"
-    r"|synthetiseur|synthesizer|bot|chatbot|discord|telegram|server|serveur"
-    r"|api|backend|website|site web|web app|webapp|fullstack|cli|tool|outil"
-    r"|plugin|extension|simulateur|simulator|automate|automation|scrape|scraper"
-    r"|crawl|crawler|dashboard|tableau de bord)\b"
-)
-
-_NON_WEB = re.compile(
-    r"\b(?:python|pygame|tkinter|java|kotlin|swift|c\+\+|c#|rust|golang|go"
-    r"|unity|godot|android|ios|electron|flask|django|node server|backend)\b"
-)
-
-_OFFICE = re.compile(
-    r"\b(?:presentation|prasentation|presentacion|presentazione"
-    r"|slides?|diapositives?|folien|diapositivas?|diapositive"
-    r"|powerpoint|pptx|word|docx|excel|xlsx|spreadsheet|tableur"
-    r"|tabellenkalkulation|hoja de calculo|foglio di calcolo|pdf)\b"
+# Later turns of a conversation that already has its Work session: a change or a rerun stays there.
+_FOLLOW_UP = re.compile(
+    r"\b(?:modifi\w*|ajout\w*|corrig\w*|chang\w*|remplac\w*|supprim\w*|enlev\w*|amelior\w*|refai[st]\w*"
+    r"|relanc\w*|reexecut\w*|mets|mettre|renomm\w*|complet\w*|continu\w*|update\w*|add|fix\w*|change\w*"
+    r"|replace\w*|remove\w*|improve\w*|redo|rerun|rename\w*|andere|fuge|korrigier\w*|anade|cambia\w*"
+    r"|aggiungi|correggi)\b"
 )
 
 
@@ -116,29 +94,32 @@ def _normalized(text: str) -> str:
     )
 
 
+def work_reason(
+    text: str, history: Sequence[Mapping[str, object]] = ()
+) -> Reason | None:
+    """Why this plain-chat turn needs Work, or None when the chat answers it."""
+    normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text))
+    if not normalized.strip() or _HOW_TO.search(normalized):
+        return None
+    if _RUN.search(normalized):
+        return "run"
+    if _FILE.search(normalized):
+        return "file"
+    if _BUILD.search(normalized):
+        return "build"
+    return None
+
+
 def needs_work(text: str, history: Sequence[Mapping[str, object]] = ()) -> bool:
-    """True when a plain-chat turn needs Work: build/run code, an app beyond a
-    small single HTML artifact, tests, scripts, data processing with code, or a
-    registered machine. False for questions, explanations, writing, translation
-    and small SVG/HTML apps already handled by the artifact panel."""
-    plain = _ATTACHMENT_TAG.sub(" ", text)
-    normalized = _normalized(plain)
-    if not normalized.strip():
-        return False
-    if _EXPLAIN_SIGNALS.search(normalized) and not _WORK_SIGNALS.search(normalized):
-        return False
-    if _CODE_EXPLAIN.search(normalized):
-        return False
-    if _QUESTION.search(normalized) and not _WORK_SIGNALS.search(normalized):
-        return False
-    if _OFFICE.search(normalized) and not _WORK_SIGNALS.search(normalized):
-        return False
-    if not _WORK_SIGNALS.search(normalized):
-        return False
-    # A small single-file HTML/SVG app stays in the artifact panel, unless the
-    # request is for a real app (game, drum machine, bot, server) or names a
-    # non-web runtime.
-    if _SMALL_ARTIFACT.search(normalized) and not _NON_WEB.search(normalized):
-        if not _APP_BEYOND_ARTIFACT.search(normalized):
-            return False
-    return True
+    return work_reason(text, history) is not None
+
+
+def continues_work(text: str) -> bool:
+    """A change or rerun request, for a conversation that already has a Work session."""
+    normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text))
+    return bool(normalized.strip()) and (
+        work_reason(text) is not None
+        or (
+            _FOLLOW_UP.search(normalized) is not None and not _HOW_TO.search(normalized)
+        )
+    )
