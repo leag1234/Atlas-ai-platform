@@ -165,9 +165,10 @@ class PerRouteSupportTableTests(unittest.TestCase):
             if target is None:
                 continue
             with self.subTest(name=name):
-                expected = presets().get(target.provider, {}).get(
-                    "json_response_format"
-                ) is True
+                expected = (
+                    presets().get(target.provider, {}).get("json_response_format")
+                    is True
+                )
                 self.assertEqual(supports_structured_output(name, "none"), expected)
 
     def test_unsupported_provider_route_is_reported(self) -> None:
