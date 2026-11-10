@@ -184,6 +184,34 @@ def _multipart_parts(
     return parts
 
 
+EXTENSION_TYPES = {
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "webm": "audio/webm",
+    "ogg": "audio/ogg",
+    "oga": "audio/ogg",
+    "m4a": "audio/mp4",
+    "mp4": "audio/mp4",
+}
+
+
+def _media_type(headers: dict[str, str]) -> str:
+    """The declared audio type, or the file extension's when none is declared.
+
+    Open WebUI streams its recording without a part content type (aiohttp then
+    sends application/octet-stream); the decoder still checks the bytes.
+    """
+    declared = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if declared not in ("", "application/octet-stream"):
+        return declared
+    disposition = headers.get("content-disposition", "")
+    marker = 'filename="'
+    if marker not in disposition:
+        return declared
+    filename = disposition.split(marker, 1)[1].split('"', 1)[0]
+    return EXTENSION_TYPES.get(filename.rsplit(".", 1)[-1].lower(), declared)
+
+
 def _text(parts: dict[str, tuple[dict[str, str], bytes]], name: str) -> str | None:
     item = parts.get(name)
     return item[1].decode("utf-8") if item else None
@@ -216,7 +244,7 @@ async def transcription(request: Request) -> dict[str, str] | PlainTextResponse:
     model = _text(parts, "model")
     if model != _config().get("model_id"):
         raise HTTPException(status_code=400, detail="stt_unknown_model")
-    media_type = headers.get("content-type", "").lower()
+    media_type = _media_type(headers)
     if media_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=415, detail="stt_audio_required")
     if not audio:

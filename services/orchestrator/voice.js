@@ -86,16 +86,12 @@
     } catch { audio = null; button.setAttribute('aria-pressed', 'false'); button.title = t().voiceUnavailable; }
   };
   const mount = () => {
-    const composer = document.querySelector('#message-input-container');
-    if (composer && config.stt && !composer.querySelector('[data-atlas-voice]')) {
-      const button = makeButton('voice', micIcon);
-      button.setAttribute('aria-label', t().dictate); button.title = t().dictate;
-      button.addEventListener('click', () => dictate(button));
-      composer.append(button);
-    }
+    // Chat dictation is the native Open WebUI microphone (Atlas speech-to-text behind it):
+    // nothing is injected into the Svelte composer, whose re-renders removed foreign nodes.
     document.querySelectorAll('[id^="message-"]:has(.chat-assistant) .buttons, .atlas-project-turn .atlas-project-turn-actions').forEach(row => {
       if (!config.tts || row.querySelector('[data-atlas-read]')) return;
       const button = makeButton('read', speakerIcon);
+      button.hidden = false;
       button.setAttribute('aria-pressed', 'false');
       button.setAttribute('aria-label', t().readAloud); button.title = t().readAloud;
       button.addEventListener('click', () => readAloud(button));

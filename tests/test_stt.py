@@ -76,6 +76,22 @@ class STTContractTests(unittest.TestCase):
         self.assertEqual(too_long.status_code, 413)
         self.assertEqual(too_large.status_code, 413)
 
+    def test_open_webui_recording_without_part_type_is_accepted(self) -> None:
+        # Open WebUI streams its MP3 recording with no part content type.
+        recording = self.client.post(
+            "/v1/audio/transcriptions",
+            data={"model": "atlas-stt"},
+            files={"file": ("b8391b62.mp3", b"audio", "application/octet-stream")},
+        )
+        unknown = self.client.post(
+            "/v1/audio/transcriptions",
+            data={"model": "atlas-stt"},
+            files={"file": ("notes.txt", b"not audio", "application/octet-stream")},
+        )
+        self.assertEqual(recording.status_code, 200)
+        self.assertEqual(recording.json(), {"text": "dictated text"})
+        self.assertEqual(unknown.status_code, 415)
+
     def test_rejects_an_unsupported_automatically_detected_language(self) -> None:
         with patch.object(service, "transcriber", StubTranscriber(language="pt")):
             response = self.request()

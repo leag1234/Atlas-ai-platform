@@ -235,9 +235,17 @@ html:root body #chat-input, html:root body #chat-input p { font-family:var(--atl
 #message-input-container > .justify-between > :first-child > :not(:has(#input-menu-button)) { display:none!important; }
 #message-input-container > .justify-between > :last-child { grid-column:3; grid-row:2; display:flex!important; align-items:center; justify-content:center; min-width:0; min-height:52px; margin:0!important; }
 #message-input-container > .justify-between > :last-child > :not(:has(#send-message-button,#stop-response-button)) { display:none!important; }
-/* The Atlas dictation button lives in the composer, outside the native button groups. */
-#message-input-container > [data-atlas-voice] { position:static!important; width:40px; height:40px; display:flex!important; align-items:center; justify-content:center; border:0!important; border-radius:50%; background:var(--atlas-border)!important; color:var(--atlas-text)!important; }
-#message-input-container > [data-atlas-voice][data-atlas-recording] { background:var(--atlas-accent)!important; color:var(--atlas-on-accent)!important; }
+/* Dictation is the native microphone (Atlas speech-to-text behind it): it stays beside send, in a wider last column. */
+#message-input-container:has(#voice-input-button) { grid-template-columns:52px minmax(0,1fr) 96px; }
+#message-input-container > .justify-between > :last-child > :has(> #voice-input-button) { display:flex!important; }
+#message-input-container > .justify-between > :last-child:has(#voice-input-button) { gap:6px; }
+#voice-input-button { position:static!important; width:40px; height:40px; display:flex!important; align-items:center; justify-content:center; padding:0!important; border-radius:50%; background:var(--atlas-border)!important; color:var(--atlas-text)!important; }
+/* The native recording bar takes the Atlas surface and accent instead of the upstream indigo. */
+[class*="bg-indigo-300/10"] { background:var(--atlas-surface)!important; }
+[class*="bg-indigo-500"]:not([class*="bg-indigo-300/10"]) { background:var(--atlas-accent)!important; color:var(--atlas-on-accent)!important; }
+/* Its cancel button and timer use the neutral chat controls. */
+[class*="bg-indigo-400/20"] { background:var(--atlas-border)!important; color:var(--atlas-text)!important; }
+[class*="text-indigo-"]:not([class*="bg-indigo-500"]):not([class*="bg-indigo-400/20"]) { color:var(--atlas-muted)!important; }
 /* Read-aloud sits with the answer actions. */
 .atlas-actions [data-atlas-read], .atlas-project-turn-actions [data-atlas-read] { min-width:32px; min-height:32px; }
 #input-menu-button { position:static!important; width:40px; height:40px; background:var(--atlas-border)!important; border-radius:50%; color:var(--atlas-text)!important; }
