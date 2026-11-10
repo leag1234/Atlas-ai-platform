@@ -209,6 +209,33 @@ class SearchLanguageDefaultTests(unittest.TestCase):
         self.assertIs(with_search_language(fetch, "fr"), fetch)
 
 
+class FreeNameTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_new_file_takes_the_next_free_name(self) -> None:
+        from pathlib import PurePosixPath
+
+        from services.orchestrator.project_document_tools import publish_with_free_name
+        from services.retrieval.project_identity import ProjectError
+
+        taken = {"club.pptx", "club-2.pptx"}
+        asked: list[str] = []
+
+        async def publish(name: str) -> dict[str, str]:
+            asked.append(name)
+            if name in taken:
+                raise ProjectError(409, "path_conflict")
+            return {"name": name}
+
+        receipt = await publish_with_free_name(
+            publish, PurePosixPath("club.pptx"), "created"
+        )
+        self.assertEqual(receipt, {"name": "club-3.pptx"})
+        self.assertEqual(asked, ["club.pptx", "club-2.pptx", "club-3.pptx"])
+        with self.assertRaises(ProjectError):
+            await publish_with_free_name(
+                publish, PurePosixPath("club.pptx"), "regenerated"
+            )
+
+
 class SettledSwitchRefusalTests(unittest.TestCase):
     def test_refused_switch_is_settled_once_a_file_is_published(self) -> None:
         from services.orchestrator.code_mode import open_failures
