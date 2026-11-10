@@ -69,3 +69,25 @@ def targets(
     if not selected or effort not in EFFORTS:
         raise ValueError("invalid_model")
     return usage, selected
+
+
+def supports_structured_output(name: str, effort: str) -> bool:
+    """Whether every target of a public route guarantees strict json_schema.
+
+    A route guarantees the schema only when each of its targets runs on a
+    provider whose preset declares native structured output; Atlas then
+    validates the final JSON against the schema with one retry. Otherwise the
+    request must be refused, never answered with free text.
+    """
+    from provider_settings import presets
+
+    try:
+        _, entries = targets(name, effort)
+    except ValueError:
+        return False
+    declared = config().get("structured_output", {})
+    return bool(entries) and all(
+        bool(declared.get(target.provider))
+        and presets().get(target.provider, {}).get("json_response_format") is True
+        for target in entries
+    )
