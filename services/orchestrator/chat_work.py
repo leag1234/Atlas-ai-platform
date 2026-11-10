@@ -351,7 +351,17 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             "conversation_id": bound_conversation,
             "project_action": "work",
             "work_session_id": session_id,
-            "messages": [ChatMessage(role="user", content=request.user_text)],
+            # The earlier turns of this chat come along (text only, the last ten):
+            # without them a change request found "an empty workspace" and asked
+            # which document was meant (staging 2026-11-10).
+            "messages": [
+                *(
+                    ChatMessage(role=message.role, content=message.text[:8000])
+                    for message in request.conversation_messages[:-1][-10:]
+                    if message.role in {"user", "assistant"} and message.text.strip()
+                ),
+                ChatMessage(role="user", content=request.user_text),
+            ],
         }
     )
     scoped._project_subject = subject
