@@ -169,6 +169,37 @@ class StreamDecoderTests(unittest.TestCase):
         )
         self.assertEqual(decoder.result["text"], "")
 
+    def test_an_app_fits_in_one_tool_call_and_runaway_arguments_stop(self) -> None:
+        from packages.limits import LimitError
+
+        def call(size: int) -> bytes:
+            head = frame(
+                {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-app",
+                            "type": "function",
+                            "function": {"name": "create_artifact", "arguments": ""},
+                        }
+                    ]
+                }
+            )
+            body = b"".join(
+                frame({"tool_calls": [{"index": 0, "function": {"arguments": "x" * 4000}}]})
+                for _ in range(size // 4000)
+            )
+            return head + body
+
+        decoder = StreamDecoder()
+        decoder.feed(call(40000) + end("tool_calls"))
+        decoder.finish()
+        assert decoder.result is not None
+        self.assertEqual(len(decoder.result["calls"][0]["arguments"]), 40000)
+        with self.assertRaises(LimitError) as caught:
+            StreamDecoder().feed(call(68000))
+        self.assertEqual(caught.exception.code, "tool_limit")
+
     def test_missing_usage_finish_or_done_cannot_be_success(self) -> None:
         for suffix in [
             b"",

@@ -43,7 +43,7 @@ def classify(messages: list[dict[str, object]]) -> str:
 
 class Function(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    arguments: str = Field(max_length=16000)
+    arguments: str = Field(max_length=65536)
 
 
 class ToolCall(BaseModel):

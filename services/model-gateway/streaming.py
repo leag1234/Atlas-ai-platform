@@ -14,7 +14,7 @@ from stream_usage import validate_usage
 
 class FunctionDelta(BaseModel):
     name: str = Field(default="", max_length=80)
-    arguments: str = Field(default="", max_length=16000)
+    arguments: str = Field(default="", max_length=65536)
 
 
 class CallDelta(BaseModel):
@@ -190,7 +190,7 @@ class StreamDecoder:
                     target["arguments"] += call.function.arguments
                     for key, maximum in (
                         ("id", 200),
-                        ("arguments", 16000),
+                        ("arguments", 65536),
                     ):
                         if len(target[key]) > maximum:
                             if key == "name":

@@ -53,7 +53,7 @@ class WireCall(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=80)
-    arguments: str = Field(max_length=16000)
+    arguments: str = Field(max_length=65536)
 
 
 class WireUsage(BaseModel):
