@@ -61,8 +61,18 @@ _FILE_KIND = (
     r"|(?:in|as|im|als|en|in formato)\s+(?:a\s+)?(?:word|pdf|excel|powerpoint)(?:\s+format)?"
     r"|docx|xlsx|pptx|powerpoint)"
 )
+# "un PDF", "une note Word", "an Excel": the bare kind right after the verb's article,
+# with at most one noun between them ("fais un résumé du PDF" is about a PDF, not a request for one).
+_ARTICLE = (
+    r"(?:un|une|le|la|ce|cette|mon|ma|a|an|the|this|my|ein|eine|einen|el|il|uno|una)"
+)
+_BARE_KIND = (
+    rf"(?:[- ](?:moi|nous|me|us|mir))?\s+{_ARTICLE}\s+(?:(?!(?:de|du|des|of|from|sur|about)\b)[\w'-]+\s+)?"
+    r"(?:word|excel|pdf|powerpoint|csv)\b"
+)
 _FILE = re.compile(
     rf"\b{_CREATE_VERB}\b.{{0,160}}?(?:(?<![\w.]){_FILE_KIND}\b|[\w-]+\.(?:docx|xlsx|pptx|pdf|csv)\b)"
+    rf"|\b{_CREATE_VERB}{_BARE_KIND}"
 )
 
 # A program that is more than one web page: a named non-web runtime or a server-side thing.

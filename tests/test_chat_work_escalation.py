@@ -21,6 +21,13 @@ def request(text: str, **kwargs: object) -> ChatRequest:
 
 class NeedsWorkTableTests(unittest.TestCase):
     TRUE_CASES = [
+        # The bare kind right after the verb (staging 2026-11-10: these stayed in the chat).
+        "Prépare un PDF de deux pages sur le marché des véhicules électriques en Europe.",
+        "Rédige une note Word comparant trois offres de fibre.",
+        "Fais-moi un Excel de suivi de dépenses",
+        "Peux-tu me faire un PDF de ce texte ?",
+        "Make me a PowerPoint about our roadmap",
+        "Create an Excel with monthly sales",
         # Running code or tests.
         "Écris un script Python qui calcule les 20 premiers nombres premiers et exécute-le.",
         "Écris un script python qui analyse ce CSV et lance les tests",
@@ -47,6 +54,10 @@ class NeedsWorkTableTests(unittest.TestCase):
         "Build a CLI tool in Rust that renames files",
     ]
     FALSE_CASES = [
+        "Fais un résumé du PDF que je t'ai envoyé hier",
+        "Écris une fonction qui lit un PDF page par page",
+        "Rédige un mail qui explique la différence entre Word et Pages",
+        "Write a summary of the Excel shortcuts I should know",
         "Explique-moi comment fonctionne une boucle for en python",
         "What is the difference between a list and a tuple?",
         "Traduis cette phrase en anglais",
@@ -425,3 +436,55 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertFalse(await escalate_to_work(req, item))
         self.assertEqual((item.state, item.erreurs, item.reponse), (state, [], ""))
+
+    async def test_a_delivered_file_survives_a_leftover_tool_error(self) -> None:
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.interactions import Interaction
+
+        req = request("Fais-moi un document Word sur le télétravail")
+        req.__dict__["native_chat_id"] = "123e4567-e89b-12d3-a456-426614174010"
+        req.__dict__["artifact_owner"] = "user@example.com"
+        item = Interaction()
+
+        async def failing_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
+            i.state, i.reponse = "failed", "Done.\n\nWork failed: read refused"
+            i.erreurs.append("read refused")
+            i.work_failure = {
+                "category": "tool_error",
+                "answer": "Done.\n\n[Download](/api/atlas/orgs/o/projects/p/deliverables/d/download)",
+            }
+
+        with (
+            patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+            patch("services.orchestrator.chat_work.work_gate_open", return_value=True),
+            patch(
+                "services.orchestrator.chat_work._identity",
+                new=AsyncMock(
+                    return_value={
+                        "memberships": [
+                            {"org_id": "123e4567-e89b-12d3-a456-426614174000"}
+                        ]
+                    }
+                ),
+            ),
+            patch(
+                "services.orchestrator.chat_work._ensure_scratch_project",
+                new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174002"),
+            ),
+            patch(
+                "services.orchestrator.chat_work._find_binding",
+                new=AsyncMock(
+                    return_value={
+                        "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
+                        "work_session_id": "123e4567-e89b-12d3-a456-426614174004",
+                    }
+                ),
+            ),
+            patch("services.orchestrator.code_mode.process_work", new=failing_work),
+        ):
+            self.assertTrue(await escalate_to_work(req, item))
+        self.assertEqual(
+            (item.state, item.erreurs, item.task_type), ("done", [], "work")
+        )
+        self.assertIn("/deliverables/d/download", item.reponse)
+        self.assertNotIn("Work failed", item.reponse)

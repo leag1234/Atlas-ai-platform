@@ -380,6 +380,17 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             failure,
             reply is not None,
         )
+        produced = str(item.work_failure.get("answer", ""))
+        if (
+            item.work_failure.get("category") == "tool_error"
+            and "/deliverables/" in produced
+        ):
+            # The file exists and its links are in the answer: a tool error left
+            # open on the way (a refused read, a refused switch) does not turn a
+            # delivered file into a failure, in the chat (staging 2026-11-10).
+            item.reponse, item.task_type, item.state = produced, "work", "done"
+            item.erreurs, item.work_failure = before[1], {}
+            return True
         if reply is not None and item.work_failure.get("category") != "tool_error":
             # A known limit (time, steps, budget) or failing tests: the explanation,
             # with what was produced, is the finished answer of this turn.
