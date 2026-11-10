@@ -393,6 +393,7 @@ what is covered on the direct models, as of 2026-11-03:
 - **Applied:**
   - Chat Completions: `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `max_tokens` or `max_completion_tokens`, `n` (up to 8 choices), `logprobs` and `top_logprobs`, `response_format`, tools and `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `stream` and `stream_options`;
     - `response_format: {"type":"json_schema","json_schema":{"name":...,"schema":{...},"strict":true}}` is guaranteed on every public model (`atlas-dev`/`atlas-code`, `atlas-chat` and the dated aliases): each route targets only providers with native structured output, and Atlas validates the final JSON against the schema with one retry. If the answer still does not validate, a non-streamed answer is HTTP 502 `invalid_response_format` and a stream ends with an error event, never the invalid JSON as a success. A route that cannot guarantee the schema refuses the request with HTTP 400 `unsupported_parameter` (`param: "response_format"`) before any provider call;
+    - The assistant profiles (`atlas`, `atlas-glm`, `atlas-deepseek`, `atlas-qwen`) answer in prose with their own tools and never guarantee a JSON format: any `response_format` other than `text` is refused with HTTP 400 `unsupported_parameter` (`param: "response_format"`). Use `atlas-chat`, `atlas-code` or `atlas-dev` for JSON output.
   - Responses: `top_p`;
   - Messages: `stop_sequences`, `top_p`, `top_k`.
 

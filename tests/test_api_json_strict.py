@@ -273,6 +273,33 @@ class StrictJsonApiTests(unittest.TestCase):
                     )
         self.assertEqual(self.env.plans, [])
 
+    def test_assistant_profiles_refuse_json_formats(self) -> None:
+        lax = {"type": "json_schema", "json_schema": {"name": "x", "schema": SCHEMA}}
+        _, secret = self.env.store.create(
+            org_id="fictional-org",
+            member_id="fictional-member",
+            subject="tester@example.invalid",
+            budget_user="fictional-user",
+            name="assistant-json",
+            scopes=["assistant"],
+            created_by="operator",
+            daily_requests=1000,
+            daily_micro_eur=10000000,
+        )
+        self.env.headers = {"Authorization": "Bearer " + secret}
+        for model in ("atlas", "atlas-glm", "atlas-deepseek", "atlas-qwen"):
+            for output_format in (FORMAT, lax, {"type": "json_object"}):
+                with self.subTest(model=model, format=output_format["type"]):
+                    reply = self.env.post(
+                        self.env.body(model, response_format=output_format)
+                    )
+                    self.assertEqual(reply.status_code, 400, reply.text)
+                    error = reply.json()["error"]
+                    self.assertEqual(error["type"], "unsupported_parameter")
+                    self.assertEqual(error["param"], "response_format")
+                    self.assertIn("atlas-chat", error["message"])
+        self.assertEqual(self.env.plans, [])
+
     def test_non_strict_json_schema_is_not_refused(self) -> None:
         self.env.texts = [GOOD]
         lax = {
