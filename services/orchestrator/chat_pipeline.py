@@ -804,6 +804,10 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             item,
         )
         return
+    from services.orchestrator.chat_work import escalate_to_work
+
+    if await escalate_to_work(request, item):
+        return
     from services.orchestrator.narration import clean_answer
     from services.orchestrator.title import is_title_task, title_response
 

@@ -182,7 +182,7 @@
     const grid = node('div', null, 'atlas-project-grid'); grid.setAttribute('role','tabpanel'); center.append(grid);
     function renderCards() {
       grid.replaceChildren();
-      const values = projects.filter(p => (projectTab === 'archived' ? p.state === 'archived' : p.state !== 'archived' && (projectTab === 'organization' ? p.visibility === 'organization' : projectTab === 'shared' ? p.shared_with_me === true : p.shared_with_me !== true && p.visibility !== 'organization')) && (p.name + ' ' + (p.description || '')).toLocaleLowerCase().includes(projectSearch.toLocaleLowerCase()));
+      const values = projects.filter(p => !p.hidden && (projectTab === 'archived' ? p.state === 'archived' : p.state !== 'archived' && (projectTab === 'organization' ? p.visibility === 'organization' : projectTab === 'shared' ? p.shared_with_me === true : p.shared_with_me !== true && p.visibility !== 'organization')) && (p.name + ' ' + (p.description || '')).toLocaleLowerCase().includes(projectSearch.toLocaleLowerCase()));
       values.sort((a,b) => projectSort === 'name' ? a.name.localeCompare(b.name) : (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0));
       for (const project of values) {
         const card = node('button', null, 'atlas-project-card'); card.type = 'button'; card.dataset.projectCard = project.id;
@@ -979,7 +979,7 @@
   async function moveMenu(chatId) {
     if (!chatId) return;
     projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
-    const editable = projects.filter(project => !project.shared_with_me || project.role === 'owner' || project.role === 'editor');
+    const editable = projects.filter(project => !project.hidden && (!project.shared_with_me || project.role === 'owner' || project.role === 'editor'));
     const recent = editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0));
     const chooseProject = project => importNativeChat(project, chatId);
     const createAndMove = async () => {

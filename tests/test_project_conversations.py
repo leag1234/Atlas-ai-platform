@@ -965,3 +965,86 @@ class ProjectConversationTests(ProjectIsolationTests):
             "viewer",
         )
         self.assertEqual(turns.json()["items"], [])
+
+    def test_hidden_project_is_excluded_from_listing_but_resolvable(self) -> None:
+        created = self.request(
+            "POST",
+            self.prefix(),
+            "owner",
+            {"name": "Chats", "default_action": "work", "hidden": True},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        hidden = created.json()
+        self.assertTrue(hidden["hidden"])
+        listing = self.request("GET", self.prefix(), "owner").json()["items"]
+        self.assertNotIn(hidden["id"], [item["id"] for item in listing])
+        with_hidden = self.request(
+            "GET", self.prefix() + "?include_hidden=1", "owner"
+        ).json()["items"]
+        self.assertIn(hidden["id"], [item["id"] for item in with_hidden])
+        resolved = self.request("GET", self.prefix() + "/" + hidden["id"], "owner")
+        self.assertEqual(resolved.status_code, 200, resolved.text)
+        self.assertTrue(resolved.json()["hidden"])
+        self.error(
+            self.request(
+                "POST", self.prefix(), "owner", {"name": "X", "hidden": "yes"}
+            ),
+            422,
+            "invalid_request",
+        )
+
+    def test_chat_binding_is_stored_once_and_lookup_returns_it(self) -> None:
+        session = str(uuid4())
+        path = self.project_path() + f"/conversations/{self.conversation}"
+        invalid_bodies: list[Any] = [
+            {"chat_binding": {}},
+            {"chat_binding": {"chat_conversation_id": "c1"}},
+            {
+                "chat_binding": {
+                    "chat_conversation_id": "c1",
+                    "work_session_id": "not-a-uuid",
+                }
+            },
+            {"chat_binding": {"chat_conversation_id": "", "work_session_id": session}},
+        ]
+        for body in invalid_bodies:
+            self.error(
+                self.request("PATCH", path, "viewer", body, match=0),
+                422,
+                "invalid_request",
+            )
+        bound = self.request(
+            "PATCH",
+            path,
+            "viewer",
+            {
+                "chat_binding": {
+                    "chat_conversation_id": "chat-42",
+                    "work_session_id": session,
+                }
+            },
+            match=0,
+        )
+        self.assertEqual(bound.status_code, 200, bound.text)
+        self.assertEqual(
+            bound.json()["chat_binding"],
+            {"chat_conversation_id": "chat-42", "work_session_id": session},
+        )
+        lookup = self.request(
+            "GET",
+            self.project_path()
+            + "/conversations/chat-binding?chat_conversation_id=chat-42",
+            "viewer",
+        )
+        self.assertEqual(lookup.status_code, 200, lookup.text)
+        self.assertEqual(lookup.json()["id"], self.conversation)
+        self.error(
+            self.request(
+                "GET",
+                self.project_path()
+                + "/conversations/chat-binding?chat_conversation_id=other",
+                "viewer",
+            ),
+            404,
+            "not_found",
+        )
