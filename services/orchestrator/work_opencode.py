@@ -86,6 +86,9 @@ def map_event(payload: dict[str, Any]) -> dict[str, Any] | None:
                 "tool": part.get("tool"),
                 "status": state.get("status"),
                 "input": _short(state.get("input")),
+                "args": state.get("input")
+                if isinstance(state.get("input"), dict)
+                else {},
                 "output": _short(state.get("output")),
                 "session_id": info.get("sessionID"),
             }
