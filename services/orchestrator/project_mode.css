@@ -276,3 +276,5 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 #atlas-project .atlas-project-composer, .atlas-project-composer { background:var(--atlas-surface)!important; border-color:var(--atlas-border); border-radius:var(--atlas-composer-radius,26px); box-shadow:none; }
 /* Focus rings use the chat accent rather than the former project orange. */
 .atlas-project :focus-visible { outline-color:var(--atlas-accent); }
+/* Project dialogs live outside the project view (appended to the page body): they take the chat tokens too. */
+.atlas-project-dialog, html.dark .atlas-project-dialog { --project-bg:var(--atlas-bg); --project-card:var(--atlas-bg); --project-line:var(--atlas-border); --project-ink:var(--atlas-text); --project-muted:var(--atlas-muted); --project-accent:var(--atlas-accent); --project-hover:var(--atlas-side); background:var(--atlas-bg)!important; color:var(--atlas-text)!important; font-family:var(--atlas-body-font); }
