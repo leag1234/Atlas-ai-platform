@@ -826,7 +826,9 @@ async def process_work(
                 run_opencode_turn,
             )
 
-            if engine_turn_selected(selection):
+            if engine_turn_selected(
+                selection, bool(execution.session.get("repository_id"))
+            ):
                 engine_result = await run_opencode_turn(
                     request,
                     item,

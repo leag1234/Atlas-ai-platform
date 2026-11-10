@@ -286,6 +286,18 @@ class FilePatchesTests(unittest.TestCase):
         self.assertNotIn("__pycache__", "".join(section for _, section in sections))
 
 
+class RepositorySessionTests(unittest.TestCase):
+    def test_repository_session_keeps_the_loop(self) -> None:
+        from types import SimpleNamespace
+
+        from services.orchestrator.work_opencode_turn import engine_turn_selected
+
+        selection = SimpleNamespace(group="code")
+        with mock.patch.dict(os.environ, {"ATLAS_WORK_ENGINE": "opencode"}):
+            self.assertTrue(engine_turn_selected(selection))
+            self.assertFalse(engine_turn_selected(selection, repository=True))
+
+
 class LabelTests(unittest.TestCase):
     def test_labels_show_the_file_or_command_never_the_content(self) -> None:
         from services.orchestrator.work_opencode_turn import _label
