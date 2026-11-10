@@ -256,3 +256,23 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 .atlas-project-task-dot {display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:var(--project-accent);vertical-align:middle;}
 .atlas-project-task-banner {padding:10px 14px;border:1px solid var(--project-line);border-radius:10px;background:var(--project-hover);font-size:13px;}
 @media(max-width:760px) {.atlas-project-task-grid {grid-template-columns:minmax(0,1fr);}}
+/* Owner request 2026-11-10: the project UI uses the chat's design tokens (colours, font, bubbles), not a palette of its own. */
+.atlas-project, #atlas-project, html.dark .atlas-project, html.dark #atlas-project {
+  --project-bg:var(--atlas-chat-panel,var(--atlas-bg)); --project-card:var(--atlas-chat-panel,var(--atlas-bg)); --project-line:var(--atlas-border);
+  --project-ink:var(--atlas-text); --project-muted:var(--atlas-muted); --project-accent:var(--atlas-accent); --project-hover:var(--atlas-side);
+  font-family:var(--atlas-body-font); font-size:var(--atlas-ui-size);
+}
+/* Same frame as the chat's main panel: a rounded card with the same margins next to the sidebar. */
+#atlas-project { inset:14px 14px 14px calc(var(--atlas-sidebar-width,250px) + 28px); border-radius:var(--atlas-radius); overflow:hidden; }
+/* Conversation turns use the chat's message size; chrome keeps the interface size. */
+.atlas-project-turn { font-size:var(--atlas-body-size); }
+/* System dark mode follows the same tokens as the chat's dark theme. */
+@media(prefers-color-scheme:dark) { html:not(.light) .atlas-project, html:not(.light) #atlas-project { --project-bg:var(--atlas-chat-panel,var(--atlas-bg)); --project-card:var(--atlas-chat-panel,var(--atlas-bg)); --project-line:var(--atlas-border); --project-ink:var(--atlas-text); --project-muted:var(--atlas-muted); --project-accent:var(--atlas-accent); --project-hover:var(--atlas-side); } }
+/* Headings use the chat font instead of Inter. */
+.atlas-project :is(h1,h2,h3) { font-family:var(--atlas-font); }
+/* The user's message in a project looks like the chat's user bubble. */
+.atlas-project-turn .question { background:var(--atlas-user-bg)!important; color:var(--atlas-text); border-radius:var(--atlas-radius); }
+/* The project composer looks like the chat composer: same surface, border and radius. */
+#atlas-project .atlas-project-composer, .atlas-project-composer { background:var(--atlas-surface)!important; border-color:var(--atlas-border); border-radius:var(--atlas-composer-radius,26px); box-shadow:none; }
+/* Focus rings use the chat accent rather than the former project orange. */
+.atlas-project :focus-visible { outline-color:var(--atlas-accent); }
