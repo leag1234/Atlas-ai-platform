@@ -200,6 +200,7 @@ class SettledSwitchRefusalTests(unittest.TestCase):
         refused = {"switch_tool_group": "deliverable_group_required"}
         self.assertEqual(open_failures(refused, []), refused)
         self.assertEqual(open_failures(refused, [{"deliverable_id": "d1"}]), {})
+        self.assertEqual(open_failures({"read_file": "File must be regular"}, []), {})
         other = {"switch_tool_group": "invalid_tool_group", "run_command": "denied"}
         self.assertEqual(open_failures(other, [{"deliverable_id": "d1"}]), other)
 
