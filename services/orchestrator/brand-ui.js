@@ -116,7 +116,13 @@
       const label = logo.getAttribute('aria-label') || 'Open sidebar';
       open.setAttribute('aria-label', label);
       open.title = label;
-      open.addEventListener('click', () => logo.click());
+      // Svelte may have re-rendered the logo since: find the current one at click time.
+      open.addEventListener('click', event => {
+        // The rail's own containers also react to clicks: keep this one to ourselves.
+        event.stopPropagation();
+        const current = [...document.querySelectorAll('#sidebar button[aria-label]')].find(button => button.querySelector('img') && !button.dataset.atlasOpenSidebar);
+        current?.click();
+      });
       stackItem(logo, rail).insertAdjacentElement('afterend', open);
       new ResizeObserver(entries => { open.hidden = entries[0].contentRect.width > 100; }).observe(rail);
     }
