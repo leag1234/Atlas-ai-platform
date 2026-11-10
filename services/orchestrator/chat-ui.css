@@ -530,3 +530,7 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 :is([role=dialog],dialog) input[placeholder]:focus { outline:none!important; box-shadow:none!important; }
 /* The search field's container shows focus with a thin accent ring inside the dialog bounds. */
 :is([role=dialog],dialog) :has(> input[placeholder]:focus) { border-radius:10px; box-shadow:inset 0 0 0 1px var(--atlas-accent); }
+/* The selected chat row is red with white text: its "..." menu button follows the text colour (owner request). */
+#sidebar :has(> a.selected) :is(button,button svg) { color:var(--atlas-on-accent)!important; }
+/* Open WebUI's chat controls panel (system prompt and Ollama parameters) is not part of Atlas: hide its button and panel. */
+:is(button[data-atlas-controls],button[aria-label="Controls"],#controls-container,#controls-resizer) { display:none!important; }
