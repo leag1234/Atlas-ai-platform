@@ -45,3 +45,15 @@ class ProjectMoveUiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DarkMoveDialogTests(unittest.TestCase):
+    def test_dark_move_rows_are_not_filled_buttons(self) -> None:
+        css = Path("services/orchestrator/project_mode.css").read_text()
+        self.assertIn(
+            "html.dark .atlas-project-move-dialog form button, html.dark .atlas-project-move-menu button { background:transparent;",
+            css,
+        )
+        self.assertIn(
+            "#atlas-project .atlas-project-composer textarea { resize:none; }", css
+        )
