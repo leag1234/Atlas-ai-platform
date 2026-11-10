@@ -279,3 +279,11 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 .atlas-project :focus-visible { outline-color:var(--atlas-accent); }
 /* Project dialogs live outside the project view (appended to the page body): they take the chat tokens too. */
 .atlas-project-dialog, html.dark .atlas-project-dialog { --project-bg:var(--atlas-bg); --project-card:var(--atlas-bg); --project-line:var(--atlas-border); --project-ink:var(--atlas-text); --project-muted:var(--atlas-muted); --project-accent:var(--atlas-accent); --project-hover:var(--atlas-side); background:var(--atlas-bg)!important; color:var(--atlas-text)!important; font-family:var(--atlas-body-font); }
+/* The project list in the chat sidebar sits outside the project view: one row per project, like the chat rows. */
+.atlas-project-host-projects .atlas-project-sidebar-row, .atlas-project-host-projects .atlas-project-sidebar-all { display:block; width:100%; border:0; margin:0; padding:7px 8px; border-radius:var(--atlas-radius-sm,8px); background:transparent; color:var(--atlas-text); font:inherit; font-size:14px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.atlas-project-host-projects .atlas-project-sidebar-all { color:var(--atlas-muted); font-size:13px; }
+.atlas-project-host-projects .atlas-project-sidebar-row:hover, .atlas-project-host-projects .atlas-project-sidebar-all:hover { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); }
+.atlas-project-host-projects .atlas-project-sidebar-row[aria-current=page] { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); font-weight:600; }
+/* Dark dialogs take the raised chat surface, not the page black. */
+html.dark .atlas-project-dialog { background:var(--atlas-surface)!important; }
+html.dark .atlas-project-dialog input, html.dark .atlas-project-dialog button { background:var(--atlas-bg); color:var(--atlas-text); border-color:var(--atlas-border); }
