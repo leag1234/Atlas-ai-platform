@@ -202,7 +202,9 @@ class StreamDecoderTests(unittest.TestCase):
         decoder.feed(call(120000) + end("tool_calls"))
         decoder.finish()
         assert decoder.result is not None
-        self.assertEqual(len(decoder.result["calls"][0]["arguments"]), 120000)
+        calls = decoder.result["calls"]
+        assert isinstance(calls, list)
+        self.assertEqual(len(calls[0]["arguments"]), 120000)
         # A provider that never stops is cut by the raw stream cap.
         with self.assertRaises(LimitError) as caught:
             StreamDecoder(max_tokens=100).feed(call(900000))
