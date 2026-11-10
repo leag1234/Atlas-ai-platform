@@ -37,6 +37,12 @@ _ATTACHMENT_OR_IMAGE = re.compile(
     r"|anhang|adjunto|allegato|image|imagen|immagine|bild|photo|foto)\b"
 )
 _DRAWING = re.compile(r"\b(?:dessine\w*|draw|zeichne\w*|dibuja\w*|disegna\w*)\b")
+# SVG is drawn as code and rendered in the app panel, unlike an image request
+# ("dessine un chat" goes to image generation; "dessine un chat en SVG" does not).
+_SVG = re.compile(r"\bsvg\b")
+_SHOW = re.compile(
+    r"\b(?:affiche\w*|montre\w*|show|display|render|zeige\w*|muestra\w*|mostra\w*)\b"
+)
 _TITLE_REQUEST = re.compile(r"\b(?:title|titre|titel|titulo|titolo)\b")
 _PROJECT_OR_CODE_MODE = re.compile(
     r"\b(?:project|projet|projekt|proyecto|progetto|code mode|mode code"
@@ -82,6 +88,9 @@ def app_intent(text: str, history: Sequence[Mapping[str, object]]) -> Intent | N
         return None
     if _OFFICE.search(normalized) and not _EXPLICIT_WEB.search(normalized):
         return None
+    svg = svg_intent(normalized, history)
+    if svg is not None:
+        return svg
     if any(
         pattern.search(normalized)
         for pattern in (
@@ -103,6 +112,28 @@ def app_intent(text: str, history: Sequence[Mapping[str, object]]) -> Intent | N
     if _CHANGE.search(normalized) and not _QUESTION.search(normalized):
         return "modify"
     return "available"
+
+
+def svg_intent(
+    normalized: str, history: Sequence[Mapping[str, object]]
+) -> Intent | None:
+    """An SVG drawing, or a request to show the SVG just given, is an app turn."""
+    if _SVG.search(normalized) and not _EXPLANATION.search(normalized):
+        if not _has_artifact(history):
+            return "create"
+        return "modify" if _CHANGE.search(normalized) else "create"
+    if _SHOW.search(normalized) and _last_answer_has_svg(history):
+        return "create"
+    return None
+
+
+def _last_answer_has_svg(history: Sequence[Mapping[str, object]]) -> bool:
+    for message in reversed(history):
+        if message.get("role") != "assistant":
+            continue
+        content = message.get("content", "")
+        return isinstance(content, str) and "<svg" in content.casefold()
+    return False
 
 
 def _has_artifact(history: Sequence[Mapping[str, object]]) -> bool:

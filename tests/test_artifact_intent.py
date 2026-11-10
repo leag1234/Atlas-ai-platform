@@ -99,3 +99,30 @@ class ArtifactIntentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SvgIntentTests(unittest.TestCase):
+    def test_svg_drawing_and_show_it_here_are_app_turns(self) -> None:
+        from packages.artifact_intent import app_intent
+
+        svg_answer = [
+            {"role": "user", "content": "dessine un mouton en svg"},
+            {
+                "role": "assistant",
+                "content": "```svg\n<svg viewBox='0 0 10 10'></svg>\n```",
+            },
+            {"role": "user", "content": "tu peux l'afficher ici ?"},
+        ]
+        self.assertEqual(app_intent("dessine-moi un mouton en SVG", []), "create")
+        self.assertEqual(app_intent("draw a sheep as an SVG", []), "create")
+        self.assertEqual(app_intent("tu peux l'afficher ici ?", svg_answer), "create")
+
+    def test_plain_drawing_explanation_and_unrelated_show_are_not(self) -> None:
+        from packages.artifact_intent import app_intent
+
+        self.assertIsNone(app_intent("dessine un chat", []))
+        self.assertIsNone(app_intent("explique le format SVG", []))
+        self.assertIsNone(app_intent("montre-moi la météo", []))
+        self.assertIsNone(
+            app_intent("affiche-le ici", [{"role": "assistant", "content": "Bonjour"}])
+        )
