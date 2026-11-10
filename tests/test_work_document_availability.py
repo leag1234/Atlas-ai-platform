@@ -193,6 +193,17 @@ class DocumentAvailabilityTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class SettledSwitchRefusalTests(unittest.TestCase):
+    def test_refused_switch_is_settled_once_a_file_is_published(self) -> None:
+        from services.orchestrator.code_mode import open_failures
+
+        refused = {"switch_tool_group": "deliverable_group_required"}
+        self.assertEqual(open_failures(refused, []), refused)
+        self.assertEqual(open_failures(refused, [{"deliverable_id": "d1"}]), {})
+        other = {"switch_tool_group": "invalid_tool_group", "run_command": "denied"}
+        self.assertEqual(open_failures(other, [{"deliverable_id": "d1"}]), other)
+
+
 class DeliverableGroupGuardTests(unittest.TestCase):
     def selection(self, pending: bool) -> WorkToolSelection:
         selection = WorkToolSelection("documents")
