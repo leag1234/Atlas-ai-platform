@@ -956,6 +956,17 @@
     }
   };
   document.addEventListener('pointerdown', recordMoveMenuTrigger, true);
+  // On a phone the native sidebar closes after opening a chat; Atlas entries (projects, a project,
+  // its conversations, scheduled tasks) do the same instead of staying over the page they opened.
+  const closePhoneSidebar = () => {
+    if (!matchMedia('(max-width: 767px)').matches) return;
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar || sidebar.getAttribute('aria-hidden') === 'true' || sidebar.getBoundingClientRect().right <= 0) return;
+    sidebar.querySelector('button[class*="cursor-[w-resize]"]')?.click();
+  };
+  document.addEventListener('click', event => {
+    if (event.target instanceof Element && event.target.closest('#atlas-project-navigation button:not([aria-label="' + t('newProject') + '"]), #atlas-project-sidebar-list button')) setTimeout(closePhoneSidebar, 0);
+  });
   // Atlas dialogs close like the chat's modals: Escape, or a tap that starts and ends on the backdrop
   // (on a phone the move dialog could only be closed with its Cancel button).
   let backdropDown = null;
@@ -1311,7 +1322,16 @@
     notice = node('div','','atlas-project-notice'); notice.setAttribute('role','status');
     const mobile = node('header',null,'atlas-project-mobile-header');
     const home = button('ordinary',ordinary), logo = node('img'); logo.src = '/static/atlas/brand/svg/atlas-logotype.svg'; logo.alt = 'Atlas'; home.replaceChildren(logo);
-    mobile.append(home,button('projects',() => choose({org:scope.org})));
+    // Same sidebar button as the chat header on a phone: the project view otherwise had no way to the conversations.
+    const toggle = document.getElementById('sidebar-toggle-button');
+    const menu = node('button', null, 'atlas-project-sidebar-open'); menu.type = 'button';
+    menu.setAttribute('aria-label', toggle?.getAttribute('aria-label') || t('projects'));
+    const icon = document.createElementNS('http://www.w3.org/2000/svg','svg'); icon.setAttribute('viewBox','0 0 24 24'); icon.setAttribute('fill','none'); icon.setAttribute('stroke','currentColor'); icon.setAttribute('stroke-width','1.6'); icon.setAttribute('width','22'); icon.setAttribute('height','22'); icon.setAttribute('aria-hidden','true');
+    const frame = document.createElementNS('http://www.w3.org/2000/svg','rect'); frame.setAttribute('x','3.5'); frame.setAttribute('y','4.5'); frame.setAttribute('width','17'); frame.setAttribute('height','15'); frame.setAttribute('rx','3');
+    const rail = document.createElementNS('http://www.w3.org/2000/svg','path'); rail.setAttribute('d','M9 4.5v15');
+    icon.append(frame, rail); menu.append(icon);
+    menu.addEventListener('click', () => document.getElementById('sidebar-toggle-button')?.click());
+    mobile.append(menu,home,button('projects',() => choose({org:scope.org})));
     root.append(mobile,left,center,right,notice); document.body.append(root);
     const side = document.getElementById('atlas-side-view');
     if (side) {sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width',side.getBoundingClientRect().width+'px')); sideResize.observe(side);}

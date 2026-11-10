@@ -23,5 +23,17 @@ class DialogDismissTests(unittest.TestCase):
         self.assertIn("dialog === backdropDown", script)
 
 
+class PhoneNavigationTests(unittest.TestCase):
+    def test_atlas_entries_close_the_phone_sidebar_and_project_header_opens_it(
+        self,
+    ) -> None:
+        script = Path("services/orchestrator/project_mode.js").read_text()
+        self.assertIn("const closePhoneSidebar = () =>", script)
+        self.assertIn("#atlas-project-sidebar-list button", script)
+        self.assertIn("atlas-project-sidebar-open", script)
+        css = Path("services/orchestrator/project_mode.css").read_text()
+        self.assertIn(".atlas-project-page-heading > button { white-space:nowrap;", css)
+
+
 if __name__ == "__main__":
     unittest.main()
