@@ -183,6 +183,9 @@ class AttachmentTests(unittest.TestCase):
             messages=[ChatMessage(role="user", content="Quelle heure est-il à Tokyo ?")]
         )
         with patch.dict(os.environ, {"ATLAS_ARTIFACTS": "1"}):
+            self.assertEqual(drawing.timeout_seconds, 120)
+            drawing.__dict__["artifact_owner"] = "user-1"
+            question.__dict__["artifact_owner"] = "user-1"
             self.assertEqual(drawing.timeout_seconds, 300)
             self.assertEqual(question.timeout_seconds, 120)
         with patch.dict(os.environ, {"ATLAS_ARTIFACTS": "0"}):
