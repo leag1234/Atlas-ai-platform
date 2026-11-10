@@ -88,7 +88,10 @@
   const mount = () => {
     // Chat dictation is the native Open WebUI microphone (Atlas speech-to-text behind it):
     // nothing is injected into the Svelte composer, whose re-renders removed foreign nodes.
-    document.querySelectorAll('[id^="message-"]:has(.chat-assistant) .buttons, .atlas-project-turn .atlas-project-turn-actions').forEach(row => {
+    // Chat answers keep the native read-aloud action (Atlas speech behind it when ATLAS_TTS is on):
+    // appending into Svelte message rows froze the page like the composer did. Only the
+    // project view, which Atlas renders itself, gets this button.
+    document.querySelectorAll('.atlas-project-turn .atlas-project-turn-actions').forEach(row => {
       if (!config.tts || row.querySelector('[data-atlas-read]')) return;
       const button = makeButton('read', speakerIcon);
       button.hidden = false;
