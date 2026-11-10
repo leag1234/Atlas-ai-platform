@@ -436,8 +436,10 @@
       }
       for (const item of panelData?.deliverables || []) if (item.turn_id === turn.request_id || item.request_id === turn.request_id || turn.content_refs.some(ref => ref.text?.includes(item.download_route))) article.append(fileCard(item));
       if (turn.usage) {
+        // Amounts are rounded in the user's locale (a raw float showed 0.018945800000000002).
+        const amount = new Intl.NumberFormat(window.atlasProjectLocale.language(), {minimumFractionDigits:2, maximumFractionDigits:3, useGrouping:false});
         for (const [key, label] of [['cost_eur', 'cost'], ['unknown_eur', 'unknownCost'], ['reserved_eur', 'reservedCost']]) {
-          if (turn.usage[key] != null && Number(turn.usage[key]) !== 0) article.append(detail(label, turn.usage[key]));
+          if (turn.usage[key] != null && Number(turn.usage[key]) !== 0) article.append(detail(label, amount.format(Number(turn.usage[key]))));
         }
       }
       const lastContext = turn.usage?.context;
@@ -871,7 +873,10 @@
   async function previewDeliverable(item) {
     const src = projectURL(base() + '/deliverables/' + item.id + '/preview');
     const current = generation, response = await request(src);
-    if ((response.headers.get('content-type') || '').startsWith('application/pdf')) await window.atlasSideView.open({ kind:'pdf', src, title:t('preview') });
+    const type = response.headers.get('content-type') || '';
+    if (type.startsWith('application/pdf')) await window.atlasSideView.open({ kind:'pdf', src, title:t('preview') });
+    // An HTML deliverable is a page or an app: run it in the sandboxed frame, not as Markdown text.
+    else if (type.startsWith('text/html')) { const content = await response.text(); checkScope(current); await window.atlasSideView.open({ kind:'html', content, title:item.relative_path || t('preview') }); }
     else { const content = await response.text(); checkScope(current); await window.atlasSideView.open({ kind:'markdown', content, title:t('preview'), readOnly:true }); }
   }
   function hostMain() {
