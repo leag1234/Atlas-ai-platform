@@ -588,7 +588,9 @@
     confirmDeleteProject: ['Delete this project and its files, conversations, memory, access grants, and tasks?','Supprimer ce projet et ses fichiers, conversations, mémoire, accès et tâches ?','Dieses Projekt samt Dateien, Unterhaltungen, Speicher, Zugriffsrechten und Aufgaben löschen?','¿Eliminar este proyecto y sus archivos, conversaciones, memoria, accesos y tareas?','Eliminare questo progetto e file, conversazioni, memoria, accessi e attività?'],
     confirmArchiveProject: ['Archive this project? You can restore it later.','Archiver ce projet ? Vous pourrez le restaurer plus tard.','Dieses Projekt archivieren? Es kann später wiederhergestellt werden.','¿Archivar este proyecto? Podrá restaurarlo después.','Archiviare questo progetto? Potrai ripristinarlo in seguito.'],
     quotaProjectAdvice: ['Your active-project limit has been reached. Archive or delete a project to create another.','Votre limite de projets actifs est atteinte. Archivez ou supprimez un projet pour en créer un autre.','Ihr Limit aktiver Projekte ist erreicht. Archivieren oder löschen Sie ein Projekt, um ein weiteres zu erstellen.','Se alcanzó el límite de proyectos activos. Archive o elimine un proyecto para crear otro.','Hai raggiunto il limite di progetti attivi. Archivia o elimina un progetto per crearne un altro.'],
-    viewProjects: ['View projects','Voir les projets','Projekte ansehen','Ver proyectos','Vedi progetti']
+    viewProjects: ['View projects','Voir les projets','Projekte ansehen','Ver proyectos','Vedi progetti'],
+    dictate: ['Dictate','Dicter','Diktieren','Dictar','Dettare'],
+    voiceUnavailable: ['Voice is not available on this installation.','La voix n’est pas disponible sur cette installation.','Sprache ist auf dieser Installation nicht verfügbar.','La voz no está disponible en esta instalación.','La voce non è disponibile su questa installazione.']
   };
   for (const [key, values] of Object.entries(additional)) { keys.push(key); Object.keys(rows).forEach((language, index) => rows[language].push(values[index])); }
   window.atlasProjectLocale = { keys, rows, language() {

@@ -235,6 +235,11 @@ html:root body #chat-input, html:root body #chat-input p { font-family:var(--atl
 #message-input-container > .justify-between > :first-child > :not(:has(#input-menu-button)) { display:none!important; }
 #message-input-container > .justify-between > :last-child { grid-column:3; grid-row:2; display:flex!important; align-items:center; justify-content:center; min-width:0; min-height:52px; margin:0!important; }
 #message-input-container > .justify-between > :last-child > :not(:has(#send-message-button,#stop-response-button)) { display:none!important; }
+/* The Atlas dictation button lives in the composer, outside the native button groups. */
+#message-input-container > [data-atlas-voice] { position:static!important; width:40px; height:40px; display:flex!important; align-items:center; justify-content:center; border:0!important; border-radius:50%; background:var(--atlas-border)!important; color:var(--atlas-text)!important; }
+#message-input-container > [data-atlas-voice][data-atlas-recording] { background:var(--atlas-accent)!important; color:var(--atlas-on-accent)!important; }
+/* Read-aloud sits with the answer actions. */
+.atlas-actions [data-atlas-read], .atlas-project-turn-actions [data-atlas-read] { min-width:32px; min-height:32px; }
 #input-menu-button { position:static!important; width:40px; height:40px; background:var(--atlas-border)!important; border-radius:50%; color:var(--atlas-text)!important; }
 #send-message-button, #stop-response-button,
 #message-input-container > .justify-between > .self-end > .items-center > .flex > button { position:static!important; width:40px; height:40px; display:flex; justify-content:center; align-items:center; border-radius:50%; background:var(--atlas-accent)!important; color:var(--atlas-on-accent)!important; }

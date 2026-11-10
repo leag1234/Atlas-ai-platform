@@ -392,7 +392,9 @@
     input.placeholder = t('composerPlaceholder');
     const tools = node('div', null, 'atlas-project-composer-tools');
     uploads.setAttribute('aria-label',t('upload')); uploads.hidden = true;
-    tools.append(iconButton('upload','+', () => uploads.click()), uploads, sessionLabel, stop, send);
+    const mic = iconButton('dictate', '🎙', () => dictate());
+    mic.dataset.voice = ''; mic.hidden = true;
+    tools.append(iconButton('upload','+', () => uploads.click()), uploads, mic, sessionLabel, stop, send);
     composer.append(input, tools);
     composer.addEventListener('submit', guarded(submit));
     input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!send.disabled) composer.requestSubmit(); } });
@@ -408,7 +410,7 @@
     }
     await setAction();
     await replay(); await restoreSession(); await panels();
-    if (current === generation) { input.focus(); schedule(current); }
+    if (current === generation) { input.focus(); schedule(current); loadVoiceConfig(); }
   }
   function renderTurns() {
     transcript.replaceChildren();
@@ -517,6 +519,39 @@
   async function refreshTurns() {
     const current = generation;
     const result = await list(base() + '/conversations/' + scope.conversation + '/turns'); checkScope(current); turns = result; if (!sending) renderTurns(); renderEvents();
+  }
+  let recorder = null, micStream = null, micChunks = [];
+  async function dictate() {
+    const label = t('dictate');
+    if (recorder) { recorder.stop(); return; }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { say(t('voiceUnavailable')); return; }
+    try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { say(t('voiceUnavailable')); return; }
+    micChunks = []; recorder = new MediaRecorder(micStream);
+    recorder.ondataavailable = event => { if (event.data.size) micChunks.push(event.data); };
+    recorder.onstop = async () => {
+      micStream?.getTracks().forEach(track => track.stop()); micStream = null; recorder = null;
+      const form = new FormData();
+      form.append('file', new Blob(micChunks, { type: 'audio/webm' }), 'dictation.webm');
+      form.append('model', 'atlas-stt');
+      try {
+        const response = await fetch('/api/atlas/voice/transcriptions', { method: 'POST', credentials: 'same-origin', body: form });
+        const data = await response.json().catch(() => ({}));
+        const text = (data.text || '').trim();
+        if (response.ok && text) { input.value = input.value ? input.value.replace(/\s+$/, '') + ' ' + text : text; input.focus(); }
+        else say(t('voiceUnavailable'));
+      } catch { say(t('voiceUnavailable')); }
+    };
+    recorder.start();
+  }
+  async function loadVoiceConfig() {
+    try {
+      const response = await fetch('/api/atlas/voice/config', { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) return;
+      const value = await response.json();
+      const mic = root?.querySelector('[data-voice]');
+      if (mic) mic.hidden = !value.stt;
+    } catch { /* dictation stays off */ }
   }
   function controls() {
     const activeWork = action === 'work' && ['running','awaiting_approval','cancelling'].includes(session?.state);
