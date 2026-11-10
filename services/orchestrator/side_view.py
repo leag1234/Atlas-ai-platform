@@ -1,9 +1,17 @@
 """Owned side-view transport for verified Open WebUI attachment references."""
 
-from html import escape
 from urllib.parse import urlencode
 
 from services.orchestrator.chat_schema import ChatRequest
+
+
+OPEN_LABELS = {
+    "fr": "Ouvrir dans le panneau latéral",
+    "en": "Open in side view",
+    "de": "In der Seitenansicht öffnen",
+    "es": "Abrir en la vista lateral",
+    "it": "Apri nella vista laterale",
+}
 
 
 def pdf_placeholders(request: ChatRequest) -> str:
@@ -18,14 +26,9 @@ def pdf_placeholders(request: ChatRequest) -> str:
             fragment = urlencode(
                 {"atlas-view": "pdf", "title": attachment.filename, "slot": "top"}
             )
-            return (
-                '<span class="atlas-view" data-atlas-view="pdf" data-src="'
-                + source
-                + '" data-title="'
-                + escape(attachment.filename, quote=True)
-                + '" data-slot="top" hidden></span>\n\n'
-                # Open WebUI strips hidden HTML spans. Markdown links use the
-                # same native Markdown transport as the owned diagram images.
-                + f"[Open in side view]({source}#{fragment})\n\n"
-            )
+            # The Markdown link is the whole transport: chat-ui.js turns it into the
+            # side-view chip. A raw HTML marker showed as markup in sidebar previews
+            # and notifications.
+            label = OPEN_LABELS.get(request.lang, OPEN_LABELS["en"])
+            return f"[{label}]({source}#{fragment})\n\n"
     return ""
