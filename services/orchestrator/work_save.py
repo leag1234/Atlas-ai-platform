@@ -138,6 +138,38 @@ async def project_file_paths(execution: Any) -> dict[str, dict[str, Any]]:
     return paths
 
 
+async def deliverables_folder(execution: Any) -> str | None:
+    status, project = await execution.broker.public("GET", "")
+    if status != 200 or not project.get("deliverables_folder_id"):
+        return None
+    return str(project["deliverables_folder_id"])
+
+
+def root_folder(folders: list[dict[str, Any]]) -> str | None:
+    """The project's top folder: where files written outside any folder go."""
+    for folder in folders:
+        if not folder.get("parent_id"):
+            return str(folder["id"])
+    return str(folders[0]["id"]) if folders else None
+
+
+def place(
+    path: str, folder_ids: set[str], default: str | None
+) -> tuple[str, str] | None:
+    """(folder_id, relative path) of a workspace path.
+
+    Base files are imported under their folder id; an engine or a command may
+    also write at the workspace root (for example /workspace/stats.py). Those
+    files belong to the project's top folder.
+    """
+    parts = path.split("/", 1)
+    if len(parts) == 2 and parts[0] in folder_ids:
+        return parts[0], parts[1]
+    if default is None:
+        return None
+    return default, path
+
+
 async def save_new_files(
     execution: Any, workspace: Any, tools: Any, base: Any
 ) -> dict[str, Any]:
@@ -179,15 +211,22 @@ async def _export_and_save_new_files(
     ]
     publisher = ProjectPublisher(execution)
     existing = await project_file_paths(execution)
+    # Work publications always land in the project's deliverables folder (the
+    # retrieval side refuses any other); files written at the workspace root go
+    # there too, so a later turn finds them at the same project path.
+    default = await deliverables_folder(execution) or root_folder(
+        list(folders["items"])
+    )
     for path in new_paths:
-        parts = path.split("/", 1)
-        if len(parts) != 2 or parts[0] not in folders_by_id:
+        placed = place(path, set(folders_by_id), default)
+        if placed is None:
             report["skipped"].append({"path": path, "reason": "unknown_folder"})
             continue
-        folder_id, relative = parts
+        relative = placed[1]
+        folder_id = default or placed[0]
         if path in bases:
             continue
-        if path in existing:
+        if folder_id + "/" + relative in existing:
             # Created by an earlier turn of this session (kept workspace), so
             # already a project file: saving it is an overwrite, with approval.
             report["modified"].append(path)
@@ -274,9 +313,14 @@ async def save_modified_files(
     # Session base versions carry ids only, and files saved by earlier turns of
     # the session are not in its base: resolve paths against the project files.
     bases = await project_file_paths(execution)
+    status, folders = await execution.broker.public("GET", "folders")
+    items = list(folders.get("items", [])) if status == 200 else []
+    folder_ids = {str(f["id"]) for f in items}
+    default = await deliverables_folder(execution) or root_folder(items)
     deadline = time.monotonic() + 300
     for path in modified:
-        entry = bases.get(path)
+        placed = place(path, folder_ids, default)
+        entry = bases.get(placed[0] + "/" + placed[1]) if placed else None
         if entry is None:
             report.setdefault("not_saved", []).append(
                 {"path": path, "reason": "no_base_file"}
@@ -371,6 +415,9 @@ async def save_modified_files(
                 headers={
                     "Content-Type": "multipart/form-data; boundary=" + boundary,
                     "If-Match": '"' + str(file["revision"]) + '"',
+                    # Every write through the project API needs one; the approval
+                    # id makes a retry of the same overwrite idempotent.
+                    "Idempotency-Key": "work-save-" + str(approval["id"]),
                 },
             )
         except ProjectError as error:
@@ -413,4 +460,20 @@ async def save_turn_files(
     )
     if report.get("modified") and contents:
         await save_modified_files(execution, tools, report, contents)
+    import logging
+
+    # Paths only (never content): a silent skip must be visible in the service log.
+    logging.getLogger(__name__).warning(
+        "work_save saved=%d modified_saved=%d skipped=%s not_saved=%s",
+        len(report.get("saved", [])),
+        len(report.get("saved_modified", [])),
+        [(e.get("path", "")[-80:], e.get("reason")) for e in report.get("skipped", [])][
+            :20
+        ],
+        [
+            (e.get("path", "")[-80:], e.get("reason"))
+            for e in report.get("not_saved", [])
+            if isinstance(e, dict)
+        ][:20],
+    )
     return report

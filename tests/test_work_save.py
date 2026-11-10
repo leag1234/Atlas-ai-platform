@@ -371,6 +371,12 @@ class FakeApprovalBroker:
             return 200, dict(self.file)
         if path == "files":
             return 200, {"items": [dict(self.file)], "next_cursor": None}
+        if path == "folders":
+            return 200, {
+                "items": [{"id": "folder-a", "parent_id": None, "revision": 1}]
+            }
+        if path == "":
+            return 200, {"deliverables_folder_id": "folder-a"}
         if path.startswith("work-sessions/"):
             decision = self.decisions.pop(0) if self.decisions else "pending"
             return 200, {
@@ -457,6 +463,7 @@ class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(broker.posts), 1)
         _, body, headers = broker.posts[0]
         self.assertEqual(headers["If-Match"], '"9"')
+        self.assertEqual(headers["Idempotency-Key"], "work-save-ap-1")
         self.assertIn(b'name="base_version"', body)
         self.assertIn(b"v1", body)
         self.assertIn(b'name="approval_id"', body)
@@ -646,3 +653,20 @@ class ExistingPathTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertNotIn("new.py", [s["path"] for s in report["saved"]])
         self.assertIn("folder-a/new.py", report["modified"])
+
+
+class PlaceTests(unittest.TestCase):
+    def test_root_files_go_to_the_top_folder(self) -> None:
+        from services.orchestrator.work_save import place, root_folder
+
+        folders: list[dict[str, Any]] = [
+            {"id": "sub", "parent_id": "top"},
+            {"id": "top", "parent_id": None},
+        ]
+        self.assertEqual(root_folder(folders), "top")
+        self.assertEqual(place("stats.py", {"top", "sub"}, "top"), ("top", "stats.py"))
+        self.assertEqual(
+            place("pkg/mod.py", {"top", "sub"}, "top"), ("top", "pkg/mod.py")
+        )
+        self.assertEqual(place("sub/a.py", {"top", "sub"}, "top"), ("sub", "a.py"))
+        self.assertIsNone(place("stats.py", set(), None))
