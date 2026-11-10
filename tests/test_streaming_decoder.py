@@ -169,6 +169,52 @@ class StreamDecoderTests(unittest.TestCase):
         )
         self.assertEqual(decoder.result["text"], "")
 
+    def test_tool_arguments_are_bounded_by_max_tokens_not_characters(self) -> None:
+        from packages.limits import LimitError
+
+        def call(size: int) -> bytes:
+            head = frame(
+                {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call-app",
+                            "type": "function",
+                            "function": {"name": "create_artifact", "arguments": ""},
+                        }
+                    ]
+                }
+            )
+            body = b"".join(
+                frame(
+                    {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": "x" * 4000}}
+                        ]
+                    }
+                )
+                for _ in range(size // 4000)
+            )
+            return head + body
+
+        # A 120000-character app in one call decodes.
+        decoder = StreamDecoder(max_tokens=16000)
+        decoder.feed(call(120000) + end("tool_calls"))
+        decoder.finish()
+        assert decoder.result is not None
+        calls = decoder.result["calls"]
+        assert isinstance(calls, list)
+        self.assertEqual(len(calls[0]["arguments"]), 120000)
+        # A provider that never stops is cut by the raw stream cap.
+        with self.assertRaises(LimitError) as caught:
+            StreamDecoder(max_tokens=100).feed(call(900000))
+        self.assertEqual(caught.exception.code, "stream_limit_or_trailing_data")
+
+    def test_raw_stream_cap_scales_with_max_tokens(self) -> None:
+        envelope = frame({"content": "a"})
+        decoder = StreamDecoder(max_tokens=16000)
+        decoder.feed(envelope * (1200000 // len(envelope)))
+
     def test_missing_usage_finish_or_done_cannot_be_success(self) -> None:
         for suffix in [
             b"",

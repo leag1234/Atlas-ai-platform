@@ -316,6 +316,7 @@ async def attempt(
     decoder = StreamDecoder(
         allow_length=request.profile is not None,
         ignore_calls=answer_only,
+        max_tokens=request.max_tokens,
     )
     if routed is not None:
         greedy_top_p = provider_settings.preset_value(routed, "greedy_top_p")

@@ -174,3 +174,19 @@ class AttachmentTests(unittest.TestCase):
         )
         self.assertFalse(plain.has_attachments)
         self.assertEqual(plain.timeout_seconds, 120)
+
+    def test_app_turn_gets_the_file_deadline(self) -> None:
+        drawing = ChatRequest(
+            messages=[ChatMessage(role="user", content="dessine-moi un mouton en SVG")]
+        )
+        question = ChatRequest(
+            messages=[ChatMessage(role="user", content="Quelle heure est-il à Tokyo ?")]
+        )
+        with patch.dict(os.environ, {"ATLAS_ARTIFACTS": "1"}):
+            self.assertEqual(drawing.timeout_seconds, 120)
+            drawing.__dict__["artifact_owner"] = "user-1"
+            question.__dict__["artifact_owner"] = "user-1"
+            self.assertEqual(drawing.timeout_seconds, 300)
+            self.assertEqual(question.timeout_seconds, 120)
+        with patch.dict(os.environ, {"ATLAS_ARTIFACTS": "0"}):
+            self.assertEqual(drawing.timeout_seconds, 120)
