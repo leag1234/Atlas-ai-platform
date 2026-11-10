@@ -84,10 +84,16 @@ class VoiceUIContractTests(unittest.TestCase):
         self.assertEqual(injected.count(b"/api/atlas/voice/client.js"), 1)
         self.assertIn(b"/api/atlas/voice/client.js", ATLAS_UI_TAGS)
 
-    def test_chat_ui_keeps_the_dictation_button_visible(self) -> None:
+    def test_chat_ui_shows_the_native_dictation_button(self) -> None:
         css = Path("services/orchestrator/chat-ui.css").read_text()
-        self.assertIn("#message-input-container > [data-atlas-voice]", css)
+        self.assertIn(":has(> #voice-input-button) { display:flex!important; }", css)
         self.assertIn("[data-atlas-read]", css)
+
+    def test_voice_script_never_touches_the_chat_composer(self) -> None:
+        # Injecting into the Svelte composer froze the page (re-render loop).
+        script = Path("services/orchestrator/voice.js").read_text()
+        self.assertNotIn("composer.append", script)
+        self.assertNotIn("document.querySelector('#message-input-container')", script)
 
     def test_project_composer_has_a_dictation_button_and_locale_labels(self) -> None:
         script = Path("services/orchestrator/project_mode.js").read_text()
