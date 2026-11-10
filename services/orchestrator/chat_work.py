@@ -100,8 +100,13 @@ def _org_project(path: str) -> tuple[str | None, str | None]:
 async def _find_scratch_project(
     client: aiohttp.ClientSession, subject: str, org: str
 ) -> str | None:
+    # Hidden projects are excluded from the user listing, so the escalation
+    # resolves the scratch project through its own scoped read.
     status, listing = await _public(
-        client, subject, "GET", f"/api/atlas/orgs/{org}/projects"
+        client,
+        subject,
+        "GET",
+        f"/api/atlas/orgs/{org}/projects?include_hidden=1",
     )
     if status != 200:
         return None
@@ -138,9 +143,68 @@ async def _ensure_scratch_project(
     return str(created["id"])
 
 
+async def _find_binding(
+    client: aiohttp.ClientSession,
+    subject: str,
+    org: str,
+    project: str,
+    chat_conversation_id: str,
+) -> dict[str, str] | None:
+    status, bound = await _public(
+        client,
+        subject,
+        "GET",
+        f"/api/atlas/orgs/{org}/projects/{project}/conversations/chat-binding"
+        f"?chat_conversation_id={chat_conversation_id}",
+    )
+    if status != 200 or not isinstance(bound.get("id"), str):
+        return None
+    binding = bound.get("chat_binding")
+    if not isinstance(binding, dict):
+        return None
+    session_id = binding.get("work_session_id")
+    if not isinstance(session_id, str):
+        return None
+    return {"conversation_id": str(bound["id"]), "work_session_id": session_id}
+
+
+async def _bind_conversation(
+    client: aiohttp.ClientSession,
+    subject: str,
+    org: str,
+    project: str,
+    conversation_id: str,
+    chat_conversation_id: str,
+    work_session_id: str,
+) -> None:
+    status, _ = await _public(
+        client,
+        subject,
+        "PATCH",
+        f"/api/atlas/orgs/{org}/projects/{project}/conversations/{conversation_id}",
+        {
+            "chat_binding": {
+                "chat_conversation_id": chat_conversation_id,
+                "work_session_id": work_session_id,
+            }
+        },
+    )
+    if status != 200:
+        raise RuntimeError("scratch_binding_unavailable")
+
+
 async def _ensure_conversation(
-    client: aiohttp.ClientSession, subject: str, org: str, project: str
-) -> str:
+    client: aiohttp.ClientSession,
+    subject: str,
+    org: str,
+    project: str,
+    chat_conversation_id: str | None,
+) -> tuple[str, str | None]:
+    """Bind once per chat conversation: reuse the stored mapping on later turns."""
+    if chat_conversation_id:
+        bound = await _find_binding(client, subject, org, project, chat_conversation_id)
+        if bound is not None:
+            return bound["conversation_id"], bound["work_session_id"]
     status, created = await _public(
         client,
         subject,
@@ -150,7 +214,7 @@ async def _ensure_conversation(
     )
     if status not in (200, 201) or not isinstance(created.get("id"), str):
         raise RuntimeError("scratch_conversation_unavailable")
-    return str(created["id"])
+    return str(created["id"]), None
 
 
 async def _ensure_work_session(
@@ -188,7 +252,14 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
         or ""
     ).strip()
     if not subject or subject == "unknown":
+        logger.info(
+            "chat_work_fallback conversation=%s reason=no_subject",
+            request.conversation_id or "unknown",
+        )
         return False
+    chat_conversation_id = (
+        str(request.conversation_id) if request.conversation_id else None
+    )
     try:
         async with aiohttp.ClientSession(
             trust_env=False, timeout=aiohttp.ClientTimeout(total=30)
@@ -196,17 +267,46 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             identity = await _identity(client, subject)
             memberships = identity.get("memberships", [])
             if not memberships:
+                logger.info(
+                    "chat_work_fallback conversation=%s reason=no_organization",
+                    chat_conversation_id or "unknown",
+                )
                 return False
             org = str(memberships[0]["org_id"])
             project = await _ensure_scratch_project(client, subject, org)
-            bound_conversation = await _ensure_conversation(
-                client, subject, org, project
+            existing = (
+                await _find_binding(client, subject, org, project, chat_conversation_id)
+                if chat_conversation_id
+                else None
             )
-            session_id = await _ensure_work_session(
-                client, subject, org, project, bound_conversation
-            )
+            if existing is not None:
+                bound_conversation, session_id = (
+                    existing["conversation_id"],
+                    existing["work_session_id"],
+                )
+            else:
+                bound_conversation, _ = await _ensure_conversation(
+                    client, subject, org, project, chat_conversation_id
+                )
+                session_id = await _ensure_work_session(
+                    client, subject, org, project, bound_conversation
+                )
+                if chat_conversation_id:
+                    await _bind_conversation(
+                        client,
+                        subject,
+                        org,
+                        project,
+                        bound_conversation,
+                        chat_conversation_id,
+                        session_id,
+                    )
     except (aiohttp.ClientError, TimeoutError, RuntimeError, ValueError) as exc:
-        logger.warning("chat_work_escalation_setup_failed error=%s", type(exc).__name__)
+        logger.warning(
+            "chat_work_fallback conversation=%s reason=setup_failed error=%s",
+            chat_conversation_id or "unknown",
+            type(exc).__name__,
+        )
         return False
 
     from services.orchestrator.code_mode import process_work, work_failure_reply
@@ -241,4 +341,9 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
         if reply is not None:
             item.reponse = reply
     item.task_type = "work"
+    logger.info(
+        "chat_work_escalated conversation=%s session=%s",
+        chat_conversation_id or "unknown",
+        session_id,
+    )
     return True

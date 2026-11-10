@@ -7120,6 +7120,10 @@ components:
           enum:
           - standard
           - strict
+        hidden:
+          type: boolean
+          default: false
+          description: Hidden projects are excluded from the user's project listings and move choices; the escalation lookup still resolves them.
         instructions_file_id:
           type: string
           format: uuid
@@ -7913,6 +7917,21 @@ components:
         archived:
           type: boolean
           description: Hidden from the default listing; only the author changes it.
+        chat_binding:
+          type: object
+          additionalProperties: false
+          description: Server-side binding of a native chat conversation to this project conversation; set by the chat-to-Work escalation, not by clients.
+          properties:
+            chat_conversation_id:
+              type: string
+              minLength: 1
+              maxLength: 120
+            work_session_id:
+              type: string
+              format: uuid
+          required:
+          - chat_conversation_id
+          - work_session_id
       required:
       - id
       - created_at
@@ -10488,6 +10507,10 @@ components:
           - chat
           - work
           default: chat
+        hidden:
+          type: boolean
+          default: false
+          description: Hidden projects are excluded from the user's project listings and move choices; the escalation lookup still resolves them.
       required:
       - name
     ProjectPatch:
@@ -10819,6 +10842,21 @@ components:
           pattern: \S
         archived:
           type: boolean
+        chat_binding:
+          type: object
+          additionalProperties: false
+          description: Server-side binding of a native chat conversation to this project conversation; set by the chat-to-Work escalation, not by clients.
+          properties:
+            chat_conversation_id:
+              type: string
+              minLength: 1
+              maxLength: 120
+            work_session_id:
+              type: string
+              format: uuid
+          required:
+          - chat_conversation_id
+          - work_session_id
     ConversationSearchResult:
       type: object
       additionalProperties: false

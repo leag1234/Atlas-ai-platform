@@ -113,6 +113,7 @@ class ProjectCreate(Closed):
     instructions: str = Field(default="", max_length=4000)
     default_action: Literal["chat", "work"] = "chat"
     privacy: Literal["standard", "strict"] = "standard"
+    hidden: bool = False
 
 
 class ProjectPatch(Closed):

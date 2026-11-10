@@ -133,13 +133,18 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
         from services.orchestrator.interactions import Interaction
 
         req = request("Write a snake game in Python and run it")
+        req.__dict__["conversation_id"] = "123e4567-e89b-12d3-a456-426614174010"
         req.__dict__["daily_user"] = "user@example.com"
         item = Interaction()
         calls: list[dict[str, object]] = []
+        bound: list[dict[str, object]] = []
 
         async def fake_process_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
             calls.append(kwargs)
             i.reponse, i.state = "done answer", "done"
+
+        async def fake_bind(*args, **kwargs):  # type: ignore[no-untyped-def]
+            bound.append(dict(kwargs))
 
         with (
             patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
@@ -163,13 +168,20 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174002"),
             ),
             patch(
+                "services.orchestrator.chat_work._find_binding",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
                 "services.orchestrator.chat_work._ensure_conversation",
-                new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174003"),
+                new=AsyncMock(
+                    return_value=("123e4567-e89b-12d3-a456-426614174003", None)
+                ),
             ),
             patch(
                 "services.orchestrator.chat_work._ensure_work_session",
                 new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174004"),
             ),
+            patch("services.orchestrator.chat_work._bind_conversation", new=fake_bind),
             patch(
                 "services.orchestrator.code_mode.process_work", new=fake_process_work
             ),
@@ -180,6 +192,70 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.task_type, "work")
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["session_id"], "123e4567-e89b-12d3-a456-426614174004")
+        self.assertEqual(len(bound), 1)
+
+    async def test_escalate_reuses_bound_session_on_next_turn(self) -> None:
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.interactions import Interaction
+
+        req = request("Add a score counter to the snake game and run the tests")
+        req.__dict__["conversation_id"] = "123e4567-e89b-12d3-a456-426614174010"
+        req.__dict__["daily_user"] = "user@example.com"
+        item = Interaction()
+        calls: list[dict[str, object]] = []
+
+        async def fake_process_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
+            calls.append(kwargs)
+            i.reponse, i.state = "done answer", "done"
+
+        with (
+            patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+            patch("services.orchestrator.chat_work.work_gate_open", return_value=True),
+            patch(
+                "services.orchestrator.chat_work._identity",
+                new=AsyncMock(
+                    return_value={
+                        "memberships": [
+                            {"org_id": "123e4567-e89b-12d3-a456-426614174000"}
+                        ]
+                    }
+                ),
+            ),
+            patch(
+                "services.orchestrator.chat_work._ensure_scratch_project",
+                new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174002"),
+            ),
+            patch(
+                "services.orchestrator.chat_work._find_binding",
+                new=AsyncMock(
+                    return_value={
+                        "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
+                        "work_session_id": "123e4567-e89b-12d3-a456-426614174004",
+                    }
+                ),
+            ),
+            patch(
+                "services.orchestrator.chat_work._ensure_conversation",
+                new=AsyncMock(side_effect=AssertionError("must not be called")),
+            ) as ensure_conversation,
+            patch(
+                "services.orchestrator.chat_work._ensure_work_session",
+                new=AsyncMock(side_effect=AssertionError("must not be called")),
+            ) as ensure_session,
+            patch(
+                "services.orchestrator.chat_work._bind_conversation", new=AsyncMock()
+            ) as bind,
+            patch(
+                "services.orchestrator.code_mode.process_work", new=fake_process_work
+            ),
+        ):
+            handled = await escalate_to_work(req, item)
+        self.assertTrue(handled)
+        ensure_conversation.assert_not_awaited()
+        ensure_session.assert_not_awaited()
+        bind.assert_not_awaited()
+        self.assertEqual(calls[0]["session_id"], "123e4567-e89b-12d3-a456-426614174004")
+        self.assertEqual(calls[0]["project_id"], "123e4567-e89b-12d3-a456-426614174002")
 
     async def test_escalate_returns_false_without_subject(self) -> None:
         from services.orchestrator.chat_work import escalate_to_work
