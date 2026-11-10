@@ -525,3 +525,8 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 .atlas-rail-open { display:flex; align-items:center; justify-content:center; width:34px; height:34px; margin:2px auto; border-radius:8px; color:var(--atlas-text); background:transparent; }
 /* Hover and focus follow the rail's other buttons. */
 .atlas-rail-open:is(:hover,:focus-visible) { background:var(--atlas-surface); }
+
+/* Sidebar search dialog (Ctrl+K) stays inside the viewport on both themes (owner report 2026-11-10). */
+dialog:has(> input[type="search"]), dialog:has(input[aria-label*="earch"]) { max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); margin:auto; overflow:auto; box-sizing:border-box; }
+/* The search input keeps its full width and never overflows the cut panel. */
+dialog:has(> input[type="search"]) input[type="search"], dialog:has(input[aria-label*="earch"]) input { width:100%; min-width:0; box-sizing:border-box; }

@@ -1041,6 +1041,34 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", start, { once: true }) : start();
 })();
 
+// Sidebar search (Ctrl+K, owner report 2026-11-10): a result must open its chat,
+// and Enter inside the search box must never submit the composer.
+(() => {
+  "use strict";
+  // The search dialog is the native modal holding the search input; the composer
+  // is the host form holding #chat-input. Both conditions must hold, so Enter in
+  // any other input (project dialogs, code workspace) keeps its native behavior.
+  const inSearchDialog = target => target instanceof Element && Boolean(target.closest("dialog")) && Boolean(target.closest("dialog").querySelector("input[type='search'],input[aria-label],input:not([type])"));
+  const composerOf = target => target instanceof Element && target.closest("form")?.querySelector("#chat-input") ? target.closest("form") : null;
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    const target = event.target;
+    if (!inSearchDialog(target)) return;
+    // Never let the host composer treat this Enter as a send.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  document.addEventListener("submit", event => {
+    const form = composerOf(event.target);
+    if (!form) return;
+    const search = document.querySelector("dialog[open] input[type='search']");
+    if (search && search.isConnected && (document.activeElement === search || search.parentElement.contains(document.activeElement))) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }, true);
+})();
+
 // Owner Code workspace: the server flag is authoritative; no UI is mounted otherwise.
 (() => {
   "use strict";
