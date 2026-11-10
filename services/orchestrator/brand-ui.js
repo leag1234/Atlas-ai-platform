@@ -1,4 +1,10 @@
 (() => {
+  // Open WebUI keeps the sidebar closed until a stored preference opens it. On a
+  // computer, Atlas opens it on the first visit only; the user's later choice stays.
+  if (!localStorage.getItem('atlas-sidebar-default')) {
+    localStorage.setItem('atlas-sidebar-default', '1');
+    if (window.innerWidth >= 1024) localStorage.setItem('sidebar', 'true');
+  }
   if (!localStorage.getItem('locale')) {
     const language = (navigator.language || 'fr').split('-')[0];
     localStorage.setItem('locale', ['fr','en','de','es','it'].includes(language) ? language : 'fr');
