@@ -319,3 +319,8 @@ body.atlas-project-open.atlas-side-open #atlas-project { right:calc(var(--atlas-
 .atlas-project-dialog-actions [data-confirm] { background:var(--atlas-text)!important; color:var(--atlas-bg)!important; border-color:var(--atlas-text)!important; }
 /* A failure raised from a dialog is shown inside it. */
 .atlas-project-dialog-error { margin:12px 0 0; color:var(--atlas-accent); font-size:13px; }
+/* Dark move dialog on a phone: its project rows are list entries, not filled buttons (they showed as black bars). */
+html.dark .atlas-project-move-dialog form button, html.dark .atlas-project-move-menu button { background:transparent; border-color:transparent; }
+html.dark .atlas-project-move-dialog form button:hover, html.dark .atlas-project-move-menu button:hover { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); }
+/* The project composer has no resize grip, like the chat composer (Firefox and WebKit drew one). */
+#atlas-project .atlas-project-composer textarea { resize:none; }
