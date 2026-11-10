@@ -60,6 +60,16 @@ receive token usage in the final chunk before `[DONE]`. Responses report the mod
 accepted; responses to `atlas-dev` still report `atlas-code` in `model`. Both direct models try Mistral first and fall back to Scaleway when it is unavailable; the
 assistant runs on Scaleway.
 
+`GET /models` also lists one precise id per routing target, for example `mistral/zai-glm-5-3`,
+`mistral/mistral-large-4` or `scaleway/glm-5.2`, with `owned_by` set to the provider. Calling such an
+id uses that target only: no fallback to another model. Send `"fallback": false` on an alias request
+(`atlas-chat`, `atlas-code`…) to use the first target only. In both cases, when the provider fails,
+the error carries its cause — 429 `rate_limit` (with `Retry-After` when the provider sent one), 402
+`provider_quota`, 503 `provider_unavailable`, 504 `provider_timeout` — as a JSON error with `type`,
+`message` and `provider_status`; the answer never comes from another model. `served_by` (the
+`X-Atlas-Served-By` header and the response field) names the target that answered on every response,
+pinned or not, and pricing and the ledger use the pinned target's price.
+
 **Assistant or direct model.** The assistant adds its own instructions and tools: it searches the web
 and cites what it retrieved, reads attached documents, and answers in the user's language. You do not
 control its system prompt. A direct model does exactly what your messages ask, with your own system
@@ -383,6 +393,7 @@ what is covered on the direct models, as of 2026-11-03:
 - **Applied:**
   - Chat Completions: `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `max_tokens` or `max_completion_tokens`, `n` (up to 8 choices), `logprobs` and `top_logprobs`, `response_format`, tools and `tool_choice`, `parallel_tool_calls`, `reasoning_effort`, `stream` and `stream_options`;
     - `response_format: {"type":"json_schema","json_schema":{"name":...,"schema":{...},"strict":true}}` is guaranteed on every public model (`atlas-dev`/`atlas-code`, `atlas-chat` and the dated aliases): each route targets only providers with native structured output, and Atlas validates the final JSON against the schema with one retry. If the answer still does not validate, a non-streamed answer is HTTP 502 `invalid_response_format` and a stream ends with an error event, never the invalid JSON as a success. A route that cannot guarantee the schema refuses the request with HTTP 400 `unsupported_parameter` (`param: "response_format"`) before any provider call;
+    - The assistant profiles (`atlas`, `atlas-glm`, `atlas-deepseek`, `atlas-qwen`) answer in prose with their own tools and never guarantee a JSON format: any `response_format` other than `text` is refused with HTTP 400 `unsupported_parameter` (`param: "response_format"`). Use `atlas-chat`, `atlas-code` or `atlas-dev` for JSON output.
   - Responses: `top_p`;
   - Messages: `stop_sequences`, `top_p`, `top_k`.
 

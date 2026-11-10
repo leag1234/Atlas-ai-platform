@@ -24,6 +24,8 @@ class TransientProviderError(RuntimeError):
         started: bool = False,
         received_bytes: int | None = None,
         detail: str = "",
+        status: int | None = None,
+        retry_after: str | None = None,
     ) -> None:
         super().__init__(code)
         # Short, key-free cause for logs: an HTTP status or an exception class.
@@ -32,6 +34,8 @@ class TransientProviderError(RuntimeError):
         self.finish_reason = finish_reason
         self.started = started
         self.received_bytes = received_bytes
+        self.status = status
+        self.retry_after = retry_after
 
 
 class ProviderResponseError(RuntimeError):

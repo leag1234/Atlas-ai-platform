@@ -168,7 +168,7 @@ def require(request: Request, scope: str) -> Response | None:
 
 
 def model_names(request: Request) -> list[str]:
-    from api_routing import PUBLIC_MODELS
+    from api_routing import PUBLIC_MODELS, pinned_models
 
     scopes = request.state.api_key.scopes
     # Assistant names keep the full Atlas assistant (tools, search, memory).
@@ -176,7 +176,7 @@ def model_names(request: Request) -> list[str]:
     if "assistant" in scopes:
         names.extend(["atlas", *PROFILES])
     if "model" in scopes:
-        names.extend([*PUBLIC_MODELS, EMBEDDING_MODEL])
+        names.extend([*PUBLIC_MODELS, *pinned_models(), EMBEDDING_MODEL])
         if tts_configured():
             names.append(TTS_MODEL)
         if transcription_configured():
@@ -192,13 +192,14 @@ def messages_client(request: Request) -> bool:
 
 
 def openai_model(name: str) -> dict[str, object]:
-    from api_routing import EFFORTS, PUBLIC_MODELS
+    from api_routing import EFFORTS, PUBLIC_MODELS, pinned_target
 
+    pinned = pinned_target(name)
     return {
         "id": name,
         "object": "model",
         "created": 0,
-        "owned_by": "atlas",
+        "owned_by": name.split("/", 1)[0] if pinned is not None else "atlas",
         **({"reasoning_efforts": list(EFFORTS)} if name in PUBLIC_MODELS else {}),
     }
 
@@ -325,6 +326,22 @@ async def chat(request: Request) -> Response:
         missing = require(request, "assistant")
         if missing is not None:
             return missing
+        output_format = raw.get("response_format")
+        if (
+            isinstance(output_format, dict)
+            and output_format.get("type", "text") != "text"
+        ):
+            # The assistant answers in prose with its own tools: it cannot
+            # guarantee a JSON format, so refuse instead of returning free text.
+            return error(
+                400,
+                "unsupported_parameter",
+                param="response_format",
+                message=str(output_format.get("type"))
+                + " is not supported by "
+                + name
+                + "; use atlas-chat, atlas-code or atlas-dev",
+            )
         if name == "atlas":
             raw["model"] = PROFILES[0]
         raw["atlas_ui"] = False

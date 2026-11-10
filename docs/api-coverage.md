@@ -129,7 +129,7 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 
 ## 5. Differences that are not gaps in the list above
 
-- **Model names.** A model name Atlas does not know (`gpt-5-codex`, `claude-sonnet-5-5`, a typo) is served as `atlas-dev` on the direct formats. Check `model` and `served_by` in the first responses.
+- **Model names.** A model name Atlas does not know (`gpt-5-codex`, `claude-sonnet-5-5`, a typo) is served as `atlas-dev` on the direct formats. Check `model` and `served_by` in the first responses. Precise ids listed by `GET /models` (`mistral/zai-glm-5-3`, `scaleway/glm-5.2`…) pin their routing target, and `"fallback": false` on an alias pins its first target; a pinned failure returns the provider's cause (429 with `Retry-After`, 402, 503, 504) with `provider_status`, never another model.
 - **Tokens.** `input_tokens` counts of the two counting routes are estimates, not a provider tokenizer.
 - **Unknown fields.** A field that is not part of the format answers 400 and the message names it, for example `unknown field messages.2.foo`.
 - **Strict privacy.** The hosted `web_search` tool is refused in strict privacy mode (`web_search_unavailable_in_strict_privacy`).

@@ -62,6 +62,7 @@ from services.orchestrator.artifact_routes import ArtifactHeadersMiddleware
 
 from services.orchestrator.app import app as harness_app
 from services.orchestrator.user_memory_ui import router as user_memory_router
+from services.orchestrator.voice_ui import router as voice_router
 
 from services.orchestrator.api_key_edge import (
     app as key_app,
@@ -124,6 +125,7 @@ async def remove_nearby_location(token: UUID, request: Request) -> Response:
 
 app.include_router(key_ui_router)
 app.include_router(user_memory_router)
+app.include_router(voice_router)
 app.mount("/api/atlas/v1", key_app)
 app.include_router(project_router)
 

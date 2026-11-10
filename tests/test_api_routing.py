@@ -688,3 +688,145 @@ class GenericNameTests(unittest.TestCase):
 
         self.assertIn("atlas-dev", PUBLIC_MODELS)
         self.assertEqual(select_public_model("atlas-dev"), "atlas-code")
+
+
+class PinnedModelTests(unittest.TestCase):
+    def test_models_lists_one_id_per_routing_target(self) -> None:
+        from api_routing import pinned_models
+
+        self.assertEqual(
+            pinned_models(),
+            [
+                "mistral/zai-glm-5-3-flash",
+                "scaleway/deepseek-v4-flash-0731",
+                "mistral/mistral-large-4",
+                "mistral/zai-glm-5-3",
+                "scaleway/glm-5.2",
+            ],
+        )
+
+    def test_pinned_id_selects_its_target_only(self) -> None:
+        from api_routing import pinned_target, select_public_model, targets
+
+        self.assertEqual(select_public_model("scaleway/glm-5.2"), "scaleway/glm-5.2")
+        self.assertEqual(
+            select_public_model("mistral/mistral-large-4"), "mistral/mistral-large-4"
+        )
+        usage, entries = targets("scaleway/glm-5.2", "low", pinned=True)
+        self.assertEqual(usage, "scaleway/glm-5.2")
+        self.assertEqual(
+            [(e.provider, e.model) for e in entries], [("scaleway", "glm-5.2")]
+        )
+        self.assertIsNone(pinned_target("atlas-chat"))
+        self.assertIsNone(pinned_target("mistral/unknown-model"))
+
+    def test_pinned_plan_has_no_fallback_and_uses_the_target_price(self) -> None:
+        import json as _json
+        import dev_gateway
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Reply OK"}],
+                "max_tokens": 20,
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+        ):
+            plan = dev_gateway.prepare_api(
+                request, "scaleway/glm-5.2", "key-test", pinned=True
+            )
+        self.assertIsNone(plan.fallback)
+        self.assertEqual(plan.provider, "scaleway")
+        self.assertEqual(plan.model, "glm-5.2")
+        self.assertEqual(_json.loads(plan.body)["model"], "glm-5.2")
+        self.assertEqual(str(plan.input_rate), "1.8")
+        self.assertEqual(str(plan.output_rate), "5.5")
+
+    def test_fallback_false_on_an_alias_keeps_only_the_first_target(self) -> None:
+        import dev_gateway
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Reply OK"}],
+                "max_tokens": 20,
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+        ):
+            plan = dev_gateway.prepare_api(
+                request, "atlas-chat", "key-test", fallback=False
+            )
+        self.assertIsNone(plan.fallback)
+        assert plan.fallback is None
+        self.assertEqual((plan.provider, plan.model), ("mistral", "zai-glm-5-3"))
+
+    def test_default_alias_behaviour_keeps_the_fallback(self) -> None:
+        import dev_gateway
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Reply OK"}],
+                "max_tokens": 20,
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+        ):
+            plan = dev_gateway.prepare_api(request, "atlas-chat", "key-test")
+        fallback = plan.fallback
+        self.assertIsNotNone(fallback)
+        assert fallback is not None
+        self.assertEqual((fallback.provider, fallback.model), ("scaleway", "glm-5.2"))
+
+    def test_pinned_call_never_uses_the_fallback_on_429(self) -> None:
+        import asyncio
+        import dev_gateway
+        from packages.dev_request import Request
+        from provider_retry import TransientProviderError
+
+        request = Request.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Reply OK"}],
+                "max_tokens": 20,
+                "reasoning_effort": "low",
+            }
+        )
+        with patch.dict(
+            os.environ,
+            {"MISTRAL_API_KEY": "test-only", "SCW_GENERATIVE_API_KEY": "test-only"},
+        ):
+            plan = dev_gateway.prepare_api(
+                request, "mistral/zai-glm-5-3", "key-test", pinned=True
+            )
+        self.assertIsNone(plan.fallback)
+        calls = 0
+
+        async def failing_transport(requested_plan: object) -> AsyncIterator[bytes]:
+            nonlocal calls
+            calls += 1
+            raise TransientProviderError(
+                "provider_error", detail="http_429", status=429, retry_after="7"
+            )
+            yield b""
+
+        async def collect() -> None:
+            with patch.object(dev_gateway, "transport", failing_transport):
+                async for _ in dev_gateway.events(plan):
+                    pass
+
+        with self.assertRaises(TransientProviderError) as raised:
+            asyncio.run(collect())
+        self.assertEqual(calls, 1)
+        self.assertEqual(raised.exception.status, 429)
+        self.assertEqual(raised.exception.retry_after, "7")

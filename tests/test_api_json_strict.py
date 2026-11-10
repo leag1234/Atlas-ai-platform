@@ -156,6 +156,21 @@ class PerRouteSupportTableTests(unittest.TestCase):
                 with self.subTest(model=name, effort=effort):
                     self.assertTrue(supports_structured_output(name, effort))
 
+    def test_pinned_ids_follow_their_provider_support(self) -> None:
+        from api_routing import pinned_target
+        from provider_settings import presets
+
+        for name in ("mistral/zai-glm-5-3", "scaleway/glm-5.2"):
+            target = pinned_target(name)
+            if target is None:
+                continue
+            with self.subTest(name=name):
+                expected = (
+                    presets().get(target.provider, {}).get("json_response_format")
+                    is True
+                )
+                self.assertEqual(supports_structured_output(name, "none"), expected)
+
     def test_unsupported_provider_route_is_reported(self) -> None:
         with patch(
             "api_routing.config",
@@ -256,6 +271,33 @@ class StrictJsonApiTests(unittest.TestCase):
                     self.assertIn(
                         "json_schema strict is not supported by", error["message"]
                     )
+        self.assertEqual(self.env.plans, [])
+
+    def test_assistant_profiles_refuse_json_formats(self) -> None:
+        lax = {"type": "json_schema", "json_schema": {"name": "x", "schema": SCHEMA}}
+        _, secret = self.env.store.create(
+            org_id="fictional-org",
+            member_id="fictional-member",
+            subject="tester@example.invalid",
+            budget_user="fictional-user",
+            name="assistant-json",
+            scopes=["assistant"],
+            created_by="operator",
+            daily_requests=1000,
+            daily_micro_eur=10000000,
+        )
+        self.env.headers = {"Authorization": "Bearer " + secret}
+        for model in ("atlas", "atlas-glm", "atlas-deepseek", "atlas-qwen"):
+            for output_format in (FORMAT, lax, {"type": "json_object"}):
+                with self.subTest(model=model, format=output_format["type"]):
+                    reply = self.env.post(
+                        self.env.body(model, response_format=output_format)
+                    )
+                    self.assertEqual(reply.status_code, 400, reply.text)
+                    error = reply.json()["error"]
+                    self.assertEqual(error["type"], "unsupported_parameter")
+                    self.assertEqual(error["param"], "response_format")
+                    self.assertIn("atlas-chat", error["message"])
         self.assertEqual(self.env.plans, [])
 
     def test_non_strict_json_schema_is_not_refused(self) -> None:

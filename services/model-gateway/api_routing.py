@@ -42,13 +42,63 @@ def select_public_model(name: str) -> str:
     """Unknown client brand names retain the historic code-default behavior."""
     if name.startswith("raw/"):
         raise ValueError("invalid_model")
+    if pinned_target(name) is not None:
+        return name
     return public_model(name) if name in PUBLIC_MODELS else "atlas-code"
 
 
+def pinned_target(name: str) -> Target | None:
+    """The single routing target a precise model id pins, or None for aliases."""
+    provider, separator, model = name.partition("/")
+    if not separator or not provider or not model:
+        return None
+    for usage in ("atlas-code", "atlas-chat"):
+        for effort in EFFORTS:
+            entries = config().get("usages", {}).get(usage, {}).get(effort)
+            if not isinstance(entries, list):
+                continue
+            for item in entries:
+                if (
+                    isinstance(item, dict)
+                    and item.get("provider") == provider
+                    and item.get("model") == model
+                ):
+                    return Target(
+                        provider,
+                        model,
+                        str(item["effort"]) if item.get("effort") else None,
+                        int(item["context"]),
+                        "owned" if item.get("privacy") == "owned" else "shared",
+                    )
+    return None
+
+
+def pinned_models() -> list[str]:
+    """Precise model ids, one per routing target, in configuration order."""
+    ids: list[str] = []
+    for usage in ("atlas-code", "atlas-chat"):
+        for effort in EFFORTS:
+            entries = config().get("usages", {}).get(usage, {}).get(effort)
+            if not isinstance(entries, list):
+                continue
+            for item in entries:
+                if not isinstance(item, dict):
+                    continue
+                identifier = f"{item['provider']}/{item['model']}"
+                if identifier not in ids:
+                    ids.append(identifier)
+    return ids
+
+
 def targets(
-    name: str, effort: str, *, strict: bool = False
+    name: str, effort: str, *, strict: bool = False, pinned: bool = False
 ) -> tuple[str, tuple[Target, ...]]:
     usage = public_model(name)
+    if pinned:
+        target = pinned_target(name)
+        if target is None:
+            raise ValueError("invalid_model")
+        return usage, (target,)
     entries = config().get("usages", {}).get(usage, {}).get(effort)
     if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
         raise ValueError("invalid_model")
@@ -82,7 +132,7 @@ def supports_structured_output(name: str, effort: str) -> bool:
     from provider_settings import presets
 
     try:
-        _, entries = targets(name, effort)
+        _, entries = targets(name, effort, pinned=pinned_target(name) is not None)
     except ValueError:
         return False
     declared = config().get("structured_output", {})
