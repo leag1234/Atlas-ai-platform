@@ -102,7 +102,8 @@
 .atlas-project-approval button:first-of-type {background:var(--project-ink);color:var(--project-bg);}
 .atlas-project-notice {grid-column:1/-1;color:var(--project-accent);font-size:13px;}
 .atlas-project-notice:not(:empty) {padding:8px 24px;border-top:1px solid var(--project-line);}
-.atlas-project-dialog {position:fixed;inset:0;margin:auto;width:min(460px,90vw);height:fit-content;border:1px solid var(--project-line);border-radius:16px;padding:28px;background:var(--project-bg);color:var(--project-ink);}
+/* Dialogs are appended to document.body, outside .atlas-project, so they carry their own theme variables. */
+.atlas-project-dialog {--project-bg:#faf9f6;--project-card:#fffefa;--project-line:#e3e1db;--project-ink:#1a1a18;--project-muted:#73716a;--project-accent:#c2410c;--project-hover:#f0eee8;position:fixed;inset:0;margin:auto;width:min(460px,90vw);height:fit-content;border:1px solid var(--project-line);border-radius:16px;padding:28px;background:var(--project-bg);color:var(--project-ink);}
 .atlas-project-dialog::backdrop {background:#0005;}
 .atlas-project-dialog label,.atlas-project-dialog input {display:block;width:100%;margin:14px 0;}
 .atlas-project-dialog button {margin-right:8px;cursor:pointer;}

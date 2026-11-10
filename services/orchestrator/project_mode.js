@@ -925,6 +925,16 @@
     const values = [...(message.files || []), ...(chat.files || [])];
     return [...new Set(values.map(value => typeof value === 'string' ? value : value?.id).filter(value => typeof value === 'string'))];
   }
+  function nativeParts(message, chat) {
+    const parts = [];
+    const pattern = /\[([^\]]+)\]\((\/api\/atlas\/artifacts\/([0-9a-f]{32})\/versions\/(\d+)\/open)#([^)]+)\)/g;
+    for (const match of message.content.matchAll(pattern)) {
+      const params = new URLSearchParams(match[5]);
+      parts.push({type:'artifact_link', artifact:match[3], version:Number(match[4]), title:params.get('title') || match[1], slot:params.get('slot') || 'top'});
+    }
+    for (const id of nativeFiles(message, chat)) parts.push({type:'file', file_id:id});
+    return parts;
+  }
   async function importNativeChat(project, chatId) {
     const original = await fetch('/api/v1/chats/' + encodeURIComponent(chatId), {credentials:'same-origin'});
     if (!original.ok) throw Object.assign(new Error('native_chat'), {status:original.status});
@@ -954,7 +964,7 @@
       if (Number.isNaN(createdAt)) createdAt = Date.now() + index;
       if (createdAt <= previousCreatedAt) createdAt = previousCreatedAt + 1;
       previousCreatedAt = createdAt;
-      return {role:message.role,content:message.content.trim(),created_at:new Date(createdAt).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean)};
+      return {role:message.role,content:message.content.trim(),created_at:new Date(createdAt).toISOString(),attachment_file_ids:nativeFiles(message,chat).map(id => transferred.get(id)).filter(Boolean),parts:nativeParts(message,chat).map(part => part.type === 'file' ? {type:'file', file_id:transferred.get(part.file_id)} : part).filter(part => part.type !== 'file' || part.file_id)};
     });
     const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
     const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
