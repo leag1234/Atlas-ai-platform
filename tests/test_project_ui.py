@@ -50,7 +50,11 @@ class ProjectUITests(unittest.TestCase):
                 row for row in locale.splitlines() if row.strip().startswith(key + ":")
             )
             self.assertEqual(line.count("','"), 4, key)
-        self.assertIn("window.confirm(`${t('confirmDeleteConversation')}", script)
+        # Confirmations are Atlas dialogs, never the browser's own prompt.
+        self.assertNotIn("window.confirm", script)
+        self.assertIn(
+            "confirmDialog(t('confirmDeleteConversation'), conversation.title", script
+        )
         self.assertIn("'If-Match':`\"${conversation.revision}\"`", script)
         self.assertIn("'/conversations?archived=1'", script)
         self.assertIn("'q=' + encodeURIComponent(value)", script)
@@ -145,3 +149,20 @@ class ProjectUITests(unittest.TestCase):
             {"ATLAS_RETRIEVAL_URL": f"http://127.0.0.1:{server.server_port}"},
         ):
             self.assertEqual(TestClient(app).get("/projects").status_code, 503)
+
+
+class TurnVisibilityTests(unittest.TestCase):
+    def test_the_running_turn_survives_transcript_rerenders(self) -> None:
+        script = Path("services/orchestrator/project_mode.js").read_text()
+        body = script[script.index("  function renderTurns() {") :]
+        body = body[: body.index("\n  }\n")]
+        self.assertIn("keepPendingTurn();", body)
+        self.assertIn("pendingTurn = {article: pending, question: asked", script)
+        self.assertIn("if (pendingDraft) { input.value = pendingDraft;", script)
+
+    def test_side_view_never_covers_the_project_composer(self) -> None:
+        css = Path("services/orchestrator/project_mode.css").read_text()
+        self.assertIn(
+            "body.atlas-project-open.atlas-side-open #atlas-project { right:calc(var(--atlas-side-width,45vw) + 14px);",
+            css,
+        )

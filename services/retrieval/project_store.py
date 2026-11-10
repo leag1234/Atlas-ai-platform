@@ -513,6 +513,9 @@ class Scope:
         org, project = self.identity.org, self.project_id
         self.db.execute("SELECT set_config('atlas.deleting','true',true)")
         tables = (
+            # A project that ever had a scheduled task could not be deleted: its
+            # rows kept the project foreign key and the request failed with 422.
+            "scheduled_tasks",
             "runner_commands",
             "runner_sessions",
             "runner_grants",

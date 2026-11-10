@@ -32,7 +32,34 @@
     target.replaceChildren(node('span', t(message)));
 
   }
-  function failure(error) { if (error.name !== 'AbortError' && notice) errorNotice(notice, error); }
+  function failure(error) {
+    if (error.name === 'AbortError') return;
+    // A failure raised from an open dialog is shown in that dialog: the page notice is behind it.
+    const dialog = [...document.querySelectorAll('dialog.atlas-project-dialog[open]')].pop();
+    if (dialog) {
+      let target = dialog.querySelector('.atlas-project-dialog-error');
+      if (!target) { target = node('p', null, 'atlas-project-dialog-error'); target.setAttribute('role', 'alert'); dialog.append(target); }
+      errorNotice(target, error);
+      dialog.querySelectorAll('button[type=submit]').forEach(control => { control.disabled = false; });
+      return;
+    }
+    if (notice) errorNotice(notice, error);
+  }
+  // Confirmations use an Atlas dialog like the rest of the interface, never the browser's own prompt.
+  function confirmDialog(message, detail, actionKey) {
+    return new Promise(resolve => {
+      const dialog = node('dialog', null, 'atlas-project-dialog atlas-project-confirm');
+      const actions = node('div', null, 'atlas-project-dialog-actions');
+      let answer = false;
+      const accept = node('button', t(actionKey)); accept.type = 'button'; accept.dataset.confirm = '';
+      accept.addEventListener('click', () => { answer = true; dialog.close(); });
+      const cancel = node('button', t('cancel')); cancel.type = 'button'; cancel.addEventListener('click', () => dialog.close());
+      actions.append(accept, cancel);
+      dialog.append(node('h2', message)); if (detail) dialog.append(node('p', detail)); dialog.append(actions);
+      dialog.addEventListener('close', () => { dialog.remove(); resolve(answer); }, {once:true});
+      document.body.append(dialog); dialog.showModal(); cancel.focus();
+    });
+  }
   function locator(value) {
     if (!value) return t('unknown');
     if (value.kind === 'text') return `${t('text')}, ${t('characters')} ${value.start}–${value.end}`;
@@ -194,7 +221,9 @@
         card.append(node('small', relativeTime(project.updated_at || project.created_at)));
         const menu = node('span', null, 'atlas-project-card-menu');
         if (project.role === 'owner' || !project.role) {
-          menu.append(button(project.state === 'archived' ? 'restore' : 'archive', event => { event.stopPropagation(); projectAction(project, project.state === 'archived' ? 'active' : 'archived'); }), button('deleteProject', event => { event.stopPropagation(); deleteProject(project); }));
+          menu.append(button(project.state === 'archived' ? 'restore' : 'archive', event => { event.stopPropagation(); projectAction(project, project.state === 'archived' ? 'active' : 'archived'); }));
+          // The server refuses to delete an archived project (read and chat only): offer it on active projects, after a restore.
+          if (project.state !== 'archived') menu.append(button('deleteProject', event => { event.stopPropagation(); deleteProject(project); }));
         }
         card.append(menu); card.addEventListener('click', guarded(() => choose({org:scope.org,project:project.id}))); grid.append(card);
       }
@@ -216,7 +245,9 @@
   function globalTaskDialog(value, template) {
     const dialog=node('dialog',null,'atlas-project-dialog atlas-project-task-dialog'), form=node('form'); dialog.dataset.taskDialog='';
     const project=node('select'), name=node('input'), instruction=node('textarea'), frequency=node('select'), days=node('input'), time=node('input'), zone=node('input'), weekday=node('select'), target=node('input'), cap=node('input');
-    for (const item of projects.filter(item => item.role !== 'viewer')) project.append(new Option(item.name,item.id)); project.required=true; project.value=value?.project_id || projects.find(item => item.role !== 'viewer')?.id || '';
+    // Archived projects accept no new task: they are not offered.
+    const writable = projects.filter(item => item.role !== 'viewer' && (item.state !== 'archived' || item.id === value?.project_id));
+    for (const item of writable) project.append(new Option(item.name,item.id)); project.required=true; project.value=value?.project_id || writable[0]?.id || '';
     project.disabled=Boolean(value); name.required=true;name.maxLength=120;name.value=value?.name || template?.name || '';
     instruction.required=true;instruction.maxLength=8000;instruction.rows=4;instruction.value=value?.instruction || template?.instruction || '';
     for (const key of ['daily','every','weekly']) frequency.append(new Option(t('taskFrequency_'+key),key));frequency.value=value?.schedule.frequency || template?.schedule.frequency || 'daily';
@@ -237,7 +268,7 @@
     const tabs=node('div',null,'atlas-project-tabs');tabs.setAttribute('role','tablist');let tab='yours';
     const toolbar=node('div',null,'atlas-project-list-toolbar'), search=node('input'), project=node('select'), status=node('select'), sort=node('select'); search.type='search';search.placeholder=t('taskSearch');search.setAttribute('aria-label',t('taskSearch')); project.setAttribute('aria-label',t('taskFilterProject'));status.setAttribute('aria-label',t('taskFilterStatus'));sort.setAttribute('aria-label',t('taskSort'));
     project.append(new Option(t('taskAll'),''),...projects.map(item=>new Option(item.name,item.id))); status.append(new Option(t('taskAll'),''),new Option(t('taskActive'),'active'),new Option(t('taskPaused'),'paused'),new Option(t('taskFailing'),'failing'));sort.append(new Option(t('taskSortNext'),'next'),new Option(t('taskSortName'),'name'),new Option(t('taskSortLast'),'last'));
-    const grid=node('div',null,'atlas-project-grid atlas-project-task-grid'); const render=()=>{grid.replaceChildren();if(tab==='templates'){for(const template of taskTemplates()){const card=node('article',null,'atlas-project-task-card');card.append(node('h2',template.name),node('p',template.instruction),node('p',taskScheduleWords(template),'atlas-project-detail'),button('taskNew',()=>globalTaskDialog(null,template)));grid.append(card);}return;} let values=items.filter(item=>(item.name+' '+item.instruction+' '+item.project_name).toLocaleLowerCase().includes(search.value.toLocaleLowerCase())&&(!project.value||item.project_id===project.value)&&(!status.value||(status.value==='active'?item.enabled:status.value==='paused'?!item.enabled:['failed','budget_cap'].includes(item.last_result?.status))));values.sort((a,b)=>sort.value==='name'?a.name.localeCompare(b.name):sort.value==='last'?Date.parse(b.last_result?.at||0)-Date.parse(a.last_result?.at||0):Date.parse(a.next_run)-Date.parse(b.next_run));for(const item of values){const card=node('article',null,'atlas-project-task-card');card.dataset.taskId=item.id;const seen=Number(localStorage.getItem(`atlas-task-seen:${item.id}`)||0), fresh=Date.parse(item.last_result?.at||0)>seen;const title=node('button',item.name);title.className='atlas-project-task-title';title.addEventListener('click',guarded(()=>globalTaskDialog(item)));const chip=node('span',item.project_name,'atlas-project-task-project');card.append(title,chip,node('p',item.instruction,'atlas-project-task-excerpt'));const footer=node('p',`${item.enabled?t('taskActive'):t('taskPaused')} · ${taskScheduleWords(item)}`,'atlas-project-detail');if(fresh){const dot=node('span','', 'atlas-project-task-dot');dot.title=t('taskNewOutput');footer.prepend(dot);}card.append(footer);const actions=node('div',null,'atlas-project-task-actions');if(item.project_role!=='viewer'){actions.append(button('taskEdit',()=>globalTaskDialog(item)),button(item.enabled?'taskPause':'taskResume',async()=>{await request(taskPath(item),{method:'PUT',headers:{'If-Match':`"${item.revision}"`},body:{...taskInput(item),enabled:!item.enabled}});tasksPage();}),button('taskRun',async()=>{await api(taskPath(item)+'/run','POST',{});tasksPage();}),button('remove',async()=>{if(window.confirm(t('taskDelete'))){await request(taskPath(item),{method:'DELETE',headers:{'If-Match':`"${item.revision}"`}});tasksPage();}}));}if(item.last_result?.conversation_id)actions.append(button('taskConversation',()=>choose({org:scope.org,project:item.project_id,conversation:item.last_result.conversation_id})));card.append(actions);grid.append(card);}if(!values.length)grid.append(node('p',t('taskEmpty'),'atlas-project-empty'));for(const item of items) localStorage.setItem(`atlas-task-seen:${item.id}`,String(Date.now()));};
+    const grid=node('div',null,'atlas-project-grid atlas-project-task-grid'); const render=()=>{grid.replaceChildren();if(tab==='templates'){for(const template of taskTemplates()){const card=node('article',null,'atlas-project-task-card');card.append(node('h2',template.name),node('p',template.instruction),node('p',taskScheduleWords(template),'atlas-project-detail'),button('taskNew',()=>globalTaskDialog(null,template)));grid.append(card);}return;} let values=items.filter(item=>(item.name+' '+item.instruction+' '+item.project_name).toLocaleLowerCase().includes(search.value.toLocaleLowerCase())&&(!project.value||item.project_id===project.value)&&(!status.value||(status.value==='active'?item.enabled:status.value==='paused'?!item.enabled:['failed','budget_cap'].includes(item.last_result?.status))));values.sort((a,b)=>sort.value==='name'?a.name.localeCompare(b.name):sort.value==='last'?Date.parse(b.last_result?.at||0)-Date.parse(a.last_result?.at||0):Date.parse(a.next_run)-Date.parse(b.next_run));for(const item of values){const card=node('article',null,'atlas-project-task-card');card.dataset.taskId=item.id;const seen=Number(localStorage.getItem(`atlas-task-seen:${item.id}`)||0), fresh=Date.parse(item.last_result?.at||0)>seen;const title=node('button',item.name);title.className='atlas-project-task-title';title.addEventListener('click',guarded(()=>globalTaskDialog(item)));const chip=node('span',item.project_name,'atlas-project-task-project');card.append(title,chip,node('p',item.instruction,'atlas-project-task-excerpt'));const footer=node('p',`${item.enabled?t('taskActive'):t('taskPaused')} · ${taskScheduleWords(item)}`,'atlas-project-detail');if(fresh){const dot=node('span','', 'atlas-project-task-dot');dot.title=t('taskNewOutput');footer.prepend(dot);}card.append(footer);const actions=node('div',null,'atlas-project-task-actions');if(item.project_role!=='viewer'){actions.append(button('taskEdit',()=>globalTaskDialog(item)),button(item.enabled?'taskPause':'taskResume',async()=>{await request(taskPath(item),{method:'PUT',headers:{'If-Match':`"${item.revision}"`},body:{...taskInput(item),enabled:!item.enabled}});tasksPage();}),button('taskRun',async()=>{await api(taskPath(item)+'/run','POST',{});tasksPage();}),button('remove',async()=>{if(await confirmDialog(t('taskDelete'),item.title||item.name||null,'remove')){await request(taskPath(item),{method:'DELETE',headers:{'If-Match':`"${item.revision}"`}});tasksPage();}}));}if(item.last_result?.conversation_id)actions.append(button('taskConversation',()=>choose({org:scope.org,project:item.project_id,conversation:item.last_result.conversation_id})));card.append(actions);grid.append(card);}if(!values.length)grid.append(node('p',t('taskEmpty'),'atlas-project-empty'));for(const item of items) localStorage.setItem(`atlas-task-seen:${item.id}`,String(Date.now()));};
     for(const [key,label] of [['yours','taskYours'],['templates','taskTemplates']]){const control=button(label,()=>{tab=key;render();});control.setAttribute('role','tab');control.setAttribute('aria-selected',String(key===tab));tabs.append(control);} search.addEventListener('input',render);project.addEventListener('change',render);status.addEventListener('change',render);sort.addEventListener('change',render);toolbar.append(tabs,search,project,status,sort);center.append(toolbar);if(items.some(item=>!item.enabled&&item.pause_reason==='three_failures'))center.append(node('p',t('taskPausedBanner'),'atlas-project-task-banner'));center.append(grid);render();
   }
   const projectSummaries = new Map();
@@ -257,14 +288,13 @@
     }, projectInfo.name);
   }
   async function projectAction(project, state) {
-    const message = `${state === 'archived' ? t('confirmArchiveProject') : t('restore')} ${project.name}?`;
-    if (!window.confirm(message)) return;
+    if (state === 'archived' && !await confirmDialog(t('confirmArchiveProject'), project.name, 'archive')) return;
     const value = await jsonResponse(await request(`/api/atlas/orgs/${scope.org}/projects/${project.id}`, {method:'PATCH', headers:{'If-Match':`"${project.revision}"`}, body:{state}}), generation);
     projects = projects.map(item => item.id === project.id ? value : item); navigation();
     if (scope.project === project.id && state === 'archived') await choose({org:scope.org}); else projectsPage();
   }
   async function deleteProject(project) {
-    if (!window.confirm(`${t('confirmDeleteProject')}\n\n${project.name}`)) return;
+    if (!await confirmDialog(t('confirmDeleteProject'), project.name, 'deleteProject')) return;
     await request(`/api/atlas/orgs/${scope.org}/projects/${project.id}`, {method:'DELETE', headers:{'If-Match':`"${project.revision}"`}});
     projects = projects.filter(item => item.id !== project.id); projectSummaries.clear();
     await choose({org:scope.org});
@@ -278,7 +308,7 @@
       heading.lastChild.textContent = projectInfo.name;
     } else {
       const title = node('div', null, 'atlas-project-page-heading'); title.append(node('h1',projectInfo.name), iconButton('renameProject','✎',renameProject));
-      if (projectInfo.role === 'owner' || !projectInfo.role) title.append(button(projectInfo.state === 'archived' ? 'restore' : 'archive', () => projectAction(projectInfo, projectInfo.state === 'archived' ? 'active' : 'archived')), button('deleteProject', () => deleteProject(projectInfo)));
+      if (projectInfo.role === 'owner' || !projectInfo.role) title.append(button(projectInfo.state === 'archived' ? 'restore' : 'archive', () => projectAction(projectInfo, projectInfo.state === 'archived' ? 'active' : 'archived')), ...(projectInfo.state === 'archived' ? [] : [button('deleteProject', () => deleteProject(projectInfo))]));
       heading.append(title);
       if (projectInfo.description) heading.append(node('p', projectInfo.description, 'atlas-project-description'));
     }
@@ -343,7 +373,7 @@
         actions.append(
           button('renameConversation', () => nameDialog('renameConversation', name => changeConversation(conversation, 'PATCH', {title:name}), conversation.title, 200)),
           button(conversation.archived ? 'restore' : 'archive', () => changeConversation(conversation, 'PATCH', {archived:!conversation.archived})),
-          button('deleteConversation', async () => { if (window.confirm(`${t('confirmDeleteConversation')}\n\n${conversation.title}`)) await changeConversation(conversation, 'DELETE'); }));
+          button('deleteConversation', async () => { if (await confirmDialog(t('confirmDeleteConversation'), conversation.title, 'deleteConversation')) await changeConversation(conversation, 'DELETE'); }));
         menu.append(summary, actions); row.append(menu);
       }
       if (conversation.snippet) row.append(node('p', conversation.snippet, 'atlas-project-detail atlas-project-conversation-snippet'));
@@ -394,9 +424,16 @@
     arrow.append(shaft); send.append(arrow);
     stop = button('stop', cancel); stop.disabled = true; stop.dataset.stop = '';
     input.placeholder = t('composerPlaceholder');
+    // While the first message creates its conversation, the text stays visible in the rebuilt composer.
+    if (pendingDraft) { input.value = pendingDraft; input.disabled = true; send.disabled = true; }
     const tools = node('div', null, 'atlas-project-composer-tools');
     uploads.setAttribute('aria-label',t('upload')); uploads.hidden = true;
-    const mic = iconButton('dictate', '🎙', () => dictate());
+    const mic = iconButton('dictate', '', () => dictate());
+    // Same microphone glyph and round control as the chat composer.
+    const glyph = document.createElementNS('http://www.w3.org/2000/svg','svg'); glyph.setAttribute('viewBox','0 0 24 24'); glyph.setAttribute('fill','none'); glyph.setAttribute('stroke','currentColor'); glyph.setAttribute('stroke-width','1.6'); glyph.setAttribute('width','18'); glyph.setAttribute('height','18'); glyph.setAttribute('aria-hidden','true');
+    const capsule = document.createElementNS('http://www.w3.org/2000/svg','path'); capsule.setAttribute('stroke-linecap','round'); capsule.setAttribute('stroke-linejoin','round');
+    capsule.setAttribute('d','M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z');
+    glyph.append(capsule); mic.append(glyph);
     mic.dataset.voice = ''; mic.hidden = true;
     tools.append(iconButton('upload','+', () => uploads.click()), uploads, mic, sessionLabel, stop, send);
     composer.append(input, tools);
@@ -415,6 +452,16 @@
     await setAction();
     await replay(); await restoreSession(); await panels();
     if (current === generation) { input.focus(); schedule(current); loadVoiceConfig(); }
+  }
+  // The turn being produced: re-renders from the server list must not erase it (the transcript
+  // stayed empty for tens of seconds while a turn ran).
+  let pendingTurn = null, pendingDraft = '';
+  function keepPendingTurn() {
+    if (!pendingTurn || !transcript) return;
+    const last = turns[turns.length - 1];
+    const listed = !!last && last.content_refs.some(ref => ref.kind === 'question' && ref.text === pendingTurn.text) && !last.content_refs.some(ref => ref.kind !== 'question' && ref.text);
+    pendingTurn.question.hidden = listed;
+    transcript.append(pendingTurn.article);
   }
   function renderTurns() {
     transcript.replaceChildren();
@@ -462,6 +509,7 @@
       if(panelData.scheduled.can_manage && task.can_confirm !== false) card.append(button('taskConfirm',async () => {await api(base()+'/scheduled-tasks/'+task.id+'/confirm','POST',{});await panels();}));
       transcript.append(card);
     }
+    keepPendingTurn();
   }
   function withoutFileLinks(text) {
     const cards = panelData?.deliverables || [];
@@ -537,6 +585,7 @@
     recorder.ondataavailable = event => { if (event.data.size) micChunks.push(event.data); };
     recorder.onstop = async () => {
       micStream?.getTracks().forEach(track => track.stop()); micStream = null; recorder = null;
+      root?.querySelector('[data-voice]')?.setAttribute('aria-pressed', 'false');
       const form = new FormData();
       form.append('file', new Blob(micChunks, { type: 'audio/webm' }), 'dictation.webm');
       form.append('model', 'atlas-stt');
@@ -549,6 +598,8 @@
       } catch { say(t('voiceUnavailable')); }
     };
     recorder.start();
+    // The control shows that it is listening, like the chat microphone.
+    root?.querySelector('[data-voice]')?.setAttribute('aria-pressed', 'true');
   }
   async function loadVoiceConfig() {
     try {
@@ -714,9 +765,9 @@
     event.preventDefault(); if (sending || configuring || uploading || !input.value.trim()) return;
     const question = input.value.trim();
     if (!scope.conversation) {
-      configuring = true; controls();
+      configuring = true; pendingDraft = question; controls();
       try { const conversation = await api(base() + '/conversations', 'POST', {title:shortTitle(question)}); await choose({org:scope.org,project:scope.project,conversation:conversation.id}); input.value = question; }
-      finally { configuring = false; controls(); }
+      finally { configuring = false; pendingDraft = ''; controls(); }
     }
     input.value = '';
     const current = generation;
@@ -726,7 +777,9 @@
     const elapsed = node('span', '', 'atlas-project-elapsed'); const started = Date.now();
     thinking.append(node('strong', 'Atlas'), node('span', t('thinking')), elapsed);
     const timer = setInterval(() => { const seconds = Math.floor((Date.now() - started) / 1000); elapsed.textContent = seconds >= 10 ? ` · ${seconds} ${t('seconds')}` : ''; }, 1000);
-    pending.append(node('pre', question, 'question'), thinking, answer); transcript.append(pending);
+    const asked = node('pre', question, 'question');
+    pending.append(asked, thinking, answer); transcript.append(pending);
+    pendingTurn = {article: pending, question: asked, text: question};
     try {
       // The scoped agent can answer directly or call tools; no user mode selection.
       action = 'work';
@@ -750,6 +803,7 @@
     } catch (error) { if (current === generation) failure(error); }
     finally {
       clearInterval(timer); thinking.remove(); pending.classList.remove('atlas-project-turn-running');
+      if (pendingTurn?.article === pending) pendingTurn = null;
       if (current === generation) {
         sending = false; configuring = true; controls();
         try { await refreshTurns(); await replay(); if (session) session = await api(base() + '/work-sessions/' + session.id); [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]); await panels(); }
@@ -910,6 +964,10 @@
     const link = node('a', t('download')); link.href = src; link.download = file.relative_path; notice.append(' ', link);
   }
   async function previewDeliverable(item) {
+    // An HTML deliverable is a page or an app: show the file itself in the sandboxed frame. Its
+    // derived preview is a text extract, which displayed a fragment of the source instead.
+    const produced = files.find(file => file.version_id === item.file_version_id);
+    if (produced && /\.html?$/i.test(produced.relative_path)) { await previewFile(produced); return; }
     const src = projectURL(base() + '/deliverables/' + item.id + '/preview');
     const current = generation, response = await request(src);
     const type = response.headers.get('content-type') || '';
@@ -1004,7 +1062,7 @@
     const chat = await original.json(), branch = nativeBranch(chat);
     if (!branch.length || branch.length > 500) throw new Error('native_chat_shape');
     const allFiles = [...new Set(branch.flatMap(message => nativeFiles(message, chat)))];
-    if (allFiles.length && !window.confirm(moveText('confirm'))) return;
+    if (allFiles.length && !await confirmDialog(moveText('confirm'), null, 'accept')) return;
     const projectBase = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
     let folders = await list(projectBase + '/folders');
     let folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id);

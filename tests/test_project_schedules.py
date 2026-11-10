@@ -51,6 +51,22 @@ class ScheduledTaskTests(ProjectIsolationTests):
                 (task["id"],),
             )
 
+    def test_a_project_with_a_scheduled_task_can_be_deleted(self) -> None:
+        # Staging 2026-11-10: the delete failed with 422 (foreign key from
+        # scheduled_tasks) and the interface showed nothing.
+        created = self.request(
+            "POST", self.project_path() + "/scheduled-tasks", "owner", self.payload()
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        project = self.request("GET", self.project_path(), "owner").json()
+        deleted = self.request(
+            "DELETE", self.project_path(), "owner", match=project["revision"]
+        )
+        self.assertIn(deleted.status_code, (200, 202, 204), deleted.text)
+        self.assertEqual(
+            self.request("GET", self.project_path(), "owner").status_code, 404
+        )
+
     def test_roles_and_cross_project(self) -> None:
         task = self.create_task()
         path = self.project_path() + "/scheduled-tasks"

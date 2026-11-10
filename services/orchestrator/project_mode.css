@@ -303,3 +303,19 @@ body:has(> #atlas-project) #sidebar :has(> a.selected) :is(button,button svg) { 
 /* Project title row on a phone: the title wraps, the action buttons never break inside a word. */
 #atlas-project .atlas-project-page-heading { flex-wrap:wrap; row-gap:6px; }
 #atlas-project .atlas-project-page-heading > button { white-space:nowrap; flex-shrink:0; }
+/* With the side view open, the project view ends where the side view starts (the earlier frame rule pinned its right edge under it, hiding the send button). */
+body.atlas-project-open.atlas-side-open #atlas-project { right:calc(var(--atlas-side-width,45vw) + 14px); grid-template-columns:minmax(0,1fr); }
+/* Notices are plain information; only failures take the accent colour. */
+.atlas-project-notice { color:var(--atlas-muted); }
+.atlas-project-notice span { color:var(--atlas-accent); }
+/* The project microphone is the same round control as the chat composer's. */
+#atlas-project .atlas-project-composer-tools [data-voice] { width:34px; height:34px; min-width:34px; padding:0; border:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:var(--atlas-border); color:var(--atlas-text); }
+#atlas-project .atlas-project-composer-tools [data-voice][hidden] { display:none; }
+#atlas-project .atlas-project-composer-tools [data-voice][aria-pressed=true] { background:var(--atlas-accent); color:var(--atlas-on-accent); }
+/* Confirmation dialog: the question, what it applies to, then the two answers. */
+.atlas-project-confirm h2 { margin:0 0 8px; font-size:16px; font-weight:600; line-height:1.4; }
+.atlas-project-confirm p { margin:0 0 4px; color:var(--atlas-muted); overflow-wrap:anywhere; }
+.atlas-project-dialog-actions { display:flex; gap:8px; margin-top:20px; }
+.atlas-project-dialog-actions [data-confirm] { background:var(--atlas-text)!important; color:var(--atlas-bg)!important; border-color:var(--atlas-text)!important; }
+/* A failure raised from a dialog is shown inside it. */
+.atlas-project-dialog-error { margin:12px 0 0; color:var(--atlas-accent); font-size:13px; }
