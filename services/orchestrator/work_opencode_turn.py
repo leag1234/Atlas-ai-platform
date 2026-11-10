@@ -206,7 +206,11 @@ async def run_opencode_turn(
             model_id=model_id,
             token_prices=prices,
         )
-        outcome = await driver.run(request.user_text)
+        # opencode's own prompt is English: without this line short French
+        # messages were answered in English (owner test 2026-11-10).
+        outcome = await driver.run(
+            "Answer in the language of the user's message.\n\n" + request.user_text
+        )
     finally:
         await stop(engine.name)
     await emit_changes(tools, workspace)

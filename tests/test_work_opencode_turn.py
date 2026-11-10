@@ -142,7 +142,8 @@ class RunOpencodeTurnTests(unittest.IsolatedAsyncioTestCase):
         start_mock, stop_mock, driver_cls, driver = _patched()
 
         async def run(prompt: str) -> dict[str, Any]:
-            self.assertEqual(prompt, "fix the failing test")
+            self.assertTrue(prompt.endswith("fix the failing test"))
+            self.assertIn("language of the user's message", prompt)
             emit = driver_cls_await.call_args.args[2]
             for event in events:
                 await emit(event)
