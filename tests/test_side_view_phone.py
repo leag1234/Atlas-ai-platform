@@ -14,5 +14,14 @@ class PhoneSideViewTests(unittest.TestCase):
         self.assertIn("wide() && (message === last", script)
 
 
+class DialogDismissTests(unittest.TestCase):
+    def test_atlas_dialogs_close_on_escape_and_backdrop(self) -> None:
+        # On a phone the move dialog could only be closed with its Cancel button.
+        script = Path("services/orchestrator/project_mode.js").read_text()
+        self.assertIn("dialog.atlas-project-dialog[open]", script)
+        self.assertIn("event.key !== 'Escape'", script)
+        self.assertIn("dialog === backdropDown", script)
+
+
 if __name__ == "__main__":
     unittest.main()

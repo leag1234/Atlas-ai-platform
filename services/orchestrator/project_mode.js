@@ -956,6 +956,14 @@
     }
   };
   document.addEventListener('pointerdown', recordMoveMenuTrigger, true);
+  // Atlas dialogs close like the chat's modals: Escape, or a tap that starts and ends on the backdrop
+  // (on a phone the move dialog could only be closed with its Cancel button).
+  let backdropDown = null;
+  const openDialog = () => [...document.querySelectorAll('dialog.atlas-project-dialog[open]')].pop();
+  const outside = (dialog, event) => { const r = dialog.getBoundingClientRect(); return event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom; };
+  document.addEventListener('keydown', event => { if (event.key !== 'Escape') return; const dialog = openDialog(); if (dialog) { event.preventDefault(); event.stopPropagation(); dialog.close(); } }, true);
+  document.addEventListener('pointerdown', event => { const dialog = openDialog(); backdropDown = dialog && event.target === dialog && outside(dialog, event) ? dialog : null; }, true);
+  document.addEventListener('click', event => { const dialog = openDialog(); if (dialog && dialog === backdropDown && event.target === dialog && outside(dialog, event)) dialog.close(); backdropDown = null; }, true);
   document.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') recordMoveMenuTrigger(event); }, true);
   function nativeBranch(chat) {
     const history = chat?.chat?.history || chat?.history || {};
