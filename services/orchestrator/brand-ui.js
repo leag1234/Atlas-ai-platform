@@ -86,6 +86,48 @@
     } catch { /* The host owns sign-in and account error handling. */ }
   }
 
+  // Closed sidebar: only the logo opened it (owner report 2026-11-09). An explicit
+  // button with the panel icon of the close button sits under the logo.
+  const panelIcon = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18" aria-hidden="true"><rect x="3.75" y="4.5" width="16.5" height="15" rx="2.25"/><path stroke-linecap="round" d="M9.75 4.5v15"/></svg>';
+  // Insert after the item of the rail's vertical stack that holds an element,
+  // never inside a horizontal row.
+  function stackItem(element, rail) {
+    let item = element;
+    while (item.parentElement && item.parentElement !== rail) {
+      const style = getComputedStyle(item.parentElement);
+      if (style.display === 'block' || (style.display.includes('flex') && style.flexDirection.startsWith('column'))) return item;
+      item = item.parentElement;
+    }
+    return item;
+  }
+  function railOpenButton() {
+    const rail = document.querySelector('#sidebar');
+    if (!rail) return;
+    // The logo is the first labelled button holding an image (the account button comes later).
+    const logo = [...rail.querySelectorAll('button[aria-label]')].find(button => button.querySelector('img') && !button.dataset.atlasOpenSidebar);
+    if (!logo) return;
+    let open = rail.querySelector('[data-atlas-open-sidebar]');
+    if (!open) {
+      open = document.createElement('button');
+      open.type = 'button';
+      open.dataset.atlasOpenSidebar = '';
+      open.className = 'atlas-rail-open';
+      open.innerHTML = panelIcon;
+      const label = logo.getAttribute('aria-label') || 'Open sidebar';
+      open.setAttribute('aria-label', label);
+      open.title = label;
+      // Svelte may have re-rendered the logo since: find the current one at click time.
+      open.addEventListener('click', event => {
+        // The rail's own containers also react to clicks: keep this one to ourselves.
+        event.stopPropagation();
+        const current = [...document.querySelectorAll('#sidebar button[aria-label]')].find(button => button.querySelector('img') && !button.dataset.atlasOpenSidebar);
+        current?.click();
+      });
+      stackItem(logo, rail).insertAdjacentElement('afterend', open);
+      new ResizeObserver(entries => { open.hidden = entries[0].contentRect.width > 100; }).observe(rail);
+    }
+  }
+
   function refresh() {
     document.querySelectorAll('img').forEach(replaceLogo);
     document.querySelectorAll('#sidebar-webui-name').forEach(markBeta);
@@ -97,6 +139,7 @@
     }
     const title = document.title.replace(/Atlas \(Open WebUI\)|Open WebUI/g,'Atlas');
     if (document.title !== title) document.title = title;
+    railOpenButton();
     for (const container of document.querySelectorAll('nav, header, [role=dialog], #sidebar, #pinned-menu-items-list, #sidebar-webui-name')) {
       const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {

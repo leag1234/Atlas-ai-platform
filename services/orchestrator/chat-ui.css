@@ -521,3 +521,7 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 .user-message:has(textarea) :is(.w-full,.flex,.rounded-3xl):has(textarea) { width:100%!important; max-width:100%!important; }
 /* The text area fills its box and keeps the page text colour on the transparent bubble. */
 .user-message:has(textarea) textarea { width:100%!important; color:var(--atlas-text)!important; }
+/* Explicit open button of the closed sidebar: same size and colour as the rail icons. */
+.atlas-rail-open { display:flex; align-items:center; justify-content:center; width:34px; height:34px; margin:2px auto; border-radius:8px; color:var(--atlas-text); background:transparent; }
+/* Hover and focus follow the rail's other buttons. */
+.atlas-rail-open:is(:hover,:focus-visible) { background:var(--atlas-surface); }
