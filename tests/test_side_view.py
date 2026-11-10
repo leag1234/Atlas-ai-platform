@@ -45,9 +45,11 @@ class SideViewTests(unittest.TestCase):
         payload = request('report "quoted".pdf')
         self.assertEqual(payload.documents[0].file_id, FILE_ID)
         opener = pdf_placeholders(payload)
-        self.assertIn(f'data-src="/api/v1/files/{FILE_ID}/content"', opener)
-        self.assertIn('data-title="report &quot;quoted&quot;.pdf"', opener)
-        self.assertIn('data-slot="top" hidden></span>', opener)
+        self.assertIn(f"(/api/v1/files/{FILE_ID}/content#atlas-view=pdf", opener)
+        self.assertIn("title=report+%22quoted%22.pdf", opener)
+        self.assertIn("slot=top)", opener)
+        # No raw HTML marker: it showed as markup in sidebar previews.
+        self.assertNotIn("<span", opener)
         self.assertEqual(pdf_placeholders(request(file_id=None)), "")
         self.assertEqual(pdf_placeholders(request("notes.md")), "")
 

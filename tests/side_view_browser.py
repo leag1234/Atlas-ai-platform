@@ -240,7 +240,7 @@ def main() -> None:
                         for choice in event.get("choices", [])
                     )
                     cost = event.get("atlas", {}).get("cost_eur", cost)
-            assert 'data-atlas-view="pdf"' in answer, "missing real emitted placeholder"
+            assert "#atlas-view=pdf" in answer, "missing real emitted side-view link"
             assert "730" in answer, "missing useful PDF answer"
             (OUTPUT / "live.json").write_text(
                 json.dumps({"calls": 1, "cost_eur": cost, "answer": answer}, indent=2)
