@@ -517,5 +517,7 @@ html[data-atlas-guest] #chat-input [data-placeholder].is-empty::before { color:v
 html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none; align-self:center; margin-left:.375rem; padding:0 .375rem; border:1px solid currentColor; border-radius:999px; color:var(--atlas-accent); background:transparent; font-family:var(--atlas-font); font-size:10px; font-weight:600; line-height:16px; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; vertical-align:middle; }
 /* Editing a sent message: the editor spans the conversation column instead of shrinking inside the 80% fit-content bubble (owner report 2026-11-09). */
 .user-message:has(textarea) { width:100%!important; max-width:100%!important; background:transparent!important; padding:0!important; }
+/* The editor's own wrappers follow the bubble to the full column width. */
 .user-message:has(textarea) :is(.w-full,.flex,.rounded-3xl):has(textarea) { width:100%!important; max-width:100%!important; }
+/* The text area fills its box and keeps the page text colour on the transparent bubble. */
 .user-message:has(textarea) textarea { width:100%!important; color:var(--atlas-text)!important; }
