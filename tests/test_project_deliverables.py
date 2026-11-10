@@ -1006,3 +1006,35 @@ class BoundedDeliverableTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 project_deliverable_links(bad, value["org_id"], value["project_id"])
+
+
+class LocalizedDeliverableLinkTests(unittest.TestCase):
+    def test_links_follow_the_answer_language_and_name_the_file(self) -> None:
+        from uuid import uuid4
+
+        from services.orchestrator.file_results import project_deliverable_links
+
+        org, project, identifier = str(uuid4()), str(uuid4()), str(uuid4())
+        prefix = f"/api/atlas/orgs/{org}/projects/{project}/deliverables/{identifier}"
+        receipt: dict[str, object] = {
+            "id": identifier,
+            "org_id": org,
+            "project_id": project,
+            "download_route": prefix + "/download",
+            "sha256": "a" * 64,
+            "validation": {
+                "status": "passed",
+                "verifier_exit": 0,
+                "artifact_sha256": "a" * 64,
+            },
+            "relative_path": "stats.py",
+        }
+        self.assertEqual(
+            project_deliverable_links(receipt, org, project, "fr"),
+            f"[Télécharger stats.py]({prefix}/download) · [Aperçu]({prefix}/preview)",
+        )
+        self.assertTrue(
+            project_deliverable_links(receipt, org, project).startswith(
+                "[Download stats.py]"
+            )
+        )

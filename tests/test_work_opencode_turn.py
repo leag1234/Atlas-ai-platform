@@ -296,3 +296,26 @@ class RepositorySessionTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"ATLAS_WORK_ENGINE": "opencode"}):
             self.assertTrue(engine_turn_selected(selection))
             self.assertFalse(engine_turn_selected(selection, repository=True))
+
+
+class LabelTests(unittest.TestCase):
+    def test_labels_show_the_file_or_command_never_the_content(self) -> None:
+        from services.orchestrator.work_opencode_turn import _label
+
+        self.assertEqual(
+            _label(
+                "write",
+                "{...}",
+                {"filePath": "/workspace/stats.py", "content": "secret body"},
+            ),
+            "write: stats.py",
+        )
+        self.assertEqual(
+            _label("bash", "{...}", {"command": "python3 -m unittest -v"}),
+            "bash: python3 -m unittest -v",
+        )
+        self.assertEqual(_label("write", "{'content': 'x'}", None), "write")
+        self.assertNotIn(
+            "secret",
+            _label("edit", "x", {"filePath": "/workspace/a.py", "newString": "secret"}),
+        )

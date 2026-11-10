@@ -68,8 +68,16 @@ def canonical_links(text: str, files: list[str]) -> str:
     return text
 
 
+LINK_WORDS = {
+    "fr": ("Télécharger", "Aperçu"),
+    "de": ("Herunterladen", "Vorschau"),
+    "es": ("Descargar", "Vista previa"),
+    "it": ("Scarica", "Anteprima"),
+}
+
+
 def project_deliverable_links(
-    deliverable: dict[str, object], org: str, project: str
+    deliverable: dict[str, object], org: str, project: str, lang: str = "en"
 ) -> str:
     """Only server-returned, scope-matching canonical routes reach the transcript."""
     from uuid import UUID
@@ -87,4 +95,11 @@ def project_deliverable_links(
         or validation.get("artifact_sha256") != deliverable.get("sha256")
     ):
         raise ValueError("Unverified or foreign deliverable response")
-    return f"[Download document]({prefix}/download) · [Preview]({prefix}/preview)"
+    download, preview = LINK_WORDS.get(lang, ("Download", "Preview"))
+    # Name the file: a Work turn may save several, and a code file is not a "document".
+    name = str(
+        deliverable.get("relative_path") or deliverable.get("name") or ""
+    ).strip()
+    label = f"{download} {name}" if name else download
+    label = label.replace("[", "(").replace("]", ")")
+    return f"[{label}]({prefix}/download) · [{preview}]({prefix}/preview)"
