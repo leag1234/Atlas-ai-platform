@@ -711,6 +711,8 @@ async def process_work(
         dispatch.generation = execution.session["lease"]["generation"]
     workspace = execution.workspace()
     tools = WorkTools(workspace, execution, sink_context.get())
+    # Set by the chat when Work runs behind it: no approval card can be answered there.
+    tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,
@@ -929,7 +931,7 @@ async def process_work(
                     for entry in saved.get("not_saved", [])
                     if isinstance(entry, dict)
                 ]
-                if denied:
+                if denied and not tools.approvals_unattended:
                     item.reponse += not_saved_line(request.lang) + ", ".join(denied)
                 await tools.emit(
                     "recap",
@@ -1165,7 +1167,7 @@ async def process_work(
                 for entry in saved.get("not_saved", [])
                 if isinstance(entry, dict)
             ]
-            if denied:
+            if denied and not tools.approvals_unattended:
                 item.reponse += not_saved_line(request.lang) + ", ".join(denied)
             await tools.emit(
                 "recap",

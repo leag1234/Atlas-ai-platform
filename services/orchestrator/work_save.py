@@ -334,6 +334,13 @@ async def save_modified_files(
                 {"path": path, "reason": "missing"}
             )
             continue
+        if getattr(tools, "approvals_unattended", False):
+            # Behind the chat nobody can answer an approval: do not hold the
+            # answer for one (a script run waited 120 s, staging 2026-11-10).
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": "unattended"}
+            )
+            continue
         if not allowed_type(str(entry.get("relative_path"))):
             report.setdefault("not_saved", []).append({"path": path, "reason": "type"})
             continue

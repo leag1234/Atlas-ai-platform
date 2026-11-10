@@ -488,3 +488,22 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("/deliverables/d/download", item.reponse)
         self.assertNotIn("Work failed", item.reponse)
+
+
+class DeliveredFileHintTests(unittest.TestCase):
+    def test_a_change_request_names_the_kind_delivered_last(self) -> None:
+        from services.orchestrator.chat_schema import ChatMessage
+        from services.orchestrator.chat_work import delivered_file_hint
+
+        req = request("Ajoute une phrase et mets à jour le document")
+        req = req.model_copy(
+            update={
+                "messages": [
+                    ChatMessage(role="user", content="Fais-moi une lettre Word"),
+                    ChatMessage(role="assistant", content="Le document a été créé."),
+                    *req.messages,
+                ]
+            }
+        )
+        self.assertIn(".docx file", delivered_file_hint(req))
+        self.assertEqual(delivered_file_hint(request("Relance le script")), "")

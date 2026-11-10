@@ -458,6 +458,7 @@ class WorkTools(CodeTools):
         self.nearby: Any = None
         self.web: Any = None
         self.web_lang = "en"
+        self.approvals_unattended = False
         self.remote_references: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:
