@@ -2,6 +2,7 @@
 
 from packages.profiles import accepted_profile, context_window, PROFILES
 from packages.file_intent import produces_file
+from packages.work_intent import continues_work
 from packages.evidence import estimated_tokens
 from packages.language import LANGUAGES, conversation_language, status_language
 from pydantic_core import PydanticCustomError
@@ -224,6 +225,13 @@ class ChatRequest(VisionInput):
             if self.has_attachments
             or produces_file(self.user_text, include_images=False)
             or self.app_turn
+            # A turn that Work answers behind the chat (code to run, a real file, a
+            # change to either) is not a 120 s chat answer: one slow call cut a
+            # script run at 120 s on staging (2026-11-10).
+            or (
+                os.environ.get("ATLAS_CHAT_WORK") == "1"
+                and continues_work(self.user_text)
+            )
             else 120.0
         )
 

@@ -193,6 +193,22 @@ class DocumentAvailabilityTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class SearchLanguageDefaultTests(unittest.TestCase):
+    def test_a_search_without_language_takes_the_conversation_language(self) -> None:
+        from services.orchestrator.code_tools import with_search_language
+        from services.orchestrator.loop import Call
+
+        bare = Call("c1", "web_search", json.dumps({"query": "fibre offers"}))
+        self.assertEqual(
+            json.loads(with_search_language(bare, "fr").arguments),
+            {"query": "fibre offers", "lang": "fr"},
+        )
+        named = Call("c2", "web_search", json.dumps({"query": "x", "lang": "de"}))
+        self.assertIs(with_search_language(named, "fr"), named)
+        fetch = Call("c3", "web_fetch", json.dumps({"url": "https://example.org"}))
+        self.assertIs(with_search_language(fetch, "fr"), fetch)
+
+
 class SettledSwitchRefusalTests(unittest.TestCase):
     def test_refused_switch_is_settled_once_a_file_is_published(self) -> None:
         from services.orchestrator.code_mode import open_failures

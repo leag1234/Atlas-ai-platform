@@ -818,8 +818,11 @@ async def process_work(
 
             # A requested file is written in one call: the gateway then allows
             # that call up to 300 s instead of 120 (the per-call cost stays ours).
-            model.produces_files = produces_file(
-                request.user_text, include_images=False
+            from packages.work_intent import work_reason
+
+            model.produces_files = (
+                produces_file(request.user_text, include_images=False)
+                or work_reason(request.user_text) == "file"
             )
             from services.orchestrator.work_tool_selection import (
                 WorkToolSelection,
@@ -849,6 +852,7 @@ async def process_work(
                 from services.orchestrator.chat_pipeline import ChatTools
 
                 tools.web = ChatTools(item, request.user_text)
+                tools.web_lang = request.lang
                 selection.enable_research()
             from services.orchestrator.work_opencode_turn import (
                 engine_turn_selected,
