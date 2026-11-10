@@ -89,11 +89,14 @@ class VoiceUIContractTests(unittest.TestCase):
         self.assertIn(":has(> #voice-input-button) { display:flex!important; }", css)
         self.assertIn("[data-atlas-read]", css)
 
-    def test_voice_script_never_touches_the_chat_composer(self) -> None:
-        # Injecting into the Svelte composer froze the page (re-render loop).
+    def test_voice_script_never_touches_svelte_chat_nodes(self) -> None:
+        # Injecting into the Svelte composer or message rows froze the page
+        # (re-render loop): chat dictation and read-aloud are the native controls.
         script = Path("services/orchestrator/voice.js").read_text()
         self.assertNotIn("composer.append", script)
         self.assertNotIn("document.querySelector('#message-input-container')", script)
+        self.assertNotIn('[id^="message-"]', script)
+        self.assertIn(".atlas-project-turn .atlas-project-turn-actions", script)
 
     def test_project_composer_has_a_dictation_button_and_locale_labels(self) -> None:
         script = Path("services/orchestrator/project_mode.js").read_text()

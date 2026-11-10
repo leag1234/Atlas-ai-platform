@@ -1,4 +1,4 @@
-/* Dictation and read-aloud for the chat and project composers.
+/* Read-aloud for project turns (the chat uses the native dictation and read-aloud).
    Each capability is offered only when the installation enables it. */
 (() => {
   'use strict';
@@ -72,7 +72,7 @@
   };
   const readAloud = async button => {
     if (audio) { audio.pause(); audio = null; button.setAttribute('aria-pressed', 'false'); button.setAttribute('aria-label', t().readAloud); button.title = t().readAloud; return; }
-    const bubble = button.closest('[id^="message-"], .atlas-project-turn');
+    const bubble = button.closest('.atlas-project-turn');
     const content = bubble?.querySelector('.markdown-prose, .answer, pre.answer');
     const text = content?.innerText?.trim();
     if (!text) return;
@@ -88,7 +88,10 @@
   const mount = () => {
     // Chat dictation is the native Open WebUI microphone (Atlas speech-to-text behind it):
     // nothing is injected into the Svelte composer, whose re-renders removed foreign nodes.
-    document.querySelectorAll('[id^="message-"]:has(.chat-assistant) .buttons, .atlas-project-turn .atlas-project-turn-actions').forEach(row => {
+    // Chat answers keep the native read-aloud action (Atlas speech behind it when ATLAS_TTS is on):
+    // appending into Svelte message rows froze the page like the composer did. Only the
+    // project view, which Atlas renders itself, gets this button.
+    document.querySelectorAll('.atlas-project-turn .atlas-project-turn-actions').forEach(row => {
       if (!config.tts || row.querySelector('[data-atlas-read]')) return;
       const button = makeButton('read', speakerIcon);
       button.hidden = false;
