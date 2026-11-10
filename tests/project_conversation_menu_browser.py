@@ -111,9 +111,9 @@ class ProjectConversationMenuTests(unittest.TestCase):
         expect(conversations).to_contain_text("Aucune conversation ne correspond.")
         search.fill("")
         expect(conversations).to_contain_text("Fictional plan")
-        self.page.once("dialog", lambda dialog: dialog.accept())
         menu.click()
         conversations.get_by_role("button", name="Supprimer", exact=True).click()
+        self.page.locator("dialog.atlas-project-confirm [data-confirm]").click()
         expect(conversations).not_to_contain_text("Fictional plan")
         self.assertEqual(
             self.writes,
