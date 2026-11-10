@@ -230,6 +230,7 @@ class ChatRequest(VisionInput):
             # script run at 120 s on staging (2026-11-10).
             or (
                 os.environ.get("ATLAS_CHAT_WORK") == "1"
+                and not self.__dict__.get("work_declined")
                 and continues_work(self.user_text)
             )
             else 120.0

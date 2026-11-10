@@ -390,14 +390,19 @@ async def publish(
         from packages.doc_render.spreadsheet import validate_sources
 
         validate_sources(document.content, source_sheets)
-    receipt = await ProjectPublisher(execution).publish(
-        document,
-        str(path),
+    publisher = ProjectPublisher(execution)
+    receipt = await publish_with_free_name(
+        lambda name: publisher.publish(
+            document,
+            name,
+            args["strategy"],
+            list(dict.fromkeys(versions)),
+            folder["revision"],
+            str(uuid4()),
+            remaining(),
+        ),
+        path,
         args["strategy"],
-        list(dict.fromkeys(versions)),
-        folder["revision"],
-        str(uuid4()),
-        remaining(),
     )
     links = project_deliverable_links(
         receipt, execution.broker.org, execution.broker.project
@@ -409,3 +414,32 @@ async def publish(
         file_version_ids=[receipt["file_version_id"]],
         read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
     )
+
+
+async def publish_with_free_name(
+    publish: Any, path: Any, strategy: str
+) -> dict[str, Any]:
+    """Publish a new file under the next free numbered name.
+
+    A new file never fails on a name already taken (two conversations asked for
+    the same presentation and the second one failed, staging 2026-11-10).
+    Nothing is overwritten; regenerations and in-place edits keep their name.
+    """
+    from services.retrieval.project_identity import ProjectError
+
+    for attempt in range(1, 7):
+        name = (
+            path
+            if attempt == 1
+            else path.with_name(f"{path.stem}-{attempt}{path.suffix}")
+        )
+        try:
+            return dict(await publish(str(name)))
+        except ProjectError as error:
+            if (
+                strategy != "created"
+                or attempt == 6
+                or "path_conflict" not in error.args
+            ):
+                raise
+    raise AssertionError("unreachable")

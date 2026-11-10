@@ -507,3 +507,12 @@ class DeliveredFileHintTests(unittest.TestCase):
         )
         self.assertIn(".docx file", delivered_file_hint(req))
         self.assertEqual(delivered_file_hint(request("Relance le script")), "")
+
+
+class ChatDeadlineTests(unittest.TestCase):
+    def test_a_turn_the_chat_answers_keeps_the_chat_deadline(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}):
+            req = request("Génère un PowerPoint de 5 diapositives")
+            self.assertEqual(req.timeout_seconds, 300.0)
+            req.__dict__["work_declined"] = True
+            self.assertEqual(req.model_copy().timeout_seconds, 120.0)
