@@ -282,6 +282,8 @@ async def _export_and_save_new_files(
                 }
             )
             continue
+        # The receipt carries no path; the answer link names the saved file.
+        receipt = dict(receipt, relative_path=relative)
         tools.deliverables.append(receipt)
         report.setdefault("receipts", []).append(receipt)
         report["saved"].append(
