@@ -15,6 +15,7 @@ from typing import Any, cast
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
+import api_routing
 import dev_gateway as gateway
 from services.orchestrator.dev_auth import QuotaError, Store
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
@@ -28,9 +29,15 @@ from services.orchestrator.dev_messages import Wire as MessagesWire
 from services.orchestrator.dev_responses import Wire
 
 
-def error(code: str, status: int, detail: str = "") -> JSONResponse:
+def error(code: str, status: int, detail: str = "", **values: Any) -> JSONResponse:
     return JSONResponse(
-        {"error": {"type": code, "message": detail or code}}, status_code=status
+        {"error": {"type": code, "message": detail or code, **values}},
+        status_code=status,
+        headers=(
+            {"Retry-After": str(values["retry_after"])}
+            if values.get("retry_after") is not None
+            else None
+        ),
     )
 
 
@@ -170,16 +177,64 @@ def request_target(plan: gateway.Plan) -> str | None:
     return plan.provider + "/" + plan.model if plan.provider else None
 
 
-def provider_failure(exc: BaseException) -> dict[str, dict[str, str]]:
-    """D5: a provider credit refusal is reported as such, not as a provider failure."""
-    if str(exc) == "provider_quota":
+def _provider_error_status(error: dict[str, Any]) -> int:
+    """The provider's own failure status reaches the client, never another model."""
+    kind = error.get("type")
+    if kind == "provider_quota":
+        return 402
+    if kind == "rate_limit":
+        return 429
+    if kind == "provider_timeout":
+        return 504
+    if kind == "provider_unavailable":
+        return 503
+    return 502
+
+
+def provider_failure(exc: BaseException) -> dict[str, dict[str, Any]]:
+    """D5: a provider refusal is reported with its cause, never as another model."""
+    status = getattr(exc, "status", None)
+    retry_after = getattr(exc, "retry_after", None)
+    if str(exc) == "provider_quota" or status == 402:
         return {
             "error": {
                 "type": "provider_quota",
                 "message": "The model provider refused the request: account credit exhausted.",
+                "provider_status": 402,
             }
         }
-    return {"error": {"type": "provider_error", "message": "provider_error"}}
+    if str(exc) == "provider_timeout" or status == 504:
+        return {
+            "error": {
+                "type": "provider_timeout",
+                "message": "The model provider did not answer in time.",
+                "provider_status": 504,
+            }
+        }
+    if status == 429:
+        error = {
+            "type": "rate_limit",
+            "message": "The model provider rate-limited the request.",
+            "provider_status": 429,
+        }
+        if retry_after is not None:
+            error["retry_after"] = retry_after
+        return {"error": error}
+    if status is not None and status >= 500:
+        return {
+            "error": {
+                "type": "provider_unavailable",
+                "message": "The model provider is unavailable.",
+                "provider_status": status,
+            }
+        }
+    return {
+        "error": {
+            "type": "provider_error",
+            "message": "provider_error",
+            **({"provider_status": status} if status is not None else {}),
+        }
+    }
 
 
 async def drive(
@@ -271,6 +326,7 @@ async def hosted_drive(
     strict: bool,
     fetch_options: dict[str, Any] | None = None,
     code_options: dict[str, Any] | None = None,
+    no_fallback: bool = False,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Model turns with hosted searches in between, until the model answers or calls a client tool.
 
@@ -447,7 +503,14 @@ async def hosted_drive(
             }
         )
         try:
-            plan = gateway.prepare_api(request, public_model, key_id, strict=strict)
+            plan = gateway.prepare_api(
+                request,
+                public_model,
+                key_id,
+                strict=strict,
+                pinned=api_routing.pinned_target(public_model or "") is not None,
+                fallback=not no_fallback,
+            )
             request_id = store.reserve(
                 developer,
                 plan.reserved,
@@ -483,6 +546,9 @@ async def chat(
                 if len(body) > 8388608:
                     raise LimitError("body_limit", len(body), 8388608, "bytes")
         raw = json.loads(body)
+        if isinstance(raw, dict):
+            # "fallback": false pins an alias request to its first target.
+            request.state.no_fallback = raw.pop("fallback", None) is False
         if raw_model is not None and protocol == "chat" and isinstance(raw, dict):
             from packages.api_content import (
                 FileContentError,
@@ -597,9 +663,19 @@ async def chat(
                     400,
                     "Web fetch is not available in strict privacy mode.",
                 )
+        pinned = (
+            public_model is not None
+            and api_routing.pinned_target(public_model) is not None
+        )
+        no_fallback = bool(getattr(request.state, "no_fallback", False))
         plan = (
             gateway.prepare_api(
-                parsed, public_model, request.state.api_key.id, strict=strict
+                parsed,
+                public_model,
+                request.state.api_key.id,
+                strict=strict,
+                pinned=pinned,
+                fallback=not no_fallback,
             )
             if public_model is not None
             else gateway.prepare_raw(parsed)
@@ -679,6 +755,8 @@ async def chat(
         else None
     )
 
+    no_fallback = bool(getattr(request.state, "no_fallback", False))
+
     def run() -> AsyncGenerator[dict[str, Any], None]:
         if not hosted or public_model is None:
             return drive(store, developer, request_id, plan, output, deadline)
@@ -695,6 +773,7 @@ async def chat(
             strict,
             fetch_options,
             code_options,
+            no_fallback,
         )
 
     async def chunks() -> AsyncGenerator[str, None]:
@@ -763,6 +842,7 @@ async def chat(
                             error_type = str(
                                 chunk["error"].get("type", "provider_error")
                             )
+                            chunk["error"].get("retry_after")
                         if parsed.stream_options.include_usage and "error" not in chunk:
                             chunk.setdefault("usage", None)
                         if output.citations:
@@ -851,8 +931,22 @@ async def chat(
     async with aclosing(run()) as frames:
         async for frame in frames:
             if "error" in frame:
-                status = 503 if frame["error"]["type"] == "provider_quota" else 502
-                return error(frame["error"]["type"], status, frame["error"]["message"])
+                status = _provider_error_status(frame["error"])
+                return error(
+                    frame["error"]["type"],
+                    status,
+                    frame["error"]["message"],
+                    **(
+                        {"provider_status": frame["error"]["provider_status"]}
+                        if frame["error"].get("provider_status") is not None
+                        else {}
+                    ),
+                    **(
+                        {"retry_after": frame["error"]["retry_after"]}
+                        if frame["error"].get("retry_after") is not None
+                        else {}
+                    ),
+                )
             if wire:
                 try:
                     wire.feed(frame)

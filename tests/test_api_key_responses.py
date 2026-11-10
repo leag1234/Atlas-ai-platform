@@ -397,8 +397,9 @@ class KeyResponsesTests(unittest.TestCase):
 
         with patch.object(gateway, "transport", every_target_out_of_credit):
             reply = self.post(self.payload)
-        self.assertEqual(reply.status_code, 503, reply.text)
+        self.assertEqual(reply.status_code, 402, reply.text)
         self.assertEqual(reply.json()["error"]["type"], "provider_quota")
+        self.assertEqual(reply.json()["error"]["provider_status"], 402)
 
     def test_context_trim_header_stubs_old_tool_outputs(self) -> None:
         from services.orchestrator.context_trim import BLOCK, KEEP
