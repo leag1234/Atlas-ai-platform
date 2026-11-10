@@ -15,6 +15,7 @@ import traceback
 from fastapi.responses import StreamingResponse
 from packages.file_intent import produces_file, requests_file_delivery
 from packages.limits import LimitError
+from packages.user_errors import ui_failure
 
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.deadline import request_deadline
@@ -594,7 +595,12 @@ def response(
                         "error": {
                             "code": "stream_error",
                             "type": "stream_error",
-                            "message": detail,
+                            "message": (
+                                ui_failure("timeout", payload.lang)
+                                if payload.atlas_ui
+                                else None
+                            )
+                            or detail,
                         }
                     }
                 )
@@ -607,6 +613,9 @@ def response(
                     if guest_configuration_failure(exc)
                     else exc.detail or exc.code
                 )
+                readable = (
+                    ui_failure(exc.code, payload.lang) if payload.atlas_ui else None
+                )
                 if guest_configuration_failure(exc):
                     logging.getLogger(__name__).error(
                         "Configuration failure; variables=%s", configuration_names(exc)
@@ -617,7 +626,7 @@ def response(
                         "error": {
                             "code": exc.code,
                             "type": exc.code,
-                            "message": detail,
+                            "message": readable or detail,
                         }
                     }
                 )

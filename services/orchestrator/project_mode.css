@@ -287,3 +287,13 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 /* Dark dialogs take the raised chat surface, not the page black. */
 html.dark .atlas-project-dialog { background:var(--atlas-surface)!important; }
 html.dark .atlas-project-dialog input, html.dark .atlas-project-dialog button { background:var(--atlas-bg); color:var(--atlas-text); border-color:var(--atlas-border); }
+/* The open project conversation is the current row: same red highlight as a chat (owner request). */
+.atlas-project-host-projects .atlas-project-host-conversation[aria-current=page] { background:var(--atlas-accent); color:var(--atlas-on-accent); font-weight:inherit; }
+/* With a project page open, the last native chat is no longer current: it loses its highlight. */
+body:has(> #atlas-project) #sidebar a.selected { background:transparent!important; color:var(--atlas-text)!important; }
+body:has(> #atlas-project) #sidebar :has(> a.selected) :is(button,button svg) { color:var(--atlas-muted)!important; }
+/* The project send control matches the chat composer: a round arrow button; Stop only shows while a turn runs. */
+#atlas-project .atlas-project-composer-tools [data-send] { width:34px; height:34px; min-width:34px; padding:0; border:0; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:var(--atlas-text); color:var(--atlas-bg); }
+#atlas-project .atlas-project-composer-tools [data-send] svg { width:18px; height:18px; }
+#atlas-project .atlas-project-composer-tools [data-send]:disabled { opacity:.3; cursor:default; }
+#atlas-project .atlas-project-composer-tools [data-stop]:disabled { display:none; }

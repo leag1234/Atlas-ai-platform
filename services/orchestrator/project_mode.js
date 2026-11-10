@@ -387,7 +387,11 @@
     sessionLabel = node('p', '', 'atlas-project-detail');
     uploads = node('input'); uploads.type = 'file'; uploads.multiple = true;
     uploads.addEventListener('change', guarded(() => upload()));
-    send = node('button', t('send')); send.type = 'submit'; send.dataset.send = '';
+    // Same send control as the chat composer: a round arrow button, named for assistive technology.
+    send = node('button'); send.type = 'submit'; send.dataset.send = ''; send.setAttribute('aria-label', t('send')); send.title = t('send');
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg','svg'); arrow.setAttribute('viewBox','0 0 24 24'); arrow.setAttribute('fill','none'); arrow.setAttribute('stroke','currentColor'); arrow.setAttribute('stroke-width','2'); arrow.setAttribute('aria-hidden','true');
+    const shaft = document.createElementNS('http://www.w3.org/2000/svg','path'); shaft.setAttribute('stroke-linecap','round'); shaft.setAttribute('stroke-linejoin','round'); shaft.setAttribute('d','M12 19V5m0 0-6 6m6-6 6 6');
+    arrow.append(shaft); send.append(arrow);
     stop = button('stop', cancel); stop.disabled = true; stop.dataset.stop = '';
     input.placeholder = t('composerPlaceholder');
     const tools = node('div', null, 'atlas-project-composer-tools');
@@ -845,8 +849,8 @@
     }
     for (const item of deliverables.filter(d => !files.some(f => f.version_id === d.file_version_id))) filePanel.append(fileCard(item));
     const repositorySection = node('section',null,'atlas-project-panel'); repositorySection.dataset.panel = 'repository';
-    const repositoryHeading = node('div',null,'atlas-project-panel-heading'); repositoryHeading.append(node('h2',t('Repository')));
-    if (projectInfo.role === 'owner' || projectInfo.role === 'editor') repositoryHeading.append(button('Repository',repositoryPanel));
+    const repositoryHeading = node('div',null,'atlas-project-panel-heading'); repositoryHeading.append(node('h2',t('repository')));
+    if (projectInfo.role === 'owner' || projectInfo.role === 'editor') repositoryHeading.append(button('repository',repositoryPanel));
     repositorySection.append(repositoryHeading);
     panels.append(filePanel, repositorySection, scheduledPanel(panelData.scheduled));
     if (memory.length) {
@@ -1033,13 +1037,37 @@
     const close = event => { if (!panel.contains(event.target) && !event.target.closest?.('[data-atlas-move-project]')) { panel.remove(); document.removeEventListener('click', close, true); } };
     setTimeout(() => document.addEventListener('click', close, true), 0);
   }
+  // Native menu entries that the bundled Open WebUI locales leave in English.
+  const nativeLabels = {'Mark as unread': {fr:'Marquer comme non lu', de:'Als ungelesen markieren', es:'Marcar como no leído', it:'Segna come non letto'}};
+  function translateNativeMenus() {
+    const language = window.atlasProjectLocale?.language?.();
+    if (!language || language === 'en') return;
+    for (const menu of document.querySelectorAll('.app-dropdown-menu,[role=menu]')) {
+      const walker = document.createTreeWalker(menu, NodeFilter.SHOW_TEXT);
+      for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+        const label = nativeLabels[text.nodeValue.trim()]?.[language];
+        if (label) text.nodeValue = text.nodeValue.replace(text.nodeValue.trim(), label);
+      }
+    }
+  }
   function installMoveMenuItems() {
+    translateNativeMenus();
     if (owned || !identity || !scope?.org) return;
     if (!pendingMoveMenu || Date.now() - pendingMoveMenu.at >= 1500) return;
     for (const menu of document.querySelectorAll('.app-dropdown-menu')) {
       if (menu.querySelector('[data-atlas-move-project]')) continue;
       const chatId = pendingMoveMenu.chatId;
-      const item = node('button', moveText('move')); item.type = 'button'; item.dataset.atlasMoveProject = '';
+      // Same look as the native entries beside it: their classes, an icon of the same size, the label in the same wrapper.
+      const sample = [...menu.querySelectorAll('button,[role=menuitem]')].find(entry => entry.querySelector('svg'));
+      const item = node('button', null, sample?.className || ''); item.type = 'button'; item.dataset.atlasMoveProject = '';
+      const icon = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      icon.setAttribute('viewBox','0 0 24 24'); icon.setAttribute('fill','none'); icon.setAttribute('stroke','currentColor'); icon.setAttribute('stroke-width','1.5'); icon.setAttribute('aria-hidden','true');
+      icon.setAttribute('class', sample?.querySelector('svg')?.getAttribute('class') || 'size-4');
+      const path = document.createElementNS('http://www.w3.org/2000/svg','path'); path.setAttribute('stroke-linecap','round'); path.setAttribute('stroke-linejoin','round');
+      path.setAttribute('d','M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z');
+      icon.append(path);
+      const label = node('div', moveText('move'), sample?.querySelector('svg + div, div')?.className || '');
+      item.append(icon, label);
       item.addEventListener('click', guarded(() => moveMenu(chatId))); menu.append(item);
       pendingMoveMenu = null;
       break;
@@ -1163,7 +1191,7 @@
     const current = generation;
     const dialog = node('dialog', null, 'atlas-project-dialog'), panel = node('section');
     dialog.dataset.repositoryPanel = '';
-    panel.append(node('h2', t('Repository')));
+    panel.append(node('h2', t('repository')));
     const status = node('p'); status.setAttribute('role', 'status');
     const form = node('form');
     const connector = node('select'); connector.name = 'connector_id'; connector.required = true;
@@ -1193,7 +1221,7 @@
         const approval = await api(base() + '/repositories/import-approvals', 'POST', data); checkScope(current);
         const selected = connectors.find(item => item.id === data.connector_id);
         const card = node('article'); card.dataset.importApproval = approval.id;
-        card.append(node('h3', t('Import approval')), node('p', `${t('Repository')}: ${selected?.repository || data.connector_id}`), node('p', `${t('Branch')}: ${approval.branch || t('unknown')}`), node('p', `${t('Files')}: ${approval.paths.length}`));
+        card.append(node('h3', t('Import approval')), node('p', `${t('repository')}: ${selected?.repository || data.connector_id}`), node('p', `${t('Branch')}: ${approval.branch || t('unknown')}`), node('p', `${t('Files')}: ${approval.paths.length}`));
         const approve = node('button', t('Approve')); approve.type = 'button';
         approve.addEventListener('click', guarded(async () => {
           approve.disabled = cancel.disabled = true;
