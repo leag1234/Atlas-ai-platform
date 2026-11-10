@@ -326,7 +326,10 @@ async def chat(request: Request) -> Response:
         if missing is not None:
             return missing
         output_format = raw.get("response_format")
-        if isinstance(output_format, dict) and output_format.get("type", "text") != "text":
+        if (
+            isinstance(output_format, dict)
+            and output_format.get("type", "text") != "text"
+        ):
             # The assistant answers in prose with its own tools: it cannot
             # guarantee a JSON format, so refuse instead of returning free text.
             return error(
