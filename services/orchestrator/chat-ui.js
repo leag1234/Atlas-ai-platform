@@ -1041,6 +1041,26 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", start, { once: true }) : start();
 })();
 
+// Sidebar search (Ctrl+K, owner report 2026-11-10): the first entry of the list is
+// Open WebUI's "Start a new conversation" action, so Enter after typing a word
+// started a chat with that word. When the search found chats, Enter opens the
+// first one instead; with no result, Enter keeps its native behaviour.
+(() => {
+  "use strict";
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const box = input.closest("[role=dialog], dialog");
+    if (!box || !input.value.trim()) return;
+    const first = box.querySelector("a[href^='/c/']");
+    if (!first) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    first.click();
+  }, true);
+})();
+
 // Owner Code workspace: the server flag is authoritative; no UI is mounted otherwise.
 (() => {
   "use strict";
