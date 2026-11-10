@@ -223,8 +223,24 @@ class ChatRequest(VisionInput):
             300.0
             if self.has_attachments
             or produces_file(self.user_text, include_images=False)
+            or self.app_turn
             else 120.0
         )
+
+    @property
+    def app_turn(self) -> bool:
+        # An app turn writes the whole SVG or HTML app in one tool call. Measured
+        # on the assistant models: 30 s (GLM) to 190 s (Qwen) for a drawing, so
+        # the plain chat 120 s cut the turn while the gateway was still writing.
+        if os.environ.get("ATLAS_ARTIFACTS") != "1" or self.continuation:
+            return False
+        from packages.artifact_intent import app_intent
+
+        history = [
+            {"role": message.role, "content": message.text}
+            for message in self.conversation_messages[:-1]
+        ]
+        return app_intent(self.user_text, history) in ("create", "modify")
 
     @model_validator(mode="after")
     def valid_project(self) -> Self:
