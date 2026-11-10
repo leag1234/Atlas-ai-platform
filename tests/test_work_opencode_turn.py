@@ -284,3 +284,26 @@ class FilePatchesTests(unittest.TestCase):
         self.assertEqual([path for path, _ in sections], ["f1/a.py", "f1/b.py"])
         self.assertTrue(sections[1][1].startswith("diff --git a/f1/b.py"))
         self.assertNotIn("__pycache__", "".join(section for _, section in sections))
+
+
+class LabelTests(unittest.TestCase):
+    def test_labels_show_the_file_or_command_never_the_content(self) -> None:
+        from services.orchestrator.work_opencode_turn import _label
+
+        self.assertEqual(
+            _label(
+                "write",
+                "{...}",
+                {"filePath": "/workspace/stats.py", "content": "secret body"},
+            ),
+            "write: stats.py",
+        )
+        self.assertEqual(
+            _label("bash", "{...}", {"command": "python3 -m unittest -v"}),
+            "bash: python3 -m unittest -v",
+        )
+        self.assertEqual(_label("write", "{'content': 'x'}", None), "write")
+        self.assertNotIn(
+            "secret",
+            _label("edit", "x", {"filePath": "/workspace/a.py", "newString": "secret"}),
+        )

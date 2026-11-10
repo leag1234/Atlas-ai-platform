@@ -58,8 +58,27 @@ def token_prices() -> tuple[Decimal, Decimal]:
     return Decimal(parts[0]), Decimal(parts[1])
 
 
-def _label(tool: str, detail: Any) -> str:
-    text = str(detail or "").replace("\n", " ").strip()
+# The workspace prefix says nothing to the user; the file name does.
+_WORKSPACE = "/workspace/"
+
+
+def _label(tool: str, detail: Any, args: Any = None) -> str:
+    """A short step label: the file for file tools, the command for bash.
+
+    Never the file content: write and edit inputs carry whole files.
+    """
+    shown = ""
+    if isinstance(args, dict):
+        path = args.get("filePath") or args.get("path")
+        if isinstance(args.get("command"), str):
+            shown = args["command"]
+        elif isinstance(path, str):
+            shown = path.removeprefix(_WORKSPACE)
+        elif isinstance(args.get("pattern"), str):
+            shown = args["pattern"]
+    elif detail and tool not in {"write", "edit"}:
+        shown = str(detail)
+    text = shown.replace("\n", " ").strip()
     label = tool if not text else tool + ": " + text
     return label if len(label) <= 120 else label[:119] + "…"
 
@@ -144,7 +163,7 @@ async def run_opencode_turn(
                 "tool",
                 tool=tool,
                 status="running",
-                label=_label(tool, mapped.get("input")),
+                label=_label(tool, mapped.get("input"), mapped.get("args")),
                 output={"input": mapped.get("input")},
             )
         elif status in {"completed", "error"}:
@@ -157,7 +176,7 @@ async def run_opencode_turn(
                 "tool",
                 tool=tool,
                 status="completed" if status == "completed" else "failed",
-                label=_label(tool, mapped.get("input")),
+                label=_label(tool, mapped.get("input"), mapped.get("args")),
                 output={
                     "input": mapped.get("input"),
                     "output": mapped.get("output"),
