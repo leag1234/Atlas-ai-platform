@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 from packages.ports import atlas_ports
 from services.orchestrator.project_ui import browser_origin, public_error
 from services.orchestrator.serving import stt_enabled
+from services.orchestrator.user_memory_ui import browser_user
 from services.retrieval.project_identity import ProjectError
 
 router = APIRouter()
@@ -81,7 +82,8 @@ async def _forward(request: Request, service: str, path: str) -> Response:
 async def transcriptions(request: Request) -> Response:
     """Dictation: multipart audio to the local STT service."""
     try:
-        browser_origin(request)
+        # Signed-in users only: the speech services are not a public endpoint.
+        await browser_user(request)
         if not stt_enabled():
             return public_error(ProjectError(503, "stt_unavailable"))
         return await _forward(request, "stt", "/v1/audio/transcriptions")
@@ -93,7 +95,8 @@ async def transcriptions(request: Request) -> Response:
 async def speech(request: Request) -> Response:
     """Read-aloud: JSON text to the local TTS service."""
     try:
-        browser_origin(request)
+        # Signed-in users only: the speech services are not a public endpoint.
+        await browser_user(request)
         if not tts_enabled():
             return public_error(ProjectError(503, "tts_unavailable"))
         return await _forward(request, "tts", "/v1/audio/speech")

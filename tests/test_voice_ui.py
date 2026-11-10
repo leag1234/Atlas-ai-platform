@@ -12,6 +12,10 @@ from services.orchestrator.chat_api import app
 from services.orchestrator.ui_injection import ATLAS_UI_TAGS, inject_atlas_ui
 
 
+async def signed_in(request) -> str:
+    return "user-1"
+
+
 class VoiceConfigTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(app)
@@ -29,8 +33,19 @@ class VoiceConfigTests(unittest.TestCase):
             response = self.client.get("/api/atlas/voice/config")
         self.assertEqual(response.json(), {"stt": False, "tts": True})
 
+    def test_speech_routes_require_a_signed_in_user(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_STT": "1", "ATLAS_TTS": "1"}, clear=False):
+            for path in ("/api/atlas/voice/transcriptions", "/api/atlas/voice/speech"):
+                response = self.client.post(
+                    path, content=b"{}", headers={"Origin": "http://testserver"}
+                )
+                with self.subTest(path=path):
+                    self.assertEqual(response.status_code, 401)
+
     def test_transcriptions_refused_when_stt_is_off(self) -> None:
-        with patch.dict(os.environ, {"ATLAS_STT": "0"}, clear=False):
+        with patch.dict(os.environ, {"ATLAS_STT": "0"}, clear=False), patch(
+            "services.orchestrator.voice_ui.browser_user", signed_in
+        ):
             response = self.client.post(
                 "/api/atlas/voice/transcriptions",
                 content=b"",
@@ -43,7 +58,9 @@ class VoiceConfigTests(unittest.TestCase):
         self.assertEqual(response.json()["error"], "stt_unavailable")
 
     def test_speech_refused_when_tts_is_off(self) -> None:
-        with patch.dict(os.environ, {"ATLAS_TTS": "0"}, clear=False):
+        with patch.dict(os.environ, {"ATLAS_TTS": "0"}, clear=False), patch(
+            "services.orchestrator.voice_ui.browser_user", signed_in
+        ):
             response = self.client.post(
                 "/api/atlas/voice/speech",
                 json={"model": "atlas-tts", "input": "hello"},
