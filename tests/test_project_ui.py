@@ -166,3 +166,16 @@ class TurnVisibilityTests(unittest.TestCase):
             "body.atlas-project-open.atlas-side-open #atlas-project { right:calc(var(--atlas-side-width,45vw) + 14px);",
             css,
         )
+
+
+class SourcePreviewTests(unittest.TestCase):
+    def test_source_files_preview_as_code_not_markdown(self) -> None:
+        # Staging 2026-11-10: a Python file previewed as Markdown lost its
+        # indentation and showed __name__ as "name".
+        script = Path("services/orchestrator/project_mode.js").read_text()
+        self.assertIn("const sourceSuffixes = new Set('py js", script)
+        self.assertIn(
+            "if (sourceSuffixes.has(suffix)) { await previewSource(file, src); return; }",
+            script,
+        )
+        self.assertIn("const fence = '`'.repeat(Math.max(3, longest + 1));", script)
