@@ -668,6 +668,28 @@ async def chat(
             and api_routing.pinned_target(public_model) is not None
         )
         no_fallback = bool(getattr(request.state, "no_fallback", False))
+        if (
+            public_model is not None
+            and parsed.response_format.type == "json_schema"
+            and parsed.response_format.json_schema is not None
+            and parsed.response_format.json_schema.strict
+            and not api_routing.supports_structured_output(
+                public_model, parsed.reasoning_effort
+            )
+        ):
+            # Never free text when strict json_schema was asked: refuse before
+            # any provider call, naming the public model.
+            return JSONResponse(
+                {
+                    "error": {
+                        "type": "unsupported_parameter",
+                        "param": "response_format",
+                        "message": "json_schema strict is not supported by "
+                        + public_model,
+                    }
+                },
+                status_code=400,
+            )
         plan = (
             gateway.prepare_api(
                 parsed,
