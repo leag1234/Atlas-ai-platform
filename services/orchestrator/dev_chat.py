@@ -95,7 +95,9 @@ class RawChatInput(Sampling):
 
     @property
     def validate_output(self) -> bool:
-        return False
+        # Public routed models validate like the developer route: a requested
+        # JSON format (or tool_choice="none") is checked against the schema.
+        return self.response_format.type != "text" or self.tool_choice == "none"
 
 
 class Choice:

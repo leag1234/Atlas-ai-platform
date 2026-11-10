@@ -27,6 +27,20 @@ def canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
+def artifact_link_text(part: Any) -> str:
+    """Rebuild the markdown app link the chat renderer turns into the side view."""
+    from urllib.parse import quote
+
+    fragment = quote(
+        f"atlas-view=app&title={part.title}&artifact={part.artifact}"
+        f"&version={part.version}&slot={part.slot}",
+        safe="=&",
+    )
+    prefix = f"/api/atlas/artifacts/{part.artifact}/versions/{part.version}"
+    label = part.title or "Open app"
+    return f"[{label}]({prefix}/open#{fragment})"
+
+
 class Transcript:
     def __init__(self, scope: Scope) -> None:
         self.scope = scope
@@ -232,21 +246,54 @@ class Transcript:
             for file_id in message.attachment_file_ids:
                 file = self.files.get("file", str(file_id))
                 attachments.append(file["version_id"])
+            for part in message.parts:
+                if part.type == "file" and part.file_id:
+                    file = self.files.get("file", str(part.file_id))
+                    attachments.append(file["version_id"])
             refs = sorted(set(attachments + [instructions]))
             self.check_sources(refs)
+            content_refs = [
+                dict(
+                    kind="question" if message.role == "user" else "answer",
+                    text=message.content,
+                    file_version_id=None,
+                )
+            ]
+            for part in message.parts:
+                if part.type == "text" and part.text.strip():
+                    content_refs.append(
+                        dict(
+                            kind="question" if message.role == "user" else "answer",
+                            text=part.text,
+                            file_version_id=None,
+                        )
+                    )
+                elif part.type == "artifact_link" and part.artifact and part.version:
+                    content_refs.append(
+                        dict(
+                            kind="artifact_link",
+                            text=artifact_link_text(part),
+                            file_version_id=None,
+                        )
+                    )
+                elif part.type == "file" and part.file_id:
+                    file = self.files.get("file", str(part.file_id))
+                    content_refs.append(
+                        dict(
+                            kind="file",
+                            text=part.text
+                            or file.get("relative_path", "").split("/")[-1]
+                            or "file",
+                            file_version_id=file["version_id"],
+                        )
+                    )
             turn = dict(
                 self.files.new(),
                 conversation_id=conversation["id"],
                 member_id=self.scope.identity.member,
                 action="chat",
                 request_id=self.files.new()["id"],
-                content_refs=[
-                    dict(
-                        kind="question" if message.role == "user" else "answer",
-                        text=message.content,
-                        file_version_id=None,
-                    )
-                ],
+                content_refs=content_refs,
                 file_version_ids=attachments,
                 context_revision=0,
                 state="completed",

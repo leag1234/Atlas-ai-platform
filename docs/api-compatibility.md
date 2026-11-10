@@ -35,7 +35,7 @@ MCP tools or files. Speech services use separate local endpoints.
 | Audio | Partial | Optional services expose `/v1/audio/speech` (Piper, WAV/MP3) and `/v1/audio/transcriptions` (local Whisper, JSON/text). These are separate from the developer API. No Realtime API. |
 | Authentication and keys | Supported | Developer API accepts `Authorization: Bearer` or `x-api-key`; if both are present they must match. Keys can be revoked, are stored as hashes and have individual daily quotas. |
 | Limits and errors | Partial | Atlas enforces its own request, context, cost and time limits. Developer errors, including unsupported routes, use `error.type` and `error.message`; error codes and headers are not a complete OpenAI match. Daily quota errors do not include `Retry-After`. |
-| Structured JSON output | Partial | Developer Chat `response_format` and Responses `text.format` accept `text`, `json_object` and `json_schema`. JSON output is validated server-side; supported schema subset, retries and stream failure behavior are described below. |
+| Structured JSON output | Partial | Developer Chat `response_format` and Responses `text.format` accept `text`, `json_object` and `json_schema`. JSON output is validated server-side; supported schema subset, retries and stream failure behavior are described below. On the hosted public models (`atlas-dev`/`atlas-code`, `atlas-chat` and their dated aliases), `json_schema` with `strict: true` is guaranteed: every route target runs on a provider with native structured output, and Atlas validates the final JSON against the schema with one retry. A route that cannot guarantee it refuses the request with HTTP 400 `error.type="unsupported_parameter"`, `error.param="response_format"` before any provider call, never free text. |
 | Responses | Partial | `POST /v1/responses` supports text/functions, non-streamed JSON response envelopes and streaming. No stored responses, `previous_response_id`, hosted tools or multimodal input. |
 
 ## Start the developer API
@@ -129,6 +129,15 @@ subset, not full JSON Schema or every OpenAI structured-output restriction.
 The legacy Scaleway code route was live-probed on 2026-10-24 with a named schema;
 it returned the required object. The requested format is forwarded unchanged
 apart from defaults, and Atlas independently parses and validates the final text.
+On the hosted public models the same guarantee holds per route: the per-route
+support table in `services/model-gateway/api-routing.json` (`structured_output`)
+lists the providers whose targets may serve a public model, and a route is
+served only when every one of its targets is on such a provider. A strict
+`json_schema` request on a route without that guarantee is refused with HTTP
+400 `{"error":{"type":"unsupported_parameter","param":"response_format","message":"json_schema strict is not supported by <model>"}}`
+before any provider call. This applies to stream and non-stream alike: a
+stream validates the assembled answer before the final chunk and ends with an
+error event on failure.
 Markdown fences, malformed/nonfinite JSON, and schema mismatches never count as
 successful output. A non-streamed failure gets one corrective attempt containing
 the bounded validation error, within the original deadline/reservation. If that

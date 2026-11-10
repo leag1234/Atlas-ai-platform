@@ -185,6 +185,17 @@ async def loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    from services.orchestrator.work_orphan_sweep import sweep_at_startup
+
+    # A restart during a Work turn can leave engine, proxy or worker
+    # containers running with no session behind them: sweep them once at start.
+    if os.environ.get("ATLAS_PROJECT_MODE") == "1":
+        try:
+            await sweep_at_startup()
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "work_orphan_sweep_startup_failed", exc_info=True
+            )
     worker = (
         asyncio.create_task(loop())
         if os.environ.get("ATLAS_PROJECT_MODE") == "1"
