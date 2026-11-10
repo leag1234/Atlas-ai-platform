@@ -526,7 +526,7 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 /* Hover and focus follow the rail's other buttons. */
 .atlas-rail-open:is(:hover,:focus-visible) { background:var(--atlas-surface); }
 
-/* Sidebar search dialog (Ctrl+K) stays inside the viewport on both themes (owner report 2026-11-10). */
-dialog:has(> input[type="search"]), dialog:has(input[aria-label*="earch"]) { max-width:calc(100vw - 32px); max-height:calc(100dvh - 32px); margin:auto; overflow:auto; box-sizing:border-box; }
-/* The search input keeps its full width and never overflows the cut panel. */
-dialog:has(> input[type="search"]) input[type="search"], dialog:has(input[aria-label*="earch"]) input { width:100%; min-width:0; box-sizing:border-box; }
+/* Sidebar search (Ctrl+K): no wide outline over the magnifier on the focused input (owner report 2026-11-10). */
+:is([role=dialog],dialog) input[placeholder]:focus { outline:none!important; box-shadow:none!important; }
+/* The search field's container shows focus with a thin accent ring inside the dialog bounds. */
+:is([role=dialog],dialog) :has(> input[placeholder]:focus) { border-radius:10px; box-shadow:inset 0 0 0 1px var(--atlas-accent); }

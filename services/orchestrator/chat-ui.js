@@ -1041,31 +1041,23 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", start, { once: true }) : start();
 })();
 
-// Sidebar search (Ctrl+K, owner report 2026-11-10): a result must open its chat,
-// and Enter inside the search box must never submit the composer.
+// Sidebar search (Ctrl+K, owner report 2026-11-10): the first entry of the list is
+// Open WebUI's "Start a new conversation" action, so Enter after typing a word
+// started a chat with that word. When the search found chats, Enter opens the
+// first one instead; with no result, Enter keeps its native behaviour.
 (() => {
   "use strict";
-  // The search dialog is the native modal holding the search input; the composer
-  // is the host form holding #chat-input. Both conditions must hold, so Enter in
-  // any other input (project dialogs, code workspace) keeps its native behavior.
-  const inSearchDialog = target => target instanceof Element && Boolean(target.closest("dialog")) && Boolean(target.closest("dialog").querySelector("input[type='search'],input[aria-label],input:not([type])"));
-  const composerOf = target => target instanceof Element && target.closest("form")?.querySelector("#chat-input") ? target.closest("form") : null;
   document.addEventListener("keydown", event => {
-    if (event.key !== "Enter" || event.isComposing) return;
-    const target = event.target;
-    if (!inSearchDialog(target)) return;
-    // Never let the host composer treat this Enter as a send.
+    if (event.key !== "Enter" || event.isComposing || event.shiftKey) return;
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const box = input.closest("[role=dialog], dialog");
+    if (!box || !input.value.trim()) return;
+    const first = box.querySelector("a[href^='/c/']");
+    if (!first) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-  }, true);
-  document.addEventListener("submit", event => {
-    const form = composerOf(event.target);
-    if (!form) return;
-    const search = document.querySelector("dialog[open] input[type='search']");
-    if (search && search.isConnected && (document.activeElement === search || search.parentElement.contains(document.activeElement))) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
+    first.click();
   }, true);
 })();
 
