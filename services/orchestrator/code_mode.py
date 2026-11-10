@@ -862,7 +862,11 @@ async def process_work(
                 if terminal == "failed":
                     item.erreurs.append(engine_result.reason)
                     item.reponse += "\n\nWork failed: " + engine_result.reason
-                from services.orchestrator.work_save import save_turn_files
+                from services.orchestrator.work_save import (
+                    not_saved_line,
+                    save_turn_files,
+                    saved_line,
+                )
 
                 saved = await save_turn_files(
                     execution,
@@ -875,15 +879,15 @@ async def process_work(
 
                 for receipt in saved.get("receipts", []):
                     links = project_deliverable_links(
-                        receipt, broker.org, broker.project
+                        receipt, broker.org, broker.project, request.lang
                     )
                     if links not in item.reponse:
                         item.reponse += "\n\n" + links
                 for entry in saved.get("saved_modified", []):
                     item.reponse += (
-                        "\n\nSaved modified project file: "
-                        + f"/api/atlas/orgs/{broker.org}/projects/{broker.project}"
-                        + f"/files/{entry['file_id']}/content?version={entry['file_version_id']}"
+                        saved_line(request.lang)
+                        + f"[{entry['path']}](/api/atlas/orgs/{broker.org}/projects/{broker.project}"
+                        + f"/files/{entry['file_id']}/content?version={entry['file_version_id']})"
                     )
                 denied = [
                     str(entry.get("path", ""))
@@ -891,9 +895,7 @@ async def process_work(
                     if isinstance(entry, dict)
                 ]
                 if denied:
-                    item.reponse += (
-                        "\n\nNot saved (approval denied/expired): " + ", ".join(denied)
-                    )
+                    item.reponse += not_saved_line(request.lang) + ", ".join(denied)
                 await tools.emit(
                     "recap",
                     label="Work turn complete"
@@ -1062,7 +1064,9 @@ async def process_work(
 
             delivered: list[str] = []
             for receipt in tools.deliverables:
-                links = project_deliverable_links(receipt, broker.org, broker.project)
+                links = project_deliverable_links(
+                    receipt, broker.org, broker.project, request.lang
+                )
                 delivered.append(links)
                 if links not in item.reponse:
                     item.reponse += "\n\n" + links
@@ -1087,7 +1091,11 @@ async def process_work(
                         else "\n\n".join(dict.fromkeys(delivered)),
                     )
                 item.reponse += "\n\nWork failed: " + reason
-            from services.orchestrator.work_save import save_turn_files
+            from services.orchestrator.work_save import (
+                not_saved_line,
+                save_turn_files,
+                saved_line,
+            )
 
             saved = await save_turn_files(
                 execution,
@@ -1099,14 +1107,16 @@ async def process_work(
             from services.orchestrator.file_results import project_deliverable_links
 
             for receipt in saved.get("receipts", []):
-                links = project_deliverable_links(receipt, broker.org, broker.project)
+                links = project_deliverable_links(
+                    receipt, broker.org, broker.project, request.lang
+                )
                 if links not in item.reponse:
                     item.reponse += "\n\n" + links
             for entry in saved.get("saved_modified", []):
                 item.reponse += (
-                    "\n\nSaved modified project file: "
-                    + f"/api/atlas/orgs/{broker.org}/projects/{broker.project}"
-                    + f"/files/{entry['file_id']}/content?version={entry['file_version_id']}"
+                    saved_line(request.lang)
+                    + f"[{entry['path']}](/api/atlas/orgs/{broker.org}/projects/{broker.project}"
+                    + f"/files/{entry['file_id']}/content?version={entry['file_version_id']})"
                 )
             denied = [
                 str(entry.get("path", ""))
@@ -1114,9 +1124,7 @@ async def process_work(
                 if isinstance(entry, dict)
             ]
             if denied:
-                item.reponse += "\n\nNot saved (approval denied/expired): " + ", ".join(
-                    denied
-                )
+                item.reponse += not_saved_line(request.lang) + ", ".join(denied)
             await tools.emit(
                 "recap",
                 label="Work turn complete"
