@@ -123,11 +123,48 @@ class ProjectPatch(Closed):
     privacy: Literal["standard", "strict"] | None = None
 
 
+class ImportedPart(Closed):
+    type: Literal["text", "artifact_link", "file"]
+    text: str = Field(default="", max_length=32000)
+    artifact: (
+        Annotated[str, Field(min_length=32, max_length=32, pattern=r"[0-9a-f]{32}")]
+        | None
+    ) = None
+    version: int | None = Field(default=None, ge=1, le=9999)
+    title: str = Field(default="", max_length=200)
+    slot: Literal["top", "bottom"] = "top"
+    file_id: str | None = None
+
+    @field_validator("text")
+    @classmethod
+    def text_required_for_text_parts(cls, value: str, info: Any) -> str:
+        if info.data.get("type") == "text" and not value.strip():
+            raise ValueError("text part requires text")
+        return value
+
+    @field_validator("artifact", "version")
+    @classmethod
+    def artifact_parts_carry_artifact(cls, value: Any, info: Any) -> Any:
+        if info.data.get("type") == "artifact_link" and value is None:
+            raise ValueError("artifact_link part requires artifact and version")
+        return value
+
+    @field_validator("file_id")
+    @classmethod
+    def file_parts_carry_file(cls, value: str | None, info: Any) -> str | None:
+        if info.data.get("type") == "file":
+            if value is None:
+                raise ValueError("file part requires file_id")
+            UUID(value)
+        return value
+
+
 class ImportedMessage(Closed):
     role: Literal["user", "assistant", "system"]
     content: Annotated[str, Field(min_length=1, max_length=32000, pattern=r"\S")]
     created_at: Annotated[str, Field(min_length=20, max_length=40, pattern=r"Z$")]
     attachment_file_ids: list[str] = Field(default_factory=list, max_length=20)
+    parts: list[ImportedPart] = Field(default_factory=list, max_length=200)
 
     @field_validator("attachment_file_ids")
     @classmethod

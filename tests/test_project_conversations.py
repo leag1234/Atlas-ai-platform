@@ -365,6 +365,72 @@ class ProjectConversationTests(ProjectIsolationTests):
             turn = ProjectFiles(scope).listing("turn", conversation["id"])[0]
             self.assertEqual(turn["file_version_ids"], [attached["version_id"]])
 
+    def test_import_preserves_every_message_part(self) -> None:
+        from services.retrieval.project_files import ProjectFiles
+
+        with store(self.app_dsn).scope(
+            self.identity("editor", self.project), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            folder = files.folder(
+                {"name": "Parts", "locality": "server", "model_use": "allow"}
+            )
+            attached = files.create_file(
+                folder["id"], "drawing.svg", b"<svg/>", folder["revision"]
+            )
+        artifact = "a" * 32
+        body = {
+            "title": "Drawing chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Draw a chart.",
+                    "created_at": "2026-10-29T09:00:00Z",
+                    "attachment_file_ids": [],
+                    "parts": [],
+                },
+                {
+                    "role": "assistant",
+                    "content": "Here is the drawing.",
+                    "created_at": "2026-10-29T09:01:00Z",
+                    "attachment_file_ids": [],
+                    "parts": [
+                        {
+                            "type": "artifact_link",
+                            "artifact": artifact,
+                            "version": 2,
+                            "title": "Chart app",
+                            "slot": "top",
+                        },
+                        {"type": "file", "file_id": attached["id"]},
+                        {"type": "text", "text": "extra note"},
+                    ],
+                },
+            ],
+        }
+        response = self.request(
+            "POST", self.project_path() + "/conversations/import", "editor", body
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        conversation = response.json()
+        turns = self.request(
+            "GET",
+            self.project_path() + f"/conversations/{conversation['id']}/turns",
+            "editor",
+        ).json()["items"]
+        self.assertEqual(len(turns), 2)
+        answer_refs = turns[1]["content_refs"]
+        kinds = [ref["kind"] for ref in answer_refs]
+        self.assertEqual(kinds, ["answer", "artifact_link", "file", "answer"])
+        link = answer_refs[1]["text"]
+        self.assertIn(f"/api/atlas/artifacts/{artifact}/versions/2/open#", link)
+        self.assertIn("atlas-view=app", link)
+        self.assertIn(f"artifact={artifact}", link)
+        self.assertIn("version=2", link)
+        self.assertEqual(answer_refs[2]["file_version_id"], attached["version_id"])
+        self.assertEqual(answer_refs[3]["text"], "extra note")
+        self.assertEqual(turns[1]["file_version_ids"], [attached["version_id"]])
+
     def broker(
         self,
         operation: str,
