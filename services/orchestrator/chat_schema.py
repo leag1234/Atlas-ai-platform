@@ -230,7 +230,7 @@ class ChatRequest(VisionInput):
     @property
     def app_turn(self) -> bool:
         # An app turn writes the whole SVG or HTML app in one tool call. Measured
-        # on the assistant models: 30 s (GLM) to 190 s (Qwen) for a drawing, so
+        # on the assistant models: 30 s to 190 s for a drawing, so
         # the plain chat 120 s cut the turn while the gateway was still writing.
         # Same eligibility as the app panel route in chat_pipeline.
         if (
