@@ -130,12 +130,49 @@ async def project_file_paths(execution: Any) -> dict[str, dict[str, Any]]:
                     PurePosixPath(str(file["folder_id"])) / str(file["relative_path"])
                 )
                 paths[key] = dict(
-                    file_id=file["id"], relative_path=file["relative_path"]
+                    file_id=file["id"],
+                    relative_path=file["relative_path"],
+                    sha256=file.get("sha256"),
                 )
         cursor = page.get("next_cursor")
         if not cursor:
             break
     return paths
+
+
+def unattended_copy_name(
+    folder_id: str,
+    relative: str,
+    content: bytes | None,
+    existing: dict[str, dict[str, Any]],
+) -> str | None:
+    """Where a changed file goes when nobody can approve an overwrite (the chat).
+
+    Returns "" when the project already holds these exact bytes under this name
+    or one of its numbered copies, the next free numbered name otherwise, and
+    None when that cannot be decided (the overwrite path then applies). Nothing
+    is overwritten: behind the chat a rerun script kept no download link, and
+    two conversations sharing a file name blocked each other (staging 2026-11-10).
+    """
+    path = PurePosixPath(relative)
+    if content is None or existing[folder_id + "/" + relative].get("sha256") is None:
+        return None
+    digest = hashlib.sha256(content).hexdigest()
+    copies = re.compile(re.escape(path.stem) + r"(?:-\d+)?" + re.escape(path.suffix))
+    for key, file in existing.items():
+        other = PurePosixPath(str(file["relative_path"]))
+        if (
+            key.startswith(folder_id + "/")
+            and other.parent == path.parent
+            and copies.fullmatch(other.name)
+            and file.get("sha256") == digest
+        ):
+            return ""
+    for number in range(2, 100):
+        candidate = str(path.with_name(f"{path.stem}-{number}{path.suffix}"))
+        if folder_id + "/" + candidate not in existing:
+            return candidate
+    return None
 
 
 async def deliverables_folder(execution: Any) -> str | None:
@@ -227,10 +264,19 @@ async def _export_and_save_new_files(
         if path in bases:
             continue
         if folder_id + "/" + relative in existing:
-            # Created by an earlier turn of this session (kept workspace), so
-            # already a project file: saving it is an overwrite, with approval.
-            report["modified"].append(path)
-            continue
+            renamed = (
+                unattended_copy_name(folder_id, relative, contents.get(path), existing)
+                if getattr(tools, "approvals_unattended", False)
+                else None
+            )
+            if renamed == "":
+                continue
+            if renamed is None:
+                # Created by an earlier turn of this session (kept workspace), so
+                # already a project file: saving it is an overwrite, with approval.
+                report["modified"].append(path)
+                continue
+            relative = renamed
         if path in binary:
             report["skipped"].append({"path": path, "reason": "binary"})
             continue

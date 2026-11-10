@@ -236,6 +236,35 @@ class FreeNameTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+class UnattendedCopyNameTests(unittest.TestCase):
+    def test_changed_file_gets_a_numbered_copy_and_same_bytes_are_skipped(self) -> None:
+        import hashlib
+
+        from services.orchestrator.work_save import unattended_copy_name
+
+        old, new = b"print(1)", b"print(2)"
+        existing: dict[str, dict[str, object]] = {
+            "f/primes.py": {
+                "relative_path": "primes.py",
+                "sha256": hashlib.sha256(old).hexdigest(),
+            }
+        }
+        self.assertEqual(unattended_copy_name("f", "primes.py", old, existing), "")
+        self.assertEqual(
+            unattended_copy_name("f", "primes.py", new, existing), "primes-2.py"
+        )
+        existing["f/primes-2.py"] = {
+            "relative_path": "primes-2.py",
+            "sha256": hashlib.sha256(new).hexdigest(),
+        }
+        self.assertEqual(unattended_copy_name("f", "primes.py", new, existing), "")
+        self.assertEqual(
+            unattended_copy_name("f", "primes.py", b"x", existing), "primes-3.py"
+        )
+        existing["f/primes.py"]["sha256"] = None
+        self.assertIsNone(unattended_copy_name("f", "primes.py", new, existing))
+
+
 class SettledSwitchRefusalTests(unittest.TestCase):
     def test_refused_switch_is_settled_once_a_file_is_published(self) -> None:
         from services.orchestrator.code_mode import open_failures

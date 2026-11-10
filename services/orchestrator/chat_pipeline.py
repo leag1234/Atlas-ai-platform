@@ -717,7 +717,15 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
     )
-    if check is not None and check.evidence and item.state == "done":
+    # A Work answer describes the file it delivered: its sentences are not factual
+    # claims to match against the pages read ("no source mentions this entity" was
+    # put in front of delivered documents, staging 2026-11-10).
+    if (
+        check is not None
+        and check.evidence
+        and item.state == "done"
+        and item.task_type != "work"
+    ):
         item.reponse = check.check(
             item.reponse,
             request.user_text,
