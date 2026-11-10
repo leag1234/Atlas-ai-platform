@@ -970,6 +970,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !pane.hidden) { close(); event.preventDefault(); } });
     window.atlasSideView = { open, close };
     const seen = new WeakSet(), opened = new Set();
+    // On a phone the side view covers the whole conversation: never open it by itself there, the chip stays one tap away.
+    const wide = () => matchMedia("(min-width: 768px)").matches;
     const chip = (node, descriptor) => { const control = button(text(0), () => open(typeof descriptor === "function" ? descriptor() : descriptor)); control.classList.add("atlas-side-chip"); node.after(control); };
     const scan = () => {
       // This pinned renderer escapes raw spans as text; hide only our exact wire marker.
@@ -979,7 +981,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         const descriptor = { kind: node.dataset.atlasView, src: node.dataset.src, title: node.dataset.title, slot: node.dataset.slot };
         const message = node.closest('[id^="message-"]') || node.closest(".chat-assistant");
         const identity = `${location.pathname}:${message?.id || ""}:${JSON.stringify(descriptor)}`;
-        chip(node, descriptor); if (!opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
+        chip(node, descriptor); if (wide() && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
       });
       document.querySelectorAll('.chat-assistant .markdown-prose a[href], .user-message .markdown-prose a[href]').forEach(node => {
         if (seen.has(node)) return;
@@ -1005,7 +1007,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
           seen.add(placeholder); node.before(placeholder);
           node.classList.add("atlas-side-chip"); node.textContent = text(0);
           node.addEventListener("click", event => { event.preventDefault(); open(descriptor).catch(() => {}); });
-          if (descriptor.kind !== "app" && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
+          if (descriptor.kind !== "app" && wide() && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
           if (descriptor.kind === "app") {
             const messages = [...document.querySelectorAll(".chat-assistant")], last = messages[messages.length - 1];
             const current = slots.get(descriptor.slot === "bottom" ? "bottom" : "top");
@@ -1017,7 +1019,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
                   current.content.prepend(banner);
                 }
               } else open(descriptor).catch(() => {});
-            } else if (message === last || message?.contains(last)) open(descriptor).catch(() => {});
+            } else if (wide() && (message === last || message?.contains(last))) open(descriptor).catch(() => {});
           }
           return;
         }

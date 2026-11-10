@@ -297,3 +297,9 @@ body:has(> #atlas-project) #sidebar :has(> a.selected) :is(button,button svg) { 
 #atlas-project .atlas-project-composer-tools [data-send] svg { width:18px; height:18px; }
 #atlas-project .atlas-project-composer-tools [data-send]:disabled { opacity:.3; cursor:default; }
 #atlas-project .atlas-project-composer-tools [data-stop]:disabled { display:none; }
+/* Phone project header: the sidebar button sits before the logo, like the chat header; the opened sidebar stays above the project view. */
+.atlas-project-mobile-header .atlas-project-sidebar-open { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; margin-right:6px; padding:0; border:0; border-radius:10px; background:transparent; color:var(--atlas-text); }
+@media (max-width: 767px) { body:has(> #atlas-project) #sidebar[aria-hidden="false"] { z-index:60!important; } }
+/* Project title row on a phone: the title wraps, the action buttons never break inside a word. */
+#atlas-project .atlas-project-page-heading { flex-wrap:wrap; row-gap:6px; }
+#atlas-project .atlas-project-page-heading > button { white-space:nowrap; flex-shrink:0; }
