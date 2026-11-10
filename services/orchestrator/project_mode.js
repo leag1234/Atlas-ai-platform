@@ -953,9 +953,20 @@
     if (url.origin !== location.origin || !url.pathname.startsWith(base() + '/') || url.username || url.password) throw new Error(t('selectionError'));
     return url.href;
   }
+  // Source code and data files are shown as they are, in a code block. Rendered as Markdown they lost
+  // their indentation and their underscores (__name__ read "name").
+  const sourceSuffixes = new Set('py js mjs cjs ts jsx tsx json jsonl css scss sh bash zsh yml yaml toml ini cfg conf sql rb go rs java kt c h cpp hpp cs php swift lua r pl xml csv tsv log env dockerfile makefile gitignore'.split(' '));
+  async function previewSource(file, src) {
+    const current = generation, response = await request(src);
+    const text = await response.text(); checkScope(current);
+    const longest = Math.max(0, ...(text.match(/`+/g) || []).map(run => run.length));
+    const fence = '`'.repeat(Math.max(3, longest + 1));
+    await window.atlasSideView.open({ kind:'markdown', content:`${fence}\n${text}\n${fence}`, title:file.relative_path, readOnly:true });
+  }
   async function previewFile(file) {
     const src = projectURL(base() + '/files/' + file.id + '/content?version=' + file.version_id);
     const suffix = file.relative_path.split('.').pop().toLowerCase();
+    if (sourceSuffixes.has(suffix)) { await previewSource(file, src); return; }
     const kind = ({ pdf:'pdf', md:'markdown', markdown:'markdown', html:'html', htm:'html', diff:'diff', patch:'diff', txt:'markdown' })[suffix];
     if (kind) { await window.atlasSideView.open({ kind, src, title:file.relative_path }); return; }
     const item = panelData?.deliverables.find(item => item.file_version_id === file.version_id);
@@ -968,6 +979,7 @@
     // derived preview is a text extract, which displayed a fragment of the source instead.
     const produced = files.find(file => file.version_id === item.file_version_id);
     if (produced && /\.html?$/i.test(produced.relative_path)) { await previewFile(produced); return; }
+    if (produced && sourceSuffixes.has(produced.relative_path.split('.').pop().toLowerCase())) { await previewFile(produced); return; }
     const src = projectURL(base() + '/deliverables/' + item.id + '/preview');
     const current = generation, response = await request(src);
     const type = response.headers.get('content-type') || '';
