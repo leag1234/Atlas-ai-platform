@@ -15,6 +15,7 @@ from typing import Any, cast
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
+import api_routing
 import dev_gateway as gateway
 from services.orchestrator.dev_auth import QuotaError, Store
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
@@ -597,6 +598,28 @@ async def chat(
                     400,
                     "Web fetch is not available in strict privacy mode.",
                 )
+        if (
+            public_model is not None
+            and parsed.response_format.type == "json_schema"
+            and parsed.response_format.json_schema is not None
+            and parsed.response_format.json_schema.strict
+            and not api_routing.supports_structured_output(
+                public_model, parsed.reasoning_effort
+            )
+        ):
+            # Never free text when strict json_schema was asked: refuse before
+            # any provider call, naming the public model.
+            return JSONResponse(
+                {
+                    "error": {
+                        "type": "unsupported_parameter",
+                        "param": "response_format",
+                        "message": "json_schema strict is not supported by "
+                        + public_model,
+                    }
+                },
+                status_code=400,
+            )
         plan = (
             gateway.prepare_api(
                 parsed, public_model, request.state.api_key.id, strict=strict
