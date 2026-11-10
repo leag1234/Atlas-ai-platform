@@ -153,3 +153,14 @@ class DevInferenceTests(unittest.IsolatedAsyncioTestCase):
                 usage = self.env.store.usage("alice")
                 self.assertEqual(usage["charged_micro_eur"], 0)
                 self.assertEqual(usage["unknown_micro_eur"], 0)
+
+
+class RequestTargetTests(unittest.TestCase):
+    def test_planned_target_names_provider_and_model(self) -> None:
+        from types import SimpleNamespace
+
+        from services.orchestrator.dev_inference import request_target
+
+        plan = SimpleNamespace(provider="mistral", model="mistral-large-4")
+        self.assertEqual(request_target(plan), "mistral/mistral-large-4")  # type: ignore[arg-type]
+        self.assertIsNone(request_target(SimpleNamespace(provider="", model="x")))  # type: ignore[arg-type]
