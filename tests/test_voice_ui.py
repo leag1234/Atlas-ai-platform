@@ -12,7 +12,7 @@ from services.orchestrator.chat_api import app
 from services.orchestrator.ui_injection import ATLAS_UI_TAGS, inject_atlas_ui
 
 
-async def signed_in(request) -> str:
+async def signed_in(request: object) -> str:
     return "user-1"
 
 
