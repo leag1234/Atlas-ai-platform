@@ -107,6 +107,11 @@ def unavailable_reply(language: str) -> str:
 
 def guest_capability_instruction() -> str:
     """State stable guest limits in pipeline-owned system text, not prompt artifacts."""
+    from services.orchestrator import request_router
+
+    if request_router.enabled():
+        # With model routing, the statement says what the instance delivers.
+        return request_router.capability_statement()
     if os.environ.get("ATLAS_STABLE") != "1":
         return "\n\nImage generation is unavailable on this instance. Do not offer it."
     return (

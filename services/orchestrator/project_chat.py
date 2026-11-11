@@ -147,6 +147,8 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
             "conversation_id": None,
         }
     )
+    # A project turn keeps its own handling: the plain-chat model router skips it.
+    scoped.__dict__["model_route_skip"] = True
     followup = is_followup(scoped_messages)
     iteration = image_iteration(scoped_messages)
     if followup or request.has_attachments or request.messages[-1].images:

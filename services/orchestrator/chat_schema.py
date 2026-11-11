@@ -220,10 +220,19 @@ class ChatRequest(VisionInput):
 
             # The inner code deadline owns the measured stop, including cleanup.
             return settings().wall_clock + 15
+        from services.orchestrator.request_router import decision
+
+        # The model routing decision of this turn, when there is one, replaces
+        # the lexical file and Work tests (ATLAS_MODEL_ROUTER=1).
+        routed = decision(self)
         return (
             300.0
             if self.has_attachments
-            or produces_file(self.user_text, include_images=False)
+            or (
+                routed.kind == "file"
+                if routed is not None
+                else produces_file(self.user_text, include_images=False)
+            )
             or self.app_turn
             # A turn that Work answers behind the chat (code to run, a real file, a
             # change to either) is not a 120 s chat answer: one slow call cut a
@@ -231,7 +240,11 @@ class ChatRequest(VisionInput):
             or (
                 os.environ.get("ATLAS_CHAT_WORK") == "1"
                 and not self.__dict__.get("work_declined")
-                and continues_work(self.user_text)
+                and (
+                    routed.work
+                    if routed is not None
+                    else continues_work(self.user_text)
+                )
             )
             else 120.0
         )
@@ -251,11 +264,16 @@ class ChatRequest(VisionInput):
         ):
             return False
         from packages.artifact_intent import app_intent
+        from services.orchestrator.request_router import app_route, decision
 
         history = [
             {"role": message.role, "content": message.text}
             for message in self.conversation_messages[:-1]
         ]
+        routed = decision(self)
+        if routed is not None:
+            # An app, or a drawing made as SVG in the panel (images off or SVG asked).
+            return app_route(self, routed, has_artifact=False) is not None
         return app_intent(self.user_text, history) in ("create", "modify")
 
     @model_validator(mode="after")

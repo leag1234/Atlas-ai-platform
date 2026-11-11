@@ -209,6 +209,35 @@ Retrieval owns metadata and blob publication; the orchestrator never opens its d
 - Changing action keeps the conversation; title generation cannot create Work sessions.
 - Plan confirmation: optional per project, off by default (decision Q9).
 
+### 4.1.1 Plain-chat routing by the model (owner decision 2026-11-11)
+- A plain chat turn (no project, no attachment or image, not a continuation, not an
+  interface task such as `### Task:` or the title request) is routed once by the model:
+  `services/orchestrator/request_router.py` asks the fast public profile of
+  `routing.yaml` (one `/agent/complete` call, JSON object output, no tools, 3 s hard
+  timeout, `ATLAS_MODEL_ROUTER_TIMEOUT` to change it) for a typed decision: `kind`
+  (`answer`, `research`, `drawing`, `app`, `file`, `run`, `remote`, `other`),
+  `file_format`, `follow_up`, `needs_research`. The decision is stored on the request and
+  every gate reads it first:
+  - `app` goes to the app panel (create, or modify when `follow_up` and an app exists);
+  - `drawing` uses image generation when it is enabled, otherwise it is drawn as SVG in
+    the app panel, or inline when there is no panel; technical diagrams, floor plans and
+    "what does X look like" keep their own paths;
+  - `file`, `run`, `remote` go to Work behind the chat (`ATLAS_CHAT_WORK=1`); `file` also
+    sets the 300 s deadline, the file flags and the expected format;
+  - everything else stays an ordinary chat answer.
+- Fallback: with `ATLAS_MODEL_ROUTER` unset (the default), or on a timeout, a gateway error
+  or an invalid output, the decision is absent and the lexical gates (`app_intent`,
+  `work_reason`, `produces_file`, `explicit_image_request`, ...) decide exactly as before.
+  Each decision logs one line (`request_router kind=... ms=... fallback=...`), never the
+  user's text. The person lookup, nearby places, links, QR codes and research grounding
+  keep their lexical tests.
+- Rule: a capability that is absent falls back to the capability that can deliver; it
+  does not refuse. A drawing with image generation off is drawn as SVG. With the router on,
+  the chat system text states what the instance delivers (drawings as SVG, files and code
+  runs through Work, or files rendered from the answer) instead of "unavailable here, do not
+  offer it", which made the chat deny capabilities the product has.
+- Live measure (staging gateway, 2026-11-11): `tools/router_eval.py`, kept out of CI.
+
 ### 4.2 Context assembly (contract § session state amendment; § context telemetry amendment)
 - Order: system, project instructions, pinned memory, tool declarations (stable prefix, never
   compacted), session state, recent verbatim turns (default 8 turns, 20,000 tokens), tool
