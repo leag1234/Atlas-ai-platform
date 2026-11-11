@@ -204,7 +204,9 @@ def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str
     requested file did not exist yet is steering: once the turn has published a
     file it is settled.
     """
-    settled = {"read_file"}
+    # A page that gave no text or a search that failed is a result too: the
+    # model writes with what it has (staging 2026-11-11).
+    settled = {"read_file", "web_search", "web_fetch"}
     if (
         deliverables
         and failures.get("switch_tool_group") == "deliverable_group_required"
@@ -713,6 +715,10 @@ async def process_work(
     tools = WorkTools(workspace, execution, sink_context.get())
     # Set by the chat when Work runs behind it: no approval card can be answered there.
     tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
+    from packages.work_intent import named_office_format
+
+    named_format = named_office_format(request.user_text)
+    tools.requested_suffix = "." + named_format if named_format else None
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,

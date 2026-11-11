@@ -133,3 +133,27 @@ def continues_work(text: str) -> bool:
             _FOLLOW_UP.search(normalized) is not None and not _HOW_TO.search(normalized)
         )
     )
+
+
+_OFFICE_KINDS = (
+    ("docx", re.compile(r"\bdocx\b|\bword\b")),
+    ("xlsx", re.compile(r"\bxlsx\b|\bexcel\b")),
+    ("pptx", re.compile(r"\bpptx\b|\bpowerpoint\b")),
+    ("pdf", re.compile(r"\bpdf\b")),
+)
+
+
+def named_office_format(text: str) -> str | None:
+    """The one office format a file request names ("a Word note" is a .docx).
+
+    None when the turn is not a file request or names several formats: only an
+    unambiguous request constrains what may be published (a Word note asked in
+    the chat came back as Markdown, staging 2026-11-11).
+    """
+    if work_reason(text) != "file":
+        return None
+    normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text))
+    named = [
+        extension for extension, pattern in _OFFICE_KINDS if pattern.search(normalized)
+    ]
+    return named[0] if len(named) == 1 else None

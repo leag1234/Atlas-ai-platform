@@ -325,6 +325,13 @@ async def publish(
         or path.suffix not in {".docx", ".xlsx", ".pptx", ".pdf", *TEXT_MIMES}
     ):
         raise ValueError("Invalid deliverable path or format")
+    wanted = getattr(tools, "requested_suffix", None)
+    if wanted and path.suffix != wanted and not tools.deliverables:
+        # The request names one office format: the first file delivered is that one.
+        raise ValueError(
+            f"The request asks for a {wanted} file: call publish_document with a "
+            f"path ending in {wanted} (not {path.suffix})."
+        )
 
     execution = tools.execution
     status, project = await execution.broker.public("GET", "")

@@ -221,6 +221,7 @@ async def run(
     recent: list[tuple[str, str]] = []
     nudged: set[tuple[str, str]] = set()
     quota_recovered = False
+    quota_denials = 0
     protocol_recovered = False
     links_recovered = False
     retrieved: set[str] = set()
@@ -463,7 +464,11 @@ async def run(
                 sink = sink_context.get()
                 if sink:
                     await sink({"phase": "intermediate_narration", "text": turn.text})
-            if quota_recovered:
+            # In the chat a quota note is the last tool exchange: the model must now
+            # answer. In Work it still has to write and publish the file it was
+            # asked for (a researched note stopped here before its publication,
+            # staging 2026-11-11): only more research is refused, below.
+            if quota_recovered and not limits.code_mode:
                 raise Stop("tool_quota_exhausted")
             messages.append(
                 {
@@ -551,13 +556,21 @@ async def run(
                 if (
                     quota
                     and limits.profile
-                    and not quota_recovered
                     # In Work the step ceiling stays a hard stop; a research quota is
-                    # told to the model once, as in the chat, so that it writes with
-                    # what it has (a researched note died here, staging 2026-11-10).
-                    and (not limits.code_mode or quota != "tool_calls")
+                    # told to the model, as in the chat, so that it writes with what
+                    # it has (a researched note died here, staging 2026-11-10). Work
+                    # may be told a few times; the chat once.
+                    and (
+                        (
+                            limits.code_mode
+                            and quota != "tool_calls"
+                            and quota_denials < 4
+                        )
+                        or (not limits.code_mode and not quota_recovered)
+                    )
                 ):
                     quota_recovered = True
+                    quota_denials += 1
                     for denied in pending_calls[pending_calls.index(call) :]:
                         denial: Message = {
                             "error": "tool_quota_exhausted",
