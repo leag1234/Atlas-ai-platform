@@ -207,6 +207,11 @@ def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str
     # A page that gave no text or a search that failed is a result too: the
     # model writes with what it has (staging 2026-11-11).
     settled = {"read_file", "web_search", "web_fetch"}
+    # A machine tool's refusal is a sentence the model relays (key not installed
+    # yet, host key changed): the person's next step, not a broken turn.
+    from services.orchestrator.work_machine_tools import NAMES as machine_tools
+
+    settled.update(machine_tools)
     if (
         deliverables
         and failures.get("switch_tool_group") == "deliverable_group_required"
@@ -304,7 +309,8 @@ async def execute_turn(
         tools,
         Path("prompts/chat.txt").read_text()
         + Path("prompts/chat-agent.txt").read_text()
-        + (language_instruction(request.lang) if isinstance(tools, WorkTools) else ""),
+        + (language_instruction(request.lang) if isinstance(tools, WorkTools) else "")
+        + (tools.instructions if isinstance(tools, WorkTools) else ""),
         limits,
         history=history,
         references=references,
@@ -715,6 +721,7 @@ async def process_work(
     tools = WorkTools(workspace, execution, sink_context.get())
     # Set by the chat when Work runs behind it: no approval card can be answered there.
     tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
+    tools.lang = request.lang
     from packages.work_intent import named_office_format
     from services.orchestrator.request_router import decision as routed_decision
 
@@ -855,8 +862,19 @@ async def process_work(
             status, project = await broker.public("GET", "")
             if status != 200:
                 raise ProjectError(status, str(project.get("error", "not_found")))
+            from services.orchestrator.work_machine_tools import machine_turn
+
+            # A turn on the user's own machine starts in the remote group, where
+            # a machine is added and verified in the conversation even when he
+            # has none yet. "Compile on my server" otherwise selected the code
+            # group (and the engine, which has no remote tools).
+            remote_turn = machine_turn(
+                request, routed, bool(execution.session.get("repository_id"))
+            )
             tools.selection = WorkToolSelection(
-                select_group(
+                "remote"
+                if remote_turn
+                else select_group(
                     request.user_text,
                     selected_files,
                     bool(execution.session.get("repository_id")),
@@ -973,6 +991,10 @@ async def process_work(
                 )
                 if targets.get("items"):
                     tools.selection.enable_remote()
+                if tools.selection.remote_enabled:
+                    from services.orchestrator.work_machine_tools import instructions
+
+                    tools.instructions = instructions(tools.approvals_unattended)
             repository = None
             if execution.session.get("repository_id"):
                 status, repositories = await broker.public("GET", "repositories")
@@ -1100,6 +1122,13 @@ async def process_work(
                     + "\n\n"
                     + CORRECTION["fr"]
                 )
+            from services.orchestrator.work_machine_tools import complete_answer
+
+            # An install command shown to the person is copied verbatim: the
+            # model is told to, and this makes sure of it.
+            item.reponse = complete_answer(
+                item.reponse, tools.machine_commands, request.lang
+            )
             item.tool_urls.extend(getattr(result, "tool_urls", set()))
             item.verification = result.verification.model_dump()
             if tools.nearby is not None and tools.nearby.result:
@@ -1147,7 +1176,11 @@ async def process_work(
                         category=category,
                         answer=item.reponse
                         if result.state == "done"
-                        else "\n\n".join(dict.fromkeys(delivered)),
+                        else complete_answer(
+                            "\n\n".join(dict.fromkeys(delivered)),
+                            tools.machine_commands,
+                            request.lang,
+                        ),
                     )
                 item.reponse += "\n\nWork failed: " + reason
             from services.orchestrator.work_save import (

@@ -186,6 +186,10 @@ def _delivered(text: str) -> str:
     if found := _FILE.search(text):
         extension = next((group for group in found.groups() if group), "")
         marks.append(f"a file (.{extension.lower()})" if extension else "a file")
+    from services.orchestrator.work_machine_tools import install_shown
+
+    if install_shown(text):
+        marks.append("a command to set up the user's machine, awaiting their reply")
     return f" [delivered: {', '.join(marks)}]" if marks else ""
 
 

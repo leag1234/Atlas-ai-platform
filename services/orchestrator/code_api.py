@@ -177,6 +177,48 @@ class ExecutionBroker:
         except (aiohttp.ClientError, TimeoutError):
             raise ProjectError(503, "dependency_unavailable") from None
 
+    async def member(
+        self,
+        method: str,
+        tail: str,
+        data: dict[str, Any] | None = None,
+        revision: object = None,
+        timeout: float = 10,
+    ) -> tuple[int, dict[str, Any]]:
+        """An organization route of the member himself (his machines), as him.
+
+        The same verified identity as `public`, resolved without a project: the
+        machines routes refuse a project scope. Every mutating request carries
+        its own Idempotency-Key, and If-Match when a revision is given.
+        """
+        import aiohttp
+        from uuid import uuid4
+        from services.orchestrator.project_ui import broker_identity, bounded_json
+        from services.orchestrator.chat_pipeline import retrieval_url
+        from services.retrieval.project_identity import ProjectError
+
+        headers: dict[str, str] = {}
+        if method != "GET":
+            headers["Idempotency-Key"] = str(uuid4())
+        if revision is not None:
+            headers["If-Match"] = f'"{revision}"'
+        try:
+            async with aiohttp.ClientSession(
+                trust_env=False, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as client:
+                resolved = await broker_identity(client, self.subject, self.org, None)
+                headers["X-Atlas-Project-Identity"] = str(resolved["identity"])
+                async with client.request(
+                    method,
+                    retrieval_url() + f"/api/atlas/orgs/{self.org}/" + tail,
+                    json=data,
+                    headers=headers,
+                    allow_redirects=False,
+                ) as reply:
+                    return reply.status, await bounded_json(reply)
+        except (aiohttp.ClientError, TimeoutError):
+            raise ProjectError(503, "dependency_unavailable") from None
+
     async def content(self, file_id: str, version_id: str, limit: int) -> bytes:
         import aiohttp
         from services.orchestrator.project_ui import broker_identity

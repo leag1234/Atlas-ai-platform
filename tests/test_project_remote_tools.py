@@ -155,11 +155,14 @@ class RemoteToolTests(unittest.TestCase):
             self.assertNotIn("private_key", json.dumps(schema.model_json_schema()))
 
     def test_remote_group_is_available_and_stays_bounded(self) -> None:
+        from services.orchestrator.work_machine_tools import NAMES as MACHINE_TOOLS
+
         selection = WorkToolSelection("remote")
+        # The user's own machines are set up from the same group (2026-11-11).
         self.assertEqual(
             set(selection.names)
             - {"update_plan", "request_approval", "switch_tool_group"},
-            set(SCHEMAS),
+            set(SCHEMAS) | set(MACHINE_TOOLS),
         )
         selection.reopen_enabled = True
         selection.memory_enabled = True

@@ -27,7 +27,19 @@ Group = Literal[
 ]
 CORE = ("update_plan", "request_approval", "switch_tool_group")
 GROUPS: dict[str, tuple[str, ...]] = {
-    "remote": ("list_targets", "remote_run", "remote_status", "remote_fetch"),
+    # The user's own machines are set up in the conversation, so their tools sit
+    # with the commands that use them (owner decision 2026-11-11).
+    "remote": (
+        "list_targets",
+        "remote_run",
+        "remote_status",
+        "remote_fetch",
+        "machine_add",
+        "machine_verify",
+        "machine_list",
+        "machine_change",
+        "machine_forget",
+    ),
     "documents": (
         "read_file",
         "read_document",
@@ -276,7 +288,7 @@ class WorkToolSelection:
         switch["parameters"]["properties"]["group"]["enum"] = self.offered_groups()
         switch["description"] = switch["description"].replace(
             "files (list/read/search/write/organize).",
-            "files (list/read/search/write/organize), remote (list targets/run/status/fetch on a granted machine).",
+            "files (list/read/search/write/organize), remote (the user's own machines over SSH: add/verify/list/change/forget; list targets/run/status/fetch on a verified or granted machine).",
         )
 
     def add_connectors(self, selection: Any) -> None:
@@ -333,7 +345,11 @@ class WorkToolSelection:
             extra += ("propose_scheduled_task",)
         if self.scheduled_publication:
             extra += ("publish_scheduled_file",)
-        selected_group = group if self.group == "code" else group[: 5 - len(extra)]
+        # Code and remote keep their whole group: at most 4 extras (schedules and
+        # scheduled publication never meet) keep both within 16 declarations.
+        selected_group = (
+            group if self.group in {"code", "remote"} else group[: 5 - len(extra)]
+        )
         names = (*CORE, *extra, *selected_group)
         if len(names) > 16:
             raise ValueError("Work tool selection exceeds the gateway capacity")
@@ -355,7 +371,7 @@ class WorkToolSelection:
             raise ToolSelectionError(
                 "no granted target for this project",
                 error="remote_unavailable",
-                next_step="Ask an administrator to grant a target to this project, then start a new turn.",
+                next_step="Tell the user that no machine is available in this turn: they can ask in a new message to add their own machine (its address and account), or an administrator can grant a target to this project.",
             )
         if (
             selected.focus is not None
