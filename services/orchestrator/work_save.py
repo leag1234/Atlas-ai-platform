@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import json
 import os
 import re
 import tarfile
@@ -140,39 +141,46 @@ async def project_file_paths(execution: Any) -> dict[str, dict[str, Any]]:
     return paths
 
 
-def unattended_copy_name(
-    folder_id: str,
-    relative: str,
-    content: bytes | None,
-    existing: dict[str, dict[str, Any]],
-) -> str | None:
-    """Where a changed file goes when nobody can approve an overwrite (the chat).
+async def approve_unattended(execution: Any, approval: dict[str, Any]) -> bool:
+    """Accept an overwrite approval on the person's behalf, behind the chat only.
 
-    Returns "" when the project already holds these exact bytes under this name
-    or one of its numbered copies, the next free numbered name otherwise, and
-    None when that cannot be decided (the overwrite path then applies). Nothing
-    is overwritten: behind the chat a rerun script kept no download link, and
-    two conversations sharing a file name blocked each other (staging 2026-11-10).
+    Owner decision of 2026-11-11: in the hidden chat workspace, where no
+    approval card can be answered, overwriting a file is approved
+    automatically. The earlier versions are kept, and a link already given
+    keeps serving its own version. The decision goes through the same
+    endpoint as a click, as the approver, and is audited like one.
     """
-    path = PurePosixPath(relative)
-    if content is None or existing[folder_id + "/" + relative].get("sha256") is None:
-        return None
-    digest = hashlib.sha256(content).hexdigest()
-    copies = re.compile(re.escape(path.stem) + r"(?:-\d+)?" + re.escape(path.suffix))
-    for key, file in existing.items():
-        other = PurePosixPath(str(file["relative_path"]))
-        if (
-            key.startswith(folder_id + "/")
-            and other.parent == path.parent
-            and copies.fullmatch(other.name)
-            and file.get("sha256") == digest
-        ):
-            return ""
-    for number in range(2, 100):
-        candidate = str(path.with_name(f"{path.stem}-{number}{path.suffix}"))
-        if folder_id + "/" + candidate not in existing:
-            return candidate
-    return None
+    from services.retrieval.project_identity import ProjectError
+
+    try:
+        digest = approval.get("action_digest")
+        if not digest:
+            status, session = await execution.broker.public(
+                "GET", "work-sessions/" + execution.session["id"]
+            )
+            pending = session.get("pending_approvals", []) if status == 200 else []
+            digest = next(
+                (
+                    a.get("action_digest")
+                    for a in pending
+                    if a.get("id") == approval["id"]
+                ),
+                None,
+            )
+        if not digest:
+            return False
+        status, _ = await execution.broker.public(
+            "POST",
+            "approvals/" + str(approval["id"]) + "/decision",
+            body=json.dumps({"allow": True, "action_digest": digest}).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "Idempotency-Key": "chat-approve-" + str(approval["id"]),
+            },
+        )
+    except ProjectError:
+        return False
+    return bool(status == 200)
 
 
 async def deliverables_folder(execution: Any) -> str | None:
@@ -264,19 +272,10 @@ async def _export_and_save_new_files(
         if path in bases:
             continue
         if folder_id + "/" + relative in existing:
-            renamed = (
-                unattended_copy_name(folder_id, relative, contents.get(path), existing)
-                if getattr(tools, "approvals_unattended", False)
-                else None
-            )
-            if renamed == "":
-                continue
-            if renamed is None:
-                # Created by an earlier turn of this session (kept workspace), so
-                # already a project file: saving it is an overwrite, with approval.
-                report["modified"].append(path)
-                continue
-            relative = renamed
+            # Created by an earlier turn of this session (kept workspace), so
+            # already a project file: saving it is an overwrite, with approval.
+            report["modified"].append(path)
+            continue
         if path in binary:
             report["skipped"].append({"path": path, "reason": "binary"})
             continue
@@ -380,12 +379,8 @@ async def save_modified_files(
                 {"path": path, "reason": "missing"}
             )
             continue
-        if getattr(tools, "approvals_unattended", False):
-            # Behind the chat nobody can answer an approval: do not hold the
-            # answer for one (a script run waited 120 s, staging 2026-11-10).
-            report.setdefault("not_saved", []).append(
-                {"path": path, "reason": "unattended"}
-            )
+        if entry.get("sha256") == hashlib.sha256(content).hexdigest():
+            # Unchanged since it was saved: nothing to overwrite, nothing to approve.
             continue
         if not allowed_type(str(entry.get("relative_path"))):
             report.setdefault("not_saved", []).append({"path": path, "reason": "type"})
@@ -432,6 +427,14 @@ async def save_modified_files(
         if remaining <= 0:
             report.setdefault("not_saved", []).append(
                 {"path": path, "reason": "expired"}
+            )
+            continue
+        if getattr(
+            tools, "approvals_unattended", False
+        ) and not await approve_unattended(execution, approval):
+            # Never hold a chat answer for an approval nobody can give.
+            report.setdefault("not_saved", []).append(
+                {"path": path, "reason": "unattended"}
             )
             continue
         decision = await wait_for_approval(

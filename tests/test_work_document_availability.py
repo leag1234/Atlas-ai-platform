@@ -236,33 +236,42 @@ class FreeNameTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
-class UnattendedCopyNameTests(unittest.TestCase):
-    def test_changed_file_gets_a_numbered_copy_and_same_bytes_are_skipped(self) -> None:
-        import hashlib
+class UnattendedApprovalTests(unittest.IsolatedAsyncioTestCase):
+    def execution(self, decision_status: int = 200) -> tuple[Any, list[Any]]:
+        calls: list[Any] = []
 
-        from services.orchestrator.work_save import unattended_copy_name
+        class Broker:
+            async def public(self, method: str, tail: str, **kwargs: Any) -> Any:
+                calls.append((method, tail, kwargs))
+                if method == "GET":
+                    return 200, {
+                        "pending_approvals": [{"id": "a1", "action_digest": "d1"}]
+                    }
+                return decision_status, {}
 
-        old, new = b"print(1)", b"print(2)"
-        existing: dict[str, dict[str, object]] = {
-            "f/primes.py": {
-                "relative_path": "primes.py",
-                "sha256": hashlib.sha256(old).hexdigest(),
-            }
-        }
-        self.assertEqual(unattended_copy_name("f", "primes.py", old, existing), "")
+        class Execution:
+            broker = Broker()
+            session = {"id": "s1"}
+
+        return Execution(), calls
+
+    async def test_the_overwrite_is_accepted_as_a_click_would(self) -> None:
+        from services.orchestrator.work_save import approve_unattended
+
+        execution, calls = self.execution()
+        self.assertTrue(await approve_unattended(execution, {"id": "a1"}))
+        method, tail, sent = calls[-1]
+        self.assertEqual((method, tail), ("POST", "approvals/a1/decision"))
         self.assertEqual(
-            unattended_copy_name("f", "primes.py", new, existing), "primes-2.py"
+            json.loads(sent["body"]), {"allow": True, "action_digest": "d1"}
         )
-        existing["f/primes-2.py"] = {
-            "relative_path": "primes-2.py",
-            "sha256": hashlib.sha256(new).hexdigest(),
-        }
-        self.assertEqual(unattended_copy_name("f", "primes.py", new, existing), "")
-        self.assertEqual(
-            unattended_copy_name("f", "primes.py", b"x", existing), "primes-3.py"
-        )
-        existing["f/primes.py"]["sha256"] = None
-        self.assertIsNone(unattended_copy_name("f", "primes.py", new, existing))
+        self.assertIn("Idempotency-Key", sent["headers"])
+
+    async def test_a_refused_decision_is_reported(self) -> None:
+        from services.orchestrator.work_save import approve_unattended
+
+        execution, _ = self.execution(410)
+        self.assertFalse(await approve_unattended(execution, {"id": "a1"}))
 
 
 class SettledSwitchRefusalTests(unittest.TestCase):
