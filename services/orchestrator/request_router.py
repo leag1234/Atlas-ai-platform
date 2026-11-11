@@ -261,9 +261,9 @@ def profile() -> str:
 
 def timeout() -> float:
     try:
-        value = float(os.environ.get("ATLAS_MODEL_ROUTER_TIMEOUT", "3"))
+        value = float(os.environ.get("ATLAS_MODEL_ROUTER_TIMEOUT", "4"))
     except ValueError:
-        return 3.0
+        return 4.0
     return min(max(value, 0.5), 10.0)
 
 
