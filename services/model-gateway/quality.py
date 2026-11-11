@@ -570,6 +570,15 @@ async def stream_quality(
                     if isinstance(terminal, dict):
                         result = terminal
                         break
+                    if "tool_progress" in event:
+                        # A long tool call is being written. Cutting it at the
+                        # recovery share would only restart the same generation,
+                        # with less time and the first attempt's budget gone: a
+                        # researched document was cut at 60 s and at 120 s, then
+                        # refused on cost (staging 2026-11-10). It keeps the
+                        # original deadline; the event is internal.
+                        deadline.reschedule(full_deadline)
+                        continue
                     delta = event.get("delta")
                     if isinstance(delta, dict):
                         if isinstance(delta.get("reasoning_content"), str):
