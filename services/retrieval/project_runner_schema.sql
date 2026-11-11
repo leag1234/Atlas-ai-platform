@@ -77,14 +77,19 @@ CREATE POLICY personal_delete ON atlas_projects.runner_grants FOR DELETE
   WHERE t.org_id=runner_grants.org_id AND t.id=runner_grants.id AND t.owner_member_id=atlas_projects.member()));
 
 -- Aggregate quota checks span projects without disclosing their rows or content.
+-- A session counts against the parallel-session limits only while it is in use
+-- (activity in the last 30 minutes). An idle session keeps its working
+-- directory for later turns but takes no slot: with 24 hours, two chat
+-- conversations filled a personal machine (limit 2) for a whole day
+-- (staging 2026-11-11). Running commands are limited separately.
 CREATE OR REPLACE FUNCTION atlas_projects.runner_usage(target uuid)
 RETURNS TABLE(active_commands bigint,target_commands bigint,open_sessions bigint,target_sessions bigint,reserved_seconds bigint,org_reserved_seconds bigint)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog AS $$
  SELECT
  (SELECT count(*) FROM atlas_projects.runner_commands WHERE org_id=atlas_projects.org() AND data->>'state' IN ('running','unknown')),
  (SELECT count(*) FROM atlas_projects.runner_commands WHERE org_id=atlas_projects.org() AND data->>'target_id'=target::text AND data->>'state' IN ('running','unknown')),
- (SELECT count(*) FROM atlas_projects.runner_sessions WHERE org_id=atlas_projects.org() AND data->>'state'='open' AND (data->>'last_activity')::timestamptz > now()-interval '24 hours'),
- (SELECT count(*) FROM atlas_projects.runner_sessions WHERE org_id=atlas_projects.org() AND data->>'target_id'=target::text AND data->>'state'='open' AND (data->>'last_activity')::timestamptz > now()-interval '24 hours'),
+ (SELECT count(*) FROM atlas_projects.runner_sessions WHERE org_id=atlas_projects.org() AND data->>'state'='open' AND (data->>'last_activity')::timestamptz > now()-interval '30 minutes'),
+ (SELECT count(*) FROM atlas_projects.runner_sessions WHERE org_id=atlas_projects.org() AND data->>'target_id'=target::text AND data->>'state'='open' AND (data->>'last_activity')::timestamptz > now()-interval '30 minutes'),
  (SELECT coalesce(sum(CASE WHEN data->>'state' IN ('running','unknown') THEN (data->>'timeout_s')::bigint ELSE ceil(coalesce((data->>'duration_s')::numeric,0))::bigint END),0)::bigint FROM atlas_projects.runner_commands WHERE org_id=atlas_projects.org() AND data->>'target_id'=target::text AND data->>'state' IN ('running','unknown','succeeded','failed','timed_out','cancelled') AND (data->>'created_at')::timestamptz>=date_trunc('month',now())),
  (SELECT coalesce(sum(CASE WHEN data->>'state' IN ('running','unknown') THEN (data->>'timeout_s')::bigint ELSE ceil(coalesce((data->>'duration_s')::numeric,0))::bigint END),0)::bigint FROM atlas_projects.runner_commands WHERE org_id=atlas_projects.org() AND data->>'state' IN ('running','unknown','succeeded','failed','timed_out','cancelled') AND (data->>'created_at')::timestamptz>=date_trunc('month',now()))
  WHERE atlas_projects.active()
