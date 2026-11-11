@@ -97,15 +97,35 @@ def edits(reference: list[str], hypothesis: list[str]) -> Edits:
     return Edits(substitutions, deletions, insertions)
 
 
-def accepted(raw: str, cleaned: str) -> bool:
-    """The guard: no inserted word, and a bounded word edit distance."""
+def accepted(raw: str, cleaned: str, *, open_end: bool = False) -> bool:
+    """The guard: no inserted word, and a bounded word edit distance.
+
+    With ``open_end`` the dictation goes on after this text: its last word may still be
+    being spoken, or split by the engine across two segments, so it must stay as heard.
+    Completing it ("sch" into "schicken") repeated the rest of the word when the next
+    segment brought it ("schicken? icken?", 2026-11-11).
+    """
     before, after = words(raw), words(cleaned)
     if not after and before:
+        return False
+    if open_end and before and after[-1:] != before[-1:]:
         return False
     change = edits(before, after)
     return change.insertions <= MAX_INSERTIONS and change.total <= max(
         1.0, MAX_EDIT_RATIO * len(before)
     )
+
+
+def with_last_word(cleaned: str, raw: str) -> str:
+    """The cleaned text with its last word put back as heard, punctuation kept."""
+    heard = re.search(r"(\w+)\W*$", unicodedata.normalize("NFKC", raw))
+    proposed = re.search(r"(\w+)(\W*)$", cleaned)
+    if heard is None or proposed is None:
+        return cleaned
+    word = heard[1]
+    if proposed[1][:1].isupper() and word[:1].islower():
+        word = word[:1].upper() + word[1:]
+    return cleaned[: proposed.start(1)] + word + proposed[2]
 
 
 def fast_profile() -> str:
@@ -130,7 +150,9 @@ class Cleaner:
     cost_eur: Decimal = Decimal(0)
     outcomes: list[Outcome] = field(default_factory=list)
 
-    async def clean(self, context: str, raw: str, *, final: bool) -> Outcome:
+    async def clean(
+        self, context: str, raw: str, *, final: bool, open_end: bool = True
+    ) -> Outcome:
         started = time.monotonic()
         deadline = FINAL_DEADLINE if final else PARTIAL_DEADLINE
         payload = {
@@ -190,9 +212,12 @@ class Cleaner:
         proposed = str(answer["text"]).strip().strip('"').strip()
         if proposed.upper().startswith("RAW:"):
             proposed = proposed[4:].strip()
+        if open_end:
+            proposed = with_last_word(proposed, raw)
+        kept = accepted(raw, proposed, open_end=open_end)
         outcome = Outcome(
-            proposed if accepted(raw, proposed) else None,
-            "accepted" if accepted(raw, proposed) else "rejected",
+            proposed if kept else None,
+            "accepted" if kept else "rejected",
             cost,
             seconds,
             proposed,

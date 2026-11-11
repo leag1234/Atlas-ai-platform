@@ -588,6 +588,45 @@ class CleanupGuardTests(unittest.TestCase):
             )
         )
 
+    def test_open_text_keeps_its_last_word_as_heard(self) -> None:
+        # The engine may still be inside the word or split it across two segments.
+        self.assertFalse(
+            dictation_cleanup.accepted(
+                "kannst du mir den bericht sch",
+                "Kannst du mir den Bericht schicken?",
+                open_end=True,
+            )
+        )
+        self.assertTrue(
+            dictation_cleanup.accepted(
+                "kannst du mir den bericht sch",
+                "Kannst du mir den Bericht sch",
+                open_end=True,
+            )
+        )
+        self.assertTrue(
+            dictation_cleanup.accepted(
+                "envoie le raport", "Envoie le rapport.", open_end=False
+            )
+        )
+        self.assertFalse(
+            dictation_cleanup.accepted(
+                "envoie le raport", "Envoie le rapport.", open_end=True
+            )
+        )
+
+    def test_the_last_word_is_put_back_and_other_fixes_kept(self) -> None:
+        self.assertEqual(
+            dictation_cleanup.with_last_word(
+                "Kannst du mir den Bericht schicken?", "kannst du mir den bericht sch"
+            ),
+            "Kannst du mir den Bericht sch?",
+        )
+        self.assertEqual(
+            dictation_cleanup.with_last_word("Envoie le rapport.", "envoie le raport"),
+            "Envoie le raport.",
+        )
+
     def test_edit_counts(self) -> None:
         change = dictation_cleanup.edits(["a", "b", "c"], ["a", "x", "c", "d"])
         self.assertEqual(
