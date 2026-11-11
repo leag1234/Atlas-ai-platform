@@ -106,7 +106,7 @@ class TTSRoutingTests(unittest.TestCase):
         expected = {
             "fr": (
                 "14 octobre 2026 à 14h30, version 3.2, 50%, 20 EUR, 1er",
-                "quatorze octobre deux mille vingt six à quatorze heures trente, version trois point deux, cinquante pour cent, vingt euros, premier",
+                "quatorze octobre deux mille vingt-six à quatorze heures trente, version trois point deux, cinquante pour cent, vingt euros, premier",
             ),
             "en": (
                 "October 14 2026 at 2:30 pm, version 3.2, 50%, $20, 1st",
@@ -114,20 +114,69 @@ class TTSRoutingTests(unittest.TestCase):
             ),
             "de": (
                 "14 Oktober 2026 um 14h30, Version 3.2, 50%, 20 EUR, 1.",
-                "vierzehn Oktober zwei tausend zwanzig sechs um vierzehn Uhr dreißig, Version drei komma zwei, fünfzig prozent, zwanzig Euro, eins.",
+                "vierzehn Oktober zweitausend sechsundzwanzig um vierzehn Uhr dreißig, Version drei komma zwei, fünfzig prozent, zwanzig Euro, eins.",
             ),
             "es": (
                 "14 octubre 2026 a las 14h30, versión 3.2, 50%, 20 EUR, 1º",
-                "catorce octubre dos mil veinte seis a las catorce horas treinta, versión tres coma dos, cincuenta por ciento, veinte euros, primero",
+                "catorce octubre dos mil veintiséis a las catorce horas treinta, versión tres coma dos, cincuenta por ciento, veinte euros, primero",
             ),
             "it": (
                 "14 ottobre 2026 alle 14h30, versione 3.2, 50%, 20 EUR, 1°",
-                "quattordici ottobre due mille venti sei alle quattordici ore trenta, versione tre virgola due, cinquanta per cento, venti euro, primo",
+                "quattordici ottobre duemila ventisei alle quattordici ore trenta, versione tre virgola due, cinquanta per cento, venti euro, primo",
             ),
         }
         for language, (source, normalized) in expected.items():
             with self.subTest(language=language):
                 self.assertEqual(spoken_text(source, language), normalized)
+
+    def test_years_and_words_containing_eur_read_correctly(self) -> None:
+        # Four-digit numbers whose last three digits are 100 or more used to raise, and the
+        # case-insensitive EUR match turned "erreur 404" into a price.
+        expected = {
+            "fr": (
+                "Né en 1789, mort en 1999. Une erreur 404.",
+                "Né en mille sept cent quatre-vingt-neuf, mort en mille neuf cent quatre-vingt-dix-neuf. Une erreur quatre cent quatre.",
+            ),
+            "en": (
+                "Born in 1999 and 1805, error 404.",
+                "Born in nineteen ninety nine and eighteen oh five, error four hundred four.",
+            ),
+            "de": (
+                "1999 und 1805",
+                "neunzehnhundertneunundneunzig und achtzehnhundertfünf",
+            ),
+            "es": (
+                "En 1999 y 2027.",
+                "En mil novecientos noventa y nueve y dos mil veintisiete.",
+            ),
+            "it": (
+                "Nel 1999 e 2027.",
+                "Nel mille novecentonovantanove e duemila ventisette.",
+            ),
+        }
+        for language, (source, normalized) in expected.items():
+            with self.subTest(language=language):
+                self.assertEqual(spoken_text(source, language), normalized)
+
+    def test_every_four_digit_number_converts_in_every_language(self) -> None:
+        for language in ("en", "fr", "de", "es", "it"):
+            for value in range(1_000, 10_000, 7):
+                with self.subTest(language=language, value=value):
+                    self.assertNotRegex(spoken_text(f"Year {value}.", language), r"\d")
+
+    def test_normalization_failure_keeps_the_text_readable(self) -> None:
+        with (
+            patch(
+                "services.tts.service._normalize_numbers",
+                side_effect=RuntimeError("broken"),
+            ),
+            self.assertLogs("services.tts.service", "WARNING") as logs,
+        ):
+            self.assertEqual(spoken_text("In **1999**.", "en"), "In 1999.")
+        self.assertEqual(
+            logs.output,
+            ["WARNING:services.tts.service:tts_number_normalization_failed"],
+        )
 
     def test_strips_code_tables_urls_and_emoji(self) -> None:
         self.assertEqual(

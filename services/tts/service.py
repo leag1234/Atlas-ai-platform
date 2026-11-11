@@ -363,73 +363,18 @@ def _normalize_numbers(text: str, language: str) -> str:
             return raw
 
     def say_year(raw: str) -> str:
+        # Four-digit numbers are read as cardinals by the language converter, which composes them
+        # correctly; English and German keep their spoken year forms ("nineteen ninety-nine",
+        # "neunzehnhundertneunundneunzig").
         value = int(raw)
-        if not 1_000 <= value <= 9_999:
-            return say(raw)
-        thousand, rest = divmod(value, 1_000)
-        names = {
-            "en": "thousand",
-            "fr": "mille",
-            "de": "tausend",
-            "es": "mil",
-            "it": "mille",
-        }
-        if not rest:
-            return _join([say(str(thousand)), names[language]])
-        old_tens = {
-            "fr": ("vingt", "trente", "quarante", "cinquante", "soixante"),
-            "en": (
-                "twenty",
-                "thirty",
-                "forty",
-                "fifty",
-                "sixty",
-                "seventy",
-                "eighty",
-                "ninety",
-            ),
-            "de": (
-                "zwanzig",
-                "dreißig",
-                "vierzig",
-                "fünfzig",
-                "sechzig",
-                "siebzig",
-                "achtzig",
-                "neunzig",
-            ),
-            "es": (
-                "veinte",
-                "treinta",
-                "cuarenta",
-                "cincuenta",
-                "sesenta",
-                "setenta",
-                "ochenta",
-                "noventa",
-            ),
-            "it": (
-                "venti",
-                "trenta",
-                "quaranta",
-                "cinquanta",
-                "sessanta",
-                "settanta",
-                "ottanta",
-                "novanta",
-            ),
-        }
-        tail = (
-            say(str(rest))
-            if rest < 20
-            else _join(
-                [
-                    old_tens[language][rest // 10 - 2],
-                    say(str(rest % 10)) if rest % 10 else "",
-                ]
-            )
-        )
-        return _join([say(str(thousand)), names[language], tail])
+        if language == "en" and 1_100 <= value <= 1_999 and value % 100:
+            century, rest = divmod(value, 100)
+            tail = say(str(rest)) if rest >= 10 else _join(["oh", say(str(rest))])
+            return _join([say(str(century)), tail])
+        if language == "de" and 1_100 <= value <= 1_999:
+            century, rest = divmod(value, 100)
+            return say(str(century)) + "hundert" + (say(str(rest)) if rest else "")
+        return say(raw)
 
     text = re.sub(r"\b1(?:er|st|e|º|°)(?!\w)", ordinal, text, flags=re.I)
     text = re.sub(
@@ -467,7 +412,7 @@ def _normalize_numbers(text: str, language: str) -> str:
         flags=re.I,
     )
     text = re.sub(
-        r"(?:€|EUR\b|\beuros?\b|\$)\s*(\d+)|(?<!\w)(\d+)\s*(?:€|EUR\b|\beuros?\b|\$)",
+        r"(?:€|(?<!\w)EUR\b|\beuros?\b|\$)\s*(\d+)|(?<!\w)(\d+)\s*(?:€|(?<!\w)EUR\b|\beuros?\b|\$)",
         lambda match: f"{say(match[1] or match[2])} {currency}",
         text,
         flags=re.I,
@@ -497,7 +442,12 @@ def spoken_text(value: str, language: str | None = None) -> str:
     text = re.sub(r"[\U00010000-\U0010ffff]", " ", text)
     text = _replace_lexicon(text, language)
     text = re.sub(r"(?<!\d)\s*,\s*|\s*,\s*(?!\d)", ", ", text)
-    return re.sub(r"\s+", " ", _normalize_numbers(text, language)).strip(" ,")
+    try:
+        text = _normalize_numbers(text, language)
+    except Exception:
+        # A normalisation defect must never stop read-aloud: Piper can still pronounce digits.
+        LOGGER.warning("tts_number_normalization_failed")
+    return re.sub(r"\s+", " ", text).strip(" ,")
 
 
 def voice_for(text: str) -> tuple[str, str]:
