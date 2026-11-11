@@ -55,6 +55,22 @@ def response(
 
         ceiling = str(settings().cost)
         display_deadline = settings().wall_clock
+    from services.orchestrator.request_router import decision
+
+    def routed_file_request() -> bool:
+        """Read again once the turn is routed by the model (ATLAS_MODEL_ROUTER=1)."""
+        routed = decision(payload)
+        if routed is None or payload.code_mode:
+            return file_request
+        return routed.kind == "file"
+
+    def routed_deadline() -> float:
+        # Only a routed plain chat turn (never code mode or a Work action) reads
+        # its deadline again: the decision can make it a 300 s turn.
+        if decision(payload) is None or payload.code_mode:
+            return display_deadline
+        return payload.timeout_seconds
+
     guest = os.environ.get("ATLAS_STABLE") == "1"
     language = payload.status_language
     labels = json.loads(Path("prompts/progress.json").read_text())
@@ -111,9 +127,9 @@ def response(
                         description
                         + (f" {elapsed:.0f} s" if elapsed >= 10 and not done else "")
                         if guest
-                        else f"{description} ({elapsed:.1f}s / {display_deadline:.0f}s)"
+                        else f"{description} ({elapsed:.1f}s / {routed_deadline():.0f}s)"
                     ),
-                    **({} if guest else {"deadline_seconds": display_deadline}),
+                    **({} if guest else {"deadline_seconds": routed_deadline()}),
                     "done": done,
                     "elapsed_seconds": elapsed,
                     "action": "atlas_activity",
@@ -443,7 +459,7 @@ def response(
             if "reasoning_content" in delta:
                 activity = "thinking"
                 await queue.put(event)
-            if file_request:
+            if routed_file_request():
                 return
             if isinstance(delta.get("content"), str):
                 count = len(narration.removed)
@@ -534,7 +550,7 @@ def response(
                     else:
                         await content(
                             item.reponse
-                            if file_request or not received_content
+                            if routed_file_request() or not received_content
                             else pending
                             + protocol.feed(narration.finish())
                             + protocol.finish(),
@@ -544,7 +560,7 @@ def response(
                         payload.atlas_ui
                         and not payload.code_mode
                         and item.files
-                        and (not file_request or not item.reponse)
+                        and (not routed_file_request() or not item.reponse)
                     ):
                         from services.orchestrator.file_results import file_footer
                         from packages.language import conversation_language

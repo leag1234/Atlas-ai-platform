@@ -705,6 +705,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         await _process_request(request, item)
     finally:
         user_urls.reset(supplied)
+        # The routing call is part of this turn's cost.
+        routing_cost = request.__dict__.get("model_route_cost_eur")
+        if isinstance(routing_cost, Decimal) and routing_cost > 0:
+            item.cout_eur = float(Decimal(str(item.cout_eur)) + routing_cost)
         if held is not None:
             sink_context.reset(held)
         grounding.current.reset(checking)
@@ -821,6 +825,18 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         item.reponse = title_response(request.user_text, request.lang)
         item.state, item.task_type, item.cout_eur = "done", "title", 0.0
         return
+    # The model decides what this plain chat turn asks for (ATLAS_MODEL_ROUTER=1),
+    # once, before any gate reads it; None leaves the lexical gates unchanged.
+    from services.orchestrator import request_router
+
+    if request_router.enabled():
+        before = request.timeout_seconds
+        if await request_router.route(request) is not None:
+            from services.orchestrator.deadline import extend
+
+            # The request deadline was set before routing: an app, a drawing in
+            # the panel or a file turn gets its 300 s.
+            extend(request.timeout_seconds - before)
     language = conversation_language(request.conversation_messages, request.ui_locale)
     if not request.continuation and is_appearance_request(
         request.user_text, history=request.messages[:-1]
@@ -1097,15 +1113,31 @@ async def _process(
         if artifact_eligible
         else None
     )
-    artifact_intent = (
-        app_intent(request.user_text, artifact_history) if artifact_eligible else None
-    )
-    if (
-        artifact_eligible
-        and artifact_current is not None
-        and "dessine" in request.user_text.casefold()
-    ):
-        artifact_intent = "modify"
+    from services.orchestrator import request_router
+
+    # The model routing decision (ATLAS_MODEL_ROUTER=1) is read first; the
+    # lexical tests below decide only when there is none.
+    routed = request_router.decision(request)
+    if routed is not None:
+        artifact_intent = (
+            request_router.app_route(
+                request, routed, has_artifact=artifact_current is not None
+            )
+            if artifact_eligible
+            else None
+        )
+    else:
+        artifact_intent = (
+            app_intent(request.user_text, artifact_history)
+            if artifact_eligible
+            else None
+        )
+        if (
+            artifact_eligible
+            and artifact_current is not None
+            and "dessine" in request.user_text.casefold()
+        ):
+            artifact_intent = "modify"
 
     if (
         not request.continuation
@@ -1137,7 +1169,14 @@ async def _process(
         and not request.has_attachments
         and not any(message.images for message in request.messages)
         and (
-            explicit_image_request(request.user_text)
+            (
+                routed.kind == "drawing"
+                and not is_appearance_request(
+                    request.user_text, history=request.messages[:-1]
+                )
+            )
+            if routed is not None
+            else explicit_image_request(request.user_text)
             or image_iteration(request.messages)
         )
     ):
@@ -1195,10 +1234,24 @@ async def _process(
         not request.continuation
         and not request.has_attachments
         and (
-            is_spatial_drawing_request(request.user_text)
-            or (not images_enabled() and not explicit_image_request(request.user_text))
+            # A drawing the app panel does not take (no panel here, API calls)
+            # is drawn as SVG in the answer, never refused.
+            routed.kind == "drawing"
+            and not technical_diagram
+            and (
+                is_spatial_drawing_request(request.user_text)
+                or request_router.svg_drawing(request, routed)
+            )
+            if routed is not None
+            else (
+                is_spatial_drawing_request(request.user_text)
+                or (
+                    not images_enabled()
+                    and not explicit_image_request(request.user_text)
+                )
+            )
+            and is_simple_drawing_request(request.user_text)
         )
-        and is_simple_drawing_request(request.user_text)
         and artifact_intent is None
     )
     if drawing and artifact_intent is None:
@@ -1208,10 +1261,12 @@ async def _process(
         await _process_simple_drawing(request, item)
         return
     if (
-        not images_enabled()
+        routed is None
+        and not images_enabled()
         and artifact_intent is None
         and explicit_image_request(request.user_text)
     ):
+        # Lexical routing only: a routed drawing never reaches this refusal.
         item.reponse, item.state, item.task_type = (
             unavailable_reply(request.lang),
             "done",
@@ -1370,7 +1425,11 @@ async def _process(
         model.sink = delivery_buffer
     from packages.file_intent import produces_file, requests_file_delivery
 
-    produces_files = produces_file(request.user_text)
+    produces_files = (
+        routed.kind in ("file", "drawing")
+        if routed is not None
+        else produces_file(request.user_text)
+    )
     artifact_turn = artifact_intent is not None
     produces_files = produces_files or artifact_turn
     artifact_cost = Decimal(
@@ -1383,12 +1442,20 @@ async def _process(
     # expected, so the missing-file notice must not be appended (an SVG drawing
     # also reads as a file request).
     deliver_files = not artifact_turn and (
-        requests_file_delivery(request.user_text)
+        (
+            routed.kind == "file"
+            if routed is not None
+            else requests_file_delivery(request.user_text)
+        )
         or (bool(request.documents) and edits_attachment(request.user_text))
     )
     from services.orchestrator.file_content import requested_formats
 
-    requested_file_formats = requested_formats(request.user_text)
+    requested_file_formats = (
+        request_router.formats(routed, requested_formats(request.user_text))
+        if routed is not None
+        else requested_formats(request.user_text)
+    )
     structured_presentation = deliver_files and "pptx" in requested_file_formats
     if (
         os.environ.get("ATLAS_TERMINAL_ENABLED") == "1"
@@ -1715,7 +1782,11 @@ async def _process(
             presentable,
         )
 
-        formats = requested_formats(request.user_text)
+        formats = (
+            requested_file_formats
+            if routed is not None
+            else requested_formats(request.user_text)
+        )
         preserve_code = bool(
             re.search(
                 r"\b(?:script|code|python|sql|function|fonction|programm)\b",

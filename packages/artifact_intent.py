@@ -127,6 +127,11 @@ def svg_intent(
     return None
 
 
+def svg_requested(text: str) -> bool:
+    """The request names SVG: a drawing written as code for the app panel."""
+    return _SVG.search(_normalized(text)) is not None
+
+
 def _last_answer_has_svg(history: Sequence[Mapping[str, object]]) -> bool:
     for message in reversed(history):
         if message.get("role") != "assistant":

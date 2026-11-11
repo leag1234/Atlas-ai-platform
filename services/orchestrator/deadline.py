@@ -21,6 +21,20 @@ async def request_deadline(seconds: float) -> AsyncIterator[None]:
             _current.reset(token)
 
 
+def extend(seconds: float) -> None:
+    """Move the current request deadline later, for a turn routed after it was set.
+
+    The deadline is set from ChatRequest.timeout_seconds before the turn runs; a
+    model routing decision taken inside the turn can make it a 300 s turn.
+    """
+    deadline = _current.get()
+    if seconds <= 0 or deadline is None or deadline.expired():
+        return
+    when = deadline.when()
+    if when is not None:
+        deadline.reschedule(when + seconds)
+
+
 @asynccontextmanager
 async def infrastructure_startup(seconds: float) -> AsyncIterator[None]:
     """Only GPU readiness can use this window; inference keeps its old allowance."""

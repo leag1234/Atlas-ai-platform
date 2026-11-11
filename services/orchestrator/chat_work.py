@@ -61,6 +61,10 @@ def should_escalate(request: ChatRequest) -> bool:
     """Routing decision for a first turn: the request itself needs Work."""
     if not eligible(request):
         return False
+    from services.orchestrator.request_router import decision
+
+    if (routed := decision(request)) is not None:
+        return routed.work
     history = [
         {"role": message.role, "content": message.text}
         for message in request.messages[:-1]
@@ -287,10 +291,25 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     if not eligible(request):
         return False
     chat_conversation_id = str(getattr(request, "native_chat_id", "") or "") or None
-    reason = work_reason(request.user_text)
-    # A change or a rerun in a conversation that already reached Work goes back
-    # to its workspace; anything else stays an ordinary chat turn.
-    follow_up = reason is None and continues_work(request.user_text)
+    from services.orchestrator.request_router import decision
+
+    routed = decision(request)
+    reason: str | None
+    if routed is not None:
+        # The model decided (ATLAS_MODEL_ROUTER=1): a file, code to run or a
+        # machine task goes to Work; a follow-up of another kind ("other") goes
+        # back to a workspace this conversation already has; an answer, research,
+        # drawing or app stays in the chat.
+        reason = routed.kind if routed.work else None
+        follow_up = reason is None and routed.follow_up and routed.kind == "other"
+        # A changed file says which kind it was delivered as (see below).
+        hint = routed.follow_up
+    else:
+        reason = work_reason(request.user_text)
+        # A change or a rerun in a conversation that already reached Work goes back
+        # to its workspace; anything else stays an ordinary chat turn.
+        follow_up = reason is None and continues_work(request.user_text)
+        hint = follow_up
     if reason is None and not (follow_up and chat_conversation_id):
         return False
     # The same subject as the project interface (the verified email), so the
@@ -391,7 +410,7 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
                 ChatMessage(
                     role="user",
                     content=request.user_text
-                    + (delivered_file_hint(request) if follow_up else ""),
+                    + (delivered_file_hint(request) if hint else ""),
                 ),
             ],
         }

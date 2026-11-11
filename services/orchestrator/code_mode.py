@@ -716,8 +716,15 @@ async def process_work(
     # Set by the chat when Work runs behind it: no approval card can be answered there.
     tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
     from packages.work_intent import named_office_format
+    from services.orchestrator.request_router import decision as routed_decision
 
-    named_format = named_office_format(request.user_text)
+    # A chat turn routed by the model carries its decision into Work.
+    routed = routed_decision(request)
+    named_format = (
+        routed.office_format
+        if routed is not None
+        else named_office_format(request.user_text)
+    )
     tools.requested_suffix = "." + named_format if named_format else None
     ceiling = execution.session["effective_limits"]
     limits = replace(
@@ -829,7 +836,9 @@ async def process_work(
             from packages.work_intent import work_reason
 
             model.produces_files = (
-                produces_file(request.user_text, include_images=False)
+                routed.kind == "file"
+                if routed is not None
+                else produces_file(request.user_text, include_images=False)
                 or work_reason(request.user_text) == "file"
             )
             from services.orchestrator.work_tool_selection import (
