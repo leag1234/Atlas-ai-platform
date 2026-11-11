@@ -361,7 +361,8 @@ html.dark .atlas-project-machine {--machine-ok:#8bd49a; --machine-warn-ink:#f2c0
 .atlas-project-machine-steps {margin:0;padding-left:22px;list-style:decimal;}
 .atlas-project-machine-steps li {min-width:0;}
 .atlas-project-machine-steps li + li {margin-top:14px;}
-.atlas-project-machine-steps li > button {margin-top:8px;}
+.atlas-project-machine-steps li > p {display:block;margin:0;}
+.atlas-project-machine-steps li > button {display:block;margin-top:8px;}
 /* Command block with its copy button, like the command blocks of developer tools. */
 .atlas-project-command {min-width:0;margin:8px 0;border:1px solid var(--project-line);border-radius:10px;background:var(--project-hover);overflow:hidden;}
 .atlas-project-command-bar {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px 6px 14px;border-bottom:1px solid var(--project-line);font-size:12px;color:var(--project-muted);}
