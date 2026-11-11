@@ -1,5 +1,10 @@
 (() => {
   "use strict";
+  // Sovereignty: Open WebUI lets any user pick the browser "Web API" speech engine; in
+  // Chrome it streams the microphone to Google. Atlas dictation never uses it, so the
+  // browser engine is removed before Open WebUI looks for it (the microphone then stays
+  // silent for that setting instead of sending audio away).
+  try { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; } catch (error) { /* read-only in some browsers */ }
   // Open WebUI stores its selected interface language in "locale" (v0.11.3).
   // Keep this in the shared overlay so the trial and host launcher agree.
   // Set the first-visit language before Open WebUI initializes its i18n store.
