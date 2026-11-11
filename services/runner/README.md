@@ -28,6 +28,15 @@ reference and updating the target. Host/user/root/jump cannot move while session
 are open. A jump account must allow forwarding only to the intended destination
 and have an OpenSSH client for pinned scanning; no reverse connection is used.
 
+Personal machines (design 18, section 13): any member declares his own SSH
+account through `/api/atlas/orgs/{org}/machines`. The broker generates one key
+per machine, the member installs the public key with the returned command, and
+the first verification pins the host key. The machine serves its owner's Work
+sessions in every project, without administrator or grant, and nobody else.
+The broker connects to such a host only at a public address, or inside a
+network the operator lists in `ATLAS_RUNNER_PERSONAL_NETWORKS` (comma-separated
+CIDR). Deleting a machine removes its key under `/keys` and its state.
+
 Linux/macOS prerequisites: Python 3, Git, OpenSSH/SFTP, POSIX shell and process groups.
 The target work root must exist and be writable. The broker connects only to
 registered endpoints. Its container firewall permits established responses, the

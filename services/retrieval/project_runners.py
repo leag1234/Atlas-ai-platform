@@ -18,7 +18,7 @@ from services.retrieval.project_ledger import append, BYTE_KEYS
 from services.retrieval.project_store import Scope
 from services.retrieval.project_work import Work
 from services.runner.registry import Registry
-from services.runner.channel import call
+from services.runner.channel import call as call
 from services.runner.contract import RemoteRun, RemoteFetch, RemoteStatus, ListTargets
 from services.runner.policy import decision, prefix_rule
 
@@ -55,6 +55,8 @@ def admin_api(
                 return 201, registry.target(data)
         if len(tail) >= 2:
             target = registry.get("targets", str(UUID(tail[1])))
+            if target.get("owner_member_id") is not None:
+                raise ProjectError(404, "not_found")
             if len(tail) == 2 and method == "PUT":
                 return 200, registry.target(data, target["id"], expected)
             if tail[2:] == ["probe"] and method == "POST" and not data:
@@ -230,6 +232,7 @@ class RemoteWork:
             self.registry.new(),
             work_session_id=work_session["id"],
             target_id=target["id"],
+            owner_member_id=target.get("owner_member_id"),
             state="pending",
             synced_digest=None,
             opened_at=timestamp(),
@@ -252,7 +255,7 @@ class RemoteWork:
             ).total_seconds()
             >= 900
         ):
-            probe_auth = dict(org_id=self.registry.org, target=target, admin=True)
+            probe_auth = self.registry.control(target)
             if target.get("jump_target_id"):
                 probe_auth["jump"] = self.registry.get(
                     "targets", target["jump_target_id"]
@@ -762,6 +765,22 @@ def close(scope: Scope, work_session: str, target_id: str | None = None) -> Json
     ).fetchall()
     for row in rows:
         session = dict(row["data"])
+        if session.get("owner_member_id") not in (None, scope.identity.member):
+            # Another member's personal machine: this caller has no authority
+            # to reach it. Its command ends by its own timeout and the broker
+            # removes the idle directory; the record stays open for its owner.
+            continue
+        try:
+            remote.registry.get("targets", session["target_id"])
+        except ProjectError as exc:
+            if exc.status != 404:
+                raise
+            # The machine was deleted by its owner: the broker dropped its
+            # state with the credential, nothing is left to contact.
+            session.update(state="closed", closed_at=timestamp())
+            remote.registry.save("sessions", session)
+            remote.audit("runner_session_closed", session)
+            continue
         commands = scope.db.execute(
             "SELECT data FROM atlas_projects.runner_commands WHERE org_id=%s AND project_id=%s AND data->>'runner_session_id'=%s",
             (scope.identity.org, scope.project_id, session["id"]),

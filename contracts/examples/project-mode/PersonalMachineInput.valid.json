@@ -1,0 +1,7 @@
+{
+  "name": "Build box",
+  "host": "build.example.org",
+  "port": 2222,
+  "user": "dev",
+  "permission_mode": "auto"
+}

@@ -1,0 +1,32 @@
+{
+  "id": "90000000-0000-4000-8000-000000000001",
+  "org_id": "10000000-0000-4000-8000-000000000001",
+  "owner_member_id": "70000000-0000-4000-8000-000000000001",
+  "name": "Build box",
+  "os": "linux",
+  "arch": "x86_64",
+  "host": "build.example.org",
+  "port": 2222,
+  "user": "dev",
+  "work_root": "/home/dev/atlas-work",
+  "permission_mode": "rules",
+  "status": "available",
+  "verified_at": "2026-11-11T09:00:00Z",
+  "host_key_fingerprints": [
+    "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  ],
+  "credential_fingerprint": "SHA256:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFictionalExampleKeyMaterial0000000000000000 atlas",
+  "install_command": "ssh -p 2222 dev@build.example.org 'mkdir -p ~/.ssh && echo \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFictionalExampleKeyMaterial0000000000000000 atlas\" >> ~/.ssh/authorized_keys'",
+  "last_probe": {
+    "status": "available",
+    "timestamp": "2026-11-11T09:00:00+00:00",
+    "os": "linux",
+    "arch": "x86_64",
+    "free_bytes": 1000000000,
+    "git": "git version 2.43.0"
+  },
+  "revision": 2,
+  "created_at": "2026-11-11T08:55:00Z",
+  "updated_at": "2026-11-11T09:00:00Z"
+}

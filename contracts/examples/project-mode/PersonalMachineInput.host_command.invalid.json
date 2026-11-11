@@ -1,0 +1,5 @@
+{
+  "name": "Build box",
+  "host": "example.org;$(id)",
+  "user": "dev"
+}

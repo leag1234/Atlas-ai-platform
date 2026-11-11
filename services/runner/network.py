@@ -68,6 +68,43 @@ def initialize() -> None:
     rule("-A", "OUTPUT", "-d", "127.0.0.11", "-p", "tcp", "-j", "ACCEPT")
 
 
+def vetted(host: str, port: int) -> str:
+    """One IPv4 address for a member-declared host, or a refusal.
+
+    A member chooses the host of a personal machine, so the name alone proves
+    nothing: it may resolve to this deployment's own network. Every address
+    must be public, or inside a network the operator listed in
+    ATLAS_RUNNER_PERSONAL_NETWORKS (comma-separated CIDR). The caller connects
+    to the returned address, never to the name again.
+    """
+    try:
+        networks = [
+            ipaddress.ip_network(value.strip())
+            for value in os.environ.get("ATLAS_RUNNER_PERSONAL_NETWORKS", "").split(",")
+            if value.strip()
+        ]
+    except ValueError:
+        raise RunnerError("runner_egress_policy_failed") from None
+    try:
+        found = sorted(
+            {
+                str(item[4][0])
+                for item in socket.getaddrinfo(
+                    host, port, family=socket.AF_INET, type=socket.SOCK_STREAM
+                )
+            }
+        )
+    except (OSError, UnicodeError):
+        raise RunnerError("runner_target_unresolved") from None
+    if not found:
+        raise RunnerError("runner_target_unresolved")
+    for value in found:
+        address = ipaddress.IPv4Address(value)
+        if not address.is_global and not any(address in net for net in networks):
+            raise RunnerError("runner_target_address_denied")
+    return found[0]
+
+
 def allow(host: str, port: int) -> None:
     if os.environ.get("ATLAS_RUNNER_FIREWALL") != "1":
         return

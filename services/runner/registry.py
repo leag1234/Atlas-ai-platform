@@ -28,8 +28,11 @@ class Registry:
         if kind not in {"targets", "grants", "sessions", "commands"}:
             raise ValueError("invalid_runner_entity")
         args = [self.org, identifier]
-        clause = ""
-        if kind != "targets":
+        if kind == "targets":
+            # Another member's personal machine does not exist for this caller.
+            args.append(self.scope.identity.member)
+            clause = " AND (owner_member_id IS NULL OR owner_member_id=%s)"
+        else:
             args.append(self.scope.project_id)
             clause = " AND project_id=%s"
         row = self.scope.db.execute(
@@ -51,8 +54,15 @@ class Registry:
         if create:
             if kind == "targets":
                 self.scope.db.execute(
-                    "INSERT INTO " + table + " VALUES(%s,%s,%s)",
-                    (self.org, value["id"], Jsonb(value)),
+                    "INSERT INTO "
+                    + table
+                    + "(org_id,id,data,owner_member_id) VALUES(%s,%s,%s,%s)",
+                    (
+                        self.org,
+                        value["id"],
+                        Jsonb(value),
+                        value.get("owner_member_id"),
+                    ),
                 )
             else:
                 self.scope.db.execute(
@@ -63,8 +73,10 @@ class Registry:
             value["revision"] += 1
             value["updated_at"] = timestamp()
             args: list[Any] = [Jsonb(value), self.org, value["id"]]
-            clause = ""
-            if kind != "targets":
+            if kind == "targets":
+                args.append(self.scope.identity.member)
+                clause = " AND (owner_member_id IS NULL OR owner_member_id=%s)"
+            else:
                 args.append(self.scope.project_id)
                 clause = " AND project_id=%s"
             self.scope.db.execute(
@@ -82,6 +94,8 @@ class Registry:
         fields = Target.model_validate(data).model_dump()
         if fields["jump_target_id"]:
             jump = self.get("targets", fields["jump_target_id"])
+            if jump.get("owner_member_id") is not None:
+                raise ProjectError(404, "not_found")
             if jump.get("jump_target_id") or jump["id"] == identifier:
                 raise ProjectError(
                     422, "invalid_request", "Only one registered jump is supported"
@@ -97,6 +111,9 @@ class Registry:
         if reused:
             raise ProjectError(409, "credential_already_bound")
         value = self.get("targets", identifier) if identifier else self.new()
+        if value.get("owner_member_id") is not None:
+            # A personal machine is never administered as an organization target.
+            raise ProjectError(404, "not_found")
         if identifier:
             self.scope.match(value, expected)
             transport_fields = ("host", "port", "user", "work_root", "jump_target_id")
@@ -119,7 +136,8 @@ class Registry:
 
     def grant(self, target: str, enabled: bool) -> Json:
         self.scope.admin()
-        self.get("targets", target)
+        if self.get("targets", target).get("owner_member_id") is not None:
+            raise ProjectError(404, "not_found")
         try:
             value = self.get("grants", target)
         except ProjectError as exc:
@@ -143,30 +161,116 @@ class Registry:
         return value
 
     def granted(self, target: str) -> tuple[Json, Json]:
+        """The target and the record of its use by this project, or 404.
+
+        An organization target needs the grant an administrator gave to the
+        project. A personal machine needs no grant: it serves its owner, once
+        verified, in every project where he works, and nobody else.
+        """
+        value = self.get("targets", target)
+        if value.get("owner_member_id") is not None:
+            if not self.usable(value):
+                raise ProjectError(404, "not_found")
+            return value, self.personal_grant(value)
         grant = self.get("grants", target)
         if not grant["enabled"]:
             raise ProjectError(404, "not_found")
-        return self.get("targets", target), grant
+        return value, grant
+
+    def usable(self, target: Json) -> bool:
+        """A personal machine serves its owner alone, after one verification."""
+        return bool(
+            target.get("owner_member_id") == self.scope.identity.member
+            and target.get("verified_at")
+        )
+
+    def private_chat_workspace(self) -> bool:
+        """Whether the scope is the caller's own hidden workspace, his alone."""
+        project = self.scope.project
+        if project is None:
+            return False
+        data = project["data"]
+        if not data.get("hidden") or data.get("owner_member_id") != (
+            self.scope.identity.member
+        ):
+            return False
+        row = self.scope.db.execute(
+            "SELECT count(*) AS count FROM atlas_projects.grants"
+            " WHERE org_id=%s AND project_id=%s AND member_id<>%s",
+            (self.org, self.scope.project_id, self.scope.identity.member),
+        ).fetchone()
+        return row is not None and row["count"] == 0
+
+    def personal_grant(self, target: Json) -> Json:
+        """Per-project state of a personal machine: code egress approval, rules.
+
+        Created on first use by the owner. It grants nothing by itself; every
+        read goes through `granted`, which checks the owner again.
+        """
+        try:
+            return self.get("grants", target["id"])
+        except ProjectError as exc:
+            if exc.status != 404:
+                raise
+        value = dict(
+            self.new(),
+            id=target["id"],
+            project_id=self.scope.project_id,
+            target_id=target["id"],
+            granted_by=self.scope.identity.member,
+            enabled=True,
+            personal=True,
+            # Owner decision 2026-11-11: in his private chat workspace, declaring
+            # and verifying the machine is the member's consent to send code
+            # there (no approval card exists in the chat). Anywhere else the
+            # first use still asks: the code of a project may belong to others.
+            code_egress_approved_at=timestamp()
+            if self.private_chat_workspace()
+            else None,
+            allow_rules=[],
+        )
+        self.save("grants", value, create=True)
+        return value
+
+    def control(self, target: Json) -> Json:
+        """Broker permit for a probe, marked by who is entitled to ask for it."""
+        if target.get("owner_member_id") is not None:
+            return dict(
+                org_id=self.org,
+                target=target,
+                personal=True,
+                member_id=self.scope.identity.member,
+            )
+        return dict(org_id=self.org, target=target, admin=True)
 
     def targets(self, model: bool = False, capability: str | None = None) -> list[Json]:
         if not model:
             self.scope.admin()
         rows = self.scope.db.execute(
-            "SELECT data FROM atlas_projects.runner_targets WHERE org_id=%s ORDER BY id",
-            (self.org,),
+            "SELECT data FROM atlas_projects.runner_targets WHERE org_id=%s AND (owner_member_id IS NULL OR owner_member_id=%s) ORDER BY id",
+            (self.org, self.scope.identity.member),
         ).fetchall()
         values = []
         for row in rows:
             value = dict(row["data"])
+            personal = value.get("owner_member_id") is not None
+            if personal and not model:
+                # Administration lists organization targets only.
+                continue
             if capability and capability not in value["capabilities"]:
                 continue
             if model:
-                try:
-                    self.granted(value["id"])
-                except ProjectError as exc:
-                    if exc.status == 404:
+                if personal:
+                    if not self.usable(value):
                         continue
-                    raise
+                else:
+                    try:
+                        if not self.get("grants", value["id"])["enabled"]:
+                            continue
+                    except ProjectError as exc:
+                        if exc.status == 404:
+                            continue
+                        raise
                 value = {
                     k: value[k]
                     for k in (
@@ -181,6 +285,8 @@ class Registry:
                     )
                 }
                 value.update(profiles=[], devices=[])
+                if personal:
+                    value["personal"] = True
             values.append(value)
         return values
 

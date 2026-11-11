@@ -32,20 +32,55 @@ class Broker:
         from datetime import datetime, timezone
 
         ssh = self.transport(auth)
+        personal = bool(auth["target"].get("owner_member_id"))
         path = ssh.root / "probe.json"
         if cached and path.exists():
             previous = json.loads(path.read_text())
             if previous["auth"]["target"] == auth["target"]:
                 return dict(previous["result"])
         try:
+            root = ssh.home_root() if personal else None
             result = ssh.probe()
+            if root:
+                result["work_root"] = root
         except RunnerError as exc:
             result = dict(status="unavailable", error=str(exc))
         result["timestamp"] = datetime.now(timezone.utc).isoformat()
-        path.write_text(
-            json.dumps(dict(auth=auth, checked_at=time.time(), result=result))
-        )
+        # A personal machine is contacted only when its owner verifies or uses
+        # it: no probe record, so the periodic sweep never connects to it.
+        if not personal:
+            path.write_text(
+                json.dumps(dict(auth=auth, checked_at=time.time(), result=result))
+            )
         return result
+
+    def scan(self, auth: Json) -> Json:
+        return dict(fingerprints=self.transport(auth).scan())
+
+    def forget(self, auth: Json) -> Json:
+        """Remove a personal machine: session state, pinned host, private key."""
+        with self.lock:
+            org, target = str(UUID(auth["org_id"])), auth["target"]
+            identifier = str(UUID(target["id"]))
+            reachable = True
+            for path in sorted(self.root.glob(org + "/*/*/session.json")):
+                saved = json.loads(path.read_text())
+                if saved.get("target", {}).get("id") != identifier:
+                    continue
+                if reachable:
+                    try:
+                        self.close(saved)
+                    except RunnerError:
+                        # Unreachable or already revoked by its owner: the
+                        # remote directory is his to remove; stop trying.
+                        reachable = False
+                if path.parent.exists():
+                    shutil.rmtree(path.parent)
+            hosts = self.root / "hosts" / org / identifier
+            if hosts.exists():
+                shutil.rmtree(hosts)
+            self.keys.forget(org, target["credential_ref"])
+            return dict(state="forgotten", remote_cleanup=reachable)
 
     def remember(self, auth: Json, state: Json | None = None) -> None:
         local, _ = self.paths(auth)
@@ -221,6 +256,11 @@ class Broker:
                 timeout_s=command["timeout_s"],
             )
         )
+        owner = target.get("owner_member_id")
+        if owner is not None and command.get("member_id") != owner:
+            # A personal machine runs commands of its owner only, whatever the
+            # caller presents as a grant.
+            raise RunnerError("runner_unauthorized")
         if (
             grant.get("target_id", target["id"]) != target["id"]
             or grant.get("project_id", auth["project_id"]) != auth["project_id"]

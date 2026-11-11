@@ -52,7 +52,9 @@ def process(
             or b"REMOTE HOST IDENTIFICATION HAS CHANGED" in reply.stderr
         ):
             raise RunnerError("host_key_fingerprint_mismatch")
-        if b"Permission denied (publickey)" in reply.stderr:
+        # OpenSSH lists every method the server offered, for example
+        # "(publickey,password)": any such refusal means the key is not accepted.
+        if b": Permission denied (" in reply.stderr:
             raise RunnerError("credential_unavailable")
         raise RunnerError("runner_transport_failed")
     return reply.stdout
@@ -105,6 +107,12 @@ class Keys:
             credential_ref=reference, public_key=public, fingerprint=fingerprint(public)
         )
 
+    def forget(self, org: str, reference: str) -> None:
+        path = self.path(org, reference)
+        for stale in (path, path.with_suffix(".pub")):
+            if stale.is_file() or stale.is_symlink():
+                stale.unlink()
+
     def require(self, org: str, reference: str) -> Path:
         path = self.path(org, reference)
         if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
@@ -113,6 +121,8 @@ class Keys:
 
 
 class SSH:
+    address: str | None = None
+
     def __init__(
         self, keys: Keys, root: Path, org: str, target: Json, jump: Json | None = None
     ) -> None:
@@ -121,8 +131,67 @@ class SSH:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.jump = SSH(keys, root, org, jump) if jump else None
 
+    def host(self) -> str:
+        """Where to connect. A personal machine is reached by a vetted address."""
+        if self.address is None:
+            if self.target.get("owner_member_id"):
+                from services.runner.network import vetted
+
+                if self.jump is not None:
+                    raise RunnerError("runner_unauthorized")
+                self.address = vetted(self.target["host"], self.target["port"])
+            else:
+                self.address = str(self.target["host"])
+        return self.address
+
+    def scan(self) -> list[str]:
+        """Host key fingerprints offered now, for the owner's first verification."""
+        from services.runner.network import allow
+
+        if self.jump is not None:
+            raise RunnerError("runner_unauthorized")
+        allow(self.host(), self.target["port"])
+        raw = process(
+            [
+                "ssh-keyscan",
+                "-T",
+                "5",
+                "-t",
+                "ed25519",
+                "-p",
+                str(self.target["port"]),
+                self.host(),
+            ],
+            timeout=10,
+        )
+        found = set()
+        for line in raw.decode("ascii", errors="replace").splitlines():
+            fields = line.split()
+            if len(fields) == 3 and not line.startswith("#"):
+                found.add(fingerprint(" ".join(fields[1:])))
+        if not found:
+            raise RunnerError("runner_host_key_unavailable")
+        return sorted(found)
+
+    def home_root(self) -> str:
+        """Create the work root; default to a directory in the account's home."""
+        from services.runner.machines import valid_work_root
+
+        root = self.target.get("work_root")
+        try:
+            if not root:
+                home = self.run("pwd -P").decode("utf-8", errors="replace").strip()
+                root = valid_work_root(home.rstrip("/") + "/atlas-work")
+            root = valid_work_root(str(root))
+        except ValueError:
+            raise RunnerError("invalid_work_root") from None
+        # Mode 700 applies when Atlas creates the directory, never to an existing one.
+        self.run("mkdir -p -m 700 -- " + shlex.quote(root))
+        self.target = dict(self.target, work_root=root)
+        return root
+
     def pin(self) -> Path:
-        target = self.target
+        target = dict(self.target, host=self.host())
         from services.runner.network import allow
 
         if self.jump is None:
@@ -242,7 +311,7 @@ class SSH:
                 *self.options(),
                 "-p",
                 str(self.target["port"]),
-                self.target["user"] + "@" + self.target["host"],
+                self.target["user"] + "@" + self.host(),
                 command,
             ],
             content=content,
@@ -259,7 +328,7 @@ class SSH:
                 "-P",
                 str(self.target["port"]),
                 str(local),
-                self.target["user"] + "@" + self.target["host"] + ":" + remote,
+                self.target["user"] + "@" + self.host() + ":" + remote,
             ]
         )
 
