@@ -1,6 +1,8 @@
 """Classifier table and routing decision for chat-to-Work escalation (step 1)."""
 
 import os
+
+import aiohttp
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -516,3 +518,55 @@ class ChatDeadlineTests(unittest.TestCase):
             self.assertEqual(req.timeout_seconds, 300.0)
             req.__dict__["work_declined"] = True
             self.assertEqual(req.model_copy().timeout_seconds, 120.0)
+
+
+class DroppedConnectionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_dropped_connection_before_the_turn_is_retried_once(self) -> None:
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.interactions import Interaction
+
+        req = request("Fais-moi un document Word sur le télétravail")
+        req.__dict__["native_chat_id"] = "123e4567-e89b-12d3-a456-426614174010"
+        req.__dict__["artifact_owner"] = "user@example.com"
+        item = Interaction()
+
+        calls: list[int] = []
+
+        async def failing_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
+            calls.append(1)
+            if len(calls) == 1:
+                raise aiohttp.ClientOSError("connection reset")
+            i.state, i.reponse, i.task_type = "done", "Script ran.", "work"
+
+        with (
+            patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+            patch("services.orchestrator.chat_work.asyncio.sleep", new=AsyncMock()),
+            patch("services.orchestrator.chat_work.work_gate_open", return_value=True),
+            patch(
+                "services.orchestrator.chat_work._identity",
+                new=AsyncMock(
+                    return_value={
+                        "memberships": [
+                            {"org_id": "123e4567-e89b-12d3-a456-426614174000"}
+                        ]
+                    }
+                ),
+            ),
+            patch(
+                "services.orchestrator.chat_work._ensure_scratch_project",
+                new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174002"),
+            ),
+            patch(
+                "services.orchestrator.chat_work._find_binding",
+                new=AsyncMock(
+                    return_value={
+                        "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
+                        "work_session_id": "123e4567-e89b-12d3-a456-426614174004",
+                    }
+                ),
+            ),
+            patch("services.orchestrator.code_mode.process_work", new=failing_work),
+        ):
+            self.assertTrue(await escalate_to_work(req, item))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((item.state, item.reponse), ("done", "Script ran."))

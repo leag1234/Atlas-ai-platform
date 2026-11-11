@@ -400,19 +400,39 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     scoped.__dict__["approvals_unattended"] = True
     before = (item.state, list(item.erreurs), item.reponse)
     failure = ""
-    try:
-        await process_work(
-            scoped,
-            item,
-            subject=subject,
-            org_id=org,
-            project_id=project,
-            session_id=session_id,
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - any Work failure falls back to the chat
-        failure = type(exc).__name__
+    for attempt in range(2):
+        try:
+            await process_work(
+                scoped,
+                item,
+                subject=subject,
+                org_id=org,
+                project_id=project,
+                session_id=session_id,
+            )
+            failure = ""
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - any Work failure falls back to the chat
+            failure = type(exc).__name__
+            # A connection dropped before the turn started (state still "received":
+            # nothing ran, nothing was saved) is retried once. On staging a script
+            # turn fell back to "code execution is not available" on one dropped
+            # connection (ClientOSError, 2026-11-11).
+            if (
+                attempt == 0
+                and isinstance(exc, (aiohttp.ClientError, OSError))
+                and item.state == before[0]
+                and not item.reponse
+            ):
+                logger.warning(
+                    "chat_work_retry conversation=%s error=%s",
+                    chat_conversation_id or "unknown",
+                    failure,
+                )
+                await asyncio.sleep(2)
+                continue
+        break
     if failure or item.state != "done":
         reply = None if failure else work_failure_reply(item, scoped.lang)
         logger.warning(
