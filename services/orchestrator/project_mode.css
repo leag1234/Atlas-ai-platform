@@ -115,9 +115,9 @@
 .atlas-project-nav-row {display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;padding:4px 12px;}
 .atlas-project-nav-row button {background:transparent;color:inherit;border:0;cursor:pointer;border-radius:8px;padding:8px;font:inherit;}
 .atlas-project-nav-row button:first-child {flex:1;text-align:left;}
-/* Projects and + share the first line; Scheduled tasks and My machines each take their own line so no label is cut. */
+/* Projects and + share the first line; Scheduled tasks takes its own line so no label is cut. */
 .atlas-project-nav-row button {white-space:nowrap;min-width:0;}
-.atlas-project-nav-row button:nth-child(n+3) {flex:1 0 100%;text-align:left;}
+.atlas-project-nav-row button:nth-child(3) {flex:1 0 100%;text-align:left;}
 .atlas-project-nav-row button:hover {background:#8882;}
 .atlas-project-sidebar-projects {margin-top:24px;}
 .atlas-project-host-projects {padding:4px 12px 10px;}
@@ -324,60 +324,3 @@ html.dark .atlas-project-move-dialog form button, html.dark .atlas-project-move-
 html.dark .atlas-project-move-dialog form button:hover, html.dark .atlas-project-move-menu button:hover { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); }
 /* The project composer has no resize grip, like the chat composer (Firefox and WebKit drew one). */
 #atlas-project .atlas-project-composer textarea { resize:none; }
-/* My machines: one column of cards. Long host names, keys and commands wrap inside their block and never widen the page. */
-#atlas-project[data-view=machines] {grid-template-columns:minmax(0,1fr);}
-#atlas-project[data-owned=true][data-view=machines] {grid-template-columns:230px minmax(0,1fr);}
-#atlas-project[data-view=machines] > .atlas-project-right {display:none;}
-.atlas-project .atlas-project-machines-intro {max-width:720px;margin:0 0 20px;color:var(--project-muted);}
-.atlas-project-machines-empty .atlas-project-primary {margin-top:14px;}
-.atlas-project-machines {display:grid;grid-template-columns:minmax(0,1fr);gap:16px;max-width:860px;}
-.atlas-project-machine {
-  --machine-ok:#1f7534; --machine-warn-ink:#683315; --machine-warn-line:#c98a4b; --machine-warn-bg:#fff5e9;
-  min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:20px;border:1px solid var(--project-line);border-radius:14px;background:var(--project-card);
-}
-html.dark .atlas-project-machine {--machine-ok:#8bd49a; --machine-warn-ink:#f2c08f; --machine-warn-line:#a8692f; --machine-warn-bg:#3a2a1c;}
-@media(prefers-color-scheme:dark) {html:not(.light) .atlas-project-machine {--machine-ok:#8bd49a; --machine-warn-ink:#f2c08f; --machine-warn-line:#a8692f; --machine-warn-bg:#3a2a1c;}}
-.atlas-project-machine:focus-visible {outline-offset:-2px;}
-.atlas-project-machine p {margin:0;}
-.atlas-project-machine-top {display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;}
-.atlas-project-machine-top h2 {min-width:0;font-size:17px;overflow-wrap:anywhere;}
-.atlas-project-machine-address {font-family:ui-monospace,monospace;font-size:13px;overflow-wrap:anywhere;}
-/* Status: unverified is neutral, available is positive, unavailable is a warning. The label always says it in words. */
-.atlas-project-machine-status {flex:none;padding:3px 10px;border:1px solid var(--project-line);border-radius:999px;color:var(--project-muted);font-size:12px;white-space:nowrap;}
-.atlas-project-machine-status[data-status=available] {color:var(--machine-ok);border-color:var(--machine-ok);}
-.atlas-project-machine-status[data-status=unavailable] {color:var(--machine-warn-ink);border-color:var(--machine-warn-line);background:var(--machine-warn-bg);}
-.atlas-project-machine-problem {padding:12px 14px;border:1px solid var(--machine-warn-line);border-radius:10px;background:var(--machine-warn-bg);color:var(--machine-warn-ink);overflow-wrap:anywhere;}
-.atlas-project .atlas-project-machine-problem button {margin-top:10px;border-color:currentColor;}
-.atlas-project-machine-note {color:var(--project-accent);font-size:13px;overflow-wrap:anywhere;}
-.atlas-project-machine .atlas-project-thinking {margin:0;}
-.atlas-project-machine-facts {margin:0;font-size:13px;}
-.atlas-project-machine-facts dt {color:var(--project-muted);}
-.atlas-project-machine-facts dd {margin:0 0 6px;}
-.atlas-project-machine-facts code {font:12px/1.5 ui-monospace,monospace;overflow-wrap:anywhere;}
-.atlas-project-machine-setup {min-width:0;}
-.atlas-project-machine-setup h3 {margin:0 0 8px;font-size:14px;font-weight:600;}
-.atlas-project-machine-setup summary {cursor:pointer;color:var(--project-muted);font-size:13px;}
-.atlas-project-machine-setup[open] summary {margin-bottom:10px;}
-.atlas-project-machine-steps {margin:0;padding-left:22px;list-style:decimal;}
-.atlas-project-machine-steps li {min-width:0;}
-.atlas-project-machine-steps li + li {margin-top:14px;}
-.atlas-project-machine-steps li > p {display:block;margin:0;}
-.atlas-project-machine-steps li > button {display:block;margin-top:8px;}
-/* Command block with its copy button, like the command blocks of developer tools. */
-.atlas-project-command {min-width:0;margin:8px 0;border:1px solid var(--project-line);border-radius:10px;background:var(--project-hover);overflow:hidden;}
-.atlas-project-command-bar {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 8px 6px 14px;border-bottom:1px solid var(--project-line);font-size:12px;color:var(--project-muted);}
-.atlas-project-command-title {margin-right:auto;}
-.atlas-project .atlas-project-command-bar button {padding:4px 12px;font-size:12px;background:var(--project-bg);color:var(--project-ink);}
-.atlas-project-command pre {margin:0;padding:12px 14px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;font:12.5px/1.6 ui-monospace,monospace;}
-.atlas-project-copy-buffer {position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;}
-/* Add and edit dialog: one explained choice per permission mode. */
-.atlas-project-machine-dialog fieldset {min-width:0;margin:0;padding:0;border:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;}
-.atlas-project-machine-dialog legend {padding:0;margin-bottom:6px;}
-.atlas-project-machine-dialog .atlas-project-machine-mode {display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 10px;align-items:start;padding:10px 12px;border:1px solid var(--project-line);border-radius:10px;cursor:pointer;}
-.atlas-project-machine-dialog .atlas-project-machine-mode input {width:auto;margin:4px 0 0;padding:0;accent-color:var(--project-accent);}
-.atlas-project-machine-mode small {grid-column:2;color:var(--project-muted);font-size:12px;}
-.atlas-project-machine-mode:has(input:checked) {border-color:var(--project-ink);}
-.atlas-project-machine-dialog .atlas-project-machine-address {margin:0;color:var(--project-muted);}
-.atlas-project-machine-dialog .atlas-project-dialog-error {margin:0;overflow-wrap:anywhere;}
-.atlas-project-machine-dialog .atlas-project-dialog-error:empty {display:none;}
-@media(max-width:760px) {.atlas-project-machine {padding:16px;} .atlas-project-machine-steps {padding-left:18px;}}

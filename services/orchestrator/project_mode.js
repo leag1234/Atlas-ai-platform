@@ -84,7 +84,7 @@
       const error = await response.json().catch(() => ({})); checkScope(current);
       const detail = `${t('failure')} (${response.status}): ${error.message || error.error || response.statusText}`;
       if (response.status === 401) { sessionStorage.removeItem(storageKey()); cleanup(); root?.remove(); }
-      throw Object.assign(new Error(detail), { status: response.status, code: typeof error.error === 'string' ? error.error : '' });
+      throw Object.assign(new Error(detail), { status: response.status });
     }
     return response;
   }
@@ -97,7 +97,7 @@
   }
   function saveRoute() {
     const url = new URL(location.href);
-    for (const key of ['org', 'project', 'conversation', 'session', 'tasks', 'machines']) scope?.[key] ? url.searchParams.set(key, scope[key]) : url.searchParams.delete(key);
+    for (const key of ['org', 'project', 'conversation', 'session', 'tasks']) scope?.[key] ? url.searchParams.set(key, scope[key]) : url.searchParams.delete(key);
     history.replaceState(null, '', url);
     if (identity && scope) sessionStorage.setItem(storageKey(), JSON.stringify(scope));
   }
@@ -151,9 +151,6 @@
       const scheduled = button('taskHeading', () => choose({org:scope.org,tasks:true}), 'atlas-project-sidebar-row');
       if (scope?.tasks) scheduled.setAttribute('aria-current', 'page');
       left.append(scheduled);
-      const personal = button('machinesHeading', () => choose({org:scope.org,machines:true}), 'atlas-project-sidebar-row');
-      if (scope?.machines) personal.setAttribute('aria-current', 'page');
-      left.append(personal);
     }
     if (owned && memberships.length > 1) left.append(picker('organization', memberships, scope?.org, org => choose({org})));
     if (owned && scope?.org) {
@@ -274,204 +271,6 @@
     const grid=node('div',null,'atlas-project-grid atlas-project-task-grid'); const render=()=>{grid.replaceChildren();if(tab==='templates'){for(const template of taskTemplates()){const card=node('article',null,'atlas-project-task-card');card.append(node('h2',template.name),node('p',template.instruction),node('p',taskScheduleWords(template),'atlas-project-detail'),button('taskNew',()=>globalTaskDialog(null,template)));grid.append(card);}return;} let values=items.filter(item=>(item.name+' '+item.instruction+' '+item.project_name).toLocaleLowerCase().includes(search.value.toLocaleLowerCase())&&(!project.value||item.project_id===project.value)&&(!status.value||(status.value==='active'?item.enabled:status.value==='paused'?!item.enabled:['failed','budget_cap'].includes(item.last_result?.status))));values.sort((a,b)=>sort.value==='name'?a.name.localeCompare(b.name):sort.value==='last'?Date.parse(b.last_result?.at||0)-Date.parse(a.last_result?.at||0):Date.parse(a.next_run)-Date.parse(b.next_run));for(const item of values){const card=node('article',null,'atlas-project-task-card');card.dataset.taskId=item.id;const seen=Number(localStorage.getItem(`atlas-task-seen:${item.id}`)||0), fresh=Date.parse(item.last_result?.at||0)>seen;const title=node('button',item.name);title.className='atlas-project-task-title';title.addEventListener('click',guarded(()=>globalTaskDialog(item)));const chip=node('span',item.project_name,'atlas-project-task-project');card.append(title,chip,node('p',item.instruction,'atlas-project-task-excerpt'));const footer=node('p',`${item.enabled?t('taskActive'):t('taskPaused')} · ${taskScheduleWords(item)}`,'atlas-project-detail');if(fresh){const dot=node('span','', 'atlas-project-task-dot');dot.title=t('taskNewOutput');footer.prepend(dot);}card.append(footer);const actions=node('div',null,'atlas-project-task-actions');if(item.project_role!=='viewer'){actions.append(button('taskEdit',()=>globalTaskDialog(item)),button(item.enabled?'taskPause':'taskResume',async()=>{await request(taskPath(item),{method:'PUT',headers:{'If-Match':`"${item.revision}"`},body:{...taskInput(item),enabled:!item.enabled}});tasksPage();}),button('taskRun',async()=>{await api(taskPath(item)+'/run','POST',{});tasksPage();}),button('remove',async()=>{if(await confirmDialog(t('taskDelete'),item.title||item.name||null,'remove')){await request(taskPath(item),{method:'DELETE',headers:{'If-Match':`"${item.revision}"`}});tasksPage();}}));}if(item.last_result?.conversation_id)actions.append(button('taskConversation',()=>choose({org:scope.org,project:item.project_id,conversation:item.last_result.conversation_id})));card.append(actions);grid.append(card);}if(!values.length)grid.append(node('p',t('taskEmpty'),'atlas-project-empty'));for(const item of items) localStorage.setItem(`atlas-task-seen:${item.id}`,String(Date.now()));};
     for(const [key,label] of [['yours','taskYours'],['templates','taskTemplates']]){const control=button(label,()=>{tab=key;render();});control.setAttribute('role','tab');control.setAttribute('aria-selected',String(key===tab));tabs.append(control);} search.addEventListener('input',render);project.addEventListener('change',render);status.addEventListener('change',render);sort.addEventListener('change',render);toolbar.append(tabs,search,project,status,sort);center.append(toolbar);if(items.some(item=>!item.enabled&&item.pause_reason==='three_failures'))center.append(node('p',t('taskPausedBanner'),'atlas-project-task-banner'));center.append(grid);render();
   }
-  // My machines (docs/18-remote-runners.md, section 13): a member declares, verifies and removes his own SSH machines.
-  // They belong to the member, not to a project: the page is reached from the navigation, with no project open.
-  let machines = [];
-  const machineBusy = new Set(), machineNotes = new Map();
-  const machinesPath = () => {
-    if (!scope || !uuid(scope.org)) throw new Error(t('selectionError'));
-    return `/api/atlas/orgs/${scope.org}/machines`;
-  };
-  const machineStatusLabels = {unverified:'machineStatusUnverified', available:'machineStatusAvailable', unavailable:'machineStatusUnavailable'};
-  const machineModeLabels = {rules:'machineModeRules', ask:'machineModeAsk', auto:'machineModeAuto'};
-  const machineModeHelp = {rules:'machineModeRulesHelp', ask:'machineModeAskHelp', auto:'machineModeAutoHelp'};
-  const machineSystems = {linux:'Linux', macos:'macOS'};
-  // One sentence per verification failure the member can act on; any other code is shown as it is.
-  const machineProbeMessages = {credential_unavailable:'machineProbeCredential', host_key_fingerprint_mismatch:'machineProbeHostKey', runner_target_address_denied:'machineProbeDenied', runner_target_unresolved:'machineProbeUnresolved', runner_transport_failed:'machineProbeTransport'};
-  const machineErrorMessages = {invalid_request:'machineErrorInvalid', runner_name_conflict:'machineErrorName', runner_machine_limit:'machineErrorLimit', runner_commands_active:'machineErrorCommands', dependency_unavailable:'machineErrorService', revision_conflict:'machineErrorChanged', not_found:'machineErrorGone'};
-  // The server is the authority on what it accepts: its answer is translated for the known codes, shown raw otherwise.
-  function machineError(problem) {
-    if (problem.name === 'TimeoutError') return t('machineVerifyTimeout');
-    const code = typeof problem.code === 'string' ? problem.code : '';
-    if (machineErrorMessages[code]) return t(machineErrorMessages[code]);
-    if ([401,403].includes(problem.status)) return t('accessFailure');
-    return `${t('machineErrorOther')} (${code || problem.status || problem.name})`;
-  }
-  async function refreshMachine(id) {
-    try {
-      const value = await api(`${machinesPath()}/${id}`);
-      machines = machines.map(item => item.id === id ? value : item);
-    } catch (problem) {
-      if (problem.status !== 404) throw problem;
-      machines = machines.filter(item => item.id !== id); say(t('machineErrorGone'));
-    }
-  }
-  async function machineFailure(id, problem) {
-    if (problem.name === 'AbortError') throw problem;
-    machineNotes.set(id, machineError(problem));
-    if (problem.code === 'revision_conflict' || problem.status === 404) await refreshMachine(id);
-  }
-  async function copyText(value) {
-    try { await navigator.clipboard.writeText(value); return true; } catch { /* No clipboard permission, or a page not served over HTTPS: use the selection fallback. */ }
-    const buffer = node('textarea', null, 'atlas-project-copy-buffer'); buffer.value = value; buffer.readOnly = true; buffer.setAttribute('aria-hidden', 'true'); buffer.tabIndex = -1;
-    document.body.append(buffer); buffer.select();
-    try { return document.execCommand('copy'); } catch { return false; } finally { buffer.remove(); }
-  }
-  // The command is shown as text and copied as text. There is deliberately no "run" control: running a command on
-  // the member's own computer needs a local helper that does not exist yet (a later step of doc 18, section 13).
-  function commandBlock(command, name) {
-    const block = node('div', null, 'atlas-project-command'), bar = node('div', null, 'atlas-project-command-bar');
-    const status = node('span', '', 'atlas-project-command-status'), pre = node('pre'), code = node('code', command);
-    status.setAttribute('role', 'status'); pre.append(code);
-    const copy = button('machineCopy', async () => {
-      const done = await copyText(command);
-      if (!done) { const range = document.createRange(); range.selectNodeContents(code); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); }
-      const message = t(done ? 'machineCopied' : 'machineCopyFailed'); status.textContent = message;
-      setTimeout(() => { if (status.textContent === message) status.textContent = ''; }, done ? 2500 : 8000);
-    });
-    copy.dataset.machineCopy = ''; copy.setAttribute('aria-label', `${t('machineCopyCommand')}: ${name}`); copy.title = t('machineCopyCommand');
-    bar.append(node('span', t('machineCommandLabel'), 'atlas-project-command-title'), status, copy); block.append(bar, pre);
-    return block;
-  }
-  function machineButton(key, machine, fn, cls) {
-    const control = button(key, fn, cls); control.setAttribute('aria-label', `${t(key)}: ${machine.name}`); control.disabled = machineBusy.has(machine.id);
-    return control;
-  }
-  function machineSteps(machine, withVerify) {
-    const steps = node('ol', null, 'atlas-project-machine-steps'), install = node('li');
-    install.append(node('p', t('machineStepInstall')), commandBlock(machine.install_command, machine.name), node('p', t('machineStepInstallHelp'), 'atlas-project-detail'));
-    steps.append(install);
-    if (withVerify) {
-      const check = node('li'), verify = machineButton('machineVerify', machine, () => verifyMachine(machine), 'atlas-project-primary'); verify.dataset.machineVerify = '';
-      check.append(node('p', t('machineStepVerify')), verify); steps.append(check);
-    }
-    return steps;
-  }
-  function machineCard(machine) {
-    const card = node('article', null, 'atlas-project-machine'); card.dataset.machine = machine.id; card.dataset.status = machine.status; card.tabIndex = -1;
-    const probe = machine.last_probe, top = node('div', null, 'atlas-project-machine-top');
-    const status = node('span', t(machineStatusLabels[machine.status] || 'unknown'), 'atlas-project-machine-status'); status.dataset.status = machine.status;
-    top.append(node('h2', machine.name), status);
-    const verified = probe?.timestamp ? `${t('machineLastVerified')}: ${relativeTime(probe.timestamp)}` : t('machineNeverVerified');
-    card.append(top, node('p', `${machine.user}@${machine.host}:${machine.port}`, 'atlas-project-machine-address'),
-      node('p', [machineSystems[machine.os] || machine.os, `${t('machineMode')}: ${t(machineModeLabels[machine.permission_mode] || 'unknown')}`, verified].join(' · '), 'atlas-project-detail'));
-    if (machineBusy.has(machine.id)) { const progress = node('p', t('machineVerifying'), 'atlas-project-thinking'); progress.setAttribute('role', 'status'); card.append(progress); }
-    if (machineNotes.has(machine.id)) { const note = node('p', machineNotes.get(machine.id), 'atlas-project-machine-note'); note.setAttribute('role', 'alert'); card.append(note); }
-    if (probe && probe.status !== 'available' && !machineBusy.has(machine.id)) {
-      const problem = node('div', null, 'atlas-project-machine-problem'), key = machineProbeMessages[probe.error]; problem.dataset.machineProblem = probe.error || '';
-      problem.append(node('p', key ? t(key) : `${t('machineProbeOther')} (${probe.error || t('unknown')})`));
-      if (probe.error === 'host_key_fingerprint_mismatch') problem.append(machineButton('machineTrust', machine, () => verifyMachine(machine, true)));
-      card.append(problem);
-    }
-    if (machine.host_key_fingerprints?.length || machine.work_root) {
-      const facts = node('dl', null, 'atlas-project-machine-facts');
-      if (machine.host_key_fingerprints?.length) { facts.append(node('dt', t('machineFingerprint'))); for (const fingerprint of machine.host_key_fingerprints) { const value = node('dd'); value.append(node('code', fingerprint)); facts.append(value); } }
-      if (machine.work_root) { const value = node('dd'); value.append(node('code', machine.work_root)); facts.append(node('dt', t('machineWorkRoot')), value); }
-      card.append(facts);
-    }
-    const actions = node('div', null, 'atlas-project-task-actions');
-    if (machine.status === 'unverified') {
-      // Not usable yet: the two steps are the main thing on the card.
-      const setup = node('section', null, 'atlas-project-machine-setup'); setup.append(node('h3', t('machineSetupHeading')), machineSteps(machine, true)); card.append(setup);
-    } else {
-      const setup = node('details', null, 'atlas-project-machine-setup'); setup.append(node('summary', t('machineShowCommand')), machineSteps(machine, false)); card.append(setup);
-      const verify = machineButton('machineVerify', machine, () => verifyMachine(machine)); verify.dataset.machineVerify = ''; actions.append(verify);
-    }
-    const remove = machineButton('machineDelete', machine, () => deleteMachine(machine)); remove.dataset.machineDelete = '';
-    actions.append(machineButton('machineEdit', machine, () => machineDialog(machine)), remove); card.append(actions);
-    return card;
-  }
-  function renderMachines(focus) {
-    if (!center?.isConnected || root.dataset.view !== 'machines') return;
-    center.replaceChildren();
-    const header = node('div', null, 'atlas-project-page-heading'); header.append(node('h1', t('machinesHeading')));
-    if (machines.length) header.append(button('machineAdd', () => machineDialog(), 'atlas-project-primary'));
-    center.append(header);
-    if (!machines.length) {
-      const empty = node('div', null, 'atlas-project-empty atlas-project-machines-empty');
-      empty.append(node('h2', t('machinesEmpty')), node('p', t('machinesIntro')), button('machineAdd', () => machineDialog(), 'atlas-project-primary')); center.append(empty);
-      return;
-    }
-    const cards = node('div', null, 'atlas-project-machines');
-    for (const machine of machines) cards.append(machineCard(machine));
-    center.append(node('p', t('machinesIntro'), 'atlas-project-machines-intro'), cards);
-    const target = focus && [...cards.children].find(card => card.dataset.machine === focus);
-    if (target) { target.scrollIntoView({block:'nearest'}); target.focus({preventScroll:true}); }
-  }
-  async function machinesPage() {
-    root.dataset.view = 'machines'; right.replaceChildren(); center.replaceChildren();
-    const current = generation, items = await list(machinesPath()); checkScope(current);
-    machines = items; machineBusy.clear(); machineNotes.clear(); renderMachines();
-  }
-  async function verifyMachine(machine, reset = false) {
-    if (reset && !await confirmDialog(t('machineTrustConfirm'), t('machineTrustDetail'), 'machineTrust')) return;
-    const current = generation; say('');
-    machineBusy.add(machine.id); machineNotes.delete(machine.id); renderMachines(machine.id);
-    try {
-      // A verification opens an SSH connection: it gets more time than an ordinary request.
-      const value = await jsonResponse(await request(`${machinesPath()}/${machine.id}/verify`, {method:'POST', body:reset ? {reset_host_key:true} : {}, signal:AbortSignal.any([lifecycle.signal, AbortSignal.timeout(90000)])}), current);
-      machines = machines.map(item => item.id === value.id ? value : item);
-    } catch (problem) { machineBusy.delete(machine.id); await machineFailure(machine.id, problem); }
-    machineBusy.delete(machine.id); renderMachines(machine.id);
-  }
-  async function deleteMachine(machine) {
-    if (!await confirmDialog(t('machineDeleteConfirm'), `${machine.name}. ${t('machineDeleteDetail')}`, 'machineDelete')) return;
-    machineNotes.delete(machine.id); say('');
-    try {
-      await request(`${machinesPath()}/${machine.id}`, {method:'DELETE', headers:{'If-Match':`"${machine.revision}"`}});
-      machines = machines.filter(item => item.id !== machine.id); say(t('machineDeleted')); renderMachines();
-    } catch (problem) { await machineFailure(machine.id, problem); renderMachines(machine.id); }
-  }
-  function machineDialog(machine) {
-    const dialog = node('dialog', null, 'atlas-project-dialog atlas-project-task-dialog atlas-project-machine-dialog'), form = node('form'); dialog.dataset.machineDialog = '';
-    const name = node('input'), host = node('input'), user = node('input'), port = node('input'), system = node('select');
-    name.required = true; name.maxLength = 120; name.value = machine?.name || '';
-    host.required = true; host.maxLength = 253; host.placeholder = 'server.example.org'; user.required = true; user.maxLength = 64; user.placeholder = 'deploy';
-    for (const control of [host, user]) { control.autocapitalize = 'off'; control.autocomplete = 'off'; control.spellcheck = false; }
-    port.type = 'number'; port.min = '1'; port.max = '65535'; port.step = '1'; port.required = true; port.value = '22';
-    for (const [value, label] of Object.entries(machineSystems)) system.append(new Option(label, value));
-    const modes = node('fieldset'); modes.append(node('legend', t('machineMode')));
-    for (const mode of ['rules', 'ask', 'auto']) {
-      const choice = node('label', null, 'atlas-project-machine-mode'), radio = node('input'); radio.type = 'radio'; radio.name = 'permission_mode'; radio.value = mode;
-      // Same default as the server.
-      radio.checked = mode === (machine?.permission_mode || 'rules');
-      choice.append(radio, node('span', t(machineModeLabels[mode])), node('small', t(machineModeHelp[mode]))); modes.append(choice);
-    }
-    const error = node('p', '', 'atlas-project-dialog-error'); error.setAttribute('role', 'alert');
-    const submit = node('button', t(machine ? 'save' : 'machineDeclare')); submit.type = 'submit';
-    const actions = node('div', null, 'atlas-project-task-actions'); actions.append(submit, button('cancel', () => dialog.close()));
-    form.append(node('h2', t(machine ? 'machineEdit' : 'machineAdd')), field('name', name));
-    if (machine) form.append(node('p', `${machine.user}@${machine.host}:${machine.port}`, 'atlas-project-machine-address'));
-    else form.append(field('machineHost', host), field('machineUser', user), field('machinePort', port), field('machineSystem', system));
-    form.append(modes, error, actions); form.noValidate = true;
-    form.addEventListener('submit', guarded(async event => {
-      event.preventDefault(); error.textContent = '';
-      // Loose checks only (required fields, port range); the server decides what a valid host or account is.
-      const number = Number(port.value), required = machine ? [name] : [name, host, user];
-      const missing = required.find(control => !control.value.trim());
-      if (missing) { error.textContent = t('machineErrorRequired'); missing.focus(); return; }
-      if (!machine && (!Number.isInteger(number) || number < 1 || number > 65535)) { error.textContent = t('machineErrorPort'); port.focus(); return; }
-      const mode = form.querySelector('input[name=permission_mode]:checked').value;
-      submit.disabled = true;
-      try {
-        let value;
-        if (machine) {
-          value = await jsonResponse(await request(`${machinesPath()}/${machine.id}`, {method:'PATCH', headers:{'If-Match':`"${machine.revision}"`}, body:{name:name.value.trim(), permission_mode:mode}}), generation);
-          machines = machines.map(item => item.id === value.id ? value : item);
-        } else {
-          value = await api(machinesPath(), 'POST', {name:name.value.trim(), host:host.value.trim(), port:number, user:user.value.trim(), os:system.value, permission_mode:mode});
-          machines = [...machines, value];
-        }
-        machineNotes.delete(value.id); say(''); dialog.close(); renderMachines(value.id);
-      } catch (problem) {
-        if (problem.name === 'AbortError') throw problem;
-        // The edited copy is stale or gone: the dialog cannot succeed, the card says why.
-        if (machine && (problem.code === 'revision_conflict' || problem.status === 404)) { await machineFailure(machine.id, problem); dialog.close(); renderMachines(machine.id); }
-        else error.textContent = machineError(problem);
-      } finally { submit.disabled = false; }
-    }));
-    dialog.append(form); root.append(dialog); dialog.addEventListener('close', () => dialog.remove(), {once:true}); dialog.showModal(); name.focus();
-  }
   const projectSummaries = new Map();
   async function loadProjectSummary(project, description, counts) {
     const current = generation, path = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
@@ -586,7 +385,7 @@
     cleanup(); lifecycle = new AbortController(); const current = generation;
     scope = value; projects = []; conversations = []; files = []; folders = []; archivedConversations = []; showArchived = false; conversationSearch = ''; searchResults = null; center.replaceChildren(); right.replaceChildren(); say(t('loading'));
     for (const key of ['org', 'project', 'conversation', 'session']) if (value[key] && !uuid(value[key])) throw new Error(t('selectionError'));
-    if ((value.tasks || value.machines) && value.project) throw new Error(t('selectionError'));
+    if (value.tasks && value.project) throw new Error(t('selectionError'));
     if (value.org && !memberships.some(m => m.org_id === value.org)) throw new Error(t('selectionError'));
     if (value.org) projects = await list(`/api/atlas/orgs/${value.org}/projects`);
     if (current !== generation) return;
@@ -603,7 +402,7 @@
     document.body.classList.add('atlas-project-open');
     hostMain()?.setAttribute('inert', '');
     say('');
-    if (value.project) await mountConversation(current); else if (value.machines) await machinesPage(); else if (value.tasks) await tasksPage(); else projectsPage();
+    if (value.project) await mountConversation(current); else if (value.tasks) await tasksPage(); else projectsPage();
   }
   const eligibleFiles = () => files.filter(f => f.locality !== 'local_only' && f.availability !== 'not_retained' && f.id !== projectInfo.instructions_file_id && folders.some(folder => folder.id === f.folder_id && folder.model_use === 'allow'));
   async function mountConversation(current) {
@@ -1406,8 +1205,6 @@
       const row = node('div',null,'atlas-project-nav-row'); row.id = 'atlas-project-navigation';
       const entry = button('projects',async () => {await mount(); await choose({org:scope?.org || memberships[0]?.org_id});}); entry.id = 'atlas-project-entry';
       row.append(entry,iconButton('newProject','+',createProject),button('taskHeading',async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id,tasks:true});}));
-      // Machines belong to the member, not to a project: the entry sits with Projects and Scheduled tasks.
-      const personal = button('machinesHeading',async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id,machines:true});}); personal.id = 'atlas-project-machines-entry'; row.append(personal);
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
@@ -1570,7 +1367,7 @@
     if (booting) return; booting = true;
     try {
       const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
-      if (!me.ok) {if (owned || selections().has('project') || selections().has('tasks') || selections().has('machines') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
+      if (!me.ok) {if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
       memberships = (await me.json()).memberships;
       if (!scope && memberships[0]?.org_id) scope = {org: memberships[0].org_id};
       const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
@@ -1579,7 +1376,7 @@
       document.getElementById('atlas-project-failure')?.remove();
       for (let i = sessionStorage.length - 1; i >= 0; i--) { const key = sessionStorage.key(i); if (key.startsWith('atlas-project:') && key !== storageKey()) sessionStorage.removeItem(key); }
       installNavigation();
-      if (owned || selections().has('project') || selections().has('tasks') || selections().has('machines') || selections().has('atlas_projects')) await mount();
+      if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) await mount();
     } catch(error) {showFailure(error);} finally {booting = false;}
   }
   function showFailure(error) {
@@ -1608,7 +1405,7 @@
     root.append(mobile,left,center,right,notice); document.body.append(root);
     const side = document.getElementById('atlas-side-view');
     if (side) {sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width',side.getBoundingClientRect().width+'px')); sideResize.observe(side);}
-    const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session'),tasks:q.get('tasks') === 'true',machines:q.get('machines') === 'true'};
+    const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session'),tasks:q.get('tasks') === 'true'};
     try {await choose(value); installNavigation();} catch(error) {if (error.name !== 'AbortError') showFailure(error);}
   }
   let route = location.pathname;
@@ -1623,7 +1420,7 @@
       if (/^\/(auth|admin)/.test(route)) { if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
     }
   });
-  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('tasks') || selections().has('machines') || selections().has('atlas_projects')) guarded(mount)(); });
+  window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) guarded(mount)(); });
   document.addEventListener('click', event => {const link = event.target.closest?.('#sidebar a, a#sidebar-new-chat-button, #pinned-menu-items-list a'); if (link && root?.isConnected) ordinary();});
   window.addEventListener('resize', installNavigation);
   window.addEventListener('pagehide', cleanup);
