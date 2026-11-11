@@ -28,7 +28,11 @@ def asset() -> Response:
 
 async def browser_user(request: Request) -> str:
     browser_origin(request)
-    token = request.cookies.get("token", "")
+    return await token_subject(request.cookies.get("token", ""))
+
+
+async def token_subject(token: str) -> str:
+    """Open WebUI user id of a session token, verified by Open WebUI itself."""
     if not token or len(token) > 8192 or any(c in token for c in "\r\n"):
         raise ProjectError(401, "unauthenticated")
     url = os.environ.get("ATLAS_WEBUI_URL") or atlas_ports().url("chat_ui")
