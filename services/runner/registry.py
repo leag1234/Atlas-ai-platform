@@ -184,6 +184,23 @@ class Registry:
             and target.get("verified_at")
         )
 
+    def private_chat_workspace(self) -> bool:
+        """Whether the scope is the caller's own hidden workspace, his alone."""
+        project = self.scope.project
+        if project is None:
+            return False
+        data = project["data"]
+        if not data.get("hidden") or data.get("owner_member_id") != (
+            self.scope.identity.member
+        ):
+            return False
+        row = self.scope.db.execute(
+            "SELECT count(*) AS count FROM atlas_projects.grants"
+            " WHERE org_id=%s AND project_id=%s AND member_id<>%s",
+            (self.org, self.scope.project_id, self.scope.identity.member),
+        ).fetchone()
+        return row is not None and row["count"] == 0
+
     def personal_grant(self, target: Json) -> Json:
         """Per-project state of a personal machine: code egress approval, rules.
 
@@ -203,7 +220,13 @@ class Registry:
             granted_by=self.scope.identity.member,
             enabled=True,
             personal=True,
-            code_egress_approved_at=None,
+            # Owner decision 2026-11-11: in his private chat workspace, declaring
+            # and verifying the machine is the member's consent to send code
+            # there (no approval card exists in the chat). Anywhere else the
+            # first use still asks: the code of a project may belong to others.
+            code_egress_approved_at=timestamp()
+            if self.private_chat_workspace()
+            else None,
             allow_rules=[],
         )
         self.save("grants", value, create=True)
