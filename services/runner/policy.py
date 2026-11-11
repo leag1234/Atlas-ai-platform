@@ -12,11 +12,20 @@ class RunnerError(Exception):
 OPERATORS = {"|", "&&", "||", ";"}
 
 
+# Redirections that read nothing and write nothing (/dev/null, descriptor duplication) cannot
+# hide a command or a file write from the argv policy; models add them by habit
+# ("tail /var/log/syslog 2>/dev/null"). Every other redirection is still refused.
+HARMLESS_REDIRECTION = re.compile(
+    r"(?<![^\s|&;])(?:[012]?>>?|&>|<)[ \t]*/dev/null(?![^\s|&;])|(?<![^\s|&;])[12]>&[12](?![^\s|&;])"
+)
+
+
 def commands(command: str) -> list[list[str]]:
     # Expansions can hide commands from an argv policy. Reject them even in
     # quotes; a user can put complex programs in a reviewed project script.
     if any(c in command for c in "$`\n\r\x00"):
         raise RunnerError("unsupported_shell_syntax")
+    command = HARMLESS_REDIRECTION.sub(" ", command)
     lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;()<>")
     lexer.whitespace_split = True
     lexer.commenters = ""
