@@ -2057,7 +2057,11 @@ async def _process(
             "search_no_results",
             "daily_search_limit",
         }:
-            from services.orchestrator.link_requests import fallback_terms, unavailable
+            from services.orchestrator.link_requests import (
+                fallback_terms,
+                reason,
+                unavailable,
+            )
 
             item.erreurs.append(exc.code)
             item.reponse = unavailable(
@@ -2066,7 +2070,9 @@ async def _process(
                 ),
                 request.lang,
             )
-            item.reponse += "\n\n" + exc.detail
+            cause = exc.detail.strip() or reason(exc.code, request.lang)
+            if cause:
+                item.reponse += "\n\n" + cause
             item.state = "done"
             item.cout_eur = float(model.spent)
             return

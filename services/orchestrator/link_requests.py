@@ -101,7 +101,10 @@ def fallback_terms(question: str, history: Sequence[str] = ()) -> str:
             )
         )
     )
-    return ", ".join(products[:3]) if products else "requested product or page"
+    if products:
+        return ", ".join(products[:3])
+    # No product name: the user's own words are the search terms (never an English placeholder).
+    return re.sub(r"\s+", " ", re.sub(r"https?://\S+", "", question)).strip()[:200]
 
 
 def instruction() -> str:
@@ -119,6 +122,52 @@ def instruction() -> str:
         "Use ordinary bullets, not shop headings or setext underlines. If retrieval "
         "fails, state that verified links could not be retrieved and give search terms.\n"
     )
+
+
+# Why the links could not be retrieved, said in the user's language when the error carries no
+# detail: a search limit must read as a limit, never as a retrieval failure (D5).
+REASONS = {
+    "daily_search_limit": {
+        "fr": "Votre limite de recherches web est atteinte pour le moment.",
+        "de": "Ihr Limit für Websuchen ist vorerst erreicht.",
+        "en": "Your web search limit is reached for now.",
+        "es": "Se alcanzó su límite de búsquedas web por ahora.",
+        "it": "Il tuo limite di ricerche web è stato raggiunto per ora.",
+    },
+    "quota_exceeded": {
+        "fr": "Le service de recherche web a atteint son quota.",
+        "de": "Der Websuchdienst hat sein Kontingent erreicht.",
+        "en": "The web search service has reached its quota.",
+        "es": "El servicio de búsqueda web alcanzó su cuota.",
+        "it": "Il servizio di ricerca web ha raggiunto la sua quota.",
+    },
+    "search_rate_limited": {
+        "fr": "Le service de recherche web limite les requêtes : réessayez dans un moment.",
+        "de": "Der Websuchdienst begrenzt die Anfragen: Versuchen Sie es gleich noch einmal.",
+        "en": "The web search service is limiting requests: try again in a moment.",
+        "es": "El servicio de búsqueda web limita las solicitudes: vuelva a intentarlo en un momento.",
+        "it": "Il servizio di ricerca web limita le richieste: riprova tra un momento.",
+    },
+    "search_unavailable": {
+        "fr": "La recherche web est indisponible pour le moment.",
+        "de": "Die Websuche ist gerade nicht verfügbar.",
+        "en": "Web search is unavailable right now.",
+        "es": "La búsqueda web no está disponible en este momento.",
+        "it": "La ricerca web non è disponibile in questo momento.",
+    },
+    "search_no_results": {
+        "fr": "La recherche web n’a donné aucun résultat.",
+        "de": "Die Websuche hat keine Ergebnisse geliefert.",
+        "en": "The web search returned no results.",
+        "es": "La búsqueda web no dio resultados.",
+        "it": "La ricerca web non ha dato risultati.",
+    },
+}
+
+
+def reason(code: str, language: str) -> str:
+    texts = REASONS.get(code, {})
+    return texts.get(language, texts.get("en", ""))
 
 
 def unavailable(question: str, language: str) -> str:
