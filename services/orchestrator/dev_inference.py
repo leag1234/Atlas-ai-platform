@@ -18,6 +18,7 @@ from pydantic import ValidationError
 import api_routing
 import dev_gateway as gateway
 from services.orchestrator.dev_auth import QuotaError, Store
+from services.orchestrator.call_repair import repaired_frames
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
 from services.orchestrator.dev_input import (
     SemanticFieldError,
@@ -64,7 +65,9 @@ async def validated_drive(
                 pending: list[dict[str, Any]] = []
                 candidate = Output(request_id, request)
                 emitted = False
-                async with aclosing(gateway.events(current)) as frames:
+                async with aclosing(
+                    repaired_frames(gateway.events(current), request.tools)
+                ) as frames:
                     async for frame in frames:
                         chunk = candidate.feed(frame)
                         if "usage" in frame:
@@ -260,7 +263,9 @@ async def drive(
         called = True
         async with (
             asyncio.timeout(max(0, deadline - monotonic())),
-            aclosing(gateway.events(plan)) as frames,
+            aclosing(
+                repaired_frames(gateway.events(plan), output.request.tools)
+            ) as frames,
         ):
             async for frame in frames:
                 chunk = output.feed(frame)

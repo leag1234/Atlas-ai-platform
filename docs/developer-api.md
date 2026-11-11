@@ -447,8 +447,16 @@ is one euro) and the limits that apply to your key.
 | 503 `strict_privacy_unavailable` | You asked for strict privacy and no owned inference server exists yet | Remove the `X-Atlas-Privacy: strict` header |
 | 503 `key_service_unavailable` | A downstream failure; a common cause is a `max_tokens` too small for the reasoning effort | See section 3, then retry |
 
-To discourage loops, Atlas also appends a note asking the model to change approach when the same tool
-call returns the same result several times, before it stops the exchange at the twelfth.
+Loop thresholds, counted over the last 12 tool calls of the history (same tool, same arguments, same
+result): at 3, a note asking the model to change approach is appended to the tool output; from 5, the
+repeated output is replaced by that note and a short instruction follows it as a user message; at 12,
+the request is refused with 409 `tool_loop_detected`. Calls whose results differ (tests rerun after an
+edit) are never counted.
+
+Atlas also repairs two unambiguous tool-call slips before your client sees them: a shell command sent
+to an undeclared tool name (`bash`, `exec`, `shell`, ...) when the request declares exactly one shell
+tool, and a declared shell tool called with `command` instead of its required `cmd` (or the reverse).
+Any other malformed call is passed through unchanged.
 
 ## 9. Privacy
 

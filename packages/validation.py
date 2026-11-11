@@ -45,7 +45,10 @@ def describe_validation(error: ValidationError) -> str:
                 "unknown field " if kind == "extra_forbidden" else "field "
             ) + path[:200]
         else:
-            measured = "invalid field"
+            # Field names are client keys, not values (a coding run died on an
+            # unnamed "invalid field; value_error", 2026-11-09).
+            path = ".".join(str(part) for part in failure["loc"])
+            measured = "invalid field " + path[:200] if path else "invalid field"
         descriptions.append(f"Request validation: {measured}; {bounds or kind}")
     message = "; ".join(descriptions)
     logging.getLogger(__name__).warning(message)
