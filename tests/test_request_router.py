@@ -528,7 +528,7 @@ class PipelineGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.call_args.args[2].artifacts.current_artifact_id, "a" * 32)
 
     async def test_answer_stays_a_chat_answer(self) -> None:
-        # "Crée une petite calculatrice" is an app for the lexical test.
+        # A request to create a small calculator is an app for the lexical test.
         run, image, inline_svg, item = await self.process(
             routed(request("Crée une petite calculatrice"), kind="answer")
         )
