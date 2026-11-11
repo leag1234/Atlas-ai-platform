@@ -163,3 +163,29 @@ Security reasoning:
 Code egress: the first-use approval of section 6 is kept for personal machines, once per project and machine, decided by the owner himself. Whether declaring and verifying a machine is already that consent (at least in the member's private chat workspace, where no approval card exists yet) is an open owner decision.
 
 Limits in this step: Linux and macOS accounts reached directly (no jump host), 20 machines per member, default quotas (2 parallel sessions, 10 GiB per session directory), files marked local-only never leave. Not included: a settings page, approvals inside the chat conversation, a local helper, depositing an existing private key.
+
+### 13.1 Setup in the conversation (owner decision, 2026-11-11)
+
+There is no machines page: a machine is set up by talking to Atlas ("I have a server at 192.0.2.10, use it over SSH to compile, and another one at 198.51.100.7 for the tests"). Any setup step happens in the conversation: the assistant asks, does, shows the command with a copy button, verifies, then continues the task.
+
+Work tools (`services/orchestrator/work_machine_tools.py`), in the `remote` tool group, act as the member through the routes above (`ExecutionBroker.member`, his own identity, an Idempotency-Key on every change and If-Match on rename, mode change and removal):
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `machine_add` | `name`, `host`, `user`, `port` (22), `permission_mode` (optional) | the machine, `install_command` verbatim, a sentence for the person, the meaning of its permission mode |
+| `machine_verify` | `name`, `reset_host_key` (false) | status and host key fingerprint, or one sentence per failure (key not installed, with the command again; host key changed, with the risk; private address; unknown host name; no SSH connection) |
+| `machine_list` | none | name, address, status, permission mode; no credential |
+| `machine_change` | `name`, `new_name`, `permission_mode` | the changed machine |
+| `machine_forget` | `name`, `confirmed` | refused unless `confirmed` is true; the model sets it only after the person said yes |
+
+Machines are named by the person or by Atlas after their use (`build`, `tests`); a request may declare several.
+
+Flow across turns:
+
+1. The request is routed `remote` (or matches the remote phrasing without the router). Work starts in the `remote` group even when the member has no machine yet; the machine rules are added to the Work system text. `machine_add` is called once per machine, the answer shows each command in a `bash` block and the turn ends. Verifying a machine declared in the same turn returns at once without connecting (its key cannot be installed yet). Whatever the model writes, every install command of the turn is in the final answer, verbatim, in a code block.
+2. The next message ("done", "c'est fait", or the error the person got) goes back to the conversation's Work session: the chat sees an install command in the last answer and treats the reply as a follow-up unless the router classified it as research, a drawing, an app or a file. Work starts in the `remote` group again, verifies, and continues the original request from the conversation history. A machine verified in the turn makes the remote commands available at once.
+3. Later conversations use a verified machine by name through `list_targets` and `remote_run`, without setup.
+
+Permission mode: no approval card can be answered in the chat yet. In the chat a new machine therefore uses `auto`, and the answer says that commands will run on that machine without asking each time and that the person can refuse; if he does, the mode becomes `rules`, and the answer says that commands on that machine will then not run in the chat. In a project, where approvals are shown, the backend default (`rules`) applies. Together with section 13's code egress rule, declaring and verifying a machine in the private chat workspace is the consent to send code there.
+
+Instructions to the model, in short: never ask for a password or a private key; never ask the person to run anything on the server other than the install command; diagnose read-only first; relay each sentence in the person's language, never an error code; ask before resetting a changed host key; remove a machine only after an explicit yes.

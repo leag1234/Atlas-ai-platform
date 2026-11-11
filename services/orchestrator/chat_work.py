@@ -284,6 +284,35 @@ def delivered_file_hint(request: ChatRequest) -> str:
     return ""
 
 
+# Kinds the chat itself delivers: a pending machine setup does not capture them.
+_CHAT_KINDS = frozenset({"research", "drawing", "app", "file"})
+# A reply to "run this command, then tell me" is short ("c'est fait", "done").
+_SETUP_REPLY_CHARACTERS = 500
+
+
+def machine_setup_pending(request: ChatRequest) -> bool:
+    """The last answer asked the person to install the Atlas key on a machine.
+
+    Then his next message ("done", "c'est fait", "ok j'ai collé la commande",
+    or the error he got) belongs to that Work session, whatever its words.
+    """
+    from services.orchestrator.work_machine_tools import install_shown
+
+    for message in reversed(request.conversation_messages[:-1]):
+        if message.role == "assistant":
+            return install_shown(message.text)
+    return False
+
+
+MACHINE_SETUP_HINT = (
+    "\n\n(Context for this turn: the previous answer asked the user to install the "
+    "Atlas key on one or more machines. If this message says it is done, call "
+    "machine_verify for each of them, then continue the user's original request of "
+    "this conversation without asking them to repeat it. If it reports an error, "
+    "help with that error.)"
+)
+
+
 async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     """Create (once per user) the hidden scratch project and a Work session bound
     to this conversation, then run the turn through process_work. Returns True
@@ -310,6 +339,15 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
         # to its workspace; anything else stays an ordinary chat turn.
         follow_up = reason is None and continues_work(request.user_text)
         hint = follow_up
+    # The answer to "run this command, then tell me when it is done" goes back to
+    # the Work session that showed it, which verifies and continues the task.
+    setup = machine_setup_pending(request) and (
+        routed.kind not in _CHAT_KINDS
+        if routed is not None
+        else len(request.user_text.strip()) <= _SETUP_REPLY_CHARACTERS
+    )
+    if setup and reason is None:
+        follow_up = True
     if reason is None and not (follow_up and chat_conversation_id):
         return False
     # The same subject as the project interface (the verified email), so the
@@ -410,13 +448,16 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
                 ChatMessage(
                     role="user",
                     content=request.user_text
-                    + (delivered_file_hint(request) if hint else ""),
+                    + (delivered_file_hint(request) if hint and not setup else "")
+                    + (MACHINE_SETUP_HINT if setup else ""),
                 ),
             ],
         }
     )
     scoped._project_subject = subject
     scoped.__dict__["approvals_unattended"] = True
+    if setup:
+        scoped.__dict__["machine_setup_pending"] = True
     before = (item.state, list(item.erreurs), item.reponse)
     failure = ""
     for attempt in range(2):
@@ -487,7 +528,7 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     item.task_type = "work"
     logger.info(
         "chat_work_escalated reason=%s conversation=%s session=%s",
-        reason or "follow_up",
+        reason or ("machine_setup" if setup else "follow_up"),
         chat_conversation_id or "unknown",
         session_id,
     )

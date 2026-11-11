@@ -126,6 +126,11 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
         )
 
         result.extend(remote_declarations())
+        from services.orchestrator.work_machine_tools import (
+            declarations as machine_declarations,
+        )
+
+        result.extend(machine_declarations())
     return result + (project_document_tools.declarations() if scoped else [])
 
 
@@ -462,6 +467,14 @@ class WorkTools(CodeTools):
         # The one office format the request names, as a suffix (".docx"), or None.
         self.requested_suffix: str | None = None
         self.remote_references: Any = None
+        # Conversation language, for the sentences of the machine tools.
+        self.lang = "en"
+        # Machines declared in this turn, and the install commands the person
+        # must still see (name -> command), for the final answer.
+        self.machines_declared: set[str] = set()
+        self.machine_commands: dict[str, str] = {}
+        # Turn-specific system text (the machine rules on a remote turn).
+        self.instructions = ""
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
@@ -656,6 +669,24 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return dict(trust="untrusted", **result)
+        if call.name.startswith("machine_"):
+            from services.orchestrator import work_machine_tools
+
+            if call.name in work_machine_tools.SCHEMAS:
+                result = await work_machine_tools.execute(
+                    self, call.name, call.arguments
+                )
+                await self.emit(
+                    "tool",
+                    tool=call.name,
+                    label=call.name,
+                    status="failed" if result.get("error") else "completed",
+                    output=dict(
+                        machine=result,
+                        **({"error": result["error"]} if result.get("error") else {}),
+                    ),
+                )
+                return result
         if call.name in {"list_targets", "remote_run", "remote_status", "remote_fetch"}:
             from services.orchestrator import work_remote_tools
             from services.retrieval.project_identity import ProjectError
