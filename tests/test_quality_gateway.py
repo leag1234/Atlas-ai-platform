@@ -199,9 +199,17 @@ class ProfileTests(unittest.TestCase):
             request(profile="atlas-qwen", reasoning_effort="high").reasoning_effort,
             "none",
         )
+        # A file turn (an app or drawing is one whole file) may ask for more
+        # output, under its own cost ceiling; a default stays at 6000.
+        self.assertEqual(
+            request(produces_files=True, max_tokens=16000, timeout=290.0).max_tokens,
+            16000,
+        )
+        self.assertEqual(request(produces_files=True).max_tokens, 6000)
         for options in (
             {"max_tokens": 16001},
             {"profile": "atlas-qwen", "max_tokens": 6001},
+            {"produces_files": True, "max_tokens": 16001},
             {"profile": "atlas-qwen", "budget_eur": "0.100001"},
             {"budget_eur": "NaN"},
         ):
