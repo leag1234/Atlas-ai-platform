@@ -494,19 +494,22 @@ class Session:
                     self.closing.append(asyncio.create_task(self.close_turn()))
             elif event.kind == "done":
                 self.provider_seconds = event.seconds
-                await self.close_turn()
+                await self.close_turn(last=True)
                 return
 
-    async def close_turn(self) -> None:
+    async def close_turn(self, *, last: bool = False) -> None:
         async with self.closing_lock:
-            await self._close_turn()
+            await self._close_turn(last)
 
-    async def _close_turn(self) -> None:
+    async def _close_turn(self, last: bool = False) -> None:
         if self.cleaner is None or self.cleaned_upto >= len(self.finals):
             return
         start, end = self.cleaned_upto, len(self.finals)
         raw = " ".join(self.finals[start:end])
-        outcome = await self.cleaner.clean(self.closed_text, raw, final=True)
+        # Only the end of the dictation may change the last word (see accepted()).
+        outcome = await self.cleaner.clean(
+            self.closed_text, raw, final=True, open_end=not last
+        )
         text = outcome.text if outcome.text is not None else raw
         self.cleaned_upto, self.closed_text = (
             end,
