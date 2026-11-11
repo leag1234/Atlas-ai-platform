@@ -14,7 +14,7 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
-Reason = Literal["run", "file", "build", "follow_up"]
+Reason = Literal["run", "file", "build", "remote", "follow_up"]
 
 _ATTACHMENT_TAG = re.compile(
     r"\[attachment: [^\n]*\]|<attached_files>.*?</attached_files>", re.S | re.I
@@ -22,7 +22,7 @@ _ATTACHMENT_TAG = re.compile(
 
 # "How do I…", "explain…", "what is…": a question about the subject, not a request to do it.
 _HOW_TO = re.compile(
-    r"\b(?:comment (?:faire|creer|ecrire|lancer|executer|generer|on|puis|est|je)|how (?:do|does|can|to|would|should)"
+    r"\b(?:comment (?:faire|creer|ecrire|lancer|executer|generer|on|puis|est|je|se|me|s')|how (?:do|does|can|to|would|should)"
     r"|explique\w*|explain\w*|pourquoi|why|c'est quoi|qu'est[- ]ce|what is|what are|what does"
     r"|difference|quelle est|quel est|wie kann|wie macht|warum|erklar\w*|como (?:se|puedo|hago)"
     r"|por que|come (?:si|posso)|perche|spiega\w*)\b"
@@ -87,6 +87,15 @@ _BUILD = re.compile(
     r"|\b(?:scrape[sz]?|scraper|crawle?[sz]?)\b.{0,40}\b(?:site|page|url|website)\b"
 )
 
+# Work on one of the person's own machines, over SSH (owner decision 2026-11-11: the chat
+# reaches the machines a member declared, like a terminal assistant would).
+_MACHINE = r"(?:serveurs?|servers?|vps|machines?|hosts?|box)"
+_REMOTE = re.compile(
+    rf"\b(?:connecte[sz]?(?:[- ](?:toi|vous))?|connect|log ?in|ssh)\b.{{0,40}}\b{_MACHINE}\b"
+    rf"|\b(?:sur|on|dans|depuis|from)\s+(?:mon|ma|mes|my|notre|our)\s+{_MACHINE}\b"
+    r"|\b(?:en|via|par|over|through|with)\s+ssh\b"
+)
+
 # Later turns of a conversation that already has its Work session: a change or a rerun stays there.
 _FOLLOW_UP = re.compile(
     r"\b(?:modifi\w*|ajout\w*|corrig\w*|chang\w*|remplac\w*|supprim\w*|enlev\w*|amelior\w*|refai[st]\w*"
@@ -111,6 +120,8 @@ def work_reason(
     normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text))
     if not normalized.strip() or _HOW_TO.search(normalized):
         return None
+    if _REMOTE.search(normalized):
+        return "remote"
     if _RUN.search(normalized):
         return "run"
     if _FILE.search(normalized):

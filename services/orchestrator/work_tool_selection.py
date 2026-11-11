@@ -63,7 +63,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "research": ("web_search", "web_fetch"),
 }
 PATTERNS = {
-    "remote": r"\b(remote|target|runner|build server|serveur|registered machine)\b",
+    "remote": r"\b(remote|target|runner|build server|serveurs?|servers?|ssh|vps|registered machine|(?:my|mon|ma|mes) machines?)\b",
     "presentations": r"\b(pptx|slides?|presentation|presentacion|prasentation|diaporama)\b",
     "spreadsheets": r"\b(xlsx|csv|spreadsheet|workbook|excel|tableur|tabellen|foglio|hoja)\b",
     "documents": r"\b(docx|pdf|markdown|(?<![\w./\\-])md|(?<![\w./\\-])txt|word|documents?|documento|memo|report|rapport|bericht|informe|relazione)\b",
