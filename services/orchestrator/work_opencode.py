@@ -19,6 +19,10 @@ import aiohttp
 
 SERVER_USER = "opencode"
 SERVER_PORT = 4096
+# One server-sent event is one line. A turn with many tool calls sends message updates far
+# above aiohttp's default line limit (128 KiB), and the stream died with LineTooLong
+# (staging 2026-11-11, 40 bash calls).
+EVENT_LINE_BYTES = 16 * 1024 * 1024
 IMAGE = "atlas-opencode-engine:local"
 
 # opencode permission names this engine may auto-allow. Everything else,
@@ -277,10 +281,15 @@ class OpencodeDriver:
                             break
                         try:
                             if remaining is None:
-                                line = await stream.content.readline()
+                                line = await stream.content.readline(
+                                    max_line_length=EVENT_LINE_BYTES
+                                )
                             else:
                                 line = await asyncio.wait_for(
-                                    stream.content.readline(), timeout=remaining
+                                    stream.content.readline(
+                                        max_line_length=EVENT_LINE_BYTES
+                                    ),
+                                    timeout=remaining,
                                 )
                         except asyncio.TimeoutError:
                             outcome = "aborted_time"
