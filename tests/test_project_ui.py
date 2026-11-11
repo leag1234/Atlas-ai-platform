@@ -179,3 +179,148 @@ class SourcePreviewTests(unittest.TestCase):
             script,
         )
         self.assertIn("const fence = '`'.repeat(Math.max(3, longest + 1));", script)
+
+
+class MachinesPageTests(unittest.TestCase):
+    """My machines (doc 18, section 13): static checks of the served page code."""
+
+    def setUp(self) -> None:
+        client = TestClient(app)
+        self.script = client.get("/project-mode/client.js").text
+        self.locale = client.get("/project-mode/locale.js").text
+        self.css = client.get("/project-mode/style.css").text
+        start = self.script.index("  // My machines (docs/18-remote-runners.md")
+        end = self.script.index("  const projectSummaries = new Map();")
+        self.page = self.script[start:end]
+
+    def test_the_page_calls_the_six_routes(self) -> None:
+        page = self.page
+        self.assertIn("return `/api/atlas/orgs/${scope.org}/machines`;", page)
+        # GET list, POST declare, GET one.
+        self.assertIn("await list(machinesPath())", page)
+        self.assertIn("await api(machinesPath(), 'POST', {name:", page)
+        self.assertIn("await api(`${machinesPath()}/${id}`)", page)
+        # PATCH and DELETE carry the revision; POST verify carries the reset flag.
+        revision = "headers:{'If-Match':`\"${machine.revision}\"`}"
+        self.assertIn(
+            "request(`${machinesPath()}/${machine.id}`, {method:'PATCH', " + revision,
+            page,
+        )
+        self.assertIn(
+            "request(`${machinesPath()}/${machine.id}`, {method:'DELETE', " + revision,
+            page,
+        )
+        self.assertIn(
+            "request(`${machinesPath()}/${machine.id}/verify`, {method:'POST', body:reset ? {reset_host_key:true} : {}",
+            page,
+        )
+        # Every mutation goes through the helper that adds the Idempotency-Key.
+        self.assertNotIn("fetch(", page)
+        self.assertIn(
+            "if (options.method && options.method !== 'GET') headers.set('Idempotency-Key', crypto.randomUUID());",
+            self.script,
+        )
+        # The server's error code reaches the page, which translates the known ones.
+        self.assertIn(
+            "code: typeof error.error === 'string' ? error.error : ''", self.script
+        )
+        for code in (
+            "invalid_request",
+            "runner_name_conflict",
+            "runner_machine_limit",
+            "runner_commands_active",
+            "dependency_unavailable",
+            "credential_unavailable",
+            "host_key_fingerprint_mismatch",
+            "runner_target_address_denied",
+            "runner_target_unresolved",
+        ):
+            self.assertIn(code + ":'machine", page, code)
+
+    def test_the_entry_is_reachable_without_a_project(self) -> None:
+        self.assertIn("personal.id = 'atlas-project-machines-entry'", self.script)
+        self.assertIn("memberships[0]?.org_id,machines:true}", self.script)
+        self.assertIn(
+            "if ((value.tasks || value.machines) && value.project) throw", self.script
+        )
+        self.assertIn("else if (value.machines) await machinesPage();", self.script)
+        self.assertIn("machines:q.get('machines') === 'true'", self.script)
+        self.assertIn(
+            ".atlas-project-nav-row button:nth-child(n+3) {flex:1 0 100%;", self.css
+        )
+
+    def test_the_command_is_copied_and_shown_as_text(self) -> None:
+        page = self.page
+        self.assertIn("copy.dataset.machineCopy = ''", page)
+        self.assertIn("await navigator.clipboard.writeText(value)", page)
+        self.assertIn("document.execCommand('copy')", page)
+        self.assertIn("code = node('code', command)", page)
+        self.assertIn("t(done ? 'machineCopied' : 'machineCopyFailed')", page)
+        # No control runs the command on the member's computer: no local helper exists yet.
+        self.assertIn('There is deliberately no "run" control', page)
+        for forbidden in (
+            "innerHTML",
+            "outerHTML",
+            "insertAdjacentHTML",
+            "document.write",
+            "console.",
+            "eval(",
+            "window.confirm",
+            "confirm(",
+            "alert(",
+            "prompt(",
+        ):
+            self.assertNotIn(forbidden, page, forbidden)
+        # The one earlier use (a fixed icon in the collapsed rail) stays the only one.
+        self.assertEqual(self.script.count("innerHTML"), 1)
+        self.assertNotIn("window.confirm", self.script)
+        self.assertNotIn("alert(", self.script)
+
+    def test_destructive_actions_use_the_atlas_dialog(self) -> None:
+        page = self.page
+        self.assertIn(
+            "confirmDialog(t('machineDeleteConfirm'), `${machine.name}. ${t('machineDeleteDetail')}`, 'machineDelete')",
+            page,
+        )
+        self.assertIn(
+            "if (reset && !await confirmDialog(t('machineTrustConfirm'), t('machineTrustDetail'), 'machineTrust')) return;",
+            page,
+        )
+        self.assertIn("if (probe.error === 'host_key_fingerprint_mismatch')", page)
+
+    def test_every_string_exists_in_the_five_languages(self) -> None:
+        import re
+
+        used = set(re.findall(r"'(machines?[A-Z][A-Za-z]*)'", self.script))
+        self.assertGreater(len(used), 50)
+        rows = {}
+        for row in self.locale.splitlines():
+            match = re.match(r"\s+(machines?[A-Z][A-Za-z]*): \[(.*)\],?$", row)
+            if match:
+                rows[match.group(1)] = match.group(2)
+        # No key without its translations, no translation without a use.
+        self.assertEqual(used, set(rows))
+        for key, values in rows.items():
+            parts = values.split("','")
+            self.assertEqual(len(parts), 5, key)
+            self.assertTrue(all(part.strip("'").strip() for part in parts), key)
+            # Typographic apostrophes only: a straight one would end the string.
+            self.assertEqual(values.count("'"), 10, key)
+
+    def test_long_values_never_widen_the_page(self) -> None:
+        css = self.css
+        self.assertIn(
+            ".atlas-project-command pre {margin:0;padding:12px 14px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;",
+            css,
+        )
+        self.assertIn(
+            ".atlas-project-machines {display:grid;grid-template-columns:minmax(0,1fr);",
+            css,
+        )
+        for selector in (
+            ".atlas-project-machine-status[data-status=available]",
+            ".atlas-project-machine-status[data-status=unavailable]",
+            "html.dark .atlas-project-machine {",
+            "html:not(.light) .atlas-project-machine {",
+        ):
+            self.assertIn(selector, css)
