@@ -587,3 +587,31 @@ class NamedOfficeFormatTests(unittest.TestCase):
         self.assertIsNone(named_office_format("Fais-moi un Word et un PDF du rapport"))
         self.assertIsNone(named_office_format("Écris un script et exécute-le"))
         self.assertIsNone(named_office_format("In a word, what is a PDF?"))
+
+
+class RemoteIntentTests(unittest.TestCase):
+    def test_requests_on_a_personal_machine_reach_work(self) -> None:
+        from packages.work_intent import work_reason
+
+        for text in (
+            "Connecte-toi à mon serveur et regarde l'espace disque",
+            "Regarde les logs nginx sur mon serveur",
+            "Lance les tests sur ma machine de build",
+            "Check the disk usage on my server",
+            "Redémarre le service en ssh",
+            "ssh into the build box and run make",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(work_reason(text), "remote")
+
+    def test_questions_about_ssh_stay_in_the_chat(self) -> None:
+        from packages.work_intent import work_reason
+
+        for text in (
+            "Comment se connecter en ssh à un serveur ?",
+            "Explique-moi ce qu'est un serveur web",
+            "What is the difference between a VPS and a dedicated server?",
+            "Écris un mail pour demander un nouveau serveur",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(work_reason(text))
