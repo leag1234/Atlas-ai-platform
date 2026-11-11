@@ -63,6 +63,48 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(call.args[1], 0)
             self.assertLessEqual(call.args[1], 1)
 
+    async def test_spent_allowance_of_one_provider_moves_to_the_next(self) -> None:
+        empty = {"provider": "searxng", "results": [], "outcome": "empty_results"}
+        found = {"provider": "serpapi", "results": [], "consulted_at": "now"}
+        spent = BudgetRefusal("daily_search", 20, 20, "en")
+        env = {
+            "ATLAS_SEARCH_PROVIDER": "searxng,tavily,serpapi",
+            "SERPAPI_KEY": "fixture",
+            "TAVILY_API_KEY": "fixture",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(self.runtime, "searxng", new=AsyncMock(return_value=empty)),
+            patch.object(self.runtime, "tavily", new=AsyncMock(side_effect=spent)),
+            patch.object(
+                self.runtime, "serpapi", new=AsyncMock(return_value=found)
+            ) as serpapi,
+        ):
+            result = await self.runtime.search(self.request, 5)
+        serpapi.assert_awaited_once()
+        self.assertEqual(result["provider"], "serpapi")
+        self.assertEqual(
+            result["attempts"],
+            [
+                {"provider": "searxng", "outcome": "empty_results"},
+                {"provider": "tavily", "outcome": "daily_search"},
+                {"provider": "serpapi", "outcome": "ok"},
+            ],
+        )
+
+    async def test_spent_allowance_everywhere_is_still_reported_as_such(self) -> None:
+        empty = {"provider": "searxng", "results": [], "outcome": "empty_results"}
+        spent = BudgetRefusal("daily_search", 20, 20, "en")
+        env = {"ATLAS_SEARCH_PROVIDER": "searxng,tavily", "TAVILY_API_KEY": "fixture"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(self.runtime, "searxng", new=AsyncMock(return_value=empty)),
+            patch.object(self.runtime, "tavily", new=AsyncMock(side_effect=spent)),
+        ):
+            with self.assertRaises(BudgetRefusal) as raised:
+                await self.runtime.search(self.request, 5)
+        self.assertIs(raised.exception, spent)
+
     async def test_non_cooldown_searxng_outcomes_fall_through_without_retry(
         self,
     ) -> None:
