@@ -73,21 +73,44 @@ class _Models:
                 sess_options=options,
                 providers=["CPUExecutionProvider"],
             )
-            hub = importlib.import_module("huggingface_hub")
-            cls.vad_path = Path(
-                hub.hf_hub_download("istupakov/silero-vad-onnx", "silero_vad.onnx")
-            )
+            vad = os.environ.get("ATLAS_DICTATION_LOCAL_VAD")
+            if vad:
+                cls.vad_path = Path(vad)
+            else:
+                hub = importlib.import_module("huggingface_hub")
+                cls.vad_path = Path(
+                    hub.hf_hub_download("istupakov/silero-vad-onnx", "silero_vad.onnx")
+                )
             cls.decodes = threading.BoundedSemaphore(
                 int(os.environ.get("ATLAS_DICTATION_LOCAL_STREAMS", "2"))
             )
 
 
 def available() -> bool:
-    """True when the optional dependencies are importable (the model may still download)."""
-    return all(
-        importlib.util.find_spec(name) is not None
-        for name in ("onnx_asr", "onnxruntime", "huggingface_hub")
+    """True when the optional dependencies are importable and the configured files exist.
+
+    A deployment names its model directory and VAD file (ATLAS_DICTATION_LOCAL_MODEL_DIR,
+    ATLAS_DICTATION_LOCAL_VAD) so that no request downloads weights; without them the
+    weights come from the Hugging Face cache (development).
+    """
+    model = os.environ.get("ATLAS_DICTATION_LOCAL_MODEL_DIR")
+    vad = os.environ.get("ATLAS_DICTATION_LOCAL_VAD")
+    return (
+        all(
+            importlib.util.find_spec(name) is not None
+            for name in ("onnx_asr", "onnxruntime", "huggingface_hub")
+        )
+        and (not model or Path(model).is_dir())
+        and (not vad or Path(vad).is_file())
     )
+
+
+def warm_up() -> None:
+    """Load the model ahead of the first stream; a failure is left to that stream."""
+    try:
+        _Models.load()
+    except Exception:  # noqa: BLE001 - LocalStream.connect reports the failure
+        return
 
 
 class _Vad:

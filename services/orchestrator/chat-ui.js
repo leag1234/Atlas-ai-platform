@@ -1303,3 +1303,364 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   const start = () => { new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, characterData: true }); schedule(); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
+
+// Real-time dictation (ATLAS_REALTIME_DICTATION): the Atlas voice button replaces the native
+// microphone. Everything Atlas adds lives in document.body: the button is laid over the
+// native microphone's place (hidden by chat-ui.css, kept in the layout), the live text is
+// shown in a floating panel, and the Svelte composer is only read (positions) until the
+// final text is written into it once, through its own editing path. No observer inserts
+// nodes into Open WebUI's trees and nothing in the composer changes while the user speaks
+// (#334 and #335 froze the page twice).
+(() => {
+  "use strict";
+  const WORDS = {
+    en: { dictate: "Dictate", stop: "Stop dictation", panel: "Dictation", starting: "Starting the microphone…", listening: "Listening", finishing: "Finishing…", local: "Transcribed on Atlas servers", cloud: "Transcribed by an external service", fallback: "Atlas engine busy: transcribed by an external service", strict: "Strict privacy: audio stays in Atlas", stopButton: "Stop", insert: "Insert the text", close: "Close", autoInsert: "Insert when I pause", limit: "Maximum dictation length reached.", permission: "Microphone access was refused. Allow it in the browser's site settings, then try again.", noMic: "No microphone was found on this device.", micBusy: "The microphone is used by another application.", insecure: "This browser cannot record here: dictation needs a secure connection and a recent browser.", busy: "The dictation engine is busy. Try again in a moment.", strictBusy: "The dictation engine is busy, and strict privacy keeps audio in Atlas. Try again in a moment.", sessionOpen: "A dictation is already running in another tab or window.", budget: "Your usage limit is reached, so dictation is not available for now.", provider: "The transcription service has reached its usage limit. Try again later.", network: "The connection to Atlas was lost. Check the network and try again.", idle: "No sound came from the microphone.", noComposer: "The message box is not available here: open a conversation, then insert the text.", unavailable: "Dictation is not available right now." },
+    fr: { dictate: "Dicter", stop: "Arrêter la dictée", panel: "Dictée", starting: "Démarrage du micro…", listening: "À l’écoute", finishing: "Finalisation…", local: "Transcrit sur les serveurs Atlas", cloud: "Transcrit par un service externe", fallback: "Moteur Atlas occupé : transcrit par un service externe", strict: "Confidentialité stricte : l’audio reste dans Atlas", stopButton: "Arrêter", insert: "Insérer le texte", close: "Fermer", autoInsert: "Insérer à chaque pause", limit: "Durée maximale de dictée atteinte.", permission: "L’accès au micro a été refusé. Autorisez-le dans les réglages du site du navigateur, puis réessayez.", noMic: "Aucun micro n’a été trouvé sur cet appareil.", micBusy: "Le micro est utilisé par une autre application.", insecure: "Ce navigateur ne peut pas enregistrer ici : la dictée demande une connexion sécurisée et un navigateur récent.", busy: "Le moteur de dictée est occupé. Réessayez dans un instant.", strictBusy: "Le moteur de dictée est occupé, et la confidentialité stricte garde l’audio dans Atlas. Réessayez dans un instant.", sessionOpen: "Une dictée est déjà en cours dans un autre onglet ou une autre fenêtre.", budget: "Votre limite d’usage est atteinte : la dictée n’est pas disponible pour le moment.", provider: "Le service de transcription a atteint sa limite d’usage. Réessayez plus tard.", network: "La connexion à Atlas a été perdue. Vérifiez le réseau et réessayez.", idle: "Aucun son n’est venu du micro.", noComposer: "La zone de message n’est pas disponible ici : ouvrez une conversation, puis insérez le texte.", unavailable: "La dictée n’est pas disponible pour le moment." },
+    de: { dictate: "Diktieren", stop: "Diktat stoppen", panel: "Diktat", starting: "Mikrofon wird gestartet…", listening: "Hört zu", finishing: "Wird abgeschlossen…", local: "Auf Atlas-Servern transkribiert", cloud: "Von einem externen Dienst transkribiert", fallback: "Atlas-Engine ausgelastet: von einem externen Dienst transkribiert", strict: "Strikter Datenschutz: Audio bleibt in Atlas", stopButton: "Stoppen", insert: "Text einfügen", close: "Schließen", autoInsert: "Bei jeder Pause einfügen", limit: "Maximale Diktatdauer erreicht.", permission: "Der Mikrofonzugriff wurde verweigert. Erlauben Sie ihn in den Website-Einstellungen des Browsers und versuchen Sie es erneut.", noMic: "Auf diesem Gerät wurde kein Mikrofon gefunden.", micBusy: "Das Mikrofon wird von einer anderen Anwendung verwendet.", insecure: "Dieser Browser kann hier nicht aufnehmen: Das Diktat braucht eine sichere Verbindung und einen aktuellen Browser.", busy: "Die Diktat-Engine ist ausgelastet. Versuchen Sie es gleich noch einmal.", strictBusy: "Die Diktat-Engine ist ausgelastet, und strikter Datenschutz hält Audio in Atlas. Versuchen Sie es gleich noch einmal.", sessionOpen: "In einem anderen Tab oder Fenster läuft bereits ein Diktat.", budget: "Ihr Nutzungslimit ist erreicht, das Diktat ist vorerst nicht verfügbar.", provider: "Der Transkriptionsdienst hat sein Nutzungslimit erreicht. Versuchen Sie es später erneut.", network: "Die Verbindung zu Atlas wurde unterbrochen. Prüfen Sie das Netzwerk und versuchen Sie es erneut.", idle: "Vom Mikrofon kam kein Ton.", noComposer: "Das Nachrichtenfeld ist hier nicht verfügbar: Öffnen Sie eine Unterhaltung und fügen Sie den Text dann ein.", unavailable: "Das Diktat ist gerade nicht verfügbar." },
+    es: { dictate: "Dictar", stop: "Detener el dictado", panel: "Dictado", starting: "Iniciando el micrófono…", listening: "Escuchando", finishing: "Finalizando…", local: "Transcrito en los servidores de Atlas", cloud: "Transcrito por un servicio externo", fallback: "Motor de Atlas ocupado: transcrito por un servicio externo", strict: "Privacidad estricta: el audio se queda en Atlas", stopButton: "Detener", insert: "Insertar el texto", close: "Cerrar", autoInsert: "Insertar en cada pausa", limit: "Se alcanzó la duración máxima del dictado.", permission: "Se denegó el acceso al micrófono. Permítalo en los ajustes del sitio del navegador y vuelva a intentarlo.", noMic: "No se encontró ningún micrófono en este dispositivo.", micBusy: "Otra aplicación está usando el micrófono.", insecure: "Este navegador no puede grabar aquí: el dictado necesita una conexión segura y un navegador reciente.", busy: "El motor de dictado está ocupado. Vuelva a intentarlo en un momento.", strictBusy: "El motor de dictado está ocupado y la privacidad estricta mantiene el audio en Atlas. Vuelva a intentarlo en un momento.", sessionOpen: "Ya hay un dictado en curso en otra pestaña o ventana.", budget: "Se alcanzó su límite de uso: el dictado no está disponible por ahora.", provider: "El servicio de transcripción alcanzó su límite de uso. Vuelva a intentarlo más tarde.", network: "Se perdió la conexión con Atlas. Compruebe la red y vuelva a intentarlo.", idle: "No llegó ningún sonido del micrófono.", noComposer: "El cuadro de mensaje no está disponible aquí: abra una conversación y luego inserte el texto.", unavailable: "El dictado no está disponible en este momento." },
+    it: { dictate: "Detta", stop: "Ferma la dettatura", panel: "Dettatura", starting: "Avvio del microfono…", listening: "In ascolto", finishing: "Completamento…", local: "Trascritto sui server di Atlas", cloud: "Trascritto da un servizio esterno", fallback: "Motore di Atlas occupato: trascritto da un servizio esterno", strict: "Privacy rigorosa: l’audio resta in Atlas", stopButton: "Ferma", insert: "Inserisci il testo", close: "Chiudi", autoInsert: "Inserisci a ogni pausa", limit: "Durata massima della dettatura raggiunta.", permission: "L’accesso al microfono è stato negato. Consentilo nelle impostazioni del sito del browser, poi riprova.", noMic: "Nessun microfono trovato su questo dispositivo.", micBusy: "Il microfono è usato da un’altra applicazione.", insecure: "Questo browser non può registrare qui: la dettatura richiede una connessione sicura e un browser recente.", busy: "Il motore di dettatura è occupato. Riprova tra un momento.", strictBusy: "Il motore di dettatura è occupato e la privacy rigorosa mantiene l’audio in Atlas. Riprova tra un momento.", sessionOpen: "Una dettatura è già in corso in un’altra scheda o finestra.", budget: "Il tuo limite di utilizzo è stato raggiunto: la dettatura non è disponibile per ora.", provider: "Il servizio di trascrizione ha raggiunto il suo limite di utilizzo. Riprova più tardi.", network: "La connessione ad Atlas si è interrotta. Controlla la rete e riprova.", idle: "Dal microfono non è arrivato alcun suono.", noComposer: "La casella del messaggio non è disponibile qui: apri una conversazione, poi inserisci il testo.", unavailable: "La dettatura non è disponibile in questo momento." },
+    nl: { dictate: "Dicteren", stop: "Dicteren stoppen", panel: "Dicteren", starting: "Microfoon wordt gestart…", listening: "Luistert", finishing: "Wordt afgerond…", local: "Getranscribeerd op Atlas-servers", cloud: "Getranscribeerd door een externe dienst", fallback: "Atlas-engine bezet: getranscribeerd door een externe dienst", strict: "Strikte privacy: audio blijft in Atlas", stopButton: "Stoppen", insert: "Tekst invoegen", close: "Sluiten", autoInsert: "Invoegen bij elke pauze", limit: "Maximale dicteerduur bereikt.", permission: "Toegang tot de microfoon is geweigerd. Sta die toe in de site-instellingen van de browser en probeer het opnieuw.", noMic: "Er is geen microfoon gevonden op dit apparaat.", micBusy: "De microfoon wordt door een andere toepassing gebruikt.", insecure: "Deze browser kan hier niet opnemen: dicteren vereist een beveiligde verbinding en een recente browser.", busy: "De dicteerengine is bezet. Probeer het zo meteen opnieuw.", strictBusy: "De dicteerengine is bezet en strikte privacy houdt audio in Atlas. Probeer het zo meteen opnieuw.", sessionOpen: "Er loopt al een dictaat in een ander tabblad of venster.", budget: "Uw gebruikslimiet is bereikt: dicteren is voorlopig niet beschikbaar.", provider: "De transcriptiedienst heeft zijn gebruikslimiet bereikt. Probeer het later opnieuw.", network: "De verbinding met Atlas is verbroken. Controleer het netwerk en probeer het opnieuw.", idle: "Er kwam geen geluid van de microfoon.", noComposer: "Het berichtvak is hier niet beschikbaar: open een gesprek en voeg de tekst daarna in.", unavailable: "Dicteren is op dit moment niet beschikbaar." }
+  };
+  const locale = () => {
+    let stored = "";
+    try { stored = localStorage.getItem("locale") || ""; } catch { stored = ""; }
+    return (stored || document.documentElement.lang || navigator.language || "en").toLowerCase().split("-")[0];
+  };
+  const language = () => (WORDS[locale()] ? locale() : "en");
+  const t = key => WORDS[language()][key] || WORDS.en[key];
+  const AUTO = "atlas-dictation-auto-insert";
+  const autoInsert = () => { try { return localStorage.getItem(AUTO) === "1"; } catch { return false; } };
+  const ERRORS = { session_open: "sessionOpen", busy: "busy", local_busy: "busy", strict_privacy_unavailable: "strictBusy", budget_limit: "budget", provider_limit: "provider", idle_timeout: "idle" };
+  const svg = (paths, filled) => {
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 24 24"); icon.setAttribute("aria-hidden", "true");
+    icon.setAttribute("fill", filled ? "currentColor" : "none"); icon.setAttribute("stroke", filled ? "none" : "currentColor"); icon.setAttribute("stroke-width", "1.5");
+    for (const [tag, attributes] of paths) {
+      const part = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [name, value] of Object.entries(attributes)) part.setAttribute(name, value);
+      icon.append(part);
+    }
+    return icon;
+  };
+  const micIcon = () => svg([["rect", { x: "9", y: "2", width: "6", height: "12", rx: "3" }], ["path", { "stroke-linecap": "round", "stroke-linejoin": "round", d: "M5 10v1a7 7 0 0 0 14 0v-1M12 18v4m0 0H9m3 0h3" }]], false);
+  const stopIcon = () => svg([["rect", { x: "7", y: "7", width: "10", height: "10", rx: "2" }]], true);
+  const make = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; };
+
+  let button = null, panel = null, ui = null, observed = null, resize = null, queued = false, lastPlace = "", config = null, nextConfig = 0;
+  const fresh = () => ({ state: "idle", socket: null, audio: null, stream: null, finals: [], partial: "", closed: [], live: null, started: 0, ticker: 0, finishing: 0, engine: "", fallback: false, privacy: "standard", error: "", note: "", cursor: null, ready: false });
+  let s = fresh();
+
+  // --- text: stable (cleaned or final) in normal colour, the open utterance in grey ---
+  const pieces = () => {
+    const stable = []; let open = ""; let i = 0;
+    while (i < s.finals.length) {
+      const closed = s.closed.find(range => range.from === i && range.to > i);
+      if (closed) { stable.push(closed.text); i = closed.to; continue; }
+      const live = s.live;
+      if (live && live.from === i && live.to === s.finals.length) {
+        if (!live.partial) { stable.push(live.text); i = live.to; continue; }
+        if (s.partial) { open = live.text; i = live.to; break; }
+      }
+      stable.push(s.finals[i] || ""); i += 1;
+    }
+    if (!open && s.partial) open = s.live && s.live.partial && s.live.from === s.finals.length ? s.live.text : s.partial;
+    return { stable: stable.filter(Boolean).join(" "), open };
+  };
+  const finalText = () => { const { stable, open } = pieces(); return [stable, open].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); };
+
+  // --- placement: over the native microphone, which keeps its layout box ---
+  const composer = mic => mic.closest("#message-input-container") || mic.parentElement;
+  const uncovered = (rect, mic) => {
+    const stack = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    const top = stack.find(node => node !== button && !button.contains(node) && !(panel && panel.contains(node)));
+    return !top || top === mic || composer(mic).contains(top);
+  };
+  const place = () => {
+    queued = false;
+    const mic = document.getElementById("voice-input-button");
+    let visible = false;
+    if (mic) {
+      if (mic !== observed && resize) { resize.disconnect(); resize.observe(mic); resize.observe(composer(mic)); observed = mic; }
+      const rect = mic.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth) {
+        visible = uncovered(rect, mic);
+        const key = [rect.left, rect.top, rect.width, rect.height].map(Math.round).join(",");
+        if (key !== lastPlace) {
+          lastPlace = key;
+          const [left, top, width, height] = key.split(",");
+          button.style.left = left + "px"; button.style.top = top + "px"; button.style.width = width + "px"; button.style.height = height + "px";
+        }
+        if (panel && !panel.hidden) placePanel(composer(mic).getBoundingClientRect());
+      }
+    }
+    // An open session keeps its button (the user must be able to stop) even if the composer moved away.
+    const show = visible || s.state !== "idle";
+    if (button.hidden === show) button.hidden = !show;
+  };
+  const placePanel = box => {
+    const width = Math.max(240, Math.min(box.width, innerWidth - 16));
+    const left = Math.max(8, Math.min(box.left, innerWidth - width - 8));
+    const bottom = Math.max(8, innerHeight - box.top + 8);
+    const style = `${Math.round(left)},${Math.round(width)},${Math.round(bottom)}`;
+    if (panel.dataset.place === style) return;
+    panel.dataset.place = style;
+    panel.style.left = Math.round(left) + "px"; panel.style.width = Math.round(width) + "px"; panel.style.bottom = Math.round(bottom) + "px";
+  };
+  const schedule = () => { if (!queued) { queued = true; requestAnimationFrame(place); } };
+
+  // --- panel ---
+  const buildPanel = () => {
+    panel = make("div", "atlas-dictation-panel"); panel.hidden = true;
+    panel.setAttribute("role", "dialog"); panel.setAttribute("aria-modal", "false");
+    const text = make("div", "atlas-dictation-text"); text.setAttribute("aria-live", "polite");
+    const stable = make("span", "atlas-dictation-stable"), open = make("span", "atlas-dictation-open");
+    text.append(stable, open);
+    const message = make("p", "atlas-dictation-message"); message.setAttribute("role", "alert"); message.hidden = true;
+    const bar = make("div", "atlas-dictation-bar");
+    const dot = make("span", "atlas-dictation-dot"); dot.setAttribute("aria-hidden", "true");
+    const time = make("span", "atlas-dictation-time", "0:00");
+    const status = make("span", "atlas-dictation-status");
+    const autoLabel = make("label", "atlas-dictation-auto"); const auto = document.createElement("input"); auto.type = "checkbox";
+    const autoText = make("span"); autoLabel.append(auto, autoText);
+    auto.addEventListener("change", () => { try { localStorage.setItem(AUTO, auto.checked ? "1" : "0"); } catch { /* this browser only */ } });
+    const stop = make("button", "atlas-dictation-stop"); stop.type = "button";
+    const insert = make("button", "atlas-dictation-insert"); insert.type = "button"; insert.hidden = true;
+    const close = make("button", "atlas-dictation-close"); close.type = "button"; close.hidden = true;
+    for (const control of [stop, insert, close]) control.addEventListener("mousedown", event => event.preventDefault());
+    stop.addEventListener("click", () => finish());
+    insert.addEventListener("click", () => deliver());
+    close.addEventListener("click", () => reset());
+    bar.append(dot, time, status, autoLabel, stop, insert, close);
+    panel.append(text, message, bar);
+    document.body.append(panel);
+    ui = { text, stable, open, message, dot, time, status, auto, autoText, stop, insert, close };
+  };
+  const clock = () => {
+    if (!ui) return;
+    const seconds = s.started ? Math.floor((performance.now() - s.started) / 1000) : 0;
+    const value = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    if (ui.time.textContent !== value) ui.time.textContent = value;
+  };
+  const render = () => {
+    const active = s.state !== "idle";
+    button.setAttribute("aria-pressed", String(s.state === "starting" || s.state === "live"));
+    button.dataset.state = s.state;
+    const label = s.state === "starting" || s.state === "live" ? t("stop") : t("dictate");
+    if (button.getAttribute("aria-label") !== label) { button.setAttribute("aria-label", label); button.title = label; button.replaceChildren(s.state === "starting" || s.state === "live" ? stopIcon() : micIcon()); }
+    if (!panel) { if (!active) return; buildPanel(); }
+    panel.hidden = !active;
+    if (!active) return;
+    panel.setAttribute("aria-label", t("panel")); panel.dataset.state = s.state;
+    const { stable, open } = pieces();
+    if (ui.stable.textContent !== stable) ui.stable.textContent = stable;
+    const shown = open ? (stable ? " " : "") + open : "";
+    if (ui.open.textContent !== shown) ui.open.textContent = shown;
+    ui.text.hidden = !stable && !open;
+    const message = s.error || s.note;
+    ui.message.textContent = message; ui.message.hidden = !message;
+    ui.message.dataset.kind = s.error ? "error" : "note";
+    ui.status.textContent = s.state === "starting" ? t("starting") : s.state === "finishing" ? t("finishing") : s.state === "live" ? [t("listening"), s.privacy === "strict" ? t("strict") : s.fallback ? t("fallback") : t(s.engine === "cloud" ? "cloud" : "local")].join(" · ") : "";
+    ui.autoText.textContent = t("autoInsert"); ui.auto.checked = autoInsert();
+    // A failed session shows its sentence and actions only.
+    for (const node of [ui.dot, ui.time, ui.auto.parentElement]) node.hidden = s.state === "error";
+    ui.stop.textContent = t("stopButton"); ui.stop.hidden = !(s.state === "starting" || s.state === "live");
+    ui.insert.textContent = t("insert"); ui.insert.hidden = !(s.state === "error" && finalText());
+    ui.close.textContent = t("close"); ui.close.hidden = s.state !== "error";
+    clock(); schedule();
+  };
+
+  // --- the single write into the composer, through its own editing path ---
+  const write = text => {
+    const editor = document.getElementById("chat-input");
+    if (!editor) return false;
+    window.dispatchEvent(new CustomEvent("atlas:dictation-insert"));
+    const textarea = editor instanceof HTMLTextAreaElement;
+    // The cursor recorded when dictation started, if the composer still holds it; else the end.
+    const cursor = s.cursor;
+    editor.focus({ preventScroll: true });
+    let before = "";
+    if (textarea) {
+      const end = editor.value.length;
+      const at = cursor && typeof cursor.start === "number" && cursor.start <= end ? cursor : { start: end, end };
+      editor.setSelectionRange(at.start, Math.min(at.end, end));
+      before = editor.value.slice(0, editor.selectionStart);
+    } else {
+      const selection = getSelection();
+      const kept = cursor && cursor.range && editor.contains(cursor.range.startContainer) && editor.contains(cursor.range.endContainer);
+      const target = kept ? cursor.range : document.createRange();
+      if (!kept) { target.selectNodeContents(editor); target.collapse(false); }
+      selection.removeAllRanges(); selection.addRange(target);
+      const range = selection.getRangeAt(0).cloneRange(); range.setStart(editor, 0);
+      before = range.toString();
+    }
+    const value = (before && !/\s$/.test(before) ? " " : "") + text;
+    const length = textarea ? editor.value.length : editor.textContent.length;
+    // Open WebUI's state follows the editor's own input handling (Tiptap or the textarea binding).
+    let done = document.execCommand("insertText", false, value);
+    const grew = () => (textarea ? editor.value.length : editor.textContent.length) > length;
+    if (!done || !grew()) {
+      if (textarea) {
+        editor.setRangeText(value, editor.selectionStart, editor.selectionEnd, "end");
+        editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+      } else {
+        const data = new DataTransfer(); data.setData("text/plain", value);
+        editor.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      }
+      done = grew();
+    }
+    return done;
+  };
+
+  // --- session ---
+  const release = () => {
+    if (s.stream) s.stream.getTracks().forEach(track => track.stop());
+    if (s.audio) s.audio.close().catch(() => {});
+    s.stream = null; s.audio = null;
+  };
+  const closeSocket = () => {
+    const socket = s.socket; s.socket = null;
+    if (socket) { socket.onmessage = socket.onclose = socket.onerror = null; try { socket.close(); } catch { /* already closed */ } }
+  };
+  const reset = () => {
+    release(); closeSocket(); clearInterval(s.ticker); clearTimeout(s.finishing);
+    s = fresh(); render();
+  };
+  const fail = key => {
+    if (s.state === "idle") return;
+    release(); closeSocket(); clearInterval(s.ticker); clearTimeout(s.finishing);
+    s.state = "error"; s.error = t(key); render();
+  };
+  // The final text is written once; without a composer it stays in the panel to insert later.
+  const deliver = () => {
+    const value = finalText();
+    release(); closeSocket(); clearInterval(s.ticker); clearTimeout(s.finishing);
+    if (!value || write(value)) { s = fresh(); render(); return; }
+    s.state = "error"; s.error = t("noComposer"); render();
+  };
+  const complete = () => {
+    if (s.state === "idle" || s.state === "error") return;
+    deliver();
+  };
+  const finish = () => {
+    if (s.state === "starting" && (!s.socket || s.socket.readyState !== WebSocket.OPEN)) { reset(); return; }
+    if (s.state !== "starting" && s.state !== "live") return;
+    s.state = "finishing"; render();
+    try { s.socket.send(JSON.stringify({ type: "stop" })); } catch { /* the close handler completes */ }
+    release();
+    // The server sends the last final and clean-up, then done; never wait forever for it.
+    s.finishing = setTimeout(complete, 12000);
+  };
+  const onMessage = event => {
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    if (data.type === "ready") {
+      s.ready = true; s.engine = data.engine; s.fallback = Boolean(data.fallback); s.privacy = data.privacy === "strict" ? "strict" : "standard";
+      if (s.state === "starting") s.state = "live";
+    } else if (data.type === "partial") s.partial = data.text || "";
+    else if (data.type === "final") {
+      s.finals[data.index] = data.text || ""; s.partial = "";
+      if (s.live && !s.live.final) s.live = null;
+    } else if (data.type === "cleaned") {
+      if (data.final) { s.closed.push(data); s.live = null; } else s.live = data;
+    } else if (data.type === "turn" && data.event === "end") {
+      if (s.state === "live" && autoInsert() && finalText()) { setTimeout(finish, 0); }
+    } else if (data.type === "limit") s.note = t("limit");
+    else if (data.type === "error") { fail((data.code === "local_busy" && data.privacy === "strict") ? "strictBusy" : ERRORS[data.code] || "unavailable"); return; }
+    else if (data.type === "done") { complete(); return; }
+    render();
+  };
+  const microphoneError = error => {
+    const name = error && error.name;
+    if (name === "NotAllowedError" || name === "SecurityError") return "permission";
+    if (name === "NotFoundError" || name === "OverconstrainedError") return "noMic";
+    if (name === "NotReadableError" || name === "AbortError") return "micBusy";
+    if (name === "NotSupportedError") return "insecure";
+    return "unavailable";
+  };
+  const scope = () => {
+    const query = new URLSearchParams(location.search);
+    return query.get("org") && query.get("project") ? { org: query.get("org"), project: query.get("project") } : null;
+  };
+  const begin = async () => {
+    const editor = document.getElementById("chat-input");
+    s = fresh();
+    // Where the user was typing: the text goes there at the end (the button keeps the focus).
+    s.cursor = null;
+    if (editor && editor.contains(document.activeElement)) {
+      if (editor instanceof HTMLTextAreaElement) s.cursor = { start: editor.selectionStart, end: editor.selectionEnd };
+      else { const selection = getSelection(); if (selection.rangeCount && editor.contains(selection.anchorNode)) s.cursor = { range: selection.getRangeAt(0).cloneRange() }; }
+    }
+    s.state = "starting"; s.started = performance.now(); render();
+    s.ticker = setInterval(clock, 500);
+    const current = s;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.AudioWorkletNode || !window.WebSocket) { fail("insecure"); return; }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    } catch (error) { if (s === current) fail(microphoneError(error)); return; }
+    if (s !== current || s.state !== "starting") { stream.getTracks().forEach(track => track.stop()); return; }
+    s.stream = stream;
+    let capture;
+    try {
+      try { s.audio = new AudioContext({ sampleRate: 16000 }); } catch { s.audio = new AudioContext(); }
+      await s.audio.audioWorklet.addModule("/api/atlas/dictation/dictation-worklet.js");
+      if (s !== current) return;
+      capture = new AudioWorkletNode(s.audio, "dictation-capture");
+      s.audio.createMediaStreamSource(stream).connect(capture);
+    } catch { if (s === current) fail("unavailable"); return; }
+    const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/atlas/dictation/stream`);
+    socket.binaryType = "arraybuffer"; s.socket = socket;
+    socket.onmessage = onMessage;
+    socket.onclose = () => { if (s !== current) return; if (s.state === "finishing") complete(); else fail(s.ready ? "network" : "unavailable"); };
+    socket.onopen = () => {
+      if (s !== current) return;
+      // The interface language, whatever it is: the server maps it to each engine (pinned,
+      // detected, or another engine for a language the local one lacks).
+      const code = /^[a-z]{2}$/.test(locale()) ? locale() : null;
+      socket.send(JSON.stringify({ type: "start", engine: "auto", language: code, scope: scope(), cleanup: true }));
+      // Audio is sent from the start: the server reads it once its engine is ready.
+      capture.port.onmessage = ({ data }) => { if (s === current && (s.state === "starting" || s.state === "live") && socket.readyState === WebSocket.OPEN) socket.send(data.pcm); };
+    };
+  };
+  const toggle = () => {
+    if (s.state === "starting" || s.state === "live") finish();
+    else if (s.state === "error") { reset(); begin().catch(() => fail("unavailable")); }
+    else if (s.state === "idle") begin().catch(() => fail("unavailable"));
+  };
+
+  // --- mounting: only once the installation enables it and the user is signed in ---
+  const mount = () => {
+    button = make("button", "atlas-dictation-button"); button.type = "button"; button.hidden = true;
+    // The editor keeps its focus and cursor: the text goes where the user was typing.
+    button.addEventListener("mousedown", event => event.preventDefault());
+    button.addEventListener("click", toggle);
+    document.body.append(button);
+    document.documentElement.dataset.atlasDictation = "on";
+    resize = new ResizeObserver(schedule);
+    addEventListener("resize", schedule, { passive: true });
+    addEventListener("scroll", schedule, { passive: true, capture: true });
+    document.addEventListener("transitionend", schedule, { passive: true, capture: true });
+    addEventListener("keydown", event => {
+      if (event.key !== "Escape" || s.state === "idle") return;
+      event.preventDefault(); event.stopPropagation();
+      if (s.state === "error") reset(); else finish();
+    }, true);
+    render();
+  };
+  const probe = () => {
+    // A cheap check: one element lookup, then one rectangle once mounted.
+    if (button) { schedule(); return; }
+    if (config === false || performance.now() < nextConfig || !document.getElementById("voice-input-button")) return;
+    nextConfig = performance.now() + 15000;
+    fetch("/api/atlas/dictation/config", { credentials: "same-origin", cache: "no-store" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(value => {
+        if (!value) return; // signed out or unavailable: tried again later
+        config = Boolean(value.enabled);
+        if (config && !button) mount();
+      })
+      .catch(() => {});
+  };
+  const start = () => { setInterval(probe, 400); probe(); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true }); else start();
+})();

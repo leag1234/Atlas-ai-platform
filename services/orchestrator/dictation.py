@@ -1,23 +1,31 @@
 """Real-time dictation: a WebSocket relay from the browser microphone to a streaming engine.
 
-Prototype behind ATLAS_REALTIME_DICTATION=1 (off by default), served on its own test page
-and never injected into the chat composer. The browser sends 16 kHz mono PCM frames; Atlas
-relays them to the selected engine and sends partial and final text back:
+Behind ATLAS_REALTIME_DICTATION=1 (off by default). The chat's voice button (chat-ui.js)
+and a standalone test page use it. The browser sends 16 kHz mono PCM frames; Atlas relays
+them to the selected engine and sends partial and final text back:
 
-- ``cloud``: the gateway's realtime transcription provider (realtime_transcription.py).
-  The provider key stays on the server. Refused in strict privacy: no audio leaves Atlas.
 - ``local``: the owned CPU engine (services/stt/streaming.py), allowed in strict privacy.
+  It is the default; at most ATLAS_DICTATION_LOCAL_MAX_SESSIONS streams run at once.
+- ``cloud``: the gateway's realtime transcription provider (realtime_transcription.py).
+  The provider key stays on the server. It takes over when the local engine is busy or
+  missing, never in strict privacy: there no audio leaves Atlas.
 
-Client messages: one JSON ``start`` ({"type": "start", "engine", "language", "privacy",
-"cleanup"}), then binary PCM s16le frames, then {"type": "stop"}. Server messages:
-``ready``, ``turn``, ``partial`` (text of the open utterance, replaced each time), ``final``
-(a closed segment, by index), ``cleaned`` (a model-cleaned view of segments, see
-dictation_cleanup.py), ``done`` (seconds and cost) and ``error`` (a public code; a provider
-quota or rate refusal is ``provider_limit``, never an outage).
+Strict privacy is decided here, not by the browser: a session started from a project
+(``scope`` names its organization and project) takes the project's own setting, read with
+the signed-in user's membership; a project that cannot be read counts as strict. The
+browser may only ask for strict, never lift it.
 
-Limits: session length, idle time, frame size, audio pace, one session per user and a
-global session cap. Cost is reserved in the daily ledger at start and settled at the end.
-Audio and text are never stored or logged.
+Client messages: one JSON ``start`` ({"type": "start", "engine" ("auto" by default),
+"language", "scope", "privacy", "cleanup"}), then binary PCM s16le frames, then
+{"type": "stop"}. Server messages: ``ready`` (engine, and ``fallback`` when the cloud
+engine replaced a busy local one), ``turn``, ``partial`` (text of the open utterance,
+replaced each time), ``final`` (a closed segment, by index), ``cleaned`` (a model-cleaned
+view of segments, see dictation_cleanup.py), ``done`` (seconds and cost) and ``error`` (a
+public code; a provider quota or rate refusal is ``provider_limit``, never an outage).
+
+Limits: session length, idle time, frame size, audio pace, one session per user, a
+global session cap and a local engine cap. Cost is reserved in the daily ledger at start
+and settled at the end. Audio and text are never stored or logged.
 """
 
 import asyncio
@@ -31,21 +39,46 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol
+from uuid import UUID
 
+import aiohttp
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
 from services.orchestrator.dictation_cleanup import Cleaner
 from services.orchestrator.dictation_cleanup import enabled as cleanup_enabled
 from services.orchestrator.project_ui import public_error
-from services.orchestrator.user_memory_ui import browser_user, token_subject
+from services.orchestrator.user_memory_ui import browser_user, token_user
 from services.retrieval.project_identity import ProjectError
 
 router = APIRouter()
 log = logging.getLogger("atlas.dictation")
 HERE = Path(__file__).parent
-LANGUAGES = frozenset({"fr", "en", "de", "es", "it"})
+# The local engine detects the language itself among the 25 of its model card
+# (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3, read 2026-11-11).
+LOCAL_LANGUAGES = frozenset(
+    "bg cs da de el en es et fi fr hr hu it lt lv mt nl pl pt ro ru sk sl sv uk".split()
+)
+# The cloud engine announces 45 languages without listing them; the language is pinned only
+# for those measured with it, the others are left to its own detection.
+CLOUD_LANGUAGES_DEFAULT = "fr,en,de,es,it,nl"
+
+
+def cloud_languages() -> frozenset[str]:
+    raw = os.environ.get("ATLAS_DICTATION_CLOUD_LANGUAGES", CLOUD_LANGUAGES_DEFAULT)
+    return frozenset(code.strip() for code in raw.split(",") if code.strip())
+
+
+def spoken_language(value: object) -> str | None:
+    """An ISO 639-1 code from the browser (interface or chosen language), else None."""
+    if isinstance(value, str):
+        code = value.strip().lower().split("-")[0]
+        if len(code) == 2 and code.isascii() and code.isalpha():
+            return code
+    return None
+
+
 BYTES_PER_SECOND = 32000
 
 
@@ -61,8 +94,10 @@ def _number(name: str, default: float) -> float:
 
 
 def engines() -> list[str]:
-    raw = os.environ.get("ATLAS_DICTATION_ENGINES", "cloud")
-    return [name for name in raw.split(",") if name.strip() in {"cloud", "local"}]
+    raw = os.environ.get("ATLAS_DICTATION_ENGINES", "local,cloud")
+    return [
+        name.strip() for name in raw.split(",") if name.strip() in {"cloud", "local"}
+    ]
 
 
 @dataclass(frozen=True)
@@ -72,6 +107,7 @@ class Limits:
     max_frame: int
     max_sessions: int
     delay_ms: int
+    max_local: int = 2
 
     @classmethod
     def current(cls) -> "Limits":
@@ -81,6 +117,8 @@ class Limits:
             int(_number("ATLAS_DICTATION_MAX_FRAME_BYTES", 16000)),
             int(_number("ATLAS_DICTATION_MAX_SESSIONS", 4)),
             int(_number("ATLAS_DICTATION_DELAY_MS", 480)),
+            # About one CPU core per local stream (measured 2026-11-11 on the 4-core VM).
+            int(_number("ATLAS_DICTATION_LOCAL_MAX_SESSIONS", 2)),
         )
 
 
@@ -104,17 +142,127 @@ class Refusal(Exception):
         } | extra
 
 
-_active: set[str] = set()
+_active: set[str] = set()  # users with an open session
+_local: set[str] = set()  # users with an open session on the local engine
 
 
-async def socket_user(socket: WebSocket) -> str:
+@dataclass(frozen=True)
+class SocketUser:
+    subject: str  # interface user id: budget and session identity
+    email: str  # verified email: project membership identity
+
+
+async def socket_user(socket: WebSocket) -> SocketUser:
     """Same-origin signed-in user, as for the voice routes, on a WebSocket handshake."""
     expected = os.environ.get("ATLAS_PROJECT_ORIGIN") or str(socket.base_url).replace(
         "ws", "http", 1
     ).rstrip("/")
     if socket.headers.get("origin") != expected:
         raise ProjectError(403, "origin_rejected")
-    return await token_subject(socket.cookies.get("token", ""))
+    user = await token_user(socket.cookies.get("token", ""))
+    subject, email = user.get("id"), user.get("email")
+    if not isinstance(subject, str) or not subject.strip() or len(subject) > 200:
+        raise ProjectError(401, "unauthenticated")
+    return SocketUser(
+        subject, email if isinstance(email, str) and len(email) <= 320 else ""
+    )
+
+
+async def project_privacy(email: str, org: str, project: str) -> str:
+    """The project's own privacy setting, read with the user's membership."""
+    from services.orchestrator.chat_work import _public
+
+    async with aiohttp.ClientSession(
+        trust_env=False, timeout=aiohttp.ClientTimeout(total=5)
+    ) as client:
+        status, value = await _public(
+            client, email, "GET", f"/api/atlas/orgs/{org}/projects/{project}"
+        )
+    if status != 200:
+        raise ProjectError(status, "project_unavailable")
+    return "strict" if value.get("privacy") == "strict" else "standard"
+
+
+async def session_privacy(start: dict[str, Any], user: SocketUser) -> str:
+    """Strict privacy from the conversation's project; fail closed when it cannot be read."""
+    asked = "strict" if start.get("privacy") == "strict" else "standard"
+    scope = start.get("scope")
+    if not isinstance(scope, dict) or scope.get("project") is None:
+        return asked
+    try:
+        org, project = (
+            str(UUID(str(scope.get("org")))),
+            str(UUID(str(scope["project"]))),
+        )
+    except ValueError:
+        return "strict"
+    if not user.email:
+        return "strict"
+    try:
+        setting = await project_privacy(user.email, org, project)
+    except Exception:  # noqa: BLE001 - an unreadable project setting counts as strict
+        return "strict"
+    return "strict" if "strict" in (asked, setting) else "standard"
+
+
+def local_installed() -> bool:
+    from services.stt import streaming
+
+    return streaming.available()
+
+
+def cloud_configured() -> bool:
+    import realtime_transcription
+
+    return bool(realtime_transcription.configured())
+
+
+def choose_engine(
+    requested: object, privacy: str, limits: Limits, language: str | None = None
+) -> tuple[str, bool]:
+    """Local first; the cloud engine when the local one is busy, never in strict privacy.
+
+    A language outside the local engine's own goes to the cloud engine outside strict
+    privacy. Returns the engine and whether it replaced a busy local engine.
+    """
+    allowed = engines()
+    if (
+        requested != "local"
+        and language is not None
+        and language not in LOCAL_LANGUAGES
+        and privacy != "strict"
+        and "cloud" in allowed
+        and cloud_configured()
+    ):
+        return "cloud", False
+    if requested == "cloud":
+        if privacy == "strict":
+            raise Refusal(
+                "strict_privacy_unavailable",
+                "Strict privacy mode: no audio leaves Atlas, so cloud dictation is off.",
+            )
+        if "cloud" not in allowed:
+            raise Refusal("engine_unavailable", "This engine is not enabled.")
+        return "cloud", False
+    local = "local" in allowed and local_installed()
+    if local and len(_local) < limits.max_local:
+        return "local", False
+    if requested == "local" or privacy == "strict" or "cloud" not in allowed:
+        if not local:
+            raise Refusal("engine_unavailable", "The local engine is not installed.")
+        raise Refusal(
+            "local_busy",
+            "The local dictation engine is busy"
+            + (
+                "; strict privacy keeps audio in Atlas." if privacy == "strict" else "."
+            ),
+            privacy=privacy,
+        )
+    if not cloud_configured():
+        if local:
+            raise Refusal("local_busy", "The local dictation engine is busy.")
+        raise Refusal("engine_unavailable", "No realtime transcription provider.")
+    return "cloud", local
 
 
 def price_micro(engine: str, seconds: float) -> int:
@@ -249,13 +397,19 @@ class Session:
     """One browser dictation session: relay, segments, clean-up and metering."""
 
     def __init__(
-        self, socket: WebSocket, user: str, start: dict[str, Any], limits: Limits
+        self,
+        socket: WebSocket,
+        user: str,
+        start: dict[str, Any],
+        limits: Limits,
+        *,
+        engine: str,
+        privacy: str,
     ) -> None:
         self.socket, self.user, self.limits = socket, user, limits
-        self.engine = str(start.get("engine") or engines()[0])
-        language = start.get("language")
-        self.language = language if language in LANGUAGES else None
-        self.privacy = "strict" if start.get("privacy") == "strict" else "standard"
+        self.engine = engine
+        self.language = spoken_language(start.get("language"))
+        self.privacy = privacy
         self.cleaner: Cleaner | None = None
         # Strict privacy cleans up only on an owned model; without one it stays off.
         owned = bool(os.environ.get("ATLAS_OWNED_VLLM_BASE_URL"))
@@ -279,15 +433,6 @@ class Session:
     async def emit(self, message: dict[str, object]) -> None:
         async with self.sending:
             await self.socket.send_text(json.dumps(message, ensure_ascii=False))
-
-    def check(self) -> None:
-        if self.engine not in engines():
-            raise Refusal("engine_unavailable", "This engine is not enabled.")
-        if self.privacy == "strict" and self.engine != "local":
-            raise Refusal(
-                "strict_privacy_unavailable",
-                "Strict privacy mode: no audio leaves Atlas, so cloud dictation is off.",
-            )
 
     async def receive(self, stream: Stream) -> None:
         """Browser to engine, with frame, pace, idle and length limits."""
@@ -414,10 +559,11 @@ async def stream_socket(socket: WebSocket) -> None:
         await socket.close(code=1008)
         return
     try:
-        user = await socket_user(socket)
+        identity = await socket_user(socket)
     except ProjectError:
         await socket.close(code=1008)
         return
+    user = identity.subject
     await socket.accept()
     limits = Limits.current()
     session: Session | None = None
@@ -429,14 +575,27 @@ async def stream_socket(socket: WebSocket) -> None:
         start = json.loads(await asyncio.wait_for(socket.receive_text(), 10))
         if not isinstance(start, dict) or start.get("type") != "start":
             raise Refusal("invalid_request", "The first message is a start message.")
-        session = Session(socket, user, start, limits)
-        session.check()
+        privacy = await session_privacy(start, identity)
         if user in _active:
-            raise Refusal("busy", "A dictation session is already open for this user.")
+            raise Refusal(
+                "session_open", "A dictation session is already open for this user."
+            )
         if len(_active) >= limits.max_sessions:
             raise Refusal("busy", "Too many dictation sessions right now.")
+        # No await between the choice and the registration: the local cap holds.
+        engine, fallback = choose_engine(
+            start.get("engine"), privacy, limits, spoken_language(start.get("language"))
+        )
+        if privacy == "strict" and engine != "local":
+            raise Refusal(
+                "strict_privacy_unavailable",
+                "Strict privacy mode: no audio leaves Atlas, so cloud dictation is off.",
+            )
         _active.add(user)
+        if engine == "local":
+            _local.add(user)
         registered = True
+        session = Session(socket, user, start, limits, engine=engine, privacy=privacy)
         try:
             reservation = ledger.reserve_cost(
                 user,
@@ -446,11 +605,17 @@ async def stream_socket(socket: WebSocket) -> None:
             )
         except BudgetRefusal as exc:
             raise Refusal("budget_limit", exc.message, category=exc.category) from None
-        stream = await open_stream(session.engine, session.language, limits.delay_ms)
+        stream = await open_stream(
+            session.engine,
+            session.language if session.language in cloud_languages() else None,
+            limits.delay_ms,
+        )
         await session.emit(
             {
                 "type": "ready",
                 "engine": session.engine,
+                "fallback": fallback,
+                "privacy": session.privacy,
                 "max_seconds": limits.max_seconds,
                 "cleanup": session.cleaner is not None,
             }
@@ -498,6 +663,7 @@ async def stream_socket(socket: WebSocket) -> None:
         if registered:
             # Released first: closing the provider socket may take a moment.
             _active.discard(user)
+            _local.discard(user)
         for task in tasks + (session.closing if session is not None else []):
             task.cancel()
         if stream is not None:
@@ -544,6 +710,32 @@ async def page(request: Request) -> Response:
     return HTMLResponse(
         (HERE / "dictation.html").read_text(),
         headers={"Cache-Control": "private, no-store"},
+    )
+
+
+_warming: set[asyncio.Task[None]] = set()
+
+
+@router.get("/api/atlas/dictation/config")
+async def config(request: Request) -> Response:
+    """Whether the chat shows the Atlas voice button; warms the local engine up."""
+    try:
+        await browser_user(request)
+    except ProjectError as exc:
+        return public_error(exc)
+    headers = {"Cache-Control": "private, no-store"}
+    if not enabled():
+        return JSONResponse({"enabled": False}, headers=headers)
+    available = engines()
+    if "local" in available and local_installed() and not _warming:
+        from services.stt import streaming
+
+        # The first dictation then skips the model load (a few seconds on this CPU).
+        task = asyncio.create_task(asyncio.to_thread(streaming.warm_up))
+        _warming.add(task)
+    return JSONResponse(
+        {"enabled": bool(available), "max_seconds": Limits.current().max_seconds},
+        headers=headers,
     )
 
 

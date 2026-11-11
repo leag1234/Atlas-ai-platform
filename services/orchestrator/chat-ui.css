@@ -243,6 +243,44 @@ html:root body #chat-input, html:root body #chat-input p { font-family:var(--atl
 #message-input-container > .justify-between > :last-child:has(#voice-input-button) { gap:6px; justify-content:flex-end; margin-right:7px!important; }
 /* The right column keeps room for the send button; with an empty input the microphone sits at the right edge, as far from it as the add button is from the left edge. */
 #voice-input-button { position:static!important; width:40px; height:40px; display:flex!important; align-items:center; justify-content:center; padding:0!important; border-radius:50%; background:var(--atlas-border)!important; color:var(--atlas-text)!important; }
+/* Real-time dictation (chat-ui.js): the native microphone keeps its layout box, hidden by CSS only, and the Atlas voice button (in document.body) is laid over that place. */
+html[data-atlas-dictation="on"] #voice-input-button { visibility:hidden!important; pointer-events:none!important; }
+/* The Atlas voice button: the native microphone's look, above the composer but below menus (z 50) and dialogs. */
+.atlas-dictation-button { position:fixed; z-index:45; box-sizing:border-box; display:flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:50%; background:var(--atlas-border); color:var(--atlas-text); cursor:pointer; }
+.atlas-dictation-button[hidden] { display:none; }
+/* Its icon at the native size. */
+.atlas-dictation-button svg { width:18px; height:18px; }
+/* Hover and keyboard focus. */
+.atlas-dictation-button:hover { filter:brightness(.95); } .atlas-dictation-button:focus-visible { outline:2px solid var(--atlas-accent); outline-offset:2px; }
+/* While it listens: the accent colour and a slow ring. */
+.atlas-dictation-button[aria-pressed="true"] { background:var(--atlas-accent); color:var(--atlas-on-accent); animation:atlas-dictation-ring 1.6s ease-out infinite; }
+@keyframes atlas-dictation-ring { 0% { box-shadow:0 0 0 0 color-mix(in srgb, var(--atlas-accent) 45%, transparent); } 100% { box-shadow:0 0 0 10px transparent; } }
+/* The floating dictation panel above the composer, owned by Atlas. */
+.atlas-dictation-panel { position:fixed; z-index:46; box-sizing:border-box; display:flex; flex-direction:column; gap:8px; max-height:40vh; padding:12px 14px; border:1px solid var(--atlas-border); border-radius:18px; background:var(--atlas-bg); color:var(--atlas-text); font-family:var(--atlas-body-font); font-size:var(--atlas-ui-size); box-shadow:0 6px 24px rgba(0,0,0,.12); }
+.atlas-dictation-panel[hidden] { display:none; }
+/* Dark mode: a deeper shadow on the black background. */
+html.dark .atlas-dictation-panel { box-shadow:0 6px 24px rgba(0,0,0,.6); background:var(--atlas-surface); }
+/* Live text: stable text in the normal colour, the open utterance in grey. */
+.atlas-dictation-text { overflow-y:auto; font-size:var(--atlas-body-size); line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.atlas-dictation-open { color:var(--atlas-muted); }
+/* A readable sentence for each failure, never a raw code. */
+.atlas-dictation-message { margin:0; line-height:1.4; }
+.atlas-dictation-message[data-kind="error"] { color:#b42318; }
+/* Dark mode: the error colour keeps its contrast. */
+html.dark .atlas-dictation-message[data-kind="error"] { color:#ff8a80; }
+/* Status bar: recording dot, elapsed time, engine status, auto-insert and the actions. */
+.atlas-dictation-bar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; color:var(--atlas-muted); }
+.atlas-dictation-dot { width:8px; height:8px; border-radius:50%; background:var(--atlas-muted); }
+.atlas-dictation-panel[data-state="live"] .atlas-dictation-dot { background:#d92d20; }
+/* Dark mode: a lighter recording dot. */
+html.dark .atlas-dictation-panel[data-state="live"] .atlas-dictation-dot { background:#ff6b5f; }
+.atlas-dictation-time { font-variant-numeric:tabular-nums; }
+.atlas-dictation-status { flex:1 1 auto; min-width:0; }
+.atlas-dictation-auto { display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+/* Panel buttons: the primary action in the accent colour. */
+.atlas-dictation-bar button { min-height:32px; padding:0 14px; border:0; border-radius:16px; background:var(--atlas-border); color:var(--atlas-text); font:inherit; cursor:pointer; }
+.atlas-dictation-panel [hidden] { display:none!important; }
+.atlas-dictation-bar .atlas-dictation-stop, .atlas-dictation-bar .atlas-dictation-insert { background:var(--atlas-accent); color:var(--atlas-on-accent); }
 /* The native recording bar takes the Atlas surface and accent instead of the upstream indigo. */
 [class*="bg-indigo-300/10"] { background:var(--atlas-surface)!important; }
 [class*="bg-indigo-500"]:not([class*="bg-indigo-300/10"]) { background:var(--atlas-accent)!important; color:var(--atlas-on-accent)!important; }

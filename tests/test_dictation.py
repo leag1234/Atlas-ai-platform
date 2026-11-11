@@ -3,12 +3,14 @@
 import asyncio
 import json
 import os
+import re
 import tempfile
 import unittest
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from uuid import uuid4
 
 import numpy as np
 from fastapi.testclient import TestClient
@@ -25,10 +27,10 @@ from services.stt import streaming
 ORIGIN = {"origin": "http://testserver"}
 
 
-async def signed_in(token: str) -> str:
+async def signed_in(token: str) -> dict[str, str]:
     if token != "good":
         raise ProjectError(401, "unauthenticated")
-    return "user-1"
+    return {"id": "user-1", "email": "member@example.test"}
 
 
 class FakeProvider:
@@ -99,6 +101,7 @@ class DictationTests(unittest.TestCase):
         self.environment.stop()
         self.directory.cleanup()
         dictation._active.clear()
+        dictation._local.clear()
 
     def test_flag_off_hides_page_and_socket(self) -> None:
         with patch.dict(os.environ, {"ATLAS_REALTIME_DICTATION": "0"}):
@@ -110,7 +113,7 @@ class DictationTests(unittest.TestCase):
                     socket.receive_text()
 
     def test_socket_requires_same_origin_and_a_signed_in_user(self) -> None:
-        with patch("services.orchestrator.dictation.token_subject", signed_in):
+        with patch("services.orchestrator.dictation.token_user", signed_in):
             for headers, token in (
                 ({"origin": "http://elsewhere"}, "good"),
                 (ORIGIN, "bad"),
@@ -126,7 +129,7 @@ class DictationTests(unittest.TestCase):
     def start(self, **fields: object) -> list[dict[str, Any]]:
         self.client.cookies.set("token", "good")
         with (
-            patch("services.orchestrator.dictation.token_subject", signed_in),
+            patch("services.orchestrator.dictation.token_user", signed_in),
             patch.object(realtime_transcription, "ProviderStream", FakeProvider),
         ):
             with self.client.websocket_connect(
@@ -180,7 +183,7 @@ class DictationTests(unittest.TestCase):
 
         self.client.cookies.set("token", "good")
         with (
-            patch("services.orchestrator.dictation.token_subject", signed_in),
+            patch("services.orchestrator.dictation.token_user", signed_in),
             patch.object(realtime_transcription, "ProviderStream", Limited),
         ):
             with self.client.websocket_connect(
@@ -197,28 +200,32 @@ class DictationTests(unittest.TestCase):
             session = dictation.Session(
                 object(),  # type: ignore[arg-type]
                 "user-1",
-                {"engine": "local", "privacy": "strict", "cleanup": True},
+                {"cleanup": True},
                 dictation.Limits.current(),
+                engine="local",
+                privacy="strict",
             )
             self.assertIsNone(session.cleaner)
             session = dictation.Session(
                 object(),  # type: ignore[arg-type]
                 "user-1",
-                {"engine": "cloud", "cleanup": True},
+                {"cleanup": True},
                 dictation.Limits.current(),
+                engine="cloud",
+                privacy="standard",
             )
             self.assertIsNotNone(session.cleaner)
 
     def test_one_session_per_user(self) -> None:
         dictation._active.add("user-1")
         result = self.start(engine="cloud")
-        self.assertEqual(result[0]["code"], "busy")
+        self.assertEqual(result[0]["code"], "session_open")
 
     def test_frames_are_bounded(self) -> None:
         FakeProvider.script = [realtime_transcription.ProviderEvent("done")]
         self.client.cookies.set("token", "good")
         with (
-            patch("services.orchestrator.dictation.token_subject", signed_in),
+            patch("services.orchestrator.dictation.token_user", signed_in),
             patch.object(realtime_transcription, "ProviderStream", FakeProvider),
         ):
             with self.client.websocket_connect(
@@ -231,6 +238,234 @@ class DictationTests(unittest.TestCase):
         self.assertEqual(error["code"], "invalid_audio")
         self.assertTrue(FakeProvider.instances[0].closed)
         self.assertNotIn("user-1", dictation._active)
+
+    def test_busy_local_engine_falls_back_to_cloud_outside_strict_privacy(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [P("done", seconds=0.1)]
+        dictation._local.update({"other-1", "other-2"})  # the local cap (2) is reached
+        with patch.object(dictation, "local_installed", lambda: True):
+            result = self.start(language="fr")
+        self.assertEqual(result[0]["type"], "ready")
+        self.assertEqual((result[0]["engine"], result[0]["fallback"]), ("cloud", True))
+        self.assertEqual(result[0]["privacy"], "standard")
+        self.assertEqual(len(FakeProvider.instances), 1)
+
+    def test_strict_project_never_falls_back_to_cloud(self) -> None:
+        dictation._local.update({"other-1", "other-2"})
+
+        async def strict_project(email: str, org: str, project: str) -> str:
+            self.assertEqual(email, "member@example.test")
+            return "strict"
+
+        scope = {"org": str(uuid4()), "project": str(uuid4())}
+        with (
+            patch.object(dictation, "local_installed", lambda: True),
+            patch.object(dictation, "project_privacy", strict_project),
+        ):
+            result = self.start(scope=scope)
+        self.assertEqual(result[0]["code"], "local_busy")
+        self.assertEqual(result[0]["privacy"], "strict")
+        self.assertEqual(FakeProvider.instances, [])
+        self.assertNotIn("user-1", dictation._active)
+
+    def test_cloud_pins_only_measured_languages(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        for code, pinned in (("nl", "nl"), ("de", "de"), ("ja", None), ("xx", None)):
+            FakeProvider.instances = []
+            FakeProvider.script = [P("done", seconds=0.1)]
+            result = self.start(engine="cloud", language=code)
+            self.assertEqual(result[0]["type"], "ready")
+            self.assertEqual(FakeProvider.instances[0].options["language"], pinned)
+
+    def test_config_reports_the_flag_to_signed_in_users(self) -> None:
+        async def user(request: object) -> str:
+            return "user-1"
+
+        with patch("services.orchestrator.dictation.browser_user", user):
+            self.assertEqual(
+                self.client.get("/api/atlas/dictation/config").json()["enabled"], True
+            )
+            with patch.dict(os.environ, {"ATLAS_REALTIME_DICTATION": "0"}):
+                self.assertEqual(
+                    self.client.get("/api/atlas/dictation/config").json(),
+                    {"enabled": False},
+                )
+        self.assertEqual(
+            self.client.get("/api/atlas/dictation/config").status_code, 401
+        )
+
+
+class EngineChoiceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.environment = patch.dict(
+            os.environ,
+            {"ATLAS_DICTATION_ENGINES": "local,cloud", "MISTRAL_API_KEY": "test-key"},
+        )
+        self.environment.start()
+        self.limits = dictation.Limits.current()
+        dictation._local.clear()
+
+    def tearDown(self) -> None:
+        self.environment.stop()
+        dictation._local.clear()
+
+    def choose(self, requested: object, privacy: str = "standard") -> tuple[str, bool]:
+        return dictation.choose_engine(requested, privacy, self.limits)
+
+    def test_local_is_the_default_until_its_cap(self) -> None:
+        with patch.object(dictation, "local_installed", lambda: True):
+            self.assertEqual(self.choose("auto"), ("local", False))
+            dictation._local.update({"a", "b"})
+            self.assertEqual(self.choose("auto"), ("cloud", True))
+            with self.assertRaises(dictation.Refusal) as refused:
+                self.choose("local")
+            self.assertEqual(refused.exception.body["code"], "local_busy")
+
+    def test_local_cap_is_a_setting(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_DICTATION_LOCAL_MAX_SESSIONS": "1"}):
+            self.limits = dictation.Limits.current()
+        dictation._local.add("a")
+        with patch.object(dictation, "local_installed", lambda: True):
+            self.assertEqual(self.choose("auto"), ("cloud", True))
+
+    def test_strict_privacy_keeps_audio_local(self) -> None:
+        with patch.object(dictation, "local_installed", lambda: True):
+            self.assertEqual(self.choose("auto", "strict"), ("local", False))
+            dictation._local.update({"a", "b"})
+            with self.assertRaises(dictation.Refusal) as refused:
+                self.choose("auto", "strict")
+            self.assertEqual(refused.exception.body["code"], "local_busy")
+            self.assertEqual(refused.exception.body["privacy"], "strict")
+            with self.assertRaises(dictation.Refusal) as refused:
+                self.choose("cloud", "strict")
+            self.assertEqual(
+                refused.exception.body["code"], "strict_privacy_unavailable"
+            )
+        with patch.object(dictation, "local_installed", lambda: False):
+            with self.assertRaises(dictation.Refusal) as refused:
+                self.choose("auto", "strict")
+            self.assertEqual(refused.exception.body["code"], "engine_unavailable")
+            self.assertEqual(self.choose("auto"), ("cloud", False))
+
+
+class LanguageTests(unittest.TestCase):
+    def test_any_iso_code_is_kept_and_the_rest_is_dropped(self) -> None:
+        for value, code in (("nl", "nl"), ("pt-BR", "pt"), ("FR", "fr"), ("", None)):
+            self.assertEqual(dictation.spoken_language(value), code)
+        for other in (None, 3, "fra", "x1", "é"):
+            self.assertIsNone(dictation.spoken_language(other))
+
+    def test_a_language_the_local_engine_lacks_goes_to_cloud_outside_strict(
+        self,
+    ) -> None:
+        limits = dictation.Limits.current()
+        with (
+            patch.dict(
+                os.environ,
+                {"ATLAS_DICTATION_ENGINES": "local,cloud", "MISTRAL_API_KEY": "k"},
+            ),
+            patch.object(dictation, "local_installed", lambda: True),
+        ):
+            for code in ("fr", "en", "de", "es", "it", "nl", "pl", None):
+                self.assertEqual(
+                    dictation.choose_engine("auto", "standard", limits, code),
+                    ("local", False),
+                )
+            self.assertEqual(
+                dictation.choose_engine("auto", "standard", limits, "ja"),
+                ("cloud", False),
+            )
+            self.assertEqual(
+                dictation.choose_engine("auto", "strict", limits, "ja"),
+                ("local", False),
+            )
+
+
+class PrivacyTests(unittest.TestCase):
+    user = dictation.SocketUser("user-1", "member@example.test")
+
+    def privacy(self, start: dict[str, object], setting: object) -> str:
+        async def read(email: str, org: str, project: str) -> str:
+            if isinstance(setting, Exception):
+                raise setting
+            return str(setting)
+
+        with patch.object(dictation, "project_privacy", read):
+            return asyncio.run(dictation.session_privacy(start, self.user))
+
+    def test_the_project_setting_decides_and_the_browser_cannot_lift_it(self) -> None:
+        scope = {"org": str(uuid4()), "project": str(uuid4())}
+        self.assertEqual(self.privacy({}, "strict"), "standard")
+        self.assertEqual(self.privacy({"privacy": "strict"}, "standard"), "strict")
+        self.assertEqual(self.privacy({"scope": scope}, "strict"), "strict")
+        self.assertEqual(
+            self.privacy({"scope": scope, "privacy": "standard"}, "strict"), "strict"
+        )
+        self.assertEqual(self.privacy({"scope": scope}, "standard"), "standard")
+
+    def test_an_unreadable_project_counts_as_strict(self) -> None:
+        scope = {"org": str(uuid4()), "project": str(uuid4())}
+        self.assertEqual(
+            self.privacy({"scope": scope}, ProjectError(404, "not_found")), "strict"
+        )
+        self.assertEqual(
+            self.privacy({"scope": {"org": "x", "project": "y"}}, "standard"), "strict"
+        )
+        no_email = dictation.SocketUser("user-1", "")
+        with patch.object(dictation, "project_privacy", lambda *a: None):
+            self.assertEqual(
+                asyncio.run(dictation.session_privacy({"scope": scope}, no_email)),
+                "strict",
+            )
+
+
+class LocalAvailabilityTests(unittest.TestCase):
+    def test_a_configured_model_directory_must_exist(self) -> None:
+        with (
+            patch("importlib.util.find_spec", lambda name: object()),
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            with patch.dict(os.environ, {"ATLAS_DICTATION_LOCAL_MODEL_DIR": directory}):
+                os.environ.pop("ATLAS_DICTATION_LOCAL_VAD", None)
+                self.assertTrue(streaming.available())
+            missing = str(Path(directory) / "missing")
+            with patch.dict(os.environ, {"ATLAS_DICTATION_LOCAL_MODEL_DIR": missing}):
+                self.assertFalse(streaming.available())
+
+
+class ChatButtonContractTests(unittest.TestCase):
+    """The chat voice button must not touch Open WebUI's Svelte trees (#334, #335)."""
+
+    def block(self) -> str:
+        script = Path("services/orchestrator/chat-ui.js").read_text()
+        start = script.index("// Real-time dictation (ATLAS_REALTIME_DICTATION)")
+        return script[start:]
+
+    def test_button_and_panel_live_in_the_body_and_never_observe_mutations(
+        self,
+    ) -> None:
+        block = self.block()
+        self.assertNotIn("MutationObserver", block)
+        self.assertEqual(
+            sorted(set(re.findall(r"(\w+)\.append\((?:button|panel)\)", block))),
+            ["body"],
+        )
+        self.assertIn("document.body.append(button)", block)
+        self.assertIn("document.body.append(panel)", block)
+        self.assertIn("ResizeObserver", block)
+        # One write, through the composer's own editing path.
+        self.assertEqual(block.count('execCommand("insertText"'), 1)
+        self.assertIn("/api/atlas/dictation/config", block)
+        for language in ("en", "fr", "de", "es", "it", "nl"):
+            self.assertIn(f"    {language}: {{ dictate:", block)
+
+    def test_native_microphone_is_hidden_by_css_only_when_enabled(self) -> None:
+        css = Path("services/orchestrator/chat-ui.css").read_text()
+        self.assertIn(
+            'html[data-atlas-dictation="on"] #voice-input-button { visibility:hidden!important;',
+            css,
+        )
+        self.assertIn('dataset.atlasDictation = "on"', self.block())
 
 
 class ProviderTests(unittest.TestCase):

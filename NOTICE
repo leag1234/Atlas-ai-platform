@@ -2,3 +2,8 @@ ATLAS-0 inclut des idées et formats adaptés de :
 - coding-constitution / Antigravity (github.com/pdewost/coding-constitution), Apache-2.0
   — marqueurs d'observabilité, ré-ancrage, anti-rationalisation, état cold-start.
 Les évals de traduction échantillonnent FLORES-200 (Meta, CC-BY-SA 4.0).
+The optional local dictation engine (services/stt/streaming.py) runs NVIDIA Parakeet TDT 0.6B v3
+(CC-BY-4.0, https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) in the INT8 ONNX export by istupakov
+(https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx), loaded with onnx-asr (MIT), and
+Silero VAD (MIT, https://huggingface.co/istupakov/silero-vad-onnx). The weights are downloaded at
+installation and are not distributed with this repository.
