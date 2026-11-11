@@ -459,6 +459,8 @@ class WorkTools(CodeTools):
         self.web: Any = None
         self.web_lang = "en"
         self.approvals_unattended = False
+        # The one office format the request names, as a suffix (".docx"), or None.
+        self.requested_suffix: str | None = None
         self.remote_references: Any = None
 
     async def emit(self, kind: str, **data: Any) -> None:

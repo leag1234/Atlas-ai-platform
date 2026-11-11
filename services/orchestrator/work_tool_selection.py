@@ -115,7 +115,12 @@ class Switch(BaseModel):
 def office_format_requested(question: str) -> bool:
     from services.orchestrator.file_content import requested_formats
 
-    return bool(set(requested_formats(question)) & OFFICE_FORMATS)
+    from packages.work_intent import named_office_format
+
+    return (
+        bool(set(requested_formats(question)) & OFFICE_FORMATS)
+        or named_office_format(question) is not None
+    )
 
 
 def code_context(

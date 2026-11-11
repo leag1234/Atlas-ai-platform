@@ -570,3 +570,20 @@ class DroppedConnectionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await escalate_to_work(req, item))
         self.assertEqual(len(calls), 2)
         self.assertEqual((item.state, item.reponse), ("done", "Script ran."))
+
+
+class NamedOfficeFormatTests(unittest.TestCase):
+    def test_one_named_format_constrains_the_file(self) -> None:
+        from packages.work_intent import named_office_format
+
+        self.assertEqual(
+            named_office_format("Rédige une note Word sur les aides"), "docx"
+        )
+        self.assertEqual(named_office_format("Fais-moi un Excel de budget"), "xlsx")
+        self.assertEqual(
+            named_office_format("Génère un PowerPoint de 5 diapositives"), "pptx"
+        )
+        self.assertEqual(named_office_format("Prépare un PDF de deux pages"), "pdf")
+        self.assertIsNone(named_office_format("Fais-moi un Word et un PDF du rapport"))
+        self.assertIsNone(named_office_format("Écris un script et exécute-le"))
+        self.assertIsNone(named_office_format("In a word, what is a PDF?"))
