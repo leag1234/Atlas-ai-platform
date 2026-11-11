@@ -5,7 +5,7 @@ realtime_transcription_model; ATLAS_REALTIME_TRANSCRIPTION_PROVIDER overrides it
 comes from that preset's api_key_env and never leaves this process. Audio frames are relayed
 from memory and never stored or logged, nor is the transcript.
 
-Protocol (Mistral realtime transcription, documentation fetched 2026-11-11, see the
+Protocol (the hosted realtime transcription provider, documentation fetched 2026-11-11, see the
 preset sources): a WebSocket on /audio/transcriptions/realtime?model=..., a session.update
 before the first audio, input_audio.append with base64 PCM, input_audio.end, then
 transcription.text.delta (append-only text), turn.* events and transcription.done with
