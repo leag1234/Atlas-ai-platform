@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import tempfile
@@ -6,24 +5,19 @@ import unittest
 from unittest.mock import patch
 
 from services.orchestrator import artifact_store
-from services.orchestrator.artifact_store import ArtifactError
 from services.orchestrator.artifact_tools import (
-    ArtifactToolRuntime,
     clean_summary,
     compose_answer,
     current_artifact_message,
-    declarations,
     footer,
     parse_history_reference,
     unchanged_footer,
 )
-from services.orchestrator.loop import Call
 
 Message = dict[str, object]
 
 
 HTML = "<html><body><button>Run</button></body></html>"
-UPDATED_HTML = "<html><body><button>Changed</button></body></html>"
 
 
 class ArtifactToolsTests(unittest.TestCase):
@@ -33,89 +27,6 @@ class ArtifactToolsTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {"ATLAS_DATA_DIR": self.directory.name})
         self.env.start()
         self.addCleanup(self.env.stop)
-
-    def test_declaration_schema(self) -> None:
-        declaration = declarations()[0]["function"]
-        assert isinstance(declaration, dict)
-        self.assertEqual(declaration["name"], "create_artifact")
-        properties = declaration["parameters"]["properties"]
-        self.assertEqual(properties["title"]["maxLength"], 80)
-        self.assertEqual(
-            properties["filename"]["pattern"], r"^[a-z0-9][a-z0-9-]{0,60}\.html$"
-        )
-        self.assertEqual(properties["summary"]["maxLength"], 600)
-        self.assertEqual(
-            properties["artifact_id"]["anyOf"][0]["pattern"], r"^[0-9a-f]{32}$"
-        )
-
-    def test_execute_creates_and_updates(self) -> None:
-        runtime = ArtifactToolRuntime("user@example.test", "request-1")
-        first = asyncio.run(runtime.execute(call(HTML), 1))
-        assert isinstance(first, dict)
-        artifact_id = str(first["artifact_id"])
-        self.assertTrue(first["ok"])
-        self.assertEqual(first["version"], 1)
-        self.assertEqual(first["bytes"], len(HTML.encode()))
-        second = asyncio.run(runtime.execute(call(UPDATED_HTML, artifact_id), 1))
-        self.assertEqual(second["version"], 2)
-        self.assertEqual(
-            artifact_store.read(artifact_id, "user@example.test", 2).content,
-            UPDATED_HTML.encode(),
-        )
-
-    def test_execute_reports_validation_and_rejects_after_two_failures(self) -> None:
-        runtime = ArtifactToolRuntime("user@example.test", "request-1")
-        first = asyncio.run(runtime.execute(call("<p>invalid</p>"), 1))
-        assert isinstance(first, dict)
-        problems = first["problems"]
-        assert isinstance(problems, list)
-        self.assertEqual(first["error"], "artifact_invalid")
-        self.assertEqual(
-            problems[0],
-            {"code": "not_a_document", "line": 1, "detail": "<p>invalid</p>"},
-        )
-        self.assertTrue(runtime.forced is False)
-        second = asyncio.run(runtime.execute(call("<p>invalid</p>"), 1))
-        self.assertEqual(second["error"], "artifact_rejected")
-        self.assertFalse(runtime.offered)
-
-    def test_execute_reports_dialog_with_page_message_guidance(self) -> None:
-        content = "<html><body><script>alert('Game over');</script></body></html>"
-        arguments = {
-            "title": "Snake",
-            "filename": "snake.html",
-            "content": content,
-            "summary": "A simple game.",
-        }
-        runtime = ArtifactToolRuntime("user@example.test", "request-1")
-        first = asyncio.run(
-            runtime.execute(Call("call-1", "create_artifact", json.dumps(arguments)), 1)
-        )
-        assert isinstance(first, dict)
-        self.assertEqual(first["error"], "artifact_invalid")
-        self.assertEqual(
-            first["problems"],
-            [
-                {
-                    "code": "dialog_api",
-                    "line": 1,
-                    "detail": "show the message inside the page",
-                }
-            ],
-        )
-
-    def test_execute_maps_store_errors_and_respects_current_id(self) -> None:
-        runtime = ArtifactToolRuntime("user@example.test", "request-1")
-        unknown = asyncio.run(runtime.execute(call(HTML, "0" * 32), 1))
-        self.assertEqual(unknown["error"], "artifact_unknown")
-        with patch.object(
-            artifact_store,
-            "create",
-            side_effect=ArtifactError("artifact_store_unavailable"),
-        ):
-            runtime = ArtifactToolRuntime("user@example.test", "request-1")
-            unavailable = asyncio.run(runtime.execute(call(HTML), 1))
-        self.assertEqual(unavailable["error"], "artifact_unavailable")
 
     def test_history_parser_and_owner_check(self) -> None:
         created = artifact_store.create(
@@ -139,12 +50,11 @@ class ArtifactToolsTests(unittest.TestCase):
             {
                 "role": "system",
                 "content": (
-                    "Current app (update it with create_artifact and its "
-                    "artifact_id): "
+                    "Current app of this conversation (context only; Atlas applies "
+                    "changes to it): "
                     + json.dumps(
                         {
                             "current_artifact": {
-                                "artifact_id": artifact_id,
                                 "version": 1,
                                 "title": "Open Snake",
                                 "filename": "snake.html",
@@ -233,14 +143,18 @@ class ArtifactToolsTests(unittest.TestCase):
         )
         self.assertIn("Here it is.\n\nPlay.\n\n[Open", answer)
 
+    def test_footer_title_survives_ampersands_and_is_read_back(self) -> None:
+        text = footer("a" * 32, 3, "Tom & Jerry", "tom.html", "en")
+        self.assertIn("title=Tom%20%26%20Jerry&artifact=", text)
+        reference = parse_history_reference(
+            [{"role": "assistant", "content": text}, {"role": "user", "content": "x"}]
+        )
+        assert reference is not None
+        self.assertEqual(
+            (reference.artifact_id, reference.version, reference.title),
+            ("a" * 32, 3, "Tom & Jerry"),
+        )
 
-def call(content: str, artifact_id: str | None = None) -> Call:
-    arguments = {
-        "title": "Snake",
-        "filename": "snake.html",
-        "content": content,
-        "summary": "A simple game.",
-    }
-    if artifact_id is not None:
-        arguments["artifact_id"] = artifact_id
-    return Call("call-1", "create_artifact", repr(arguments).replace("'", '"'))
+    def test_drawing_footer_has_no_data_notice(self) -> None:
+        text = footer("0" * 32, 1, "Cat", "cat.html", "en", temporary=False)
+        self.assertNotIn("Temporary preview", text)

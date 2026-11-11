@@ -435,7 +435,11 @@ class PipelineGateTests(unittest.IsolatedAsyncioTestCase):
                 "services.orchestrator.chat_pipeline._process_simple_drawing",
                 AsyncMock(),
             ) as inline_svg,
+            patch(
+                "services.orchestrator.chat_pipeline.process_app_turn", AsyncMock()
+            ) as app_turn,
         ):
+            self.app_turn = app_turn
             from services.orchestrator.chat_pipeline import _process
 
             await _process(req, item)
@@ -453,15 +457,13 @@ class PipelineGateTests(unittest.IsolatedAsyncioTestCase):
                 run, image, inline_svg, item = await self.process(
                     routed(request(text), kind="drawing")
                 )
-                run.assert_awaited_once()
+                run.assert_not_awaited()
                 image.assert_not_awaited()
                 inline_svg.assert_not_awaited()
                 self.assertEqual(item.task_type, "artifact")
-                self.assertIn(
-                    "create_artifact",
-                    [tool["function"]["name"] for tool in run.call_args.args[1].tools],
-                )
-                self.assertTrue(run.call_args.args[2].artifacts.forced)
+                self.app_turn.assert_awaited_once()
+                self.assertEqual(self.app_turn.call_args.kwargs["kind"], "drawing")
+                self.assertEqual(self.app_turn.call_args.kwargs["intent"], "create")
                 self.assertNotEqual(item.reponse, unavailable_reply("fr"))
                 self.assertNotEqual(item.reponse, unavailable_reply("en"))
 
@@ -508,24 +510,29 @@ class PipelineGateTests(unittest.IsolatedAsyncioTestCase):
             routed(request("un truc pour s'entraîner aux tables de 7"), kind="app")
         )
         self.assertEqual(item.task_type, "artifact")
-        self.assertTrue(run.call_args.args[2].artifacts.forced)
+        run.assert_not_awaited()
+        self.assertEqual(self.app_turn.call_args.kwargs["intent"], "create")
+        self.assertEqual(self.app_turn.call_args.kwargs["kind"], "app")
         history = [
             {"role": "user", "content": "un jeu de dames"},
             {"role": "assistant", "content": "Voici le jeu: " + ARTIFACT_LINK},
         ]
+        current = Mock(
+            artifact={"artifact_id": "a" * 32, "version": 1},
+            message={"role": "user", "content": "{}"},
+        )
         with patch(
             "services.orchestrator.chat_pipeline.current_artifact_message",
-            return_value=Mock(
-                artifact={"artifact_id": "a" * 32, "version": 1},
-                message={"role": "user", "content": "{}"},
-            ),
+            return_value=current,
         ):
             run, _, _, item = await self.process(
                 routed(request("plus grand", history), kind="app", follow_up=True)
             )
         self.assertEqual(item.task_type, "artifact")
-        self.assertFalse(run.call_args.args[2].artifacts.forced)
-        self.assertEqual(run.call_args.args[2].artifacts.current_artifact_id, "a" * 32)
+        run.assert_not_awaited()
+        # The service resolves the artifact to change; the model never names it.
+        self.assertEqual(self.app_turn.call_args.kwargs["intent"], "modify")
+        self.assertIs(self.app_turn.call_args.kwargs["current"], current)
 
     async def test_answer_stays_a_chat_answer(self) -> None:
         # A request to create a small calculator is an app for the lexical test.

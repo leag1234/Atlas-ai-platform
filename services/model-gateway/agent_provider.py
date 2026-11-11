@@ -75,6 +75,10 @@ class Completion(BaseModel):
     choices: list[Choice] = Field(min_length=1, max_length=1)
 
 
+# Output tokens a file turn (produces_files) may request in one call.
+FILE_OUTPUT_CEILING = 16000
+
+
 class AgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     messages: list[dict[str, object]] = Field(min_length=1, max_length=100)
@@ -162,6 +166,11 @@ class AgentRequest(BaseModel):
         ceiling = 6000
         if "max_tokens" not in self.model_fields_set:
             self.max_tokens = ceiling
+        # A file turn may ask for more: an app or drawing is one whole file in a
+        # single answer (services/orchestrator/app_turn.py). The cost ceiling of
+        # a file turn (0.30 EUR) still bounds every attempt.
+        if self.produces_files:
+            ceiling = FILE_OUTPUT_CEILING
         if self.max_tokens > ceiling:
             raise LimitError("output_budget", self.max_tokens, ceiling, "tokens")
         self.reasoning_effort = "none"
