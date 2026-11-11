@@ -141,6 +141,44 @@ async def references(tools: Any, result: dict[str, Any]) -> dict[str, Any]:
     return bounded(result)
 
 
+BUSY_WAIT_S = 90.0
+BUSY_POLL_S = 3.0
+
+
+async def start(
+    tools: Any, invoke: Any, status_args: dict[str, Any], timeout: float
+) -> dict[str, Any]:
+    """Start a prepared command, waiting for a slot while the machine is busy.
+
+    A machine runs a bounded number of commands at once. Another conversation
+    using it is a short wait, not a failure: the refusal left the model
+    resending the same command at once and then telling the user it had no
+    access (staging 2026-11-11).
+    """
+    deadline = time.monotonic() + min(BUSY_WAIT_S, max(0.0, timeout - 5))
+    told = False
+    while True:
+        try:
+            return dict(await invoke("execute", status_args))
+        except ProjectError as exc:
+            busy = exc.status == 429 and exc.body.get("error") == (
+                "runner_concurrency_limit"
+            )
+            if not busy or time.monotonic() + BUSY_POLL_S > deadline:
+                raise
+        await tools.execution.check()
+        if not told:
+            told = True
+            await tools.emit(
+                "tool",
+                tool="remote_run",
+                label="Machine busy, waiting for a free slot",
+                status="running",
+                output=dict(text="Machine busy, waiting for a free slot"),
+            )
+        await asyncio.sleep(BUSY_POLL_S)
+
+
 async def execute(
     tools: Any, name: str, arguments: str, timeout: float
 ) -> dict[str, Any]:
@@ -230,7 +268,7 @@ async def execute(
                 .get("target_name", target_name),
                 next_step="The user must approve; stop and tell them; do not resubmit",
             )
-        result = await invoke("execute", status_args)
+        result = await start(tools, invoke, status_args, timeout)
         args = status_args
     result = await invoke("status", args)
     deadline = time.monotonic() + min(args["wait_s"], max(0, timeout - 1))

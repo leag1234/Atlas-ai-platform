@@ -542,13 +542,13 @@ class RemoteWork:
         if usage is None:
             raise ProjectError(403, "permission_denied")
         session = auth["session"]
-        opening = int(session["state"] != "open")
+        # Only running commands take a slot. A session between two commands
+        # holds a directory, not the machine: counting it refused the third
+        # conversation of one user on a machine that was doing nothing
+        # (staging 2026-11-11, limit 2, every later request failed).
         if (
             usage["active_commands"] >= 16
             or usage["target_commands"] >= auth["target"]["max_parallel_sessions"]
-            or usage["open_sessions"] + opening > 16
-            or usage["target_sessions"] + opening
-            > auth["target"]["max_parallel_sessions"]
         ):
             raise ProjectError(429, "runner_concurrency_limit")
         if (
