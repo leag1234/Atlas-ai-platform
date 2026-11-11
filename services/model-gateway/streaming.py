@@ -96,6 +96,10 @@ class Frame(BaseModel):
 STREAM_BYTES_PER_TOKEN = 1024
 
 
+# Arguments this long are a document or an app being written, not a stalled call.
+TOOL_PROGRESS_CHARS = 2000
+
+
 class StreamDecoder:
     def __init__(
         self,
@@ -116,6 +120,7 @@ class StreamDecoder:
         self.total = 0
         self.text = ""
         self.calls: dict[int, dict[str, str]] = {}
+        self.tool_progress_sent = False
         self.ignored_calls = False
         self.usage: dict[str, object] | None = None
         self.reason: str | None = None
@@ -204,6 +209,15 @@ class StreamDecoder:
                         self.calls.clear()
                         raise MalformedToolCall(len(target["name"]))
                     target["arguments"] += call.function.arguments
+                    if (
+                        not self.tool_progress_sent
+                        and len(target["arguments"]) >= TOOL_PROGRESS_CHARS
+                    ):
+                        # Tool arguments are not forwarded while they are written.
+                        # Tell the caller once that a long call (a whole document
+                        # or app) is under way, so that it is not cut as silent.
+                        self.tool_progress_sent = True
+                        events.append({"tool_progress": len(target["arguments"])})
                     # Arguments have no length cap of their own: an app is
                     # written in one call, and max_tokens bounds the output.
                     for key, maximum in (("id", 200),):
