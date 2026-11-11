@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas dictation</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #ffffff; --muted: #6e6e73; --line: #d2d2d7; --accent: #0b57d0; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --bg: #161617; --muted: #a1a1a6; --line: #3a3a3c; --accent: #8ab4f8; } }
+  body { margin: 0; padding: 24px 16px; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+  button { font: inherit; padding: 10px 18px; border-radius: 999px; border: 1px solid var(--accent); background: var(--accent); color: var(--bg); cursor: pointer; }
+  button[aria-pressed="true"] { background: transparent; color: var(--accent); }
+  select, label { font: inherit; color: var(--fg); }
+  #text { width: 100%; box-sizing: border-box; min-height: 200px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; white-space: pre-wrap; }
+  #text .partial { color: var(--muted); font-style: italic; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; color: var(--muted); font-size: 0.9rem; }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  #status { min-height: 1.5em; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1 data-i18n="title">Dictation</h1>
+  <div class="controls">
+    <button id="mic" type="button" aria-pressed="false" data-i18n="start">Start</button>
+    <label><span data-i18n="engine">Engine</span>
+      <select id="engine"><option value="cloud" data-i18n="cloud">Cloud</option><option value="local" data-i18n="local">Local</option></select>
+    </label>
+    <label><input id="cleanup" type="checkbox"> <span data-i18n="cleanup">Clean-up</span></label>
+    <label><input id="strict" type="checkbox"> <span data-i18n="strict">Strict privacy</span></label>
+  </div>
+  <div id="text" role="textbox" aria-live="polite" aria-multiline="true"></div>
+  <p id="status"></p>
+  <dl>
+    <dt data-i18n="first">Speech to first text</dt><dd id="first">-</dd>
+    <dt data-i18n="final">End of speech to final text</dt><dd id="last">-</dd>
+  </dl>
+</main>
+<script src="/api/atlas/dictation/dictation.js"></script>
+</body>
+</html>

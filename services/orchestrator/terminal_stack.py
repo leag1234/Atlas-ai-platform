@@ -64,6 +64,15 @@ def without_header(header: bytes, name: bytes) -> bytes:
     )
 
 
+def dictation_upgrade(target_path: str, header: bytes) -> bool:
+    """A WebSocket upgrade to the dictation relay, the only upgraded /api/atlas/ route."""
+    return (
+        target_path.split("?", 1)[0] == "/api/atlas/dictation/stream"
+        and re.search(rb"(?im)^upgrade:\s*websocket\s*$", header) is not None
+        and re.search(rb"(?im)^connection:[^\r\n]*\bupgrade\b", header) is not None
+    )
+
+
 def identity_allowed(header: bytes) -> bool:
     """A front-door identity names a user, except beside an interface API key.
 
@@ -330,6 +339,12 @@ def loopback_html_injector(
                             )
                             + b"\r\nConnection: close"
                         )
+                        if dictation_upgrade(target_path, header):
+                            # The dictation WebSocket needs its upgrade; the byte relay
+                            # below carries the frames both ways.
+                            project_header = without_header(
+                                header, b"x-atlas-user-role"
+                            )
                         if target_path.startswith("/api/atlas/v1/"):
                             for name in (
                                 b"x-atlas-user",

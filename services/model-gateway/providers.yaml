@@ -37,6 +37,10 @@
   },
   # Source: https://docs.mistral.ai/api/endpoint/chat; https://docs.mistral.ai/models/mistral-small-4-0-26-03; https://docs.mistral.ai/inference/pricing; fetched 2026-10-22.
   # Transcription: https://docs.mistral.ai/api/endpoint/audio/transcriptions; fetched 2026-11-04.
+  # Realtime transcription: https://docs.mistral.ai/studio/audio/speech-to-text/transcribe-in-realtime;
+  # https://docs.mistral.ai/models/voxtral-mini-transcribe-realtime-3-0 (0.008 USD/min, Public Preview);
+  # https://docs.mistral.ai/inference/regional-inference (EU endpoint, 1.1x list price); fetched 2026-11-11.
+  # EU endpoint and model checked live on 2026-11-11.
   "mistral": {
     "json_response_format": true,
     "verification": "verified 2026-10-23 by acceptance test",
@@ -49,6 +53,8 @@
     "reasoning_values": [],
     "reasoning_models": ["mistral-large-4"],
     "transcription_model": "voxtral-mini-latest",
+    "realtime_transcription_model": "voxtral-mini-transcribe-realtime-3",
+    "realtime_transcription_base_url": "https://api.eu.mistral.ai/v1",
     "context": 262144,
     "price": {"currency": "USD", "input": 0.15, "output": 0.60},
     "note": "Vision not enabled by this preset; verify capabilities before overriding.",

@@ -77,8 +77,8 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 block for block in text.split("location ") if "proxy_pass " in block
             ]
             # The production front door has one more proxy location: the image route.
-            # Both have the Stop cancel route.
-            self.assertEqual(len(blocks), 6 if name == "atlas.indidea.org.conf" else 4)
+            # Both have the Stop cancel route and the dictation WebSocket.
+            self.assertEqual(len(blocks), 7 if name == "atlas.indidea.org.conf" else 5)
             prefix = "atlas" if name == "atlas.indidea.org.conf" else "atlas_test"
             for block in blocks:
                 if block.startswith("^~ /api/atlas/v1/"):

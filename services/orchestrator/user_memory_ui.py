@@ -1,6 +1,7 @@
 """Authenticated personal-memory controls for the injected Atlas UI."""
 
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import aiohttp
@@ -28,7 +29,11 @@ def asset() -> Response:
 
 async def browser_user(request: Request) -> str:
     browser_origin(request)
-    token = request.cookies.get("token", "")
+    return await token_subject(request.cookies.get("token", ""))
+
+
+async def token_user(token: str) -> dict[str, Any]:
+    """Open WebUI user of a session token, verified by Open WebUI itself."""
     if not token or len(token) > 8192 or any(c in token for c in "\r\n"):
         raise ProjectError(401, "unauthenticated")
     url = os.environ.get("ATLAS_WEBUI_URL") or atlas_ports().url("chat_ui")
@@ -42,7 +47,12 @@ async def browser_user(request: Request) -> str:
         ) as reply:
             if reply.status != 200:
                 raise ProjectError(401, "unauthenticated")
-            user = await bounded_json(reply)
+            return await bounded_json(reply)
+
+
+async def token_subject(token: str) -> str:
+    """Open WebUI user id of a session token, verified by Open WebUI itself."""
+    user = await token_user(token)
     subject = user.get("id")
     if not isinstance(subject, str) or not subject.strip() or len(subject) > 200:
         raise ProjectError(401, "unauthenticated")
