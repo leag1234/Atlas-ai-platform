@@ -1,0 +1,6 @@
+{
+  "name": "Build box",
+  "host": "example.org",
+  "user": "dev",
+  "private_key": "x"
+}

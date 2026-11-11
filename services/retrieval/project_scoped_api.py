@@ -470,6 +470,29 @@ def dispatch(
             if method != "GET":
                 scope.remember(method, path, key, body, skill_result)
             return skill_result
+        if project is None and tail and tail[0] == "machines":
+            from services.retrieval.project_machines import api as machine_api
+
+            if query:
+                raise ProjectError(422, "invalid_request")
+            data = json.loads(body) if body else {}
+            if not isinstance(data, dict):
+                raise ProjectError(422, "invalid_request")
+            key = headers.get("idempotency-key", "")
+            if method != "GET":
+                if not key or len(key) > 200:
+                    raise ProjectError(
+                        422, "invalid_request", "Idempotency-Key is required"
+                    )
+                replay = scope.replay(method, path, key, body)
+                if replay is not None:
+                    return replay
+            machine_result = machine_api(
+                scope, method, tail, data, headers.get("if-match")
+            )
+            if method != "GET":
+                scope.remember(method, path, key, body, machine_result)
+            return machine_result
         if tail and tail[0] == "runner-targets":
             from services.retrieval.project_runners import admin_api
 

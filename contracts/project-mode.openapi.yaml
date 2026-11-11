@@ -5737,6 +5737,297 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 200000
+  /api/atlas/orgs/{org}/machines:
+    get:
+      operationId: get_personal_machines
+      summary: GET the caller's personal machines
+      x-roles:
+      - active member
+      description: Personal machines belong to the calling member. No administrator
+        step and no project grant. Another member's machine does not exist for the
+        caller (404). No response carries a private key or a credential reference.
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - next_cursor
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PersonalMachine'
+                  next_cursor:
+                    type:
+                    - string
+                    - 'null'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+    post:
+      operationId: post_personal_machines
+      summary: POST declare a personal machine; Atlas generates its key pair
+      x-roles:
+      - active member
+      description: Personal machines belong to the calling member. No administrator
+        step and no project grant. Another member's machine does not exist for the
+        caller (404). No response carries a private key or a credential reference.
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalMachine'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalMachineInput'
+  /api/atlas/orgs/{org}/machines/{machine}:
+    get:
+      operationId: get_personal_machine
+      summary: GET one personal machine of the caller
+      x-roles:
+      - active member
+      description: Personal machines belong to the calling member. No administrator
+        step and no project grant. Another member's machine does not exist for the
+        caller (404). No response carries a private key or a credential reference.
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: machine
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalMachine'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+    patch:
+      operationId: patch_personal_machine
+      summary: PATCH name or permission mode
+      x-roles:
+      - active member
+      description: Personal machines belong to the calling member. No administrator
+        step and no project grant. Another member's machine does not exist for the
+        caller (404). No response carries a private key or a credential reference.
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: machine
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalMachine'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalMachinePatch'
+    delete:
+      operationId: delete_personal_machine
+      summary: DELETE the machine and its stored credential
+      x-roles:
+      - active member
+      description: Personal machines belong to the calling member. No administrator
+        step and no project grant. Another member's machine does not exist for the
+        caller (404). No response carries a private key or a credential reference.
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: machine
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalMachineDeleted'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /api/atlas/orgs/{org}/machines/{machine}/verify:
+    post:
+      operationId: post_personal_machine_verify
+      summary: POST connect, pin the host key on first use, probe
+      x-roles:
+      - active member
+      description: Personal machines belong to the calling member. No administrator
+        step and no project grant. Another member's machine does not exist for the
+        caller (404). No response carries a private key or a credential reference.
+      parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: machine
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalMachine'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '428':
+          $ref: '#/components/responses/Error428'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonalMachineVerify'
 components:
   securitySchemes:
     ExecutionBroker:
@@ -9688,6 +9979,9 @@ components:
           - feature_not_available
           - selector_conflict
           - path_conflict
+          - runner_name_conflict
+          - runner_machine_limit
+          - runner_commands_active
         status:
           const: 409
         message:
@@ -12864,6 +13158,196 @@ components:
       - operation
       type: object
 
+    PersonalMachineInput:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - host
+      - user
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        host:
+          type: string
+          minLength: 1
+          maxLength: 253
+          pattern: ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$
+          description: DNS name or IPv4 literal. Allow-list pattern; anything else is refused, never escaped.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 22
+        user:
+          type: string
+          pattern: ^[A-Za-z_][A-Za-z0-9_.-]{0,63}$
+        os:
+          type: string
+          enum:
+          - linux
+          - macos
+          default: linux
+        work_root:
+          oneOf:
+          - type: string
+            maxLength: 500
+            pattern: ^/[A-Za-z0-9_./-]+$
+          - type: 'null'
+          description: Absolute directory for session work. Null resolves to atlas-work in the account's home at first
+            verification.
+        permission_mode:
+          type: string
+          enum:
+          - ask
+          - rules
+          - auto
+          default: rules
+    PersonalMachinePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        permission_mode:
+          type: string
+          enum:
+          - ask
+          - rules
+          - auto
+    PersonalMachineVerify:
+      type: object
+      additionalProperties: false
+      properties:
+        reset_host_key:
+          type: boolean
+          default: false
+          description: Forget the pinned host key and pin the one offered now. Explicit owner decision after a
+            reinstallation; a changed key otherwise fails closed.
+    PersonalMachineDeleted:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - deleted
+      - remote_cleanup
+      properties:
+        id:
+          type: string
+          format: uuid
+        deleted:
+          const: true
+        remote_cleanup:
+          type: boolean
+          description: False when the machine could not be reached to remove session directories.
+    PersonalMachine:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - org_id
+      - owner_member_id
+      - name
+      - os
+      - arch
+      - host
+      - port
+      - user
+      - work_root
+      - permission_mode
+      - status
+      - verified_at
+      - host_key_fingerprints
+      - credential_fingerprint
+      - public_key
+      - install_command
+      - last_probe
+      - revision
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        org_id:
+          type: string
+          format: uuid
+        owner_member_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        os:
+          type: string
+          enum:
+          - linux
+          - macos
+        arch:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        user:
+          type: string
+        work_root:
+          oneOf:
+          - type: string
+          - type: 'null'
+        permission_mode:
+          type: string
+          enum:
+          - ask
+          - rules
+          - auto
+        status:
+          type: string
+          enum:
+          - unverified
+          - available
+          - unavailable
+          description: Work sessions use a machine only after one successful verification.
+        verified_at:
+          oneOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        host_key_fingerprints:
+          type: array
+          maxItems: 8
+          items:
+            type: string
+            pattern: ^SHA256:[A-Za-z0-9+/]{43}$
+          description: Pinned at the first verification and shown to the owner.
+        credential_fingerprint:
+          type: string
+          pattern: ^SHA256:[A-Za-z0-9+/]{43}$
+        public_key:
+          type: string
+          pattern: ^ssh-ed25519 [A-Za-z0-9+/]+={0,2} atlas$
+          description: Public half of the key pair Atlas generated for this machine. The private key never leaves
+            the runner broker.
+        install_command:
+          type: string
+          description: Ready to run in the owner's own terminal; appends the public key to authorized_keys.
+        last_probe:
+          oneOf:
+          - type: object
+          - type: 'null'
+        revision:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
   responses:
     Error401:
       description: Typed failure

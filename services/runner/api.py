@@ -30,10 +30,26 @@ def broker() -> Broker:
 def execute(operation: str, data: dict[str, Any]) -> dict[str, Any]:
     auth = unseal(operation, data.pop("permit"))
     service = broker()
-    if operation == "generate" and auth.get("admin") is True:
+    # Retrieval marks its own control permits: an administrator's registered
+    # target, or a member acting on the personal machine he owns.
+    personal = (
+        auth.get("personal") is True
+        and bool(auth.get("member_id"))
+        and (
+            operation == "generate"
+            or auth.get("target", {}).get("owner_member_id") == auth["member_id"]
+        )
+    )
+    if operation == "generate" and (auth.get("admin") is True or personal):
         return service.keys.generate(auth["org_id"])
     if operation in {"probe", "probe-status"} and auth.get("admin") is True:
         return service.probe(auth, cached=operation == "probe-status")
+    if operation == "probe" and personal:
+        return service.probe(auth)
+    if operation == "scan" and personal:
+        return service.scan(auth)
+    if operation == "forget" and personal:
+        return service.forget(auth)
     if operation == "run":
         return service.run(auth, base64.b64decode(data["content"], validate=True))
     if operation in {"status", "cancel", "log"}:
