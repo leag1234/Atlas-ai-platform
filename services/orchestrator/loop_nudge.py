@@ -27,6 +27,11 @@ REPLACEMENT = (
     "Do not run this call again. Take the next step of your task with what you already "
     "know, run a different command, or stop and report what blocks you.]"
 )
+DIRECTIVE = (
+    "[Atlas] Your last {count} calls to {name} were identical and returned the same "
+    "result. Your next action must be different: another command, an edit, or a short "
+    "final report of what blocks you. Do not call {name} with the same arguments again."
+)
 TIMING = re.compile(r"^(?:Chunk ID: \S+|Wall time: [\d.]+ seconds?)\n", re.MULTILINE)
 
 
@@ -72,4 +77,19 @@ def nudge_messages(messages: list[Any]) -> tuple[list[Any], int]:
     )
     result = list(messages)
     result[index] = messages[index].model_copy(update={"content": content})
+    if len(same) >= REPLACE_AT and index == len(messages) - 1:
+        # Measured 2026-11-09 to 11 on a coding client: with the note inside the tool
+        # output alone, models still repeated one search 24 to 36 times. A note in
+        # the user's voice after the output is the last thing the model reads.
+        result.append(
+            messages[index].model_copy(
+                update={
+                    "role": "user",
+                    "content": DIRECTIVE.format(name=name, count=len(same)),
+                    "tool_call_id": None,
+                    "tool_calls": [],
+                    "name": None,
+                }
+            )
+        )
     return result, len(same)

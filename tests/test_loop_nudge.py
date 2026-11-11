@@ -51,8 +51,11 @@ class LoopNudgeTests(unittest.TestCase):
         nudged, repeats = nudge_messages(history(*turns))
         self.assertEqual(repeats, 6)
         self.assertEqual(
-            nudged[-1].content, REPLACEMENT.format(name="exec_command", count=6)
+            nudged[-2].content, REPLACEMENT.format(name="exec_command", count=6)
         )
+        # From five repeats an instruction follows in the user's voice.
+        self.assertEqual(nudged[-1].role, "user")
+        self.assertIn("must be different", nudged[-1].content)
 
     def test_a_full_window_of_identical_calls_reaches_the_stop_count(self) -> None:
         from services.orchestrator.loop_nudge import LOOP_STOP, WINDOW
