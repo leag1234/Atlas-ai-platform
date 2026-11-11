@@ -140,7 +140,8 @@ class Machines:
             allow_rules=[],
             deny_rules=[],
             sensitive_rules=[],
-            max_parallel_sessions=2,
+            # A personal machine serves one user across several conversations at once.
+            max_parallel_sessions=4,
             disk_quota_bytes=10 * 1024**3,
             monthly_minutes=3000,
             same_locality=False,

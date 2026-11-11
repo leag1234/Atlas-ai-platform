@@ -23,6 +23,25 @@ from services.orchestrator.stream_client import Sink
 from decimal import Decimal
 
 
+# The machine is reachable when these errors come back: the command shape was refused before it
+# ran. The hint must make the model rewrite it, never tell the user it has no access.
+REMOTE_FIX_HINTS = {
+    "unsupported_shell_syntax": (
+        "The command was refused before running, the machine is still available. Allowed: simple "
+        "commands joined by |, &&, || or ;, and redirections to /dev/null or 2>&1. Not allowed: $, "
+        "backquotes, subshells, other redirections, variable assignments. Rewrite the command "
+        "within these rules and run it again."
+    ),
+    "unsupported_shell_indirection": (
+        "The command was refused before running, the machine is still available. Do not wrap "
+        "commands in sh, bash, env, eval or exec: run the program directly, then try again."
+    ),
+    "invalid_command": (
+        "The command could not be parsed (unbalanced quotes or an empty part). Fix it and run it again."
+    ),
+}
+
+
 class Arguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -704,9 +723,14 @@ class WorkTools(CodeTools):
                     exc.__class__.__name__,
                     code,
                 )
+                found = re.search(r"Value error, ([a-z_]+)", code)
+                code = found[1] if found else code
                 result = dict(
                     error=code,
-                    next_step="Correct the command or target from this error; do not resend an identical request.",
+                    next_step=REMOTE_FIX_HINTS.get(
+                        code,
+                        "Correct the command or target from this error; do not resend an identical request.",
+                    ),
                 )
             await self.emit(
                 "tool",
