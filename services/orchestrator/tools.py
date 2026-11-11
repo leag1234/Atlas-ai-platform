@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from services.orchestrator import mcp_client
 from services.orchestrator.cache import Cache
+from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.calculator import calculate
 from services.orchestrator.content import hierarchical_summary
 from packages.evidence import estimated_tokens
@@ -190,6 +191,7 @@ class Runtime:
                 raise KeyError("SERPAPI_KEY")
             raise ValueError("search_unavailable")
         last_quota: SearchQuotaError | None = None
+        last_budget: BudgetRefusal | None = None
         attempts: list[Message] = []
         last_searxng_result: Message | None = None
         deadline = asyncio.get_running_loop().time() + timeout
@@ -237,6 +239,13 @@ class Runtime:
             except SearchQuotaError as exc:
                 last_quota = exc
                 attempts.append({"provider": provider, "outcome": str(exc)})
+            except BudgetRefusal as exc:
+                # The allowance of this provider is used up, not the search
+                # itself: the next provider may still answer. Stopping here
+                # told users "daily search limit" with a provider left unused
+                # (staging 2026-11-11: SearXNG empty, Tavily allowance reached).
+                last_budget = exc
+                attempts.append({"provider": provider, "outcome": exc.category})
             except (TimeoutError, aiohttp.ClientError):
                 last_quota = None
                 attempts.append({"provider": provider, "outcome": "upstream_timeout"})
@@ -260,6 +269,9 @@ class Runtime:
         if last_quota is not None:
             self._last_search_attempts = attempts
             raise last_quota
+        if last_budget is not None:
+            self._last_search_attempts = attempts
+            raise last_budget
         self._last_search_attempts = attempts
         raise ValueError("search_unavailable")
 
