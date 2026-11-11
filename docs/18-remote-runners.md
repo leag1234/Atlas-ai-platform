@@ -134,3 +134,32 @@ First live acceptance: the existing test VM registered as a Linux target, then t
 2. Direct SSH is enough for P1 (with `ProxyJump` through another registered target for machines on a private network); a reverse mode for machines behind NAT is deferred.
 3. The model writes its own commands on targets; the safety lever is the per-target permission mode (§6), not a closed list of commands.
 4. Acceptance targets: the test VM (Linux), the owner's server with attached Android phones, the owner's Mac. Windows when a machine is available.
+
+## 13. Personal machines (owner decision, 2026-11-11)
+
+This section supersedes owner answer 1 of section 12 for machines a member administers himself. Organization targets are unchanged: an administrator registers them and grants them per project (sections 3 to 6).
+
+Reason: an administrator step for a personal server blocks ordinary use. A developer who can reach a server over SSH uses it directly with other coding assistants; Atlas does the same, without weakening principle 1 (the model never handles a credential).
+
+REQ-RUN-09: any active member declares his own machines, with no administrator and no project grant.
+
+Flow (`/api/atlas/orgs/{org}/machines`, contract `contracts/project-mode.openapi.yaml`):
+
+1. **Declare.** The member gives a name, host, port, user and permission mode (`rules` by default; `ask` and `auto` as in section 6). The runner broker generates one ed25519 key pair for this machine and keeps the private key. The response carries the public key and a ready-made command to run in the member's own terminal: `ssh USER@HOST 'mkdir -p ~/.ssh && echo "<public key> atlas" >> ~/.ssh/authorized_keys'` (with `-p PORT` when the port is not 22).
+2. **Verify.** On the member's request Atlas connects. The host key seen at the first verification is pinned and shown to the member; later connections fail closed on any other key, until the member explicitly resets the pin (reinstalled server). The probe of section 8 then checks the account. The work root defaults to `atlas-work` in the account's home.
+3. **Use.** Once verified, the machine is listed by `list_targets` (marked `personal`) in every Work session of its owner: each project where he works and the hidden chat workspace. The per-project record of use (code egress approval, "always allow" rules) is created on first use.
+4. **Manage.** The member lists, renames, changes the mode, verifies again and deletes. Deleting removes the private key, the pinned host key and the session directories that can still be reached.
+
+Ownership rule: a machine has one `owner_member_id`. No other member, administrators included, can read, change, verify, delete or use it; the API answers 404, as for any resource outside the caller's scope (doc 17). The rule is enforced three times: by the retrieval service on every route and Work operation, by row-level security on `runner_targets` (the owner column is part of every policy), and by the broker, which refuses a control permit or a command whose member is not the owner.
+
+Security reasoning:
+
+- **One Atlas key per machine.** The member's own SSH key never leaves his computer and is never given to Atlas. Atlas holds a key that opens this account on this machine only.
+- **Revocation by one line.** Removing the `atlas` line from `authorized_keys` ends Atlas access at once, whatever the state of Atlas. Deleting the machine in Atlas destroys the private key.
+- **Strict input.** Host, user and port are accepted by allow-list patterns (DNS name or IPv4 literal, POSIX account name, 1 to 65535), never escaped. The installation command is built from those validated values only.
+- **No reach into the deployment.** A member chooses the host, so the broker resolves it and refuses any address that is not public, unless the operator listed its network in `ATLAS_RUNNER_PERSONAL_NETWORKS` (comma-separated CIDR, for on-premises machines). The broker then connects to the vetted address.
+- **Contact only on request.** Atlas connects to a personal machine when its owner verifies or uses it; the periodic probe of section 8 does not apply.
+
+Code egress: the first-use approval of section 6 is kept for personal machines, once per project and machine, decided by the owner himself. Whether declaring and verifying a machine is already that consent (at least in the member's private chat workspace, where no approval card exists yet) is an open owner decision.
+
+Limits in this step: Linux and macOS accounts reached directly (no jump host), 20 machines per member, default quotas (2 parallel sessions, 10 GiB per session directory), files marked local-only never leave. Not included: a settings page, approvals inside the chat conversation, a local helper, depositing an existing private key.

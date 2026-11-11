@@ -32,6 +32,14 @@ Work session, target, directory, synced digest and last activity. Commands bind
 member, session, target, exact command, cwd, timeout, code digest, decision,
 state, duration, transferred bytes and project file references.
 
+Personal machines (design 18 section 13, owner decision 2026-11-11) are rows of
+`runner_targets` with `owner_member_id`. A member declares, verifies and deletes
+his own through `/api/atlas/orgs/{org}/machines` (`project-mode.openapi.yaml`);
+no administrator or project grant applies. Only the owner reads or uses such a
+row: retrieval, forced RLS and the runner each check the owner. The host key is
+pinned at the owner's first verification; hosts resolve to public addresses or
+operator-listed networks only. Organization targets keep the rules above.
+
 ## Execution and approvals
 
 `remote_run` freezes the scratch snapshot before approval. The first egress and
