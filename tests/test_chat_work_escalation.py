@@ -491,6 +491,76 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/deliverables/d/download", item.reponse)
         self.assertNotIn("Work failed", item.reponse)
 
+    async def test_a_failed_machine_task_is_explained_never_answered_by_the_chat_alone(
+        self,
+    ) -> None:
+        # The chat has no machine tools: falling back to it produced "I cannot
+        # access your server" after a runner limit (staging 2026-11-11).
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.code_mode import work_failure_category
+        from services.orchestrator.interactions import Interaction
+
+        req = request(
+            "Connecte-toi en SSH à ma machine Test box et dis-moi l'espace disque restant"
+        )
+        req.__dict__["native_chat_id"] = "123e4567-e89b-12d3-a456-426614174011"
+        req.__dict__["artifact_owner"] = "user@example.com"
+        item = Interaction()
+        category = work_failure_category("runner_concurrency_limit", tool_failure=True)
+        self.assertEqual(category, "machine_busy")
+
+        async def failing_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
+            i.state, i.reponse = "failed", "Work failed: runner_concurrency_limit"
+            i.erreurs.append("runner_concurrency_limit")
+            i.work_failure = {"category": category, "answer": ""}
+
+        with (
+            patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+            patch("services.orchestrator.chat_work.work_gate_open", return_value=True),
+            patch(
+                "services.orchestrator.chat_work._identity",
+                new=AsyncMock(
+                    return_value={
+                        "memberships": [
+                            {"org_id": "123e4567-e89b-12d3-a456-426614174000"}
+                        ]
+                    }
+                ),
+            ),
+            patch(
+                "services.orchestrator.chat_work._ensure_scratch_project",
+                new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174002"),
+            ),
+            patch(
+                "services.orchestrator.chat_work._find_binding",
+                new=AsyncMock(
+                    return_value={
+                        "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
+                        "work_session_id": "123e4567-e89b-12d3-a456-426614174004",
+                    }
+                ),
+            ),
+            patch("services.orchestrator.code_mode.process_work", new=failing_work),
+        ):
+            self.assertTrue(await escalate_to_work(req, item))
+        self.assertEqual((item.state, item.task_type), ("done", "work"))
+        self.assertIn("votre machine est déjà utilisée", item.reponse)
+        self.assertNotIn("Work failed", item.reponse)
+
+    def test_machine_limits_have_their_own_category_in_every_language(self) -> None:
+        from services.orchestrator.code_mode import WORK_FAILURE, work_failure_category
+
+        self.assertEqual(
+            work_failure_category("runner_minutes_limit", tool_failure=True),
+            "machine_minutes",
+        )
+        self.assertEqual(
+            work_failure_category("read refused", tool_failure=True), "tool_error"
+        )
+        for words in WORK_FAILURE.values():
+            self.assertIn("machine_busy", words)
+            self.assertIn("machine_minutes", words)
+
 
 class DeliveredFileHintTests(unittest.TestCase):
     def test_a_change_request_names_the_kind_delivered_last(self) -> None:

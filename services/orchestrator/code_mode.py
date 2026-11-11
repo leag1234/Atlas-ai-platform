@@ -146,6 +146,8 @@ WORK_FAILURE = {
         "time_limit": "the time limit was reached",
         "step_limit": "the step limit was reached",
         "budget": "the budget limit for this turn was reached",
+        "machine_busy": "your machine is already used by other conversations; try again in a few minutes",
+        "machine_minutes": "the monthly command time of this machine is used up",
         "other": "the work stopped before finishing",
     },
     "fr": {
@@ -155,6 +157,8 @@ WORK_FAILURE = {
         "time_limit": "la limite de temps a été atteinte",
         "step_limit": "la limite d'étapes a été atteinte",
         "budget": "la limite de budget de ce tour a été atteinte",
+        "machine_busy": "votre machine est déjà utilisée par d'autres conversations ; réessayez dans quelques minutes",
+        "machine_minutes": "le temps de commande mensuel de cette machine est épuisé",
         "other": "le travail s'est arrêté avant la fin",
     },
     "de": {
@@ -164,6 +168,8 @@ WORK_FAILURE = {
         "time_limit": "das Zeitlimit wurde erreicht",
         "step_limit": "das Schrittlimit wurde erreicht",
         "budget": "das Budgetlimit dieses Durchgangs wurde erreicht",
+        "machine_busy": "Ihre Maschine wird bereits von anderen Unterhaltungen genutzt; versuchen Sie es in einigen Minuten erneut",
+        "machine_minutes": "die monatliche Befehlszeit dieser Maschine ist aufgebraucht",
         "other": "die Arbeit wurde vor dem Abschluss beendet",
     },
     "es": {
@@ -173,6 +179,8 @@ WORK_FAILURE = {
         "time_limit": "se alcanzó el límite de tiempo",
         "step_limit": "se alcanzó el límite de pasos",
         "budget": "se alcanzó el límite de presupuesto de este turno",
+        "machine_busy": "su máquina ya la usan otras conversaciones; vuelva a intentarlo en unos minutos",
+        "machine_minutes": "se agotó el tiempo mensual de comandos de esta máquina",
         "other": "el trabajo se detuvo antes de terminar",
     },
     "it": {
@@ -182,6 +190,8 @@ WORK_FAILURE = {
         "time_limit": "è stato raggiunto il limite di tempo",
         "step_limit": "è stato raggiunto il limite di passaggi",
         "budget": "è stato raggiunto il limite di budget di questo turno",
+        "machine_busy": "la tua macchina è già usata da altre conversazioni; riprova tra qualche minuto",
+        "machine_minutes": "il tempo mensile dei comandi di questa macchina è esaurito",
         "other": "il lavoro si è interrotto prima della fine",
     },
 }
@@ -220,9 +230,19 @@ def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str
     return {tool: error for tool, error in failures.items() if tool not in settled}
 
 
+# A machine limit is a known, temporary state of the person's machine, said as such
+# (on staging the chat fell back to "I cannot access your server", 2026-11-11).
+MACHINE_LIMITS = {
+    "runner_concurrency_limit": "machine_busy",
+    "runner_minutes_limit": "machine_minutes",
+}
+
+
 def work_failure_category(reason: str, *, tool_failure: bool) -> str | None:
     """Map a failed Work turn reason to a public category; None is an outage."""
     if tool_failure:
+        if reason in MACHINE_LIMITS:
+            return MACHINE_LIMITS[reason]
         return "tests_failed" if reason == "tests_not_verified" else "tool_error"
     if reason == "provider_error":
         return None

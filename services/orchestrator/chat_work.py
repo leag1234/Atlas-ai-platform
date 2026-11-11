@@ -514,7 +514,12 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             item.reponse, item.task_type, item.state = produced, "work", "done"
             item.erreurs, item.work_failure = before[1], {}
             return True
-        if reply is not None and item.work_failure.get("category") != "tool_error":
+        # A machine task or code to run needs Work's tools: the chat alone would
+        # answer that it has no access, which is false. It gets the explanation.
+        needs_work = reason in {"remote", "run"} or setup
+        if reply is not None and (
+            item.work_failure.get("category") != "tool_error" or needs_work
+        ):
             # A known limit (time, steps, budget) or failing tests: the explanation,
             # with what was produced, is the finished answer of this turn.
             item.reponse, item.task_type, item.state = reply, "work", "done"
