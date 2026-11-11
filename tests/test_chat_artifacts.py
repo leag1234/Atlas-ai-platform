@@ -11,14 +11,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from services.orchestrator import artifact_store
 from services.orchestrator.chat_schema import ChatRequest
-from services.orchestrator.chat_pipeline import ChatTools
 from services.orchestrator.daily_budget import DailyLedger
 from services.orchestrator.interactions import Interaction
-from services.orchestrator.loop import Call, Result
+from services.orchestrator.loop import Result
 
 
 HTML = "<html><body><button>Run</button></body></html>"
-UPDATED_HTML = "<html><body><button>Changed</button></body></html>"
 
 
 class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
@@ -84,56 +82,37 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
                 "services.orchestrator.chat_pipeline.run",
                 new=run if run is not None else AsyncMock(return_value=result),
             ) as run,
+            patch(
+                "services.orchestrator.chat_pipeline.process_app_turn", AsyncMock()
+            ) as app_turn,
         ):
+            self.app_turn = app_turn
             from services.orchestrator.chat_pipeline import _process
 
             await _process(request, item)
         return cast(AsyncMock, run), item
 
-    async def test_create_is_offered_forced_and_configured(self) -> None:
-        events = []
-
-        from services.orchestrator.stream_client import sink_context
-
-        async def sink(event: dict[str, object]) -> None:
-            events.append(event)
-
-        token = sink_context.set(sink)
-        try:
-            run, item = await self.process(
-                self.request("Create a small web app."),
-                Result("Here it is.", "done", cost=Decimal("0.01")),
-            )
-        finally:
-            sink_context.reset(token)
-        model = run.call_args.args[1]
-        self.assertIn(
-            "create_artifact", [tool["function"]["name"] for tool in model.tools]
+    async def test_create_goes_to_the_app_turn_without_the_tool_loop(self) -> None:
+        run, item = await self.process(
+            self.request("Create a small web app."),
+            Result("Here it is.", "done", cost=Decimal("0.01")),
         )
-        # Never forced: a forced call is decoded under a JSON grammar that
-        # corrupts long HTML arguments (see chat_pipeline).
-        self.assertIsNone(model.required_file_tool)
-        self.assertEqual(
-            model.configure_quality.call_args.args[1],
-            6000,
-        )
-        self.assertEqual(model.reasoning_ceiling, "none")
-        self.assertEqual(run.call_args.args[4].cost, Decimal("0.30"))
-        self.assertIn(Path("prompts/artifact.txt").read_text(), run.call_args.args[3])
+        # The file is written in the answer of the app turn, never as the
+        # arguments of a tool call in the general loop.
+        run.assert_not_awaited()
+        self.app_turn.assert_awaited_once()
+        self.assertEqual(self.app_turn.call_args.kwargs["intent"], "create")
+        self.assertEqual(self.app_turn.call_args.kwargs["kind"], "app")
+        self.assertIsNone(self.app_turn.call_args.kwargs["current"])
         self.assertEqual(item.task_type, "artifact")
-        self.assertEqual(
-            [event for event in events if event.get("phase") == "tool_started"],
-            [{"phase": "tool_started", "tool": "create_artifact", "urls": []}],
-        )
 
-    async def test_artifact_max_tokens_is_clamped_to_gateway_limit(self) -> None:
-        with patch.dict(os.environ, {"ATLAS_ARTIFACT_MAX_TOKENS": "12000"}):
-            run, _ = await self.process(
-                self.request("Create a small web app."),
-                Result("Here it is.", "done", cost=Decimal("0.01")),
-            )
-        model = run.call_args.args[1]
-        self.assertEqual(model.configure_quality.call_args.args[1], 6000)
+    async def test_svg_request_is_a_drawing_turn(self) -> None:
+        run, item = await self.process(
+            self.request("Dessine un chat en SVG."),
+            Result("Here it is.", "done", cost=Decimal("0.01")),
+        )
+        run.assert_not_awaited()
+        self.assertEqual(self.app_turn.call_args.kwargs["kind"], "drawing")
 
     async def test_feature_off_is_byte_identical(self) -> None:
         os.environ.pop("ATLAS_ARTIFACTS")
@@ -153,180 +132,59 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.call_args.args[4].cost, Decimal("0.10"))
         self.assertEqual(item.task_type, "text")
 
-    async def test_successful_create_composes_footer_and_journal(self) -> None:
-        arguments = {
-            "title": "Runner",
-            "filename": "runner.html",
-            "content": HTML,
-            "summary": "A simple app.",
-        }
-        result = Result("Here it is.", "done", cost=Decimal("0.01"))
-        result.trace = [
-            {
-                "tool": "create_artifact",
-                "arguments": json.dumps(arguments),
-                "output": {"ok": True},
-            }
-        ]
-
-        async def execute_artifact(
-            query: object,
-            model: object,
-            tools: ChatTools,
-            system: object,
-            limits: object,
-            **kwargs: object,
-        ) -> Result:
-            assert tools.artifacts is not None
-            output = await tools.artifacts.execute(
-                Call("call-1", "create_artifact", json.dumps(arguments)), 1
-            )
-            result.trace = [
-                {
-                    "tool": "create_artifact",
-                    "arguments": json.dumps(arguments),
-                    "output": output,
-                }
-            ]
-            return result
-
-        _, item = await self.process(
-            self.request("Create a small web app."), run=execute_artifact
-        )
-        artifact = item.artifacts[0]
-        self.assertEqual(set(artifact), {"id", "version", "bytes", "sha256"})
-        self.assertEqual(artifact["bytes"], len(HTML.encode()))
-        self.assertIn("/api/atlas/artifacts/", item.reponse)
-        self.assertIn(
-            f"[Télécharger runner.html](/api/atlas/artifacts/{artifact['id']}/versions/"
-            f"{artifact['version']}/download)",
-            item.reponse,
-        )
-        self.assertIn(
-            f"[Ouvrir « Runner » (version {artifact['version']})]"
-            f"(/api/atlas/artifacts/{artifact['id']}/versions/{artifact['version']}/open#",
-            item.reponse,
-        )
-        self.assertIn("A simple app.", item.reponse)
-        self.assertIn("artifact_ready", item.latence_ms)
-        artifact_id = str(artifact["id"])
-        self.assertEqual(
-            artifact_store.read(artifact_id, "owner@example.test", 1).content,
-            HTML.encode(),
-        )
-        with self.assertRaises(artifact_store.ArtifactError):
-            artifact_store.read(artifact_id, "user@example.test", 1)
-        self.assertEqual(
-            {"generate_image", "create_artifact"},
-            frozenset({"generate_image", "create_artifact"}),
-        )
-
-    async def test_modify_and_available_are_not_forced(self) -> None:
+    def history(self) -> tuple[str, list[dict[str, str]]]:
         created = artifact_store.create(
             "user@example.test", "Runner", "runner.html", HTML.encode(), "request-1"
         )
         artifact_id = str(created["id"])
-        history = [
+        return artifact_id, [
             {
                 "role": "assistant",
                 "content": f"/api/atlas/artifacts/{artifact_id}/versions/1/open",
             }
         ]
+
+    async def test_follow_up_passes_the_current_artifact(self) -> None:
+        artifact_id, history = self.history()
         run, item = await self.process(
             self.request("Change the app.", history),
             Result("Changed.", "done", cost=Decimal("0.01")),
+            artifact_owner="user@example.test",
         )
-        model = run.call_args.args[1]
-        self.assertIn(
-            "create_artifact", [tool["function"]["name"] for tool in model.tools]
-        )
-        self.assertIsNone(model.required_file_tool)
+        run.assert_not_awaited()
         self.assertEqual(item.task_type, "artifact")
+        self.assertEqual(self.app_turn.call_args.kwargs["intent"], "modify")
+        current = self.app_turn.call_args.kwargs["current"]
+        self.assertEqual(current.artifact["artifact_id"], artifact_id)
+        self.assertEqual(current.artifact["content"], HTML)
+        self.assertNotIn(artifact_id, str(current.message["content"]))
 
-    async def test_stable_mode_keeps_artifact_tool(self) -> None:
+    async def test_stable_mode_keeps_the_app_turn(self) -> None:
         os.environ["ATLAS_STABLE"] = "1"
         run, _ = await self.process(
             self.request("Create a small web app."),
             Result("Here it is.", "done", cost=Decimal("0.01")),
         )
-        model = run.call_args.args[1]
-        self.assertIn(
-            "create_artifact", [tool["function"]["name"] for tool in model.tools]
-        )
+        run.assert_not_awaited()
+        self.app_turn.assert_awaited_once()
 
-    async def test_dessine_reaches_tool_loop_with_current_artifact(self) -> None:
-        created = artifact_store.create(
-            "user@example.test", "Runner", "runner.html", HTML.encode(), "request-1"
-        )
-        artifact_id = str(created["id"])
-        history = [
-            {
-                "role": "assistant",
-                "content": f"/api/atlas/artifacts/{artifact_id}/versions/1/open",
-            }
-        ]
-        with patch(
-            "services.orchestrator.chat_pipeline.images_enabled", return_value=True
-        ):
-            run, _ = await self.process(
-                self.request("Dessine le bouton en rouge.", history),
-                Result("Changed.", "done", cost=Decimal("0.01")),
-                artifact_owner="user@example.test",
-            )
-        model = run.call_args.args[1]
-        self.assertIn(
-            "create_artifact", [tool["function"]["name"] for tool in model.tools]
-        )
-        history = run.call_args.kwargs["history"]
-        self.assertTrue(
-            all(
-                isinstance(message, dict)
-                and message.get("role") is not None
-                and message.get("content") is not None
-                for message in history
-            )
-        )
-        self.assertEqual(history[-1]["role"], "system")
-        self.assertIn("current_artifact", str(history[-1]["content"]))
-        self.assertIn(artifact_id, str(history[-1]["content"]))
-
-    async def test_dessine_reaches_tool_loop_with_current_artifact_images_disabled(
-        self,
-    ) -> None:
-        created = artifact_store.create(
-            "user@example.test", "Runner", "runner.html", HTML.encode(), "request-1"
-        )
-        artifact_id = str(created["id"])
-        history = [
-            {
-                "role": "assistant",
-                "content": f"/api/atlas/artifacts/{artifact_id}/versions/1/open",
-            }
-        ]
-        with patch(
-            "services.orchestrator.chat_pipeline.images_enabled", return_value=False
-        ):
-            run, _ = await self.process(
-                self.request("Dessine le bouton en rouge.", history),
-                Result("Changed.", "done", cost=Decimal("0.01")),
-                artifact_owner="user@example.test",
-            )
-        model = run.call_args.args[1]
-        self.assertIn(
-            "create_artifact", [tool["function"]["name"] for tool in model.tools]
-        )
-        history = run.call_args.kwargs["history"]
-        self.assertTrue(
-            all(
-                isinstance(message, dict)
-                and message.get("role") is not None
-                and message.get("content") is not None
-                for message in history
-            )
-        )
-        self.assertEqual(history[-1]["role"], "system")
-        self.assertIn("current_artifact", str(history[-1]["content"]))
-        self.assertIn(artifact_id, str(history[-1]["content"]))
+    async def test_dessine_changes_the_current_artifact(self) -> None:
+        for images in (True, False):
+            with self.subTest(images=images):
+                artifact_id, history = self.history()
+                with patch(
+                    "services.orchestrator.chat_pipeline.images_enabled",
+                    return_value=images,
+                ):
+                    run, _ = await self.process(
+                        self.request("Dessine le bouton en rouge.", history),
+                        Result("Changed.", "done", cost=Decimal("0.01")),
+                        artifact_owner="user@example.test",
+                    )
+                run.assert_not_awaited()
+                self.assertEqual(self.app_turn.call_args.kwargs["intent"], "modify")
+                current = self.app_turn.call_args.kwargs["current"]
+                self.assertEqual(current.artifact["artifact_id"], artifact_id)
 
     async def test_daily_reservation_remains_text_ceiling(self) -> None:
         from decimal import Decimal
@@ -352,6 +210,7 @@ class ChatArtifactTests(unittest.IsolatedAsyncioTestCase):
             "create_artifact", [tool["function"]["name"] for tool in model.tools]
         )
         self.assertIsNone(model.required_file_tool)
+        self.app_turn.assert_not_awaited()
         self.assertEqual(item.task_type, "text")
         self.assertEqual(run.call_args.args[4].cost, Decimal("0.10"))
 

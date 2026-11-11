@@ -114,7 +114,9 @@ def response(
             description = activity_description or str(
                 activity_labels.get("done" if done else activity, activity)
             )
-            if guest:
+            if guest and not (
+                activity == "artifact_progress" and activity_description and not done
+            ):
                 from services.orchestrator.guest_activity import activity_label
 
                 description = activity_label(language, "done" if done else activity)
@@ -382,6 +384,14 @@ def response(
                         activity_description = synthesis.get(language, synthesis["en"])
                 elif phase == "narration":
                     activity = "thinking"
+                elif phase == "artifact_progress":
+                    # Service-owned progress of an app or drawing turn ("Writing
+                    # the app… 120 lines"): the file itself is never streamed.
+                    activity = "artifact_progress"
+                    description = event.get("description")
+                    activity_description = (
+                        str(description) if isinstance(description, str) else ""
+                    )
                 elif phase == "generating":
                     activity = (
                         "thinking"

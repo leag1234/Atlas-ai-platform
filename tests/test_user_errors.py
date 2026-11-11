@@ -2,7 +2,7 @@
 
 import unittest
 
-from packages.user_errors import ui_failure
+from packages.user_errors import app_failure, ui_failure
 
 
 class UserErrorTests(unittest.TestCase):
@@ -31,6 +31,19 @@ class UserErrorTests(unittest.TestCase):
         ):
             with self.subTest(code=code):
                 self.assertIsNone(ui_failure(code, "fr"))
+
+    def test_app_and_drawing_failures_offer_a_retry_in_every_language(self) -> None:
+        for language in ("fr", "en", "de", "es", "it"):
+            for kind in ("app", "drawing"):
+                for timeout in (False, True):
+                    with self.subTest(language=language, kind=kind, timeout=timeout):
+                        text = app_failure(kind, language, timeout=timeout)
+                        self.assertNotIn("_", text)
+                        self.assertEqual(text.count("."), 2)
+            unchanged = app_failure("app", language, unchanged_version=3)
+            self.assertIn("3", unchanged)
+        self.assertIn("Renvoyez votre message", app_failure("drawing", "fr"))
+        self.assertEqual(app_failure("app", "pt"), app_failure("app", "en"))
 
 
 if __name__ == "__main__":

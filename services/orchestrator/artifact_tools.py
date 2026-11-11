@@ -1,37 +1,20 @@
-"""Declaration and execution of the terminal HTML artefact tool."""
+"""Current app of a conversation, and the answer footer that links to it.
+
+The app or drawing itself is written by the model in its answer and stored by
+services/orchestrator/app_turn.py; no tool carries it.
+"""
 
 from __future__ import annotations
 
 import json
 import re
 from dataclasses import dataclass
-from typing import Annotated
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from packages.artifact_html import quote_attributes, validate
 from services.orchestrator import artifact_store
 from services.orchestrator.artifact_store import ArtifactError
-from services.orchestrator.loop import Call, Message
+from services.orchestrator.loop import Message
 
-
-class CreateArtifact(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    title: Annotated[str, Field(min_length=1, max_length=80, pattern=r"^[^\n\r\[\]]+$")]
-    filename: Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,60}\.html$")]
-    content: str = Field(min_length=1)
-    summary: Annotated[str, Field(min_length=1, max_length=600)]
-    artifact_id: Annotated[
-        str | None, Field(default=None, pattern=r"^[0-9a-f]{32}$")
-    ] = None
-
-
-DESCRIPTION = (
-    "Deliver a small interactive web app as one self-contained HTML file that runs "
-    "in the Atlas preview. Inline all CSS and JavaScript; no external URL or network "
-    "access. To change the current app, pass its artifact_id and the complete new file."
-)
 
 FOOTER_LABELS: dict[str, dict[str, str]] = {
     "en": {
@@ -89,26 +72,11 @@ HISTORY_REFERENCE_PATTERN = re.compile(
     r"/api/atlas/artifacts/([0-9a-f]{32})/versions/([1-9][0-9]{0,3})/open"
 )
 MAX_CURRENT_ARTIFACT_BYTES = 96 * 1024
-MAX_PROBLEMS = 10
-MAX_DETAIL_CHARS = 80
 PROBLEM_DETAILS = {
     "dialog_api": "show the message inside the page",
     "script_syntax": "this script does not parse (check braces, brackets, "
     "parentheses and quotes); send the complete corrected file",
 }
-
-
-def declarations() -> list[Message]:
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": "create_artifact",
-                "description": DESCRIPTION,
-                "parameters": CreateArtifact.model_json_schema(),
-            },
-        }
-    ]
 
 
 @dataclass(frozen=True)
@@ -125,8 +93,9 @@ class CurrentArtifact:
 
 
 CURRENT_ARTIFACT_PREFIX = (
-    "Current app (update it with create_artifact and its artifact_id): "
+    "Current app of this conversation (context only; Atlas applies changes to it): "
 )
+_FRAGMENT_TITLE = re.compile(r"#[^)\s]*?\btitle=([^&)\s]*)")
 
 
 def parse_history_reference(messages: list[Message]) -> ArtifactReference | None:
@@ -138,10 +107,19 @@ def parse_history_reference(messages: list[Message]) -> ArtifactReference | None
         if not isinstance(content, str):
             continue
         for match in HISTORY_REFERENCE_PATTERN.finditer(content):
+            # The footer link carries the stored title in its fragment; older
+            # answers only have the link label.
+            fragment = _FRAGMENT_TITLE.match(content, match.end())
             title_match = re.search(
                 rf"\[([^\]]+)\]\({re.escape(match.group(0))}", content
             )
-            title = title_match.group(1) if title_match else ""
+            title = (
+                unquote(fragment.group(1))
+                if fragment
+                else title_match.group(1)
+                if title_match
+                else ""
+            )
             reference = ArtifactReference(match.group(1), int(match.group(2)), title)
     return reference
 
@@ -180,11 +158,12 @@ def current_artifact_message(
         artifact["content"] = version.content.decode("utf-8")
     else:
         artifact["note"] = "source too large to include"
+    visible = {key: value for key, value in artifact.items() if key != "artifact_id"}
     return CurrentArtifact(
         {
             "role": "system",
             "content": CURRENT_ARTIFACT_PREFIX
-            + json.dumps({"current_artifact": artifact}, ensure_ascii=False),
+            + json.dumps({"current_artifact": visible}, ensure_ascii=False),
         },
         artifact,
     )
@@ -206,12 +185,14 @@ def footer(
     title: str,
     filename: str,
     language: str,
+    *,
+    temporary: bool = True,
 ) -> str:
     labels = FOOTER_LABELS.get(language, FOOTER_LABELS["en"])
     prefix = f"/api/atlas/artifacts/{artifact_id}/versions/{version}"
-    fragment = quote(
-        f"atlas-view=app&title={title}&artifact={artifact_id}&version={version}&slot=top",
-        safe="=&",
+    fragment = (
+        f"atlas-view=app&title={quote(title, safe='')}"
+        f"&artifact={artifact_id}&version={version}&slot=top"
     )
     open_label = labels["open"].format(title=title, version=version)
     download_label = labels["download"].format(filename=filename)
@@ -219,7 +200,7 @@ def footer(
         f"[{_markdown_escape(open_label)}]({prefix}/open#{fragment}) · "
         f"[{_markdown_escape(download_label)}]({prefix}/download)"
     )
-    if version == 1:
+    if version == 1 and temporary:
         text += f"\n\n{labels['temporary']}"
     return text
 
@@ -227,115 +208,6 @@ def footer(
 def unchanged_footer(version: int, language: str) -> str:
     labels = FOOTER_LABELS.get(language, FOOTER_LABELS["en"])
     return labels["unchanged"].format(version=version)
-
-
-class ArtifactToolRuntime:
-    """Per-turn state for the terminal artefact tool."""
-
-    def __init__(
-        self,
-        identity: str | None,
-        request_id: str,
-        current_artifact_id: str | None = None,
-        current_version: int | None = None,
-    ) -> None:
-        self.identity = identity
-        self.request_id = request_id
-        self.current_artifact_id = current_artifact_id
-        self.current_version = current_version
-        self.calls = 0
-        self.failures = 0
-        self.offered = True
-        self.forced = True
-
-    def _failure(self, error: str, **details: object) -> Message:
-        self.failures += 1
-        if self.failures >= 2:
-            self.offered = False
-            return {
-                "error": "artifact_rejected",
-                "detail": "explain in one or two sentences why the app could not be produced",
-            }
-        return {"error": error, **details}
-
-    async def execute(self, call: Call, timeout: float) -> Message:
-        if not self.offered or self.calls >= 2:
-            return self._failure("artifact_rejected")
-        self.calls += 1
-        self.forced = False
-        try:
-            arguments = CreateArtifact.model_validate_json(call.arguments)
-        except ValidationError as error:
-            return self._failure(
-                "artifact_invalid",
-                problems=[
-                    {"code": "invalid_arguments", "line": 1, "detail": str(error)[:80]}
-                ],
-            )
-        if arguments.artifact_id != self.current_artifact_id:
-            return self._failure("artifact_unknown")
-        arguments.content = quote_attributes(arguments.content)
-        problems = validate(arguments.content)
-        if problems:
-            return self._failure(
-                "artifact_invalid",
-                problems=[
-                    {
-                        "code": problem.code,
-                        "line": problem.line,
-                        "detail": PROBLEM_DETAILS.get(
-                            problem.code,
-                            arguments.content.splitlines()[problem.line - 1][
-                                :MAX_DETAIL_CHARS
-                            ]
-                            if problem.line <= len(arguments.content.splitlines())
-                            else "",
-                        ),
-                    }
-                    for problem in problems[:MAX_PROBLEMS]
-                ],
-            )
-        content = arguments.content.encode("utf-8")
-        try:
-            if arguments.artifact_id is None:
-                result = artifact_store.create(
-                    self.identity,
-                    arguments.title,
-                    arguments.filename,
-                    content,
-                    self.request_id,
-                )
-            else:
-                result = artifact_store.update(
-                    arguments.artifact_id,
-                    self.identity,
-                    arguments.title,
-                    arguments.filename,
-                    content,
-                    self.request_id,
-                    self.current_version,
-                )
-        except ArtifactError as error:
-            code = {
-                "artifact_owner_required": "artifact_unknown",
-                "artifact_invalid": "artifact_invalid",
-                "artifact_not_found": "artifact_unknown",
-                "artifact_conflict": "artifact_unknown",
-                "artifact_quota": "artifact_quota",
-                "artifact_store_unavailable": "artifact_unavailable",
-                "artifact_unavailable": "artifact_unavailable",
-            }.get(error.code, "artifact_unavailable")
-            return self._failure(code)
-        artifact_id = str(result["id"])
-        version = int(result["version"])
-        self.current_artifact_id = artifact_id
-        self.current_version = version
-        return {
-            "ok": True,
-            "artifact_id": artifact_id,
-            "version": version,
-            "bytes": len(content),
-        }
 
 
 def compose_answer(
@@ -346,16 +218,12 @@ def compose_answer(
     title: str,
     filename: str,
     language: str,
+    *,
+    temporary: bool = True,
 ) -> str:
     cleaned = clean_summary(summary)
     parts = [part for part in (prose, cleaned) if part]
-    parts.append(footer(artifact_id, version, title, filename, language))
+    parts.append(
+        footer(artifact_id, version, title, filename, language, temporary=temporary)
+    )
     return "\n\n".join(parts)
-
-
-def tool_message(content: Message) -> Message:
-    return {
-        "role": "tool",
-        "tool_call_id": "",
-        "content": json.dumps(content, ensure_ascii=False),
-    }

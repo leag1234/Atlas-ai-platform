@@ -60,6 +60,12 @@ def _limits() -> tuple[int, int, int, int]:
     )
 
 
+def quota_limits() -> tuple[int, int]:
+    """New versions allowed per owner and hour, and versions kept per owner."""
+    versions_per_hour, max_versions, _, _ = _limits()
+    return versions_per_hour, max_versions
+
+
 def _safe_path(path: Path) -> bool:
     return not any(part.is_symlink() for part in path.parents) and not path.is_symlink()
 
