@@ -209,7 +209,11 @@ class DocumentRenderTests(unittest.TestCase):
                 )
 
     def test_unsupported_glyph_and_huge_heading_fail(self) -> None:
-        for title in (chr(0x1F680), "x" * 4000):
+        # A script the face does not cover is refused when laid out; an emoji
+        # is dropped, so a title made of one only is blank and refused.
+        for title in ("\u4e2d\u6587", "x" * 4000):
             content = Content(title=title, sections=self.content.sections)
             with self.assertRaises(ValueError):
                 render(content, self.root / "reject.pdf", image_root=self.root)
+        with self.assertRaises(ValueError):
+            Content(title=chr(0x1F680), sections=self.content.sections)
