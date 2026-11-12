@@ -17,6 +17,58 @@ from services.orchestrator.stream_client import sink_context
 
 
 class TrialStatusLanguageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_caveat_in_the_progress_block_follows_the_language(
+        self,
+    ) -> None:
+        from services.orchestrator.chat_pipeline import search_failure_notice
+        from services.orchestrator.searxng import NOTICES
+
+        payload = ChatRequest.model_validate(
+            {
+                "model": "atlas-qwen",
+                "atlas_ui": True,
+                "stream": True,
+                "ui_locale": "fr",
+                "messages": [{"role": "user", "content": "Les horaires du musée ?"}],
+            }
+        )
+
+        async def work(request: ChatRequest, item: Interaction) -> None:
+            sink = sink_context.get()
+            assert sink is not None
+            await sink({"phase": "tool_started", "tool": "web_search"})
+            await sink(
+                {
+                    "phase": "tool_finished",
+                    "tool": "web_search",
+                    "urls": ["https://example.org/a"],
+                    "ok": True,
+                    "outcome": "partial_results",
+                    "message": NOTICES["partial_results"],
+                }
+            )
+            item.reponse, item.state = "Réponse utile.", "done"
+            await sink({"delta": {"content": item.reponse}})
+
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
+        ):
+            stream = response(payload, Interaction(), time.monotonic(), work)
+            rows = [
+                json.loads(str(line).removeprefix("data: "))
+                async for line in stream.body_iterator
+                if str(line).startswith("data: {")
+            ]
+        content = "".join(
+            str(row["choices"][0]["delta"].get("content", ""))
+            for row in rows
+            if row.get("choices")
+        )
+        self.assertIn(search_failure_notice("partial_results", "fr"), content)
+        self.assertNotIn(NOTICES["partial_results"], content)
+        self.assertIn("https://example.org/a", content)
+
     async def test_trial_locale_precedence_and_conversation_fallback(self) -> None:
         french = "Bonjour, explique pourquoi le ciel est bleu pendant la journée."
         english = "Please explain why the sky looks blue during the daytime."
