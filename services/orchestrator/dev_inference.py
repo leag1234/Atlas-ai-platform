@@ -203,7 +203,9 @@ def provider_failure(exc: BaseException) -> dict[str, dict[str, Any]]:
             "error": {
                 "type": "provider_quota",
                 "message": "The model provider refused the request: account credit exhausted.",
-                "provider_status": 402,
+                # The status the provider really sent: a credit refusal may
+                # arrive on another status than 402.
+                "provider_status": status if isinstance(status, int) else 402,
             }
         }
     if str(exc) == "provider_timeout" or status == 504:
