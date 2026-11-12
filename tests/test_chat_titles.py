@@ -5,6 +5,7 @@ import json
 import os
 import unittest
 from decimal import Decimal
+from typing import Any
 from unittest import mock
 
 from services.orchestrator.title import (
@@ -59,8 +60,10 @@ class HeuristicTitleTests(unittest.TestCase):
 
 
 class ModelTitleTests(unittest.TestCase):
-    def run_answer(self, question: str, result: object) -> tuple[dict, Decimal]:
-        async def complete(body: dict, seconds: float) -> dict:
+    def run_answer(
+        self, question: str, result: object
+    ) -> tuple[dict[str, object], Decimal]:
+        async def complete(body: dict[str, Any], seconds: float) -> dict[str, Any]:
             if isinstance(result, Exception):
                 raise result
             return result  # type: ignore[return-value]
@@ -96,7 +99,7 @@ class ModelTitleTests(unittest.TestCase):
         self.assertEqual(answer, {"title": "Write a haiku about rain"})
 
     def test_flag_off_makes_no_call(self) -> None:
-        async def complete(body: dict, seconds: float) -> dict:
+        async def complete(body: dict[str, Any], seconds: float) -> dict[str, Any]:
             raise AssertionError("no call expected")
 
         with mock.patch.dict(os.environ, {"ATLAS_MODEL_TITLES": ""}):
