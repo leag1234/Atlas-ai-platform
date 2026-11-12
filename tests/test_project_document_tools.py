@@ -301,6 +301,43 @@ class ProjectDocumentToolsTests(unittest.TestCase):
                     30,
                 )
             )
+        # A name, a path, a link or a number is not a reference: the refusal is
+        # named and says what to do, never Python's own UUID message, and nothing
+        # is fetched (staging 2026-11-12, a spreadsheet read by its file name).
+        fetched = execution.broker.content.await_count
+        for wrong in (
+            dict(file_id="budget (3).xlsx", version="1"),
+            dict(file_id=file_id, version="latest"),
+            dict(file_id="/deliverables/" + file_id + "/download", version=version),
+            dict(file_id="", version=""),
+        ):
+            with self.subTest(wrong=wrong):
+                with self.assertRaises(ValueError) as refused:
+                    asyncio.run(
+                        project_document_tools.execute(
+                            tools, "read_document", json.dumps(wrong), 30
+                        )
+                    )
+                self.assertNotIsInstance(refused.exception, ProjectError)
+                message = str(refused.exception)
+                self.assertTrue(message.startswith("unknown_file_reference: "))
+                self.assertIn("read_input", message)
+                self.assertNotIn("hexadecimal", message)
+        with self.assertRaisesRegex(ValueError, "^unknown_file_reference: "):
+            asyncio.run(
+                project_document_tools.execute(
+                    tools,
+                    "compare_documents",
+                    json.dumps(
+                        dict(
+                            left=dict(file_id=file_id, version=version),
+                            right=dict(file_id="report.docx", version="2"),
+                        )
+                    ),
+                    30,
+                )
+            )
+        self.assertEqual(execution.broker.content.await_count, fetched + 1)
         execution.broker.call = AsyncMock(
             return_value=dict(mode="preview", operations=[], files=[])
         )

@@ -211,6 +211,61 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNone(await request_router.route(req))
         gateway.assert_not_awaited()
 
+    async def test_questions_about_an_attached_document_are_not_routed(self) -> None:
+        # The chat reads attachments itself: whatever the wording, the language
+        # or the way the file arrives, no routing call is made, so the turn can
+        # never be handed to Work, which does not receive the attachment.
+        gateway = AsyncMock(return_value=reply('{"kind": "run"}'))
+        document = {
+            "filename": "note.pdf",
+            "file_data": "data:application/pdf;base64,AA",
+        }
+        tag = (
+            '<attached_files>\n<file type="filesystem" url="f1" '
+            'content_type="application/pdf" name="note.pdf"/>\n</attached_files>\n'
+        )
+        questions = [
+            "Résume ce document en 5 points et donne son numéro de référence officiel.",
+            "resume moi ca stp",
+            "c'est quoi le numero de reference ?",
+            "Summarise this file and list the key dates",
+            "what does it say about the budget?",
+            "Count the pages of the attached PDF with the terminal",
+            "Fasse dieses Dokument in fünf Punkten zusammen",
+            "Wie lautet das Aktenzeichen?",
+            "Resume este archivo en cinco puntos",
+            "¿Cuál es el número de referencia oficial?",
+            "Riassumi il file allegato",
+            "Qual è il numero di riferimento?",
+        ]
+        cases = []
+        for question in questions:
+            cases.append(request(question, documents=[document]))
+            cases.append(request(tag + question))
+            # A later question in a conversation whose first message had the file.
+            cases.append(
+                request(
+                    question,
+                    history=[
+                        {"role": "user", "content": tag + "Read this"},
+                        {"role": "assistant", "content": "It is a note."},
+                    ],
+                )
+            )
+        with (
+            router_on(),
+            patch("services.orchestrator.request_router._gateway", gateway),
+        ):
+            for req in cases:
+                with self.subTest(text=req.user_text):
+                    self.assertTrue(req.has_attachments)
+                    self.assertFalse(request_router.eligible(req))
+                    self.assertIsNone(await request_router.route(req))
+                    self.assertIsNone(request_router.decision(req))
+                    # A read of 30 000 tokens is not a 120 s chat answer.
+                    self.assertEqual(req.timeout_seconds, 300.0)
+        gateway.assert_not_awaited()
+
     async def test_decision_is_ignored_when_the_flag_is_off(self) -> None:
         req = routed(request("Write a poem"), kind="file", file_format="pdf")
         with patch.dict(os.environ, {}, clear=False):
