@@ -484,6 +484,11 @@ class WorkTools(CodeTools):
         self.web: Any = None
         self.web_lang = "en"
         self.approvals_unattended = False
+        # The hidden chat project (chat_file_names.py): a taken name becomes a
+        # numbered copy. earlier_answers are this chat's answers, whose links
+        # say which files this conversation saved.
+        self.numbered_copies = False
+        self.earlier_answers: list[str] = []
         # The one office format the request names, as a suffix (".docx"), or None.
         self.requested_suffix: str | None = None
         self.remote_references: Any = None

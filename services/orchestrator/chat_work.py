@@ -499,6 +499,16 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
     )
     scoped._project_subject = subject
     scoped.__dict__["approvals_unattended"] = True
+    # The project is shared by all of this person's chats: a name another
+    # conversation took is saved as a numbered copy, never overwritten. The
+    # earlier answers (full text, links included) say which files are this
+    # conversation's own.
+    scoped.__dict__["numbered_copies"] = True
+    scoped.__dict__["earlier_answers"] = [
+        message.text
+        for message in request.conversation_messages[:-1]
+        if message.role == "assistant" and message.text.strip()
+    ]
     if setup:
         scoped.__dict__["machine_setup_pending"] = True
     before = (item.state, list(item.erreurs), item.reponse)

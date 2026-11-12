@@ -946,6 +946,112 @@ class ProjectDeliverableTests(ProjectWorkTests):
                 receipt["source_version_ids"], [s["version"] for s in sources]
             )
 
+    def test_chat_files_take_numbered_copies_and_project_names_stay(self) -> None:
+        """The hidden chat project numbers a taken name; project mode keeps -2."""
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+
+        self.publication_setup()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            chat = WorkTools(workspace, execution)
+            chat.numbered_copies = True
+            project = WorkTools(workspace, execution)
+
+            async def publish(
+                tools: Any, path: str, text: str, strategy: str = "created"
+            ) -> dict[str, Any]:
+                reply = await tools.execute(
+                    Call(
+                        str(uuid4()),
+                        "publish_document",
+                        json.dumps(
+                            dict(path=path, content=text, sources=[], strategy=strategy)
+                        ),
+                    ),
+                    60,
+                )
+                self.assertNotIn("error", reply, reply)
+                return dict(reply)
+
+            async def run() -> list[dict[str, Any]]:
+                return [
+                    await publish(chat, "tracker.csv", "day,km\nmonday,5\n"),
+                    await publish(chat, "tracker.csv", "day,km\ntuesday,7\n"),
+                    await publish(chat, "tracker.csv", "day,km\nfriday,9\n"),
+                    # A regeneration under a taken name is a copy too, never a failure.
+                    await publish(
+                        chat, "tracker.csv", "day,km\nsunday,12\n", "regenerated"
+                    ),
+                    await publish(project, "plan.md", "# Plan\n\nOne.\n"),
+                    await publish(project, "plan.md", "# Plan\n\nTwo.\n"),
+                ]
+
+            replies = asyncio.run(run())
+        self.assertEqual(
+            [r["deliverable"].get("relative_path") for r in replies[:4]],
+            ["tracker.csv", "tracker (2).csv", "tracker (3).csv", "tracker (4).csv"],
+        )
+        self.assertNotIn("note", replies[0])
+        self.assertIn("saved as tracker (2).csv", replies[1]["note"])
+        self.assertIn("Download tracker (2).csv", replies[1]["text"])
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            delivered = files.listing(
+                "file", scope.project_data["deliverables_folder_id"]
+            )
+            names = sorted(f["relative_path"] for f in delivered)
+            # Nothing was overwritten: one version per file.
+            identifiers = {f["id"] for f in delivered}
+            versions = [
+                v for v in files.listing("version") if v["file_id"] in identifiers
+            ]
+        self.assertEqual(
+            names,
+            [
+                "plan-2.md",
+                "plan.md",
+                "tracker (2).csv",
+                "tracker (3).csv",
+                "tracker (4).csv",
+                "tracker.csv",
+            ],
+        )
+        self.assertEqual(len(versions), len(names))
+        # Each copy downloads its own bytes.
+        self.assertEqual(
+            self.request(
+                "GET", replies[1]["deliverable"]["download_route"], "viewer"
+            ).content,
+            b"day,km\ntuesday,7\n",
+        )
+
 
 class BoundedDeliverableTests(unittest.TestCase):
     def test_trusted_builder_reopens_all_formats_and_refuses_missing_source_content(

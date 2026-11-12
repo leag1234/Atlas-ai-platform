@@ -216,6 +216,39 @@ def place(
     return default, path
 
 
+def chat_target(
+    relative: str,
+    content: bytes | None,
+    folder_id: str,
+    existing: dict[str, dict[str, Any]],
+    answers: list[str],
+    project: str,
+) -> str | None:
+    """In the hidden chat project, the existing file a workspace file stands for.
+
+    The name or one of its numbered copies holding the same bytes (linked as it
+    is), else the one this conversation's answers linked last (updated in place,
+    the overwrite being approved automatically there). None when the name is
+    free or taken only by other conversations: the file is then saved under
+    its name or as a numbered copy.
+    """
+    from services.orchestrator.chat_file_names import (
+        family,
+        folder_names,
+        last_delivered,
+    )
+
+    names = family(relative, folder_names(existing, folder_id))
+    if not names:
+        return None
+    if content is not None:
+        digest = hashlib.sha256(content).hexdigest()
+        for name in names:
+            if existing[folder_id + "/" + name].get("sha256") == digest:
+                return name
+    return last_delivered(names, answers, project)
+
+
 async def save_new_files(
     execution: Any, workspace: Any, tools: Any, base: Any
 ) -> dict[str, Any]:
@@ -272,7 +305,23 @@ async def _export_and_save_new_files(
         folder_id = default or placed[0]
         if path in bases:
             continue
-        if folder_id + "/" + relative in existing:
+        numbered = bool(getattr(tools, "numbered_copies", False))
+        if numbered:
+            target = chat_target(
+                relative,
+                contents.get(path),
+                folder_id,
+                existing,
+                getattr(tools, "earlier_answers", []),
+                execution.broker.project,
+            )
+            if target is not None:
+                # The same bytes are already there, or this conversation saved
+                # the file: linked as it is, or updated (auto-approved overwrite).
+                report["modified"].append(path)
+                report.setdefault("targets", {})[path] = folder_id + "/" + target
+                continue
+        elif folder_id + "/" + relative in existing:
             # Created by an earlier turn of this session (kept workspace), so
             # already a project file: saving it is an overwrite, with approval.
             report["modified"].append(path)
@@ -309,15 +358,42 @@ async def _export_and_save_new_files(
             report["skipped"].append({"path": path, "reason": "folder_unavailable"})
             continue
         try:
-            receipt = await publisher.publish(
-                document,
-                relative,
-                "created",
-                source_version_ids,
-                folder["revision"],
-                str(uuid4()),
-                60,
-            )
+            if numbered:
+                # A name another conversation took is saved as a numbered copy;
+                # a folder moved by a publication meanwhile is retried.
+                from services.orchestrator.chat_file_names import (
+                    folder_names,
+                    folder_revision,
+                    publish_copy,
+                )
+
+                receipt, relative = await publish_copy(
+                    lambda name, revision: publisher.publish(
+                        document,
+                        name,
+                        "created",
+                        source_version_ids,
+                        revision,
+                        str(uuid4()),
+                        60,
+                    ),
+                    relative,
+                    folder_names(existing, folder_id),
+                    lambda: folder_revision(execution, folder_id),
+                )
+                existing[folder_id + "/" + relative] = dict(
+                    file_id=receipt.get("id"), relative_path=relative
+                )
+            else:
+                receipt = await publisher.publish(
+                    document,
+                    relative,
+                    "created",
+                    source_version_ids,
+                    folder["revision"],
+                    str(uuid4()),
+                    60,
+                )
         except ProjectError as error:
             # One refused file never fails the turn: it is reported, not saved.
             report["skipped"].append(
@@ -366,9 +442,11 @@ async def save_modified_files(
     folder_ids = {str(f["id"]) for f in items}
     default = await deliverables_folder(execution) or root_folder(items)
     deadline = time.monotonic() + 300
+    targets = report.get("targets") or {}
     for path in modified:
         placed = place(path, folder_ids, default)
-        entry = bases.get(placed[0] + "/" + placed[1]) if placed else None
+        key = targets.get(path) or (placed[0] + "/" + placed[1] if placed else None)
+        entry = bases.get(key) if key else None
         if entry is None:
             report.setdefault("not_saved", []).append(
                 {"path": path, "reason": "no_base_file"}

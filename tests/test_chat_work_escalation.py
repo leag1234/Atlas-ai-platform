@@ -193,9 +193,11 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
         item = Interaction()
         calls: list[dict[str, object]] = []
         bound: list[dict[str, object]] = []
+        scoped: list[ChatRequest] = []
 
         async def fake_process_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
             calls.append(kwargs)
+            scoped.append(r)
             i.reponse, i.state = "done answer", "done"
 
         async def fake_bind(*args, **kwargs):  # type: ignore[no-untyped-def]
@@ -246,6 +248,9 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["session_id"], "123e4567-e89b-12d3-a456-426614174004")
         self.assertEqual(len(bound), 1)
+        # The hidden chat project numbers a taken name (chat_file_names.py).
+        self.assertTrue(scoped[0].__dict__["numbered_copies"])
+        self.assertEqual(scoped[0].__dict__["earlier_answers"], [])
 
     async def test_escalate_reuses_bound_session_on_next_turn(self) -> None:
         from services.orchestrator.chat_work import escalate_to_work
