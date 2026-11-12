@@ -47,7 +47,8 @@ class ChatToolTests(unittest.IsolatedAsyncioTestCase):
         for language in ("en", "fr", "de", "es", "it"):
             with self.subTest(language=language):
                 notice = partial_search_failure_notice("upstream_blocked", language)
-                self.assertIn("upstream_blocked", notice)
+                self.assertNotIn("upstream_blocked", notice)
+                self.assertNotIn("_", notice)
                 self.assertNotIn("no verified results were obtained", notice.lower())
 
     async def test_delegation_and_retrieval_failures(self) -> None:

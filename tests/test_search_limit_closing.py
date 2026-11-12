@@ -9,7 +9,7 @@ import tempfile
 import time
 from typing import Literal
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from packages.profiles import PROFILES
 from services.orchestrator.chat_pipeline import ChatTools
@@ -601,3 +601,61 @@ class TranscriptTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LimitCaveatTests(unittest.IsolatedAsyncioTestCase):
+    """A turn closed for a search limit gets no contradicting "partial results" caveat."""
+
+    async def run_request(self, closed: str) -> Interaction:
+        from services.orchestrator import chat_pipeline
+        from services.orchestrator.closing import LIMIT_CLOSED
+
+        async def fake_process(request: ChatRequest, item: Interaction) -> None:
+            # What the chat loop leaves: an earlier search came back partial, then
+            # (or not) a later search was refused for a limit and closed the turn.
+            item.state, item.reponse = "done", ANSWER
+            item.erreurs.append("partial_search_failure:partial_results")
+            if closed:
+                LIMIT_CLOSED.set(closed)
+
+        request = ChatRequest.model_validate(
+            {"ui_locale": "en", "messages": [{"role": "user", "content": QUESTION}]}
+        )
+        item = Interaction()
+        with (
+            patch.object(
+                chat_pipeline, "dispatch_project", AsyncMock(return_value=False)
+            ),
+            patch(
+                "services.orchestrator.user_memory.prepare",
+                AsyncMock(return_value=False),
+            ),
+            patch(
+                "services.orchestrator.chat_work.escalate_to_work",
+                AsyncMock(return_value=False),
+            ),
+            patch("services.orchestrator.request_router.enabled", return_value=False),
+            patch.object(chat_pipeline, "_process", fake_process),
+        ):
+            await chat_pipeline._process_request(request, item)
+        return item
+
+    async def test_no_partial_results_caveat_after_a_limit_closed_the_turn(
+        self,
+    ) -> None:
+        item = await self.run_request("daily_search_limit")
+        self.assertEqual(item.reponse, ANSWER)
+
+    async def test_the_caveat_stays_when_no_limit_closed_the_turn(self) -> None:
+        item = await self.run_request("")
+        self.assertTrue(item.reponse.startswith(ANSWER))
+        self.assertIn("some sources were unavailable", item.reponse)
+        self.assertNotIn("partial_results", item.reponse)
+
+    async def test_the_loop_marks_the_turn_it_closed(self) -> None:
+        from services.orchestrator.closing import LIMIT_CLOSED
+
+        LIMIT_CLOSED.set("")
+        model = Scripted([Turn(NOTE, (search("s1"),)), Turn(ANSWER)])
+        await chat_turn(model, Research())
+        self.assertEqual(LIMIT_CLOSED.get(), "daily_search_limit")

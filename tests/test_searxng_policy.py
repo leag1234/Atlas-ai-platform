@@ -486,7 +486,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             await chat_pipeline.process(request, item)
         self.assertIn("CERN is a physics laboratory.", item.reponse)
         self.assertIn(
-            "Une partie de la recherche web a échoué (upstream_timeout) ; cette réponse repose uniquement sur les sources récupérées avant cet échec.",
+            "Une partie de la recherche web a échoué (la recherche a dépassé le délai) ; cette réponse repose uniquement sur les sources récupérées avant cet échec.",
             item.reponse,
         )
 
