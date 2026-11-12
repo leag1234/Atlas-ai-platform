@@ -5,6 +5,8 @@ import base64
 import json
 import time
 import unittest
+from collections.abc import Awaitable, Callable
+from typing import Any
 from unittest.mock import patch
 
 from services.orchestrator.chat_schema import ChatRequest
@@ -38,6 +40,113 @@ def request(filename: str = "notes.pdf", file_id: str | None = FILE_ID) -> ChatR
         }
     )
     return ChatRequest.model_validate(value)
+
+
+Process = Callable[[ChatRequest, Interaction], Awaitable[None]]
+
+
+def frames(process: Process, payload: ChatRequest) -> list[dict[str, Any]]:
+    """Every data frame of one streamed turn, in order."""
+
+    async def collect() -> list[str]:
+        stream = response(payload, Interaction(), time.monotonic(), process)
+        chunks = []
+        with patch("services.orchestrator.chat_stream.write_interaction"):
+            async for chunk in stream.body_iterator:
+                chunks.append(
+                    chunk if isinstance(chunk, str) else bytes(chunk).decode()
+                )
+        return chunks
+
+    return [
+        json.loads(line[6:])
+        for line in "".join(asyncio.run(collect())).splitlines()
+        if line.startswith("data: ") and line != "data: [DONE]"
+    ]
+
+
+def text_of(frame: dict[str, Any]) -> str:
+    return str(frame.get("choices", [{}])[0].get("delta", {}).get("content", ""))
+
+
+def status_of(frame: dict[str, Any]) -> dict[str, Any] | None:
+    event = frame.get("event")
+    return event["data"] if isinstance(event, dict) else None
+
+
+def keepalives(sent: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        frame
+        for frame in sent
+        if isinstance(frame.get("atlas"), dict)
+        and frame["atlas"].get("phase") == "answer_keepalive"
+    ]
+
+
+class StatusUntilTheAnswerTests(unittest.TestCase):
+    """The interface shows a turn as interrupted after 45 s without an event."""
+
+    def test_the_opener_does_not_end_the_status_line(self) -> None:
+        # Staging 2026-11-12: the link to the attached PDF counted as the start of
+        # the answer, the per-second status stopped, the document took more than
+        # 45 s to read and the interface stopped the turn as interrupted.
+        answer = "The initial budget is 730 euros."
+
+        async def process(payload: ChatRequest, item: Interaction) -> None:
+            await asyncio.sleep(2.4)
+            item.reponse, item.state = answer, "done"
+
+        sent = frames(process, request())
+        opener = next(i for i, frame in enumerate(sent) if text_of(frame))
+        self.assertEqual(text_of(sent[opener]), pdf_placeholders(request()))
+        answered = next(i for i, frame in enumerate(sent) if answer in text_of(frame))
+        opener_status = status_of(sent[opener])
+        self.assertTrue(opener_status is None or opener_status["done"] is False)
+        waiting = [
+            status
+            for frame in sent[opener + 1 : answered]
+            if (status := status_of(frame)) is not None
+        ]
+        # One status a second while the document is read, none of them "done".
+        self.assertGreaterEqual(len(waiting), 2)
+        self.assertTrue(all(status["done"] is False for status in waiting))
+        self.assertTrue(all(status["hidden"] is False for status in waiting))
+        done = status_of(sent[answered])
+        assert done is not None
+        self.assertTrue(done["done"])
+        self.assertTrue(done["hidden"])
+
+    def test_a_started_answer_that_goes_silent_still_sends_events(self) -> None:
+        async def process(payload: ChatRequest, item: Interaction) -> None:
+            sink = sink_context.get()
+            assert sink
+            await sink({"delta": {"content": "First part.\n"}})
+            await asyncio.sleep(2.6)
+            await sink({"delta": {"content": "Second part.\n"}})
+            item.reponse, item.state = "First part.\nSecond part.\n", "done"
+
+        plain = ChatRequest.model_validate(
+            {
+                "messages": [{"role": "user", "content": "Tell me a story"}],
+                "atlas_ui": True,
+                "stream": True,
+            }
+        )
+        with patch("services.orchestrator.chat_stream.ANSWER_SILENCE_SECONDS", 1.0):
+            sent = frames(process, plain)
+        first = next(i for i, frame in enumerate(sent) if "First" in text_of(frame))
+        second = next(i for i, frame in enumerate(sent) if "Second" in text_of(frame))
+        between = sent[first + 1 : second]
+        self.assertTrue(keepalives(between))
+        for frame in between:
+            # Nothing visible: no text, and the status stays the hidden one.
+            self.assertEqual(text_of(frame), "")
+            status = status_of(frame)
+            if status is not None:
+                self.assertTrue(status["done"])
+                self.assertTrue(status["hidden"])
+        # A short pause sends nothing more than before.
+        self.assertFalse(keepalives(frames(process, plain)))
 
 
 class SideViewTests(unittest.TestCase):

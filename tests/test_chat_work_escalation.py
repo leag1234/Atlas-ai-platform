@@ -182,6 +182,65 @@ class RoutingTests(unittest.TestCase):
                 self.assertFalse(should_escalate(request("What is a tuple?")))
 
 
+class AttachedDocumentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_question_about_an_attached_document_never_reaches_work(
+        self,
+    ) -> None:
+        # Work does not receive the attachment: even a decision that names a
+        # run or a file (kept from an earlier gate, or the lexical test) leaves
+        # the turn to the chat, without any call to the project service.
+        from services.orchestrator.chat_work import eligible, escalate_to_work
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.request_router import DECISION_KEY, Decision
+
+        document = {
+            "filename": "note.pdf",
+            "file_data": "data:application/pdf;base64,AAAA",
+        }
+        tag = (
+            '<attached_files>\n<file type="filesystem" url="f1" '
+            'content_type="application/pdf" name="note.pdf"/>\n</attached_files>\n'
+        )
+        questions = [
+            "Résume ce document en 5 points et donne son numéro de référence officiel.",
+            "resume moi ca stp",
+            "Summarise this file and list the key dates",
+            "what does it say about the budget?",
+            "Avec le terminal, compte le nombre de pages du PDF joint",
+            "Run a Python script that counts the words of this file",
+            "Fasse dieses Dokument zusammen",
+            "Resume este archivo en cinco puntos",
+            "Riassumi il file allegato",
+        ]
+        identity = AsyncMock()
+        work = AsyncMock()
+        with (
+            patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1", "ATLAS_MODEL_ROUTER": "1"}),
+            patch("services.orchestrator.chat_work.work_gate_open", return_value=True),
+            patch("services.orchestrator.chat_work._identity", new=identity),
+            patch("services.orchestrator.code_mode.process_work", new=work),
+        ):
+            for question in questions:
+                for req in (
+                    request(question, documents=[document]),
+                    request(tag + question),
+                ):
+                    for kind in ("run", "file", "remote"):
+                        with self.subTest(text=req.user_text, kind=kind):
+                            req.__dict__[DECISION_KEY] = Decision(kind=kind)
+                            req.__dict__["native_chat_id"] = (
+                                "123e4567-e89b-12d3-a456-426614174010"
+                            )
+                            req.__dict__["artifact_owner"] = "user@example.com"
+                            item = Interaction()
+                            self.assertFalse(eligible(req))
+                            self.assertFalse(should_escalate(req))
+                            self.assertFalse(await escalate_to_work(req, item))
+                            self.assertEqual(item.erreurs, [])
+        identity.assert_not_awaited()
+        work.assert_not_awaited()
+
+
 class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
     async def test_escalate_creates_scratch_and_calls_process_work(self) -> None:
         from services.orchestrator.chat_work import escalate_to_work
@@ -506,9 +565,13 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch("services.orchestrator.code_mode.process_work", new=failing_work),
+            self.assertLogs("services.orchestrator.chat_work", "WARNING") as logs,
         ):
             self.assertFalse(await escalate_to_work(req, item))
         self.assertEqual((item.state, item.erreurs, item.reponse), (state, [], ""))
+        # The line says what the person got: here the chat answers by itself.
+        self.assertIn("errors=deliverable_group_required", logs.output[-1])
+        self.assertIn("outcome=chat_answers", logs.output[-1])
 
     async def test_a_delivered_file_survives_a_leftover_tool_error(self) -> None:
         from services.orchestrator.chat_work import escalate_to_work
@@ -554,6 +617,7 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
             patch("services.orchestrator.code_mode.process_work", new=failing_work),
+            self.assertLogs("services.orchestrator.chat_work", "WARNING") as logs,
         ):
             self.assertTrue(await escalate_to_work(req, item))
         self.assertEqual(
@@ -561,6 +625,8 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("/deliverables/d/download", item.reponse)
         self.assertNotIn("Work failed", item.reponse)
+        self.assertIn("errors=read refused", logs.output[-1])
+        self.assertIn("outcome=file_delivered", logs.output[-1])
 
     async def test_a_failed_machine_task_is_explained_never_answered_by_the_chat_alone(
         self,

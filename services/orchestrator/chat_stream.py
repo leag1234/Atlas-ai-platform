@@ -35,6 +35,16 @@ from packages.configuration import (
 )
 
 
+# The interface declares a turn interrupted after 45 s without an event of its
+# stream (guest-chat.js), and an SSE comment is not one. Before the answer the
+# status line is sent every second; once the answer has started, a silence of
+# this length is followed by the status the interface keeps hidden, so a turn
+# the service is still working on is never shown as interrupted.
+ANSWER_SILENCE_SECONDS = 15.0
+# Atlas's own link to an attached PDF, sent before the model is called.
+OPENER_PHASE = "attachment_opener"
+
+
 def response(
     payload: ChatRequest,
     item: Interaction,
@@ -160,6 +170,24 @@ def response(
                             "elapsed_seconds": round(time.monotonic() - started, 1),
                         },
                         "event": status_event(),
+                    }
+                )
+                + "\n\n"
+            )
+
+        def still_answering() -> str:
+            # After the answer started: the same frame with the hidden status.
+            return (
+                "data: "
+                + json.dumps(
+                    {
+                        **base,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": None}],
+                        "atlas": {
+                            "phase": "answer_keepalive",
+                            "elapsed_seconds": round(time.monotonic() - started, 1),
+                        },
+                        "event": status_event(done=True),
                     }
                 )
                 + "\n\n"
@@ -585,8 +613,18 @@ def response(
                     if opener:
                         # Atlas's own text, not the model's: it bypasses the answer
                         # filters, so an answer completed without streamed text (a
-                        # document read in one call) is still sent in full.
-                        await queue.put({"delta": {"content": opener}})
+                        # document read in one call) is still sent in full. It is
+                        # not the start of the answer either: the status line goes
+                        # on until the model's text. Counted as the answer, it
+                        # stopped every event of a turn whose document took more
+                        # than 45 s to read, and the interface showed the turn as
+                        # interrupted and stopped it (staging 2026-11-12).
+                        await queue.put(
+                            {
+                                "delta": {"content": opener},
+                                "atlas": {"turn": turn, "phase": OPENER_PHASE},
+                            }
+                        )
                     await process(payload, item)
                     # A Work turn that failed for a known reason carries its own
                     # localized explanation; it is a finished answer, not an outage.
@@ -773,6 +811,7 @@ def response(
         cancel_id = str(payload.cancel_id) if payload.cancel_id is not None else None
         if cancel_id is not None:
             register_cancellation(cancel_id, task)
+        last_sent = time.monotonic()
         try:
             yield heartbeat()
             while True:
@@ -786,7 +825,11 @@ def response(
                         break
                     last_activity = time.monotonic()
                     if not answer_started:
+                        last_sent = last_activity
                         yield heartbeat()
+                    elif last_activity - last_sent >= ANSWER_SILENCE_SECONDS:
+                        last_sent = last_activity
+                        yield still_answering()
                     else:
                         yield ": keepalive\n\n"
                     continue
@@ -886,7 +929,8 @@ def response(
                     not answer_started
                     and isinstance(delta, dict)
                     and bool(delta.get("content"))
-                    and event_phase not in {"tool_details", "image_start_notice"}
+                    and event_phase
+                    not in {"tool_details", "image_start_notice", OPENER_PHASE}
                 )
                 if first_content:
                     answer_started = True
@@ -902,6 +946,7 @@ def response(
                         "event", status_event(bool(event.get("finish")))
                     )
                     last_activity = time.monotonic()
+                last_sent = time.monotonic()
                 yield "data: " + json.dumps(output) + "\n\n"
             yield "data: [DONE]\n\n"
         finally:

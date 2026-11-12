@@ -556,14 +556,21 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         break
     if failure or item.state != "done":
         reply = None if failure else work_failure_reply(item, scoped.lang)
-        logger.warning(
-            "chat_work_incomplete conversation=%s state=%s errors=%s exception=%s explained=%s",
-            chat_conversation_id or "unknown",
-            item.state,
-            ",".join(str(error) for error in item.erreurs)[:120],
-            failure,
-            reply is not None,
-        )
+        stopped = (item.state, ",".join(str(error) for error in item.erreurs)[:120])
+
+        def incomplete(outcome: str) -> None:
+            # What the person got, not what was computed on the way: the line
+            # read "explained=True" for a turn that delivered its file and for
+            # one the chat then answered alone (staging 2026-11-12).
+            logger.warning(
+                "chat_work_incomplete conversation=%s state=%s errors=%s "
+                "exception=%s outcome=%s",
+                chat_conversation_id or "unknown",
+                *stopped,
+                failure,
+                outcome,
+            )
+
         produced = str(item.work_failure.get("answer", ""))
         if (
             item.work_failure.get("category") == "tool_error"
@@ -574,6 +581,7 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
             # delivered file into a failure, in the chat (staging 2026-11-10).
             item.reponse, item.task_type, item.state = produced, "work", "done"
             item.erreurs, item.work_failure = before[1], {}
+            incomplete("file_delivered")
             return True
         # A machine task or code to run needs Work's tools: the chat alone would
         # answer that it has no access, which is false. It gets the explanation.
@@ -599,11 +607,13 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
             # with what was produced, is the finished answer of this turn.
             item.reponse, item.task_type, item.state = reply, "work", "done"
             item.work_failure = {}
+            incomplete("explained")
             return True
         # Anything else: the chat answers by itself, as it did before Work existed
         # behind it. The person never gets a raw failure for a turn the chat can answer.
         item.state, item.erreurs, item.reponse = before[0], before[1], before[2]
         item.work_failure = {}
+        incomplete("chat_answers")
         return False
     item.task_type = "work"
     logger.info(

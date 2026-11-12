@@ -139,13 +139,36 @@ def declarations() -> list[dict[str, object]]:
     ]
 
 
+UNKNOWN_REFERENCE = (
+    "unknown_file_reference: file_id and version must be the two identifiers of "
+    "one file of this session: the read_input that publish_document returned in "
+    "this turn, or a file selected for this session. A file name, a path, a link "
+    "or a number is not a reference. Do not guess another one: if the file is "
+    "not among them (a file delivered in an earlier turn, for example), write "
+    "its content again in full from the conversation."
+)
+
+
+def reference(value: dict[str, Any]) -> tuple[str, str]:
+    """The file and version identifiers of a document input, or a named refusal.
+
+    A reference that was not an identifier got Python's own "badly formed
+    hexadecimal UUID string" as the tool error, and the Work turn ended as
+    failed with that sentence (staging 2026-11-12).
+    """
+    try:
+        return str(UUID(str(value["file_id"]))), str(UUID(str(value["version"])))
+    except ValueError:
+        raise ValueError(UNKNOWN_REFERENCE) from None
+
+
 async def resolve(
     execution: Any, value: dict[str, Any], receipts: list[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
     from pathlib import PurePosixPath
     from services.retrieval.project_identity import ProjectError
 
-    file_id, version = str(UUID(value["file_id"])), str(UUID(value["version"]))
+    file_id, version = reference(value)
     if dict(file_id=file_id, version_id=version) not in execution.session[
         "base_file_versions"
     ] and not any(
