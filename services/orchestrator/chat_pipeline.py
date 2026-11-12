@@ -843,13 +843,15 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         )
         return
     from services.orchestrator.narration import clean_answer
-    from services.orchestrator.title import is_title_task, title_response
+    from services.orchestrator.title import is_title_task, title_answer
 
     # Open WebUI sends its title task to the same OpenAI-compatible endpoint.
-    # It is auxiliary UI work: keep it deterministic and outside the agent loop.
+    # It is auxiliary UI work, outside the agent loop: one bounded call to the
+    # fast profile (ATLAS_MODEL_TITLES=1), or the question's own words.
     if is_title_task(request.user_text):
-        item.reponse = title_response(request.user_text, request.lang)
-        item.state, item.task_type, item.cout_eur = "done", "title", 0.0
+        answer, cost = await title_answer(request.user_text, request.lang)
+        item.reponse = answer
+        item.state, item.task_type, item.cout_eur = "done", "title", float(cost)
         return
     # The model decides what this plain chat turn asks for (ATLAS_MODEL_ROUTER=1),
     # once, before any gate reads it; None leaves the lexical gates unchanged.
