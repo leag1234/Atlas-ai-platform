@@ -132,7 +132,8 @@ def _character(character: str, face: frozenset[int]) -> str:
         return "-"  # a square, triangle or circle used as a bullet
     if category[0] == "Z":
         return " "  # an em space or another space the face lacks
-    if category[0] in {"S", "P", "C", "M"}:
+    if category[0] in {"S", "P", "M"} or category == "Cf":
+        # Control characters (Cc) are kept: content holding one is refused.
         # Any other symbol or mark the face lacks is dropped; only letters of a
         # script the face does not cover are left for the layout to refuse.
         return ""
