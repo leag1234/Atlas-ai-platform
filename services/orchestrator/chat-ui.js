@@ -506,6 +506,10 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       it: ["Apri nella vista laterale", "Apri nel browser", "Non è possibile confermare la visualizzazione di questa pagina. Se è vuota o bloccata, aprila nel browser."]
     };
     const text = index => (words[(localStorage.getItem("locale") || localStorage.getItem("atlas-ui-language") || navigator.language || "fr").split("-")[0]] || words.fr)[index];
+    // The server writes an answer's links in the conversation language (FOOTER_LABELS in artifact_tools.py, OPEN_LABELS in side_view.py).
+    // The chip that replaces its open link keeps that language: a French answer read "Open in side view · Télécharger …" in an English interface (staging 2026-11-12).
+    const answerOpeners = { en: /^Open (?:.+ \(version \d+\)|in side view)$/, fr: /^Ouvrir (?:.+ \(version \d+\)|dans le panneau latéral)$/, de: /^(?:.+ öffnen \(Version \d+\)|In der Seitenansicht öffnen)$/, es: /^Abrir (?:.+ \(versión \d+\)|en la vista lateral)$/, it: /^Apri (?:.+ \(versione \d+\)|nella vista laterale)$/ };
+    const openText = written => { const language = Object.keys(answerOpeners).find(key => answerOpeners[key].test(written.trim())); return language ? words[language][0] : text(0); };
     const sideLabels = {
   "Side view": [
     "Side view",
@@ -876,10 +880,6 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
           stopped.append(element("p", "", label("The app tried to open another page and was stopped.")), button("Restart app", () => open(descriptor).catch(() => {})));
           slot.content.append(stopped);
         });
-        const markInteracted = () => { if (document.activeElement === node) slot.interacted = true; };
-        node.addEventListener("focusin", markInteracted);
-        window.addEventListener("blur", markInteracted);
-        slot.cleanup.push(() => window.removeEventListener("blur", markInteracted));
         slot.toolbar.append(version);
         slot.content.append(node, notice);
         slot.download = () => {
@@ -960,7 +960,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       if (pane.hidden) priorFocus = document.activeElement;
       // Replace contents without removing the slot or its split proportions.
       const old = ensure(name); old.disposed = true; old.cleanup.forEach(fn => fn());
-      const slot = { ...old, cleanup: [], disposed: false, descriptor: { ...descriptor }, download: null, interacted: false }; slots.set(name, slot);
+      const slot = { ...old, cleanup: [], disposed: false, descriptor: { ...descriptor }, download: null }; slots.set(name, slot);
       slot.content.replaceChildren(); while (slot.toolbar.children.length > 2) slot.toolbar.lastChild.remove();
       slot.caption.textContent = descriptor.title || descriptor.kind; pane.hidden = false; document.body.classList.add("atlas-side-open"); active = name; refresh();
       try { await views[descriptor.kind].open(slot, descriptor); }
@@ -974,7 +974,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     drag(grip, true, x => setWidth(innerWidth - x)); window.addEventListener("resize", () => setWidth(desktopWidth));
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !pane.hidden) { close(); event.preventDefault(); } });
     window.atlasSideView = { open, close };
-    const seen = new WeakSet(), opened = new Set();
+    const seen = new WeakSet(), opened = new Set(), versions = new Map();
     // On a phone the side view covers the whole conversation: never open it by itself there, the chip stays one tap away.
     const wide = () => matchMedia("(min-width: 768px)").matches;
     const chip = (node, descriptor) => { const control = button(text(0), () => open(typeof descriptor === "function" ? descriptor() : descriptor)); control.classList.add("atlas-side-chip"); node.after(control); };
@@ -1010,21 +1010,25 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
           placeholder.dataset.atlasView = descriptor.kind; placeholder.dataset.src = descriptor.src || ""; placeholder.dataset.title = descriptor.title; placeholder.dataset.slot = descriptor.slot;
           if (descriptor.artifact) { placeholder.dataset.artifact = descriptor.artifact; placeholder.dataset.version = String(descriptor.version); }
           seen.add(placeholder); node.before(placeholder);
-          node.classList.add("atlas-side-chip"); node.textContent = text(0);
+          node.classList.add("atlas-side-chip"); node.textContent = openText(node.textContent);
           node.addEventListener("click", event => { event.preventDefault(); open(descriptor).catch(() => {}); });
           if (descriptor.kind !== "app" && wide() && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
           if (descriptor.kind === "app") {
-            const messages = [...document.querySelectorAll(".chat-assistant")], last = messages[messages.length - 1];
+            const messages = [...document.querySelectorAll(".chat-assistant")], last = messages[messages.length - 1], latest = message === last || message?.contains(last);
             const current = slots.get(descriptor.slot === "bottom" ? "bottom" : "top");
+            // A version this page has not met yet, in the last answer, is the one the conversation just produced.
+            const known = versions.get(descriptor.artifact) || 0, produced = latest && descriptor.version > known;
+            versions.set(descriptor.artifact, Math.max(known, descriptor.version));
             if (current?.descriptor?.kind === "app" && current.descriptor.artifact === descriptor.artifact && descriptor.version > current.descriptor.version) {
-              if (current.interacted) {
-                if (!current.node.querySelector(".atlas-side-banner")) {
-                  const banner = element("div", "atlas-side-banner");
-                  banner.append(element("span", "", label("New version available")), button("Reload", () => open(descriptor).catch(() => {})));
-                  current.content.prepend(banner);
-                }
-              } else open(descriptor).catch(() => {});
-            } else if (wide() && (message === last || message?.contains(last))) open(descriptor).catch(() => {});
+              // The change just asked for replaces the open version by itself: the panel stayed on version 1 behind a Reload bar (staging 2026-11-12).
+              // Only a newer version already met, rendered again while an older one is open by choice, is offered and not imposed.
+              if (produced) open(descriptor).catch(() => {});
+              else if (!current.node.querySelector(".atlas-side-banner")) {
+                const banner = element("div", "atlas-side-banner");
+                banner.append(element("span", "", label("New version available")), button("Reload", () => open(descriptor).catch(() => {})));
+                current.content.prepend(banner);
+              }
+            } else if (wide() && latest) open(descriptor).catch(() => {});
           }
           return;
         }

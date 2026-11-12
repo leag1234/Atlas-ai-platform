@@ -155,6 +155,43 @@ class ArtifactToolsTests(unittest.TestCase):
             ("a" * 32, 3, "Tom & Jerry"),
         )
 
+    def test_side_view_chip_keeps_the_language_of_the_footer(self) -> None:
+        # The chip replaces the open link of the footer; the download link next
+        # to it keeps the server wording, so both must read in one language.
+        import re
+        from pathlib import Path
+
+        from services.orchestrator.artifact_tools import FOOTER_LABELS
+        from services.orchestrator.side_view import OPEN_LABELS
+
+        script = Path("services/orchestrator/chat-ui.js").read_text()
+        table = re.search(r"const answerOpeners = \{(.*)\};", script)
+        assert table is not None
+        openers = dict(re.findall(r"(\w\w): /(.+?)/(?=,| )", table[1]))
+        self.assertEqual(set(openers), set(FOOTER_LABELS))
+        self.assertEqual(set(openers), set(OPEN_LABELS))
+        for language, labels in FOOTER_LABELS.items():
+            written = [
+                labels["open"].format(title="Le Pain d'Élise", version=12),
+                OPEN_LABELS[language],
+            ]
+            for label in written:
+                matching = [
+                    key for key, pattern in openers.items() if re.search(pattern, label)
+                ]
+                self.assertEqual(matching, [language], label)
+        self.assertIn("node.textContent = openText(node.textContent);", script)
+
+    def test_side_view_shows_a_produced_version_by_itself(self) -> None:
+        # Focusing the frame on load marked every app as used, so a new version
+        # always waited behind a Reload bar (staging 2026-11-12).
+        from pathlib import Path
+
+        script = Path("services/orchestrator/chat-ui.js").read_text()
+        self.assertNotIn("interacted", script)
+        self.assertIn("produced = latest && descriptor.version > known;", script)
+        self.assertIn("if (produced) open(descriptor)", script)
+
     def test_drawing_footer_has_no_data_notice(self) -> None:
         text = footer("0" * 32, 1, "Cat", "cat.html", "en", temporary=False)
         self.assertNotIn("Temporary preview", text)
