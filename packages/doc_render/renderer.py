@@ -207,6 +207,10 @@ def build_document(content: Content, path: Path, root: Path) -> None:
 
 
 def build_workbook(content: Content, path: Path, root: Path) -> None:
+    from .spreadsheet import table_areas
+
+    # Where each sheet's table is, checked before anything is written.
+    areas = table_areas(content)
     workbook = Workbook()
     workbook.remove(workbook.worksheets[0])
     workbook.properties.title = content.title
@@ -220,13 +224,23 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
         texts = [section.heading, *section.paragraphs, *section.bullets]
         if index == 0:
             texts.insert(0, content.title)
-        rows: list[tuple[Reading, ...]] = [(Reading((Span(text),)),) for text in texts]
+        # The first table starts at cell A1: header in row 1, first data row
+        # in row 2. A reference then means the same cell to the author of the
+        # table, in the file and to the person who opens it. Texts written
+        # above it shifted every formula (a total summed the heading, the
+        # header and half of the rows, staging 2026-11-12). The title, the
+        # heading and the texts follow the table after one empty row.
+        rows: list[tuple[Reading, ...]] = []
         formula_rows: set[int] = set()
-        for table in section.tables:
-            if table.formulas:
-                formula_rows.update(
-                    range(len(rows) + 2, len(rows) + 2 + len(table.rows))
-                )
+        if section.tables:
+            first = section.tables[0]
+            if first.formulas:
+                formula_rows.update(range(2, 2 + len(first.rows)))
+            rows.extend(first.read())
+            rows.append(())
+        rows.extend((Reading((Span(text),)),) for text in texts)
+        for table in section.tables[1:]:
+            # No formula here: table_areas refused it.
             rows.extend(table.read())
         extents[sheet.title] = (len(rows), max(map(len, rows)))
         typed: dict[str, tuple[float, str]] = {}
@@ -283,7 +297,7 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
     if any(table.formulas for section in content.sections for table in section.tables):
         from .formulas import cache_formulas
 
-        cache_formulas(path, extents)
+        cache_formulas(path, extents, areas)
 
 
 def render(content: Content, path: Path, *, image_root: Path) -> Verification:

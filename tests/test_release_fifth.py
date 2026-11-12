@@ -30,7 +30,10 @@ def expenses() -> Content:
 
 
 class SpreadsheetRowsTests(unittest.TestCase):
-    def test_live_wrong_ranges_bind_to_rows_actually_written(self) -> None:
+    def test_ranges_counted_from_the_table_header_are_the_rows_written(self) -> None:
+        # Live, the ranges were written from the header of the table (row 1)
+        # while texts above the table shifted its rows. The table now starts at
+        # A1 whatever texts the section has.
         for paragraphs in ((), ("Context before data",)):
             value = expenses().model_dump()
             value["sections"][0]["paragraphs"] = paragraphs
@@ -43,14 +46,21 @@ class SpreadsheetRowsTests(unittest.TestCase):
                 book = load_workbook(path, data_only=True)
                 formulas = load_workbook(path, data_only=False)
                 try:
-                    offset = len(paragraphs)
                     self.assertEqual(
-                        [book["1"][f"C{r + offset}"].value for r in (8, 9, 10)],
+                        [book["1"][f"C{row}"].value for row in (6, 7, 8)],
                         [500, 1000, 1500],
                     )
                     self.assertEqual(
-                        formulas["1"][f"C{8 + offset}"].value,
-                        f'=SUMIF(A{4 + offset}:A{7 + offset},"Formation",C{4 + offset}:C{7 + offset})',
+                        formulas["1"]["C6"].value,
+                        '=SUMIF(A2:A5,"Formation",C2:C5)',
+                    )
+                    self.assertEqual(formulas["1"]["A1"].value, "Category")
+                    self.assertEqual(
+                        [
+                            formulas["1"].cell(row, 1).value
+                            for row in range(9, 12 + len(paragraphs))
+                        ],
+                        [None, "Costs", "Expenses", *paragraphs],
                     )
                 finally:
                     book.close()
@@ -64,12 +74,12 @@ class SpreadsheetRowsTests(unittest.TestCase):
             path = Path(directory) / "totals.xlsx"
             render(expenses(), path, image_root=path.parent)
             raw = path.read_bytes()
-            source = read_structured(raw, ".xlsx", {"sheet": "1", "range": "A4:C7"})[
+            source = read_structured(raw, ".xlsx", {"sheet": "1", "range": "A2:C5"})[
                 "segments"
             ]
             validate_sources(raw, [source])
             changed = json.loads(json.dumps(source))
-            next(s for s in changed if s["locator"]["cell"] == "C7")["text"] = "900"
+            next(s for s in changed if s["locator"]["cell"] == "C5")["text"] = "900"
             with self.assertRaisesRegex(ValueError, "spreadsheet_source_mismatch"):
                 validate_sources(raw, [changed])
             # A tampered cached value must fail even with intact source rows.
@@ -87,7 +97,7 @@ class SpreadsheetRowsTests(unittest.TestCase):
                     if name == "xl/worksheets/sheet1.xml":
                         tree = ET.fromstring(data)
                         for cell in tree.iter(ns + "c"):
-                            if cell.attrib["r"] == "C9":
+                            if cell.attrib["r"] == "C7":
                                 value = cell.find(ns + "v")
                                 assert value is not None
                                 value.text = "0"
@@ -100,7 +110,7 @@ class SpreadsheetRowsTests(unittest.TestCase):
         from packages.attachment_reader import read_structured
         from packages.doc_render.spreadsheet import validate_sources
 
-        for start, end, accepted in ((4, 7, True), (2, 5, False)):
+        for start, end, accepted in ((2, 5, True), (2, 4, False)):
             value = expenses().model_dump()
             rows = [list(row) for row in value["sections"][0]["tables"][0]["rows"]]
             rows[5][2] = (
@@ -115,7 +125,7 @@ class SpreadsheetRowsTests(unittest.TestCase):
                 render(Content.model_validate(value), path, image_root=path.parent)
                 raw = path.read_bytes()
                 source = read_structured(
-                    raw, ".xlsx", {"sheet": "1", "range": "A4:C7"}
+                    raw, ".xlsx", {"sheet": "1", "range": "A2:C5"}
                 )["segments"]
                 if accepted:
                     validate_sources(raw, [source])

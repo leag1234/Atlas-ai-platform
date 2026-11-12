@@ -25,7 +25,7 @@ class ReleaseDeliveryTests(unittest.TestCase):
                             rows=[
                                 ["Training", "200"],
                                 ["Training", "300"],
-                                ["Total", "=SUM(B4:B5)"],
+                                ["Total", "=SUM(B2:B3)"],
                             ],
                         )
                     ],
@@ -47,8 +47,8 @@ class ReleaseDeliveryTests(unittest.TestCase):
                     formulas = load_workbook(path, data_only=False)
                     cached = load_workbook(path, data_only=True)
                     try:
-                        self.assertEqual(formulas["1"]["B6"].value, "=SUM(B4:B5)")
-                        self.assertEqual(cached["1"]["B6"].value, 500)
+                        self.assertEqual(formulas["1"]["B4"].value, "=SUM(B2:B3)")
+                        self.assertEqual(cached["1"]["B4"].value, 500)
                     finally:
                         formulas.close()
                         cached.close()
@@ -60,7 +60,7 @@ class ReleaseDeliveryTests(unittest.TestCase):
                     path="Totals.XLSX",
                     sources=[],
                     formulas=True,
-                    content="| Value |\n| --- |\n| 500 |\n| =SUM(A4) |",
+                    content="| Value |\n| --- |\n| 500 |\n| =SUM(A2) |",
                 )
             )
         )

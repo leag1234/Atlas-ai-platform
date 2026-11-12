@@ -191,17 +191,17 @@ class NumberCellTests(unittest.TestCase):
             )
         )
         expected: dict[str, tuple[str, Any, str]] = {
-            "B4": ("n", 1250, '#,##0.00 "€"'),
-            "B5": ("n", 12.5, "0.00"),
-            "B6": ("n", 0.45, "0 %"),
-            "B7": ("n", 12, "General"),
-            "B8": ("s", "007", "General"),
-            "B9": ("s", "2026-11-12", "General"),
-            "B10": ("s", "06 12 34 56 78", "General"),
-            "B11": ("s", "1/2", "General"),
-            "B12": ("s", "1.2.3", "General"),
+            "B2": ("n", 1250, '#,##0.00 "€"'),
+            "B3": ("n", 12.5, "0.00"),
+            "B4": ("n", 0.45, "0 %"),
+            "B5": ("n", 12, "General"),
+            "B6": ("s", "007", "General"),
+            "B7": ("s", "2026-11-12", "General"),
+            "B8": ("s", "06 12 34 56 78", "General"),
+            "B9": ("s", "1/2", "General"),
+            "B10": ("s", "1.2.3", "General"),
             # A header is a name, never a number.
-            "B3": ("s", "Amount", "General"),
+            "B1": ("s", "Amount", "General"),
         }
         for coordinate, (kind, value, shown) in expected.items():
             with self.subTest(coordinate=coordinate):
@@ -218,36 +218,36 @@ class NumberCellTests(unittest.TestCase):
                     "| Rent | 1 250,00 € |",
                     "| Power | 145,50 € |",
                     "| Water | 12,50 € |",
-                    "| **TOTAL** | **=SUM(B4:B6)** |",
+                    "| **TOTAL** | **=SUM(B2:B4)** |",
                 ),
                 formulas=True,
             )
         )
-        self.assertEqual(sheet["B7"].data_type, "f")
-        self.assertEqual(sheet["B7"].value, "=SUM(B4:B6)")
-        self.assertEqual(values["B7"].value, 1408)
-        self.assertEqual(sheet["B7"].number_format, '#,##0.00 "€"')
-        self.assertEqual(sheet["A7"].value, "TOTAL")
-        self.assertTrue(sheet["A7"].font.b)
+        self.assertEqual(sheet["B5"].data_type, "f")
+        self.assertEqual(sheet["B5"].value, "=SUM(B2:B4)")
+        self.assertEqual(values["B5"].value, 1408)
+        self.assertEqual(sheet["B5"].number_format, '#,##0.00 "€"')
+        self.assertEqual(sheet["A5"].value, "TOTAL")
+        self.assertTrue(sheet["A5"].font.b)
 
     def test_numbers_like_text_are_never_skipped_in_silence(self) -> None:
         refused = (
             # Thousands or decimals? Nothing in the table says.
-            ("| a | 1,250 |", "=SUM(B4:B5)"),
-            ("| a | 1,250 |", "=IFERROR(SUM(B4:B5),0)"),
-            ("| a | 1,250 |", "=AVERAGE(B4:B5)"),
-            ("| a | 1,250 |", "=COUNT(B4:B5)"),
-            ("| a | 1,250 |", '=IF(B4>100,"high","low")'),
-            ("| a | 1,250 |", '=IFERROR(B4*2,"")'),
-            ("| a | 1,250 |", '=SUMIF(A4:A5,"a",B4:B5)'),
-            ("| a | 2 kg |", "=SUM(B4:B5)"),
-            ("| a | 2 kg |", "=B4+B5"),
+            ("| a | 1,250 |", "=SUM(B2:B3)"),
+            ("| a | 1,250 |", "=IFERROR(SUM(B2:B3),0)"),
+            ("| a | 1,250 |", "=AVERAGE(B2:B3)"),
+            ("| a | 1,250 |", "=COUNT(B2:B3)"),
+            ("| a | 1,250 |", '=IF(B2>100,"high","low")'),
+            ("| a | 1,250 |", '=IFERROR(B2*2,"")'),
+            ("| a | 1,250 |", '=SUMIF(A2:A3,"a",B2:B3)'),
+            ("| a | 2 kg |", "=SUM(B2:B3)"),
+            ("| a | 2 kg |", "=B2+B3"),
         )
         for row, formula in refused:
             with self.subTest(row=row, formula=formula):
                 with self.assertRaisesRegex(
                     ValueError,
-                    r"formula_requires_numeric_cells:B4:sheet_1 \(the code ends",
+                    r"formula_requires_numeric_cells:B2:sheet_1 \(the code ends",
                 ):
                     delivered(
                         content(
@@ -261,31 +261,31 @@ class NumberCellTests(unittest.TestCase):
     ) -> None:
         _, values = self.reopened(
             content(
-                table("| a | n/a |", "| b | 300 |", "| t | =SUM(B4:B5) |"),
+                table("| a | n/a |", "| b | 300 |", "| t | =SUM(B2:B3) |"),
                 formulas=True,
             )
         )
-        self.assertEqual(values["B6"].value, 300)
+        self.assertEqual(values["B4"].value, 300)
         sheet, values = self.reopened(
             content(
-                table("| a | 1,250 |", "| b | 12.50 |", "| t | =SUM(B4:B5) |"),
+                table("| a | 1,250 |", "| b | 12.50 |", "| t | =SUM(B2:B3) |"),
                 formulas=True,
             )
         )
         self.assertEqual(
-            (sheet["B4"].value, sheet["B4"].number_format), (1250, "#,##0")
+            (sheet["B2"].value, sheet["B2"].number_format), (1250, "#,##0")
         )
-        self.assertEqual(values["B6"].value, 1262.5)
+        self.assertEqual(values["B4"].value, 1262.5)
         sheet, values = self.reopened(
             content(
-                table("| a | 1,250 |", "| b | 12,50 |", "| t | =SUM(B4:B5) |"),
+                table("| a | 1,250 |", "| b | 12,50 |", "| t | =SUM(B2:B3) |"),
                 formulas=True,
             )
         )
         self.assertEqual(
-            (sheet["B4"].value, sheet["B4"].number_format), (1.25, "0.000")
+            (sheet["B2"].value, sheet["B2"].number_format), (1.25, "0.000")
         )
-        self.assertEqual(values["B6"].value, 13.75)
+        self.assertEqual(values["B4"].value, 13.75)
 
     def test_a_criterion_and_a_source_excerpt_meet_a_number_as_typed(self) -> None:
         value = content(
@@ -293,14 +293,14 @@ class NumberCellTests(unittest.TestCase):
                 "| 12.50 | 1 250,00 € |",
                 "| 12.50 | 300 |",
                 "| 7 | 40 |",
-                '| t | =SUMIF(A4:A6,"12.50",B4:B6) |',
-                "| u | =SUMIF(A4:A6,7,B4:B6) |",
+                '| t | =SUMIF(A2:A4,"12.50",B2:B4) |',
+                "| u | =SUMIF(A2:A4,7,B2:B4) |",
                 headers="| Rate | Amount |",
             ),
             formulas=True,
         )
         _, values = self.reopened(value)
-        self.assertEqual((values["B7"].value, values["B8"].value), (1550, 40))
+        self.assertEqual((values["B5"].value, values["B6"].value), (1550, 40))
         # The excerpt of a source is found in the cell as typed.
         document = build_project_document(
             value, ".xlsx", ["1 250,00 €", "12.50"], max_bytes=16777216, timeout=30
@@ -330,7 +330,7 @@ class WideTableTests(unittest.TestCase):
         headers = "| Poste | " + " | ".join(MONTHS) + " | Total |"
         rows = []
         for index, (label, amount) in enumerate(
-            (("Loyer", "1 250,00 €"), ("Énergie", "145,50 €"), ("Eau", "12,50 €")), 4
+            (("Loyer", "1 250,00 €"), ("Énergie", "145,50 €"), ("Eau", "12,50 €")), 2
         ):
             total = f"=SUM(B{index}:M{index})" if formulas else "17 825,00 €"
             rows.append(f"| {label} | " + " | ".join([amount] * 12) + f" | {total} |")
@@ -338,7 +338,7 @@ class WideTableTests(unittest.TestCase):
             columns = "BCDEFGHIJKLMN"
             rows.append(
                 "| **TOTAL** | "
-                + " | ".join(f"=SUM({column}4:{column}6)" for column in columns)
+                + " | ".join(f"=SUM({column}2:{column}4)" for column in columns)
                 + " |"
             )
         return content(table(*rows, headers=headers), suffix, formulas=formulas)
@@ -353,16 +353,16 @@ class WideTableTests(unittest.TestCase):
                 sheet, cached = formulas["1"], values["1"]
                 self.assertEqual(sheet.max_column, 14)
                 self.assertEqual(
-                    [cell.value for cell in sheet[3]], ["Poste", *MONTHS, "Total"]
+                    [cell.value for cell in sheet[1]], ["Poste", *MONTHS, "Total"]
                 )
-                self.assertEqual(sheet["M4"].data_type, "n")
-                self.assertEqual(sheet["M4"].value, 1250)
-                self.assertEqual(sheet["M5"].number_format, '0.00 "€"')
-                self.assertEqual(cached["N4"].value, 15000)
-                self.assertEqual(cached["N5"].value, 1746)
-                self.assertEqual(cached["M7"].value, 1408)
-                self.assertEqual(cached["N7"].value, 16896)
-                for coordinate in ("N4", "N5", "M7", "N7"):
+                self.assertEqual(sheet["M2"].data_type, "n")
+                self.assertEqual(sheet["M2"].value, 1250)
+                self.assertEqual(sheet["M3"].number_format, '0.00 "€"')
+                self.assertEqual(cached["N2"].value, 15000)
+                self.assertEqual(cached["N3"].value, 1746)
+                self.assertEqual(cached["M5"].value, 1408)
+                self.assertEqual(cached["N5"].value, 16896)
+                for coordinate in ("N2", "N3", "M5", "N5"):
                     self.assertEqual(sheet[coordinate].data_type, "f")
                     self.assertEqual(sheet[coordinate].number_format, '#,##0.00 "€"')
                 # Fourteen columns stay in view: no column keeps the wide default.
@@ -390,7 +390,7 @@ class WideTableTests(unittest.TestCase):
             book = load_workbook(path)
             try:
                 self.assertEqual(book["1"].max_column, 60)
-                self.assertEqual(book["1"]["BH4"].value, 60)
+                self.assertEqual(book["1"]["BH2"].value, 60)
             finally:
                 book.close()
         with self.assertRaisesRegex(
@@ -504,7 +504,7 @@ class EmphasisTests(unittest.TestCase):
                 try:
                     sheet = book["1"]
                     shown = [
-                        [cell.value for cell in row] for row in sheet.iter_rows(3, 6)
+                        [cell.value for cell in row] for row in sheet.iter_rows(1, 4)
                     ]
                     self.assertEqual(
                         shown,
@@ -515,16 +515,16 @@ class EmphasisTests(unittest.TestCase):
                             ["TOTAL", 1262.5, "see notes below"],
                         ],
                     )
-                    self.assertTrue(sheet["A3"].font.b)
-                    self.assertTrue(sheet["A4"].font.i)
-                    self.assertFalse(sheet["A4"].font.b)
-                    self.assertTrue(sheet["A6"].font.b)
-                    self.assertTrue(sheet["B6"].font.b)
-                    self.assertEqual(sheet["B6"].number_format, '#,##0.00 "€"')
-                    self.assertFalse(sheet["C6"].font.b)
-                    self.assertFalse(sheet["A5"].font.b)
+                    self.assertTrue(sheet["A1"].font.b)
+                    self.assertTrue(sheet["A2"].font.i)
+                    self.assertFalse(sheet["A2"].font.b)
+                    self.assertTrue(sheet["A4"].font.b)
+                    self.assertTrue(sheet["B4"].font.b)
+                    self.assertEqual(sheet["B4"].number_format, '#,##0.00 "€"')
+                    self.assertFalse(sheet["C4"].font.b)
+                    self.assertFalse(sheet["A3"].font.b)
                     self.assertEqual(
-                        sheet["C5"].hyperlink.target, "https://example.org/contract"
+                        sheet["C3"].hyperlink.target, "https://example.org/contract"
                     )
                 finally:
                     book.close()

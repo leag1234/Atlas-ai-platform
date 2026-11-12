@@ -50,6 +50,21 @@ compare or compute with text that begins like a number is refused with
 total (one range in SUM, AVERAGE, MIN or MAX, the amounts of SUMIF, or cells
 added and subtracted) takes the number format of the cells it adds up.
 
+In XLSX each section is a sheet named 1, 2, etc. The first table of a section
+starts at cell A1 of its sheet (header in row 1, first data row in row 2); the
+title, the heading, the paragraphs and the bullets follow it after one empty
+row, then any other table. A cell reference therefore means the same cell to
+the author of the table, in the file and to the person who opens it: nothing
+written above a table shifts its formulas. Only that first table holds
+formulas (`formula_table_not_first:sheet_<n>` otherwise), and every reference
+of a formula, in the branches IF does not evaluate too, stays inside such a
+table, its own or the one of a numbered sheet (`2!B2`); a reference to a note
+or beyond the last row is refused with
+`formula_reference_outside_table:<cell>:sheet_<n>`, the cell being the one that
+holds the formula. `total_findings` (`spreadsheet.py`) lists, for a rendered
+file, the totals whose range starts on the header row or stops before the last
+row above them; tests use it, publication does not refuse them.
+
 A table has up to 60 columns in XLSX, where it is not laid out on pages, and up
 to 14 in DOCX, PDF and PPTX (`table_columns_limit:14` beyond). Above eight
 columns the type is smaller (9 pt up to 11 columns, 7 pt up to 14) and a DOCX
