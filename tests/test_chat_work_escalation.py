@@ -547,6 +547,59 @@ class WorkFailureFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("votre machine est déjà utilisée", item.reponse)
         self.assertNotIn("Work failed", item.reponse)
 
+    async def test_a_stopped_run_is_explained_never_answered_by_the_chat_alone(
+        self,
+    ) -> None:
+        # Without a known category (time limit on the engine path) the tool-less chat
+        # used to answer, and invented test output (staging 2026-11-12).
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.interactions import Interaction
+
+        req = request(
+            "Write a function in Go that reverses a string, with unit tests, and run the tests to show they pass"
+        )
+        req.__dict__["native_chat_id"] = "123e4567-e89b-12d3-a456-426614174012"
+        req.__dict__["artifact_owner"] = "user@example.com"
+        item = Interaction()
+
+        async def stopped_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
+            i.state, i.reponse = "failed", "Work failed: time_limit"
+            i.erreurs.append("time_limit")
+            i.work_failure = {}
+
+        with (
+            patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+            patch("services.orchestrator.chat_work.work_gate_open", return_value=True),
+            patch(
+                "services.orchestrator.chat_work._identity",
+                new=AsyncMock(
+                    return_value={
+                        "memberships": [
+                            {"org_id": "123e4567-e89b-12d3-a456-426614174000"}
+                        ]
+                    }
+                ),
+            ),
+            patch(
+                "services.orchestrator.chat_work._ensure_scratch_project",
+                new=AsyncMock(return_value="123e4567-e89b-12d3-a456-426614174002"),
+            ),
+            patch(
+                "services.orchestrator.chat_work._find_binding",
+                new=AsyncMock(
+                    return_value={
+                        "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
+                        "work_session_id": "123e4567-e89b-12d3-a456-426614174004",
+                    }
+                ),
+            ),
+            patch("services.orchestrator.code_mode.process_work", new=stopped_work),
+        ):
+            self.assertTrue(await escalate_to_work(req, item))
+        self.assertEqual((item.state, item.task_type), ("done", "work"))
+        self.assertIn("la limite de temps a été atteinte", item.reponse)
+        self.assertNotIn("PASS", item.reponse)
+
     def test_machine_limits_have_their_own_category_in_every_language(self) -> None:
         from services.orchestrator.code_mode import WORK_FAILURE, work_failure_category
 
