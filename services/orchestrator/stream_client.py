@@ -14,6 +14,20 @@ metadata_only_context: ContextVar[bool] = ContextVar("metadata_only", default=Fa
 sink_context: ContextVar[Sink | None] = ContextVar("stream_sink", default=None)
 
 
+def provider_credit_detail(status: object) -> str:
+    # D5 wording of an exhausted provider account, with the provider's status.
+    suffix = (
+        f" (provider status {status})"
+        if type(status) is int and 100 <= status <= 599
+        else ""
+    )
+    return (
+        "The model provider refused the request: account credit exhausted"
+        + suffix
+        + "."
+    )
+
+
 async def receive(
     url: str, payload: dict[str, object], timeout: float, sink: Sink
 ) -> dict[str, object]:
@@ -55,6 +69,15 @@ async def receive(
                             502,
                             str(event.get("message", "provider_error")),
                             retries=int(event.get("retries", 0)),
+                        )
+                    if event.get("error") == "provider_quota":
+                        from services.orchestrator.model import GatewayError
+
+                        # D5: an exhausted provider account is not an outage.
+                        raise GatewayError(
+                            "provider_quota",
+                            402,
+                            provider_credit_detail(event.get("provider_status")),
                         )
                     if (
                         event.get("error") == "measured_limit"

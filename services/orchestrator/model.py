@@ -30,7 +30,11 @@ from services.orchestrator.loop import (
 __all__ = ["GatewayError"]
 
 from services.orchestrator.tools import declarations
-from services.orchestrator.stream_client import Sink, receive
+from services.orchestrator.stream_client import (
+    Sink,
+    provider_credit_detail,
+    receive,
+)
 from services.orchestrator.narration import (
     NarrationFilter,
     TurnHold,
@@ -207,6 +211,19 @@ class GatewayModel:
                             detail,
                             measurements=measurements,
                         )
+                    if response.status == 402:
+                        error = json.loads(await response.content.read(512))
+                        if (
+                            isinstance(error, dict)
+                            and error.get("code") == "provider_quota"
+                        ):
+                            # D5: an exhausted provider account is not an outage.
+                            raise GatewayError(
+                                "provider_quota",
+                                402,
+                                provider_credit_detail(error.get("provider_status")),
+                            )
+                        raise RuntimeError("gateway_error")
                     if response.status in (413, 429):
                         error = json.loads(await response.content.read(512))
                         if (

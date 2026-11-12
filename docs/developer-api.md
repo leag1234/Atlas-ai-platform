@@ -66,7 +66,9 @@ id uses that target only: no fallback to another model. Send `"fallback": false`
 (`atlas-chat`, `atlas-code`…) to use the first target only. In both cases, when the provider fails,
 the error carries its cause — 429 `rate_limit` (with `Retry-After` when the provider sent one), 402
 `provider_quota`, 503 `provider_unavailable`, 504 `provider_timeout` — as a JSON error with `type`,
-`message` and `provider_status`; the answer never comes from another model. `served_by` (the
+`message` and `provider_status`; the answer never comes from another model. An exhausted provider
+account is always reported as 402 `provider_quota`, never as a rate limit or an outage, whatever
+status the provider used to say so; `provider_status` carries that status. `served_by` (the
 `X-Atlas-Served-By` header and the response field) names the target that answered on every response,
 pinned or not, and pricing and the ledger use the pinned target's price.
 
