@@ -662,6 +662,76 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(page["context_truncated"])
         self.assertIn(CONTEXT_TRUNCATION_MARKER, page["text"])
 
+    async def test_work_step_sends_a_bounded_page_context(self) -> None:
+        # Staging 2026-11-12: a researched report sent about 290k tokens of
+        # fetched pages to the step writing the document; the first token came
+        # after more than 100 s under load and the call was cut.
+        from quality import CONTEXT_TRUNCATION_MARKER, input_bound
+
+        seen: list[AgentRequest] = []
+
+        async def transport(
+            current: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            seen.append(current)
+            yield result("Document written.", 20)
+
+        tools: list[dict[str, object]] = [
+            {"type": "function", "function": {"name": "switch_tool_group"}},
+            {"type": "function", "function": {"name": "web_fetch"}},
+        ]
+        messages: list[dict[str, object]] = [
+            {"role": "user", "content": "Research and write a report."}
+        ]
+        for index in range(3):
+            fetch_id = f"fetch-{index}"
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": fetch_id,
+                            "type": "function",
+                            "function": {"name": "web_fetch", "arguments": "{}"},
+                        }
+                    ],
+                }
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": fetch_id,
+                    "content": json.dumps(
+                        {
+                            "trust": "untrusted",
+                            "data": {"text": f"Page {index} sentence. " * 40000},
+                        }
+                    ),
+                }
+            )
+        original = request(tools=tools, messages=messages, budget_eur="0.10")
+        with (
+            patch.dict(
+                os.environ,
+                {**environment(), "ATLAS_WORK_CONTEXT_TOKENS": "20000"},
+            ),
+            patch("stream_transport.attempt", transport),
+        ):
+            events = [e async for e in stream_quality(AgentProvider(), original)]
+        self.assertIn("Document written.", str(events[-1]))
+        self.assertLessEqual(input_bound(seen[0].messages, seen[0].tools), 20000 * 3)
+        pages = [
+            json.loads(str(message["content"]))["data"]
+            for message in seen[0].messages
+            if message.get("role") == "tool"
+        ]
+        self.assertTrue(any(page.get("context_truncated") for page in pages))
+        self.assertTrue(
+            any(CONTEXT_TRUNCATION_MARKER in page["text"] for page in pages)
+        )
+        self.assertTrue(all(page["text"] for page in pages))
+
     async def test_text_only_model_uses_vision_capable_alternate(self) -> None:
         from test_vision_schema import payload, picture
 
