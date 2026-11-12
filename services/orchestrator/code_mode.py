@@ -1045,14 +1045,12 @@ async def process_work(
                     execution.session["base_file_versions"],
                     engine_result.state,
                 )
-                from services.orchestrator.file_results import project_deliverable_links
+                from services.orchestrator.file_results import append_deliverable_links
 
                 for receipt in saved.get("receipts", []):
-                    links = project_deliverable_links(
-                        receipt, broker.org, broker.project, request.lang
+                    item.reponse = append_deliverable_links(
+                        item.reponse, receipt, broker.org, broker.project, request.lang
                     )
-                    if links not in item.reponse:
-                        item.reponse += "\n\n" + links
                 item.reponse += project_file_lines(
                     saved, broker.org, broker.project, request.lang
                 )
@@ -1242,16 +1240,21 @@ async def process_work(
                 item.retrieved_urls.extend(
                     p["source"] for p in tools.nearby.result["places"]
                 )
-            from services.orchestrator.file_results import project_deliverable_links
+            from services.orchestrator.file_results import (
+                append_deliverable_links,
+                project_deliverable_links,
+            )
 
             delivered: list[str] = []
             for receipt in tools.deliverables:
-                links = project_deliverable_links(
-                    receipt, broker.org, broker.project, request.lang
+                delivered.append(
+                    project_deliverable_links(
+                        receipt, broker.org, broker.project, request.lang
+                    )
                 )
-                delivered.append(links)
-                if links not in item.reponse:
-                    item.reponse += "\n\n" + links
+                item.reponse = append_deliverable_links(
+                    item.reponse, receipt, broker.org, broker.project, request.lang
+                )
             item.cout_eur = float(model.spent)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
             reason = result.reason or next(
@@ -1297,14 +1300,10 @@ async def process_work(
                 execution.session["base_file_versions"],
                 result.state,
             )
-            from services.orchestrator.file_results import project_deliverable_links
-
             for receipt in saved.get("receipts", []):
-                links = project_deliverable_links(
-                    receipt, broker.org, broker.project, request.lang
+                item.reponse = append_deliverable_links(
+                    item.reponse, receipt, broker.org, broker.project, request.lang
                 )
-                if links not in item.reponse:
-                    item.reponse += "\n\n" + links
             item.reponse += project_file_lines(
                 saved, broker.org, broker.project, request.lang
             )

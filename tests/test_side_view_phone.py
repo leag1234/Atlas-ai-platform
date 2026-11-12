@@ -11,7 +11,7 @@ class PhoneSideViewTests(unittest.TestCase):
             'const wide = () => matchMedia("(min-width: 768px)").matches;', script
         )
         self.assertEqual(script.count("wide() && !opened.has(identity)"), 2)
-        self.assertIn("wide() && (message === last", script)
+        self.assertIn("wide() && latest) open(descriptor)", script)
 
 
 class DialogDismissTests(unittest.TestCase):
