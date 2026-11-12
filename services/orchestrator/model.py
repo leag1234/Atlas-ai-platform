@@ -33,6 +33,7 @@ from services.orchestrator.tools import declarations
 from services.orchestrator.stream_client import Sink, receive
 from services.orchestrator.narration import (
     NarrationFilter,
+    TurnHold,
     clean_answer,
     unfinished_announcement,
 )
@@ -110,6 +111,9 @@ class GatewayModel:
         self.observing = False
         self.generation_ms = 0.0
         self.sink: Sink | None = None
+        # Chat: a turn's text is kept off the stream until the turn is known
+        # to be the answer, after a tool result or from the first turn on.
+        self.note_hold: Literal["off", "after_tool", "turn"] = "off"
         self.reasoning_effort = "none"
         self.reasoning_ceiling: Literal["none", "low", "medium", "high"] | None = None
         self.stream_turn = 0
@@ -526,6 +530,7 @@ class GatewayModel:
         started = monotonic()
         if self.dispatch_hook:
             await self.dispatch_hook("intent", payload)
+        hold: TurnHold | None = None
         try:
             from services.orchestrator.stream_client import metadata_only_context
 
@@ -544,6 +549,18 @@ class GatewayModel:
                 )
                 parser = NarrationFilter()
                 sink = self.sink
+                # Whether this turn is the answer or a step before a tool call
+                # is only known when it ends, and streamed text cannot be taken
+                # back: the turn's text is held until then. With no tool
+                # offered the turn can only be the answer and streams live, as
+                # does a first turn nobody expects to use a tool (first token).
+                if payload["tools"] and (
+                    self.note_hold == "turn"
+                    or self.note_hold == "after_tool"
+                    and any(message.get("role") == "tool" for message in messages)
+                ):
+                    hold = TurnHold(sink)
+                answer: Sink = hold if hold is not None else sink
 
                 async def filtered(event: dict[str, object]) -> None:
                     delta = event.get("delta")
@@ -557,7 +574,7 @@ class GatewayModel:
                                 {"phase": "narration", "sentences": len(parser.removed)}
                             )
                         if text:
-                            await sink({"delta": {**delta, "content": text}})
+                            await answer({"delta": {**delta, "content": text}})
                     else:
                         await sink(event)
 
@@ -566,7 +583,7 @@ class GatewayModel:
                 )
                 tail = parser.finish()
                 if tail:
-                    await sink({"delta": {"content": tail}})
+                    await answer({"delta": {"content": tail}})
             result = WireTurn.model_validate(wire)
             context["provider_input_tokens"] = result.usage.prompt_tokens
             if self.session_context is not None:
@@ -607,6 +624,11 @@ class GatewayModel:
                     output_limit,
                     "tokens including recovery",
                 )
+            if hold is not None:
+                if result.calls:
+                    hold.drop()
+                else:
+                    await hold.release()
             if self.sink is not None:
                 await self.sink(
                     {

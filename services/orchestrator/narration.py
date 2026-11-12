@@ -1,5 +1,6 @@
 """Remove non-answer narration and wire material before delivery."""
 
+from collections.abc import Awaitable, Callable
 import json
 import logging
 import re
@@ -170,6 +171,43 @@ class NarrationFilter:
             self.removed.append(tail.strip())
             return ""
         return tail
+
+
+class TurnHold:
+    """Keep one model turn's streamed text back until the turn's kind is known.
+
+    What a model writes before it calls a tool ("I found relevant results, I
+    will now read...") is a working note, never answer text, and a stream cannot
+    take text back. The turn's text is held, then dropped when the turn calls a
+    tool, or released when the turn is the final answer.
+    """
+
+    def __init__(self, sink: Callable[[dict[str, object]], Awaitable[None]]) -> None:
+        self.sink = sink
+        self.events: list[dict[str, object]] = []
+
+    async def __call__(self, event: dict[str, object]) -> None:
+        self.events.append(event)
+
+    async def release(self) -> None:
+        """The turn is the answer: deliver what was held."""
+        events, self.events = self.events, []
+        for event in events:
+            await self.sink(event)
+
+    def drop(self) -> None:
+        """The turn called a tool: its text was a working note."""
+        characters = sum(
+            len(content)
+            for event in self.events
+            if isinstance(delta := event.get("delta"), dict)
+            and isinstance(content := delta.get("content"), str)
+        )
+        if characters:
+            logging.getLogger(__name__).info(
+                "working_notes_withheld characters=%d", characters
+            )
+        self.events = []
 
 
 def clean_answer(text: str, *, allow_empty: bool = False) -> str:
