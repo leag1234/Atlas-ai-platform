@@ -292,8 +292,10 @@ def response(
 
         async def work_status(event: dict[str, object]) -> None:
             # One Work step (work_progress.py): the kind of step, never its content.
+            await show_work(work_progress.step(event))
+
+        async def show_work(step: tuple[str, str] | None) -> None:
             nonlocal activity, activity_urls, activity_description
-            step = work_progress.step(event)
             if step is None or step == (activity, activity_description):
                 return
             activity, activity_description = step
@@ -312,9 +314,11 @@ def response(
                 return
             announced = event.get("work_step")
             if isinstance(announced, dict):
-                # A Work tool call starting: status only, never persisted or shown
-                # as a step.
-                if relay_work:
+                # A Work tool call starting, or the hand-over to Work (a phase):
+                # status only, never persisted or shown as a step.
+                if relay_work and "phase" in announced:
+                    await show_work(work_progress.phase(str(announced["phase"])))
+                elif relay_work:
                     await work_status(
                         {
                             "type": "tool",

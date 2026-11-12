@@ -576,6 +576,45 @@ class ProjectWorkTests(ProjectIsolationTests):
         self.assertEqual(recovered.status_code, 200, recovered.text)
         self.assertTrue(recovered.json()["cleanup_required"])
 
+    def test_last_event_sequence_includes_the_tool_ledger_record(self) -> None:
+        # The latest-sequence lookup is bounded to this call's sequences; the
+        # ledger record a tool event appends after its progress event still counts.
+        self.assertEqual(self.acquire().status_code, 200)
+        event = dict(
+            org_id=self.org,
+            project_id=self.project,
+            version=1,
+            seq=1,
+            session_id=self.session["id"],
+            request_id=self.turn_id,
+            turn_id=None,
+            type="tool",
+            status="running",
+            label="Run",
+            tool="run_command",
+            plan=[],
+            approval_id=None,
+            job_id=None,
+            text=None,
+            error=None,
+            output={},
+        )
+        for status in ("running", "completed"):
+            event["status"] = status
+            persisted = self.broker(
+                "events", dict(self.fence(), progress=[event], audit=[])
+            )
+            self.assertEqual(persisted.status_code, 200, persisted.text)
+            progress_seq = persisted.json()["events"][0]["seq"]
+            with psycopg.connect(self.admin_dsn) as db:
+                row = db.execute(
+                    "SELECT max(seq) FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND data->>'session_id'=%s",
+                    (self.org, self.project, self.session["id"]),
+                ).fetchone()
+            assert row is not None
+            self.assertGreater(row[0], progress_seq)
+            self.assertEqual(persisted.json()["last_event_seq"], row[0])
+
     def test_approval_and_progress_rls_denies_other_project(self) -> None:
         self.assertEqual(self.acquire().status_code, 200)
         approval, _ = self.issue()

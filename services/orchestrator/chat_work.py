@@ -331,10 +331,32 @@ MACHINE_SETUP_HINT = (
 )
 
 
+# Set on the request once the chat status said the workspace is being prepared.
+_PREPARING_KEY = "work_preparing_announced"
+
+
+async def _announce(request: ChatRequest, phase: str) -> None:
+    """The chat status of the hand-over (work_progress.py): a phase name only."""
+    from services.orchestrator.stream_client import sink_context
+
+    if phase == "preparing":
+        request.__dict__[_PREPARING_KEY] = True
+    if sink := sink_context.get():
+        await sink({"work_step": {"phase": phase}})
+
+
 async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     """Create (once per user) the hidden scratch project and a Work session bound
     to this conversation, then run the turn through process_work. Returns True
     when the turn was handed to Work."""
+    handed = await _escalate(request, item)
+    if not handed and request.__dict__.pop(_PREPARING_KEY, False):
+        # The chat answers by itself: the preparing status must not stay.
+        await _announce(request, "declined")
+    return handed
+
+
+async def _escalate(request: ChatRequest, item: Interaction) -> bool:
     if not eligible(request):
         return False
     chat_conversation_id = str(getattr(request, "native_chat_id", "") or "") or None
@@ -382,6 +404,9 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             request.conversation_id or "unknown",
         )
         return False
+    # From here the setup (project, conversation, session, workspace and, for
+    # code, the engine) takes seconds before Work reports its first step.
+    await _announce(request, "preparing")
     try:
         async with aiohttp.ClientSession(
             trust_env=False, timeout=aiohttp.ClientTimeout(total=30)

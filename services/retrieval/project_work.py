@@ -783,9 +783,19 @@ class Work:
                 )
             )
         if events:
+            # Only ledger events after the first one of this call can raise the
+            # maximum (a tool event appends its ledger record after its progress
+            # sequence). Bounding the sequence keeps this an index range: over
+            # the whole project, the row policies made it 2.8 s per event on a
+            # scratch project of 4200 ledger events (staging 2026-11-12).
             latest = self.db.execute(
-                "SELECT coalesce(max(seq),0) AS seq FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND data->>'session_id'=%s",
-                (self.org, self.project, value["id"]),
+                "SELECT coalesce(max(seq),0) AS seq FROM atlas_projects.ledger_events WHERE org_id=%s AND project_id=%s AND seq>=%s AND data->>'session_id'=%s",
+                (
+                    self.org,
+                    self.project,
+                    min(item["seq"] for item in events),
+                    value["id"],
+                ),
             ).fetchone()
             value["last_event_seq"] = max(
                 max(item["seq"] for item in events), latest["seq"] if latest else 0
