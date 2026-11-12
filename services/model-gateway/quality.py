@@ -67,6 +67,15 @@ ACTION_TOOLS = frozenset(
 )
 
 
+def work_context_tokens() -> int:
+    """The input a Work step sends at most, in tokens (ATLAS_WORK_CONTEXT_TOKENS)."""
+    try:
+        value = int(os.environ.get("ATLAS_WORK_CONTEXT_TOKENS", "64000"))
+    except ValueError:
+        value = 64000
+    return max(16000, value)
+
+
 def trim_fetched_pages(
     messages: list[dict[str, object]],
     tools: list[dict[str, object]],
@@ -275,6 +284,27 @@ async def stream_quality(
     primary = policy.models[role]
     fallback_role = policy.config[role]["fallback"]
     budget = Decimal(request.budget_eur or "0.10")
+    if work_step(request.tools):
+        # Fetched pages used to reach the step that writes a document whole, up
+        # to the model context: about 290k tokens per call for a researched
+        # report, over 100 s before the first token under load, the call cut
+        # and the document never delivered (staging 2026-11-12). A Work step
+        # reads at most ATLAS_WORK_CONTEXT_TOKENS of page text; the longest
+        # pages keep a marked prefix, as when the model context is reached.
+        limit = work_context_tokens() * WORK_BYTES_PER_TOKEN
+        if input_bound(request.messages, request.tools) > limit:
+            messages = trim_fetched_pages(request.messages, request.tools, limit)
+            if messages != request.messages:
+                request = request.model_copy(update={"messages": messages})
+                logging.getLogger(__name__).info(
+                    json.dumps(
+                        {
+                            "event": "work_context_trimmed",
+                            "bytes": input_bound(request.messages, request.tools),
+                            "limit": limit,
+                        }
+                    )
+                )
     input_bytes = input_bound(request.messages, request.tools)
     incoming = (
         ceil(input_bytes / WORK_BYTES_PER_TOKEN)
