@@ -1144,3 +1144,55 @@ class LocalizedDeliverableLinkTests(unittest.TestCase):
                 "[Download stats.py]"
             )
         )
+
+    def test_a_route_the_answer_already_links_is_not_added_again(self) -> None:
+        from uuid import uuid4
+
+        from services.orchestrator.file_results import (
+            append_deliverable_links,
+            project_deliverable_links,
+        )
+
+        org, project, identifier = str(uuid4()), str(uuid4()), str(uuid4())
+        prefix = f"/api/atlas/orgs/{org}/projects/{project}/deliverables/{identifier}"
+        receipt: dict[str, object] = {
+            "id": identifier,
+            "org_id": org,
+            "project_id": project,
+            "download_route": prefix + "/download",
+            "sha256": "a" * 64,
+            "validation": {
+                "status": "passed",
+                "verifier_exit": 0,
+                "artifact_sha256": "a" * 64,
+            },
+            "relative_path": "letter.docx",
+        }
+        english = project_deliverable_links(receipt, org, project)
+        french = project_deliverable_links(receipt, org, project, "fr")
+
+        def add(answer: str, lang: str = "en") -> str:
+            return append_deliverable_links(answer, receipt, org, project, lang)
+
+        # No link in the answer: the full pair, as before.
+        self.assertEqual(add("Done."), "Done.\n\n" + english)
+        # The model repeated the download link in its own words: one download
+        # link in the answer, and the preview stays available.
+        own = f"Download: [Cover Letter]({prefix}/download)\n\nTo use it: edit."
+        answer = add(own)
+        self.assertEqual(answer, own + f"\n\n[Preview]({prefix}/preview)")
+        self.assertEqual(answer.count(prefix + "/download"), 1)
+        # Both links already there: nothing is added, also on a second pass.
+        self.assertEqual(add(answer), answer)
+        self.assertEqual(add("Done.\n\n" + english), "Done.\n\n" + english)
+        # A verbatim copy of the tool result takes the answer language.
+        self.assertEqual(add(english + "\n\nVoilà.", "fr"), french + "\n\nVoilà.")
+        # An invented host in front of the route is removed, not doubled.
+        hosted = f"[La lettre](https://files.example.org{prefix}/download)"
+        self.assertEqual(
+            add(hosted, "fr"),
+            f"[La lettre]({prefix}/download)\n\n[Aperçu]({prefix}/preview)",
+        )
+        # The link of another file does not count for this one.
+        other = f"[Other]({prefix[:-36]}{uuid4()}/download)"
+        self.assertEqual(add(other), other + "\n\n" + english)

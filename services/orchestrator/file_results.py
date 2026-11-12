@@ -80,6 +80,48 @@ def project_deliverable_links(
     deliverable: dict[str, object], org: str, project: str, lang: str = "en"
 ) -> str:
     """Only server-returned, scope-matching canonical routes reach the transcript."""
+    return " · ".join(
+        link for _, link in _deliverable_links(deliverable, org, project, lang)
+    )
+
+
+def append_deliverable_links(
+    answer: str,
+    deliverable: dict[str, object],
+    org: str,
+    project: str,
+    lang: str = "en",
+) -> str:
+    """Add the links of a saved file to an answer, each route once.
+
+    The model reads the same routes in the tool result and often repeats the
+    download link in its own sentence; adding the full pair after it showed two
+    download links for one file (staging 2026-11-12). A route the answer
+    already links is not added again, so the preview stays one click away
+    without a second download link.
+    """
+    links = _deliverable_links(deliverable, org, project, lang)
+    # A verbatim copy of the tool result carries its English labels.
+    answer = answer.replace(
+        project_deliverable_links(deliverable, org, project),
+        " · ".join(link for _, link in links),
+    )
+    for route, _ in links:
+        # A model may put an invented host before a relative UI route.
+        answer = re.sub(
+            r"\]\(\s*(?:https?://[^/\s)]+)?" + re.escape(route) + r"\s*\)",
+            # The route is made of UUIDs and fixed words: safe as a replacement.
+            f"]({route})",
+            answer,
+        )
+    missing = [link for route, link in links if f"]({route})" not in answer]
+    return answer + "\n\n" + " · ".join(missing) if missing else answer
+
+
+def _deliverable_links(
+    deliverable: dict[str, object], org: str, project: str, lang: str
+) -> tuple[tuple[str, str], tuple[str, str]]:
+    """The verified (route, markdown link) pairs of a file: download, then preview."""
     from uuid import UUID
 
     identifier = str(UUID(str(deliverable["id"])))
@@ -102,4 +144,7 @@ def project_deliverable_links(
     ).strip()
     label = f"{download} {name}" if name else download
     label = label.replace("[", "(").replace("]", ")")
-    return f"[{label}]({prefix}/download) · [{preview}]({prefix}/preview)"
+    return (
+        (f"{prefix}/download", f"[{label}]({prefix}/download)"),
+        (f"{prefix}/preview", f"[{preview}]({prefix}/preview)"),
+    )
