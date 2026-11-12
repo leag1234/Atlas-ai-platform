@@ -31,6 +31,17 @@ class GlyphTests(unittest.TestCase):
         text = "x² + y³ ≈ 10 ≤ 12, « citation » — fin…"
         self.assertEqual(adapt(text), text)
 
+    def test_any_arrow_bullet_shape_and_fraction_is_adapted(self) -> None:
+        # Staging -27 (2026-11-12): a Word report still refused for symbols the
+        # first version did not list.
+        self.assertEqual(
+            adapt("Suite ⇨ fin ➜ ok ⟹ donc ; ▪ point ; ► titre ; ⅓ ; ⚠️ note"),
+            "Suite -> fin -> ok -> donc ; - point ; - titre ; 1/3 ; note",
+        )
+        self.assertEqual(adapt("mot\u2003mot"), "mot mot")
+        for text in ("✱ ℹ ⌘ ⏱ ♫ ☂", "a\u200bb"):
+            self.assertTrue(drawable(adapt(text)), adapt(text))
+
     def test_an_uncovered_script_is_left_for_the_layout_to_refuse(self) -> None:
         self.assertEqual(adapt("中文报告"), "中文报告")
 
