@@ -48,5 +48,33 @@ class CodeUrlTests(unittest.TestCase):
         self.assertIn("unverified source", cleaned)
 
 
+class CanonicalUrlTests(unittest.TestCase):
+    def test_a_retrieved_page_cited_with_a_final_slash_is_kept(self) -> None:
+        text = "* **Source :** [Python.org](https://www.python.org/downloads/)\n"
+        cleaned = without_unretrieved(text, {"https://www.python.org/downloads"})
+        self.assertIn("https://www.python.org/downloads/", cleaned)
+
+    def test_spelling_differences_are_the_same_page(self) -> None:
+        for cited in (
+            "https://python.org/downloads",
+            "http://www.python.org/downloads#latest",
+            "https://WWW.Python.org/downloads/",
+        ):
+            with self.subTest(cited=cited):
+                self.assertIn(
+                    cited,
+                    without_unretrieved(
+                        "See " + cited + " today.", {"https://www.python.org/downloads"}
+                    ),
+                )
+
+    def test_another_page_of_the_same_site_is_still_removed(self) -> None:
+        cleaned = without_unretrieved(
+            "See https://www.python.org/downloads/release/python-3152/ today.",
+            {"https://www.python.org/downloads"},
+        )
+        self.assertNotIn("release/python-3152", cleaned)
+
+
 if __name__ == "__main__":
     unittest.main()

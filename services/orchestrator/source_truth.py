@@ -113,8 +113,26 @@ user_urls: ContextVar[frozenset[str]] = ContextVar(
 )
 
 
+def canonical_url(url: str) -> str:
+    """One spelling of an address: scheme, host case, a "www." prefix, a final
+    slash and a fragment do not make another page. A retrieved page cited as
+    "https://www.python.org/downloads/" was removed as unretrieved because the
+    fetch had no final slash (staging 2026-11-12)."""
+    parsed = urlparse(url.strip().strip("<>"))
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    port = f":{parsed.port}" if parsed.port else ""
+    path = parsed.path.rstrip("/")
+    query = f"?{parsed.query}" if parsed.query else ""
+    return f"{host}{port}{path}{query}"
+
+
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
     retrieved = set(retrieved) | user_urls.get()
+    known = {canonical_url(url) for url in retrieved}
+
+    def fetched(url: str) -> bool:
+        return url in retrieved or canonical_url(url) in known
+
     from services.orchestrator.citation_fragments import _CODE, tool_citations
     from services.orchestrator.mermaid_check import FENCE
 
@@ -125,7 +143,7 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
 
     def replace(match: re.Match[str]) -> str:
         value = match[0].rstrip(".,;:)]}>'\"")
-        if value in retrieved:
+        if fetched(value):
             return match[0]
         if any(start <= match.start() < end for start, end in diagram_ranges):
             return "unverified source"
@@ -142,13 +160,13 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     # Bare unknown URLs retain the existing explicit provenance notice.
     text = re.sub(
         r"(?<!!)\[[^\]\n]+\]\((?:\[unverified source\]|https?://[^\s]+?)\)",
-        lambda m: m[0] if urls(m[0]) and urls(m[0]) <= retrieved else "",
+        lambda m: m[0] if urls(m[0]) and all(map(fetched, urls(m[0]))) else "",
         text,
         flags=re.I,
     )
     definitions = re.compile(r"(?m)^\s{0,3}\[([^\]\n]+)\]:[ \t]*(\S+)[^\n]*$")
     for definition in list(definitions.finditer(text)):
-        if definition[2].strip("<>") not in retrieved:
+        if not fetched(definition[2].strip("<>")):
             label = re.escape(definition[1])
             text = re.sub(r"(?<!!)\[[^\]\n]+\]\[" + label + r"\]", "", text, flags=re.I)
             text = text.replace(definition[0], "")

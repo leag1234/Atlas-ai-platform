@@ -446,7 +446,12 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                             await tools.execute(call, 2)
                         self.assertEqual(raised.exception.code, outcome)
                         self.assertEqual(raised.exception.detail, sx.NOTICES[outcome])
-                self.assertIn(outcome, item.erreurs)
+                if outcome == "partial_results":
+                    # Pages were returned: the search worked, no caveat under
+                    # the answer (staging 2026-11-12).
+                    self.assertNotIn(outcome, item.erreurs)
+                else:
+                    self.assertIn(outcome, item.erreurs)
 
     async def test_pipeline_keeps_earlier_sources_and_adds_localized_caveat(
         self,
