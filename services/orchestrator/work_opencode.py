@@ -166,6 +166,7 @@ class OpencodeDriver:
         provider: str = "atlas",
         model_id: str = "",
         token_prices: tuple[Decimal, Decimal] | None = None,
+        follow_up: Callable[[], str | None] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.auth = basic_auth_header(password)
@@ -179,6 +180,11 @@ class OpencodeDriver:
         # EUR per million input and output tokens. opencode reports cost 0 for a
         # provider without a price table, so the turn ceiling uses these rates.
         self.token_prices = token_prices
+        # Asked when the session goes idle: a message that sends the agent back
+        # to work in the same session (a requested run with nothing executed),
+        # or None to end the turn.
+        self.follow_up = follow_up
+        self.prompts: list[str] = []
         self.cost = Decimal(0)
         self.input_tokens = 0
         self.output_tokens = 0
@@ -194,6 +200,23 @@ class OpencodeDriver:
         ) as response:
             response.raise_for_status()
             return await response.json(content_type=None)
+
+    async def _prompt(
+        self, session: aiohttp.ClientSession, session_id: str, text: str
+    ) -> None:
+        self.prompts.append(text.strip())
+        await self._request(
+            session,
+            "POST",
+            "/session/" + session_id + "/prompt_async",
+            json={
+                "model": {
+                    "providerID": self.provider,
+                    "modelID": self.model_id,
+                },
+                "parts": [{"type": "text", "text": text}],
+            },
+        )
 
     async def _abort(self, session: aiohttp.ClientSession, session_id: str) -> None:
         try:
@@ -256,18 +279,7 @@ class OpencodeDriver:
                 headers={"Authorization": self.auth},
             )
             try:
-                await self._request(
-                    http,
-                    "POST",
-                    "/session/" + session_id + "/prompt_async",
-                    json={
-                        "model": {
-                            "providerID": self.provider,
-                            "modelID": self.model_id,
-                        },
-                        "parts": [{"type": "text", "text": prompt}],
-                    },
-                )
+                await self._prompt(http, session_id, prompt)
                 async with stream:
                     while True:
                         remaining = (
@@ -322,11 +334,21 @@ class OpencodeDriver:
                         mapped = map_event(payload)
                         if mapped is None:
                             continue
+                        if (
+                            mapped["kind"] == "text"
+                            and str(mapped.get("text", "")).strip() in self.prompts
+                        ):
+                            # Our own message, echoed as a part: never the answer.
+                            continue
                         events.append(mapped)
                         await self.emit(mapped)
                         if mapped["kind"] == "permission":
                             await self._answer_permission(http, mapped)
                         elif mapped["kind"] == "turn_end":
+                            follow_up = self.follow_up() if self.follow_up else None
+                            if follow_up:
+                                await self._prompt(http, session_id, follow_up)
+                                continue
                             break
                         elif mapped["kind"] == "error":
                             outcome = "error"

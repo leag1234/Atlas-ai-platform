@@ -11,6 +11,7 @@ import time
 import threading
 from typing import Any
 from collections.abc import Awaitable, Callable, Sequence
+from functools import partial
 
 import yaml
 
@@ -220,6 +221,10 @@ STEP_LIMITS = {
 }
 
 
+# How the loop's agent runs code, for the instruction of a requested run.
+RUN_TOOL = "run_command (in the code group: call switch_tool_group first if another group is selected)"
+
+
 def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str, str]:
     """Tool errors still open at the end of a Work turn.
 
@@ -338,6 +343,7 @@ async def execute_turn(
         register(str(history[-1]["content"]), {"session_state": workspace_context})
     if isinstance(tools, WorkTools):
         tools.verification.explicit = explicit_tests(request.user_text)
+    guard = tools.run_guard if isinstance(tools, WorkTools) else None
     result = await run(
         Query(question=redact(request.user_text), lang=request.lang),
         model,
@@ -356,8 +362,18 @@ async def execute_turn(
         # tool calls ("I will first…", "that failed, let me retry…") is progress,
         # not the answer: it was glued in front of the result without a space.
         final_only=isinstance(tools, WorkTools),
+        before_final=None if guard is None else partial(guard.next_step, RUN_TOOL),
     )
     assert isinstance(result, CodeResult)
+    if isinstance(tools, WorkTools) and guard is not None and result.state == "done":
+        result.text, unexecuted = guard.answer(result.text, request.lang)
+        if unexecuted:
+            await tools.emit(
+                "honesty",
+                label="Run not executed",
+                status="completed",
+                output={"text": result.text},
+            )
     if isinstance(tools, WorkTools):
         result.verification = tools.verification.status()
         if (
@@ -882,6 +898,17 @@ async def process_work(
                 if routed is not None
                 else produces_file(request.user_text, include_images=False)
                 or work_reason(request.user_text) == "file"
+            )
+            from services.orchestrator.work_execution import (
+                ExecutionGuard,
+                run_requested,
+            )
+
+            # Code to run is run before the answer, or the answer says it was not.
+            tools.run_guard = ExecutionGuard(
+                run_requested(
+                    routed.kind if routed is not None else None, request.user_text
+                )
             )
             from services.orchestrator.work_tool_selection import (
                 WorkToolSelection,
