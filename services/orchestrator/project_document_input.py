@@ -39,7 +39,12 @@ def markdown(text: str, title: str) -> Content:
             sections.append(section.copy())
 
     def cells(line: str) -> list[str]:
-        return [cell.strip() for cell in line.strip().strip("|").split("|")]
+        # One outer pipe on each side is the table border; an empty last cell
+        # written "||" stays a cell.
+        line = line.strip()
+        line = line[1:] if line.startswith("|") else line
+        line = line[:-1] if line.endswith("|") else line
+        return [cell.strip() for cell in line.split("|")]
 
     index = 0
     while index < len(lines):
@@ -69,9 +74,13 @@ def markdown(text: str, title: str) -> Content:
             rows = []
             index += 2
             while index < len(lines) and "|" in lines[index] and lines[index].strip():
-                # A deliberate empty Markdown cell is a visual placeholder;
-                # keep strict Content text and rectangularity validation intact.
-                rows.append([cell or "—" for cell in cells(lines[index])])
+                # An empty Markdown cell stays an empty cell in every format (a
+                # value to fill in later); a missing cell is still a width error.
+                row = cells(lines[index])
+                while len(row) > len(headers) and not row[-1]:
+                    # A doubled closing pipe adds no column.
+                    row.pop()
+                rows.append(row)
                 index += 1
             section["tables"].append(dict(headers=headers, rows=rows))
             continue

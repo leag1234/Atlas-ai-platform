@@ -12,6 +12,7 @@ from docx.enum.text import WD_BREAK
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as SheetImage
 from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 from pptx import Presentation
 from pptx.util import Pt
 from reportlab.pdfgen.canvas import Canvas
@@ -186,6 +187,9 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
     workbook.remove(workbook.worksheets[0])
     workbook.properties.title = content.title
     workbook.properties.created = workbook.properties.modified = EPOCH
+    # The written area of each sheet, empty table cells included: a formula may
+    # reference an empty cell of the table, never a cell outside what was written.
+    extents: dict[str, tuple[int, int]] = {}
     for index, section in enumerate(content.sections):
         # Numeric tabs are structural identifiers, never invented document content.
         sheet = workbook.create_sheet(str(index + 1))
@@ -206,8 +210,14 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
                     range(len(rows) + 2, len(rows) + 2 + len(table.rows))
                 )
             rows.extend((table.headers, *table.rows))
+        extents[sheet.title] = (len(rows), max(map(len, rows)))
         for row_index, row in enumerate(rows, 1):
             for column, value in enumerate(row, 1):
+                if not value:
+                    # An empty table cell is a truly empty cell: no value, no
+                    # empty string. Formulas read it as Excel does.
+                    sheet.column_dimensions[get_column_letter(column)].width = 32
+                    continue
                 cell = sheet.cell(row_index, column, value)
                 cell.data_type = "s"
                 if row_index in formula_rows:
@@ -236,7 +246,7 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
     if any(table.formulas for section in content.sections for table in section.tables):
         from .formulas import cache_formulas
 
-        cache_formulas(path)
+        cache_formulas(path, extents)
 
 
 def render(content: Content, path: Path, *, image_root: Path) -> Verification:

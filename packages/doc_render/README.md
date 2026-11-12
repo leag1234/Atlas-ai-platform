@@ -28,7 +28,11 @@ python -m tests.doc_render_bench output/document.pdf --sections 40
 The schema accepts a title, substantive sections, paragraphs, bullets, rectangular
 tables and relative PNG/JPEG image paths contained by an explicit asset root.
 Blank/control text, unknown fields, unsupported font characters and oversized
-content fail explicitly. The caller owns output paths and asset permissions.
+content fail explicitly. A table cell may be empty (a value to fill in later):
+it stays empty in every format, with no placeholder character, and is a truly
+empty cell in XLSX, read by formulas as Excel reads it (0 in arithmetic, skipped
+by SUM, MIN, MAX, COUNT and AVERAGE). A table needs at least one column name.
+The caller owns output paths and asset permissions.
 
 PPTX uses python-pptx, DOCX uses python-docx, XLSX uses openpyxl, and PDF uses
 ReportLab with its bundled Vera font. All document text comes from the input.

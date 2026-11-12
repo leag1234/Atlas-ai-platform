@@ -7,6 +7,11 @@ values, cell and range references on the same workbook, the operators
 Anything else is rejected with a named reason, so the caller can rewrite the
 formula instead of guessing. Formulas are parsed first, then evaluated, so IF
 and IFERROR only evaluate the branch they return (Excel semantics).
+
+An empty cell is read as Excel reads it: 0 in arithmetic, "" next to text and
+with &, FALSE as a condition; SUM, MIN, MAX and COUNT skip it (their result
+over no number is 0), and AVERAGE over no number is a division by zero, which
+IFERROR catches. Text in a cell that arithmetic needs stays an error.
 """
 
 from __future__ import annotations
@@ -58,7 +63,15 @@ class CellError(ValueError):
     """
 
 
-def cache_formulas(path: Path) -> None:
+def cache_formulas(
+    path: Path, extents: dict[str, tuple[int, int]] | None = None
+) -> None:
+    """Compute and store every formula result.
+
+    extents gives, per sheet title, the written area as (rows, columns), empty
+    cells included: an empty cell is not stored in the file, so the file alone
+    understates the area a formula may reference.
+    """
     book = load_workbook(path, data_only=False)
     values: dict[tuple[str, str], Any] = {}
     active: set[tuple[str, str]] = set()
@@ -96,11 +109,17 @@ def cache_formulas(path: Path) -> None:
 
     def compare(operator: str, left: Any, right: Any) -> bool:
         # Excel orders numbers before text before logical values; an empty
-        # cell is 0 next to a number and "" next to text.
+        # cell is 0 next to a number, "" next to text and FALSE next to a
+        # logical value.
+        def blank(other: Any) -> Any:
+            if isinstance(other, bool):
+                return False
+            return "" if isinstance(other, str) else 0.0
+
         if left is None:
-            left = "" if isinstance(right, str) else 0.0
+            left = blank(right)
         if right is None:
-            right = "" if isinstance(left, str) else 0.0
+            right = blank(left)
 
         def rank(value: Any) -> int:
             return 2 if isinstance(value, bool) else 1 if isinstance(value, str) else 0
@@ -151,9 +170,10 @@ def cache_formulas(path: Path) -> None:
         left, top, right, bottom = range_boundaries(text)
         if left is None or top is None or right is None or bottom is None:
             raise ValueError("unsupported_formula_reference")
+        rows, columns = (extents or {}).get(sheet.title, (0, 0))
         if (
-            right > sheet.max_column
-            or bottom > sheet.max_row
+            right > max(columns, sheet.max_column)
+            or bottom > max(rows, sheet.max_row)
             or (right - left + 1) * (bottom - top + 1) > 10000
         ):
             raise ValueError("formula_range_limit")
@@ -387,7 +407,8 @@ def cache_formulas(path: Path) -> None:
             return sum(
                 number(v)
                 for c, v in zip(criteria, amounts, strict=True)
-                if str(c).casefold() == str(criterion).casefold()
+                # An empty criteria cell matches no text criterion.
+                if c is not None and str(c).casefold() == str(criterion).casefold()
             )
         arity(1, 30)
         found = numbers()
@@ -413,7 +434,8 @@ def cache_formulas(path: Path) -> None:
         value = float(result)
         if not math.isfinite(value):
             raise ValueError("nonfinite_formula")
-        return value
+        # The negation of an empty cell is 0, never a stored "-0.0".
+        return value + 0.0
 
     try:
         for sheet in book:

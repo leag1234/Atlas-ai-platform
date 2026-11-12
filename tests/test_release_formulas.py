@@ -102,17 +102,19 @@ class FormulaDeliveryTests(unittest.TestCase):
             finally:
                 book.close()
 
-    def test_markdown_empty_cell_is_a_visible_placeholder_without_padding_rows(
-        self,
-    ) -> None:
+    def test_markdown_empty_cell_stays_empty_without_padding_rows(self) -> None:
         value = normalize(
             dict(
                 path="summary.docx",
-                content="| Name | Amount | Note |\n| --- | --- | --- |\n| Total | 1500 |  |",
+                content="| Name | Amount | Note |\n| --- | --- | --- |\n"
+                "| Total | 1500 |  |\n| Rest || |\n| Later | 20 ||",
             )
         )
         content = Content.model_validate(value["content"])
-        self.assertEqual(content.sections[0].tables[0].rows[0], ("Total", "1500", "—"))
+        self.assertEqual(
+            content.sections[0].tables[0].rows,
+            (("Total", "1500", ""), ("Rest", "", ""), ("Later", "20", "")),
+        )
         with self.assertRaises(ValueError):
             normalize(
                 dict(
@@ -120,6 +122,252 @@ class FormulaDeliveryTests(unittest.TestCase):
                     content="| Name | Amount |\n| --- | --- |\n| Total |",
                 )
             )
+
+
+BUDGET = (
+    "# Budget\n## Monthly follow-up\n"
+    "| Category | January | February | Total |\n| --- | --- | --- | --- |\n"
+    "| Rent | 800 | | =B4+C4 |\n"
+    "| Groceries | 300.5 |  | =B5+C5 |\n"
+    "| Total | =SUM(B4:B5) | =SUM(C4:C5) | =SUM(D4:D5) |\n"
+    "{extra}"
+)
+
+
+class EmptyCellTests(unittest.TestCase):
+    """A cell left empty is an empty cell, read by formulas as Excel reads it."""
+
+    def content(self, extra: str = "", suffix: str = "xlsx") -> Content:
+        value = normalize(
+            dict(
+                path="budget." + suffix,
+                formulas=suffix == "xlsx",
+                content=BUDGET.format(extra=extra),
+            )
+        )
+        return Content.model_validate(value["content"])
+
+    def test_a_month_not_started_is_empty_and_its_totals_are_zero(self) -> None:
+        from zipfile import ZipFile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "budget.xlsx"
+            result = render(self.content(), path, image_root=path.parent)
+            # No dash and no other character was invented for the empty cells.
+            self.assertNotIn("—", "".join(result.text))
+            formulas = load_workbook(path, data_only=False)
+            values = load_workbook(path, data_only=True)
+            try:
+                sheet = values["1"]
+                for cell in ("C4", "C5"):
+                    self.assertIsNone(formulas["1"][cell].value)
+                    self.assertIsNone(sheet[cell].value)
+                self.assertEqual(formulas["1"]["C6"].value, "=SUM(C4:C5)")
+                self.assertEqual(
+                    [sheet[cell].value for cell in ("D4", "D5", "B6", "C6", "D6")],
+                    [800, 300.5, 1100.5, 0, 1100.5],
+                )
+            finally:
+                formulas.close()
+                values.close()
+            with ZipFile(path) as archive:
+                xml = archive.read("xl/worksheets/sheet1.xml").decode()
+        # Truly empty: the cell is absent from the file, not an empty string.
+        self.assertIn('r="B4"', xml)
+        self.assertNotIn('r="C4"', xml)
+        self.assertNotIn('r="C5"', xml)
+
+    def test_the_publication_path_delivers_the_sheet_with_an_empty_month(self) -> None:
+        from services.orchestrator.presentation_delivery import build_project_document
+
+        document = build_project_document(
+            self.content(), ".xlsx", [], max_bytes=16777216, timeout=30
+        )
+        preview = document.preview.decode()
+        self.assertIn("=SUM(C4:C5)", preview)
+        self.assertNotIn("—", preview)
+
+    def test_formulas_over_empty_cells_compute_what_excel_shows(self) -> None:
+        cases = {
+            # Arithmetic reads an empty cell as 0.
+            "=C4+C5": 0,
+            "=B4-C4": 800,
+            "=C4*B4": 0,
+            "=-C4": 0,
+            "=C4*-1": 0,
+            "=C4%": 0,
+            "=ABS(C4)": 0,
+            "=ROUND(C4,2)": 0,
+            # Aggregates skip it; over no number they give 0.
+            "=SUM(C4:C5)": 0,
+            "=SUM(B4:C5)": 1100.5,
+            "=COUNT(C4:C5)": 0,
+            "=COUNT(B4:C5)": 2,
+            "=MIN(C4:C5)": 0,
+            "=MAX(C4:C5)": 0,
+            "=MIN(B4:C5)": 300.5,
+            "=AVERAGE(B4:C5)": 550.25,
+            '=SUMIF(A4:A5,"Rent",C4:C5)': 0,
+            # Comparisons and conditions: 0, "" and FALSE.
+            "=C4=0": True,
+            '=C4=""': True,
+            "=C4=FALSE": True,
+            "=C4>0": False,
+            "=IF(C4,1,2)": 2,
+            "=NOT(C4)": True,
+            '=IF(C4="","to fill in",C4)': "to fill in",
+            # Concatenation reads it as "".
+            '=C4&"x"': "x",
+            # A reference to an empty cell shows 0.
+            "=C4": 0,
+            # The error of an average or a division over cells still empty is
+            # caught by IFERROR, as in Excel.
+            '=IFERROR(AVERAGE(C4:C5),"")': None,
+            "=IFERROR(B4/C4,0)": 0,
+        }
+        for formula, expected in cases.items():
+            with self.subTest(formula=formula):
+                extra = f"| Check | {formula} | | |\n"
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "budget.xlsx"
+                    render(self.content(extra), path, image_root=path.parent)
+                    book = load_workbook(path, data_only=True)
+                    try:
+                        found = book["1"]["B7"].value
+                    finally:
+                        book.close()
+                self.assertEqual(found, expected)
+                # TRUE is not 1 and "" is not 0 in the stored result.
+                self.assertEqual(isinstance(found, bool), isinstance(expected, bool))
+
+    def test_what_excel_shows_as_an_error_is_still_refused_by_name(self) -> None:
+        from services.orchestrator.presentation_delivery import build_project_document
+
+        for extra, reason in (
+            ("| Check | =AVERAGE(C4:C5) | | |\n", "formula_division_by_zero"),
+            ("| Check | =B4/C4 | | |\n", "formula_division_by_zero"),
+            # Text is not an empty cell: a written dash still stops arithmetic.
+            ("| Check | — | =B7+1 | |\n", "formula_requires_numeric_cells"),
+            ("| Check | =A4*2 | | |\n", "formula_requires_numeric_cells"),
+            # Outside the written table.
+            ("| Check | =SUM(B4:B40) | | |\n", "formula_range_limit"),
+            ("| Check | =F4 | | |\n", "formula_range_limit"),
+        ):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    reason + r" \(formulas support.*leave a cell to fill in empty",
+                ):
+                    build_project_document(
+                        self.content(extra),
+                        ".xlsx",
+                        [],
+                        max_bytes=16777216,
+                        timeout=30,
+                    )
+
+    def test_blank_rows_to_fill_in_below_a_total_are_inside_the_table(self) -> None:
+        value = normalize(
+            dict(
+                path="log.xlsx",
+                formulas=True,
+                content="# Log\n## Expenses\n| Date | Amount |\n| --- | --- |\n"
+                "| Total | =SUM(B5:B7) |\n| | |\n| | |\n| | |",
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "log.xlsx"
+            render(
+                Content.model_validate(value["content"]), path, image_root=path.parent
+            )
+            book = load_workbook(path, data_only=True)
+            try:
+                self.assertEqual(book["1"]["B4"].value, 0)
+                self.assertEqual(book["1"].max_row, 4)
+            finally:
+                book.close()
+
+    def test_strict_content_accepts_empty_cells_and_needs_column_names(self) -> None:
+        table = dict(headers=["", "January"], rows=[["Rent", ""], ["Groceries", "  "]])
+        content = Content.model_validate(
+            dict(title="Budget", sections=[dict(heading="Months", tables=[table])])
+        )
+        self.assertEqual(
+            content.sections[0].tables[0].rows, (("Rent", ""), ("Groceries", ""))
+        )
+        self.assertEqual(
+            content.texts(), ("Budget", "Months", "January", "Rent", "Groceries")
+        )
+        for bad in (
+            dict(table, headers=["", " "]),
+            dict(table, rows=[["Rent"]]),
+            dict(table, rows=[["Rent", None]]),
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                Content.model_validate(
+                    dict(
+                        title="Budget", sections=[dict(heading="Months", tables=[bad])]
+                    )
+                )
+        # Text outside table cells is still required.
+        with self.assertRaises(ValueError):
+            Content.model_validate(
+                dict(title="Budget", sections=[dict(heading="Months", bullets=[""])])
+            )
+
+    def test_other_formats_keep_the_cell_empty_without_a_dash(self) -> None:
+        from docx import Document
+        from pptx import Presentation
+
+        from packages.doc_render.schema import PresentationOutline
+
+        for suffix in ("docx", "pdf"):
+            with (
+                self.subTest(suffix=suffix),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                path = Path(directory) / ("budget." + suffix)
+                result = render(
+                    self.content("| | | | |\n", suffix), path, image_root=path.parent
+                )
+                text = "".join(result.text)
+                self.assertNotIn("—", text)
+                self.assertIn("Rent", text)
+                self.assertIn("=SUM(C4:C5)", "".join(text.split()))
+                if suffix == "docx":
+                    grid = Document(str(path)).tables[0]
+                    self.assertEqual(
+                        [cell.text for cell in grid.rows[1].cells],
+                        ["Rent", "800", "", "=B4+C4"],
+                    )
+                    self.assertEqual(
+                        [cell.text for cell in grid.rows[4].cells], [""] * 4
+                    )
+        outline = PresentationOutline.model_validate(
+            dict(
+                title="Budget",
+                slides=[
+                    dict(
+                        title="Months",
+                        bullets=["February is not started"],
+                        table=dict(
+                            headers=["Category", "February"], rows=[["Rent", ""]]
+                        ),
+                    )
+                ],
+            )
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "budget.pptx"
+            render(outline.content(), path, image_root=path.parent)
+            cells = [
+                cell.text
+                for shape in Presentation(str(path)).slides[0].shapes
+                if shape.has_table
+                for row in shape.table.rows
+                for cell in row.cells
+            ]
+        self.assertEqual(cells, ["Category", "February", "Rent", ""])
 
 
 class SourceAppendixTests(unittest.TestCase):

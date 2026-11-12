@@ -116,7 +116,8 @@ def pages(content: Content, image_root: Path) -> tuple[tuple[Placed, ...], ...]:
                         lines=lines,
                         size=11,
                         table=True,
-                        height=max(map(len, lines)) * 15 + 12,
+                        # A row of empty cells keeps the height of one line.
+                        height=max(1, *map(len, lines)) * 15 + 12,
                     )
                 )
         for value in section.images:
