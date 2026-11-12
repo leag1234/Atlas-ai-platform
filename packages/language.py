@@ -90,11 +90,11 @@ def requested_language(text: str) -> str | None:
     )
     normalized = re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", normalized)
     names = {
-        "en": "english|anglais|englisch|ingles|inglese",
-        "fr": "french|francais|franzosisch|frances|francese",
-        "de": "german|allemand|deutsch(?:e[nmrs]?)?|aleman|tedesco",
-        "es": "spanish|espagnol|spanisch|espanol|spagnolo",
-        "it": "italian|italien|italienisch|italiano",
+        "en": "english|anglais|englisch|ingles|inglese hello thanks thank",
+        "fr": "french|francais|franzosisch|frances|francese merci beaucoup salut",
+        "de": "german|allemand|deutsch(?:e[nmrs]?)?|aleman|tedesco danke hallo wer",
+        "es": "spanish|espagnol|spanisch|espanol|spagnolo gracias hola quien",
+        "it": "italian|italien|italienisch|italiano grazie ciao chi",
     }
     directive = r"\b(?:translat\w*|tradui\w*|tradu[cz]\w*|traduc\w*|tradurr\w*|uberset\w*|answer|reply|respond\w*|repond\w*|antworte\w*|rispondi)\b"
     chosen: str | None = None
@@ -118,6 +118,38 @@ def requested_language(text: str) -> str | None:
     return chosen
 
 
+# Short, frequent words that belong to one language only among the five (no "la", "es",
+# "die" in a romance sense…): enough to trust a detection on a message of a few words.
+FUNCTION_WORDS = {
+    "en": (
+        "the is are what how why who explain write tell my this that you your please "
+        "define describe hello thanks thank"
+    ),
+    "fr": (
+        "les est cet cette je vous moi quoi comment pourquoi des au aux explique ecris "
+        "dis merci beaucoup salut"
+    ),
+    "de": (
+        "der die das ist ich wie warum wer und nicht ein eine mir erklare schreib bitte "
+        "danke hallo"
+    ),
+    "es": "el los las como por para porque hora explica escribe dime cual quien gracias hola",
+    "it": "gli che perche per sono spiega scrivi dimmi chi grazie ciao",
+}
+
+
+def has_function_word(text: str, language: str) -> bool:
+    normalized = "".join(
+        c
+        for c in unicodedata.normalize("NFKD", text.lower())
+        if not unicodedata.combining(c)
+    )
+    return bool(
+        set(re.findall(r"[a-z]+", normalized))
+        & set(FUNCTION_WORDS.get(language, "").split())
+    )
+
+
 def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> str:
     # Dutch is supported by search; text UI/prompt translations remain unchanged.
     if locale == "nl":
@@ -136,8 +168,18 @@ def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> s
     if len(re.findall(r"\b[\w'-]+\b", current)) < 5:
         if history is not None:
             return history
+        # A few words fool the statistical detector ("Explain quantum entanglement"
+        # came back French at 0.86, "Que hora es" French at 1.0; staging 2026-11-12).
+        # Function words that belong to one language only decide first; a detection
+        # is kept only when it agrees with them or with the UI locale.
+        marked = [
+            language for language in LANGUAGES if has_function_word(current, language)
+        ]
+        if len(marked) == 1:
+            return marked[0]
         if language := detected_language(current):
-            return language
+            if language == locale or language in marked:
+                return language
         # Statistical detection is unreliable on very short messages. Retain
         # explicit French cues locked by M19, otherwise honor the UI locale.
         normalized = "".join(
