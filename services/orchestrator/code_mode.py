@@ -161,6 +161,7 @@ WORK_FAILURE = {
         "tests_failed": "the tests did not pass",
         "time_limit": "the time limit was reached",
         "step_limit": "the step limit was reached",
+        "repeated_failure": "the same tool step failed several times in a row and was stopped",
         "budget": "the budget limit for this turn was reached",
         "machine_busy": "your machine is already used by other conversations; try again in a few minutes",
         "machine_minutes": "the monthly command time of this machine is used up",
@@ -172,6 +173,7 @@ WORK_FAILURE = {
         "tests_failed": "les tests n'ont pas réussi",
         "time_limit": "la limite de temps a été atteinte",
         "step_limit": "la limite d'étapes a été atteinte",
+        "repeated_failure": "la même étape d'outil a échoué plusieurs fois de suite et a été arrêtée",
         "budget": "la limite de budget de ce tour a été atteinte",
         "machine_busy": "votre machine est déjà utilisée par d'autres conversations ; réessayez dans quelques minutes",
         "machine_minutes": "le temps de commande mensuel de cette machine est épuisé",
@@ -183,6 +185,7 @@ WORK_FAILURE = {
         "tests_failed": "die Tests wurden nicht bestanden",
         "time_limit": "das Zeitlimit wurde erreicht",
         "step_limit": "das Schrittlimit wurde erreicht",
+        "repeated_failure": "derselbe Werkzeugschritt ist mehrmals hintereinander fehlgeschlagen und wurde abgebrochen",
         "budget": "das Budgetlimit dieses Durchgangs wurde erreicht",
         "machine_busy": "Ihre Maschine wird bereits von anderen Unterhaltungen genutzt; versuchen Sie es in einigen Minuten erneut",
         "machine_minutes": "die monatliche Befehlszeit dieser Maschine ist aufgebraucht",
@@ -194,6 +197,7 @@ WORK_FAILURE = {
         "tests_failed": "las pruebas no se superaron",
         "time_limit": "se alcanzó el límite de tiempo",
         "step_limit": "se alcanzó el límite de pasos",
+        "repeated_failure": "el mismo paso de herramienta falló varias veces seguidas y se detuvo",
         "budget": "se alcanzó el límite de presupuesto de este turno",
         "machine_busy": "su máquina ya la usan otras conversaciones; vuelva a intentarlo en unos minutos",
         "machine_minutes": "se agotó el tiempo mensual de comandos de esta máquina",
@@ -205,6 +209,7 @@ WORK_FAILURE = {
         "tests_failed": "i test non sono stati superati",
         "time_limit": "è stato raggiunto il limite di tempo",
         "step_limit": "è stato raggiunto il limite di passaggi",
+        "repeated_failure": "lo stesso passaggio di uno strumento è fallito più volte di seguito ed è stato interrotto",
         "budget": "è stato raggiunto il limite di budget di questo turno",
         "machine_busy": "la tua macchina è già usata da altre conversazioni; riprova tra qualche minuto",
         "machine_minutes": "il tempo mensile dei comandi di questa macchina è esaurito",
@@ -238,13 +243,12 @@ def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str
     file it is settled.
     """
     # A page that gave no text or a search that failed is a result too: the
-    # model writes with what it has (staging 2026-11-11).
-    settled = {"read_file", "web_search", "web_fetch"}
-    # A machine tool's refusal is a sentence the model relays (key not installed
-    # yet, host key changed): the person's next step, not a broken turn.
-    from services.orchestrator.work_machine_tools import NAMES as machine_tools
+    # model writes with what it has (staging 2026-11-11). A machine tool's
+    # refusal is a sentence the model relays (key not installed yet, host key
+    # changed): the person's next step, not a broken turn.
+    from services.orchestrator.tool_failures import relayed_failure_tools
 
-    settled.update(machine_tools)
+    settled = set(relayed_failure_tools())
     if (
         deliverables
         and failures.get("switch_tool_group") == "deliverable_group_required"
@@ -273,6 +277,11 @@ def work_failure_category(reason: str, *, tool_failure: bool) -> str | None:
         return "time_limit"
     if reason in STEP_LIMITS:
         return "step_limit"
+    from services.orchestrator.tool_failures import STOP_REASON
+
+    if reason == STOP_REASON:
+        # The loop stopped a tool that kept failing the same way.
+        return "repeated_failure"
     if reason in {"cost", "tokens"}:
         return "budget"
     return "other"
