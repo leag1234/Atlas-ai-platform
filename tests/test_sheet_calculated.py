@@ -172,13 +172,15 @@ class FindingTests(unittest.TestCase):
         assert found is not None
         self.assertEqual(found.code, MISSING)
         self.assertEqual(found.columns, (("1", "D", "Pace (min/km)"),))
-        self.assertFalse(found.unflagged)
-        # Formulas typed without formulas=true are text in the file.
+        self.assertNotIn("formulas=true", calculation_refusal(found))
+        # A formula typed without formulas=true is a formula in the file.
         typed = RUNNING_HEADER + "| 2026-03-01 | 10 | 55 | =C2/B2 |\n"
-        found = finding(content(typed), RUNNING)
+        self.assertIsNone(finding(content(typed), RUNNING))
+        # Typed with an apostrophe it is a text: nothing is calculated.
+        quoted = RUNNING_HEADER + "| 2026-03-01 | 10 | 55 | '=C2/B2 |\n"
+        found = finding(content(quoted), RUNNING)
         assert found is not None
-        self.assertEqual((found.code, found.unflagged), (MISSING, True))
-        self.assertIn("only with formulas=true", calculation_refusal(found))
+        self.assertEqual(found.code, MISSING)
 
     def test_derived_column_left_empty_beside_formulas(self) -> None:
         found = finding(content(BUDGET_EMPTY_DIFFERENCE, formulas=True), BUDGET)

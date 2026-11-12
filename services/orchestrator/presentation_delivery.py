@@ -233,6 +233,10 @@ if suffix == ".xlsx":
     # A cell typed "12.50" is stored as the number 12.5, which verify() matched
     # to it: a source excerpt found in the typed text is in the workbook.
     normalized += "\n" + "".join("".join(content.texts()).split())
+# Inline markers are read, never displayed: "the **first** clause" is in the
+# file as "the first clause", which verify() matched to it. A source excerpt
+# is accepted as it was typed.
+normalized += "\n" + "".join("".join(content.typed()).split())
 for source in payload["source_texts"]:
     if not source.strip() or "".join(source.split()) not in normalized:
         raise ValueError("Source coverage verification failed")
@@ -262,7 +266,9 @@ FORMULA_HELP = (
     " MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT, IFERROR; arithmetic needs numbers"
     " or empty cells: leave a cell to fill in empty, it counts as 0, and put no"
     " dash or placeholder text in cells a formula computes with; a division or"
-    ' AVERAGE over cells still empty needs IFERROR(..., ""))'
+    ' AVERAGE over cells still empty needs IFERROR(..., ""); in a workbook'
+    " every table cell that starts with = is a formula: a cell that must show"
+    " a leading = as text starts with an apostrophe, as in '=A1)"
 )
 
 
@@ -285,7 +291,8 @@ NOT_FIRST_HELP = (
     " (the code ends with the sheet: only the first table of a section holds"
     " formulas, because it starts at cell A1 of its sheet; give each table with"
     " formulas its own section, under its own heading, and write a cell of"
-    " another sheet as 2!B2)"
+    " another sheet as 2!B2; a cell that must show a leading = as text starts"
+    " with an apostrophe, as in '=A1)"
 )
 COLUMNS_HELP = (
     " (the number is the most columns a table may have in this format; a wider"

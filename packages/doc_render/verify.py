@@ -11,6 +11,7 @@ from pptx.shapes.autoshape import Shape
 from pptx.shapes.graphfrm import GraphicFrame
 from pypdf import PdfReader
 
+from .cells import shown
 from .schema import Content
 
 
@@ -101,7 +102,10 @@ def verify(
         if paginated:
             seen: set[str] = set()
             headings = sorted(
-                {"".join(section.heading.split()) for section in expected.sections},
+                {
+                    "".join(shown(section.heading).split())
+                    for section in expected.sections
+                },
                 key=len,
                 reverse=True,
             )

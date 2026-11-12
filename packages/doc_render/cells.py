@@ -1,4 +1,4 @@
-"""How a table cell is read: inline emphasis and numbers typed as text.
+"""How a text is read: inline emphasis, and numbers typed as text in a cell.
 
 A cell is written with Markdown and typing habits: "**TOTAL**", "12.50",
 "1 250,00 €", "45 %". The markers are read, never shown, and a text that is
@@ -7,6 +7,13 @@ thousands separators, currency sign, percent). French and English notations
 are both read. A text that may be a number or something else stays text: a
 date, a phone number, an identifier with leading zeros, "1/2", a version
 number, and "1,250" when nothing in its table says which notation is used.
+
+A title, a heading, a paragraph and a bullet are read with the same rules
+(prose): "**Date**: 12 March" never shows its asterisks. There a link keeps
+its address after its text, since no cell holds it.
+
+In a workbook a cell that starts with "=" is a formula. A cell typed with an
+apostrophe before it ("'=A1") is the text "=A1" in every format.
 """
 
 from __future__ import annotations
@@ -37,6 +44,8 @@ class Reading:
     number: int | float | None = None
     number_format: str = "General"
     link: str = ""
+    # Typed with an apostrophe before "=": a text, never a formula.
+    quoted: bool = False
 
     @property
     def text(self) -> str:
@@ -70,8 +79,11 @@ INLINE = re.compile(
 
 
 @lru_cache(maxsize=4096)
-def spans(text: str) -> tuple[Span, ...]:
-    """The cell text without its inline Markdown markers, with its emphasis."""
+def spans(text: str, addresses: bool = False) -> tuple[Span, ...]:
+    """The text without its inline Markdown markers, with its emphasis.
+
+    With addresses, a link keeps its address after its text.
+    """
     if text.startswith("="):
         # A formula: "*" is a product.
         return (Span(text),)
@@ -96,6 +108,9 @@ def spans(text: str) -> tuple[Span, ...]:
                 add(match["code"].strip(), bold, italic)
             elif match["label"]:
                 walk(match["label"], bold, italic)
+                address = match["url"].removeprefix("mailto:")
+                if addresses and address not in match["label"]:
+                    add(f" ({address})", bold, italic)
             else:
                 marks = len(match["stars"])
                 walk(match["inner"], bold or marks >= 2, italic or marks != 2)
@@ -110,6 +125,21 @@ def spans(text: str) -> tuple[Span, ...]:
 
 def plain(text: str) -> str:
     return "".join(span.text for span in spans(text))
+
+
+def prose(text: str) -> tuple[Span, ...]:
+    """A title, a heading, a paragraph or a bullet, read as a cell is.
+
+    "[the report](https://example.org/r)" reads "the report
+    (https://example.org/r)": outside a workbook cell nothing else would keep
+    the address.
+    """
+    return spans(text, True)
+
+
+def shown(text: str) -> str:
+    """A title, a heading, a paragraph or a bullet as displayed."""
+    return "".join(span.text for span in prose(text))
 
 
 def whole_link(text: str) -> str:
@@ -217,14 +247,17 @@ def numeric_looking(text: str) -> bool:
 
 def read(text: str, known: str = "", *, data: bool = True) -> Reading:
     """One cell. Headers and formulas are never numbers."""
-    parts = spans(text)
-    shown = "".join(span.text for span in parts)
-    found = number(shown, known) if data and not shown.startswith("=") else None
+    quoted = text.startswith("'=")
+    # After the apostrophe the text is kept as typed: "*" is not emphasis.
+    parts = (Span(text[1:]),) if quoted else spans(text)
+    display = "".join(span.text for span in parts)
+    found = number(display, known) if data and not display.startswith("=") else None
     return Reading(
         spans=parts,
         number=found[0] if found else None,
         number_format=found[1] if found else "General",
         link=whole_link(text),
+        quoted=quoted,
     )
 
 

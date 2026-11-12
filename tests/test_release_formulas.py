@@ -90,17 +90,26 @@ class FormulaDeliveryTests(unittest.TestCase):
                     render(self.content(formula), path, image_root=path.parent)
                 self.assertFalse(path.exists())
 
-    def test_generic_workbooks_keep_formula_shaped_text_literal(self) -> None:
+    def test_a_table_that_was_not_flagged_gives_the_same_workbook(self) -> None:
         value = self.content().model_dump()
         value["sections"][0]["tables"][0]["formulas"] = False
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "literal.xlsx"
+            path = Path(directory) / "unflagged.xlsx"
             render(Content.model_validate(value), path, image_root=path.parent)
-            book = load_workbook(path)
+            flagged = Path(directory) / "flagged.xlsx"
+            render(self.content(), flagged, image_root=path.parent)
+            # Formulas, cached values and formats: the file of a flagged table.
+            self.assertEqual(path.read_bytes(), flagged.read_bytes())
+            formulas = load_workbook(path, data_only=False)
+            values = load_workbook(path, data_only=True)
             try:
-                self.assertEqual(book["1"]["B6"].data_type, "s")
+                self.assertEqual(formulas["1"]["B6"].data_type, "f")
+                self.assertEqual(
+                    [values["1"][f"B{i}"].value for i in (6, 7, 8)], [500, 1000, 1500]
+                )
             finally:
-                book.close()
+                formulas.close()
+                values.close()
 
     def test_markdown_empty_cell_stays_empty_without_padding_rows(self) -> None:
         value = normalize(
@@ -132,6 +141,182 @@ BUDGET = (
     "| Total | =SUM(B2:B3) | =SUM(C2:C3) | =SUM(D2:D3) |\n"
     "{extra}"
 )
+
+
+class ImpliedFormulaTests(unittest.TestCase):
+    """In a workbook a cell that starts with "=" is a formula without the flag."""
+
+    HEAD = "# Costs\n## Expenses\n| Item | Amount | Note |\n| --- | --- | --- |\n"
+    ROWS = "| Rent | 800,00 | fixed |\n| Power | 60,50 | |\n"
+
+    def content(self, extra: str, suffix: str = ".xlsx") -> Content:
+        # No formulas option: the flag is implied by the cells.
+        value = normalize(
+            dict(path="costs" + suffix, content=self.HEAD + self.ROWS + extra)
+        )
+        return Content.model_validate(value["content"])
+
+    def delivered(self, extra: str, suffix: str = ".xlsx") -> bytes:
+        from services.orchestrator.presentation_delivery import build_project_document
+
+        return build_project_document(
+            self.content(extra, suffix), suffix, [], max_bytes=16777216, timeout=30
+        ).content
+
+    def test_formulas_are_evaluated_and_cached_without_the_flag(self) -> None:
+        from io import BytesIO
+
+        raw = self.delivered(
+            '| **Total** | **=SUM(B2:B3)** | =IF(B4>800,"over","under") |\n'
+        )
+        formulas = load_workbook(BytesIO(raw), data_only=False)
+        values = load_workbook(BytesIO(raw), data_only=True)
+        try:
+            self.assertFalse(
+                self.content("| Total | =SUM(B2:B3) | |\n")
+                .sections[0]
+                .tables[0]
+                .formulas
+            )
+            sheet, cached = formulas["1"], values["1"]
+            self.assertEqual(sheet["B4"].value, "=SUM(B2:B3)")
+            self.assertEqual(sheet["B4"].data_type, "f")
+            self.assertEqual(sheet["C4"].data_type, "f")
+            self.assertEqual(cached["B4"].value, 860.5)
+            self.assertEqual(cached["C4"].value, "over")
+            # The total is shown as the amounts it adds up.
+            self.assertEqual(sheet["B3"].number_format, "0.00")
+            self.assertEqual(sheet["B4"].number_format, "#,##0.00")
+        finally:
+            formulas.close()
+            values.close()
+
+    def test_the_refusals_are_those_of_a_flagged_table(self) -> None:
+        apostrophe = r".*a leading = as text starts with an apostrophe, as in '=A1\)"
+        for extra, reason in (
+            ("| Total | =UNKNOWN(B2:B3) | |\n", "unsupported_formula_function"),
+            ("| Total | =SUM(B2:B3 | |\n", "unsupported_formula"),
+            # A text that only starts like a formula is named, with the way
+            # to keep it a text.
+            ("| Total | 860,50 | => see the lease |\n", "unsupported_formula"),
+        ):
+            with (
+                self.subTest(extra=extra),
+                self.assertRaisesRegex(
+                    ValueError, reason + r" \(formulas support" + apostrophe
+                ),
+            ):
+                self.delivered(extra)
+        for extra, reason in (
+            ("| Total | =SUM(B2:B9) | |\n", "formula_reference_outside_table:B4:"),
+            ("| Total | =A2*2 | |\n", "formula_requires_numeric_cells"),
+            ("| Total | =B4+1 | |\n", "circular_or_deep_formula"),
+        ):
+            with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, reason):
+                self.delivered(extra)
+
+    def test_an_apostrophe_keeps_a_leading_equals_sign_as_text(self) -> None:
+        from io import BytesIO
+
+        extra = (
+            "| Total | =SUM(B2:B3) | '=SUM(B2:B3) |\n| Rule | | **'=> see *.txt** |\n"
+        )
+        raw = self.delivered(extra)
+        formulas = load_workbook(BytesIO(raw), data_only=False)
+        values = load_workbook(BytesIO(raw), data_only=True)
+        try:
+            for book in (formulas, values):
+                self.assertEqual(book["1"]["C4"].value, "=SUM(B2:B3)")
+                self.assertEqual(book["1"]["C4"].data_type, "s")
+                self.assertEqual(book["1"]["C5"].value, "=> see *.txt")
+            # Marked as Excel marks a cell entered with an apostrophe.
+            self.assertTrue(formulas["1"]["C4"].quotePrefix)
+            self.assertFalse(formulas["1"]["B4"].quotePrefix)
+            self.assertEqual(formulas["1"]["B4"].data_type, "f")
+            self.assertEqual(values["1"]["B4"].value, 860.5)
+        finally:
+            formulas.close()
+            values.close()
+        # The apostrophe is never displayed, in any format.
+        from docx import Document
+
+        cells = [
+            cell.text
+            for row in Document(BytesIO(self.delivered(extra, ".docx"))).tables[0].rows
+            for cell in row.cells
+        ]
+        self.assertEqual(
+            cells[-6:],
+            ["Total", "=SUM(B2:B3)", "=SUM(B2:B3)"] + ["Rule", "", "=> see *.txt"],
+        )
+
+    def test_other_formats_show_the_cell_and_refuse_the_flag(self) -> None:
+        from io import BytesIO
+
+        from docx import Document
+        from pptx import Presentation
+        from pypdf import PdfReader
+        from services.orchestrator.presentation_delivery import build_project_document
+
+        extra = "| Total | =SUM(B2:B3) | |\n"
+        document = Document(BytesIO(self.delivered(extra, ".docx")))
+        self.assertEqual(document.tables[0].rows[3].cells[1].text, "=SUM(B2:B3)")
+        page = PdfReader(BytesIO(self.delivered(extra, ".pdf"))).pages[0]
+        self.assertIn("=SUM(B2:B3)", page.extract_text())
+        slides = dict(
+            title="Costs",
+            slides=[
+                dict(
+                    title="Expenses",
+                    bullets=["Two lines"],
+                    table=dict(
+                        headers=["Item", "Amount"],
+                        rows=[["Rent", "800"], ["Total", "=SUM(B2:B2)"]],
+                    ),
+                )
+            ],
+        )
+        deck = build_project_document(
+            Content.model_validate(
+                normalize(dict(path="costs.pptx", **slides))["content"]
+            ),
+            ".pptx",
+            [],
+            max_bytes=16777216,
+            timeout=30,
+        )
+        shown = [
+            cell.text
+            for slide in Presentation(BytesIO(deck.content)).slides
+            for shape in slide.shapes
+            if shape.has_table
+            for row in shape.table.rows
+            for cell in row.cells
+        ]
+        self.assertIn("=SUM(B2:B2)", shown)
+        # The option itself is still refused outside a workbook.
+        for fields in (
+            dict(path="costs.docx", content=self.HEAD + self.ROWS + extra),
+            dict(path="costs.pdf", content=self.HEAD + self.ROWS + extra),
+            dict(path="costs.pptx", **slides),
+        ):
+            with (
+                self.subTest(path=fields["path"]),
+                self.assertRaisesRegex(ValueError, "Formulas require XLSX"),
+            ):
+                normalize(dict(fields, formulas=True))
+
+    def test_the_tool_says_it_in_one_sentence(self) -> None:
+        from services.orchestrator.project_document_tools import DESCRIPTIONS
+
+        text = DESCRIPTIONS["publish_document"]
+        self.assertIn(
+            "In an XLSX table a cell starting with = is a formula, with or "
+            "without formulas=true (a cell that must show a leading = as text "
+            "starts with an apostrophe: '=A1)",
+            text,
+        )
+        self.assertNotIn("set formulas=true", text)
 
 
 class EmptyCellTests(unittest.TestCase):

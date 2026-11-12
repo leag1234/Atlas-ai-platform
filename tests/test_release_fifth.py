@@ -311,6 +311,13 @@ class ForgeBindingTests(unittest.TestCase):
 
 class PublicationSourceGuardTests(unittest.IsolatedAsyncioTestCase):
     async def test_wrong_source_total_never_reaches_publisher(self) -> None:
+        await self.refused(flagged=True)
+
+    async def test_a_table_that_was_not_flagged_is_checked_the_same(self) -> None:
+        # In a workbook the cells that start with "=" are formulas anyway.
+        await self.refused(flagged=False)
+
+    async def refused(self, *, flagged: bool) -> None:
         from services.orchestrator.project_document_tools import publish
         from services.orchestrator.terminal_client import (
             VerifiedDocument,
@@ -354,6 +361,8 @@ class PublicationSourceGuardTests(unittest.IsolatedAsyncioTestCase):
             return_value={"coverage": {"complete": True}, "segments": segments}
         )
         document = VerifiedDocument(raw, b"preview", hashlib.sha256(raw).hexdigest())
+        content = expenses().model_dump()
+        content["sections"][0]["tables"][0]["formulas"] = flagged
         with (
             patch(
                 "services.orchestrator.presentation_delivery.build_project_document",
@@ -366,7 +375,7 @@ class PublicationSourceGuardTests(unittest.IsolatedAsyncioTestCase):
                     tools,
                     dict(
                         path="totals.xlsx",
-                        content=expenses().model_dump(),
+                        content=content,
                         sources=[dict(file_id=file_id, version=version)],
                         strategy="created",
                     ),
