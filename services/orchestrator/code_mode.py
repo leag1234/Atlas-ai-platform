@@ -793,6 +793,8 @@ async def process_work(
     tools = WorkTools(workspace, execution, sink_context.get())
     # Set by the chat when Work runs behind it: no approval card can be answered there.
     tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
+    tools.numbered_copies = bool(request.__dict__.get("numbered_copies"))
+    tools.earlier_answers = list(request.__dict__.get("earlier_answers") or [])
     tools.lang = request.lang
     from packages.work_intent import named_office_format
     from services.orchestrator.request_router import decision as routed_decision

@@ -398,19 +398,53 @@ async def publish(
 
         validate_sources(document.content, source_sheets)
     publisher = ProjectPublisher(execution)
-    receipt = await publish_with_free_name(
-        lambda name: publisher.publish(
-            document,
-            name,
+    note: dict[str, str] = {}
+    if getattr(tools, "numbered_copies", False):
+        # The hidden chat project: a taken name becomes a numbered copy, and a
+        # folder moved by another conversation's publication is retried.
+        from services.orchestrator.chat_file_names import (
+            folder_names,
+            folder_revision,
+            publish_copy,
+        )
+        from services.orchestrator.work_save import project_file_paths
+
+        folder_id = str(folder["id"])
+        receipt, saved = await publish_copy(
+            lambda name, revision: publisher.publish(
+                document,
+                name,
+                args["strategy"],
+                list(dict.fromkeys(versions)),
+                revision,
+                str(uuid4()),
+                remaining(),
+            ),
+            str(path),
+            folder_names(await project_file_paths(execution), folder_id),
+            lambda: folder_revision(execution, folder_id),
+        )
+        # The link names the file actually saved.
+        receipt = dict(receipt, relative_path=saved)
+        if saved != str(path):
+            note["note"] = (
+                f"{path} already exists in the chat files: this file was saved as "
+                f"{saved}. Nothing was overwritten. Name it {saved} in the answer."
+            )
+    else:
+        receipt = await publish_with_free_name(
+            lambda name: publisher.publish(
+                document,
+                name,
+                args["strategy"],
+                list(dict.fromkeys(versions)),
+                folder["revision"],
+                str(uuid4()),
+                remaining(),
+            ),
+            path,
             args["strategy"],
-            list(dict.fromkeys(versions)),
-            folder["revision"],
-            str(uuid4()),
-            remaining(),
-        ),
-        path,
-        args["strategy"],
-    )
+        )
     links = project_deliverable_links(
         receipt, execution.broker.org, execution.broker.project
     )
@@ -420,6 +454,7 @@ async def publish(
         text=links,
         file_version_ids=[receipt["file_version_id"]],
         read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
+        **note,
     )
 
 
