@@ -1,0 +1,40 @@
+{
+  "checks": [
+    {
+      "kind": "csv",
+      "path": "artifacts/export.csv",
+      "rows": [
+        [
+          "ID",
+          "Name",
+          "Note"
+        ],
+        [
+          "1",
+          "Élodie",
+          "Paris, France"
+        ],
+        [
+          "2",
+          "Jürgen",
+          "He said \"yes\""
+        ],
+        [
+          "3",
+          "Città",
+          "line one\nline two"
+        ]
+      ]
+    }
+  ],
+  "expected_publications": [
+    "export.csv"
+  ],
+  "id": "D17",
+  "input_hashes": {
+    "dialect.txt": "4f1923966a5ce58a2f573f2fe3d33c11a64a2672b8b742fc6d00ec51f871692d",
+    "export.xlsx": "2dedfef608aab08842e233560e174a8a0b12bb3cb7ec983d6bfed00c03bfa7a8",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214"
+  },
+  "scenario": null
+}

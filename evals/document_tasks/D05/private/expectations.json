@@ -1,0 +1,34 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "changes": [
+          {
+            "after": "Payment within 45 days.",
+            "before": "Payment within 30 days.",
+            "clause": "A",
+            "left_source": "before.pdf#page=1",
+            "right_source": "after.pdf#page=1"
+          },
+          {
+            "after": "Liability cap EUR 15000.",
+            "before": "Liability cap EUR 10000.",
+            "clause": "C",
+            "left_source": "before.pdf#page=2",
+            "right_source": "after.pdf#page=2"
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D05",
+  "input_hashes": {
+    "after.pdf": "33f903176a43ced6c7daae3dd3a5be79ed006eeafb6aefef8960abe4a8717fb8",
+    "before.pdf": "0a7fd17248b8bfb49faf17a74d1b665a1d3d3cf489b6776b5306e9e924fc2d27",
+    "response-contract.json": "09bf03e5473bcd67a346f14d4e4458229af4536a4c55a57e242616cdca07ae5e"
+  },
+  "scenario": null
+}

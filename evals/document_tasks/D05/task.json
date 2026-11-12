@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "8fc7d5dfae4955cb36b228f4b87f61ba716a5f00091bd4e86598fe162f785aed",
+  "expected_artifacts": [],
+  "id": "D05",
+  "input_manifest": [
+    {
+      "path": "after.pdf",
+      "sha256": "33f903176a43ced6c7daae3dd3a5be79ed006eeafb6aefef8960abe4a8717fb8",
+      "size_bytes": 1889
+    },
+    {
+      "path": "before.pdf",
+      "sha256": "0a7fd17248b8bfb49faf17a74d1b665a1d3d3cf489b6776b5306e9e924fc2d27",
+      "size_bytes": 1887
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "09bf03e5473bcd67a346f14d4e4458229af4536a4c55a57e242616cdca07ae5e",
+      "size_bytes": 837
+    }
+  ],
+  "language": "it",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Confronta before.pdf e after.pdf. Restituisci JSON changes con clause, before, after, left_source e right_source. Includi solo le clausole modificate, non quelle rimaste uguali.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Compare two PDFs",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Indichi quali clausole sono cambiate fra le due versioni."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Confronta le clausole",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Confronta before.pdf e after.pdf. Restituisci JSON changes con clause, before, after, left_source e right_source. Includi solo le clausole modificate, non quelle rimaste uguali.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "CONFRONTA BEFORE.PDF E AFTER.PDF. RESTITUISCI JSON CHANGES CON CLAUSE, BEFORE, AFTER, LEFT_SOURCE E RIGHT_SOURCE. INCLUDI SOLO LE CLAUSOLE MODIFICATE, NON QUELLE RIMASTE UGUALI.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Which clauses changed between these two versions?"
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Which clauses changed between these two versions? Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D05/verifier.py",
+  "verifier_timeout_seconds": 120
+}

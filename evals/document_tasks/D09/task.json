@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "6f4a618f26c75d10cf0f127cb5ff6663d1bb55c0c064804bda83253548ee3be8",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "path": "merged.docx"
+    }
+  ],
+  "id": "D09",
+  "input_manifest": [
+    {
+      "path": "first.docx",
+      "sha256": "98d3e022ac0d89d86d5aaaafcb1080836130e41742410e190ded5a358e730025",
+      "size_bytes": 36745
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+      "size_bytes": 513
+    },
+    {
+      "path": "second.docx",
+      "sha256": "72200e3cd558ae02554f7c3cb674b58edeeb9d0e8c851014e58debc152620182",
+      "size_bytes": 36747
+    }
+  ],
+  "language": "es",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Combina first.docx y second.docx en merged.docx, primero la sección Alpha y después Beta. Conserva todos los párrafos y tablas; no cambies los originales.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Merge two DOCX inputs",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Combine ambas secciones sin perder sus tablas."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Combina ambos documentos",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Combina first.docx y second.docx en merged.docx, primero la seccion Alpha y despues Beta. Conserva todos los parrafos y tablas; no cambies los originales.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "COMBINA FIRST.DOCX Y SECOND.DOCX EN MERGED.DOCX, PRIMERO LA SECCIÓN ALPHA Y DESPUÉS BETA. CONSERVA TODOS LOS PÁRRAFOS Y TABLAS; NO CAMBIES LOS ORIGINALES.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Combine both sections without dropping their tables."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Combine both sections without dropping their tables. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D09/verifier.py",
+  "verifier_timeout_seconds": 120
+}

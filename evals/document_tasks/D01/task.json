@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "8092eaec3d76f598c488b896e305d8954eaf32d4db2bb96171267a2be763ec44",
+  "expected_artifacts": [],
+  "id": "D01",
+  "input_manifest": [
+    {
+      "path": "appendix.pdf",
+      "sha256": "c41fb1b7e85c6c4626df773b70ab4bde21c37413ac575bfc19b043783c7ef08e",
+      "size_bytes": 1903
+    },
+    {
+      "path": "report.pdf",
+      "sha256": "3d2c469ecf7883006255708b552d66cac248c6430263c704ed74296770315dc5",
+      "size_bytes": 2901
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "f2bef24c96ae87e19fc54ecf09065313925f5f95acad75519ee51b6cb8a6f83a",
+      "size_bytes": 818
+    }
+  ],
+  "language": "en",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Read pages 2 and 4 of report.pdf and page 2 of appendix.pdf. Return JSON records with file, page, code, amount, and due. Do not include other pages.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Extract selected PDF pages",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Donnez uniquement les champs des pages demandées."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Extract requested fields",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Read pages 2 and 4 of report.pdf and page 2 of appendix.pdf. Return JSON records with file, page, code, amount, and due. Do not include other pages.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "READ PAGES 2 AND 4 OF REPORT.PDF AND PAGE 2 OF APPENDIX.PDF. RETURN JSON RECORDS WITH FILE, PAGE, CODE, AMOUNT, AND DUE. DO NOT INCLUDE OTHER PAGES.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Give me the fields from only the specified pages."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Give me the fields from only the specified pages. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D01/verifier.py",
+  "verifier_timeout_seconds": 120
+}

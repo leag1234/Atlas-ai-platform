@@ -1,0 +1,25 @@
+{
+  "checks": [
+    {
+      "contains": [],
+      "forbidden": [
+        "succeeded",
+        "completed",
+        "successfully",
+        "completato",
+        "riuscito"
+      ],
+      "kind": "text",
+      "path": "answer.txt"
+    }
+  ],
+  "expected_publications": [],
+  "id": "D30",
+  "input_hashes": {
+    "plan.txt": "d814ebdc3b4ee70543ac3b5182861a3e89f00b0244906394461915cc71daa57d",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+    "source.docx": "66be062680a66479201caa64f8d34077865c0c6affe33700f7a88b97171279c9"
+  },
+  "no_publication": true,
+  "scenario": "cancel"
+}

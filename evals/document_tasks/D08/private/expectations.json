@@ -1,0 +1,43 @@
+{
+  "checks": [
+    {
+      "kind": "docx",
+      "paragraphs": [
+        "Service agreement",
+        "Payment is due within 45 days.",
+        "Support remains Monday to Friday.",
+        "Governing language: English."
+      ],
+      "path": "artifacts/edited.docx",
+      "preserve_styles": "contract.docx",
+      "styles": [
+        "Heading 1",
+        "Normal",
+        "Normal",
+        "Normal"
+      ],
+      "tables": [
+        [
+          [
+            "Party",
+            "Contact"
+          ],
+          [
+            "Cedar",
+            "Ari"
+          ]
+        ]
+      ]
+    }
+  ],
+  "expected_publications": [
+    "edited.docx"
+  ],
+  "id": "D08",
+  "input_hashes": {
+    "amendment.txt": "01871cec91a1e66e29b6cb558d0f2ab54044c480099564332869c429135ce3c1",
+    "contract.docx": "67cd3464d4dc737939451fe0e9e08710703c02fefa63a7bde4c9e3f169f217e9",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214"
+  },
+  "scenario": null
+}

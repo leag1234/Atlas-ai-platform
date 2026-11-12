@@ -1,0 +1,33 @@
+{
+  "checks": [
+    {
+      "contains": [
+        "Cedar conversion",
+        "Owner: Ari",
+        "Due: 2031-10-12",
+        "Item",
+        "Amount",
+        "Equipment",
+        "1200",
+        "Training",
+        "600"
+      ],
+      "kind": "pdf",
+      "pages": [
+        1,
+        2
+      ],
+      "path": "artifacts/converted.pdf"
+    }
+  ],
+  "expected_publications": [
+    "converted.pdf"
+  ],
+  "id": "D11",
+  "input_hashes": {
+    "layout.txt": "c46f5e3b49e3fdcfa7978bda0cbc8ca960ca9ab0decdc4251b9d30aa8dead52b",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+    "source.docx": "203731ddb3ad5f2c3d3096f1bfd93afc326d794b9f212d9da0bb9cac7a48bbf5"
+  },
+  "scenario": null
+}

@@ -1,0 +1,42 @@
+{
+  "checks": [
+    {
+      "kind": "xlsx",
+      "path": "artifacts/clean.xlsx",
+      "sheets": {
+        "Contacts": [
+          [
+            "ID",
+            "Name",
+            "Score"
+          ],
+          [
+            "A",
+            "Ari",
+            null
+          ],
+          [
+            "B",
+            "Bea",
+            0
+          ],
+          [
+            "C",
+            "Ciro",
+            5
+          ]
+        ]
+      }
+    }
+  ],
+  "expected_publications": [
+    "clean.xlsx"
+  ],
+  "id": "D14",
+  "input_hashes": {
+    "dirty.xlsx": "3c25f486cdd03ec6b2f9122156b3a88d9d4703dca20b04f0f8b4450e17d45b07",
+    "response-contract.json": "01cad1f3898d0ea370ade5de7ce03bf2460504b5f3587a5c4e8cfe8017717450",
+    "rules.txt": "705189d4ea464b5e716afc8047bd4070f0c5e6d0785721389679832274f0b13e"
+  },
+  "scenario": null
+}

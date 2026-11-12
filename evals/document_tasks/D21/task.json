@@ -1,0 +1,87 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "12243ea232b8bdfdcd775796ef120e92a6b3c70531f5f9e6c4da6892b3d824a7",
+  "expected_artifacts": [],
+  "id": "D21",
+  "input_manifest": [
+    {
+      "path": "inbox/brief.docx",
+      "sha256": "e47a56810d3abb3f2ebb5a9d625617c1cd2d54de6c06dc9937ac09869d56fa68",
+      "size_bytes": 36571
+    },
+    {
+      "path": "inbox/figures.xlsx",
+      "sha256": "ec720402b7ad284791b0e1c5d33a3af05c5beba267c20d1abe6952edd473f831",
+      "size_bytes": 5004
+    },
+    {
+      "path": "inbox/notice.pdf",
+      "sha256": "2cd23bd2571aaa39d1e43bd177306d395817b005b868b427e9b4a2cd9245bc84",
+      "size_bytes": 1361
+    },
+    {
+      "path": "plan.csv",
+      "sha256": "186735ed182dec6d71e70a67709e3cebe70490426c58331f85f58ee7c7c5dc0e",
+      "size_bytes": 128
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "b3d476335430ca75fc3df81d707d9b38a5f81cccbc6b65a571f6357408b6bf8a",
+      "size_bytes": 620
+    }
+  ],
+  "language": "en",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Organize the mixed inputs according to plan.csv, preserving every byte and original version. Return JSON moves with source and destination. Do not overwrite existing paths.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Organize mixed documents",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Coloca cada archivo en la ubicación indicada."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Organize these files",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Organize the mixed inputs according to plan.csv, preserving every byte and original version. Return JSON moves with source and destination. Do not overwrite existing paths.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "ORGANIZE THE MIXED INPUTS ACCORDING TO PLAN.CSV, PRESERVING EVERY BYTE AND ORIGINAL VERSION. RETURN JSON MOVES WITH SOURCE AND DESTINATION. DO NOT OVERWRITE EXISTING PATHS.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Put each input at the location in the supplied plan."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Put each input at the location in the supplied plan. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D21/verifier.py",
+  "verifier_timeout_seconds": 120
+}

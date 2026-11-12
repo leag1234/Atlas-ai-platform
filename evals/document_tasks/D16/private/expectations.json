@@ -1,0 +1,52 @@
+{
+  "checks": [
+    {
+      "caches": {
+        "Budget!D2": 25.5,
+        "Budget!D3": 9,
+        "Budget!D4": 34.5
+      },
+      "compute_totals": true,
+      "kind": "xlsx",
+      "path": "artifacts/totals.xlsx",
+      "sheets": {
+        "Budget": [
+          [
+            "Item",
+            "Quantity",
+            "Unit price",
+            "Total"
+          ],
+          [
+            "Binder",
+            3,
+            8.5,
+            "=B2*C2"
+          ],
+          [
+            "Pen",
+            4,
+            2.25,
+            "=B3*C3"
+          ],
+          [
+            "Grand total",
+            null,
+            null,
+            "=SUM(D2:D3)"
+          ]
+        ]
+      }
+    }
+  ],
+  "expected_publications": [
+    "totals.xlsx"
+  ],
+  "id": "D16",
+  "input_hashes": {
+    "items.csv": "d482a572ffb216beb68bab04c76f6a8c57943c8852ad6e5c5c49cb76a202151e",
+    "response-contract.json": "426febec237062b0237b1198125f7541727278f440c29f78b490b824a717a273",
+    "rules.txt": "a33e0941eaa2e64e029faabaf426865e3f0d31f2d9c5503d3e2307591fe8192a"
+  },
+  "scenario": null
+}

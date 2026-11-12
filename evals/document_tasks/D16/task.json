@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "83c4ec0c48bddcf13b5d30b388d98d3f776945ee74d2fb27eb503d22371853d1",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "path": "totals.xlsx"
+    }
+  ],
+  "id": "D16",
+  "input_manifest": [
+    {
+      "path": "items.csv",
+      "sha256": "d482a572ffb216beb68bab04c76f6a8c57943c8852ad6e5c5c49cb76a202151e",
+      "size_bytes": 52
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "426febec237062b0237b1198125f7541727278f440c29f78b490b824a717a273",
+      "size_bytes": 695
+    },
+    {
+      "path": "rules.txt",
+      "sha256": "a33e0941eaa2e64e029faabaf426865e3f0d31f2d9c5503d3e2307591fe8192a",
+      "size_bytes": 134
+    }
+  ],
+  "language": "en",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Create totals.xlsx from items.csv and rules.txt. Use sheet Budget, columns Item, Quantity, Unit price, Total, with row formulas and a SUM total. Preserve numeric types; provide cached totals consistent with the inputs.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Produce XLSX with formulas",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Calcule les totaux dans le classeur demandé."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Calculate row totals",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Create totals.xlsx from items.csv and rules.txt. Use sheet Budget, columns Item, Quantity, Unit price, Total, with row formulas and a SUM total. Preserve numeric types; provide cached totals consistent with the inputs.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "CREATE TOTALS.XLSX FROM ITEMS.CSV AND RULES.TXT. USE SHEET BUDGET, COLUMNS ITEM, QUANTITY, UNIT PRICE, TOTAL, WITH ROW FORMULAS AND A SUM TOTAL. PRESERVE NUMERIC TYPES; PROVIDE CACHED TOTALS CONSISTENT WITH THE INPUTS.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Build the requested calculation sheet."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Build the requested calculation sheet. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D16/verifier.py",
+  "verifier_timeout_seconds": 120
+}

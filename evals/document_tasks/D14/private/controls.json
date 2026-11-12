@@ -1,0 +1,10 @@
+{
+  "corruptions": [
+    "hidden_cells",
+    "missing_result",
+    "mutated_original",
+    "wrong_cell_type_value"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

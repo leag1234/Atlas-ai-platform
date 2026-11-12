@@ -1,0 +1,50 @@
+{
+  "checks": [
+    {
+      "contains": [
+        "Decision memo",
+        "Decision",
+        "Approve the Cedar pilot. Owner: Ari. Due: 2031-09-15.",
+        "Budget",
+        "Total: EUR 1800."
+      ],
+      "headings": [
+        "Decision memo",
+        "Decision",
+        "Budget"
+      ],
+      "kind": "docx",
+      "path": "artifacts/memo.docx",
+      "tables": [
+        [
+          [
+            "Item",
+            "Amount"
+          ],
+          [
+            "Equipment",
+            "1200"
+          ],
+          [
+            "Training",
+            "600"
+          ],
+          [
+            "Total",
+            "1800"
+          ]
+        ]
+      ]
+    }
+  ],
+  "expected_publications": [
+    "memo.docx"
+  ],
+  "id": "D10",
+  "input_hashes": {
+    "brief.txt": "d5f3b21f3d668d4aaf10adc87eb68f8d83eaa1dbd35bd333a21ea36be4f446e1",
+    "budget.csv": "b7c44cef85d8ca2868b8f021253b3cb98a831b9ac43aec41767c56c404c1f39f",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214"
+  },
+  "scenario": null
+}

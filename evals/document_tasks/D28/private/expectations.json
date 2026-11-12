@@ -1,0 +1,24 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "reasons": [
+          "approval_denied",
+          "approval_expired"
+        ],
+        "status": "not_performed"
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D28",
+  "input_hashes": {
+    "keep.docx": "6ecf258d8583d3182a86506612ec551c41af4c9dd4b88f27268370471d87a2ab",
+    "response-contract.json": "d16ef3466b9b41d72d9a429328001f2946500e7b8f79c00fb8b6d7d109428c84",
+    "scenario.json": "c9e56b669adb2343add795746427341136c3298245d0a9d1449451cf62b344a9"
+  },
+  "no_publication": true,
+  "scenario": "approval"
+}

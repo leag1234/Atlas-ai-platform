@@ -1,0 +1,15 @@
+{
+  "corruptions": [
+    "double_charge",
+    "duplicate_replay",
+    "missing_result",
+    "mutated_original",
+    "phantom_publication",
+    "silent_restart",
+    "unlisted_publication",
+    "worker_running",
+    "wrong_refusal"
+  ],
+  "good": "good.tar.gz",
+  "purpose": "Verifier validation only; synthetic observations are not Work recordings"
+}

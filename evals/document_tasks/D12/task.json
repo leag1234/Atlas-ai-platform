@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "5f52c0899a0622524c01b5e49e3fbf6d830bebe088044cf6d3bff127dd244eed",
+  "expected_artifacts": [],
+  "id": "D12",
+  "input_manifest": [
+    {
+      "path": "old.docx",
+      "sha256": "7fa6f2664f64f5681c9e384b39d481556c082fd5ecc325da8b29aad47886993a",
+      "size_bytes": 36608
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "75482e5daf7e0c1a567b2d35456514d037363a43e3bd3e7a6ca440c4ca372c93",
+      "size_bytes": 835
+    },
+    {
+      "path": "revised.docx",
+      "sha256": "dc290893458fcf2cc52e243df00df0dfa61ac49e88278d3f2df830dcc463ac3c",
+      "size_bytes": 36609
+    }
+  ],
+  "language": "fr",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Comparez old.docx et revised.docx. Renvoyez JSON changes avec kind, before, after, left_source et right_source pour les suppressions et insertions. Ne modifiez aucun original.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Compare DOCX versions",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Listez les ajouts et suppressions avec leur emplacement."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Comparez les versions",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Comparez old.docx et revised.docx. Renvoyez JSON changes avec kind, before, after, left_source et right_source pour les suppressions et insertions. Ne modifiez aucun original.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "COMPAREZ OLD.DOCX ET REVISED.DOCX. RENVOYEZ JSON CHANGES AVEC KIND, BEFORE, AFTER, LEFT_SOURCE ET RIGHT_SOURCE POUR LES SUPPRESSIONS ET INSERTIONS. NE MODIFIEZ AUCUN ORIGINAL.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: List the located additions and removals."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: List the located additions and removals. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D12/verifier.py",
+  "verifier_timeout_seconds": 120
+}

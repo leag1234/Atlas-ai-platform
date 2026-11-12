@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "15b65346636a34d72866173f440261797be322240df1ecb6f8b5d5b7178afc2c",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "text/csv",
+      "path": "export.csv"
+    }
+  ],
+  "id": "D17",
+  "input_manifest": [
+    {
+      "path": "dialect.txt",
+      "sha256": "4f1923966a5ce58a2f573f2fe3d33c11a64a2672b8b742fc6d00ec51f871692d",
+      "size_bytes": 99
+    },
+    {
+      "path": "export.xlsx",
+      "sha256": "2dedfef608aab08842e233560e174a8a0b12bb3cb7ec983d6bfed00c03bfa7a8",
+      "size_bytes": 5133
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+      "size_bytes": 513
+    }
+  ],
+  "language": "fr",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Exportez Export!A1:C4 de export.xlsx vers export.csv selon dialect.txt. Utilisez UTF-8 et CSV standard avec guillemets doubles; préservez accents, virgules, guillemets et sauts de ligne dans les cellules.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Extract CSV from XLSX",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Enregistrez cette plage de cellules dans le format délimité demandé."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Exportez ces cellules",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Exportez Export!A1:C4 de export.xlsx vers export.csv selon dialect.txt. Utilisez UTF-8 et CSV standard avec guillemets doubles; preservez accents, virgules, guillemets et sauts de ligne dans les cellules.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "EXPORTEZ EXPORT!A1:C4 DE EXPORT.XLSX VERS EXPORT.CSV SELON DIALECT.TXT. UTILISEZ UTF-8 ET CSV STANDARD AVEC GUILLEMETS DOUBLES; PRÉSERVEZ ACCENTS, VIRGULES, GUILLEMETS ET SAUTS DE LIGNE DANS LES CELLULES.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Save this cell rectangle in the specified delimited format."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Save this cell rectangle in the specified delimited format. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D17/verifier.py",
+  "verifier_timeout_seconds": 120
+}

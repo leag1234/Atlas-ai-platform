@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "67bc42e73b7c47080cc4c23bc254cf06aa2b9811a5dca7cd56bfdfefd6cd1ed8",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/pdf",
+      "path": "converted.pdf"
+    }
+  ],
+  "id": "D11",
+  "input_manifest": [
+    {
+      "path": "layout.txt",
+      "sha256": "c46f5e3b49e3fdcfa7978bda0cbc8ca960ca9ab0decdc4251b9d30aa8dead52b",
+      "size_bytes": 64
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214",
+      "size_bytes": 513
+    },
+    {
+      "path": "source.docx",
+      "sha256": "203731ddb3ad5f2c3d3096f1bfd93afc326d794b9f212d9da0bb9cac7a48bbf5",
+      "size_bytes": 36792
+    }
+  ],
+  "language": "en",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Convert source.docx to converted.pdf using the layout notes in layout.txt. Include all headings, paragraphs and table cells, on one or two readable pages. Leave the original unchanged.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Convert DOCX to PDF",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Crea una copia portatile leggibile del documento."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Convert to PDF",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Convert source.docx to converted.pdf using the layout notes in layout.txt. Include all headings, paragraphs and table cells, on one or two readable pages. Leave the original unchanged.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "CONVERT SOURCE.DOCX TO CONVERTED.PDF USING THE LAYOUT NOTES IN LAYOUT.TXT. INCLUDE ALL HEADINGS, PARAGRAPHS AND TABLE CELLS, ON ONE OR TWO READABLE PAGES. LEAVE THE ORIGINAL UNCHANGED.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Make a readable portable copy of the supplied document."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Make a readable portable copy of the supplied document. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D11/verifier.py",
+  "verifier_timeout_seconds": 120
+}

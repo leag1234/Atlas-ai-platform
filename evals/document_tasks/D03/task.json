@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "b708edef3a2f13a4ea59c3202f42cdef151fc2d46483c069389e8c56bc50fc75",
+  "expected_artifacts": [],
+  "id": "D03",
+  "input_manifest": [
+    {
+      "path": "long.pdf",
+      "sha256": "664fab570e43ca4b6e4f15de61908e80b9dd185ec6c8e97a5723a4965e3b1b63",
+      "size_bytes": 50108
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "1a926ec5d0bcb5d9cc693da99af2833c68b0a41b5163ed6fc752f32cdb6b447c",
+      "size_bytes": 613
+    },
+    {
+      "path": "scope.txt",
+      "sha256": "1d4b0ea6bc84c11a988682a4c5b12a6613848048b53b793b52bcdaf488e4fce9",
+      "size_bytes": 129
+    }
+  ],
+  "language": "de",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Fassen Sie long.pdf anhand des Zusatzauftrags scope.txt zusammen. Geben Sie JSON facts mit fact und source für Freigabe, Zwischenprüfung und Abschluss aus. Verwenden Sie genaue Seitenverweise; erfinden Sie keine fehlenden Angaben.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Summarize a long PDF",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Finden Sie die drei Meilensteinentscheidungen und nennen Sie ihre Seiten."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Fakten mit Quellen",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Fassen Sie long.pdf anhand des Zusatzauftrags scope.txt zusammen. Geben Sie JSON facts mit fact und source fur Freigabe, Zwischenprufung und Abschluss aus. Verwenden Sie genaue Seitenverweise; erfinden Sie keine fehlenden Angaben.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "FASSEN SIE LONG.PDF ANHAND DES ZUSATZAUFTRAGS SCOPE.TXT ZUSAMMEN. GEBEN SIE JSON FACTS MIT FACT UND SOURCE FÜR FREIGABE, ZWISCHENPRÜFUNG UND ABSCHLUSS AUS. VERWENDEN SIE GENAUE SEITENVERWEISE; ERFINDEN SIE KEINE FEHLENDEN ANGABEN.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Find the three milestone decisions and cite their pages."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Find the three milestone decisions and cite their pages. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D03/verifier.py",
+  "verifier_timeout_seconds": 120
+}

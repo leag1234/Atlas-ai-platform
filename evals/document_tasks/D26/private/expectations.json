@@ -1,0 +1,29 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "refusals": [
+          {
+            "error": "archive_path_escape",
+            "file": "traversal.tar"
+          },
+          {
+            "error": "expanded_size_limit",
+            "file": "bomb.zip"
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D26",
+  "input_hashes": {
+    "bomb.zip": "1abd5857780ecc0727b717b9f5a3a8c78e82bee242504be9868b162398b76a68",
+    "response-contract.json": "a070517ed8b0704fc6a34ecab0a17c8ec9ddd5aa0a1b3868b73ed66927f0e3db",
+    "traversal.tar": "a54747833926f843fd898501a31eeca7e668b3f05af5b1e58c3353c15fa1af5d"
+  },
+  "no_publication": true,
+  "scenario": "archive"
+}

@@ -1,0 +1,41 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "records": [
+          {
+            "amount": 250,
+            "code": "R-02",
+            "due": "2031-04-02",
+            "file": "report.pdf",
+            "page": 2
+          },
+          {
+            "amount": 500,
+            "code": "R-04",
+            "due": "2031-04-04",
+            "file": "report.pdf",
+            "page": 4
+          },
+          {
+            "amount": 250,
+            "code": "A-02",
+            "due": "2031-04-02",
+            "file": "appendix.pdf",
+            "page": 2
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D01",
+  "input_hashes": {
+    "appendix.pdf": "c41fb1b7e85c6c4626df773b70ab4bde21c37413ac575bfc19b043783c7ef08e",
+    "report.pdf": "3d2c469ecf7883006255708b552d66cac248c6430263c704ed74296770315dc5",
+    "response-contract.json": "f2bef24c96ae87e19fc54ecf09065313925f5f95acad75519ee51b6cb8a6f83a"
+  },
+  "scenario": null
+}

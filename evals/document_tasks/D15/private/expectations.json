@@ -1,0 +1,60 @@
+{
+  "checks": [
+    {
+      "kind": "xlsx",
+      "path": "artifacts/joined.xlsx",
+      "sheets": {
+        "Matches": [
+          [
+            "OrderID",
+            "CustomerID",
+            "Name",
+            "Amount"
+          ],
+          [
+            "O1",
+            "C2",
+            "Bea",
+            80
+          ],
+          [
+            "O2",
+            "C1",
+            "Ari",
+            50
+          ]
+        ],
+        "Unmatched": [
+          [
+            "Kind",
+            "ID",
+            "CustomerID",
+            "Amount"
+          ],
+          [
+            "order",
+            "O3",
+            "C9",
+            20
+          ],
+          [
+            "customer",
+            "C3",
+            "C3",
+            null
+          ]
+        ]
+      }
+    }
+  ],
+  "expected_publications": [
+    "joined.xlsx"
+  ],
+  "id": "D15",
+  "input_hashes": {
+    "customers.xlsx": "693c495aecee0f32ab50aafbd28b6e9367eb105eb809eda582f92552d263deaa",
+    "orders.xlsx": "aff6ccbadf292fcbe94094c109069f968e2ed9a05f32231707f1f1b07b5875ec",
+    "response-contract.json": "37f1c65056187e31f778afc5c93733b5634f1400aec4ae6d07c0e72bbb8f265d"
+  },
+  "scenario": null
+}

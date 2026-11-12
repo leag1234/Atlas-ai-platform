@@ -1,0 +1,41 @@
+{
+  "checks": [
+    {
+      "kind": "json",
+      "path": "answer.json",
+      "value": {
+        "changes": [
+          {
+            "after": "Dispatch on Tuesday.",
+            "before": "Dispatch on Monday.",
+            "kind": "replace",
+            "left_source": "old.docx#paragraph=2",
+            "right_source": "revised.docx#paragraph=2"
+          },
+          {
+            "after": null,
+            "before": "Retired review step.",
+            "kind": "delete",
+            "left_source": "old.docx#paragraph=3",
+            "right_source": null
+          },
+          {
+            "after": "Add compliance review.",
+            "before": null,
+            "kind": "insert",
+            "left_source": null,
+            "right_source": "revised.docx#paragraph=4"
+          }
+        ]
+      }
+    }
+  ],
+  "expected_publications": [],
+  "id": "D12",
+  "input_hashes": {
+    "old.docx": "7fa6f2664f64f5681c9e384b39d481556c082fd5ecc325da8b29aad47886993a",
+    "response-contract.json": "75482e5daf7e0c1a567b2d35456514d037363a43e3bd3e7a6ca440c4ca372c93",
+    "revised.docx": "dc290893458fcf2cc52e243df00df0dfa61ac49e88278d3f2df830dcc463ac3c"
+  },
+  "scenario": null
+}

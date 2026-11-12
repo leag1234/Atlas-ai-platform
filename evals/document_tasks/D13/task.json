@@ -1,0 +1,77 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write"
+  ],
+  "base_archive_sha256": "16135dc39cfe5226a49db8864816d2571087823f2abb91399c108ec9aca24e81",
+  "expected_artifacts": [],
+  "id": "D13",
+  "input_manifest": [
+    {
+      "path": "ranges.xlsx",
+      "sha256": "a6ea7b155bff5335ab7a6790c3ee14b50b945b95fe9bcbcceb33bda45070e3e1",
+      "size_bytes": 5738
+    },
+    {
+      "path": "request.txt",
+      "sha256": "9165b66d6d43bba4d43bfb433a92db76606c03a9d38f476e9b3d3a1c6714daa6",
+      "size_bytes": 143
+    },
+    {
+      "path": "response-contract.json",
+      "sha256": "bde2389560359f02f2cc7620396971b0903b25180216a8d6cc869201cd883eb3",
+      "size_bytes": 891
+    }
+  ],
+  "language": "de",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Lesen Sie Values!A1:C5 und Notes!A1:B2 in ranges.xlsx gemäß request.txt. Liefern Sie JSON sheets mit name und cells; jede Zelle enthält address, type, value und cached. Unterscheiden Sie Formeln, gespeicherte Ergebnisse und fehlende Cachewerte; berechnen Sie nichts neu.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Read an XLSX range",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Melden Sie gespeicherte Zellen und unterscheiden Sie Formeln von zwischengespeicherten Zahlen."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Zellen genau auslesen",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Lesen Sie Values!A1:C5 und Notes!A1:B2 in ranges.xlsx gemaß request.txt. Liefern Sie JSON sheets mit name und cells; jede Zelle enthalt address, type, value und cached. Unterscheiden Sie Formeln, gespeicherte Ergebnisse und fehlende Cachewerte; berechnen Sie nichts neu.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "LESEN SIE VALUES!A1:C5 UND NOTES!A1:B2 IN RANGES.XLSX GEMÄSS REQUEST.TXT. LIEFERN SIE JSON SHEETS MIT NAME UND CELLS; JEDE ZELLE ENTHÄLT ADDRESS, TYPE, VALUE UND CACHED. UNTERSCHEIDEN SIE FORMELN, GESPEICHERTE ERGEBNISSE UND FEHLENDE CACHEWERTE; BERECHNEN SIE NICHTS NEU.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Report stored cells and distinguish calculation expressions from cached numbers."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Report stored cells and distinguish calculation expressions from cached numbers. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D13/verifier.py",
+  "verifier_timeout_seconds": 120
+}

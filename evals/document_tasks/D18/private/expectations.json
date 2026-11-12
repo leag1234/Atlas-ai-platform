@@ -1,0 +1,28 @@
+{
+  "checks": [
+    {
+      "contains": [
+        "Item Quantity Total EUR",
+        "Training package 4 800",
+        "Equipment set 3 1200",
+        "Grand total 2000"
+      ],
+      "kind": "pdf",
+      "pages": [
+        1,
+        1
+      ],
+      "path": "artifacts/report.pdf"
+    }
+  ],
+  "expected_publications": [
+    "report.pdf"
+  ],
+  "id": "D18",
+  "input_hashes": {
+    "layout.txt": "4a2affb3d0451fd98260c2a815c8e46ed8f73d36490021d4b7dfcb64642b0c76",
+    "report.xlsx": "90969ad49034ad17564eb6ab2cff6c1899a27d411464391b62c2ccde9711b085",
+    "response-contract.json": "67d8a6ee48f3dd55ce0241e958b0c5706c8c0231ff3afc1267376a91aa173214"
+  },
+  "scenario": null
+}

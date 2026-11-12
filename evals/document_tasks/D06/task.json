@@ -1,0 +1,86 @@
+{
+  "allowed_effects": [
+    "read",
+    "scratch_write",
+    "publish"
+  ],
+  "base_archive_sha256": "7d149a4beb7a5e27ac95d539d84c36a956d5addd467a8e4c4fbf357ef63d7945",
+  "expected_artifacts": [
+    {
+      "checks": [
+        "Requested content, structure, provenance, and visible rendered bounds"
+      ],
+      "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "path": "table.xlsx"
+    }
+  ],
+  "id": "D06",
+  "input_manifest": [
+    {
+      "path": "response-contract.json",
+      "sha256": "6e32e285ada94c236a9bbe7ad16bd9d29b939bd0692148ea04ded68217e60f25",
+      "size_bytes": 697
+    },
+    {
+      "path": "schema.csv",
+      "sha256": "7a9953e82490eba8e1ffe73a056fca2fc41b87f828016e397ca9751decda52fc",
+      "size_bytes": 86
+    },
+    {
+      "path": "table.pdf",
+      "sha256": "0cf50f82d673b70ce3764567a460ca8b37fa34676fe321d6ee2be59cea15c142",
+      "size_bytes": 1908
+    }
+  ],
+  "language": "en",
+  "limits": {
+    "archive_entries": 20000,
+    "command_memory_bytes": 536870912,
+    "command_output_bytes": 32768,
+    "command_seconds": 120,
+    "cost_eur": 3,
+    "expanded_bytes": 209715200,
+    "model_calls": 41,
+    "per_call_eur": 0.1,
+    "text_tool_bytes": 262144,
+    "tool_calls": 40,
+    "wall_seconds": 1200
+  },
+  "prompt": "Extract the table on page 2 of table.pdf into table.xlsx, sheet Register. Follow schema.csv column order and types; include the source page for every row. Preserve missing values, not zeros.\nUse response-contract.json for output structure and locator conventions.",
+  "title": "Extract a PDF table to XLSX",
+  "variants": [
+    {
+      "execute": true,
+      "kind": "natural",
+      "prompt": "Übertragen Sie die ausgewählten Zeilen in die Arbeitsmappe."
+    },
+    {
+      "execute": true,
+      "kind": "short",
+      "prompt": "Table into workbook",
+      "requires_task_context": true
+    },
+    {
+      "execute": true,
+      "kind": "unaccented",
+      "prompt": "Extract the table on page 2 of table.pdf into table.xlsx, sheet Register. Follow schema.csv column order and types; include the source page for every row. Preserve missing values, not zeros.\nUse response-contract.json for output structure and locator conventions."
+    },
+    {
+      "execute": true,
+      "kind": "uppercase",
+      "prompt": "EXTRACT THE TABLE ON PAGE 2 OF TABLE.PDF INTO TABLE.XLSX, SHEET REGISTER. FOLLOW SCHEMA.CSV COLUMN ORDER AND TYPES; INCLUDE THE SOURCE PAGE FOR EVERY ROW. PRESERVE MISSING VALUES, NOT ZEROS.\nUSE RESPONSE-CONTRACT.JSON FOR OUTPUT STRUCTURE AND LOCATOR CONVENTIONS."
+    },
+    {
+      "execute": true,
+      "kind": "english",
+      "prompt": "Please carry out this task: Put the selected rows in a typed workbook."
+    },
+    {
+      "execute": false,
+      "kind": "negative",
+      "prompt": "Do not carry out this task yet: Put the selected rows in a typed workbook. Explain the requested action only; do not write, publish or modify anything."
+    }
+  ],
+  "verifier_ref": "D06/verifier.py",
+  "verifier_timeout_seconds": 120
+}
