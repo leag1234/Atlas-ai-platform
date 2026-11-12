@@ -83,18 +83,88 @@ def total_formats(
     return {cell: shown for cell, shown in found.items() if shown != "General"}
 
 
+# One SUM, AVERAGE, MIN or MAX over one range, and nothing else.
+AGGREGATE = re.compile(rf"=(?:SUM|AVERAGE|MIN|MAX)\({CELL}:{CELL}\)", re.I)
+
+
+def table_areas(content: Content) -> dict[str, tuple[int, int]]:
+    """Per sheet title, the rows (header included) and columns of its table.
+
+    The contract of a workbook: the first table of a section starts at cell A1
+    of its sheet, header in row 1 and first data row in row 2, so a reference
+    written by the author of the table is the reference in the file. Only that
+    table holds formulas, and a formula refers to cells of such a table (its
+    own, or the one of a numbered sheet): the position of anything else on a
+    sheet depends on the texts written around it. A later table of a section
+    that holds a formula is refused with its sheet.
+    """
+    areas: dict[str, tuple[int, int]] = {}
+    for index, section in enumerate(content.sections, 1):
+        for position, table in enumerate(section.tables):
+            if position == 0:
+                areas[str(index)] = (1 + len(table.rows), len(table.headers))
+            elif table.formulas and any(
+                cell.startswith("=") for row in table.rows for cell in row
+            ):
+                raise ValueError(f"formula_table_not_first:sheet_{index}")
+    return areas
+
+
+def total_findings(raw: bytes, areas: dict[str, tuple[int, int]]) -> list[str]:
+    """Totals of a rendered workbook whose range is probably not the one meant.
+
+    A total is one SUM, AVERAGE, MIN or MAX over a range of its own column,
+    written under that range. Two findings, each with the cell and its sheet:
+    total_includes_header when the range starts on the header row, and
+    total_stops_early when a cell that is not a formula lies between the end
+    of the range and the total (a row of the column that the total leaves
+    out). Publication does not refuse them: a header is text, which a sum
+    skips, and a total of the first rows only can be meant. They let a test
+    prove what the totals of a rendered file add up.
+    """
+    book = load_workbook(BytesIO(raw), data_only=False)
+    try:
+        findings: list[str] = []
+        for sheet in book:
+            rows, columns = areas.get(sheet.title, (0, 0))
+            if not rows:
+                continue
+            for row in range(2, rows + 1):
+                for column in range(1, columns + 1):
+                    cell = sheet.cell(row, column)
+                    if cell.data_type != "f":
+                        continue
+                    match = AGGREGATE.fullmatch(str(cell.value))
+                    if (
+                        match is None
+                        or match[1].upper() != match[3].upper()
+                        or column_index_from_string(match[1].upper()) != column
+                    ):
+                        continue
+                    top, bottom = sorted((int(match[2]), int(match[4])))
+                    if bottom >= row:
+                        continue
+                    where = f"{cell.coordinate}:sheet_{sheet.title}"
+                    if top <= 1:
+                        findings.append("total_includes_header:" + where)
+                    if any(
+                        sheet.cell(between, column).data_type != "f"
+                        for between in range(bottom + 1, row)
+                    ):
+                        findings.append("total_stops_early:" + where)
+        return findings
+    finally:
+        book.close()
+
+
 def bind_summaries(content: Content) -> Content:
     value = content.model_dump()
-    for index, section in enumerate(value["sections"]):
-        written = (
-            (1 if index == 0 else 0)
-            + 1
-            + len(section["paragraphs"])
-            + len(section["bullets"])
-        )
-        for table in section["tables"]:
+    for section in value["sections"]:
+        # Formulas live in the first table of a section, which starts at A1:
+        # its data rows start at row 2 (see table_areas).
+        for table in section["tables"][:1]:
             rows = table["rows"]
-            start = written + 2
+            start = 2
             data = []
             for row in rows:
                 if any(cell.startswith("=") for cell in row):
@@ -135,7 +205,6 @@ def bind_summaries(content: Content) -> Content:
                 table["rows"] = tuple(
                     tuple(replacements.get(cell, cell) for cell in row) for row in rows
                 )
-            written += 1 + len(rows)
     return Content.model_validate(value)
 
 

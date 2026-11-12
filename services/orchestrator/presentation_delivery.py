@@ -273,6 +273,20 @@ NUMERIC_HELP = (
     " ambiguous separator like 1,250, and keep header and label cells out of"
     " formula ranges)"
 )
+OUTSIDE_HELP = (
+    " (the code ends with the cell that holds the formula and its sheet: that"
+    " formula refers to a cell outside the table. In the file the table starts"
+    " at cell A1 of its sheet: its header is row 1, its first data row is row"
+    " 2, and nothing above it shifts the rows, so a total under four data rows"
+    " is =SUM(B2:B5); count the rows from the header of the table, and write a"
+    " cell of another sheet as 2!B2)"
+)
+NOT_FIRST_HELP = (
+    " (the code ends with the sheet: only the first table of a section holds"
+    " formulas, because it starts at cell A1 of its sheet; give each table with"
+    " formulas its own section, under its own heading, and write a cell of"
+    " another sheet as 2!B2)"
+)
 COLUMNS_HELP = (
     " (the number is the most columns a table may have in this format; a wider"
     " table fits an .xlsx file, up to 60 columns, or is split in two)"
@@ -292,6 +306,10 @@ def render_failure_reason(diagnostic: str) -> str:
     reason = match[1]
     if reason.startswith("formula_requires_numeric_cells:"):
         reason += NUMERIC_HELP
+    elif reason.startswith("formula_reference_outside_table:"):
+        reason += OUTSIDE_HELP
+    elif reason.startswith("formula_table_not_first:"):
+        reason += NOT_FIRST_HELP
     elif "formula" in reason or reason == "unsupported_sumif_criteria":
         reason += FORMULA_HELP
     elif reason.startswith("table_columns_limit:"):

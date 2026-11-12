@@ -17,10 +17,19 @@ Text that begins like a number ("1,250" whose notation is unknown, "2 kg",
 "12.50" in a header) is never skipped or misread in silence: a sum, a count, a
 comparison with a number or arithmetic over it stops the render with
 formula_requires_numeric_cells and the cell, and IFERROR does not hide it.
+
+A workbook built by the renderer has one table per sheet that formulas may use,
+starting at cell A1 (see table_areas in spreadsheet.py). Every reference of
+every formula must stay inside such a table, in the branches IF and IFERROR do
+not evaluate too: a reference to a note under the table or beyond its last row
+is a miscount, refused with formula_reference_outside_table and the cell that
+holds the formula. Cells are named as they are in the file, which is how the
+author of the table wrote them.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 import math
@@ -82,14 +91,23 @@ def refuse(*values: Any) -> None:
             raise ValueError("formula_requires_numeric_cells:" + value.where)
 
 
+OUTSIDE = "formula_reference_outside_table"
+
+
 def cache_formulas(
-    path: Path, extents: dict[str, tuple[int, int]] | None = None
+    path: Path,
+    extents: dict[str, tuple[int, int]] | None = None,
+    tables: dict[str, tuple[int, int]] | None = None,
 ) -> None:
     """Compute and store every formula result.
 
     extents gives, per sheet title, the written area as (rows, columns), empty
     cells included: an empty cell is not stored in the file, so the file alone
     understates the area a formula may reference.
+
+    tables gives, per sheet title, the rows (header included) and columns of
+    the table that starts at cell A1. When given, a reference outside such a
+    table is refused, on a sheet without a table too.
     """
     book = load_workbook(path, data_only=False)
     values: dict[tuple[str, str], Any] = {}
@@ -174,7 +192,15 @@ def cache_formulas(
             raise ValueError("circular_or_deep_formula")
         if key not in values:
             active.add(key)
-            values[key] = evaluate(sheet, cell.value)
+            try:
+                values[key] = evaluate(sheet, cell.value)
+            except ValueError as error:
+                if str(error) == OUTSIDE:
+                    # Named with the cell that holds the formula to correct.
+                    raise ValueError(
+                        f"{OUTSIDE}:{coordinate}:sheet_{sheet.title}"
+                    ) from None
+                raise
             active.remove(key)
         return marked(sheet, coordinate, values[key])
 
@@ -184,7 +210,8 @@ def cache_formulas(
             value.where = f"{coordinate}:sheet_{sheet.title}"
         return value
 
-    def reference(sheet: Any, text: str) -> list[Any]:
+    def area(sheet: Any, text: str) -> tuple[Any, int, int, int, int]:
+        """The sheet a reference names and its bounds: left, top, right, bottom."""
         if "!" in text:
             title, text = text.rsplit("!", 1)
             title = title.strip("'").replace("''", "'")
@@ -199,6 +226,14 @@ def cache_formulas(
         left, top, right, bottom = range_boundaries(text)
         if left is None or top is None or right is None or bottom is None:
             raise ValueError("unsupported_formula_reference")
+        if tables is not None:
+            rows, columns = tables.get(sheet.title, (0, 0))
+            if max(left, right) > columns or max(top, bottom) > rows:
+                raise ValueError(OUTSIDE)
+        return sheet, left, top, right, bottom
+
+    def reference(sheet: Any, text: str) -> list[Any]:
+        sheet, left, top, right, bottom = area(sheet, text)
         rows, columns = (extents or {}).get(sheet.title, (0, 0))
         if (
             right > max(columns, sheet.max_column)
@@ -319,6 +354,19 @@ def cache_formulas(
         if position != len(tokens):
             raise ValueError("unsupported_formula")
         return tree
+
+    def references(node: tuple[Any, ...]) -> Iterator[str]:
+        """Every reference of a parsed formula, evaluated or not."""
+        if node[0] == "range":
+            yield node[1]
+        elif node[0] in ("neg", "percent"):
+            yield from references(node[1])
+        elif node[0] == "op":
+            yield from references(node[2])
+            yield from references(node[3])
+        elif node[0] == "call":
+            for arg in node[2]:
+                yield from references(arg)
 
     def values_of(sheet: Any, node: tuple[Any, ...]) -> list[Any]:
         """A range argument yields its cells; any other argument one value."""
@@ -470,7 +518,12 @@ def cache_formulas(
         return max(found, default=0.0)
 
     def evaluate(sheet: Any, formula: str) -> Any:
-        result = scalar(sheet, parse(formula))
+        tree = parse(formula)
+        for text in references(tree):
+            # Also where IF or IFERROR would not look today: the branch is
+            # evaluated once the sheet is filled in.
+            area(sheet, text)
+        result = scalar(sheet, tree)
         if result is None:
             # "=B2" on an empty cell shows 0.
             return 0.0
