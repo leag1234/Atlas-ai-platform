@@ -11,13 +11,14 @@ import logging
 import re
 import hashlib
 from time import monotonic
-from typing import Literal
+from typing import Any, Literal
 
 import aiohttp
 from pydantic import ValidationError
 
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
+from provider_refusal import classify_refusal, error_envelope
 from provider_retry import (
     ModelUnavailableError,
     ProviderResponseError,
@@ -188,16 +189,15 @@ async def provider_error_message(
 ) -> str | None:
     # Error bodies are untrusted and may be HTML or oversized. Read a bounded
     # JSON envelope, and retain only its message, never the body or exception.
-    body = bytearray()
-    try:
-        async for piece in response.content.iter_chunked(4096):
-            if len(body) + len(piece) > 16384:
-                return None
-            body.extend(piece)
-        value = json.loads(body)
-    except (ValueError, aiohttp.ClientError, TimeoutError):
-        return None
-    if not isinstance(value, dict):
+    return error_message(await error_envelope(response), request, key)
+
+
+def error_message(
+    value: dict[str, Any] | None,
+    request: AgentRequest,
+    key: str | None = None,
+) -> str | None:
+    if value is None:
         return None
     error = value.get("error", value)
     message = error.get("message") if isinstance(error, dict) else None
@@ -220,8 +220,9 @@ async def provider_error_message(
     return message[:300]
 
 
-async def provider_rejection_details(
-    response: aiohttp.ClientResponse,
+def rejection_details(
+    status: int,
+    value: dict[str, Any] | None,
     request: AgentRequest,
     body: dict[str, object],
 ) -> dict[str, object]:
@@ -233,18 +234,7 @@ async def provider_rejection_details(
         "request_max_tokens": request.max_tokens,
         "request_body_keys": list(body),
     }
-    if not 400 <= response.status < 500:
-        return details
-    raw = bytearray()
-    try:
-        async for piece in response.content.iter_chunked(2048):
-            if len(raw) + len(piece) > 2048:
-                break
-            raw.extend(piece)
-        value = json.loads(raw)
-    except (ValueError, aiohttp.ClientError, TimeoutError):
-        return details
-    if not isinstance(value, dict):
+    if not 400 <= status < 500 or value is None:
         return details
     candidates = [value.get("error"), value.get("detail")]
     for error in candidates:
@@ -401,27 +391,41 @@ async def attempt(
                 allow_redirects=False,
             ) as response:
                 if response.status != 200:
-                    message = await provider_error_message(response, request, key)
-                    rejection = await provider_rejection_details(
-                        response, request, payload
-                    )
+                    # The body can be read only once: the message, the request
+                    # shape details and the refusal class share one envelope.
+                    envelope = await error_envelope(response)
+                    message = error_message(envelope, request, key)
+                    refusal = classify_refusal(response.status, envelope, (key,))
                     diagnostic(
                         "http",
                         status=response.status,
-                        **rejection,
+                        **rejection_details(
+                            response.status, envelope, request, payload
+                        ),
+                        refusal_class=refusal.kind,
+                        **(
+                            {"refusal_type": refusal.error_type}
+                            if refusal.error_type
+                            else {}
+                        ),
+                        **(
+                            {"refusal_code": refusal.error_code}
+                            if refusal.error_code
+                            else {}
+                        ),
                         **(
                             {"provider_message": message} if message is not None else {}
                         ),
                     )
                     if response.status in (502, 503, 504):
-                        raise TransientProviderError("provider_error")
+                        raise TransientProviderError("provider_error", refusal=refusal)
                     if (
                         response.status in (400, 404)
                         and message is not None
                         and "model not found" in message.lower()
                     ):
                         raise ModelUnavailableError("model_unavailable")
-                    raise ProviderResponseError(response.status)
+                    raise ProviderResponseError(response.status, refusal)
                 async for piece in response.content.iter_chunked(16384):
                     for event in decoder.feed(piece):
                         yield event

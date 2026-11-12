@@ -18,6 +18,7 @@ from packages.dev_request import Request
 from serverless import ServerlessPolicy
 import provider_settings
 from api_routing import Target, targets
+from provider_refusal import Refusal, classify_refusal, error_envelope
 from provider_retry import TransientProviderError
 from streaming import Delta
 from stream_usage import validate_usage
@@ -442,23 +443,43 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                 },
                 allow_redirects=False,
             ) as response:
-                if response.status == 402:
-                    # Provider account out of credit: try the fallback target, and if
-                    # none is left report a credit refusal, never a provider failure.
-                    logging.getLogger(__name__).warning(
-                        "devapi_provider_credit", extra={"provider": plan.provider}
-                    )
-                    raise TransientProviderError(
-                        "provider_quota", detail="http_402", status=402
-                    )
-                if response.status == 429 or response.status >= 500:
-                    raise TransientProviderError(
-                        "provider_error",
-                        detail=f"http_{response.status}",
-                        status=response.status,
-                        retry_after=response.headers.get("Retry-After"),
-                    )
                 if response.status != 200:
+                    refusal = classify_refusal(
+                        response.status,
+                        await error_envelope(response),
+                        (plan.api_key or provider_settings.api_key(),),
+                    )
+                    # One line per refused call: status, the provider's error
+                    # identifiers and a class. Never its message, the request
+                    # or the key.
+                    logging.getLogger(__name__).warning(
+                        "devapi_provider_refusal provider=%s model=%s status=%s %s",
+                        plan.provider or "-",
+                        plan.model or "-",
+                        response.status,
+                        refusal.fields(),
+                    )
+                    if refusal.kind == "credit":
+                        # Provider account out of credit, whatever the status that
+                        # carries it: try the fallback target, and if none is left
+                        # report a credit refusal, never a provider failure (D5).
+                        logging.getLogger(__name__).warning(
+                            "devapi_provider_credit", extra={"provider": plan.provider}
+                        )
+                        raise TransientProviderError(
+                            "provider_quota",
+                            detail=f"http_{response.status}",
+                            status=response.status,
+                            refusal=refusal,
+                        )
+                    if response.status == 429 or response.status >= 500:
+                        raise TransientProviderError(
+                            "provider_error",
+                            detail=f"http_{response.status}",
+                            status=response.status,
+                            retry_after=response.headers.get("Retry-After"),
+                            refusal=refusal,
+                        )
                     raise RuntimeError("provider_error")
                 async for piece in response.content.iter_chunked(16384):
                     started = True
@@ -667,6 +688,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
             raise
         failed_primary_started = exc.started
         fallback_reason = f"{exc} {exc.detail}".strip()
+        fallback_refusal = exc.refusal or Refusal()
     except Exception:
         # Keep the stream shape of a failed attempt: frames held back while
         # waiting for visible content still reach the client before the error.
@@ -676,14 +698,16 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
         raise
     # The reason and both targets are in the message itself: the service log
     # format prints the message only, and the provider alert needs the cause.
+    # The class and the provider's error identifiers follow the existing fields.
     logging.getLogger(__name__).warning(
-        "devapi_transient_fallback from=%s/%s to=%s/%s reason=%s started=%s",
+        "devapi_transient_fallback from=%s/%s to=%s/%s reason=%s started=%s %s",
         plan.provider,
         plan.model,
         plan.fallback.provider if plan.fallback else "",
         plan.fallback.model if plan.fallback else "",
         fallback_reason[:80],
         failed_primary_started,
+        fallback_refusal.fields(),
     )
     async with aclosing(attempt_events(plan.fallback)) as attempt:
         async for frame in attempt:
