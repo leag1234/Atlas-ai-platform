@@ -328,6 +328,45 @@ class DeliverableGroupGuardTests(unittest.TestCase):
         with self.assertRaises((ToolSelectionError, ValueError)):
             offline.switch(json.dumps({"group": "research"}))
 
+    def test_a_research_visit_returns_to_the_publishing_group(self) -> None:
+        from services.orchestrator.work_tool_selection import ToolSelectionError
+
+        selection = WorkToolSelection("spreadsheets")
+        selection.deliverable_pending = lambda: True
+        selection.enable_research()
+        selection.switch(json.dumps({"group": "research"}))
+        selection.declarations()
+        for target in ("files", "code", "research"):
+            with self.subTest(target=target):
+                with self.assertRaises(ToolSelectionError) as refused:
+                    selection.switch(json.dumps({"group": target}))
+                result = refused.exception.result
+                self.assertEqual(result["error"], "deliverable_group_required")
+                self.assertEqual(result["group"], "spreadsheets")
+                self.assertIn(
+                    "Switch back to the spreadsheets group", result["next_step"]
+                )
+                self.assertEqual(selection.group, "research")
+        self.assertEqual(
+            selection.switch(json.dumps({"group": "spreadsheets"}))["group"],
+            "spreadsheets",
+        )
+        # Once the file exists the agent moves freely again.
+        selection.declarations()
+        done = WorkToolSelection("documents")
+        done.deliverable_pending = lambda: False
+        done.enable_research()
+        done.switch(json.dumps({"group": "research"}))
+        done.declarations()
+        self.assertEqual(done.switch(json.dumps({"group": "files"}))["group"], "files")
+
+    def test_research_as_the_first_group_keeps_its_free_switch(self) -> None:
+        selection = WorkToolSelection("research")
+        selection.deliverable_pending = lambda: True
+        self.assertEqual(
+            selection.switch(json.dumps({"group": "files"}))["group"], "files"
+        )
+
     def test_switch_is_free_once_the_file_exists_or_none_was_requested(self) -> None:
         self.assertEqual(
             self.selection(False).switch(json.dumps({"group": "files"}))["group"],
@@ -346,6 +385,20 @@ class DeliverableGroupGuardTests(unittest.TestCase):
         code = WorkToolSelection("code")
         code.deliverable_pending = lambda: True
         self.assertEqual(code.switch(json.dumps({"group": "files"}))["group"], "files")
+
+    def test_the_turn_decision_wins_over_the_lexical_file_check(self) -> None:
+        from services.orchestrator.code_mode import code_deliverable_pending
+
+        question = "Je voudrais un PDF qui résume les règles du jeu de Kestrel"
+        # No creation verb: the lexical check alone misses this request.
+        self.assertFalse(code_deliverable_pending(question, "documents", []))
+        self.assertTrue(code_deliverable_pending(question, "documents", [], True))
+        self.assertFalse(
+            code_deliverable_pending(question, "documents", [{"id": "d1"}], True)
+        )
+        self.assertFalse(
+            code_deliverable_pending("Create a docx report", "documents", [], False)
+        )
 
     def test_code_deliverable_lock_applies_only_to_office_formats(self) -> None:
         from services.orchestrator.code_mode import code_deliverable_pending

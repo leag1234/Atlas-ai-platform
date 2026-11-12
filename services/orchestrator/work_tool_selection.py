@@ -212,6 +212,8 @@ class WorkToolSelection:
         # Set by the Work turn: true while the request asks for a file that was not produced yet.
         self.deliverable_pending: Callable[[], bool] | None = None
         self.researched_before_file = False
+        # The publishing group a research visit came from: the visit returns there.
+        self.research_origin: str | None = None
         self.focus: str | None = None
         self.pending_focus: str | None = None
         self.verified = False
@@ -385,10 +387,21 @@ class WorkToolSelection:
                 next_step="Use one of allowed_tools as focus, or omit focus.",
             )
         current = self.pending or self.group
+        # A research visit made for the file returns to the group it came from:
+        # from research the agent went on to the files group, wrote the file
+        # there with write_file and never published it (staging corpus
+        # 2026-11-11, a CSV with no link and a Markdown file for a PDF request).
+        origin = (
+            current
+            if "publish_document" in self.groups.get(current, ())
+            else self.research_origin
+            if current == "research"
+            else None
+        )
         if (
             self.deliverable_pending is not None
             and self.deliverable_pending()
-            and "publish_document" in self.groups.get(current, ())
+            and origin is not None
             and "publish_document" not in self.groups[selected.group]
         ):
             # A factual document may need its facts first: one visit to the
@@ -397,15 +410,24 @@ class WorkToolSelection:
             # second visit, still has to wait for the file.
             if (
                 selected.group == "research"
+                and origin == current
                 and self.research_enabled
                 and not self.researched_before_file
             ):
                 self.researched_before_file = True
+                self.research_origin = current
                 self.pending, self.pending_focus = selected.group, selected.focus
                 return dict(
                     group=self.pending,
                     tools=list((*CORE, *self.groups[self.pending])),
                     next_step=f"Research now, then switch back to the {current} group and call publish_document.",
+                )
+            if current == "research":
+                raise ToolSelectionError(
+                    "a file was requested and not produced yet",
+                    error="deliverable_group_required",
+                    group=origin,
+                    next_step=f"Switch back to the {origin} group now and call publish_document with the researched content. Do not write the file with another tool.",
                 )
             raise ToolSelectionError(
                 "a file was requested and not produced yet",

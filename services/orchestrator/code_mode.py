@@ -110,13 +110,28 @@ def configure_work_model(model: CodeModel, request: ChatRequest) -> None:
 
 
 def code_deliverable_pending(
-    question: str, group: str, deliverables: Sequence[object]
+    question: str,
+    group: str,
+    deliverables: Sequence[object],
+    file_requested: bool | None = None,
 ) -> bool:
+    """True while the request asks for a file that was not produced yet.
+
+    file_requested is the turn's own decision when it has one (the routed
+    decision behind the chat): "Je voudrais un PDF qui ..." names no creation
+    verb, so the lexical check alone left the guard off and the agent wrote a
+    Markdown file instead of the PDF (staging corpus 2026-11-11).
+    """
     from packages.file_intent import produces_file
     from services.orchestrator.work_tool_selection import office_format_requested
 
-    return (
+    requested = (
         produces_file(question, include_images=False)
+        if file_requested is None
+        else file_requested
+    )
+    return (
+        requested
         and not (group == "code" and not office_format_requested(question))
         and not deliverables
     )
@@ -1002,8 +1017,12 @@ async def process_work(
                     ),
                 )
                 return
+            file_requested = bool(model.produces_files)
             selection.deliverable_pending = lambda: code_deliverable_pending(
-                request.user_text, selection.group, tools.deliverables
+                request.user_text,
+                selection.group,
+                tools.deliverables,
+                file_requested,
             )
             if os.environ.get("ATLAS_REMOTE_RUNNERS") == "1":
                 targets = await broker.call(
