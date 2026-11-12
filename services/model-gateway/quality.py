@@ -583,6 +583,9 @@ async def stream_quality(
         prefix = ""
         prefix_open = True
         partial_reasoning = ""
+        # Counts of what an attempt received, for a cut attempt's log line.
+        progress_chars = 0
+        event_count = 0
         result: dict[str, object] | None = None
         # Reserve time for recovery, still under the original request deadline.
         allotted = (
@@ -600,7 +603,9 @@ async def stream_quality(
                     if isinstance(terminal, dict):
                         result = terminal
                         break
+                    event_count += 1
                     if "tool_progress" in event:
+                        progress_chars = int(str(event["tool_progress"]) or 0)
                         # A long tool call is being written. Cutting it at the
                         # recovery share would only restart the same generation,
                         # with less time and the first attempt's budget gone: a
@@ -775,6 +780,13 @@ async def stream_quality(
                         "reserved_unknown_eur": str(spent),
                         "final_usage_measured": failed_usage is not None,
                         "visible_content": answer_started,
+                        # Lengths only, never text: what the cut attempt had
+                        # received (staging 2026-11-12, researched reports cut
+                        # after 90-107 s with no visible content).
+                        "events": event_count,
+                        "reasoning_chars": len(partial_reasoning),
+                        "content_chars": len(streamed),
+                        "tool_progress_chars": progress_chars,
                     }
                 )
             )
