@@ -137,3 +137,101 @@ class SourceAppendixTests(unittest.TestCase):
             content, ".docx", [source], max_bytes=16777216, timeout=30
         )
         self.assertIn(b"Budget initial : 1500 euros.", document.preview)
+
+
+class ComputedColumnTests(unittest.TestCase):
+    """A computed column ("pace calculated automatically") is arithmetic."""
+
+    def workbook(self, formula: str) -> Content:
+        value = normalize(
+            dict(
+                path="log.xlsx",
+                formulas=True,
+                content="# Training log\n## Runs\n"
+                "| Day | Distance | Minutes | Pace |\n| --- | --- | --- | --- |\n"
+                f"| Monday | 5 | 27.5 | {formula} |\n| Thursday | 8 | 44 | =C5/B5 |",
+            )
+        )
+        return Content.model_validate(value["content"])
+
+    def cached(self, formula: str) -> object:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "log.xlsx"
+            render(self.workbook(formula), path, image_root=path.parent)
+            book = load_workbook(path, data_only=True)
+            try:
+                self.assertEqual(book["1"]["D5"].value, 5.5)
+                return book["1"]["D4"].value
+            finally:
+                book.close()
+
+    def test_operators_functions_and_lazy_branches_compute_cached_values(
+        self,
+    ) -> None:
+        cases = {
+            "=C4/B4": 5.5,
+            "=(C4+0.5)/B4": 5.6,
+            '=IF(AND(B4>0,C4>0),C4/B4,"")': 5.5,
+            # An empty text result reopens as a blank cell.
+            '=IF(B4>100,C4/B4,"")': None,
+            '=IF(B4=0,"",C4/B4)': 5.5,
+            '=IFERROR(C4/0,"n/a")': "n/a",
+            "=ROUND(C4/B4*1.01,1)": 5.6,
+            "=ROUND(2.5,0)": 3,
+            "=-2^2": 4,
+            "=50%*B4": 2.5,
+            '=B4&" km"': "5 km",
+            "=B4>3": True,
+            "=NOT(OR(B4>10,C4>100))": True,
+            "=AVERAGE(B4:B5)": 6.5,
+            "=MAX(B4:C5)-MIN(B4:C5)": 39,
+            "=SUM(B4:B5)/COUNT(B4:B5)": 6.5,
+            "=ABS(B4-C4)": 22.5,
+        }
+        for formula, expected in cases.items():
+            with self.subTest(formula=formula):
+                self.assertEqual(self.cached(formula), expected)
+
+    def test_formula_failures_name_their_reason_for_the_agent(self) -> None:
+        from services.orchestrator.presentation_delivery import build_project_document
+
+        for formula, reason in (
+            ("=C4/0", "formula_division_by_zero"),
+            ("=A4/B4", "formula_requires_numeric_cells"),
+            ("=FOO(B4)", "unsupported_formula_function"),
+            ("=B4:B5*2", "formula_range_needs_single_cell"),
+            ("=ROUND(B4)", "formula_argument_count"),
+        ):
+            with self.subTest(formula=formula):
+                with self.assertRaisesRegex(
+                    ValueError, reason + r" \(formulas support"
+                ):
+                    build_project_document(
+                        self.workbook(formula),
+                        ".xlsx",
+                        [],
+                        max_bytes=16777216,
+                        timeout=30,
+                    )
+
+    def test_only_codes_and_fixed_messages_leave_the_render_process(self) -> None:
+        from services.orchestrator.presentation_delivery import render_failure_reason
+
+        self.assertEqual(
+            render_failure_reason(
+                'Traceback (most recent call last):\n  File "/x/y.py"\n'
+                "packages.doc_render.verify.VerificationError: missing_expected_text"
+            ),
+            "missing_expected_text",
+        )
+        self.assertEqual(
+            render_failure_reason("ValueError: Source coverage verification failed"),
+            "Source coverage verification failed",
+        )
+        for diagnostic in (
+            "ValueError: secret content of /tmp/atlas-deliverable-x/artifact.xlsx",
+            "KeyError: 'title'",
+            "",
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                self.assertEqual(render_failure_reason(diagnostic), "")
