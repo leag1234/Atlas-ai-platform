@@ -1055,6 +1055,66 @@ class ProjectDeliverableTests(ProjectWorkTests):
             b"day,km\ntuesday,7\n",
         )
 
+    def test_web_pages_declared_as_sources_are_ignored_not_refused(self) -> None:
+        """Staging corpus 2026-11-12: a researched report listed its web pages
+        as sources with invented identifiers and was refused twice."""
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+
+        self.publication_setup()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            tools = WorkTools(workspace, execution)
+            invented = [
+                dict(file_id="https://example.test/fusion-report", version="1"),
+                dict(file_id="ITER fusion report", version="2026"),
+            ]
+            reply = asyncio.run(
+                tools.execute(
+                    Call(
+                        str(uuid4()),
+                        "publish_document",
+                        json.dumps(
+                            dict(
+                                path="fusion.md",
+                                content="# Fusion\n\nITER, see https://example.test/fusion-report.\n",
+                                sources=invented,
+                            )
+                        ),
+                    ),
+                    60,
+                )
+            )
+        self.assertNotIn("error", reply, reply)
+        self.assertIn(
+            "2 of the declared sources were not file identifiers", str(reply["note"])
+        )
+        self.assertEqual(tools.deliverables[-1]["source_version_ids"], [])
+
 
 class BoundedDeliverableTests(unittest.TestCase):
     def test_trusted_builder_reopens_all_formats_and_refuses_missing_source_content(
