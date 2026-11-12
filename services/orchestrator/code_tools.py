@@ -577,6 +577,10 @@ class WorkTools(CodeTools):
                 "group": self.selection.group,
                 "next_step": "Use switch_tool_group to select the required tools",
             }
+        if self.sink:
+            # The chat behind Work shows this step now (work_progress.py); some
+            # tools report only when done. Not persisted, no content.
+            await self.sink({"work_step": {"tool": call.name}})
         if call.name in {"web_search", "web_fetch"}:
             if self.web is None:
                 result: dict[str, object] = {
