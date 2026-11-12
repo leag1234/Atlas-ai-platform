@@ -102,6 +102,11 @@ def response(
         activity_description = ""
         last_activity = time.monotonic()
         citation_numbers: dict[str, int] = {}
+        # A chat turn handed to Work: its steps become the status line.
+        relay_work = payload.atlas_ui and not payload.org_id and not payload.code_mode
+        from services.orchestrator.work_progress import WorkProgress
+
+        work_progress = WorkProgress(language, routed_file_request)
         base = {
             "id": item.request_id,
             "created": int(time.time()),
@@ -111,11 +116,14 @@ def response(
 
         def status_event(done: bool = False) -> dict[str, object]:
             elapsed = round(time.monotonic() - started, 1)
-            description = activity_description or str(
-                activity_labels.get("done" if done else activity, activity)
-            )
+            # A Work step label never outlives the step: the answer is "done".
+            description = (
+                "" if done and activity == "work_step" else activity_description
+            ) or str(activity_labels.get("done" if done else activity, activity))
             if guest and not (
-                activity == "artifact_progress" and activity_description and not done
+                activity in {"artifact_progress", "work_step"}
+                and activity_description
+                and not done
             ):
                 from services.orchestrator.guest_activity import activity_label
 
@@ -282,11 +290,38 @@ def response(
                 }
             )
 
+        async def work_status(event: dict[str, object]) -> None:
+            # One Work step (work_progress.py): the kind of step, never its content.
+            nonlocal activity, activity_urls, activity_description
+            step = work_progress.step(event)
+            if step is None or step == (activity, activity_description):
+                return
+            activity, activity_description = step
+            activity_urls = []
+            # Throttled: a skipped status still reaches the next heartbeat.
+            if work_progress.due(time.monotonic()):
+                await queue.put(
+                    {"atlas": {"phase": "work_progress"}, "event": status_event()}
+                )
+
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
             nonlocal received_content
             if event.get("phase") == "connector_approval":
                 await queue.put({"atlas": event})
+                return
+            announced = event.get("work_step")
+            if isinstance(announced, dict):
+                # A Work tool call starting: status only, never persisted or shown
+                # as a step.
+                if relay_work:
+                    await work_status(
+                        {
+                            "type": "tool",
+                            "tool": announced.get("tool"),
+                            "status": "pending",
+                        }
+                    )
                 return
             if not payload.atlas_ui and not isinstance(event.get("project"), dict):
                 # A tool turn cannot be distinguished from a final turn until it
@@ -294,8 +329,11 @@ def response(
                 if "phase" in event:
                     await queue.put({"atlas": {"steps": [event]}})
                 return
-            if isinstance(event.get("project"), dict):
+            project_event = event.get("project")
+            if isinstance(project_event, dict):
                 await queue.put(event)
+                if relay_work:
+                    await work_status(project_event)
                 return
             if payload.code_mode and isinstance(event.get("code"), dict):
                 code = event["code"]
@@ -353,6 +391,9 @@ def response(
                 raw_tools = event.get("tools")
                 named_tools = raw_tools if isinstance(raw_tools, list) else []
                 if phase in {"tool_started", "tool_finished"}:
+                    if activity == "work_step":
+                        # The Work step label belongs to the step before this tool.
+                        activity_description = ""
                     activity = str(event.get("tool", "answering"))
                     activity_urls = (
                         [str(url) for url in raw_urls]

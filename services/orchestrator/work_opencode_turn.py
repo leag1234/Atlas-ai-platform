@@ -154,9 +154,10 @@ async def run_opencode_turn(
     tool_calls = 0
     # A requested run holds the answer until the shell ran something.
     guard = getattr(tools, "run_guard", None)
+    announced = ""
 
     async def emit(mapped: dict[str, Any]) -> None:
-        nonlocal answer, tool_calls
+        nonlocal answer, tool_calls, announced
         kind = mapped.get("kind")
         if kind == "text":
             answer = str(mapped.get("text") or answer)
@@ -166,6 +167,15 @@ async def run_opencode_turn(
         tool = str(mapped.get("tool") or "tool")
         status = str(mapped.get("status") or "")
         key = (tool, str(mapped.get("input") or ""))
+        if status == "pending":
+            # The engine is still writing this call (a whole file can take a
+            # minute): the chat shows the step now. Not persisted, no content.
+            sink = getattr(tools, "sink", None)
+            if sink is not None and announced != tool:
+                announced = tool
+                await sink({"work_step": {"tool": tool}})
+            return
+        announced = ""
         if status == "running":
             if key in seen:
                 return
