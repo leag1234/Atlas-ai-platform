@@ -19,7 +19,7 @@ from pypdf.generic import DictionaryObject
 from pypdf.errors import PdfReadError
 
 from packages.doc_render import Content, Section, VerificationError, render, verify
-from packages.doc_render.layout import HEIGHT, MARGIN, pages
+from packages.doc_render.layout import HEIGHT, MARGIN, SLIDE, pages, report_geometry
 
 
 class DocumentRenderTests(unittest.TestCase):
@@ -37,7 +37,17 @@ class DocumentRenderTests(unittest.TestCase):
         self.content = Content.model_validate(self.fixture)
 
     def test_formats_reopen_preserve_content_and_are_deterministic(self) -> None:
-        for suffix, count in (("pptx", 3), ("pdf", 3), ("docx", 1), ("xlsx", 2)):
+        # A PDF report flows on A4 pages: the three sections of the fixture fit
+        # on one page, where the deck has a slide per section.
+        report_pages = len(
+            pages(self.content, self.root, geometry=report_geometry(self.content))
+        )
+        for suffix, count in (
+            ("pptx", 3),
+            ("pdf", report_pages),
+            ("docx", 1),
+            ("xlsx", 2),
+        ):
             with self.subTest(format=suffix):
                 first = self.root / f"first.{suffix}"
                 result = render(self.content, first, image_root=self.root)
@@ -88,8 +98,17 @@ class DocumentRenderTests(unittest.TestCase):
         for suffix in ("pdf", "pptx"):
             path = self.root / f"prefixes.{suffix}"
             render(content, path, image_root=self.root)
-            result = verify(path, expected=content, expected_count=10)
+            count = (
+                len(pages(content, self.root, geometry=report_geometry(content)))
+                if suffix == "pdf"
+                else 10
+            )
+            result = verify(path, expected=content, expected_count=count)
             self.assertIn("Section 10", result.text[-1])
+        # A presentation delivered as PDF keeps one page per slide.
+        path = self.root / "slides.pdf"
+        render(content, path, image_root=self.root, slides=True)
+        verify(path, expected=content, expected_count=10)
 
     def test_schema_rejects_empty_ragged_and_unknown_content(self) -> None:
         for data in (
@@ -143,15 +162,65 @@ class DocumentRenderTests(unittest.TestCase):
             self.assertTrue(
                 all(item.top + item.block.height <= HEIGHT - MARGIN for item in page)
             )
-        for suffix in ("pdf", "pptx"):
+        report = pages(content, self.root, geometry=report_geometry(content))
+        self.assertGreater(len(report), 1)
+        for suffix, count in (("pdf", len(report)), ("pptx", len(layout))):
             path = self.root / f"long.{suffix}"
             render(content, path, image_root=self.root)
             verify(
                 path,
                 expected=content,
-                expected_count=len(layout),
+                expected_count=count,
                 require_pagination=True,
             )
+
+    def test_a_pdf_report_flows_on_a4_and_does_not_repeat_headings(self) -> None:
+        # Staging 2026-11-12: a short report took 16 slide-size pages, one section
+        # per page and a repeated heading on each continuation.
+        content = Content(
+            title="Short report",
+            sections=tuple(
+                Section(
+                    heading=f"Part {index}",
+                    paragraphs=("A paragraph of the report. " * 12,),
+                    bullets=("First point", "Second point"),
+                )
+                for index in range(1, 9)
+            ),
+        )
+        report = pages(content, self.root, geometry=report_geometry(content))
+        self.assertLessEqual(len(report), 2)
+        self.assertEqual(len(pages(content, self.root, geometry=SLIDE)), 8)
+        path = self.root / "short.pdf"
+        render(content, path, image_root=self.root)
+        result = verify(path, expected=content, expected_count=len(report))
+        self.assertEqual(sum(text.count("Part 3") for text in result.text), 1)
+        from pypdf import PdfReader
+
+        box = PdfReader(str(path)).pages[0].mediabox
+        self.assertLess(float(box.width), float(box.height))
+
+    def test_a_wide_table_puts_the_report_in_landscape(self) -> None:
+        months = ["Item", *(f"M{index}" for index in range(1, 13)), "Total"]
+        content = Content.model_validate(
+            {
+                "title": "Budget",
+                "sections": [
+                    {
+                        "heading": "Costs",
+                        "tables": [
+                            {
+                                "headers": months,
+                                "rows": [["Rent", *["1 250,00 €"] * 13]],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertGreater(
+            report_geometry(content).width, report_geometry(content).height
+        )
 
     def test_verification_rejects_empty_corrupt_missing_and_wrong_count(self) -> None:
         path = self.root / "blank.pdf"

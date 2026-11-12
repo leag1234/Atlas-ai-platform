@@ -181,7 +181,7 @@ async def deliver_presentation(
                 if suffix not in formats:
                     continue
                 path = Path(directory) / ("presentation." + suffix)
-                render(content, path, image_root=Path(directory))
+                render(content, path, image_root=Path(directory), slides=True)
                 verified = verify(
                     path,
                     expected=content,
