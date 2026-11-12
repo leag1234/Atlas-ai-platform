@@ -153,6 +153,84 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(searxng.await_count, 1)
                 tavily.assert_awaited_once()
 
+    async def test_searxng_leaves_time_for_the_next_provider(self) -> None:
+        # Staging 2026-11-12: slow engines took all but 2 s of a 15 s search,
+        # Tavily (3 to 5 s) timed out and the whole turn failed.
+        fallback = {
+            "provider": "tavily",
+            "results": [{"link": "https://example.test/result"}],
+            "consulted_at": "now",
+        }
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_SEARCH_PROVIDER": "searxng,tavily",
+                    "TAVILY_API_KEY": "fixture",
+                },
+                clear=True,
+            ),
+            patch.object(
+                self.runtime,
+                "searxng",
+                new=AsyncMock(
+                    return_value={
+                        "provider": "searxng",
+                        "outcome": "upstream_timeout",
+                        "results": [],
+                    }
+                ),
+            ) as searxng,
+            patch.object(
+                self.runtime, "tavily", new=AsyncMock(return_value=fallback)
+            ) as tavily,
+        ):
+            result = await self.runtime.search(self.request, 15)
+        self.assertEqual(result["provider"], "tavily")
+        searxng_budget = cast(tuple[object, float], searxng.call_args_list[-1].args)[1]
+        tavily_budget = cast(tuple[object, float], tavily.call_args_list[-1].args)[1]
+        self.assertLessEqual(searxng_budget, 8.01)
+        self.assertGreaterEqual(tavily_budget, 6.9)
+
+    async def test_short_search_budget_is_split_in_half(self) -> None:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_SEARCH_PROVIDER": "searxng,tavily",
+                    "TAVILY_API_KEY": "fixture",
+                },
+                clear=True,
+            ),
+            patch.object(
+                self.runtime,
+                "searxng",
+                new=AsyncMock(
+                    return_value={"provider": "searxng", "outcome": "ok", "results": []}
+                ),
+            ) as searxng,
+        ):
+            await self.runtime.search(self.request, 6)
+        self.assertLessEqual(
+            cast(tuple[object, float], searxng.call_args_list[-1].args)[1], 3.01
+        )
+
+    async def test_searxng_alone_keeps_the_whole_budget(self) -> None:
+        with (
+            patch.dict(os.environ, {"ATLAS_SEARCH_PROVIDER": "searxng"}, clear=True),
+            patch.object(
+                self.runtime,
+                "searxng",
+                new=AsyncMock(
+                    return_value={"provider": "searxng", "outcome": "ok", "results": []}
+                ),
+            ) as searxng,
+        ):
+            await self.runtime.search(self.request, 15)
+        self.assertGreater(
+            cast(tuple[object, float], searxng.call_args_list[-1].args)[1], 14.9
+        )
+
     async def test_short_local_cooldown_waits_then_retries(self) -> None:
         cooldown = {
             "provider": "searxng",
