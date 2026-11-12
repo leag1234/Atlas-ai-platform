@@ -199,11 +199,15 @@ class Runtime:
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 break
+            # A later provider keeps enough time to answer: a paid provider takes 3
+            # to 5 s, while slow SearXNG engines used to take all but 2 s of the
+            # budget and the whole turn failed on the timeout (staging 2026-11-12).
+            later = (
+                provider == "searxng" and available.index(provider) < len(available) - 1
+            )
+            reserve = max(2.05, min(7.0, remaining * 0.5)) if later else 0.0
             try:
-                provider_timeout = remaining
-                # Leave room for a short local cooldown and a later provider.
-                if provider == "searxng" and len(available) > 1:
-                    provider_timeout = max(0.001, remaining - 2.05)
+                provider_timeout = max(0.001, remaining - reserve)
                 result = await {
                     "serpapi": self.serpapi,
                     "tavily": self.tavily,
@@ -216,10 +220,11 @@ class Runtime:
                 cooldown = searxng_cooldown_wait(result) if provider == "searxng" else 0
                 if cooldown:
                     remaining = deadline - asyncio.get_running_loop().time()
-                    if remaining > cooldown + 0.05:
+                    if remaining - reserve > cooldown + 0.05:
                         await asyncio.sleep(cooldown)
                         result = await self.searxng(
-                            request, deadline - asyncio.get_running_loop().time()
+                            request,
+                            deadline - asyncio.get_running_loop().time() - reserve,
                         )
                         outcome = str(result.get("outcome", "ok"))
                         attempts.append(
