@@ -24,6 +24,9 @@ class Block:
     height: float = 0
     table: bool = False
     bullet: bool = False
+    # Table rows only: line spacing and the horizontal padding of a cell.
+    leading: float = 15
+    pad: float = 6
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,19 @@ def wrap(text: str, width: float, size: float) -> tuple[str, ...]:
     return tuple(lines)
 
 
+def table_type(columns: int) -> tuple[float, float, float, float]:
+    """Font size, line spacing, side padding and row padding of a table.
+
+    More than eight columns are set smaller and tighter: a label, twelve
+    months and a total hold "1 250,00 €" on one line each.
+    """
+    if columns <= 8:
+        return 11.0, 15.0, 6.0, 12.0
+    if columns <= 11:
+        return 9.0, 12.0, 3.0, 8.0
+    return 7.0, 10.0, 2.0, 8.0
+
+
 def text_block(text: str, size: float = 12, *, bullet: bool = False) -> Block:
     lines = wrap(text, BODY_WIDTH - (16 if bullet else 0), size)
     return Block(
@@ -81,7 +97,10 @@ def image_path(root: Path, value: str) -> Path:
     return path
 
 
-def pages(content: Content, image_root: Path) -> tuple[tuple[Placed, ...], ...]:
+def pages(
+    content: Content, image_root: Path, *, tables: bool = True
+) -> tuple[tuple[Placed, ...], ...]:
+    """Lay the content out on pages; a workbook has none for its tables."""
     registered = font()
     for text in content.texts():
         if any(ord(c) not in registered.face.charToGlyph for c in text):
@@ -106,18 +125,22 @@ def pages(content: Content, image_root: Path) -> tuple[tuple[Placed, ...], ...]:
             body.append(text_block(text))
         for text in section.bullets:
             body.append(text_block(text, bullet=True))
-        for table in section.tables:
-            for row in (table.headers, *table.rows):
+        for table in section.tables if tables else ():
+            size, leading, pad, row_pad = table_type(len(table.headers))
+            for row in table.read():
                 lines = tuple(
-                    wrap(cell, BODY_WIDTH / len(row) - 12, 11) for cell in row
+                    wrap(cell.text, BODY_WIDTH / len(row) - 2 * pad, size)
+                    for cell in row
                 )
                 body.append(
                     Block(
                         lines=lines,
-                        size=11,
+                        size=size,
                         table=True,
+                        leading=leading,
+                        pad=pad,
                         # A row of empty cells keeps the height of one line.
-                        height=max(1, *map(len, lines)) * 15 + 12,
+                        height=max(1, *map(len, lines)) * leading + row_pad,
                     )
                 )
         for value in section.images:

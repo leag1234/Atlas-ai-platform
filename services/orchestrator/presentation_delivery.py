@@ -229,6 +229,10 @@ with tempfile.TemporaryDirectory(prefix="atlas-deliverable-") as directory:
     raw = path.read_bytes()
 preview = "\n\n".join(checked.text).encode("utf-8")
 normalized = "".join(preview.decode().split())
+if suffix == ".xlsx":
+    # A cell typed "12.50" is stored as the number 12.5, which verify() matched
+    # to it: a source excerpt found in the typed text is in the workbook.
+    normalized += "\n" + "".join("".join(content.texts()).split())
 for source in payload["source_texts"]:
     if not source.strip() or "".join(source.split()) not in normalized:
         raise ValueError("Source coverage verification failed")
@@ -262,6 +266,19 @@ FORMULA_HELP = (
 )
 
 
+NUMERIC_HELP = (
+    " (the code ends with the cell and its sheet: that cell holds text that"
+    " begins like a number, which a formula would skip or misread; write a plain"
+    " number there, such as 1250.50, 1 250,50 € or 45 %, with no unit and no"
+    " ambiguous separator like 1,250, and keep header and label cells out of"
+    " formula ranges)"
+)
+COLUMNS_HELP = (
+    " (the number is the most columns a table may have in this format; a wider"
+    " table fits an .xlsx file, up to 60 columns, or is split in two)"
+)
+
+
 def render_failure_reason(diagnostic: str) -> str:
     """The safe reason of a failed render, or "" when there is none."""
     lines = [line.strip() for line in diagnostic.splitlines() if line.strip()]
@@ -273,8 +290,12 @@ def render_failure_reason(diagnostic: str) -> str:
     if match is None:
         return ""
     reason = match[1]
-    if "formula" in reason or reason == "unsupported_sumif_criteria":
+    if reason.startswith("formula_requires_numeric_cells:"):
+        reason += NUMERIC_HELP
+    elif "formula" in reason or reason == "unsupported_sumif_criteria":
         reason += FORMULA_HELP
+    elif reason.startswith("table_columns_limit:"):
+        reason += COLUMNS_HELP
     return reason
 
 

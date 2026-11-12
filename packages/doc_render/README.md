@@ -34,9 +34,31 @@ empty cell in XLSX, read by formulas as Excel reads it (0 in arithmetic, skipped
 by SUM, MIN, MAX, COUNT and AVERAGE). A table needs at least one column name.
 The caller owns output paths and asset permissions.
 
+Table cells are read as typed (`cells.py`). Inline Markdown is never shown:
+`**TOTAL**` is a bold cell in XLSX and a bold run in DOCX, and is plain text in
+PDF and PPTX; backticks are dropped and a link keeps its text (and its address
+in XLSX when the cell is only that link). Emphasis opens and closes at word
+boundaries, so `2*3*4` and `*args` are untouched, and underscores are never
+emphasis. In XLSX a cell typed as a number is a number in every table, with a
+number format that shows it as typed: `12.50`, `1 250,00 €`, `1,250.00`, `$40`,
+`45 %` (which holds 0.45). French and English notations are read. What may be
+something else stays text: dates, phone numbers, leading zeros, `1/2`, version
+numbers, and `1,250` or `1.250` unless other numbers of the same table settle
+the notation. Headers are never numbers. A formula that would add up, count,
+compare or compute with text that begins like a number is refused with
+`formula_requires_numeric_cells:<cell>:sheet_<n>`; IFERROR does not hide it. A
+total (one range in SUM, AVERAGE, MIN or MAX, the amounts of SUMIF, or cells
+added and subtracted) takes the number format of the cells it adds up.
+
+A table has up to 60 columns in XLSX, where it is not laid out on pages, and up
+to 14 in DOCX, PDF and PPTX (`table_columns_limit:14` beyond). Above eight
+columns the type is smaller (9 pt up to 11 columns, 7 pt up to 14) and a DOCX
+page is turned to landscape with narrow side margins; an XLSX sheet then fits
+each column to its content instead of the fixed width.
+
 PPTX uses python-pptx, DOCX uses python-docx, XLSX uses openpyxl, and PDF uses
 ReportLab with its bundled Vera font. All document text comes from the input.
-Spreadsheet cells are literal strings, including formula-shaped values. PDF and
+Formula-shaped values are literal text unless the table sets `formulas`. PDF and
 slides share measured layout, wrap and paginate overflow, and reject oversized
 atomic rows. ZIP metadata and PDF identifiers are deterministic. Output replaces
 the destination only after reopening and verification.
