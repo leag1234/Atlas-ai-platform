@@ -13,13 +13,14 @@ from pydantic import (
 )
 
 from .cells import SHEET_COLUMNS, Reading, plain, read_table, shown
+from .glyphs import adapt
 
 
 def font_spaces(value: str) -> str:
-    # The embedded font has no narrow or thin space: French typography
-    # ("1 250,00 €" written with one) keeps a no-break space instead of being
-    # refused as an unsupported character.
-    return value.replace("\u202f", "\u00a0").replace("\u2009", "\u00a0")
+    # The embedded font lacks some characters: French typography's narrow
+    # space, arrows, "CO₂", emoji. They are adapted (see glyphs.adapt) instead
+    # of refusing the whole document.
+    return adapt(value)
 
 
 def tidy(cell: str) -> str:
