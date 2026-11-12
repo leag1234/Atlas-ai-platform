@@ -13,7 +13,11 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from packages.doc_render.schema import Content
-from services.orchestrator.project_document_input import DocumentInput, normalize
+from services.orchestrator.project_document_input import (
+    DocumentInput,
+    explained,
+    normalize,
+)
 from packages.text_deliverables import (
     TEXT_CHARACTER_LIMIT,
     TEXT_MIMES,
@@ -115,7 +119,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": "Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. Each section is a sheet named 1, 2, etc.; first sheet starts with title and section heading, other sheets with the heading; table headers follow any paragraphs/bullets. Numeric table cells are numbers. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
+    "publish_document": "Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Emphasis in a cell (**Total**) is rendered, never shown. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. Each section is a sheet named 1, 2, etc.; first sheet starts with title and section heading, other sheets with the heading; table headers follow any paragraphs/bullets. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
 }
 
 
@@ -202,12 +206,14 @@ async def execute(
         and not value["content"].lstrip().startswith(("{", "["))
     )
     if name == "publish_document" and text_output(value):
-        text_args = TextPublish.model_validate(value).model_dump(exclude_none=True)
+        with explained(TextPublish):
+            text_args = TextPublish.model_validate(value).model_dump(exclude_none=True)
         await tools.execution.check()
         return await publish(tools, text_args, timeout)
     if name == "publish_document":
         value = normalize(value)
-    args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
+    with explained(SCHEMAS[name]):
+        args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
     await tools.execution.check()
     if name == "publish_document":
         return await publish(tools, args, timeout, append_sources=markdown_input)

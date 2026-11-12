@@ -3,6 +3,7 @@
 from typing import Annotated, Self
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -11,11 +12,36 @@ from pydantic import (
     model_validator,
 )
 
-Text = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=4000)]
+from .cells import SHEET_COLUMNS, Reading, plain, read_table
+
+
+def font_spaces(value: str) -> str:
+    # The embedded font has no narrow or thin space: French typography
+    # ("1 250,00 €" written with one) keeps a no-break space instead of being
+    # refused as an unsupported character.
+    return value.replace("\u202f", "\u00a0").replace("\u2009", "\u00a0")
+
+
+def tidy(cell: str) -> str:
+    # A cell of spaces only is an empty cell. Emphasis or backticks around a
+    # formula are dropped: "**=SUM(B2:B5)**" is the formula, not a text.
+    if not cell.strip():
+        return ""
+    shown = plain(cell)
+    return shown if shown.startswith("=") else cell
+
+
+Text = Annotated[
+    str,
+    StringConstraints(strict=True, min_length=1, max_length=4000),
+    AfterValidator(font_spaces),
+]
 # A table cell may be empty: a template to fill in, a month not started yet.
 # It stays empty in every format (a truly empty spreadsheet cell); no
 # placeholder character is invented for it.
-Cell = Annotated[str, StringConstraints(strict=True, max_length=4000)]
+Cell = Annotated[
+    str, StringConstraints(strict=True, max_length=4000), AfterValidator(font_spaces)
+]
 
 
 class ContentModel(BaseModel):
@@ -24,23 +50,22 @@ class ContentModel(BaseModel):
 
 class Table(ContentModel):
     formulas: bool = Field(default=False, strict=True)
-    headers: tuple[Cell, ...] = Field(min_length=1, max_length=8)
+    # A workbook takes wide tables (twelve months and more); the formats laid
+    # out on a page have their own lower bound, checked when rendering.
+    headers: tuple[Cell, ...] = Field(min_length=1, max_length=SHEET_COLUMNS)
     rows: tuple[tuple[Cell, ...], ...] = Field(min_length=1, max_length=50)
 
     @field_validator("headers", mode="after")
     @classmethod
     def blank_headers(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        # A cell of spaces only is an empty cell.
-        return tuple(cell if cell.strip() else "" for cell in value)
+        return tuple(tidy(cell) for cell in value)
 
     @field_validator("rows", mode="after")
     @classmethod
     def blank_cells(
         cls, value: tuple[tuple[str, ...], ...]
     ) -> tuple[tuple[str, ...], ...]:
-        return tuple(
-            tuple(cell if cell.strip() else "" for cell in row) for row in value
-        )
+        return tuple(tuple(tidy(cell) for cell in row) for row in value)
 
     @model_validator(mode="after")
     def rectangular(self) -> Self:
@@ -50,6 +75,10 @@ class Table(ContentModel):
             # Rows may be blank lines to fill in; the columns still need names.
             raise ValueError("table_headers_required")
         return self
+
+    def read(self) -> tuple[tuple[Reading, ...], ...]:
+        """The header row, then the rows: inline markers and numbers read."""
+        return read_table(self.headers, self.rows)
 
 
 class Section(ContentModel):
@@ -79,15 +108,20 @@ class Content(ContentModel):
             raise ValueError("content_size_limit")
         return self
 
-    def texts(self) -> tuple[str, ...]:
-        """Every written text; empty table cells hold none."""
+    def texts(self, *, sheet: bool = False) -> tuple[str, ...]:
+        """Every written text as displayed; empty table cells hold none.
+
+        Inline markers of table cells are not part of the text. With sheet,
+        a cell a workbook stores as a number gives that number.
+        """
         result = [self.title]
         for section in self.sections:
             result.extend((section.heading, *section.paragraphs, *section.bullets))
             for table in section.tables:
-                result.extend(cell for cell in table.headers if cell)
-                for row in table.rows:
-                    result.extend(cell for cell in row if cell)
+                for row in table.read():
+                    result.extend(
+                        cell.stored if sheet else cell.text for cell in row if cell.text
+                    )
         return tuple(result)
 
 

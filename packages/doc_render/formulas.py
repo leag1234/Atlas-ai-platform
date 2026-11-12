@@ -12,6 +12,11 @@ An empty cell is read as Excel reads it: 0 in arithmetic, "" next to text and
 with &, FALSE as a condition; SUM, MIN, MAX and COUNT skip it (their result
 over no number is 0), and AVERAGE over no number is a division by zero, which
 IFERROR catches. Text in a cell that arithmetic needs stays an error.
+
+Text that begins like a number ("1,250" whose notation is unknown, "2 kg",
+"12.50" in a header) is never skipped or misread in silence: a sum, a count, a
+comparison with a number or arithmetic over it stops the render with
+formula_requires_numeric_cells and the cell, and IFERROR does not hide it.
 """
 
 from __future__ import annotations
@@ -28,6 +33,8 @@ from xml.etree import ElementTree as ET
 from openpyxl import load_workbook
 from openpyxl.formula import Tokenizer
 from openpyxl.utils.cell import range_boundaries
+
+from .cells import numeric_looking
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
@@ -63,6 +70,18 @@ class CellError(ValueError):
     """
 
 
+class NumericText(str):
+    """Cell text that begins like a number, with the cell that holds it."""
+
+    where = ""
+
+
+def refuse(*values: Any) -> None:
+    for value in values:
+        if isinstance(value, NumericText):
+            raise ValueError("formula_requires_numeric_cells:" + value.where)
+
+
 def cache_formulas(
     path: Path, extents: dict[str, tuple[int, int]] | None = None
 ) -> None:
@@ -80,6 +99,7 @@ def cache_formulas(
         if value is None:
             return 0.0
         if isinstance(value, bool) or not isinstance(value, (int, float)):
+            refuse(value)
             raise CellError("formula_requires_numeric_cells")
         return float(value)
 
@@ -120,6 +140,9 @@ def cache_formulas(
             left = blank(right)
         if right is None:
             right = blank(left)
+        if not isinstance(left, str) or not isinstance(right, str):
+            # "1,250" > 1000 is not a comparison of numbers.
+            refuse(left, right)
 
         def rank(value: Any) -> int:
             return 2 if isinstance(value, bool) else 1 if isinstance(value, str) else 0
@@ -145,7 +168,7 @@ def cache_formulas(
     def cell_value(sheet: Any, coordinate: str) -> Any:
         cell = sheet[coordinate]
         if cell.data_type != "f":
-            return cell.value
+            return marked(sheet, coordinate, cell.value)
         key = (sheet.title, coordinate)
         if key in active or len(active) >= 50:
             raise ValueError("circular_or_deep_formula")
@@ -153,7 +176,13 @@ def cache_formulas(
             active.add(key)
             values[key] = evaluate(sheet, cell.value)
             active.remove(key)
-        return values[key]
+        return marked(sheet, coordinate, values[key])
+
+    def marked(sheet: Any, coordinate: str, value: Any) -> Any:
+        if isinstance(value, str) and numeric_looking(value):
+            value = NumericText(value)
+            value.where = f"{coordinate}:sheet_{sheet.title}"
+        return value
 
     def reference(sheet: Any, text: str) -> list[Any]:
         if "!" in text:
@@ -346,10 +375,12 @@ def cache_formulas(
                 raise ValueError("formula_argument_count")
 
         def numbers() -> list[float]:
-            # Ranges skip text, logical values and empty cells, like Excel.
+            # Ranges skip text, logical values and empty cells, like Excel;
+            # text that begins like a number is refused, never skipped.
             found: list[float] = []
             for arg in args:
                 for value in values_of(sheet, arg):
+                    refuse(value)
                     if isinstance(value, (int, float)) and not isinstance(value, bool):
                         found.append(float(value))
             return found
@@ -404,11 +435,25 @@ def cache_formulas(
                 isinstance(criterion, str) and any(c in criterion for c in "*?~<>=!")
             ):
                 raise ValueError("unsupported_sumif_criteria")
+
+            def meets(value: Any) -> bool:
+                # An empty criteria cell matches no criterion. A number cell is
+                # compared as a number: 12.5 typed "12.50" meets "12.50".
+                if value is None:
+                    return False
+                if (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and not isinstance(criterion, bool)
+                ):
+                    try:
+                        return float(criterion) == value
+                    except (TypeError, ValueError):
+                        return False
+                return str(value).casefold() == str(criterion).casefold()
+
             return sum(
-                number(v)
-                for c, v in zip(criteria, amounts, strict=True)
-                # An empty criteria cell matches no text criterion.
-                if c is not None and str(c).casefold() == str(criterion).casefold()
+                number(v) for c, v in zip(criteria, amounts, strict=True) if meets(c)
             )
         arity(1, 30)
         found = numbers()
@@ -429,8 +474,10 @@ def cache_formulas(
         if result is None:
             # "=B2" on an empty cell shows 0.
             return 0.0
-        if isinstance(result, bool) or isinstance(result, str):
+        if isinstance(result, bool):
             return result
+        if isinstance(result, str):
+            return str(result)
         value = float(result)
         if not math.isfinite(value):
             raise ValueError("nonfinite_formula")

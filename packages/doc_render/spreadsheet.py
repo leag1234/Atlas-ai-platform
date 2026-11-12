@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import column_index_from_string
 
 from .schema import Content
@@ -17,6 +18,69 @@ SUMIF = re.compile(
     re.I,
 )
 SUM = re.compile(r"^=SUM\((?:'?[0-9]+'?!)?\$?([A-Z]+)\$?(\d+):\$?\1\$?(\d+)\)$", re.I)
+
+
+CELL = r"\$?([A-Z]{1,3})\$?([0-9]{1,5})"
+# A total keeps the unit of what it adds up: one range in SUM, AVERAGE, MIN or
+# MAX, the amounts of a SUMIF, or cells added and subtracted.
+TOTAL = re.compile(
+    rf"=(?:(?:SUM|AVERAGE|MIN|MAX)\(|SUMIF\([^,()]+,[^,()]+,){CELL}:{CELL}\)", re.I
+)
+TERMS = re.compile(rf"={CELL}(?:[+-]{CELL})+", re.I)
+
+
+def total_formats(
+    typed: dict[str, tuple[float, str]], computed: dict[str, str]
+) -> dict[str, str]:
+    """The number format of each total, taken from the cells it adds up.
+
+    typed gives the value and format of each number cell, computed the formula
+    of each formula cell. Twelve months typed "1 250,00 €" give a total shown
+    the same way; cells of different kinds give no format.
+    """
+    sources: dict[str, list[str]] = {}
+    for coordinate, formula in computed.items():
+        match = TOTAL.fullmatch(formula)
+        if match:
+            left, right = sorted(
+                (column_index_from_string(match[1]), column_index_from_string(match[3]))
+            )
+            top, bottom = sorted((int(match[2]), int(match[4])))
+            if (right - left + 1) * (bottom - top + 1) <= 10000:
+                sources[coordinate] = [
+                    f"{get_column_letter(column)}{row}"
+                    for row in range(top, bottom + 1)
+                    for column in range(left, right + 1)
+                ]
+        elif TERMS.fullmatch(formula):
+            sources[coordinate] = [
+                (column + row).upper()
+                for column, row in re.findall(CELL, formula, re.I)
+            ]
+    found: dict[str, str] = {}
+    for _ in range(3):
+        # A total of totals is settled once its own cells are.
+        for coordinate, cells in sources.items():
+            if coordinate in found:
+                continue
+            if any(cell in sources and cell not in found for cell in cells):
+                continue
+            formats = [typed[cell][1] for cell in cells if cell in typed]
+            formats += [found[cell] for cell in cells if cell in found]
+            kinds = {shown.replace("#,##0", "0") for shown in formats}
+            if len(kinds) != 1 or "General" in kinds:
+                found[coordinate] = "General"
+                continue
+            # Amounts under a thousand show no preference: digits are grouped
+            # unless a larger amount was typed without grouping.
+            ungrouped = any(
+                abs(typed[cell][0]) >= 1000 and "#,##0" not in typed[cell][1]
+                for cell in cells
+                if cell in typed
+            ) or any("#,##0" not in found[cell] for cell in cells if cell in found)
+            kind = kinds.pop()
+            found[coordinate] = kind if ungrouped else kind.replace("0", "#,##0", 1)
+    return {cell: shown for cell, shown in found.items() if shown != "General"}
 
 
 def bind_summaries(content: Content) -> Content:

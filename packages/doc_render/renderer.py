@@ -7,7 +7,9 @@ from tempfile import TemporaryDirectory
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from docx import Document
+from docx.enum.section import WD_ORIENT
 from docx.shared import Inches as DocInches
+from docx.shared import Pt as DocPt
 from docx.enum.text import WD_BREAK
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as SheetImage
@@ -17,7 +19,8 @@ from pptx import Presentation
 from pptx.util import Pt
 from reportlab.pdfgen.canvas import Canvas
 
-from .layout import FONT, HEIGHT, MARGIN, WIDTH, image_path, pages
+from .cells import PAGE_COLUMNS, SHEET_COLUMNS, Reading, Span
+from .layout import FONT, HEIGHT, MARGIN, WIDTH, image_path, pages, table_type
 from .schema import Content
 from .verify import Verification, verify
 
@@ -77,12 +80,12 @@ def build_slides(content: Content, path: Path, root: Path) -> None:
                 for col, lines in enumerate(block.lines):
                     cell = table.cell(0, col)
                     cell.text = "\n".join(lines)
-                    cell.margin_left = cell.margin_right = Pt(6)
+                    cell.margin_left = cell.margin_right = Pt(block.pad)
                     cell.margin_top = cell.margin_bottom = Pt(3)
                     for paragraph in cell.text_frame.paragraphs:
                         paragraph.font.name = "Bitstream Vera Sans"
                         paragraph.font.size = Pt(block.size)
-                        paragraph.line_spacing = Pt(15)
+                        paragraph.line_spacing = Pt(block.leading)
             else:
                 indent = 16 if block.bullet else 0
                 box = slide.shapes.add_textbox(
@@ -147,9 +150,9 @@ def build_pdf(content: Content, path: Path, root: Path) -> None:
                     canvas.rect(
                         x, HEIGHT - top - block.height, cell_width, block.height
                     )
-                x += 6 if block.table else (16 if block.bullet else 0)
+                x += block.pad if block.table else (16 if block.bullet else 0)
                 for line_index, line in enumerate(lines):
-                    leading = 15 if block.table else block.size * 1.35
+                    leading = block.leading if block.table else block.size * 1.35
                     canvas.drawString(
                         x, HEIGHT - top - block.size - 3 - line_index * leading, line
                     )
@@ -160,6 +163,18 @@ def build_pdf(content: Content, path: Path, root: Path) -> None:
 def build_document(content: Content, path: Path, root: Path) -> None:
     document = Document()
     document.core_properties.title = content.title
+    wide = any(
+        len(table.headers) > 8
+        for section in content.sections
+        for table in section.tables
+    )
+    if wide:
+        # A table of more than eight columns gets the long side of the page
+        # and narrow side margins.
+        page = document.sections[0]
+        page.orientation = WD_ORIENT.LANDSCAPE
+        page.page_width, page.page_height = page.page_height, page.page_width
+        page.left_margin = page.right_margin = DocInches(0.5)
     document.add_heading(content.title, 0)
     for index, section in enumerate(content.sections):
         if index:
@@ -172,11 +187,20 @@ def build_document(content: Content, path: Path, root: Path) -> None:
         for table in section.tables:
             grid = document.add_table(rows=1, cols=len(table.headers))
             grid.style = "Table Grid"
-            for cell, text in zip(grid.rows[0].cells, table.headers, strict=True):
-                cell.text = text
-            for row in table.rows:
-                for cell, text in zip(grid.add_row().cells, row, strict=True):
-                    cell.text = text
+            size = table_type(len(table.headers))[0]
+            small = size < 11
+            for position, row in enumerate(table.read()):
+                cells = grid.rows[0].cells if position == 0 else grid.add_row().cells
+                for cell, reading in zip(cells, row, strict=True):
+                    if not small and reading.spans in ((), (Span(reading.text),)):
+                        cell.text = reading.text
+                        continue
+                    for span in reading.spans:
+                        run = cell.paragraphs[0].add_run(span.text)
+                        run.bold = span.bold or None
+                        run.italic = span.italic or None
+                        if small:
+                            run.font.size = DocPt(size)
         for value in section.images:
             document.add_picture(str(image_path(root, value)), width=DocInches(4))
     document.save(str(path))
@@ -193,46 +217,59 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
     for index, section in enumerate(content.sections):
         # Numeric tabs are structural identifiers, never invented document content.
         sheet = workbook.create_sheet(str(index + 1))
-        rows: list[tuple[str, ...]] = []
+        texts = [section.heading, *section.paragraphs, *section.bullets]
         if index == 0:
-            rows.append((content.title,))
-        rows.extend(
-            [
-                (section.heading,),
-                *((text,) for text in section.paragraphs),
-                *((text,) for text in section.bullets),
-            ]
-        )
+            texts.insert(0, content.title)
+        rows: list[tuple[Reading, ...]] = [(Reading((Span(text),)),) for text in texts]
         formula_rows: set[int] = set()
         for table in section.tables:
             if table.formulas:
                 formula_rows.update(
                     range(len(rows) + 2, len(rows) + 2 + len(table.rows))
                 )
-            rows.extend((table.headers, *table.rows))
+            rows.extend(table.read())
         extents[sheet.title] = (len(rows), max(map(len, rows)))
+        typed: dict[str, tuple[float, str]] = {}
+        computed: dict[str, str] = {}
+        # Up to eight columns keep one comfortable width; a wider sheet fits
+        # each column to what it holds, so twelve months stay in view.
+        widths: dict[int, int] = {}
+        fitted = extents[sheet.title][1] > 8
         for row_index, row in enumerate(rows, 1):
-            for column, value in enumerate(row, 1):
-                if not value:
+            for column, reading in enumerate(row, 1):
+                fit = min(32, max(10, len(reading.text) + 4)) if fitted else 32
+                widths[column] = max(widths.get(column, 0), fit)
+                if not reading.text:
                     # An empty table cell is a truly empty cell: no value, no
                     # empty string. Formulas read it as Excel does.
-                    sheet.column_dimensions[get_column_letter(column)].width = 32
                     continue
-                cell = sheet.cell(row_index, column, value)
+                cell = sheet.cell(row_index, column, reading.text)
                 cell.data_type = "s"
-                if row_index in formula_rows:
-                    if value.startswith("="):
-                        cell.data_type = "f"
-                    else:
-                        import re
-
-                        if re.fullmatch(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?", value):
-                            numeric = float(value) if "." in value else int(value)
-                            if str(numeric) == value:
-                                cell.value = numeric
-                cell.font = Font(name="Bitstream Vera Sans", size=11)
+                if row_index in formula_rows and reading.text.startswith("="):
+                    cell.data_type = "f"
+                    computed[cell.coordinate] = reading.text
+                elif reading.number is not None:
+                    # A cell typed as a number is one in every table, shown as
+                    # typed: a sum never skips "12.50" or "1 250,00 €".
+                    cell.value = reading.number
+                    cell.number_format = reading.number_format
+                    typed[cell.coordinate] = (reading.number, reading.number_format)
+                elif reading.link:
+                    cell.hyperlink = reading.link
+                cell.font = Font(
+                    name="Bitstream Vera Sans",
+                    size=11,
+                    bold=reading.bold or None,
+                    italic=reading.italic or None,
+                )
                 cell.alignment = Alignment(wrap_text=True, vertical="top")
-                sheet.column_dimensions[cell.column_letter].width = 32
+        for column, width in widths.items():
+            sheet.column_dimensions[get_column_letter(column)].width = width
+        if computed:
+            from .spreadsheet import total_formats
+
+            for coordinate, shown in total_formats(typed, computed).items():
+                sheet[coordinate].number_format = shown
         image_row = len(rows) + 2
         for value in section.images:
             image = SheetImage(str(image_path(root, value)))
@@ -256,8 +293,16 @@ def render(content: Content, path: Path, *, image_root: Path) -> Verification:
         from .spreadsheet import bind_summaries
 
         content = bind_summaries(content)
-    # Apply identical font, image and layout bounds for every output format.
-    pages(content, image_root)
+    limit = SHEET_COLUMNS if path.suffix == ".xlsx" else PAGE_COLUMNS
+    if any(
+        len(table.headers) > limit
+        for section in content.sections
+        for table in section.tables
+    ):
+        raise ValueError(f"table_columns_limit:{limit}")
+    # Apply identical font and image bounds for every output format; table rows
+    # are laid out on pages for the formats that have pages.
+    pages(content, image_root, tables=path.suffix != ".xlsx")
     builders = {
         ".pptx": build_slides,
         ".pdf": build_pdf,

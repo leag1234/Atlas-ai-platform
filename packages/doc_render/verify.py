@@ -113,6 +113,8 @@ def verify(
                         break
                 seen.update(heading for heading in headings if heading in value)
         combined = "".join(units)
-        if any("".join(value.split()) not in combined for value in expected.texts()):
+        # A workbook stores a number for a cell typed as one.
+        wanted = expected.texts(sheet=path.suffix == ".xlsx")
+        if any("".join(value.split()) not in combined for value in wanted):
             raise VerificationError("missing_expected_text")
     return Verification(unit, len(text), tuple(text), paginated)
