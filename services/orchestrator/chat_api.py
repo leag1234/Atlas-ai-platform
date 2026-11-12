@@ -460,7 +460,9 @@ async def chat(request: Request) -> Response:
             logging.getLogger(__name__).error(
                 "Configuration failure; variables=%s", configuration_names(exc)
             )
-            detail = temporarily_unavailable(payload.lang if payload else "en")
+            detail = temporarily_unavailable(
+                payload.answer_language if payload else "en"
+            )
         else:
             detail = exc.detail
     except BudgetRefusal as exc:
@@ -516,7 +518,9 @@ async def chat(request: Request) -> Response:
             logging.getLogger(__name__).error(
                 "Configuration failure; variables=%s", configuration_names(exc)
             )
-            detail = temporarily_unavailable(payload.lang if payload else "en")
+            detail = temporarily_unavailable(
+                payload.answer_language if payload else "en"
+            )
     finally:
         if code:
             item.erreurs.append(code)

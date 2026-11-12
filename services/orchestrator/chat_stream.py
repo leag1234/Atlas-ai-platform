@@ -675,7 +675,7 @@ def response(
                             "code": "stream_error",
                             "type": "stream_error",
                             "message": (
-                                ui_failure("timeout", payload.lang)
+                                ui_failure("timeout", payload.answer_language)
                                 if payload.atlas_ui
                                 else None
                             )
@@ -688,12 +688,14 @@ def response(
                 item.state = "error"
                 item.erreurs.append(exc.code)
                 detail = (
-                    temporarily_unavailable(payload.lang)
+                    temporarily_unavailable(payload.answer_language)
                     if guest_configuration_failure(exc)
                     else exc.detail or exc.code
                 )
                 readable = (
-                    ui_failure(exc.code, payload.lang) if payload.atlas_ui else None
+                    ui_failure(exc.code, payload.answer_language)
+                    if payload.atlas_ui
+                    else None
                 )
                 if guest_configuration_failure(exc):
                     logging.getLogger(__name__).error(
@@ -726,12 +728,12 @@ def response(
                 item.state = "error"
                 item.erreurs.append("stream_error")
                 if guest_configuration_failure(exc):
-                    detail = temporarily_unavailable(payload.lang)
+                    detail = temporarily_unavailable(payload.answer_language)
                     logging.getLogger(__name__).error(
                         "Configuration failure; variables=%s", configuration_names(exc)
                     )
                 elif payload.project_id:
-                    detail = temporarily_unavailable(payload.lang)
+                    detail = temporarily_unavailable(payload.answer_language)
                 else:
                     detail = (
                         "The request did not complete because of an unexpected failure "

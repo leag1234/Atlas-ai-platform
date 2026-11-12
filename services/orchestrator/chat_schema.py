@@ -173,6 +173,21 @@ class ChatRequest(VisionInput):
         return {key: item for key, item in value.items() if key != "ui_locale"}
 
     @property
+    def answer_language(self) -> str:
+        """The language of the answer: an explicit lang, else the conversation's.
+
+        Clients send ui_locale and rarely lang, whose default is French: the
+        deadline error of an English conversation came back in French
+        (staging 2026-11-12).
+        """
+        if "lang" in self.model_fields_set:
+            return self.lang
+        try:
+            return conversation_language(self.conversation_messages, self.ui_locale)
+        except (IndexError, ValueError):
+            return self.lang
+
+    @property
     def status_language(self) -> str:
         # The legacy answer-language hint is not evidence of a known UI locale.
         locale = self.ui_locale if "ui_locale" in self.model_fields_set else None

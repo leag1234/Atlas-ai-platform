@@ -211,6 +211,9 @@ WORK_FAILURE = {
         "other": "il lavoro si è interrotto prima della fine",
     },
 }
+# Kept from a Work turn's time limit when the loop stops on time: the files
+# are saved and the stopped turn explained before the turn's own timeout.
+WORK_CLOSING_SECONDS = 30.0
 STEP_LIMITS = {
     "tool_calls",
     "model_calls",
@@ -741,12 +744,15 @@ async def process_work(
     session_id: str,
     collect_workspace: Callable[[Workspace], Awaitable[None]] | None = None,
     saved_reply: str | None = None,
+    wall_clock: float | None = None,
 ) -> None:
     """Task-G handoff after verified identity and scoped conversation/context selection.
 
     No caller headers or database handles enter this interface. The broker refreshes
     current authority for each operation; disconnect cancellation follows the same
-    cleanup boundary as an explicit cancel.
+    cleanup boundary as an explicit cancel. wall_clock, when given, lowers the
+    turn's time limit (a chat turn's Work ends before the chat deadline); the
+    project interface leaves it out and keeps the Work limit.
     """
     from uuid import UUID
     from dataclasses import replace
@@ -807,7 +813,22 @@ async def process_work(
         wall_clock=min(limits.wall_clock, ceiling["wall_seconds"]),
         cost=min(limits.cost, Decimal(str(ceiling["cost_eur"]))),
     )
+    if wall_clock is not None:
+        limits = replace(
+            limits, wall_clock=max(0.0, min(limits.wall_clock, wall_clock))
+        )
     started = time.monotonic()
+
+    def left(reserve: float = 0.0) -> Limits:
+        """The limits with the time this turn has left, less a closing reserve.
+
+        The engine and the loop measure time from their own start: preparing the
+        workspace and the engine is counted here, so they stop before the turn's
+        own timeout and the stopped turn still saves its files and explains.
+        """
+        seconds = limits.wall_clock - (time.monotonic() - started) - reserve
+        return replace(limits, wall_clock=max(0.0, seconds))
+
     model: CodeModel | None = None
     result: CodeResult | None = None
     nearby_usage: dict[str, Any] | None = None
@@ -979,7 +1000,7 @@ async def process_work(
                     item,
                     tools,
                     workspace,
-                    limits,
+                    left(),
                     selection.research_enabled,
                 )
                 if collect_workspace is not None:
@@ -1168,7 +1189,7 @@ async def process_work(
                 request,
                 model,
                 tools,
-                limits,
+                left(WORK_CLOSING_SECONDS),
                 dict(
                     root="/workspace",
                     repository=repository,
