@@ -1,5 +1,10 @@
 """POC-P6: reserve worst-case usage before starting cancellable I/O."""
 
+from services.orchestrator.closing import (
+    SEARCH_TOOLS,
+    closing_instruction,
+    limit_code,
+)
 from services.orchestrator.code_verification import VerificationStatus
 from services.orchestrator.tool_failures import (
     SAME_FAILURE_STOP,
@@ -228,6 +233,11 @@ async def run(
     nudged: set[tuple[str, str]] = set()
     quota_recovered = False
     quota_denials = 0
+    # Chat only: the first search refused for a limit, and whether the model
+    # was told that its next call closes the turn (see closing.py).
+    closes_on_limit = bool(limits.profile) and not limits.code_mode
+    limit_refusal: Message | None = None
+    closed = False
     protocol_recovered = False
     links_recovered = False
     retrieved: set[str] = set()
@@ -318,6 +328,31 @@ async def run(
                         }
                     )
                     raise Stop("model_calls")
+                if limit_refusal is not None and not closed:
+                    # After every pending tool result, and before the one model
+                    # call that follows: it is offered no tool and writes the
+                    # answer. Reserved and timed below like any other call.
+                    # The instruction is the last message the model reads: it
+                    # was followed to the letter there, and only in part as a
+                    # system message placed before the repeated question.
+                    closed = True
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": closing_instruction(
+                                str(limit_refusal["error"]), query.lang
+                            ),
+                        }
+                    )
+                    logging.getLogger(__name__).info(
+                        json.dumps(
+                            {
+                                "event": "search_limit_closing",
+                                "limit": limit_refusal["error"],
+                                "tools_executed": result.tool_calls,
+                            }
+                        )
+                    )
                 prepare_context = getattr(type(model), "prepare_context", None)
                 if prepare_context is not None:
                     await prepare_context(model, messages)
@@ -488,7 +523,7 @@ async def run(
             # answer. In Work it still has to write and publish the file it was
             # asked for (a researched note stopped here before its publication,
             # staging 2026-11-11): only more research is refused, below.
-            if quota_recovered and not limits.code_mode:
+            if (quota_recovered or closed) and not limits.code_mode:
                 raise Stop("tool_quota_exhausted")
             messages.append(
                 {
@@ -559,6 +594,28 @@ async def run(
                             tool=call.name,
                             arguments=call.arguments,
                             output=acknowledgement,
+                            reused=True,
+                        )
+                    )
+                    continue
+                if limit_refusal is not None and call.name in SEARCH_TOOLS:
+                    # The search limit was reached earlier in this turn: the same
+                    # refusal again, without another request or reservation.
+                    if references is not None:
+                        await references.retain(call, dict(limit_refusal), messages)
+                    else:
+                        messages.append(
+                            dict(
+                                role="tool",
+                                tool_call_id=call.id,
+                                content=json.dumps(limit_refusal, ensure_ascii=False),
+                            )
+                        )
+                    result.trace.append(
+                        dict(
+                            tool=call.name,
+                            arguments=call.arguments,
+                            output=dict(limit_refusal),
                             reused=True,
                         )
                     )
@@ -809,6 +866,8 @@ async def run(
                             "content": json.dumps(output, ensure_ascii=False),
                         }
                     )
+                if closes_on_limit and limit_refusal is None and limit_code(output):
+                    limit_refusal = dict(output)
                 if same_failures:
                     logging.getLogger(__name__).info(
                         json.dumps(
