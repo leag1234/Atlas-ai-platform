@@ -30,6 +30,14 @@ NOTE_KEY = "repeated_failure"
 RELAYED = frozenset({"read_file", "web_search", "web_fetch"})
 
 
+# A refused document read changes nothing either, and the model saw the
+# reason: when the turn ends it is a result, not a failure (a turn that
+# delivered its workbook ended "Work failed" for one refused read before the
+# publication, staging 2026-11-12). It has no quota of its own, so the same
+# refusal repeated still stops the turn.
+SETTLED_READS = frozenset({"read_document"})
+
+
 def relayed_failure_tools() -> frozenset[str]:
     """Tools whose error is a result to relay, not a broken step."""
     # A machine tool's refusal is a sentence for the person (key not installed

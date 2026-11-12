@@ -246,9 +246,12 @@ def open_failures(failures: dict[str, str], deliverables: list[Any]) -> dict[str
     # model writes with what it has (staging 2026-11-11). A machine tool's
     # refusal is a sentence the model relays (key not installed yet, host key
     # changed): the person's next step, not a broken turn.
-    from services.orchestrator.tool_failures import relayed_failure_tools
+    from services.orchestrator.tool_failures import (
+        SETTLED_READS,
+        relayed_failure_tools,
+    )
 
-    settled = set(relayed_failure_tools())
+    settled = set(relayed_failure_tools() | SETTLED_READS)
     if (
         deliverables
         and failures.get("switch_tool_group") == "deliverable_group_required"

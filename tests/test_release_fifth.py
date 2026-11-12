@@ -189,13 +189,53 @@ class PublishedReadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tools.workspace.invoke.await_args.args[1]["file_id"], file_id)
         execution.broker.public.side_effect = None
         tools.deliverables[0]["turn_id"] = str(uuid4())
-        with self.assertRaises(ProjectError):
+        with self.assertRaises(ProjectError) as refused:
             await execute(
                 tools,
                 "read_document",
                 json.dumps(dict(file_id=file_id, version=version)),
                 30,
             )
+        # The refusal says what may be read, and what to do for an earlier file.
+        self.assertEqual(refused.exception.body["error"], "not_found")
+        self.assertIn(
+            "A file delivered in an earlier turn and not selected cannot be read back",
+            str(refused.exception.body["message"]),
+        )
+
+    async def test_a_file_name_or_a_link_is_refused_with_what_to_send(self) -> None:
+        execution = SimpleNamespace(
+            request_id=str(uuid4()),
+            session={"base_file_versions": []},
+            check=AsyncMock(),
+            broker=SimpleNamespace(public=AsyncMock(), content=AsyncMock()),
+        )
+        tools = SimpleNamespace(
+            execution=execution,
+            deliverables=[],
+            workspace=SimpleNamespace(invoke=AsyncMock()),
+        )
+        for file_id, version in (
+            ("budget (3).xlsx", "1"),
+            ("/api/atlas/orgs/x/projects/y/deliverables/z/download", str(uuid4())),
+            (str(uuid4()), "latest"),
+        ):
+            with self.subTest(file_id=file_id, version=version):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^unknown_document_input: file_id and version are the two "
+                    r"identifiers given as read_input .*a file name, a path or a "
+                    r"link is not one",
+                ) as refused:
+                    await execute(
+                        tools,
+                        "read_document",
+                        json.dumps(dict(file_id=file_id, version=version)),
+                        30,
+                    )
+                self.assertNotIn("hexadecimal", str(refused.exception))
+        execution.broker.public.assert_not_awaited()
+        tools.workspace.invoke.assert_not_awaited()
 
 
 class PublicAnswerTests(unittest.TestCase):

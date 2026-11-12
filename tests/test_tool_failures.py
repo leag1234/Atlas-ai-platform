@@ -183,6 +183,23 @@ class RepeatedFailureTests(unittest.TestCase):
             {"edit_file": "x"},
         )
 
+    def test_a_refused_document_read_is_a_result_but_still_stops_when_repeated(
+        self,
+    ) -> None:
+        # The turn that then publishes its file is not a failed turn.
+        refused = {"read_document": "unknown_document_input: file_id and version"}
+        self.assertEqual(open_failures(refused, [{"id": "file"}]), {})
+        self.assertEqual(open_failures(refused, []), {})
+        # A refused publication or conversion is still open.
+        for tool in ("publish_document", "convert_document"):
+            self.assertEqual(open_failures({tool: "x"}, []), {tool: "x"})
+        failures = RepeatedFailures()
+        stops = [
+            failures.record("read_document", {"error": "not_found"})[1]
+            for _ in range(SAME_FAILURE_STOP)
+        ]
+        self.assertEqual(stops, [0] * (SAME_FAILURE_STOP - 1) + [SAME_FAILURE_STOP])
+
 
 class Model:
     """Publishes a slightly different document each time, as a model does."""

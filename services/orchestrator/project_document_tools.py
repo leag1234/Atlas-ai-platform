@@ -139,13 +139,31 @@ def declarations() -> list[dict[str, object]]:
     ]
 
 
+# What a document input may name. The model reads this when it names a file
+# another way: a later turn of a conversation sees the name and the link of a
+# file delivered earlier, not its identifiers, and the bare parsing error of an
+# identifier ("badly formed hexadecimal UUID string") told it nothing (staging
+# 2026-11-12).
+READABLE = (
+    "file_id and version are the two identifiers given as read_input in the "
+    "result of publish_document in this turn, or those of a file selected for "
+    "this session; a file name, a path or a link is not one. A file delivered in "
+    "an earlier turn and not selected cannot be read back: work from the "
+    "conversation (to change such a document, write it again in full and "
+    "publish it)."
+)
+
+
 async def resolve(
     execution: Any, value: dict[str, Any], receipts: list[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
     from pathlib import PurePosixPath
     from services.retrieval.project_identity import ProjectError
 
-    file_id, version = str(UUID(value["file_id"])), str(UUID(value["version"]))
+    try:
+        file_id, version = str(UUID(value["file_id"])), str(UUID(value["version"]))
+    except ValueError:
+        raise ValueError("unknown_document_input: " + READABLE) from None
     if dict(file_id=file_id, version_id=version) not in execution.session[
         "base_file_versions"
     ] and not any(
@@ -153,7 +171,7 @@ async def resolve(
         and receipt.get("turn_id") == execution.request_id
         for receipt in (receipts or [])
     ):
-        raise ProjectError(404, "not_found")
+        raise ProjectError(404, "not_found", READABLE)
     await execution.check()
     own_receipt = next(
         (
