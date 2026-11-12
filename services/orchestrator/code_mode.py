@@ -816,6 +816,7 @@ async def process_work(
         else named_office_format(request.user_text)
     )
     tools.requested_suffix = "." + named_format if named_format else None
+    tools.request_text = request.user_text
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,

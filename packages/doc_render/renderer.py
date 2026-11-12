@@ -179,7 +179,8 @@ def build_document(content: Content, path: Path, root: Path) -> None:
     for index, section in enumerate(content.sections):
         if index:
             document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-        document.add_heading(section.heading, 1)
+        if index or not content.repeats_title():
+            document.add_heading(section.heading, 1)
         for text in section.paragraphs:
             document.add_paragraph(text)
         for text in section.bullets:
@@ -222,7 +223,7 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
         # Numeric tabs are structural identifiers, never invented document content.
         sheet = workbook.create_sheet(str(index + 1))
         texts = [section.heading, *section.paragraphs, *section.bullets]
-        if index == 0:
+        if index == 0 and not content.repeats_title():
             texts.insert(0, content.title)
         # The first table starts at cell A1: header in row 1, first data row
         # in row 2. A reference then means the same cell to the author of the

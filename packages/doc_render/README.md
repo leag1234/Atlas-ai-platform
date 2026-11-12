@@ -65,6 +65,23 @@ holds the formula. `total_findings` (`spreadsheet.py`) lists, for a rendered
 file, the totals whose range starts on the header row or stops before the last
 row above them; tests use it, publication does not refuse them.
 
+A first heading that says the title again (a Markdown text that opens with its
+title) is written once, in every format.
+
+`calculated.py` compares a workbook with the request it answers. It finds
+`formulas_requested_but_missing` when the request asks for calculated values
+(a small word list in English, French, German, Spanish and Italian; "without
+formulas" is not a request) and no table holds a formula, and
+`calculated_column_empty` or `calculated_row_empty` when a column or a row
+named as a derived quantity holds at most its own total: a relation between
+columns (Difference, Average, Pace) in a table with formulas elsewhere or for
+such a request, an amount (Total, Balance, Percentage), which may be typed,
+only for such a request. A list, or a template for a request that asks for no
+calculation, is never found. Publication refuses each reason once per turn,
+says how a calculated cell of an empty row is written (`=IFERROR(C2/B2,"")`,
+`=IF(B2="","",B2-C2)`), then publishes the same content as it is with a note
+that the answer must not claim a calculation.
+
 A table has up to 60 columns in XLSX, where it is not laid out on pages, and up
 to 14 in DOCX, PDF and PPTX (`table_columns_limit:14` beyond). Above eight
 columns the type is smaller (9 pt up to 11 columns, 7 pt up to 14) and a DOCX
