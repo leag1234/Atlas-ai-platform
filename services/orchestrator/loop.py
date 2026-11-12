@@ -1,6 +1,11 @@
 """POC-P6: reserve worst-case usage before starting cancellable I/O."""
 
 from services.orchestrator.code_verification import VerificationStatus
+from services.orchestrator.tool_failures import (
+    SAME_FAILURE_STOP,
+    STOP_REASON,
+    RepeatedFailures,
+)
 
 from packages.profiles import accepted_profile
 from packages.limits import LimitError
@@ -231,6 +236,8 @@ async def run(
     last_plan: tuple[str, Message] | None = None
     previous_call: tuple[str, str] | None = None
     skills_inserted = 0
+    # Work only: the same tool failing the same way, whatever its arguments.
+    failures = RepeatedFailures() if limits.code_mode else None
 
     def record_limit(values: dict[str, object]) -> None:
         if isinstance(result, CodeResult):
@@ -692,6 +699,9 @@ async def run(
                 )
                 if not isinstance(output, dict):
                     raise ValueError("invalid_tool_response")
+                same_failures = 0
+                if failures is not None:
+                    output, same_failures = failures.record(call.name, output)
                 if call.name == "update_plan" and "error" not in output:
                     last_plan = canonical, dict(output)
                 from services.orchestrator.source_truth import tool_result_urls
@@ -799,6 +809,25 @@ async def run(
                             "content": json.dumps(output, ensure_ascii=False),
                         }
                     )
+                if same_failures:
+                    logging.getLogger(__name__).info(
+                        json.dumps(
+                            {
+                                "event": "repeated_tool_failure",
+                                "tool": call.name,
+                                "count": same_failures,
+                            }
+                        )
+                    )
+                    record_limit(
+                        {
+                            "kind": STOP_REASON,
+                            "measured": same_failures,
+                            "limit": SAME_FAILURE_STOP,
+                            "unit": "calls",
+                        }
+                    )
+                    raise Stop(STOP_REASON)
                 if call.name in terminal_tools and "error" not in output:
                     result.text = (
                         next(
