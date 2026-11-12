@@ -11,6 +11,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    from services.orchestrator.work_execution import ExecutionGuard
     from services.orchestrator.work_tool_selection import WorkToolSelection
 from uuid import uuid4
 
@@ -494,6 +495,8 @@ class WorkTools(CodeTools):
         self.machine_commands: dict[str, str] = {}
         # Turn-specific system text (the machine rules on a remote turn).
         self.instructions = ""
+        # Set by the Work turn when the request asks for code to be run.
+        self.run_guard: ExecutionGuard | None = None
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))

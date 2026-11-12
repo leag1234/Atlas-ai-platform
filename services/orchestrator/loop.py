@@ -196,6 +196,7 @@ async def run(
     skill_messages: list[Message] | None = None,
     include_intermediate: bool = True,
     final_only: bool = False,
+    before_final: Callable[[list[str]], str | None] | None = None,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -404,6 +405,18 @@ async def run(
                     cleaned = cleanup(
                         without_unretrieved(complete_text, retrieved | tool_urls)
                     )
+                    if limits.code_mode and before_final is not None:
+                        # A final answer the turn cannot accept yet (a requested
+                        # run with nothing executed) goes back to the model once,
+                        # with what it still has to do.
+                        step = before_final([name for name, n in counts.items() if n])
+                        if step is not None:
+                            messages.append(
+                                {"role": "assistant", "content": complete_text}
+                            )
+                            messages.append({"role": "user", "content": step})
+                            answer_parts.clear()
+                            continue
                     if limits.code_mode:
                         # Work preserves its prose when no external URL needs
                         # filtering; otherwise it removes only that URL.

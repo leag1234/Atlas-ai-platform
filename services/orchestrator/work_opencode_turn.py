@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from functools import partial
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +27,8 @@ if TYPE_CHECKING:
     from services.orchestrator.loop import Limits
 
 DEFAULT_MODEL = "atlas-code"
+# How the engine's agent runs code, for the instruction of a requested run.
+RUN_TOOL = "the bash tool"
 DEFAULT_PRICES = "0.5,1.5"
 
 
@@ -149,6 +152,8 @@ async def run_opencode_turn(
     answer = ""
     seen: set[tuple[Any, ...]] = set()
     tool_calls = 0
+    # A requested run holds the answer until the shell ran something.
+    guard = getattr(tools, "run_guard", None)
     announced = ""
 
     async def emit(mapped: dict[str, Any]) -> None:
@@ -188,6 +193,8 @@ async def run_opencode_turn(
                 return
             seen.add(terminal_key)
             tool_calls += 1
+            if guard is not None:
+                guard.record((tool,))
             await tools.emit(
                 "tool",
                 tool=tool,
@@ -215,6 +222,7 @@ async def run_opencode_turn(
             research=research,
             model_id=model_id,
             token_prices=prices,
+            follow_up=None if guard is None else partial(guard.next_step, RUN_TOOL),
         )
         # opencode's own prompt is English: without this line short French
         # messages were answered in English (owner test 2026-11-10).
@@ -231,6 +239,15 @@ async def run_opencode_turn(
         "aborted_time": ("failed", "time_limit"),
         "error": ("failed", "engine_error"),
     }.get(str(outcome.get("outcome")), ("failed", "engine_error"))
+    if guard is not None and state == "done":
+        answer, unexecuted = guard.answer(answer, getattr(request, "lang", "en"))
+        if unexecuted:
+            await tools.emit(
+                "honesty",
+                label="Run not executed",
+                status="completed",
+                output={"text": answer},
+            )
     return OpencodeTurnResult(
         text=answer,
         state=state,
