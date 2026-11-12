@@ -7,7 +7,7 @@ from pathlib import Path
 import tarfile
 import unittest
 import uuid
-from typing import Any
+from typing import Any, Sequence
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import yaml
@@ -62,6 +62,66 @@ class RemoteToolTests(unittest.TestCase):
         next_step = result["next_step"]
         assert isinstance(next_step, str)
         self.assertIn("Correct the command or target", next_step)
+
+    def busy_start(self, failures: Sequence[Exception], timeout: float) -> Any:
+        import asyncio
+
+        from services.orchestrator import work_remote_tools
+
+        calls: list[str] = []
+        pending = list(failures)
+
+        async def invoke(operation: str, values: dict[str, Any]) -> dict[str, Any]:
+            calls.append(operation)
+            if pending:
+                raise pending.pop(0)
+            return dict(state="running", command_id="c")
+
+        tools = MagicMock()
+        tools.emit = AsyncMock()
+        tools.execution.check = AsyncMock()
+        with patch.object(work_remote_tools, "BUSY_POLL_S", 0.01):
+            try:
+                result: Any = asyncio.run(
+                    work_remote_tools.start(
+                        tools, invoke, dict(command_id="c"), timeout
+                    )
+                )
+            except Exception as exc:
+                result = exc
+        return result, calls, tools
+
+    def test_remote_run_waits_for_a_slot_on_a_busy_machine(self) -> None:
+        from services.retrieval.project_identity import ProjectError
+
+        busy = [ProjectError(429, "runner_concurrency_limit") for _ in range(2)]
+        result, calls, tools = self.busy_start(busy, 60)
+        self.assertEqual(result, dict(state="running", command_id="c"))
+        self.assertEqual(calls, ["execute"] * 3)
+        # The user is told once why nothing moves, not once per attempt.
+        self.assertEqual(tools.emit.await_count, 1)
+        self.assertIn("busy", tools.emit.await_args.kwargs["label"])
+
+    def test_remote_run_gives_up_on_a_machine_that_stays_busy(self) -> None:
+        from services.retrieval.project_identity import ProjectError
+
+        busy = [ProjectError(429, "runner_concurrency_limit") for _ in range(500)]
+        result, calls, _ = self.busy_start(busy, 5.05)
+        self.assertIsInstance(result, ProjectError)
+        self.assertEqual(result.body["error"], "runner_concurrency_limit")
+        self.assertGreater(len(calls), 1)
+
+    def test_remote_run_does_not_wait_on_other_refusals(self) -> None:
+        from services.retrieval.project_identity import ProjectError
+
+        for refusal in (
+            ProjectError(429, "runner_minutes_limit"),
+            ProjectError(403, "approval_required"),
+        ):
+            result, calls, tools = self.busy_start([refusal], 60)
+            self.assertIs(result, refusal)
+            self.assertEqual(calls, ["execute"])
+            tools.emit.assert_not_awaited()
 
     def test_remote_run_rejects_leading_cd_chain_and_documents_cwd(self) -> None:
         import asyncio
