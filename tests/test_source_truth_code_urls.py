@@ -76,5 +76,25 @@ class CanonicalUrlTests(unittest.TestCase):
         self.assertNotIn("release/python-3152", cleaned)
 
 
+class BareLabelTests(unittest.TestCase):
+    def test_a_source_label_left_empty_is_dropped(self) -> None:
+        # Staging battery 2026-11-12: "**Source officielle :**" stayed empty
+        # after its unretrieved link was removed.
+        text = (
+            "**Python 3.15.2**\n\n"
+            "*   **Date de publication :** 25 octobre 2026\n"
+            "*   **Source officielle :** [Python](https://www.python.org/downloads/release/x/)\n\n"
+            "La branche 3.15 est en correction de bugs.\n"
+        )
+        cleaned = without_unretrieved(text, {"https://www.python.org/downloads"})
+        self.assertNotIn("Source officielle", cleaned)
+        self.assertIn("Date de publication", cleaned)
+        self.assertIn("La branche 3.15", cleaned)
+
+    def test_a_label_with_children_is_kept(self) -> None:
+        text = "- Steps:\n  - first [x](https://invented.example/a)\n  - second\n"
+        self.assertIn("Steps:", without_unretrieved(text, set()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -58,8 +58,12 @@ def cleanup(text: str) -> str:
             re.match(r"^\s*(?:[-*+•·]|\d+[.)]|#)", next_line)
         )
         next_label = next_line.rstrip(" *_`").endswith(":")
+        # A list item left as a bare label ("Source:") once its link was removed
+        # introduces nothing: without an indented child it is dropped.
+        bare_item = bool(re.match(r"^\s*[-*+•·]\s", line)) and plain.endswith(":")
         if not child and (
-            plain.endswith(":")
+            bare_item
+            or plain.endswith(":")
             and (section_end or label_peer or next_label)
             or (heading or numbered_title)
             and section_end

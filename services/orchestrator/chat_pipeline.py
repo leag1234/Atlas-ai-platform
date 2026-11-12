@@ -1063,6 +1063,11 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         )
         if request.atlas_ui:
             item.reponse += source_footer(sources, request.lang)
+        elif sources and not any(url in item.reponse for url in sources):
+            # An API answer whose citations were all removed as unretrieved kept
+            # no source at all (staging battery 2026-11-12): the pages actually
+            # consulted are listed instead.
+            item.reponse += source_footer(sources, request.lang)
 
 
 async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> None:
