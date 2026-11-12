@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 from services.orchestrator.interactions import Interaction
 
 URL = re.compile(r"https?://[^\s<>\"'()\]]+")
+# An XML namespace declaration directly before a URL: xmlns="..." or xmlns:x="...".
+_NAMESPACE = re.compile(r"\bxmlns(?::[\w.-]+)?\s*=\s*[\"']$")
 REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
 _MARKDOWN_LINK = re.compile(
     r"(?<!!)\[\[([^\]\n]+)\]\(([^)\n]+)\)\]|(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)"
@@ -113,12 +115,13 @@ user_urls: ContextVar[frozenset[str]] = ContextVar(
 
 def without_unretrieved(text: str, retrieved: set[str]) -> str:
     retrieved = set(retrieved) | user_urls.get()
-    from services.orchestrator.citation_fragments import tool_citations
+    from services.orchestrator.citation_fragments import _CODE, tool_citations
     from services.orchestrator.mermaid_check import FENCE
 
     original = text
     text = tool_citations(text, retrieved)
     diagram_ranges: list[tuple[int, int]] = []
+    code_ranges: list[tuple[int, int]] = []
 
     def replace(match: re.Match[str]) -> str:
         value = match[0].rstrip(".,;:)]}>'\"")
@@ -126,6 +129,13 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
             return match[0]
         if any(start <= match.start() < end for start, end in diagram_ranges):
             return "unverified source"
+        # A URL inside a fenced code block (an XML namespace, an endpoint in an
+        # example) or the value of an xmlns attribute is code, not a cited source:
+        # replacing it breaks the code the user copies.
+        if any(start <= match.start() < end for start, end in code_ranges):
+            return match[0]
+        if _NAMESPACE.search(match.string, max(0, match.start() - 40), match.start()):
+            return match[0]
         return "[unverified source]"
 
     # Remove fabricated Markdown citations as a whole, including placeholder URLs.
@@ -144,6 +154,14 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
             text = text.replace(definition[0], "")
     text = text.replace("[unverified source]", "")
     diagram_ranges = [(m.start(), m.end()) for m in FENCE.finditer(text)]
+    # Fenced code blocks only: an inline `https://...` in prose can still be a
+    # citation and stays under the guard.
+    code_ranges = [
+        span
+        for span in (m.span() for m in _CODE.finditer(text))
+        if text.startswith("```", span[0])
+        and not any(start < span[1] and span[0] < end for start, end in diagram_ranges)
+    ]
     text = URL.sub(replace, text)
     # Retrieval provenance contains URLs, not model-authored visit dates. Never
     # preserve an invented date merely because some other URL was retrieved.
