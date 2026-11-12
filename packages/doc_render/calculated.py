@@ -165,19 +165,11 @@ class Finding:
     name: str = ""
     # For missing formulas: the empty columns to calculate (sheet, letter, header).
     columns: tuple[tuple[str, str, str], ...] = ()
-    # Cells start with "=" in a table whose formulas flag is off: they are text.
-    unflagged: bool = False
 
     @property
     def reason(self) -> str:
         """What a turn is refused once for: no formula, or cells left empty."""
         return MISSING if self.code == MISSING else "calculated_cells_empty"
-
-
-def holds_formulas(table: Table) -> bool:
-    return table.formulas and any(
-        cell.startswith("=") for row in table.rows for cell in row
-    )
 
 
 def own_total(cell: str, letter: str) -> bool:
@@ -232,7 +224,7 @@ def finding(content: Content, request: str) -> Finding | None:
     ]
     if not tables:
         return None
-    if asks and not any(holds_formulas(table) for _, table in tables):
+    if asks and not any(table.holds_formulas() for _, table in tables):
         return Finding(
             MISSING,
             columns=tuple(
@@ -240,16 +232,9 @@ def finding(content: Content, request: str) -> Finding | None:
                 for sheet, table in tables
                 for letter, name in empty_columns(table)
             )[:5],
-            unflagged=any(
-                cell.startswith("=")
-                for section in content.sections
-                for table in section.tables
-                for row in table.rows
-                for cell in row
-            ),
         )
     for sheet, table in tables:
-        if not (asks or holds_formulas(table)):
+        if not (asks or table.holds_formulas()):
             continue
         for letter, name in empty_columns(table, DERIVED if asks else RELATION):
             return Finding(COLUMN, sheet, letter, name)

@@ -264,9 +264,15 @@ class TableAtA1Tests(unittest.TestCase):
             ),
         )
         self.assertEqual(book.values["2"]["B3"].value, 3)
-        # Without the formulas option a cell that starts with "=" is text.
-        literal = dict(computed, formulas=False)
+        # Without the formulas option a cell that starts with "=" is a formula
+        # too: the later table is refused the same way.
+        unflagged = dict(computed, formulas=False)
+        with self.assertRaisesRegex(ValueError, "formula_table_not_first:sheet_1"):
+            Rendered(self, strict(dict(heading="Rates", tables=[rates, unflagged])))
+        # Typed with an apostrophe it is a text, in any table.
+        literal = grid(["Month", "Days"], ["May", "3"], ["Total", "'=SUM(B2:B2)"])
         book = Rendered(self, strict(dict(heading="Rates", tables=[rates, literal])))
+        self.assertEqual(book.formulas["1"]["B9"].value, "=SUM(B2:B2)")
         self.assertEqual(book.formulas["1"]["B9"].data_type, "s")
 
     def test_a_reference_must_name_a_cell_of_a_table(self) -> None:

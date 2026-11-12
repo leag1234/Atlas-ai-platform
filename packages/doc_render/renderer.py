@@ -11,6 +11,7 @@ from docx.enum.section import WD_ORIENT
 from docx.shared import Inches as DocInches
 from docx.shared import Pt as DocPt
 from docx.enum.text import WD_BREAK
+from docx.text.paragraph import Paragraph
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as SheetImage
 from openpyxl.styles import Alignment, Font
@@ -19,7 +20,15 @@ from pptx import Presentation
 from pptx.util import Pt
 from reportlab.pdfgen.canvas import Canvas
 
-from .cells import PAGE_COLUMNS, SHEET_COLUMNS, Reading, Span
+from .cells import (
+    PAGE_COLUMNS,
+    SHEET_COLUMNS,
+    Reading,
+    Span,
+    prose,
+    shown,
+    whole_link,
+)
 from .layout import FONT, HEIGHT, MARGIN, WIDTH, image_path, pages, table_type
 from .schema import Content
 from .verify import Verification, verify
@@ -54,7 +63,7 @@ def normalize_zip(path: Path) -> None:
 def build_slides(content: Content, path: Path, root: Path) -> None:
     deck = Presentation()
     deck.slide_width, deck.slide_height = Pt(WIDTH), Pt(HEIGHT)
-    deck.core_properties.title = content.title
+    deck.core_properties.title = shown(content.title)
     for page in pages(content, root):
         slide = deck.slides.add_slide(deck.slide_layouts[6])
         for placed in page:
@@ -125,7 +134,7 @@ def build_pdf(content: Content, path: Path, root: Path) -> None:
     canvas = Canvas(
         str(path), pagesize=(WIDTH, HEIGHT), invariant=1, pageCompression=1, bottomup=1
     )
-    canvas.setTitle(content.title)
+    canvas.setTitle(shown(content.title))
     canvas.setAuthor("")
     for page in layout:
         for placed in page:
@@ -160,9 +169,23 @@ def build_pdf(content: Content, path: Path, root: Path) -> None:
     canvas.save()
 
 
+def write_runs(paragraph: Paragraph, text: str, *, weight: bool = True) -> None:
+    """A text as runs: its emphasis is read, its markers are never written.
+
+    A heading keeps the weight of its style ("## **Summary**" is a habit of
+    writing, not a request for another weight) and takes italics only.
+    """
+    for span in prose(text):
+        run = paragraph.add_run(span.text)
+        if span.bold and weight:
+            run.bold = True
+        if span.italic:
+            run.italic = True
+
+
 def build_document(content: Content, path: Path, root: Path) -> None:
     document = Document()
-    document.core_properties.title = content.title
+    document.core_properties.title = shown(content.title)
     wide = any(
         len(table.headers) > 8
         for section in content.sections
@@ -175,16 +198,16 @@ def build_document(content: Content, path: Path, root: Path) -> None:
         page.orientation = WD_ORIENT.LANDSCAPE
         page.page_width, page.page_height = page.page_height, page.page_width
         page.left_margin = page.right_margin = DocInches(0.5)
-    document.add_heading(content.title, 0)
+    write_runs(document.add_heading("", 0), content.title, weight=False)
     for index, section in enumerate(content.sections):
         if index:
             document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
         if index or not content.repeats_title():
-            document.add_heading(section.heading, 1)
+            write_runs(document.add_heading("", 1), section.heading, weight=False)
         for text in section.paragraphs:
-            document.add_paragraph(text)
+            write_runs(document.add_paragraph(), text)
         for text in section.bullets:
-            document.add_paragraph(text, style="List Bullet")
+            write_runs(document.add_paragraph(style="List Bullet"), text)
         for table in section.tables:
             grid = document.add_table(rows=1, cols=len(table.headers))
             grid.style = "Table Grid"
@@ -214,7 +237,7 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
     areas = table_areas(content)
     workbook = Workbook()
     workbook.remove(workbook.worksheets[0])
-    workbook.properties.title = content.title
+    workbook.properties.title = shown(content.title)
     workbook.properties.created = workbook.properties.modified = EPOCH
     # The written area of each sheet, empty table cells included: a formula may
     # reference an empty cell of the table, never a cell outside what was written.
@@ -235,11 +258,15 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
         formula_rows: set[int] = set()
         if section.tables:
             first = section.tables[0]
-            if first.formulas:
-                formula_rows.update(range(2, 2 + len(first.rows)))
+            # A cell of this table that starts with "=" is a formula, whether
+            # or not the table was flagged (see Table.holds_formulas).
+            formula_rows.update(range(2, 2 + len(first.rows)))
             rows.extend(first.read())
             rows.append(())
-        rows.extend((Reading((Span(text),)),) for text in texts)
+        # A text is read as a cell is: its markers are never shown, and the
+        # cell is bold or italic when the whole text is. It is never a number
+        # nor a formula.
+        rows.extend((Reading(prose(text), link=whole_link(text)),) for text in texts)
         for table in section.tables[1:]:
             # No formula here: table_areas refused it.
             rows.extend(table.read())
@@ -260,7 +287,11 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
                     continue
                 cell = sheet.cell(row_index, column, reading.text)
                 cell.data_type = "s"
-                if row_index in formula_rows and reading.text.startswith("="):
+                if reading.quoted:
+                    # Typed "'=A1": the text "=A1", marked as Excel marks a
+                    # cell entered with an apostrophe.
+                    cell.quotePrefix = True
+                elif row_index in formula_rows and reading.text.startswith("="):
                     cell.data_type = "f"
                     computed[cell.coordinate] = reading.text
                 elif reading.number is not None:
@@ -283,8 +314,8 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
         if computed:
             from .spreadsheet import total_formats
 
-            for coordinate, shown in total_formats(typed, computed).items():
-                sheet[coordinate].number_format = shown
+            for coordinate, display in total_formats(typed, computed).items():
+                sheet[coordinate].number_format = display
         image_row = len(rows) + 2
         for value in section.images:
             image = SheetImage(str(image_path(root, value)))
@@ -295,7 +326,11 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
             image_row += 15
     workbook.save(path)
     workbook.close()
-    if any(table.formulas for section in content.sections for table in section.tables):
+    if any(
+        table.holds_formulas()
+        for section in content.sections
+        for table in section.tables
+    ):
         from .formulas import cache_formulas
 
         cache_formulas(path, extents, areas)

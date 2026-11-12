@@ -12,7 +12,7 @@ from pydantic import (
     model_validator,
 )
 
-from .cells import SHEET_COLUMNS, Reading, plain, read_table
+from .cells import SHEET_COLUMNS, Reading, plain, read_table, shown
 
 
 def font_spaces(value: str) -> str:
@@ -24,11 +24,12 @@ def font_spaces(value: str) -> str:
 
 def tidy(cell: str) -> str:
     # A cell of spaces only is an empty cell. Emphasis or backticks around a
-    # formula are dropped: "**=SUM(B2:B5)**" is the formula, not a text.
+    # formula are dropped: "**=SUM(B2:B5)**" is the formula, not a text. So are
+    # they around a cell typed with an apostrophe to stay text ("**'=A1**").
     if not cell.strip():
         return ""
-    shown = plain(cell)
-    return shown if shown.startswith("=") else cell
+    display = plain(cell)
+    return display if display.startswith(("=", "'=")) else cell
 
 
 Text = Annotated[
@@ -49,6 +50,8 @@ class ContentModel(BaseModel):
 
 
 class Table(ContentModel):
+    # Implied in a workbook, where any cell that starts with "=" is a formula
+    # (see holds_formulas). Other formats refuse the flag and show such a cell.
     formulas: bool = Field(default=False, strict=True)
     # A workbook takes wide tables (twelve months and more); the formats laid
     # out on a page have their own lower bound, checked when rendering.
@@ -80,6 +83,16 @@ class Table(ContentModel):
         """The header row, then the rows: inline markers and numbers read."""
         return read_table(self.headers, self.rows)
 
+    def holds_formulas(self) -> bool:
+        """Whether a workbook calculates a cell of this table.
+
+        There a cell that starts with "=" is a formula whether or not the
+        table was flagged: a person who opens the file never wants to read
+        "=SUM(B2:B5)" as text (staging 2026-11-12). A cell typed "'=A1", with
+        an apostrophe, is the text "=A1".
+        """
+        return any(cell.startswith("=") for row in self.rows for cell in row)
+
 
 class Section(ContentModel):
     heading: Text
@@ -101,27 +114,45 @@ class Content(ContentModel):
 
     @model_validator(mode="after")
     def printable(self) -> Self:
-        for text in self.texts():
+        typed = self.typed()
+        for text in typed:
             if not text.strip() or any(ord(c) < 32 for c in text):
                 raise ValueError("blank_or_control_text")
-        if sum(map(len, self.texts())) > 200_000:
+        if sum(map(len, typed)) > 200_000:
             raise ValueError("content_size_limit")
         return self
 
     def texts(self, *, sheet: bool = False) -> tuple[str, ...]:
         """Every written text as displayed; empty table cells hold none.
 
-        Inline markers of table cells are not part of the text. With sheet,
-        a cell a workbook stores as a number gives that number.
+        Inline markers are not part of the text, in a title, a heading, a
+        paragraph, a bullet or a table cell. With sheet, a cell a workbook
+        stores as a number gives that number.
         """
-        result = [self.title]
+        result = [shown(self.title)]
         for section in self.sections:
-            result.extend((section.heading, *section.paragraphs, *section.bullets))
+            result.extend(
+                map(shown, (section.heading, *section.paragraphs, *section.bullets))
+            )
             for table in section.tables:
                 for row in table.read():
                     result.extend(
                         cell.stored if sheet else cell.text for cell in row if cell.text
                     )
+        return tuple(result)
+
+    def typed(self) -> tuple[str, ...]:
+        """Every written text as it was typed, inline markers included.
+
+        A source excerpt is quoted as typed and displayed without its
+        markers: the check of source coverage compares with this text.
+        """
+        result = [self.title]
+        for section in self.sections:
+            result.extend((section.heading, *section.paragraphs, *section.bullets))
+            for table in section.tables:
+                result.extend(filter(None, table.headers))
+                result.extend(cell for row in table.rows for cell in row if cell)
         return tuple(result)
 
     def repeats_title(self) -> bool:
@@ -131,7 +162,9 @@ class Content(ContentModel):
         section is headed by that title. Each format then writes the text
         once (a workbook showed it twice under its table, staging 2026-11-12).
         """
-        return "".join(self.title.split()) == "".join(self.sections[0].heading.split())
+        return "".join(shown(self.title).split()) == "".join(
+            shown(self.sections[0].heading).split()
+        )
 
 
 class PresentationSlide(ContentModel):

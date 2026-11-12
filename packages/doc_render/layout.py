@@ -8,6 +8,7 @@ from PIL import Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+from .cells import shown
 from .schema import Content
 
 FONT = "AtlasContentVera"
@@ -107,13 +108,13 @@ def pages(
             raise ValueError("unsupported_font_character")
     result: list[tuple[Placed, ...]] = []
     for index, section in enumerate(content.sections):
-        heading = text_block(section.heading, 19)
+        heading = text_block(shown(section.heading), 19)
         if heading.height > 95:
             raise ValueError("heading_exceeds_layout")
         current: list[Placed] = []
         top = MARGIN
         if index == 0:
-            title = text_block(content.title, 23)
+            title = text_block(shown(content.title), 23)
             if title.height > 100:
                 raise ValueError("title_exceeds_layout")
             current.append(Placed(title, top))
@@ -123,10 +124,12 @@ def pages(
             current.append(Placed(heading, top))
             top += heading.height
         body: list[Block] = []
+        # Inline markers are read, never laid out: a page and a slide show
+        # the text in one face.
         for text in section.paragraphs:
-            body.append(text_block(text))
+            body.append(text_block(shown(text)))
         for text in section.bullets:
-            body.append(text_block(text, bullet=True))
+            body.append(text_block(shown(text), bullet=True))
         for table in section.tables if tables else ():
             size, leading, pad, row_pad = table_type(len(table.headers))
             for row in table.read():

@@ -96,16 +96,15 @@ def table_areas(content: Content) -> dict[str, tuple[int, int]]:
     table holds formulas, and a formula refers to cells of such a table (its
     own, or the one of a numbered sheet): the position of anything else on a
     sheet depends on the texts written around it. A later table of a section
-    that holds a formula is refused with its sheet.
+    that holds a formula (a cell that starts with "=", whether or not the
+    table was flagged) is refused with its sheet.
     """
     areas: dict[str, tuple[int, int]] = {}
     for index, section in enumerate(content.sections, 1):
         for position, table in enumerate(section.tables):
             if position == 0:
                 areas[str(index)] = (1 + len(table.rows), len(table.headers))
-            elif table.formulas and any(
-                cell.startswith("=") for row in table.rows for cell in row
-            ):
+            elif table.holds_formulas():
                 raise ValueError(f"formula_table_not_first:sheet_{index}")
     return areas
 
@@ -171,7 +170,7 @@ def bind_summaries(content: Content) -> Content:
                     break
                 data.append(row)
             end = start + len(data) - 1
-            if table["formulas"] and data:
+            if data:
                 replacements: dict[str, str] = {}
                 for row in rows[len(data) :]:
                     for cell in row:

@@ -39,7 +39,14 @@ Table cells are read as typed (`cells.py`). Inline Markdown is never shown:
 PDF and PPTX; backticks are dropped and a link keeps its text (and its address
 in XLSX when the cell is only that link). Emphasis opens and closes at word
 boundaries, so `2*3*4` and `*args` are untouched, and underscores are never
-emphasis. In XLSX a cell typed as a number is a number in every table, with a
+emphasis. A title, a heading, a paragraph and a bullet are read with the same
+rules: bold and italic runs in DOCX (a heading keeps the weight of its style
+and takes italics only), a bold or italic cell in XLSX when the whole text is
+emphasised, plain text in PDF and PPTX. There a link keeps its address after
+its text, `the plan (https://example.org/plan)`, and a text that starts with
+`=` is kept as typed. `Content.texts()` gives every text as displayed and
+`Content.typed()` as typed: a source excerpt quoted with its markers is found
+in the typed text and displayed without them. In XLSX a cell typed as a number is a number in every table, with a
 number format that shows it as typed: `12.50`, `1 250,00 €`, `1,250.00`, `$40`,
 `45 %` (which holds 0.45). French and English notations are read. What may be
 something else stays text: dates, phone numbers, leading zeros, `1/2`, version
@@ -55,7 +62,12 @@ starts at cell A1 of its sheet (header in row 1, first data row in row 2); the
 title, the heading, the paragraphs and the bullets follow it after one empty
 row, then any other table. A cell reference therefore means the same cell to
 the author of the table, in the file and to the person who opens it: nothing
-written above a table shifts its formulas. Only that first table holds
+written above a table shifts its formulas. In XLSX a table cell that starts
+with `=` is a formula whether or not its table has `formulas` set, with the
+same evaluation, cached value and refusals; a cell typed with an apostrophe
+before it (`'=A1`) is the text `=A1` in every format, marked in XLSX as Excel
+marks such a cell. DOCX, PDF and PPTX show a cell that starts with `=` as it
+was typed and calculate nothing. Only that first table holds
 formulas (`formula_table_not_first:sheet_<n>` otherwise), and every reference
 of a formula, in the branches IF does not evaluate too, stays inside such a
 table, its own or the one of a numbered sheet (`2!B2`); a reference to a note
