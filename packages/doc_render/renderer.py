@@ -1,7 +1,9 @@
 """Offline builders; no templates containing user-visible boilerplate."""
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 from io import BytesIO
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
@@ -29,7 +31,18 @@ from .cells import (
     shown,
     whole_link,
 )
-from .layout import FONT, HEIGHT, MARGIN, WIDTH, image_path, pages, table_type
+from .layout import (
+    Geometry,
+    report_geometry,
+    FONT,
+    HEIGHT,
+    MARGIN,
+    SLIDE,
+    WIDTH,
+    image_path,
+    pages,
+    table_type,
+)
 from .schema import Content
 from .verify import Verification, verify
 
@@ -129,10 +142,18 @@ def build_slides(content: Content, path: Path, root: Path) -> None:
     deck.save(str(path))
 
 
-def build_pdf(content: Content, path: Path, root: Path) -> None:
-    layout = pages(content, root)
+def build_pdf(
+    content: Content, path: Path, root: Path, geometry: Geometry | None = None
+) -> None:
+    """A report on A4 pages; a presentation passes the slide geometry."""
+    g = geometry or report_geometry(content)
+    layout = pages(content, root, geometry=g)
     canvas = Canvas(
-        str(path), pagesize=(WIDTH, HEIGHT), invariant=1, pageCompression=1, bottomup=1
+        str(path),
+        pagesize=(g.width, g.height),
+        invariant=1,
+        pageCompression=1,
+        bottomup=1,
     )
     canvas.setTitle(shown(content.title))
     canvas.setAuthor("")
@@ -142,8 +163,8 @@ def build_pdf(content: Content, path: Path, root: Path) -> None:
             if block.image:
                 canvas.drawImage(
                     str(block.image),
-                    MARGIN,
-                    HEIGHT - top - block.height + 8,
+                    g.margin,
+                    g.height - top - block.height + 8,
                     width=block.width,
                     height=block.height - 8,
                     mask="auto",
@@ -151,19 +172,19 @@ def build_pdf(content: Content, path: Path, root: Path) -> None:
                 continue
             canvas.setFont(FONT, block.size)
             if block.bullet:
-                canvas.circle(MARGIN + 5, HEIGHT - top - 8, 2, fill=1, stroke=0)
+                canvas.circle(g.margin + 5, g.height - top - 8, 2, fill=1, stroke=0)
             for col, lines in enumerate(block.lines):
                 cell_width = block.width / len(block.lines)
-                x = MARGIN + col * cell_width
+                x = g.margin + col * cell_width
                 if block.table:
                     canvas.rect(
-                        x, HEIGHT - top - block.height, cell_width, block.height
+                        x, g.height - top - block.height, cell_width, block.height
                     )
                 x += block.pad if block.table else (16 if block.bullet else 0)
                 for line_index, line in enumerate(lines):
                     leading = block.leading if block.table else block.size * 1.35
                     canvas.drawString(
-                        x, HEIGHT - top - block.size - 3 - line_index * leading, line
+                        x, g.height - top - block.size - 3 - line_index * leading, line
                     )
         canvas.showPage()
     canvas.save()
@@ -336,8 +357,13 @@ def build_workbook(content: Content, path: Path, root: Path) -> None:
         cache_formulas(path, extents, areas)
 
 
-def render(content: Content, path: Path, *, image_root: Path) -> Verification:
-    """Build and verify atomically; destination must be chosen by trusted code."""
+def render(
+    content: Content, path: Path, *, image_root: Path, slides: bool = False
+) -> Verification:
+    """Build and verify atomically; destination must be chosen by trusted code.
+
+    With slides, a PDF has one slide-size page per slide, as the PPTX deck.
+    """
     content = Content.model_validate(content.model_dump())
     if path.suffix == ".xlsx":
         from .spreadsheet import bind_summaries
@@ -352,10 +378,17 @@ def render(content: Content, path: Path, *, image_root: Path) -> Verification:
         raise ValueError(f"table_columns_limit:{limit}")
     # Apply identical font and image bounds for every output format; table rows
     # are laid out on pages for the formats that have pages.
-    pages(content, image_root, tables=path.suffix != ".xlsx")
-    builders = {
+    pages(
+        content,
+        image_root,
+        tables=path.suffix != ".xlsx",
+        geometry=report_geometry(content)
+        if path.suffix == ".pdf" and not slides
+        else SLIDE,
+    )
+    builders: dict[str, Callable[[Content, Path, Path], None]] = {
         ".pptx": build_slides,
-        ".pdf": build_pdf,
+        ".pdf": partial(build_pdf, geometry=SLIDE if slides else None),
         ".docx": build_document,
         ".xlsx": build_workbook,
     }
