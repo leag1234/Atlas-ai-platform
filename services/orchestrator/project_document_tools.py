@@ -12,6 +12,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from packages.doc_render.calculated import COLUMN, MISSING, ROW, Finding, finding
 from packages.doc_render.schema import Content
 from services.orchestrator.project_document_input import (
     DocumentInput,
@@ -119,7 +120,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": "Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Emphasis in a cell (**Total**) is rendered, never shown. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.",
+    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. For XLSX formulas set formulas=true: cells starting with = support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Emphasis in a cell (**Total**) is rendered, never shown. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.',
 }
 
 
@@ -147,6 +148,95 @@ UNKNOWN_REFERENCE = (
     "not among them (a file delivered in an earlier turn, for example), write "
     "its content again in full from the conversation."
 )
+
+
+# What a calculated cell of a table to fill in looks like, checked with the
+# evaluator: the cached value of both is empty on an empty row, and a SUM
+# over such cells skips them.
+ROW_FORMULAS = (
+    "in every data row, rows left empty to fill in included, with "
+    'formulas=true, so that an empty row shows nothing: =IFERROR(C2/B2,"") '
+    'for a ratio, =IF(B2="","",B2-C2) otherwise, with the cells of each row'
+)
+KEPT = (
+    " publish the same content again: it is then accepted as it is, and the "
+    "answer must not say that the file calculates it."
+)
+
+
+def calculation_refusal(found: Finding) -> str:
+    """One line: the named reason, what to write, how to keep the file as it is."""
+    name = found.name[:60]
+    if found.code == MISSING:
+        columns = "; ".join(
+            f'column {letter} "{header[:60]}" of sheet {sheet}'
+            for sheet, letter, header in found.columns
+        )
+        return (
+            f"{MISSING}: the request asks for calculated values and this "
+            "workbook holds no formula, so it calculates nothing. Write each "
+            f"calculated column as a formula {ROW_FORMULAS}, and each total as "
+            "=SUM(B2:B5) under its four data rows."
+            + (f" Empty here: {columns}." if columns else "")
+            + (
+                " A cell that starts with = is a formula only with formulas=true."
+                if found.unflagged
+                else ""
+            )
+            + " If nothing in this file is to be calculated,"
+            + KEPT
+        )
+    if found.code == COLUMN:
+        return (
+            f'{COLUMN}: column {found.where} "{name}" of sheet {found.sheet} is '
+            "empty in every data row, so nothing is calculated there and a total "
+            f"of it adds up empty cells. Write its formula {ROW_FORMULAS}. If the "
+            "person types that column by hand," + KEPT
+        )
+    return (
+        f'{ROW}: row {found.where} "{name}" of sheet {found.sheet} is empty under '
+        "the rows it names a result of, so nothing is calculated there. Write "
+        "its formulas with formulas=true: a total of the data rows above it is "
+        f"=SUM(B2:B{int(found.where) - 1}) in column B. If the person types that "
+        "row by hand," + KEPT
+    )
+
+
+def calculation_note(found: Finding) -> str:
+    """What the answer must not claim about a file published as it is."""
+    if found.code == MISSING:
+        return (
+            "This workbook holds no formula and calculates nothing: the answer "
+            "must not describe a formula or an automatic calculation in it."
+        )
+    kind = "Column" if found.code == COLUMN else "Row"
+    return (
+        f'{kind} {found.where} "{found.name[:60]}" of sheet {found.sheet} holds no '
+        "formula: the answer must not say that it is calculated."
+    )
+
+
+def calculation_check(tools: Any, content: Content) -> str:
+    """Refuse once a workbook that does not calculate what it should.
+
+    The request asked for "pace calculated automatically" and the workbook had
+    the column and no formula, or a Difference column stayed empty beside the
+    totals (staging 2026-11-12): the description of the tool is not enough.
+    Each reason is refused once per turn. A header such as Total may name a
+    value the person types, so the same content sent again is published, with
+    a note for the answer instead of a claim that the file calculates.
+    """
+    request = getattr(tools, "request_text", "")
+    refused = getattr(tools, "calculation_refusals", None)
+    if not isinstance(request, str) or not isinstance(refused, set):
+        return ""
+    found = finding(content, request)
+    if found is None:
+        return ""
+    if found.reason not in refused:
+        refused.add(found.reason)
+        raise ValueError(calculation_refusal(found))
+    return calculation_note(found)
 
 
 def reference(value: dict[str, Any]) -> tuple[str, str]:
@@ -362,6 +452,13 @@ async def publish(
             f"path ending in {wanted} (not {path.suffix})."
         )
 
+    calculated = (
+        # Against the request, before anything is fetched or rendered.
+        calculation_check(tools, Content.model_validate(args["content"]))
+        if path.suffix == ".xlsx"
+        else ""
+    )
+
     execution = tools.execution
     status, project = await execution.broker.public("GET", "")
     if status != 200:
@@ -474,6 +571,8 @@ async def publish(
             path,
             args["strategy"],
         )
+    if calculated:
+        note["note"] = " ".join(filter(None, (note.get("note"), calculated)))
     links = project_deliverable_links(
         receipt, execution.broker.org, execution.broker.project
     )

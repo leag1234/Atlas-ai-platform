@@ -491,6 +491,11 @@ class WorkTools(CodeTools):
         self.earlier_answers: list[str] = []
         # The one office format the request names, as a suffix (".docx"), or None.
         self.requested_suffix: str | None = None
+        # The request of the turn, read for what a workbook must calculate,
+        # and the reasons a publication was already refused for in this turn
+        # (each one is refused once; see calculation_check).
+        self.request_text = ""
+        self.calculation_refusals: set[str] = set()
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.
         self.lang = "en"

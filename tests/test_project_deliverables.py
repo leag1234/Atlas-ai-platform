@@ -361,6 +361,9 @@ class ProjectDeliverableTests(ProjectWorkTests):
 
         async def turn(*args: Any) -> CodeResult:
             tools = args[2]
+            # The turn carries the request to the checks made on publication.
+            self.assertEqual(tools.request_text, "Create a report from both sources")
+            self.assertEqual(tools.calculation_refusals, set())
             reply = await tools.execute(
                 Call(
                     str(uuid4()),

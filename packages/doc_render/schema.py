@@ -124,6 +124,15 @@ class Content(ContentModel):
                     )
         return tuple(result)
 
+    def repeats_title(self) -> bool:
+        """Whether the first heading says the title again.
+
+        A Markdown text that opens with its title gives both: its first
+        section is headed by that title. Each format then writes the text
+        once (a workbook showed it twice under its table, staging 2026-11-12).
+        """
+        return "".join(self.title.split()) == "".join(self.sections[0].heading.split())
+
 
 class PresentationSlide(ContentModel):
     """The bounded model-facing contract for a single presentation slide."""

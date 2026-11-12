@@ -118,8 +118,10 @@ def pages(
                 raise ValueError("title_exceeds_layout")
             current.append(Placed(title, top))
             top += title.height
-        current.append(Placed(heading, top))
-        top += heading.height
+        if index or not content.repeats_title():
+            # Under the title, a heading that repeats it is not written again.
+            current.append(Placed(heading, top))
+            top += heading.height
         body: list[Block] = []
         for text in section.paragraphs:
             body.append(text_block(text))
