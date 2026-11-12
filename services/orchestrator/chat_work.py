@@ -517,6 +517,14 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
         # A machine task or code to run needs Work's tools: the chat alone would
         # answer that it has no access, which is false. It gets the explanation.
         needs_work = reason in {"remote", "run"} or setup
+        if needs_work and reply is None:
+            # Never hand a run or a machine task to the chat alone, even without a
+            # known failure reason: on staging the tool-less chat answered a Go
+            # request that hit the time limit with invented "go test" output
+            # (2026-11-12). The person gets what failed instead.
+            from services.orchestrator.code_mode import stopped_work_reply
+
+            reply = stopped_work_reply(item, scoped.lang)
         if reply is not None and (
             item.work_failure.get("category") != "tool_error" or needs_work
         ):

@@ -275,6 +275,21 @@ def work_failure_category(reason: str, *, tool_failure: bool) -> str | None:
     return "other"
 
 
+def stopped_work_reply(item: Interaction, lang: str) -> str:
+    """An honest final answer for a Work turn that stopped without a known category."""
+    known = work_failure_reply(item, lang)
+    if known is not None:
+        return known
+    words = WORK_FAILURE.get(lang, WORK_FAILURE["en"])
+    reason = next((str(e) for e in reversed(item.erreurs) if e), "")
+    category = (
+        reason
+        if reason in words and reason != "template"
+        else work_failure_category(reason, tool_failure=False) or "other"
+    )
+    return words["template"].format(reason=words.get(category, words["other"]))
+
+
 def work_failure_reply(item: Interaction, lang: str) -> str | None:
     """The public final answer of a Work turn that failed for a known reason."""
     failure = item.work_failure
