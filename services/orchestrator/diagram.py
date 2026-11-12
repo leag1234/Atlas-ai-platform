@@ -180,6 +180,10 @@ class DeliveryBuffer:
         delta = event.get("delta")
         content = delta.get("content") if isinstance(delta, dict) else None
         if not isinstance(delta, dict) or not isinstance(content, str):
+            if event.get("phase") == "intermediate":
+                # A turn that called a tool is not the answer: whatever it
+                # streamed neither counts against the final text nor holds it.
+                self.sent, self.pending, self.held = "", "", False
             await self.sink(event)
             return
         if self.held:
