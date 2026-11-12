@@ -1,7 +1,17 @@
-"""Bounded local spreadsheet formulas with independently computed OOXML caches."""
+"""Bounded local spreadsheet formulas with independently computed OOXML caches.
+
+The evaluator covers the arithmetic a person expects from a generated workbook
+("pace calculated automatically" is a division): numbers, text, logical
+values, cell and range references on the same workbook, the operators
++ - * / ^ & % = <> < > <= >=, parentheses, and a closed list of functions.
+Anything else is rejected with a named reason, so the caller can rewrite the
+formula instead of guessing. Formulas are parsed first, then evaluated, so IF
+and IFERROR only evaluate the branch they return (Excel semantics).
+"""
 
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 import math
 from pathlib import Path
@@ -16,18 +26,102 @@ from openpyxl.utils.cell import range_boundaries
 
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
+FUNCTIONS = (
+    "SUM",
+    "SUMIF",
+    "AVERAGE",
+    "MIN",
+    "MAX",
+    "COUNT",
+    "ROUND",
+    "ABS",
+    "IF",
+    "AND",
+    "OR",
+    "NOT",
+    "IFERROR",
+)
+# Excel precedence, lowest first. Prefix minus binds tighter than ^ (-2^2 = 4).
+BINARY = (
+    ("=", "<>", "<", ">", "<=", ">="),
+    ("&",),
+    ("+", "-"),
+    ("*", "/"),
+    ("^",),
+)
+
+
+class CellError(ValueError):
+    """An evaluation error Excel shows in the cell (#DIV/0!, #VALUE!).
+
+    IFERROR catches these and only these; unsupported syntax is never caught.
+    """
+
 
 def cache_formulas(path: Path) -> None:
     book = load_workbook(path, data_only=False)
-    values: dict[tuple[str, str], float] = {}
+    values: dict[tuple[str, str], Any] = {}
     active: set[tuple[str, str]] = set()
 
     def number(value: Any) -> float:
         if value is None:
             return 0.0
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError("formula_requires_numeric_cells")
+            raise CellError("formula_requires_numeric_cells")
         return float(value)
+
+    def arithmetic(value: Any) -> float:
+        # Logical results take part in arithmetic as 1 and 0, as in Excel.
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        return number(value)
+
+    def logical(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value != 0
+        raise CellError("formula_requires_logical_value")
+
+    def text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, float):
+            return format(value, ".15g")
+        return str(value)
+
+    def compare(operator: str, left: Any, right: Any) -> bool:
+        # Excel orders numbers before text before logical values; an empty
+        # cell is 0 next to a number and "" next to text.
+        if left is None:
+            left = "" if isinstance(right, str) else 0.0
+        if right is None:
+            right = "" if isinstance(left, str) else 0.0
+
+        def rank(value: Any) -> int:
+            return 2 if isinstance(value, bool) else 1 if isinstance(value, str) else 0
+
+        if rank(left) != rank(right):
+            a: Any = rank(left)
+            b: Any = rank(right)
+        elif isinstance(left, str):
+            a, b = left.casefold(), right.casefold()
+        else:
+            a, b = left, right
+        return bool(
+            {
+                "=": a == b,
+                "<>": a != b,
+                "<": a < b,
+                ">": a > b,
+                "<=": a <= b,
+                ">=": a >= b,
+            }[operator]
+        )
 
     def cell_value(sheet: Any, coordinate: str) -> Any:
         cell = sheet[coordinate]
@@ -71,69 +165,252 @@ def cache_formulas(path: Path) -> None:
             for cell in row
         ]
 
-    def evaluate(sheet: Any, formula: str) -> float:
+    def parse(formula: str) -> tuple[Any, ...]:
+        """Tokens to a small tree; nothing is evaluated here."""
         tokens = [t for t in Tokenizer(formula).items if t.type != "WHITE-SPACE"]
         if len(tokens) > 200:
             raise ValueError("formula_size_limit")
         position = 0
 
-        def expression() -> list[Any]:
+        def peek() -> Any:
+            return tokens[position] if position < len(tokens) else None
+
+        def binary(level: int) -> tuple[Any, ...]:
             nonlocal position
-            if position >= len(tokens):
+            if level == len(BINARY):
+                return prefix()
+            node = binary(level + 1)
+            while True:
+                token = peek()
+                if (
+                    token is None
+                    or token.type != "OPERATOR-INFIX"
+                    or token.value not in BINARY[level]
+                ):
+                    return node
+                position += 1
+                node = ("op", token.value, node, binary(level + 1))
+
+        def prefix() -> tuple[Any, ...]:
+            nonlocal position
+            token = peek()
+            if token is not None and token.type == "OPERATOR-PREFIX":
+                position += 1
+                if token.value not in "+-":
+                    raise ValueError("unsupported_formula")
+                return ("neg", prefix()) if token.value == "-" else prefix()
+            return postfix()
+
+        def postfix() -> tuple[Any, ...]:
+            nonlocal position
+            node = primary()
+            while (token := peek()) is not None and token.type == "OPERATOR-POSTFIX":
+                if token.value != "%":
+                    raise ValueError("unsupported_formula")
+                position += 1
+                node = ("percent", node)
+            return node
+
+        def primary() -> tuple[Any, ...]:
+            nonlocal position
+            token = peek()
+            if token is None:
                 raise ValueError("incomplete_formula")
-            token = tokens[position]
             position += 1
             if token.type == "OPERAND":
                 if token.subtype == "NUMBER":
-                    return [float(token.value)]
+                    return ("value", float(token.value))
                 if token.subtype == "TEXT":
-                    return [token.value[1:-1].replace('""', '"')]
+                    return ("value", token.value[1:-1].replace('""', '"'))
+                if token.subtype == "LOGICAL":
+                    return ("value", token.value.upper() == "TRUE")
                 if token.subtype == "RANGE":
-                    return reference(sheet, token.value)
-            if token.type == "FUNC" and token.subtype == "OPEN":
-                name = token.value[:-1].upper()
-                args = [expression()]
-                while position < len(tokens) and tokens[position].type == "SEP":
-                    position += 1
-                    args.append(expression())
+                    return ("range", token.value)
+                raise ValueError("unsupported_formula")
+            if token.type == "PAREN" and token.subtype == "OPEN":
+                node = binary(0)
+                closing = peek()
                 if (
-                    position >= len(tokens)
-                    or tokens[position].type != "FUNC"
-                    or tokens[position].subtype != "CLOSE"
+                    closing is None
+                    or closing.type != "PAREN"
+                    or closing.subtype != "CLOSE"
                 ):
                     raise ValueError("unsupported_formula")
                 position += 1
-                if name == "SUM":
-                    return [
-                        sum(
-                            number(v)
-                            for arg in args
-                            for v in arg
-                            if isinstance(v, (int, float)) and not isinstance(v, bool)
-                        )
-                    ]
-                if name == "SUMIF" and len(args) in (2, 3) and len(args[1]) == 1:
-                    criteria, criterion = args[0], args[1][0]
-                    amounts = args[2] if len(args) == 3 else criteria
-                    if len(criteria) != len(amounts) or (
-                        isinstance(criterion, str)
-                        and any(c in criterion for c in "*?~<>=!")
+                return node
+            if token.type == "FUNC" and token.subtype == "OPEN":
+                name = token.value[:-1].upper()
+                if name not in FUNCTIONS:
+                    raise ValueError("unsupported_formula_function")
+                args: list[tuple[Any, ...]] = []
+                closing = peek()
+                if not (
+                    closing is not None
+                    and closing.type == "FUNC"
+                    and closing.subtype == "CLOSE"
+                ):
+                    args.append(binary(0))
+                    while (separator := peek()) is not None and (
+                        separator.type == "SEP" and separator.subtype == "ARG"
                     ):
-                        raise ValueError("unsupported_sumif_criteria")
-                    return [
-                        sum(
-                            number(v)
-                            for c, v in zip(criteria, amounts, strict=True)
-                            if str(c).casefold() == str(criterion).casefold()
-                        )
-                    ]
-                raise ValueError("unsupported_formula_function")
+                        position += 1
+                        args.append(binary(0))
+                closing = peek()
+                if (
+                    closing is None
+                    or closing.type != "FUNC"
+                    or closing.subtype != "CLOSE"
+                ):
+                    raise ValueError("unsupported_formula")
+                position += 1
+                return ("call", name, tuple(args))
             raise ValueError("unsupported_formula")
 
-        result = expression()
-        if position != len(tokens) or len(result) != 1:
+        tree = binary(0)
+        if position != len(tokens):
             raise ValueError("unsupported_formula")
-        value = number(result[0])
+        return tree
+
+    def values_of(sheet: Any, node: tuple[Any, ...]) -> list[Any]:
+        """A range argument yields its cells; any other argument one value."""
+        if node[0] == "range":
+            return reference(sheet, node[1])
+        return [scalar(sheet, node)]
+
+    def scalar(sheet: Any, node: tuple[Any, ...]) -> Any:
+        kind = node[0]
+        if kind == "value":
+            return node[1]
+        if kind == "range":
+            cells = reference(sheet, node[1])
+            if len(cells) != 1:
+                raise ValueError("formula_range_needs_single_cell")
+            return cells[0]
+        if kind == "neg":
+            return -arithmetic(scalar(sheet, node[1]))
+        if kind == "percent":
+            return arithmetic(scalar(sheet, node[1])) / 100
+        if kind == "op":
+            operator, left, right = (
+                node[1],
+                scalar(sheet, node[2]),
+                scalar(sheet, node[3]),
+            )
+            if operator == "&":
+                return text(left) + text(right)
+            if operator in BINARY[0]:
+                return compare(operator, left, right)
+            a, b = arithmetic(left), arithmetic(right)
+            if operator == "+":
+                return a + b
+            if operator == "-":
+                return a - b
+            if operator == "*":
+                return a * b
+            if operator == "/":
+                if b == 0:
+                    raise CellError("formula_division_by_zero")
+                return a / b
+            try:
+                result = a**b
+            except (OverflowError, ZeroDivisionError):
+                raise CellError("nonfinite_formula") from None
+            if isinstance(result, complex):
+                raise CellError("nonfinite_formula")
+            return result
+        return function(sheet, node[1], node[2])
+
+    def function(sheet: Any, name: str, args: tuple[tuple[Any, ...], ...]) -> Any:
+        def arity(low: int, high: int) -> None:
+            if not low <= len(args) <= high:
+                raise ValueError("formula_argument_count")
+
+        def numbers() -> list[float]:
+            # Ranges skip text, logical values and empty cells, like Excel.
+            found: list[float] = []
+            for arg in args:
+                for value in values_of(sheet, arg):
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        found.append(float(value))
+            return found
+
+        if name == "IF":
+            arity(2, 3)
+            if logical(scalar(sheet, args[0])):
+                return scalar(sheet, args[1])
+            return scalar(sheet, args[2]) if len(args) == 3 else False
+        if name == "IFERROR":
+            arity(2, 2)
+            try:
+                return scalar(sheet, args[0])
+            except CellError:
+                return scalar(sheet, args[1])
+        if name in {"AND", "OR"}:
+            arity(1, 30)
+            flags = [
+                logical(value)
+                for arg in args
+                for value in values_of(sheet, arg)
+                if value is not None and not isinstance(value, str)
+            ]
+            if not flags:
+                raise CellError("formula_requires_logical_value")
+            return all(flags) if name == "AND" else any(flags)
+        if name == "NOT":
+            arity(1, 1)
+            return not logical(scalar(sheet, args[0]))
+        if name == "ABS":
+            arity(1, 1)
+            return abs(arithmetic(scalar(sheet, args[0])))
+        if name == "ROUND":
+            arity(2, 2)
+            value = arithmetic(scalar(sheet, args[0]))
+            digits = arithmetic(scalar(sheet, args[1]))
+            if not math.isfinite(value) or not -15 <= digits <= 15:
+                raise CellError("nonfinite_formula")
+            # Half away from zero, as in Excel (Python's round is half to even).
+            step = Decimal(1).scaleb(-int(digits))
+            return float(Decimal(repr(value)).quantize(step, rounding=ROUND_HALF_UP))
+        if name == "SUMIF":
+            if len(args) not in (2, 3):
+                raise ValueError("formula_argument_count")
+            criteria = values_of(sheet, args[0])
+            criterion_values = values_of(sheet, args[1])
+            if len(criterion_values) != 1:
+                raise ValueError("unsupported_sumif_criteria")
+            criterion = criterion_values[0]
+            amounts = values_of(sheet, args[2]) if len(args) == 3 else criteria
+            if len(criteria) != len(amounts) or (
+                isinstance(criterion, str) and any(c in criterion for c in "*?~<>=!")
+            ):
+                raise ValueError("unsupported_sumif_criteria")
+            return sum(
+                number(v)
+                for c, v in zip(criteria, amounts, strict=True)
+                if str(c).casefold() == str(criterion).casefold()
+            )
+        arity(1, 30)
+        found = numbers()
+        if name == "SUM":
+            return sum(found)
+        if name == "COUNT":
+            return float(len(found))
+        if name == "AVERAGE":
+            if not found:
+                raise CellError("formula_division_by_zero")
+            return sum(found) / len(found)
+        if name == "MIN":
+            return min(found, default=0.0)
+        return max(found, default=0.0)
+
+    def evaluate(sheet: Any, formula: str) -> Any:
+        result = scalar(sheet, parse(formula))
+        if result is None:
+            # "=B2" on an empty cell shows 0.
+            return 0.0
+        if isinstance(result, bool) or isinstance(result, str):
+            return result
+        value = float(result)
         if not math.isfinite(value):
             raise ValueError("nonfinite_formula")
         return value
@@ -158,16 +435,34 @@ def cache_formulas(path: Path) -> None:
                             xml_value = xml_cell.find(NS + "v")
                             if xml_value is None:
                                 xml_value = ET.SubElement(xml_cell, NS + "v")
-                            xml_value.text = repr(values[key])
+                            cached = values[key]
+                            if isinstance(cached, bool):
+                                xml_cell.set("t", "b")
+                                xml_value.text = "1" if cached else "0"
+                            elif isinstance(cached, str):
+                                xml_cell.set("t", "str")
+                                xml_value.text = cached
+                            else:
+                                xml_cell.attrib.pop("t", None)
+                                xml_value.text = repr(cached)
                     raw = ET.tostring(root, encoding="utf-8", xml_declaration=True)
                 target.writestr(name, raw)
         path.write_bytes(output.getvalue())
-        cached = load_workbook(path, data_only=True)
+        reopened = load_workbook(path, data_only=True)
         try:
             for (sheet_name, coordinate), value in values.items():
-                if cached[sheet_name][coordinate].value != value:
-                    raise ValueError("formula_cache_verification_failed")
+                found = reopened[sheet_name][coordinate].value
+                if isinstance(value, str) and found is None:
+                    found = ""
+                if found != value or type(found) is not type(value):
+                    if not (
+                        isinstance(value, float)
+                        and isinstance(found, (int, float))
+                        and not isinstance(found, bool)
+                        and found == value
+                    ):
+                        raise ValueError("formula_cache_verification_failed")
         finally:
-            cached.close()
+            reopened.close()
     finally:
         book.close()

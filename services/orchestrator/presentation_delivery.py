@@ -238,6 +238,44 @@ print(json.dumps(dict(content=base64.b64encode(raw).decode(), preview=base64.b64
 """
 
 
+# The renderer raises named codes ("unsupported_formula", "table_row_width"). Only
+# such a code, or one of the fixed messages of the program above, reaches the
+# model: never a traceback, a path or content. A failure without its reason
+# left the agent retrying the same formula until it gave up (staging 2026-11-11).
+RENDER_REASON = re.compile(
+    r"[A-Za-z_][\w.]*(?:Error|Exception): "
+    r"([a-z][a-z0-9_]{2,60}(?::[A-Za-z0-9_]{1,40}){0,3})"
+)
+RENDER_MESSAGES = (
+    "Source coverage verification failed",
+    "Generated artifact exceeds delivery limits",
+    "Scoped image resolution is required",
+    "Unsupported format",
+)
+FORMULA_HELP = (
+    " (formulas support numbers, text, TRUE/FALSE, cell and range references,"
+    " + - * / ^ & %, = <> < > <= >=, parentheses and SUM, SUMIF, AVERAGE, MIN,"
+    " MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT, IFERROR; arithmetic needs numeric"
+    " cells: leave no placeholder text in cells a formula computes with)"
+)
+
+
+def render_failure_reason(diagnostic: str) -> str:
+    """The safe reason of a failed render, or "" when there is none."""
+    lines = [line.strip() for line in diagnostic.splitlines() if line.strip()]
+    last = lines[-1] if lines else ""
+    message = next((m for m in RENDER_MESSAGES if last.endswith(": " + m)), None)
+    if message is not None:
+        return message
+    match = RENDER_REASON.fullmatch(last)
+    if match is None:
+        return ""
+    reason = match[1]
+    if "formula" in reason or reason == "unsupported_sumif_criteria":
+        reason += FORMULA_HELP
+    return reason
+
+
 def build_project_document(
     content: "Content",
     suffix: str,
@@ -275,21 +313,7 @@ def build_project_document(
     except subprocess.TimeoutExpired:
         raise ValueError("Document verification timed out") from None
     if result.returncode != 0:
-        # Return only recognized validation codes, never subprocess diagnostics.
-        diagnostic = result.stderr.decode("utf-8", errors="replace")
-        reasons = (
-            "unsupported_formula_function",
-            "unsupported_formula_reference",
-            "unknown_formula_sheet",
-            "formula_range_limit",
-            "formula_requires_numeric_cells",
-            "circular_or_deep_formula",
-            "unsupported_sumif_criteria",
-            "formula_cache_verification_failed",
-            "missing_expected_text",
-            "Source coverage verification failed",
-        )
-        reason = next((code for code in reasons if code in diagnostic), "")
+        reason = render_failure_reason(result.stderr.decode("utf-8", errors="replace"))
         raise ValueError(
             "Document rendering or requested-content/source verification failed"
             + (": " + reason if reason else "")
