@@ -4,7 +4,8 @@ Behind ATLAS_CHAT_WORK=1 (default off), a coding request in a chat without a
 project creates a hidden personal "Chats" scratch project (once per user) and a
 Work session bound to the conversation, then runs the turn through process_work,
 streaming its events into the chat like the project UI does. The Work wall clock
-limit applies, not the chat 120 s limit.
+limit applies, not the chat 120 s limit, but it ends before the chat stream's own
+deadline: the turn then closes with its explanation instead of a cut stream.
 """
 
 from __future__ import annotations
@@ -27,6 +28,23 @@ logger = logging.getLogger(__name__)
 
 SCRATCH_PROJECT_NAME = "Chats"
 SCRATCH_PROJECT_HIDDEN = True
+# Kept from the chat deadline for Work's cleanup and for the explanation of a
+# stopped turn to be written and streamed before the chat stream is cut.
+CHAT_ANSWER_SECONDS = 25.0
+
+
+def work_time_limit() -> float | None:
+    """The Work time limit of a turn run behind the chat, or None without a deadline.
+
+    The chat stream has its own deadline (300 s for a routed Work turn), far below
+    Work's (ATLAS_CODE_WALL_SECONDS). Work stopped by the chat deadline never
+    reached its own limit, and the person got a timeout and no answer (staging
+    2026-11-12, a Go function with tests on a runner without Go).
+    """
+    from services.orchestrator.deadline import remaining
+
+    left = remaining()
+    return None if left is None else max(0.0, left - CHAT_ANSWER_SECONDS)
 
 
 def chat_work_enabled() -> bool:
@@ -469,12 +487,20 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
                 org_id=org,
                 project_id=project,
                 session_id=session_id,
+                wall_clock=work_time_limit(),
             )
             failure = ""
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - any Work failure falls back to the chat
             failure = type(exc).__name__
+            if isinstance(exc, TimeoutError) and not isinstance(
+                exc, aiohttp.ClientError
+            ):
+                # Work's own time limit, taken from the chat deadline: no time is
+                # left to retry or for the chat to answer alone.
+                item.erreurs.append("time_limit")
+                break
             # A connection dropped before the turn started (state still "received":
             # nothing ran, nothing was saved) is retried once. On staging a script
             # turn fell back to "code execution is not available" on one dropped
@@ -516,7 +542,13 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
             return True
         # A machine task or code to run needs Work's tools: the chat alone would
         # answer that it has no access, which is false. It gets the explanation.
-        needs_work = reason in {"remote", "run"} or setup
+        # So does a turn that used the time left before the chat deadline: the
+        # chat has no time to answer it alone.
+        timed_out = any(
+            error in {"time_limit", "wall_clock"}
+            for error in item.erreurs[len(before[1]) :]
+        )
+        needs_work = reason in {"remote", "run"} or setup or timed_out
         if needs_work and reply is None:
             # Never hand a run or a machine task to the chat alone, even without a
             # known failure reason: on staging the tool-less chat answered a Go

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 from functools import partial
 from decimal import Decimal
@@ -146,6 +147,7 @@ async def run_opencode_turn(
     research: bool,
 ) -> OpencodeTurnResult:
     """Run one Work turn on the opencode engine and map its outcome."""
+    begun = time.monotonic()
     model_id = os.environ.get("ATLAS_WORK_ENGINE_MODEL", DEFAULT_MODEL)
     prices = token_prices()
     engine = await start(workspace, model_id)
@@ -218,7 +220,10 @@ async def run_opencode_turn(
             emit,
             approve=approve,
             cost_limit=float(limits.cost),
-            time_limit=limits.wall_clock - 30,
+            # 30 s are kept to export the changes and save the files. The
+            # engine start is counted, and the limit stays positive: 0 would
+            # mean no limit at all.
+            time_limit=max(1.0, limits.wall_clock - 30 - (time.monotonic() - begun)),
             research=research,
             model_id=model_id,
             token_prices=prices,

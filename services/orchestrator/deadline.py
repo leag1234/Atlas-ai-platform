@@ -21,6 +21,15 @@ async def request_deadline(seconds: float) -> AsyncIterator[None]:
             _current.reset(token)
 
 
+def remaining() -> float | None:
+    """Seconds left before the current request deadline, or None without one."""
+    deadline = _current.get()
+    when = deadline.when() if deadline is not None else None
+    if when is None:
+        return None
+    return max(0.0, when - asyncio.get_running_loop().time())
+
+
 def extend(seconds: float) -> None:
     """Move the current request deadline later, for a turn routed after it was set.
 
