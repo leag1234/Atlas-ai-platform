@@ -1439,6 +1439,18 @@ async def _process(
         if routed is not None
         else requests_file_delivery(request.user_text)
     ) or (bool(request.documents) and edits_attachment(request.user_text))
+    # Only the turn that calls no tool is answer text: what the model writes
+    # before a tool call is a working note, held back from the stream and left
+    # out of the answer. A file turn keeps every part: its content may be
+    # written before the call that saves it, and the fallbacks below read it.
+    # So does a diagram turn, whose explanation may precede a picture call.
+    answer_only = not (produces_files or deliver_files or technical_diagram)
+    if answer_only:
+        # A plain first turn streams from its first token; a research turn is
+        # expected to call a tool, so even its first turn waits to be known.
+        model.note_hold = (
+            "turn" if routed is not None and routed.kind == "research" else "after_tool"
+        )
     from services.orchestrator.file_content import requested_formats
 
     requested_file_formats = (
@@ -1671,6 +1683,7 @@ async def _process(
                 ),
             ),
             include_intermediate=request.atlas_ui,
+            final_only=answer_only,
             history=attachment_history,
             skill_messages=tools.skills.instructions
             if tools.skills is not None
