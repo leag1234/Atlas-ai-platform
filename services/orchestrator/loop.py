@@ -1,6 +1,7 @@
 """POC-P6: reserve worst-case usage before starting cancellable I/O."""
 
 from services.orchestrator.closing import (
+    LIMIT_CLOSED,
     SEARCH_TOOLS,
     closing_instruction,
     limit_code,
@@ -336,6 +337,7 @@ async def run(
                     # was followed to the letter there, and only in part as a
                     # system message placed before the repeated question.
                     closed = True
+                    LIMIT_CLOSED.set(str(limit_refusal["error"]))
                     messages.append(
                         {
                             "role": "user",

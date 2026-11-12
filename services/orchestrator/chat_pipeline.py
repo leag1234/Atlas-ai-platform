@@ -126,7 +126,43 @@ def search_failure_notice(outcome: str, language: str) -> str:
 
 
 def partial_search_failure_notice(outcome: str, language: str) -> str:
-    """Disclose a later search failure without denying already cited evidence."""
+    """Disclose a later search failure without denying already cited evidence.
+
+    The reason is said in words: an outcome code such as "partial_results" in the
+    answer is raw technical text for the person (staging, 2026-11-12).
+    """
+    reasons = {
+        "en": {
+            "upstream_blocked": "the search engines blocked the request",
+            "upstream_timeout": "the search timed out",
+            "empty_results": "the search found nothing",
+            "partial_results": "some sources were unavailable",
+        },
+        "fr": {
+            "upstream_blocked": "les moteurs de recherche ont bloqué la requête",
+            "upstream_timeout": "la recherche a dépassé le délai",
+            "empty_results": "la recherche n'a rien trouvé",
+            "partial_results": "certaines sources étaient indisponibles",
+        },
+        "de": {
+            "upstream_blocked": "die Suchmaschinen haben die Anfrage blockiert",
+            "upstream_timeout": "die Suche hat das Zeitlimit überschritten",
+            "empty_results": "die Suche hat nichts gefunden",
+            "partial_results": "einige Quellen waren nicht verfügbar",
+        },
+        "es": {
+            "upstream_blocked": "los motores de búsqueda bloquearon la solicitud",
+            "upstream_timeout": "la búsqueda superó el tiempo límite",
+            "empty_results": "la búsqueda no encontró nada",
+            "partial_results": "algunas fuentes no estaban disponibles",
+        },
+        "it": {
+            "upstream_blocked": "i motori di ricerca hanno bloccato la richiesta",
+            "upstream_timeout": "la ricerca ha superato il tempo limite",
+            "empty_results": "la ricerca non ha trovato nulla",
+            "partial_results": "alcune fonti non erano disponibili",
+        },
+    }
     notices = {
         "en": "Part of the web search failed ({reason}); this answer relies only on the sources retrieved before it.",
         "fr": "Une partie de la recherche web a échoué ({reason}) ; cette réponse repose uniquement sur les sources récupérées avant cet échec.",
@@ -134,7 +170,10 @@ def partial_search_failure_notice(outcome: str, language: str) -> str:
         "es": "Parte de la búsqueda web falló ({reason}); esta respuesta se basa únicamente en las fuentes recuperadas antes del fallo.",
         "it": "Una parte della ricerca web non è riuscita ({reason}); questa risposta si basa solo sulle fonti recuperate prima dell'errore.",
     }
-    return notices.get(language, notices["en"]).format(reason=outcome)
+    language = language if language in notices else "en"
+    words = reasons[language]
+    reason = words.get(outcome, words["partial_results"])
+    return notices[language].format(reason=reason)
 
 
 class Source(BaseModel):
@@ -780,6 +819,9 @@ class _RoutedStreamBuffer:
 
 
 async def _process_request(request: ChatRequest, item: Interaction) -> None:
+    from services.orchestrator.closing import LIMIT_CLOSED
+
+    LIMIT_CLOSED.set("")
     if await dispatch_project(request, item):
         return
     from services.orchestrator.user_memory import prepare as prepare_user_memory
@@ -910,7 +952,14 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             if outcome in OUTCOMES and outcome not in partial_searches
         )
     )
-    if item.state == "done" and (failed_searches or partial_searches):
+    from services.orchestrator.closing import LIMIT_CLOSED
+
+    # A turn closed for a search limit already says so in its answer.
+    if (
+        item.state == "done"
+        and (failed_searches or partial_searches)
+        and not LIMIT_CLOSED.get()
+    ):
         notice = "\n\n" + "\n".join(
             [
                 *(

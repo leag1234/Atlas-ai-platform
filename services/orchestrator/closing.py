@@ -18,8 +18,14 @@ after the research, and a tool that keeps failing has its own stop.
 """
 
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 
 from packages.language import language_instruction
+
+# The limit that closed the current chat turn, if any. The answer then already says that
+# web search was unavailable, so the pipeline adds no "partial results" caveat of its own
+# (the two contradicted each other on staging, 2026-11-12). Set in the request's task.
+LIMIT_CLOSED: ContextVar[str] = ContextVar("search_limit_closed", default="")
 
 # What each refusal means, in the words given to the model. A limit is always
 # named as a limit, never as an outage (D5).
