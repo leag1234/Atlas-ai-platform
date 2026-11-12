@@ -91,7 +91,9 @@ Sources, checked 2026-11-12:
   423 model locked (no valid payment method, or a consumption limit set to zero); 429 for
   requests or tokens per minute and for concurrent requests.
 
-Neither provider documents the identifier it sends when a service tier has no capacity
-left, and neither documents `insufficient_quota`-style identifiers: those substrings follow
-the usual naming of OpenAI-compatible endpoints and are confirmed only once such a refusal
-appears in the logs. The logged `type` and `code` show what the provider really sent.
+Neither provider documents the identifier it sends when it has no capacity left, and
+neither documents `insufficient_quota`-style identifiers: those substrings follow the usual
+naming of OpenAI-compatible endpoints and are confirmed only once such a refusal appears in
+the logs. The logged `type` and `code` show what the provider really sent. Observed on
+2026-11-12 by the owner's watch probe (one-token request): Mistral answered HTTP 429 with
+`type` `backend_out_of_capacity`, which is classified `capacity`.

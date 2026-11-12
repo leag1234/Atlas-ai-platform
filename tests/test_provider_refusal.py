@@ -116,6 +116,17 @@ class ClassTests(unittest.TestCase):
             (500, None, "other", "", ""),
             (None, None, "other", "", ""),
             (429, FLAT_CAPACITY, "capacity", "service_tier_capacity_exceeded", "3505"),
+            (
+                429,
+                {
+                    "object": "error",
+                    "message": PRIVATE,
+                    "type": "backend_out_of_capacity",
+                },
+                "capacity",
+                "backend_out_of_capacity",
+                "",
+            ),
             (429, NESTED_CREDIT, "credit", "insufficient_quota", "insufficient_quota"),
             (403, NESTED_CREDIT, "credit", "insufficient_quota", "insufficient_quota"),
             (
