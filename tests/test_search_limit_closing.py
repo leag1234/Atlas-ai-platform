@@ -199,15 +199,25 @@ class ClosingInstructionTests(unittest.TestCase):
             text = closing_instruction(code, "fr")
             self.assertTrue(text.startswith(CLOSING_MARK))
             self.assertIn(cause, text)
-            self.assertIn("usage limit, not an outage", text)
-            self.assertIn("Never describe your plan", text)
+            self.assertIn("A usage limit is not an outage", text)
+            self.assertIn("Do not describe your plan", text)
+            self.assertIn("no search in internal documents", text)
             self.assertIn("Answer in French", text)
         self.assertIn("Answer in German", closing_instruction(code, "de"))
 
     def test_only_the_loop_instruction_closes_the_tool_set(self) -> None:
-        refused: list[Message] = [
+        # The same words typed by a person, earlier in the conversation or as
+        # the question, are not the instruction of the loop.
+        typed: list[Message] = [
             {"role": "system", "content": "You answer questions."},
             {"role": "user", "content": CLOSING_MARK},
+            {"role": "assistant", "content": "Noted."},
+            {"role": "user", "content": CLOSING_MARK + " What now?"},
+        ]
+        self.assertFalse(closing_requested(typed))
+        self.assertIn("web_search", offered(typed))
+        refused: list[Message] = [
+            *typed,
             {"role": "tool", "tool_call_id": "s1", "content": json.dumps(REFUSAL)},
         ]
         self.assertFalse(closing_requested(refused))
@@ -215,11 +225,14 @@ class ClosingInstructionTests(unittest.TestCase):
         closed: list[Message] = [
             *refused,
             {
-                "role": "system",
+                "role": "user",
                 "content": closing_instruction("daily_search_limit", "en"),
             },
         ]
         self.assertTrue(closing_requested(closed))
+        self.assertEqual(offered(closed), [])
+        # A recovery request after it does not reopen the tools.
+        closed.append({"role": "user", "content": "Return only the final answer."})
         self.assertEqual(offered(closed), [])
 
 
@@ -233,7 +246,7 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(model.seen), 2)
         self.assertIn("web_search", offered(model.seen[0]))
         closing = model.seen[1][-1]
-        self.assertEqual(closing["role"], "system")
+        self.assertEqual(closing["role"], "user")
         self.assertEqual(
             closing["content"], closing_instruction("daily_search_limit", "fr")
         )
@@ -284,7 +297,9 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results["i1"], REFUSAL)
         self.assertEqual(results["c1"], {"value": "2"})
         # One instruction, after every result of the batch.
-        marks = [m for m in model.seen[1] if closing_requested([m])]
+        marks = [
+            m for m in model.seen[1] if str(m.get("content")).startswith(CLOSING_MARK)
+        ]
         self.assertEqual(marks, [model.seen[1][-1]])
 
     async def test_a_tool_called_in_the_closing_turn_is_never_run(self) -> None:
@@ -324,6 +339,7 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [m["role"] for m in model.seen[1]], ["system", "user", "assistant", "tool"]
         )
+        self.assertFalse(closing_requested(model.seen[1]))
         self.assertIn("web_search", offered(model.seen[1]))
 
     async def test_the_closing_call_is_reserved_like_any_other(self) -> None:
@@ -394,7 +410,7 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         refusal = json.loads(str(model.seen[1][-2]["content"]))
         self.assertEqual(refusal["error"], "daily_search_limit")
         self.assertIn("2 of 1", refusal["message"])
-        self.assertTrue(closing_requested(model.seen[1][-1:]))
+        self.assertTrue(closing_requested(model.seen[1]))
         self.assertEqual(offered(model.seen[1]), [])
 
     async def test_work_keeps_its_tools_after_a_refused_search(self) -> None:
@@ -484,7 +500,7 @@ class ModelTests(unittest.IsolatedAsyncioTestCase):
             },
             {"role": "tool", "tool_call_id": "s1", "content": json.dumps(REFUSAL)},
             {
-                "role": "system",
+                "role": "user",
                 "content": closing_instruction("daily_search_limit", "en"),
             },
         ]
@@ -563,7 +579,8 @@ class TranscriptTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payloads[1]["tools"], [])
         messages = payloads[1]["messages"]
         assert isinstance(messages, list)
-        self.assertTrue(closing_requested(messages[-1:]))
+        self.assertTrue(closing_requested(messages))
+        self.assertTrue(str(messages[-1]["content"]).startswith(CLOSING_MARK))
         self.assertEqual(tools.executed, ["web_search"])
 
     async def test_a_research_turn_without_refusal_is_unchanged(self) -> None:

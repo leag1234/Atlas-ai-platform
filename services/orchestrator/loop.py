@@ -332,10 +332,13 @@ async def run(
                     # After every pending tool result, and before the one model
                     # call that follows: it is offered no tool and writes the
                     # answer. Reserved and timed below like any other call.
+                    # The instruction is the last message the model reads: it
+                    # was followed to the letter there, and only in part as a
+                    # system message placed before the repeated question.
                     closed = True
                     messages.append(
                         {
-                            "role": "system",
+                            "role": "user",
                             "content": closing_instruction(
                                 str(limit_refusal["error"]), query.lang
                             ),
