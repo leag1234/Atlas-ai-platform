@@ -428,8 +428,20 @@ def response(
                     )
                 if phase == "tool_finished" and activity != "generate_image":
                     links = "<br>".join(html.escape(url) for url in activity_urls)
-                    if event.get("message"):
-                        links = html.escape(str(event["message"])) + "<br>" + links
+                    caveat: object = event.get("message")
+                    outcome = event.get("outcome")
+                    if caveat and isinstance(outcome, str):
+                        from services.orchestrator.chat_pipeline import (
+                            search_failure_notice,
+                        )
+                        from services.orchestrator.searxng import OUTCOMES
+
+                        # The search service's own caveat is English: a French
+                        # turn showed it untranslated (staging corpus 2026-11-11).
+                        if outcome in OUTCOMES:
+                            caveat = search_failure_notice(outcome, language)
+                    if caveat:
+                        links = html.escape(str(caveat)) + "<br>" + links
                     await queue.put(
                         {
                             "delta": {
