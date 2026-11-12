@@ -11,6 +11,7 @@ from time import monotonic
 
 from agent_provider import AgentRequest, Usage
 from packages.limits import ProviderLimitError
+from provider_refusal import Refusal
 from serverless import ServerlessPolicy
 
 
@@ -26,6 +27,7 @@ class TransientProviderError(RuntimeError):
         detail: str = "",
         status: int | None = None,
         retry_after: str | None = None,
+        refusal: Refusal | None = None,
     ) -> None:
         super().__init__(code)
         # Short, key-free cause for logs: an HTTP status or an exception class.
@@ -36,14 +38,18 @@ class TransientProviderError(RuntimeError):
         self.received_bytes = received_bytes
         self.status = status
         self.retry_after = retry_after
+        # Class and identifiers of a refused HTTP call; None for a timeout
+        # or a transport failure, which no provider answered.
+        self.refusal = refusal
 
 
 class ProviderResponseError(RuntimeError):
     """A provider HTTP response that must not enter transient recovery."""
 
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, refusal: Refusal | None = None) -> None:
         super().__init__("provider_error")
         self.status = status
+        self.refusal_class = refusal.kind if refusal is not None else "other"
 
 
 class ModelUnavailableError(RuntimeError):

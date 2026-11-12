@@ -131,6 +131,18 @@ def serve(
                                     "limit": exc.limit,
                                 }
                             )
+                        elif (
+                            isinstance(exc, ProviderResponseError)
+                            and exc.refusal_class == "credit"
+                        ):
+                            # D5: an exhausted provider account is a quota
+                            # refusal, never reported as a provider outage.
+                            await send(
+                                {
+                                    "error": "provider_quota",
+                                    "provider_status": exc.status,
+                                }
+                            )
                         else:
                             await send({"error": "provider_error"})
 
@@ -321,7 +333,9 @@ def serve(
                 )
             except ProviderResponseError as exc:
                 status, response = (
-                    (429, {"code": "provider_quota"})
+                    (402, {"code": "provider_quota", "provider_status": exc.status})
+                    if exc.refusal_class == "credit"
+                    else (429, {"code": "provider_quota"})
                     if exc.status == 429
                     else (502, {"code": "provider_error"})
                 )
