@@ -477,6 +477,38 @@ class SaveModifiedFilesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tools.events[0][1]["status"], "running")
         self.assertEqual(tools.events[1][1]["status"], "completed")
 
+    async def test_same_bytes_already_in_the_project_keep_their_link(self) -> None:
+        from services.orchestrator.work_save import project_file_lines
+
+        broker = FakeApprovalBroker(["allowed"])
+        broker.file["sha256"] = __import__("hashlib").sha256(b"same\n").hexdigest()
+        tools = FakeEmitTools()
+        report = self.report()
+        await save_modified_files(
+            FakeApprovalExecution(broker), tools, report, {"folder-a/old.py": b"same\n"}
+        )
+        # Nothing to overwrite: no approval and no new version, but a link.
+        self.assertEqual(broker.approval_calls, [])
+        self.assertEqual(broker.posts, [])
+        self.assertNotIn("saved_modified", report)
+        self.assertEqual(
+            report["unchanged"],
+            [{"path": "old.py", "file_id": "f1", "file_version_id": "v1"}],
+        )
+        lines = project_file_lines(report, "org", "project", "fr")
+        self.assertIn("Fichier du projet (déjà à jour) : [old.py]", lines)
+        self.assertIn(
+            "(/api/atlas/orgs/org/projects/project/files/f1/content?version=v1)", lines
+        )
+        report["saved_modified"] = [
+            {"path": "b.py", "file_id": "f2", "file_version_id": "v7"}
+        ]
+        english = project_file_lines(report, "org", "project", "en")
+        self.assertLess(
+            english.index("Project file updated: [b.py]"),
+            english.index("Project file (already up to date): [old.py]"),
+        )
+
     async def test_denied_and_expired_do_not_post(self) -> None:
         for decision in ("denied", "expired"):
             with self.subTest(decision=decision):

@@ -134,6 +134,7 @@ async def project_file_paths(execution: Any) -> dict[str, dict[str, Any]]:
                     file_id=file["id"],
                     relative_path=file["relative_path"],
                     sha256=file.get("sha256"),
+                    version_id=file.get("version_id"),
                 )
         cursor = page.get("next_cursor")
         if not cursor:
@@ -380,7 +381,19 @@ async def save_modified_files(
             )
             continue
         if entry.get("sha256") == hashlib.sha256(content).hexdigest():
-            # Unchanged since it was saved: nothing to overwrite, nothing to approve.
+            # The project already holds these exact bytes: nothing to overwrite,
+            # nothing to approve, but the answer still links the file. The chat's
+            # project is shared by its conversations, and a CSV written again
+            # with the same name and content came back with no link at all
+            # (staging corpus 2026-11-11).
+            if entry.get("version_id"):
+                report.setdefault("unchanged", []).append(
+                    {
+                        "path": str(entry.get("relative_path")),
+                        "file_id": str(entry["file_id"]),
+                        "file_version_id": str(entry["version_id"]),
+                    }
+                )
             continue
         if not allowed_type(str(entry.get("relative_path"))):
             report.setdefault("not_saved", []).append({"path": path, "reason": "type"})
@@ -551,8 +564,31 @@ NOT_SAVED = {
 }
 
 
-def saved_line(lang: str) -> str:
-    return "\n\n" + SAVED.get(lang, "Project file updated: ")
+UNCHANGED = {
+    "fr": "Fichier du projet (déjà à jour) : ",
+    "de": "Projektdatei (bereits aktuell): ",
+    "es": "Archivo del proyecto (ya actualizado): ",
+    "it": "File del progetto (già aggiornato): ",
+}
+
+
+def project_file_lines(
+    report: dict[str, Any], org: str, project: str, lang: str
+) -> str:
+    """Links to the project files a turn changed, or wrote again unchanged."""
+    text = ""
+    for key, labels, default in (
+        ("saved_modified", SAVED, "Project file updated: "),
+        ("unchanged", UNCHANGED, "Project file (already up to date): "),
+    ):
+        for entry in report.get(key, []):
+            text += (
+                "\n\n"
+                + labels.get(lang, default)
+                + f"[{entry['path']}](/api/atlas/orgs/{org}/projects/{project}"
+                + f"/files/{entry['file_id']}/content?version={entry['file_version_id']})"
+            )
+    return text
 
 
 def not_saved_line(lang: str) -> str:

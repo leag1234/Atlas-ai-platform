@@ -954,8 +954,8 @@ async def process_work(
                     item.reponse += "\n\nWork failed: " + engine_result.reason
                 from services.orchestrator.work_save import (
                     not_saved_line,
+                    project_file_lines,
                     save_turn_files,
-                    saved_line,
                 )
 
                 saved = await save_turn_files(
@@ -973,12 +973,9 @@ async def process_work(
                     )
                     if links not in item.reponse:
                         item.reponse += "\n\n" + links
-                for entry in saved.get("saved_modified", []):
-                    item.reponse += (
-                        saved_line(request.lang)
-                        + f"[{entry['path']}](/api/atlas/orgs/{broker.org}/projects/{broker.project}"
-                        + f"/files/{entry['file_id']}/content?version={entry['file_version_id']})"
-                    )
+                item.reponse += project_file_lines(
+                    saved, broker.org, broker.project, request.lang
+                )
                 denied = [
                     str(entry.get("path", ""))
                     for entry in saved.get("not_saved", [])
@@ -1205,8 +1202,8 @@ async def process_work(
                 item.reponse += "\n\nWork failed: " + reason
             from services.orchestrator.work_save import (
                 not_saved_line,
+                project_file_lines,
                 save_turn_files,
-                saved_line,
             )
 
             saved = await save_turn_files(
@@ -1224,12 +1221,9 @@ async def process_work(
                 )
                 if links not in item.reponse:
                     item.reponse += "\n\n" + links
-            for entry in saved.get("saved_modified", []):
-                item.reponse += (
-                    saved_line(request.lang)
-                    + f"[{entry['path']}](/api/atlas/orgs/{broker.org}/projects/{broker.project}"
-                    + f"/files/{entry['file_id']}/content?version={entry['file_version_id']})"
-                )
+            item.reponse += project_file_lines(
+                saved, broker.org, broker.project, request.lang
+            )
             denied = [
                 str(entry.get("path", ""))
                 for entry in saved.get("not_saved", [])
