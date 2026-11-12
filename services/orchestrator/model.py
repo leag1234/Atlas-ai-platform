@@ -29,6 +29,7 @@ from services.orchestrator.loop import (
 
 __all__ = ["GatewayError"]
 
+from services.orchestrator.closing import closing_requested
 from services.orchestrator.tools import declarations
 from services.orchestrator.stream_client import Sink, receive
 from services.orchestrator.narration import (
@@ -422,6 +423,10 @@ class GatewayModel:
         return Reservation(incoming + outgoing, cost)
 
     def available_tools(self, messages: list[Message]) -> list[dict[str, object]]:
+        # A search limit closed the research of this turn: the call that
+        # follows writes the answer, so it streams as the answer too.
+        if closing_requested(messages):
+            return []
         if any(
             message.get("role") == "tool"
             and isinstance(message.get("content"), str)
