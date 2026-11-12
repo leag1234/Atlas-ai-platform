@@ -255,8 +255,10 @@ RENDER_MESSAGES = (
 FORMULA_HELP = (
     " (formulas support numbers, text, TRUE/FALSE, cell and range references,"
     " + - * / ^ & %, = <> < > <= >=, parentheses and SUM, SUMIF, AVERAGE, MIN,"
-    " MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT, IFERROR; arithmetic needs numeric"
-    " cells: leave no placeholder text in cells a formula computes with)"
+    " MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT, IFERROR; arithmetic needs numbers"
+    " or empty cells: leave a cell to fill in empty, it counts as 0, and put no"
+    " dash or placeholder text in cells a formula computes with; a division or"
+    ' AVERAGE over cells still empty needs IFERROR(..., ""))'
 )
 
 

@@ -2,9 +2,20 @@
 
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 Text = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=4000)]
+# A table cell may be empty: a template to fill in, a month not started yet.
+# It stays empty in every format (a truly empty spreadsheet cell); no
+# placeholder character is invented for it.
+Cell = Annotated[str, StringConstraints(strict=True, max_length=4000)]
 
 
 class ContentModel(BaseModel):
@@ -13,13 +24,31 @@ class ContentModel(BaseModel):
 
 class Table(ContentModel):
     formulas: bool = Field(default=False, strict=True)
-    headers: tuple[Text, ...] = Field(min_length=1, max_length=8)
-    rows: tuple[tuple[Text, ...], ...] = Field(min_length=1, max_length=50)
+    headers: tuple[Cell, ...] = Field(min_length=1, max_length=8)
+    rows: tuple[tuple[Cell, ...], ...] = Field(min_length=1, max_length=50)
+
+    @field_validator("headers", mode="after")
+    @classmethod
+    def blank_headers(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        # A cell of spaces only is an empty cell.
+        return tuple(cell if cell.strip() else "" for cell in value)
+
+    @field_validator("rows", mode="after")
+    @classmethod
+    def blank_cells(
+        cls, value: tuple[tuple[str, ...], ...]
+    ) -> tuple[tuple[str, ...], ...]:
+        return tuple(
+            tuple(cell if cell.strip() else "" for cell in row) for row in value
+        )
 
     @model_validator(mode="after")
     def rectangular(self) -> Self:
         if any(len(row) != len(self.headers) for row in self.rows):
             raise ValueError("table_row_width")
+        if not any(self.headers):
+            # Rows may be blank lines to fill in; the columns still need names.
+            raise ValueError("table_headers_required")
         return self
 
 
@@ -51,13 +80,14 @@ class Content(ContentModel):
         return self
 
     def texts(self) -> tuple[str, ...]:
+        """Every written text; empty table cells hold none."""
         result = [self.title]
         for section in self.sections:
             result.extend((section.heading, *section.paragraphs, *section.bullets))
             for table in section.tables:
-                result.extend(table.headers)
+                result.extend(cell for cell in table.headers if cell)
                 for row in table.rows:
-                    result.extend(row)
+                    result.extend(cell for cell in row if cell)
         return tuple(result)
 
 
