@@ -432,7 +432,12 @@ class ChatTools(Runtime):
                 and str(data.get("outcome")) in OUTCOMES
             ):
                 outcome = str(data["outcome"])
-                self.item.erreurs.append(outcome)
+                # Partial results that still hold pages are a search that
+                # worked: its caveat stays in the search details, not under the
+                # answer (staging 2026-11-12, a sourced answer ended with
+                # "the search returned partial results").
+                if not (outcome == "partial_results" and data.get("results")):
+                    self.item.erreurs.append(outcome)
                 if had_verified_results and not data.get("results"):
                     self.item.erreurs.append(f"partial_search_failure:{outcome}")
                 if not data.get("results") and not had_verified_results:
