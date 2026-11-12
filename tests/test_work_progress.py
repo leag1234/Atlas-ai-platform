@@ -119,6 +119,52 @@ class WorkProgressMappingTests(unittest.TestCase):
         )
         self.assertEqual(label("nl", "planning"), LABELS["en"]["planning"])
 
+    def test_the_workspace_is_prepared_until_the_first_step(self) -> None:
+        # Staging corpus 2026-11-12: 17 to 31 s of "Thinking…" before the first
+        # step of a code or machine turn.
+        progress = WorkProgress("fr", lambda: False)
+        self.assertEqual(
+            progress.phase("preparing"),
+            ("work_step", "Préparation de l’espace de travail…"),
+        )
+        # The engine still starts after the workspace event: the status stays.
+        self.assertIsNone(progress.step({"type": "workspace", "status": "completed"}))
+        self.assertIsNone(
+            progress.step(
+                {"type": "tool", "tool": "switch_tool_group", "status": "completed"}
+            )
+        )
+        self.assertEqual(
+            progress.step({"type": "tool", "tool": "bash", "status": "pending"}),
+            ("work_step", "Exécution d’une commande…"),
+        )
+        self.assertEqual(
+            progress.step({"type": "tool", "tool": "bash", "status": "completed"}),
+            ("thinking", ""),
+        )
+        self.assertIsNone(progress.phase("unknown"))
+
+    def test_a_document_turn_prepares_the_document_once_the_workspace_is_ready(
+        self,
+    ) -> None:
+        progress = WorkProgress("en", lambda: True)
+        self.assertEqual(
+            progress.phase("preparing"), ("work_step", "Preparing the workspace…")
+        )
+        self.assertEqual(
+            progress.step({"type": "workspace", "status": "completed"}),
+            ("work_step", "Preparing the document…"),
+        )
+
+    def test_a_declined_hand_over_goes_back_to_thinking(self) -> None:
+        progress = WorkProgress("es", lambda: False)
+        progress.phase("preparing")
+        self.assertEqual(progress.phase("declined"), ("thinking", ""))
+        self.assertEqual(
+            progress.step({"type": "workspace", "status": "completed"}),
+            ("thinking", ""),
+        )
+
     def test_throttle(self) -> None:
         progress = WorkProgress("en", lambda: False)
         self.assertTrue(progress.due(100.0))
@@ -281,6 +327,47 @@ class ChatStreamRelayTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn(hidden, " ".join(found))
                 # The Work step announcements are never streamed themselves.
                 self.assertNotIn('work_step": {', text)
+
+    async def test_code_turn_shows_the_workspace_being_prepared(self) -> None:
+        events = [
+            {"work_step": {"phase": "preparing"}},
+            project(1, "workspace", None, "completed"),
+            {"work_step": {"tool": "bash"}},
+            project(2, "tool", "bash", "running"),
+            project(3, "tool", "bash", "completed"),
+            project(4, "recap", None, "completed"),
+        ]
+        payload = self.payload("Lance les tests de mon script Python")
+        for stable in (True, False):
+            with (
+                self.subTest(stable=stable),
+                patch.object(work_progress, "MINIMUM_INTERVAL_SECONDS", 0.0),
+            ):
+                found, rows = await self.statuses(payload, events, stable)
+                self.assertEqual(
+                    found,
+                    [
+                        "Réflexion…",
+                        "Préparation de l’espace de travail…",
+                        "Exécution d’une commande…",
+                        "Réflexion…",
+                        "Réponse terminée",
+                    ],
+                )
+                text = json.dumps(rows, ensure_ascii=False)
+                self.assertNotIn('"phase": "preparing"', text)
+                self.assertNotIn('work_step": {', text)
+
+    async def test_a_declined_hand_over_leaves_no_preparing_status(self) -> None:
+        events = [
+            {"work_step": {"phase": "preparing"}},
+            {"work_step": {"phase": "declined"}},
+        ]
+        with patch.object(work_progress, "MINIMUM_INTERVAL_SECONDS", 0.0):
+            found, _ = await self.statuses(
+                self.payload("Write a script and run it", "en"), events, True
+            )
+        self.assertEqual(found[-2:], ["Thinking…", "Answer complete"])
 
     async def test_english_ui_and_italian_conversation(self) -> None:
         events = [

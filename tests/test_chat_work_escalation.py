@@ -310,6 +310,72 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0]["session_id"], "123e4567-e89b-12d3-a456-426614174004")
         self.assertEqual(calls[0]["project_id"], "123e4567-e89b-12d3-a456-426614174002")
 
+    async def test_the_hand_over_is_announced_before_the_setup(self) -> None:
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.stream_client import sink_context
+
+        req = request("Write a snake game in Python and run it")
+        req.__dict__["native_chat_id"] = "123e4567-e89b-12d3-a456-426614174010"
+        req.__dict__["artifact_owner"] = "user@example.com"
+        seen: list[object] = []
+
+        async def sink(event: dict[str, object]) -> None:
+            seen.append(event)
+
+        async def identity(*args: object) -> dict[str, object]:
+            seen.append("identity")
+            return {"memberships": []}
+
+        token = sink_context.set(sink)
+        try:
+            with (
+                patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+                patch(
+                    "services.orchestrator.chat_work.work_gate_open", return_value=True
+                ),
+                patch("services.orchestrator.chat_work._identity", new=identity),
+            ):
+                self.assertFalse(await escalate_to_work(req, Interaction()))
+        finally:
+            sink_context.reset(token)
+        # No organization: the chat answers, and the status says so.
+        self.assertEqual(
+            seen,
+            [
+                {"work_step": {"phase": "preparing"}},
+                "identity",
+                {"work_step": {"phase": "declined"}},
+            ],
+        )
+
+    async def test_a_turn_that_stays_in_the_chat_announces_nothing(self) -> None:
+        from services.orchestrator.chat_work import escalate_to_work
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.stream_client import sink_context
+
+        seen: list[dict[str, object]] = []
+
+        async def sink(event: dict[str, object]) -> None:
+            seen.append(event)
+
+        token = sink_context.set(sink)
+        try:
+            with (
+                patch.dict(os.environ, {"ATLAS_CHAT_WORK": "1"}),
+                patch(
+                    "services.orchestrator.chat_work.work_gate_open", return_value=True
+                ),
+            ):
+                req = request("Write a snake game in Python")
+                self.assertFalse(await escalate_to_work(req, Interaction()))
+                req = request("What is the capital of Portugal?")
+                req.__dict__["artifact_owner"] = "user@example.com"
+                self.assertFalse(await escalate_to_work(req, Interaction()))
+        finally:
+            sink_context.reset(token)
+        self.assertEqual(seen, [])
+
     async def test_escalate_returns_false_without_subject(self) -> None:
         from services.orchestrator.chat_work import escalate_to_work
         from services.orchestrator.interactions import Interaction
