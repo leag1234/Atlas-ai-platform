@@ -12,7 +12,7 @@ from services.orchestrator.closing import (
     time_closing_instruction,
 )
 from services.orchestrator.loop import Call, Limits, Message, Query, Turn, run
-from tests.test_search_limit_closing import ANSWER, QUESTION, Research, offered, search
+from test_search_limit_closing import ANSWER, QUESTION, Research, offered, search
 
 
 class Clock:
