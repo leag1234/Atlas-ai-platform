@@ -147,6 +147,67 @@ class ProgressDeadlineTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("result", events[-1])
         self.assertNotIn("tool_progress", str(events))
 
+    async def test_a_started_deliverable_call_keeps_its_whole_deadline(
+        self,
+    ) -> None:
+        # Staging provider, 2026-11-13: publish_document sent its first arguments within
+        # 2 s, then nothing for 110 s while the document was written, then the
+        # whole document in one frame. The call is not cut at the recovery share.
+        calls = 0
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            nonlocal calls
+            calls += 1
+            yield {"tool_call": "publish_document"}
+            await asyncio.sleep(0.9)
+            yield result("Written.", 20)
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+            patch("quality.PROGRESS_STALL_SECONDS", 0.05),
+        ):
+            events = await collect(request(timeout=1.0, max_tokens=500))
+        self.assertEqual(calls, 1)
+        self.assertIn("result", events[-1])
+        self.assertNotIn("tool_call", str(events[:-1]))
+
+    async def test_a_started_lookup_call_still_gets_the_recovery_attempt(
+        self,
+    ) -> None:
+        calls = 0
+
+        async def upstream(
+            req: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                yield {"tool_call": "web_search"}
+                await asyncio.sleep(5)
+            yield result("Found.", 20)
+
+        started = monotonic()
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", upstream),
+            patch("quality.PROGRESS_STALL_SECONDS", 0.05),
+            self.assertLogs("quality", level="WARNING") as logs,
+        ):
+            events = await collect(request(timeout=1.0, max_tokens=500))
+        self.assertEqual(calls, 2)
+        self.assertIn("result", events[-1])
+        self.assertLess(monotonic() - started, 1.0)
+        failed = [
+            json.loads(record.getMessage())
+            for record in logs.records
+            if "quality_attempt_failed" in record.getMessage()
+        ]
+        self.assertEqual(failed[0]["tool_call"], "web_search")
+        self.assertEqual(failed[0]["events"], 1)
+
     def test_progress_timeout_needs_the_quality_controller(self) -> None:
         self.assertEqual(request(progress_timeout=900.0).progress_timeout, 900.0)
         with self.assertRaises(ValidationError):
