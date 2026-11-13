@@ -48,8 +48,10 @@
       navigator.geolocation.getCurrentPosition(position => {
         const latitude = Math.round(position.coords.latitude * 1000) / 1000;
         const step = .001 / Math.max(.01, Math.cos(latitude * Math.PI / 180));
-        resolve({ consent: mode, timezone, position: { latitude, longitude: Math.max(-180, Math.min(180, Math.round(position.coords.longitude / step) * step)) } });
-      }, () => resolve(null), { enableHighAccuracy: false, maximumAge: 0, timeout: 10000 });
+        // The accuracy radius lets the server refuse a network/IP estimate instead of using it silently.
+        const accuracy = Number.isFinite(position.coords.accuracy) ? Math.min(40000000, Math.max(0, Math.round(position.coords.accuracy))) : undefined;
+        resolve({ consent: mode, timezone, accuracy, position: { latitude, longitude: Math.max(-180, Math.min(180, Math.round(position.coords.longitude / step) * step)) } });
+      }, () => resolve(null), { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
     });
     let denied = false;
     if (id && localStorage.getItem(permissionKey(id)) === 'always') {

@@ -109,6 +109,10 @@ class NearbyTools:
             self.position, self.area = await self.osm.geocode(self.location.place)
         if self.position is None:
             raise NearbyError("location_required")
+        if self.location.coarse:
+            # A network or IP estimate, not the person's position (Work and
+            # Projects reach this tool without the chat's own check).
+            raise NearbyError("location_coarse")
 
     async def execute(self, call: Call, timeout: float) -> Message:
         try:
@@ -237,9 +241,13 @@ async def _process_nearby(
     max_calls: int = 8,
     cost_limit: Decimal = Decimal("0.05"),
     check: Callable[[], Awaitable[None]] | None = None,
+    category_text: str | None = None,
 ) -> int:
     sink = sink_context.get()
     location = request.location
+    # The request whose category and radius are searched: this message, or
+    # this message completing the previous one ("I am at ...").
+    text = category_text or request.user_text
     if location is None or (location.position is None and not location.place):
         item.reponse = (
             "Indiquez un lieu, par exemple « près de la place Bellecour », ou partagez votre position approximative pour cette demande."
@@ -251,6 +259,13 @@ async def _process_nearby(
             await sink(
                 {"phase": "location_required", "delta": {"content": item.reponse}}
             )
+        return 0
+    if location.coarse and not location.place:
+        from services.orchestrator.location_route import ask, coarse_reply
+
+        await ask(
+            item, coarse_reply(request.lang, location.accuracy), "location_coarse"
+        )
         return 0
     from services.orchestrator.chat_pipeline import ChatTools
 
@@ -272,8 +287,8 @@ async def _process_nearby(
             "nearby_places",
             json.dumps(
                 dict(
-                    category=request.user_text[:1000],
-                    radius=requested_radius(request.user_text),
+                    category=text[:1000],
+                    radius=requested_radius(text),
                 )
             ),
         ),
@@ -314,6 +329,7 @@ async def process_nearby(
     max_calls: int = 8,
     cost_limit: Decimal = Decimal("0.05"),
     check: Callable[[], Awaitable[None]] | None = None,
+    category_text: str | None = None,
 ) -> int:
     location = request.location
     try:
@@ -323,6 +339,7 @@ async def process_nearby(
             max_calls=max_calls,
             cost_limit=cost_limit,
             check=check,
+            category_text=category_text,
         )
     finally:
         request.location = None

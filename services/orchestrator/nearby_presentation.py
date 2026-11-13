@@ -221,7 +221,8 @@ def render(
 ) -> str:
     language = language if language in _COPY else "en"
     copy = labels(language)
-    places = result["places"][:5]
+    # Five ranked places plus the closer ones whose hours are not listed.
+    places = result["places"][:8]
     numbered = dict.fromkeys(sources or [])
 
     def link(label: str, value: Any) -> str:
