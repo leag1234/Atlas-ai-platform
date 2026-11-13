@@ -11,7 +11,16 @@ from services.orchestrator.closing import (
     closing_requested,
     time_closing_instruction,
 )
-from services.orchestrator.loop import Call, Limits, Message, Query, Turn, run
+from services.orchestrator.loop import (
+    Call,
+    Limits,
+    Message,
+    Query,
+    Reservation,
+    Result,
+    Turn,
+    run,
+)
 from test_search_limit_closing import ANSWER, QUESTION, Research, offered, search
 
 
@@ -31,9 +40,7 @@ class SlowResearcher:
         self.seen: list[list[Message]] = []
         self.timeouts: list[float] = []
 
-    def estimate(self, messages: list[Message]) -> object:
-        from services.orchestrator.loop import Reservation
-
+    def estimate(self, messages: list[Message]) -> Reservation:
         return Reservation(10, Decimal("0.001"))
 
     async def complete(self, messages: list[Message], timeout: float) -> Turn:
@@ -50,7 +57,9 @@ class SlowResearcher:
         return Turn("", (Call(f"f{rounds + 1}", "web_fetch", page),))
 
 
-async def chat_turn(model: SlowResearcher, clock: Clock, wall_clock: float = 120):
+async def chat_turn(
+    model: SlowResearcher, clock: Clock, wall_clock: float = 120
+) -> Result:
     return await run(
         Query(question=QUESTION, lang="fr"),
         model,
