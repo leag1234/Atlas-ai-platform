@@ -20,7 +20,7 @@ import copy
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Hashable
+from collections.abc import Hashable, Iterable
 
 import numpy as np
 import numpy.typing as npt
@@ -115,6 +115,19 @@ def _expand_use(root: ET.Element) -> None:
             index = list(parent).index(use)
             parent.remove(use)
             parent.insert(index, group)
+
+
+def thing_instances(named: Iterable[str], tid: str) -> list[str]:
+    """Named groups standing for a checklist thing: its numbered instances
+    (tid-1, tid-2 ...) when there are some, else tid itself or its plural."""
+    names = set(named)
+    numbered = sorted(
+        (n for n in names if re.fullmatch(re.escape(tid) + r"s?-\d+", n)),
+        key=lambda n: int(n.rsplit("-", 1)[1]),
+    )
+    if numbered:
+        return numbered
+    return [n for n in (tid, tid + "s", tid + "es") if n in names][:1]
 
 
 @dataclass
