@@ -418,6 +418,22 @@ async def _store_image(image: dict[str, Any]) -> str:
     return await asyncio.to_thread(image_store.store, url)
 
 
+def _base(urls: list[str]) -> str:
+    return (
+        os.environ.get("ATLAS_PUBLIC_URL", "").strip()
+        or urls[0].rsplit("/images/", 1)[0]
+    )
+
+
+def picture_links(picture_set: store.PictureSet, urls: list[str]) -> list[str]:
+    """The choice links of a set (one per candidate)."""
+    base = _base(urls)
+    return [
+        choice_url(base, picture_set.set_id, n)
+        for n in range(1, len(picture_set.candidates) + 1)
+    ]
+
+
 def _answer(
     language: str,
     request_text: str,
@@ -427,10 +443,7 @@ def _answer(
     footer: str,
 ) -> str:
     count = len(picture_set.candidates)
-    base = (
-        os.environ.get("ATLAS_PUBLIC_URL", "").strip()
-        or urls[0].rsplit("/images/", 1)[0]
-    )
+    base = _base(urls)
     parts: list[str] = []
     if count == 1:
         parts.append(text(language, "single"))
@@ -449,7 +462,7 @@ def _answer(
     lines.append(f"![{alt}]({sheet_url})")
     if count > 1:
         links = " · ".join(
-            f"[{n}]({choice_url(base, picture_set.set_id, n)})"
+            f"[{text(language, 'label', n=n)}]({choice_url(base, picture_set.set_id, n)})"
             for n in range(1, count + 1)
         )
         lines.append(f"{text(language, 'links')} {links}")
@@ -585,6 +598,12 @@ async def process_picture_turn(
                     artifact_id, version, title, filename, language, temporary=False
                 )
     item.reponse = _answer(language, request_text, picture_set, urls, sheet_url, footer)
+    # Server-made references: the answer filter keeps only these image and
+    # link targets (source_truth.drawing_references).
+    item.images = [{"reference": sheet_url, "kind": "picture"}] + [
+        {"reference": reference, "kind": "picture"}
+        for reference in picture_links(picture_set, urls)
+    ]
     item.state = "done"
     item.latence_ms["picture_ready"] = (time.monotonic() - started) * 1000
     LOGGER.info(

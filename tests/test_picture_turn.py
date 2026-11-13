@@ -245,6 +245,36 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         images = list((self.folder / "images").glob("*.png"))
         self.assertGreaterEqual(len(images), 5)  # four candidates and the sheet
 
+    async def test_answer_survives_the_answer_filters(self) -> None:
+        from services.orchestrator.image_truth import ImageVerifier
+        from services.orchestrator.source_truth import (
+            drawing_references,
+            inline_source_markers,
+            visible_sources,
+            without_unretrieved,
+        )
+
+        item = await self.run_turn(FakeGateway("banc"))
+        allowed = drawing_references(item) | {
+            f"/api/atlas/artifacts/{a['id']}/versions/{a['version']}/{action}"
+            for a in item.artifacts
+            for action in ("open", "download")
+        }
+        text = ImageVerifier().feed(
+            item.reponse,
+            {str(image["reference"]) for image in item.images},
+            final=True,
+        )
+        text = without_unretrieved(text, allowed)
+        text = inline_source_markers(text, visible_sources(item))
+        self.assertIn("![Propositions 1 à 4](https://atlas.example.test/images/", text)
+        for n in range(1, 5):
+            self.assertIn(
+                f"[Image {n}](https://atlas.example.test/images/picture/", text
+            )
+        self.assertIn("/versions/1/open", text)
+        self.assertNotIn("unverified", text)
+
     async def test_partial_result_when_drafts_fail(self) -> None:
         failures: dict[int, Exception] = {
             0: GatewayError("provider_error", 502),

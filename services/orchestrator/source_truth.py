@@ -51,7 +51,8 @@ def drawing_references(item: Interaction) -> set[str]:
     return payloads | {
         reference
         for image in item.images
-        if image.get("kind") in {"mechanical_svg", "drawing_svg", "qr", "web_image"}
+        if image.get("kind")
+        in {"mechanical_svg", "drawing_svg", "qr", "web_image", "picture"}
         and "reference" in image
         for reference in (
             str(image["reference"]),

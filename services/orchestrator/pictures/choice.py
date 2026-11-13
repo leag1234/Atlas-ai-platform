@@ -205,6 +205,7 @@ async def handle_choice(request: Any, item: Any) -> bool:
     await asyncio.to_thread(_apply, picture_set, index, owner, item.request_id)
     image = image_store.reference(picture_set.candidates[index].image_key)
     lines = [text(language, "chosen", n=number), f"![{number}]({image})"]
+    item.images = [{"reference": image, "kind": "picture"}]
     link = await asyncio.to_thread(_artifact_link, picture_set, owner, language)
     if link is not None:
         lines.append(link[0])
