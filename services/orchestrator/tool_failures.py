@@ -39,6 +39,27 @@ def relayed_failure_tools() -> frozenset[str]:
     return RELAYED | frozenset(NAMES)
 
 
+def stops_on_repeat(tool: str, code: str) -> bool:
+    """Whether repeating this failure of this tool stops the turn.
+
+    A machine out of reach (local address, no answer) is a relayed sentence
+    too, but no other call changes it: retried, it burnt a turn to its wall
+    clock on staging (2026-11-13).
+    """
+    from services.orchestrator.work_machine_tools import UNREACHABLE
+
+    if explained_limit(code):
+        return False
+    return tool not in relayed_failure_tools() or code in UNREACHABLE
+
+
+def family(tool: str) -> str:
+    """The machine tools share their counts: one machine, five ways to retry it."""
+    from services.orchestrator.work_machine_tools import NAMES
+
+    return "machine tools" if tool in NAMES else tool
+
+
 def explained_limit(code: str) -> bool:
     """A limit of the person's machine (busy, minutes used up).
 
@@ -79,14 +100,15 @@ class RepeatedFailures:
     ) -> tuple[dict[str, object], int]:
         """The result the model reads, and the count when the turn must stop (else 0)."""
         code = error_code(output)
+        group = family(tool)
         if code is None:
-            for key in [key for key in self.counts if key[0] == tool]:
+            for key in [key for key in self.counts if key[0] == group]:
                 del self.counts[key]
             return dict(output), 0
-        count = self.counts[tool, code] = self.counts.get((tool, code), 0) + 1
+        count = self.counts[group, code] = self.counts.get((group, code), 0) + 1
         if count < SAME_FAILURE_NUDGE:
             return dict(output), 0
-        stops = tool not in relayed_failure_tools() and not explained_limit(code)
+        stops = stops_on_repeat(tool, code)
         note = (
             f"{tool} has now failed {count} times in this turn with the same "
             "error. Another variant of the same call will fail the same way: do "

@@ -14,11 +14,14 @@ the conversation's language, never as a raw code.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from services.runner.machines import HOST
 
 Json = dict[str, Any]
 NAMES = (
@@ -167,8 +170,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "fr": "La machine {name} a répondu avec une clé d'hôte différente de celle enregistrée lors de sa première vérification. Cela arrive quand un serveur est réinstallé, mais cela peut aussi signifier que quelqu'un intercepte la connexion. Ce serveur a-t-il été réinstallé ? Atlas n'enregistrera sa nouvelle clé que si vous le confirmez.",
     },
     "runner_target_address_denied": {
-        "en": "The address of {name} is on a private or reserved network, which this Atlas instance cannot reach yet: the machine needs a public address.",
-        "fr": "L'adresse de {name} est sur un réseau privé ou réservé, que cette instance d'Atlas ne peut pas encore atteindre : la machine doit avoir une adresse publique.",
+        "en": "The address of {name} ({host}) is on a private or reserved network. This Atlas instance runs on a server on the internet and cannot reach it: that would need a connector running on your side, which Atlas does not offer yet. A machine with a public address can be used instead.",
+        "fr": "L'adresse de {name} ({host}) est sur un réseau privé ou réservé. Cette instance d'Atlas tourne sur un serveur sur Internet et ne peut pas l'atteindre : il faudrait un connecteur installé de votre côté, qu'Atlas ne propose pas encore. Une machine avec une adresse publique peut être utilisée à la place.",
+    },
+    "local_network": {
+        "en": "{host} is an address of your local network. This Atlas instance runs on a server on the internet and cannot reach your local network: that would need a connector running on your machine, which Atlas does not offer yet. A machine with a public address (a server or a VPS) can be used instead.",
+        "fr": "{host} est une adresse de votre réseau local. Cette instance d'Atlas tourne sur un serveur sur Internet et ne peut pas atteindre votre réseau local : il faudrait un connecteur installé sur votre machine, qu'Atlas ne propose pas encore. Une machine avec une adresse publique (un serveur ou un VPS) peut être utilisée à la place.",
     },
     "runner_target_unresolved": {
         "en": "The host name of {name} ({host}) does not resolve to an address: check its spelling.",
@@ -177,6 +184,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     "runner_transport_failed": {
         "en": "Atlas could not open an SSH connection to {name} ({host}, port {port}): the machine may be off, a firewall may block that port, or SSH may listen on another port.",
         "fr": "Atlas n'a pas pu ouvrir de connexion SSH vers {name} ({host}, port {port}) : la machine est peut-être éteinte, un pare-feu bloque peut-être ce port, ou SSH écoute sur un autre port.",
+    },
+    "unreachable_target": {
+        "en": "Atlas cannot reach the machine {name}: its address is on a private network, does not resolve, or does not answer over SSH.",
+        "fr": "Atlas ne peut pas atteindre la machine {name} : son adresse est sur un réseau privé, ne correspond à aucune machine, ou ne répond pas en SSH.",
     },
     "invalid_work_root": {
         "en": "Atlas connected to {name} but could not prepare its working folder in the account's home directory.",
@@ -226,6 +237,122 @@ ALIASES = {
     "credential_fingerprint_mismatch": "credential_unavailable",
 }
 RELAY = "Relay message to the user in their language; never show error codes."
+
+# Outcomes no other call can change within this turn: the machine is out of
+# reach from Atlas. On staging (2026-11-13) a request to work on a machine of
+# the person's home network went through about twenty machine and remote calls
+# until the turn hit its wall clock, then told the person to run the commands
+# himself. The first such outcome now ends the machine attempts of the turn.
+UNREACHABLE = frozenset(
+    {
+        "machine_local_network",
+        "runner_target_address_denied",
+        "runner_target_unresolved",
+        "runner_transport_failed",
+        "runner_connection_unknown",
+        "runner_host_key_unavailable",
+    }
+)
+UNREACHABLE_STEP = (
+    RELAY + " Say it once, plainly. This machine cannot be reached from Atlas: "
+    "no other call in this turn will change that. Do not call machine_add, "
+    "machine_verify, list_targets or remote_run for it again, and never give the "
+    "user commands to run instead. If the request does not need "
+    "this machine (a public repository, a computation, a file to write), do it "
+    "now in Atlas's own workspace (switch_tool_group to code, then run_command) "
+    "and say so in one sentence. Otherwise ask one short question (a public "
+    "address for that machine, or another machine) and end your turn."
+)
+
+# Addresses of the person's own network, as written: refused before any
+# connection. Documentation and other reserved ranges are left to the broker,
+# which refuses every address that is not public (services/runner/network.py).
+LOCAL_NETWORKS = tuple(
+    ipaddress.ip_network(value)
+    for value in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "169.254.0.0/16",
+        "127.0.0.0/8",
+        "100.64.0.0/10",
+        "0.0.0.0/8",
+    )
+)
+# Names that only a local network resolves (multicast DNS, home routers).
+LOCAL_SUFFIXES = (
+    ".local",
+    ".lan",
+    ".home",
+    ".internal",
+    ".intranet",
+    ".localdomain",
+    ".localhost",
+    ".home.arpa",
+)
+
+
+def operator_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """Networks the operator made reachable (the broker reads the same setting)."""
+    networks = []
+    for value in os.environ.get("ATLAS_RUNNER_PERSONAL_NETWORKS", "").split(","):
+        try:
+            networks.append(ipaddress.ip_network(value.strip()))
+        except ValueError:
+            continue
+    return networks
+
+
+def local_network(host: str) -> bool:
+    """Whether a host, as the person wrote it, lies on his own local network.
+
+    Only what the backend accepts is judged (an IPv4 address or a host name);
+    anything else is refused there as invalid and never echoed back. An address
+    of a network the operator listed is reachable on purpose. A bare name (no
+    dot, as "nas" or "my-laptop") or a local suffix resolves only inside the
+    person's network, unless the operator made one reachable.
+    """
+    value = host.strip().rstrip(".").casefold()
+    if not HOST.fullmatch(value):
+        return False
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        address = None
+    networks = operator_networks()
+    if address is not None:
+        return not any(address in net for net in networks) and any(
+            address in net for net in LOCAL_NETWORKS
+        )
+    if networks:
+        return False
+    return value == "localhost" or "." not in value or value.endswith(LOCAL_SUFFIXES)
+
+
+def keys(*values: object) -> list[str]:
+    return [str(v).strip().casefold() for v in values if v]
+
+
+def ended(tools: Any, *names: object) -> Json | None:
+    """The outcome of a machine already found out of reach in this turn."""
+    found = getattr(tools, "machines_unreachable", {})
+    for key in keys(*names):
+        if key in found:
+            return dict(found[key], next_step=UNREACHABLE_STEP)
+    return None
+
+
+def unreachable(tools: Any, result: Json, *names: object) -> Json:
+    """Record an out-of-reach machine for the rest of the turn; the result to return."""
+    result = dict(result, next_step=UNREACHABLE_STEP)
+    if not result.get("message"):
+        name = next((str(v) for v in names if v), "?")
+        result["message"] = say("unreachable_target", lang_of(tools), name=name)
+    found = getattr(tools, "machines_unreachable", None)
+    if isinstance(found, dict):
+        for key in keys(*names):
+            found[key] = result
+    return result
 
 
 def say(key: str, lang: str, **values: object) -> str:
@@ -347,6 +474,15 @@ def awaiting(tools: Any, machine: Json, key: str) -> Json:
 
 async def add(tools: Any, args: Add) -> Json:
     lang = lang_of(tools)
+    if local_network(args.host):
+        # Declaring it would make the person install a key for nothing: the
+        # verification can only fail (staging 2026-11-13).
+        return unreachable(
+            tools,
+            failure("local_network", lang, "machine_local_network", host=args.host),
+            args.name,
+            args.host,
+        )
     body: Json = dict(name=args.name, host=args.host, user=args.user, port=args.port)
     mode = args.permission_mode or ("auto" if unattended(tools) else None)
     if mode is not None:
@@ -408,6 +544,17 @@ async def verify(tools: Any, args: Verify) -> Json:
         return dict(
             failure("awaiting_user", lang, "awaiting_user", name=name),
             install_command=machine["install_command"],
+        )
+    host = str(machine.get("host", ""))
+    if local_network(host):
+        return unreachable(
+            tools,
+            dict(
+                failure("local_network", lang, "machine_local_network", host=host),
+                machine=public(machine),
+            ),
+            name,
+            host,
         )
     status, checked = await tools.execution.broker.member(
         "POST",
@@ -475,6 +622,8 @@ async def verify(tools: Any, args: Verify) -> Json:
             RELAY + " Ask whether the server was reinstalled; only after the user "
             "confirms, call machine_verify with reset_host_key=true."
         )
+    if error in UNREACHABLE:
+        return unreachable(tools, result, name, host)
     return result
 
 
@@ -561,6 +710,15 @@ async def execute(tools: Any, name: str, arguments: str) -> Json:
             fields=fields,
             next_step="Correct these arguments from the tool schema and call again.",
         )
+    known = (
+        ended(tools, args.name, args.host)
+        if isinstance(args, Add)
+        else ended(tools, args.name)
+        if isinstance(args, Verify)
+        else None
+    )
+    if known is not None:
+        return known
     try:
         if isinstance(args, Add):
             return await add(tools, args)
@@ -648,6 +806,8 @@ Machines. The user's own computers are reached over SSH with machine_add, machin
 - When the user says it is done (in any words): call machine_verify for each machine waiting for it, then continue the user's original request of this conversation without asking them to repeat it.
 - Relay each tool message in the user's language; never show error codes.
 - Diagnose read-only first (status, logs, disk space) before any command that changes the machine.
+- A machine Atlas cannot reach (an address of the user's local network such as 192.168.x.x, 10.x.x.x or a .local name; a host that does not resolve or does not answer) is said once, plainly. Never retry it in the same turn and never give the user commands to run in its place: do the task in Atlas's own workspace when it does not need that machine, otherwise ask one short question.
+- The user names a machine that is not declared and gives no address: ask in one short question for its address and account (or, when the task does not need that machine, do it in Atlas's own workspace). Never guess a name for remote_run.
 - Host key changed: explain the risk and ask whether the server was reinstalled; call machine_verify with reset_host_key=true only after the user confirms.
 - machine_forget: set confirmed=true only when the user's last message says yes to removing that machine."""
 

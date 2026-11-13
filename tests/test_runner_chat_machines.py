@@ -140,11 +140,20 @@ class ChatMachineTests(MachineTests):
         self.assertEqual(self.key_files(), [])
 
     def test_chat_machine_private_address_is_explained(self) -> None:
+        # Declared while the operator allowed its network, checked after he
+        # removed it: Atlas says why without connecting, and declares no other
+        # machine there (no key the person would install for nothing).
+        self.add(self.tools())
         with patch.dict(os.environ, {"ATLAS_RUNNER_PERSONAL_NETWORKS": ""}):
-            self.add(self.tools())
             refused = self.use(self.tools(), "machine_verify", name="build")
-        self.assertEqual(refused["error"], "runner_target_address_denied", refused)
-        self.assertIn("private or reserved network", refused["message"])
+            other = self.add(self.tools(), name="other")
+        self.assertEqual(refused["error"], "machine_local_network", refused)
+        self.assertIn("local network", refused["message"])
+        self.assertEqual(other["error"], "machine_local_network", other)
+        self.assertNotIn("install_command", other)
+        listed = self.request("GET", self.machines, "editor").json()["items"]
+        self.assertEqual([m["name"] for m in listed], ["build"])
+        self.assertIsNone(listed[0]["verified_at"])
 
 
 def load_tests(
