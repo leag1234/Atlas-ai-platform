@@ -57,6 +57,7 @@ from services.orchestrator.connectors import router as connector_router
 from services.orchestrator.code_api import router as code_router
 
 from services.orchestrator.image_store import router as image_router
+from services.orchestrator.pictures.routes import router as picture_router
 from services.orchestrator.artifact_routes import router as artifact_router
 from services.orchestrator.artifact_routes import ArtifactHeadersMiddleware
 
@@ -82,6 +83,7 @@ app.add_middleware(ArtifactHeadersMiddleware)
 app.mount("/harness", harness_app)
 
 app.include_router(image_router)
+app.include_router(picture_router)
 app.include_router(artifact_router)
 
 app.include_router(mcp_router)

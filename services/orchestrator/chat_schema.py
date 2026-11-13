@@ -249,6 +249,7 @@ class ChatRequest(VisionInput):
                 else produces_file(self.user_text, include_images=False)
             )
             or self.app_turn
+            or self.picture_turn
             # A turn that Work answers behind the chat (code to run, a real file, a
             # change to either) is not a 120 s chat answer: one slow call cut a
             # script run at 120 s on staging (2026-11-10).
@@ -263,6 +264,27 @@ class ChatRequest(VisionInput):
             )
             else 120.0
         )
+
+    @property
+    def picture_turn(self) -> bool:
+        # Four drafts by code (services/orchestrator/pictures): about 100 s
+        # measured, up to 295 s; a drawing turn outside the app panel (API
+        # callers, no artifact) must not end at the 120 s chat limit.
+        if self.continuation or self.has_attachments:
+            return False
+        from services.orchestrator.pictures.turn import available
+
+        if not available():
+            return False
+        from services.orchestrator.request_router import decision
+
+        routed = decision(self)
+        if routed is not None:
+            return routed.kind == "drawing"
+        from packages.artifact_intent import svg_requested
+        from services.orchestrator.image_tool import explicit_image_request
+
+        return svg_requested(self.user_text) or explicit_image_request(self.user_text)
 
     @property
     def app_turn(self) -> bool:

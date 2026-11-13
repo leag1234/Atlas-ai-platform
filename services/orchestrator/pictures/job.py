@@ -23,6 +23,8 @@ MAX_INPUT_BYTES = 8_000_000
 # Handlers a job may name: "module:function" under the picture package.
 HANDLERS = {
     "render": "services.orchestrator.pictures.job:render_job",
+    "draft": "services.orchestrator.pictures.chain:process_draft",
+    "sheet": "services.orchestrator.pictures.chain:contact_sheet",
 }
 TEST_PREFIX = "tests."
 
