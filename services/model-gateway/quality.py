@@ -77,7 +77,7 @@ PROGRESS_STALL_SECONDS = 60.0
 
 def made_progress(event: dict[str, object]) -> bool:
     """True for any piece of model output: content, reasoning or tool arguments."""
-    if "tool_progress" in event:
+    if "tool_progress" in event or "tool_call" in event:
         return True
     delta = event.get("delta")
     return isinstance(delta, dict) and any(
@@ -624,6 +624,7 @@ async def stream_quality(
         # Counts of what an attempt received, for a cut attempt's log line.
         progress_chars = 0
         event_count = 0
+        started_call = ""
         result: dict[str, object] | None = None
         # Reserve time for recovery, still under the original request deadline.
         # A short call (a routing decision, a title: at most SHORT_CALL_TOKENS of
@@ -652,6 +653,18 @@ async def stream_quality(
                     event_count += 1
                     if made_progress(event):
                         keep_alive(deadline, active_deadline)
+                    if "tool_call" in event:
+                        started_call = str(event["tool_call"])
+                        # The requested work (a document, a file, a command)
+                        # is being written as tool arguments, which the
+                        # provider may send only once complete: a researched
+                        # report stayed silent for 110 s after its first
+                        # arguments (staging provider, 2026-11-13), was cut at the
+                        # recovery share and failed. It keeps the original
+                        # deadline, as a long call in progress does below.
+                        if started_call in ACTION_TOOLS:
+                            extend(deadline, full_deadline)
+                        continue
                     if "tool_progress" in event:
                         progress_chars = int(str(event["tool_progress"]) or 0)
                         # A long tool call is being written. Cutting it at the
@@ -835,6 +848,7 @@ async def stream_quality(
                         "reasoning_chars": len(partial_reasoning),
                         "content_chars": len(streamed),
                         "tool_progress_chars": progress_chars,
+                        "tool_call": started_call,
                     }
                 )
             )

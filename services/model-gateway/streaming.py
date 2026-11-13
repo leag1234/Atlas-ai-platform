@@ -102,6 +102,12 @@ TOOL_PROGRESS_CHARS = 2000
 # the quality controller cuts a call that stays silent (PROGRESS_STALL_SECONDS),
 # and tool arguments are never forwarded while they are written.
 TOOL_PROGRESS_STEP = 500
+# A tool call under way is announced once, by name, with its first argument
+# characters. The provider may then hold back a long argument value until it is
+# complete: on the serverless provider (2026-11-13) a publish_document call sent its short
+# arguments within 2 s, then nothing for 110 s, then the whole 10-12 thousand
+# character document in one frame, on both chat models. Without this signal the
+# call looked silent and was cut while it was being written.
 
 
 class StreamDecoder:
@@ -126,6 +132,7 @@ class StreamDecoder:
         self.calls: dict[int, dict[str, str]] = {}
         self.tool_progress_sent = False
         self.tool_progress_at = 0
+        self.announced: set[int] = set()
         self.ignored_calls = False
         self.usage: dict[str, object] | None = None
         self.reason: str | None = None
@@ -214,6 +221,11 @@ class StreamDecoder:
                         self.calls.clear()
                         raise MalformedToolCall(len(target["name"]))
                     target["arguments"] += call.function.arguments
+                    if call.function.arguments and call.index not in self.announced:
+                        # Internal, never forwarded: the quality controller
+                        # keeps a deliverable call alive (see quality.py).
+                        self.announced.add(call.index)
+                        events.append({"tool_call": target["name"]})
                     written = sum(len(c["arguments"]) for c in self.calls.values())
                     if (
                         len(target["arguments"]) >= TOOL_PROGRESS_CHARS

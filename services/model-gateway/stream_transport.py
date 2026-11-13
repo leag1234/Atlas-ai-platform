@@ -48,6 +48,15 @@ async def response_window(seconds: float) -> AsyncGenerator[None, None]:
         _response_timeout.reset(token)
 
 
+# Decoder signals for the quality controller's deadline, never sent to a client:
+# the orchestrator rejects an event it does not know.
+INTERNAL_EVENTS = ("tool_call", "tool_progress")
+
+
+def internal(event: dict[str, object]) -> bool:
+    return any(key in event for key in INTERNAL_EVENTS)
+
+
 class StreamRequest(AgentRequest):
     reasoning_effort: Literal["none", "low", "medium", "high"] = "none"
 
@@ -70,6 +79,8 @@ async def stream(
             )
         ) as events:
             async for event in events:
+                if internal(event):
+                    continue
                 result = event.get("result")
                 if isinstance(result, dict):
                     result["cost_eur"] = "0"
@@ -117,6 +128,8 @@ async def stream(
                 ) as events,
             ):
                 async for event in events:
+                    if internal(event):
+                        continue
                     result = event.get("result")
                     if isinstance(result, dict):
                         if request.observe:
