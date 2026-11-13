@@ -97,7 +97,7 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
     origin = routed.origin if routed is not None else None
     category_text = text if categories(text) else ""
     if not category_text and routed is not None:
-        # "je suis place de la Gare à Caen" after "boulangeries ouvertes ?"
+        # "I am at the station square in Caen" after "open bakeries?"
         previous = previous_user_text(request)
         if categories(previous):
             category_text = previous + "\n" + text
