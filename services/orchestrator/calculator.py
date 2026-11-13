@@ -19,6 +19,9 @@ MAX_EXPONENT = 10000
 MAX_DIGITS = 50
 MAX_ROUND = 20
 
+# The grammar, for readers and tests. It is not sent in the tool schema: any schema
+# change invalidates the recorded journey replays (verify-m10/m17/m20), so it waits for
+# the next recording refresh.
 DESCRIPTION = (
     "Arithmetic expression, evaluated exactly in decimal. Operators: + - * / and "
     "parentheses; powers with ** or ^ (exponent at most 10000 in absolute value, "
