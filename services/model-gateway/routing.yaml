@@ -71,3 +71,12 @@ hidden_roles:
 
 hidden_profiles:
   atlas-mistral: mistral
+
+# Pictures by code (services/orchestrator/pictures): the profile each step runs on, read by
+# the orchestrator so that no model name appears there. The painter writes four SVG drafts in
+# parallel (round 10 to 23 measurements: the hidden profile at reasoning "low"); the checklist
+# is one short JSON call on the fast public profile. A painter profile that is not enabled
+# (ATLAS_HIDDEN_PROFILES) leaves the picture chain off.
+picture_roles:
+  picture_painter: atlas-mistral
+  picture_checklist: atlas-deepseek
