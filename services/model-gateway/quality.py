@@ -67,6 +67,38 @@ ACTION_TOOLS = frozenset(
     }
 )
 
+# A call that keeps receiving output (answer, reasoning or tool arguments) is
+# not cut by its own deadline: each piece moves the deadline to at least this
+# many seconds later, up to the caller's progress_timeout. A call silent this
+# long still fails. On staging a Work step streaming its answer (3161 events,
+# 11385 characters) was cut at 120 s, twice (2026-11-13).
+PROGRESS_STALL_SECONDS = 60.0
+
+
+def made_progress(event: dict[str, object]) -> bool:
+    """True for any piece of model output: content, reasoning or tool arguments."""
+    if "tool_progress" in event:
+        return True
+    delta = event.get("delta")
+    return isinstance(delta, dict) and any(
+        delta.get(key) for key in ("content", "reasoning_content")
+    )
+
+
+def keep_alive(deadline: asyncio.Timeout, bound: float) -> None:
+    """Never shorten the deadline; extend it past a silence window, up to bound."""
+    when = deadline.when()
+    target = min(bound, asyncio.get_running_loop().time() + PROGRESS_STALL_SECONDS)
+    if when is not None and target > when:
+        deadline.reschedule(target)
+
+
+def extend(deadline: asyncio.Timeout, target: float) -> None:
+    """Move the deadline to target unless progress already moved it further."""
+    when = deadline.when()
+    if when is None or target > when:
+        deadline.reschedule(target)
+
 
 def work_context_tokens() -> int:
     """The input a Work step sends at most, in tokens (ATLAS_WORK_CONTEXT_TOKENS)."""
@@ -443,11 +475,16 @@ async def stream_quality(
     # Finalization instructions may invalidate the initial affordability check.
     select_affordable_model()
     for index in range(2):
-        remaining = request.timeout - (monotonic() - started)
+        elapsed = monotonic() - started
+        remaining = request.timeout - elapsed
         if remaining <= 0:
             if malformed_name is not None:
                 raise MalformedToolCall(malformed_name.measured, index) from None
             raise TimeoutError("timeout")
+        # How long an attempt still receiving output may run: the caller's own
+        # time left, never less than this request's deadline.
+        active = max(request.timeout, request.progress_timeout or 0) - elapsed
+        active_deadline = asyncio.get_running_loop().time() + active
         # Retain room for one bounded recovery, not all future tool turns.
         # Actual cost is reserved immediately before each transport call.
         recovery = (
@@ -603,7 +640,7 @@ async def stream_quality(
         full_deadline = asyncio.get_running_loop().time() + remaining
         try:
             async with (
-                response_window(remaining),
+                response_window(max(remaining, active)),
                 asyncio.timeout(allotted) as deadline,
                 aclosing(attempt(current, model, allotted)) as events,
             ):
@@ -613,6 +650,8 @@ async def stream_quality(
                         result = terminal
                         break
                     event_count += 1
+                    if made_progress(event):
+                        keep_alive(deadline, active_deadline)
                     if "tool_progress" in event:
                         progress_chars = int(str(event["tool_progress"]) or 0)
                         # A long tool call is being written. Cutting it at the
@@ -621,7 +660,7 @@ async def stream_quality(
                         # researched document was cut at 60 s and at 120 s, then
                         # refused on cost (staging 2026-11-10). It keeps the
                         # original deadline; the event is internal.
-                        deadline.reschedule(full_deadline)
+                        extend(deadline, full_deadline)
                         continue
                     delta = event.get("delta")
                     if isinstance(delta, dict):
@@ -686,7 +725,7 @@ async def stream_quality(
                             # retried. Let this attempt use the original deadline
                             # instead of cancelling it early to reserve time for
                             # an ineligible recovery.
-                            deadline.reschedule(full_deadline)
+                            extend(deadline, full_deadline)
                             for pending_event in buffered:
                                 if current.tools and not answer_emitted:
                                     held_content.append(pending_event)

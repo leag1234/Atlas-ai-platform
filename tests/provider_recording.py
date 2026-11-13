@@ -16,7 +16,10 @@ MANIFEST_SCHEMA_VERSION = 1
 # budgets, prompts, models, tools, or limits here: each can change a response.
 # ``conversation_id`` and ``root_id`` are the documented dynamic identifiers
 # from the cassette design report. M21 currently uses only ``timeout``.
-_ALLOWED_EXCLUSIONS = frozenset({"timeout", "conversation_id", "root_id"})
+# Timing values, never content: a recorded call matches whatever time it was given.
+_ALLOWED_EXCLUSIONS = frozenset(
+    {"timeout", "progress_timeout", "conversation_id", "root_id"}
+)
 
 
 def canonical_json(value: object) -> str:
@@ -107,7 +110,9 @@ def prompt_hashes(request: object) -> dict[str, str]:
 
 
 def request_manifest(
-    kind: str, request: object, exclusions: tuple[str, ...] = ("timeout",)
+    kind: str,
+    request: object,
+    exclusions: tuple[str, ...] = ("timeout", "progress_timeout"),
 ) -> dict[str, object]:
     """Build a versioned, auditable manifest for a legacy or new cassette row."""
     requested = frozenset(exclusions)

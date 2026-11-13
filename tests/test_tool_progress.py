@@ -1,4 +1,4 @@
-"""A long tool call under way is signalled once, so the gateway does not cut it as silent."""
+"""A long tool call under way is signalled while written, so the gateway does not cut it as silent."""
 
 import json
 import sys
@@ -9,7 +9,11 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[1] / "services" / "model-gateway")
 )
 
-from streaming import TOOL_PROGRESS_CHARS, StreamDecoder  # noqa: E402
+from streaming import (  # noqa: E402
+    TOOL_PROGRESS_CHARS,
+    TOOL_PROGRESS_STEP,
+    StreamDecoder,
+)
 
 
 def frame(arguments: str, *, first: bool = False) -> bytes:
@@ -25,13 +29,19 @@ def frame(arguments: str, *, first: bool = False) -> bytes:
 
 
 class ToolProgressTests(unittest.TestCase):
-    def test_a_long_call_is_signalled_once(self) -> None:
+    def test_a_long_call_is_signalled_while_it_is_written(self) -> None:
         decoder = StreamDecoder()
         events = decoder.feed(frame("x" * 100, first=True))
         self.assertEqual(events, [])
         events = decoder.feed(frame("y" * TOOL_PROGRESS_CHARS))
         self.assertEqual(events, [{"tool_progress": TOOL_PROGRESS_CHARS + 100}])
-        self.assertEqual(decoder.feed(frame("z" * TOOL_PROGRESS_CHARS)), [])
+        # Less than a step later: nothing; a whole step later: a new signal, so
+        # a call still being written is never taken for a silent one.
+        self.assertEqual(decoder.feed(frame("z" * (TOOL_PROGRESS_STEP - 1))), [])
+        self.assertEqual(
+            decoder.feed(frame("z")),
+            [{"tool_progress": TOOL_PROGRESS_CHARS + 100 + TOOL_PROGRESS_STEP}],
+        )
 
     def test_a_short_call_is_not_signalled(self) -> None:
         decoder = StreamDecoder()

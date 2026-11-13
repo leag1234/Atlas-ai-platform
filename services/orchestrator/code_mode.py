@@ -371,6 +371,11 @@ async def execute_turn(
     if isinstance(tools, WorkTools):
         tools.verification.explicit = explicit_tests(request.user_text)
     guard = tools.run_guard if isinstance(tools, WorkTools) else None
+    if isinstance(model, GatewayModel):
+        # A step still receiving output runs on within the turn's own time
+        # instead of being cut at its per-call deadline (staging 2026-11-13:
+        # an answer streaming for 120 s was cut and the turn failed, twice).
+        model.progress_deadline = time.monotonic() + limits.wall_clock
     result = await run(
         Query(question=redact(request.user_text), lang=request.lang),
         model,

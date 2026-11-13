@@ -113,6 +113,10 @@ class GatewayModel:
         self.observations: list[Observation] = []
         self.local_enabled = True
         self.privacy = "standard"
+        # Monotonic end of the caller's own time (a Work turn's wall clock). A
+        # call still receiving output may run past its timeout up to it; the
+        # gateway still cuts a silent call.
+        self.progress_deadline: float | None = None
         self.observing = False
         self.generation_ms = 0.0
         self.sink: Sink | None = None
@@ -538,6 +542,18 @@ class GatewayModel:
             payload["produces_files"] = True
         if self.has_attachments:
             payload["has_attachments"] = True
+        # The transport waits as long as the gateway may keep a call that is
+        # still receiving output (strict privacy has no stall watch: unchanged).
+        transport = timeout
+        if (
+            self.profile
+            and self.privacy != "strict"
+            and self.progress_deadline is not None
+            and (progress := min(86400.0, self.progress_deadline - monotonic()))
+            > timeout
+        ):
+            payload["progress_timeout"] = progress
+            transport = progress
         if self.observing:
             payload.update(local_enabled=self.local_enabled, observe=True)
         context = (
@@ -557,7 +573,7 @@ class GatewayModel:
             from services.orchestrator.stream_client import metadata_only_context
 
             if self.sink is None or metadata_only_context.get():
-                wire = await self.post(self.url + "/agent/complete", payload, timeout)
+                wire = await self.post(self.url + "/agent/complete", payload, transport)
             else:
                 payload["reasoning_effort"] = self.reasoning_effort
                 self.stream_turn += 1
@@ -601,7 +617,7 @@ class GatewayModel:
                         await sink(event)
 
                 wire = await receive(
-                    self.url + "/agent/stream", payload, timeout, filtered
+                    self.url + "/agent/stream", payload, transport, filtered
                 )
                 tail = parser.finish()
                 if tail:
