@@ -134,6 +134,10 @@ async def authenticate(
             or principal.privacy == "strict"
             else "standard"
         )
+        # Every provider call made for this request checks this level (packages.privacy).
+        from packages.privacy import elevate
+
+        elevate(request.state.privacy)
         # Discard every client identity assertion, including the user budget selector.
         request.scope["headers"] = [
             (name, value)

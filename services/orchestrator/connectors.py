@@ -60,6 +60,12 @@ class Client:
     async def call(self, operation: str, data: dict[str, Any]) -> dict[str, Any]:
         from services.orchestrator.chat_pipeline import retrieval_url
 
+        if operation in {"discover", "call"}:
+            from packages.privacy import require_shared
+
+            # These operations reach the connector's third-party server.
+            require_shared("connectors")
+
         async with aiohttp.ClientSession(
             trust_env=False, timeout=aiohttp.ClientTimeout(total=40)
         ) as client:
@@ -326,7 +332,10 @@ class Selection:
 
 
 async def prepare(request: ChatRequest) -> Selection | None:
-    if request._api_key_request:
+    from packages.privacy import is_strict
+
+    # Connectors reach third-party servers: none in a strict privacy turn.
+    if request._api_key_request or is_strict():
         return None
     if not request._connector_scope:
         return None

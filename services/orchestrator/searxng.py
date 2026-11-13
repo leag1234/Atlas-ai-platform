@@ -211,6 +211,10 @@ async def engine_search(
     policy: Policy,
     deadline: float,
 ) -> Message:
+    from packages.privacy import require_shared
+
+    # The query is forwarded to public search engines: not in strict privacy.
+    require_shared("web_search")
     circuit = state.circuits.setdefault(endpoint + ":" + engine, Circuit())
     evidence: Message = {"engine": engine, "outcome": "upstream_timeout", "results": []}
     try:

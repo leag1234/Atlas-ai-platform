@@ -108,7 +108,7 @@ Reading rules:
 | Remote runners (SSH targets, Android, iOS, Windows) | Decided, not built; blocked on PM-SEC-01 | doc18 |
 | Local folders: relay, sync, desktop packaging | Decided, not built; relay prototype scheduled early (Q3) | contract § Retention and locality |
 | Organization API keys with project scopes | In progress at 2026-10-27; scopes redefined by Q2 | doc19 §5; SV |
-| Strict privacy mode | Built for the API (#144); per-project application not built (Q5) | SV |
+| Strict privacy mode | Built for the API (#144) and per project (Chat, Work, attachments, images, connectors); section 8.3 lists what is enforced and what is not built | SV |
 | Code execution in the API (`code_interpreter`, `code_execution`) | In progress as of 2026-11-04, per-call networkless sandboxes | SV |
 | UI on Atlas web shell plus OpenAtelierUI | Decided 2026-10-31; blocked (compatibility round 5, 2026-11-03) | SV |
 
@@ -523,9 +523,36 @@ cross-site mutations fail `403 origin_rejected`.
 ### 8.3 Strict privacy mode (SV 2026-10-31)
 - Owned or controlled inference only (dedicated rented server or a machine on the local
   network), never a shared multi-tenant API; no web search; explicit refusal
-  (`privacy_target_unavailable`) when no owned target is available.
-- Activation per request, per API key and per project. Built for the API (#144); per-project
-  application decided (Q5), not built.
+  (`strict_privacy_unavailable`, HTTP 503 today) when no owned target is available. The
+  hosted web tools of the API keep their own codes (`web_search_unavailable_in_strict_privacy`,
+  `web_fetch_unavailable_in_strict_privacy`, HTTP 400).
+- Activation per request (`X-Atlas-Privacy: strict`), per API key and per project. Built for
+  the API (#144) and per project (Chat, Work, dictation).
+- Enforcement (`packages/privacy.py`): the request's level is a context variable raised at the
+  edge (API key, project turn, Work turn, dictation session) and never lowered. Calls to the
+  model gateway carry it in the `X-Atlas-Privacy` header; the gateway refuses to hand out a
+  shared provider's endpoint or credential while the request is strict
+  (`provider_settings.require`), so every provider call is covered at one point. Only
+  presets flagged `"privacy": "owned"` in `providers.yaml` pass. Outside the gateway, each
+  client that sends content to a third party checks the level before sending: OCR, web
+  search and fetch, image search, public media and map lookups, connectors (MCP). A refusal
+  crossing the gateway carries the `X-Atlas-Privacy-Refusal` header and reaches the user
+  by name, never as an outage. Tools whose only implementation leaves Atlas (web search,
+  web fetch, image search, connectors) are not offered in a strict turn.
+- What each feature does in strict mode: chat, code, routing and session-state updates
+  run on the owned endpoint or are refused; vision on attached images runs on the
+  owned endpoint's vision model when one is configured, else is refused; scanned PDF pages
+  are not sent to OCR (the text layer is still read locally and the answer names the
+  refusal); image generation runs on the Atlas-operated image server and its prompt rewrite
+  on the owned endpoint (refused by name when there is none; the post-generation visual
+  check is skipped without an owned vision model); connectors are not offered and their
+  calls are refused; place search is skipped; the external Work engine (which uses a shared
+  engine key) is not used, Atlas's own Work loop runs instead; dictation stays on the local
+  engine; project file embeddings and reranking run on the gateway's local CPU models.
+  The public API refuses embeddings and transcription in strict mode (no owned server).
+- Not built: ordinary chats outside projects have no level; per-organisation minimum;
+  an owned OCR engine. Not verified: conversation titles requested by the chat interface as
+  separate requests.
 - PM-PRIV-01 (decision Q5, risk 4): strict mode is a deployment boundary, not a routing rule.
   A strict project uses owned inference for Chat, Work, OCR, vision, session-state updates,
   embeddings and reranking; has no web search; allows a connector or a runner only when its
@@ -635,7 +662,9 @@ Status: open.
 
 ### 11.2 High
 
-**PM-PRIV-01 Strict privacy boundary (risk 4).** Section 8.3. Status: decided, not built.
+**PM-PRIV-01 Strict privacy boundary (risk 4).** Section 8.3. Status: decided; inference and
+egress enforcement built (section 8.3); the deployment boundary documentation (telemetry,
+logs, previews, backups, operator access) is not built.
 
 **PM-RET-01 Retention along provenance (risk 5).** Section 3.1. Status: open.
 

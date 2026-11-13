@@ -1,6 +1,7 @@
 """Local HTTP boundary for the CPU retrieval models (contracts/m2-gateway)."""
 
 import asyncio
+import contextvars
 import json
 import logging
 import select
@@ -21,6 +22,7 @@ from packages.image_upload import UploadError
 from packages.configuration import MissingConfiguration
 from packages.ports import atlas_ports
 from packages.gpu_ownership import GPUDisabled
+from packages import privacy
 
 import imagegen
 import image_lifecycle
@@ -98,6 +100,7 @@ def serve(
                         if isinstance(exc, TimeoutError)
                         else str(exc)
                         if str(exc) in known
+                        or isinstance(exc, privacy.StrictPrivacyUnavailable)
                         else "invalid_or_unavailable"
                     )
                     logging.getLogger(__name__).warning(
@@ -109,7 +112,14 @@ def serve(
                         )
                     )
                     async with asyncio.timeout(0.1):
-                        if isinstance(exc, ProviderFailure):
+                        if isinstance(exc, privacy.StrictPrivacyUnavailable):
+                            await send(
+                                {
+                                    "error": privacy.CODE,
+                                    "capability": exc.capability,
+                                }
+                            )
+                        elif isinstance(exc, ProviderFailure):
                             await send(
                                 {
                                     "error": "provider_failure",
@@ -170,8 +180,13 @@ def serve(
             self.wfile.write(body)
 
         def do_POST(self) -> None:
+            # A fresh context per request: a privacy level never outlives it.
+            contextvars.Context().run(self.handle_post)
+
+        def handle_post(self) -> None:
             started = monotonic()
             request: object = {}
+            refused: str | None = None
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 maximum = (
@@ -186,6 +201,9 @@ def serve(
                 request = json.loads(self.rfile.read(length))
                 if not isinstance(request, dict):
                     raise ValueError("invalid_input")
+                # The caller's privacy level holds for every provider call of this
+                # request (this thread serves only this request).
+                privacy.elevate(privacy.requested(self.headers, request))
                 response: dict[str, object]
                 if self.path == "/embeddings":
                     if set(request) != {"texts", "kind"} or request["kind"] not in {
@@ -261,6 +279,16 @@ def serve(
                 else:
                     raise ValueError("invalid_input")
                 status = 200
+            except privacy.StrictPrivacyUnavailable as exc:
+                refused = exc.capability
+                status, response = (
+                    privacy.STATUS,
+                    {
+                        "code": privacy.CODE,
+                        "capability": exc.capability,
+                        "message": exc.message,
+                    },
+                )
             except MissingConfiguration as exc:
                 status, response = (
                     503,
@@ -379,6 +407,8 @@ def serve(
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            if refused is not None:
+                self.send_header(privacy.REFUSAL_HEADER, refused)
             self.end_headers()
             self.wfile.write(body)
 

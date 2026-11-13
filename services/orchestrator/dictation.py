@@ -579,6 +579,10 @@ async def stream_socket(socket: WebSocket) -> None:
         if not isinstance(start, dict) or start.get("type") != "start":
             raise Refusal("invalid_request", "The first message is a start message.")
         privacy = await session_privacy(start, identity)
+        from packages.privacy import elevate
+
+        # The session's level also holds at every provider egress (packages.privacy).
+        elevate(privacy)
         if user in _active:
             raise Refusal(
                 "session_open", "A dictation session is already open for this user."

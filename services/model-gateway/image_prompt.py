@@ -12,6 +12,7 @@ from image_scene import Scene
 
 from agent_provider import AgentProvider, AgentRequest
 from packages.configuration import MissingConfiguration
+from packages import privacy
 import provider_settings
 from serverless import ServerlessPolicy
 from image_constraints import extract_constraints, missing_constraints
@@ -60,11 +61,18 @@ def rewrite_plan() -> tuple[ServerlessPolicy, str, str, str, str, bool]:
         policy = ServerlessPolicy()
         role = rewrite_role()
         model = policy.models[role]
-        endpoint = provider_settings.endpoint()
-        api_key = provider_settings.api_key()
+        if privacy.is_strict():
+            # Strict privacy: AgentProvider sends a strict rewrite to the owned
+            # endpoint (or refuses it by name); shared credentials are never read.
+            endpoint = api_key = ""
+        else:
+            endpoint = provider_settings.endpoint()
+            api_key = provider_settings.api_key()
         capabilities = policy.config[role]["capabilities"][model]
     except KeyError as exc:
         raise MissingConfiguration((str(exc).strip("'"),)) from exc
+    except privacy.StrictPrivacyUnavailable:
+        raise
     except ValueError as exc:
         raise MissingConfiguration(()) from exc
     return (

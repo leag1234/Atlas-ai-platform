@@ -3,6 +3,7 @@
 import provider_settings
 
 from packages.limits import LimitError, ProviderLimitError
+from packages import privacy
 
 from packages.profiles import accepted_profile
 
@@ -22,6 +23,20 @@ from pydantic import Field, model_validator
 from agent_provider import Completion
 from packages.images import VisionInput
 from packages.context_limit import ContextExceeded
+
+
+def owned_vision_model() -> str | None:
+    """Strict privacy: the owned endpoint's vision model, else a named refusal.
+
+    Outside strict privacy: None (the configured shared vision provider is used).
+    """
+    if not privacy.is_strict():
+        return None
+    model = provider_settings.preset_value("owned-vllm", "vision_model")
+    if not model:
+        raise privacy.StrictPrivacyUnavailable("vision")
+    provider_settings.owned_endpoint()
+    return str(model)
 
 
 class VisionRequest(VisionInput):
@@ -103,6 +118,7 @@ class VisionProvider:
     async def complete(self, payload: object) -> dict[str, object]:
         started = monotonic()
         request = VisionRequest.model_validate(payload)
+        owned = owned_vision_model()
         incoming, reserved = self.reserve(request)
         prompt = Path("prompts/chat.txt").read_text()
         prompt += Path("prompts/vision.txt").read_text()
@@ -159,7 +175,7 @@ class VisionProvider:
         remaining = request.timeout - (monotonic() - started)
         if remaining <= 0:
             raise TimeoutError("timeout")
-        if request.profile is not None:
+        if request.profile is not None and owned is None:
             from agent_provider import AgentProvider, AgentRequest
             from quality import complete
 
@@ -203,15 +219,30 @@ class VisionProvider:
         }
 
     async def post(self, body: dict[str, object], timeout: float) -> object:
-        endpoint = provider_settings.endpoint()
+        owned = owned_vision_model()
+        if owned is not None:
+            endpoint = provider_settings.owned_endpoint()
+            body = {**body, "model": owned}
+            body.pop("reasoning_effort", None)
+        else:
+            endpoint = provider_settings.endpoint()
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
             ) as client:
                 async with client.post(
                     endpoint + "/chat/completions",
-                    json=provider_settings.request_options(body),
-                    headers={"Authorization": "Bearer " + provider_settings.api_key()},
+                    json=body
+                    if owned is not None
+                    else provider_settings.request_options(body),
+                    headers={
+                        "Authorization": "Bearer "
+                        + (
+                            provider_settings.owned_api_key()
+                            if owned is not None
+                            else provider_settings.api_key()
+                        )
+                    },
                     allow_redirects=False,
                 ) as response:
                     if response.status != 200:

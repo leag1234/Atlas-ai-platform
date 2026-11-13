@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 import aiohttp
 from fastapi import Request
 
+from packages.privacy import CODE, STATUS, StrictPrivacyUnavailable, describe
 from packages import context_usage
 from packages.file_intent import produces_file
 from packages.language import conversation_language, language_instruction
@@ -512,6 +513,10 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         )
         raise
     turn, context = state["turn"], state["context"]
+    # The project's level holds for every call of this turn (packages.privacy).
+    from packages.privacy import elevate, is_strict
+
+    elevate(context.get("privacy"))
     if request._connector_scope:
         request._connector_scope["conversation"] = turn["conversation_id"]
     item.context_manifest = context["context_manifest"]
@@ -567,7 +572,11 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         )
         if memory_reply is not None and request.project_action != "work":
             item.reponse, item.state = memory_reply, "done"
-        elif request.project_action != "work" and location_dependent(request.user_text):
+        elif (
+            request.project_action != "work"
+            and not is_strict()
+            and location_dependent(request.user_text)
+        ):
             from services.orchestrator.nearby_chat import process_nearby
 
             tool_calls = await process_nearby(
@@ -748,6 +757,15 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             failure_location(exc),
         )
         raise
+    except StrictPrivacyUnavailable as exc:
+        # Strict privacy without an owned target: a named refusal, not an outage.
+        refusal = ProjectError(STATUS, CODE, describe(exc.capability))
+        error = refusal.body
+        logging.getLogger(__name__).warning(
+            "project_turn_failed kind=StrictPrivacyUnavailable capability=%s",
+            exc.capability,
+        )
+        raise refusal from exc
     except Exception as exc:
         from packages.configuration import temporarily_unavailable
 

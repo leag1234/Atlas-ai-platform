@@ -107,13 +107,6 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
 
         await process_scoped_project(request, item)
         return
-    from services.orchestrator.location import location_dependent
-
-    if location_dependent(request.user_text):
-        from services.orchestrator.nearby_chat import process_nearby
-
-        await process_nearby(request, item)
-        return
     started = time.monotonic()
     project = request.project_id
     base = retrieval_url() + f"/projects/{project}"
@@ -128,6 +121,19 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
             5,
         )
     )
+    # The project's level holds for every call of this turn, attachments and images
+    # included (vision, OCR, search and connectors check it at egress).
+    from packages.privacy import elevate
+
+    elevate(context.privacy)
+    from services.orchestrator.location import location_dependent
+
+    # Place search sends the request to a public map service: not in strict privacy.
+    if context.privacy != "strict" and location_dependent(request.user_text):
+        from services.orchestrator.nearby_chat import process_nearby
+
+        await process_nearby(request, item)
+        return
     # Client history has no trusted scope. Rebuild it from the validated server
     # conversation; only the current upload belongs to this request's project.
     scoped_messages = [
@@ -208,6 +214,8 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
             for tool in model.tools
             if tool_name(tool) not in {"web_search", "web_fetch"}
         ]
+    # Strict: generation runs on the Atlas-operated image server and the prompt
+    # rewrite on the owned text endpoint (refused by name when there is none).
     if images_enabled():
         model.tools.append(declaration())
     tools = ProjectTools(item, str(project))

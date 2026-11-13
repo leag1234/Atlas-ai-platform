@@ -5,6 +5,7 @@ from packages.profiles import accepted_profile
 from packages import context_usage
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
+from packages import privacy
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
 import json
@@ -24,6 +25,7 @@ from services.orchestrator.loop import (
     GatewayError,
     Message,
     Reservation,
+    StrictPrivacyRefusal,
     Turn,
 )
 
@@ -205,8 +207,11 @@ class GatewayModel:
                 timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
             ) as session:
                 async with session.post(
-                    url, json=payload, allow_redirects=False
+                    url, json=payload, allow_redirects=False, headers=privacy.headers()
                 ) as response:
+                    if capability := response.headers.get(privacy.REFUSAL_HEADER):
+                        # Strict privacy: no owned target; named, never an outage.
+                        raise StrictPrivacyRefusal(capability[:64])
                     if response.status != 200 and url.endswith(
                         ("/images/generate", "/images/start", "/images/ready")
                     ):
@@ -446,6 +451,11 @@ class GatewayModel:
         ) / 1_000_000
         return Reservation(incoming + outgoing, cost)
 
+    @property
+    def strict(self) -> bool:
+        """Strict privacy for this client or for the request it runs in."""
+        return self.privacy == "strict" or privacy.is_strict()
+
     def available_tools(self, messages: list[Message]) -> list[dict[str, object]]:
         # A search limit closed the research of this turn: the call that
         # follows writes the answer, so it streams as the answer too.
@@ -483,7 +493,7 @@ class GatewayModel:
         searches = counts.get("web_search", 0) + counts.get("web_images", 0)
         ceilings = {"web_search": 3, "web_images": 3, "web_fetch": 8}
         available = []
-        for tool in self.tools:
+        for tool in privacy.allowed_tools(self.tools):
             function = tool.get("function")
             if isinstance(function, dict):
                 name = str(function.get("name"))
@@ -541,7 +551,7 @@ class GatewayModel:
                 payload["reasoning_ceiling"] = self.reasoning_ceiling
             if self.sampling_temperature is not None:
                 payload["sampling_temperature"] = self.sampling_temperature
-        if self.privacy == "strict":
+        if self.strict:
             payload["privacy"] = "strict"
         if self.produces_files:
             payload["produces_files"] = True
@@ -552,7 +562,7 @@ class GatewayModel:
         transport = timeout
         if (
             self.profile
-            and self.privacy != "strict"
+            and not self.strict
             and self.progress_deadline is not None
             and (progress := min(86400.0, self.progress_deadline - monotonic()))
             > timeout

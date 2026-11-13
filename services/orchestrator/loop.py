@@ -17,6 +17,7 @@ from services.orchestrator.tool_failures import (
 
 from packages.profiles import accepted_profile
 from packages.limits import LimitError
+from packages.privacy import CODE, STATUS, StrictPrivacyUnavailable, describe
 
 import asyncio
 import json
@@ -193,6 +194,18 @@ class GatewayError(PublicFailure):
         self.retries = retries
         self.measurements = measurements or {}
         super().__init__(code)
+
+
+class StrictPrivacyRefusal(GatewayError, StrictPrivacyUnavailable):
+    """The gateway refused a strict request: no owned target for the capability.
+
+    A GatewayError, so every turn path reports it by name instead of as an outage;
+    still a StrictPrivacyUnavailable (a ValueError) for the existing strict checks.
+    """
+
+    def __init__(self, capability: str = "inference") -> None:
+        self.capability = capability
+        GatewayError.__init__(self, CODE, STATUS, describe(capability))
 
 
 async def run(

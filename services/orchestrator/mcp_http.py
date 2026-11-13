@@ -206,6 +206,9 @@ class HTTP:
     async def exchange(
         self, method: str, params: dict[str, Any], timeout: float = 15
     ) -> dict[str, Any]:
+        from packages.privacy import require_shared
+
+        require_shared("connectors")
         async with (
             asyncio.timeout(min(timeout, 15)),
             aiohttp.ClientSession(
