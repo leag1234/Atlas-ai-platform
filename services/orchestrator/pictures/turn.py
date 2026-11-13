@@ -48,6 +48,7 @@ from services.orchestrator.pictures.worker import PictureJobError, run_job
 
 LOGGER = logging.getLogger(__name__)
 CEILING = Decimal("0.10")
+CEILING_LIMIT = Decimal("0.30")
 CHECKLIST_BUDGET = Decimal("0.01")
 LIVING_BUDGET = Decimal("0.005")
 # Below this a draft cannot be written (spike: 0.0094 to 0.0105 EUR each).
@@ -70,12 +71,29 @@ REFUSALS = frozenset(
         "provider_quota",
     }
 )
+# A draft that exhausts its own share of the turn's ceiling (a long draft and
+# its recovery) is dropped like a failed draft: the ceiling is the turn's own
+# split, not the user's budget, which the early refusal and the caller check.
+DRAFT_SHARE = frozenset({"cost_budget", "cost"})
 PHOTO = re.compile(
     r"(?i)\b(photo\w*|fotogra\w*|fotos?|r[ée]alistes?|realistic\w*|realisti\w*"
     r"|realistas?|realistisch\w*)\b"
 )
 
 Complete = Callable[[dict[str, Any], float], Awaitable[dict[str, Any]]]
+
+
+def turn_ceiling() -> Decimal:
+    """Ceiling of every call of one picture turn (ATLAS_PICTURE_TURN_EUR,
+    default 0.10 EUR as the chat turn, at most 0.30)."""
+    raw = os.environ.get("ATLAS_PICTURE_TURN_EUR", "").strip()
+    try:
+        value = Decimal(raw) if raw else CEILING
+    except ArithmeticError:
+        return CEILING
+    if not value.is_finite() or value <= 0:
+        return CEILING
+    return min(value, CEILING_LIMIT)
 
 
 def soft_seconds() -> float:
@@ -201,9 +219,18 @@ async def _checklist(
             "timeout": CHECKLIST_SECONDS,
             "budget_eur": _budget(min(CHECKLIST_BUDGET, spend.remaining())),
             "sampling_temperature": temperature,
+            "single_attempt": True,
             "local_enabled": False,
         }
-        reply = await complete(payload, CHECKLIST_SECONDS + 5)
+        try:
+            reply = await complete(payload, CHECKLIST_SECONDS + 5)
+        except Exception as error:  # noqa: BLE001 - the second try, then no checklist
+            if _refusal(error) and _code(error) not in DRAFT_SHARE:
+                raise
+            if _code(error) in DRAFT_SHARE:
+                spend.reserved_unknown += CHECKLIST_BUDGET
+            LOGGER.warning("picture_checklist_failed code=%s", _code(error))
+            continue
         spend.settle(reply)
         ck, _ = checklist.parse_checklist(str(reply.get("text") or ""), request_text)
         if ck is not None:
@@ -229,13 +256,18 @@ async def _living(
         "max_tokens": checklist.LIVING_MAX_TOKENS,
         "timeout": LIVING_SECONDS,
         "budget_eur": _budget(min(LIVING_BUDGET, spend.remaining())),
+        "single_attempt": True,
         "local_enabled": False,
     }
     try:
         reply = await complete(payload, LIVING_SECONDS + 5)
     except Exception as error:  # noqa: BLE001 - every character then counts as living
-        if _refusal(error):
+        if _refusal(error) and _code(error) not in DRAFT_SHARE:
             raise
+        # Its own small share spent (a recovery it could not pay): the map is
+        # optional, the turn goes on; what it may have cost is kept.
+        if _code(error) in DRAFT_SHARE:
+            spend.reserved_unknown += LIVING_BUDGET
         LOGGER.warning("picture_living_failed code=%s", _code(error))
         return checklist.parse_living(None, ck)
     spend.settle(reply)
@@ -322,6 +354,8 @@ async def draw(
             "timeout": min(seconds, 290.0),
             "budget_eur": _budget(per_draft),
             "sampling_temperature": painter.TEMPERATURE,
+            # No recovery on another role: a draft that fails is dropped.
+            "single_attempt": True,
             "local_enabled": False,
         }
         try:
@@ -381,7 +415,7 @@ async def draw(
                 failure = task.exception()
                 if failure is None:
                     continue
-                if _refusal(failure):
+                if _refusal(failure) and _code(failure) not in DRAFT_SHARE:
                     refusal = refusal or failure
                     for other in pending:
                         other.cancel()
@@ -418,6 +452,22 @@ async def _store_image(image: dict[str, Any]) -> str:
     return await asyncio.to_thread(image_store.store, url)
 
 
+def _base(urls: list[str]) -> str:
+    return (
+        os.environ.get("ATLAS_PUBLIC_URL", "").strip()
+        or urls[0].rsplit("/images/", 1)[0]
+    )
+
+
+def picture_links(picture_set: store.PictureSet, urls: list[str]) -> list[str]:
+    """The choice links of a set (one per candidate)."""
+    base = _base(urls)
+    return [
+        choice_url(base, picture_set.set_id, n)
+        for n in range(1, len(picture_set.candidates) + 1)
+    ]
+
+
 def _answer(
     language: str,
     request_text: str,
@@ -427,10 +477,7 @@ def _answer(
     footer: str,
 ) -> str:
     count = len(picture_set.candidates)
-    base = (
-        os.environ.get("ATLAS_PUBLIC_URL", "").strip()
-        or urls[0].rsplit("/images/", 1)[0]
-    )
+    base = _base(urls)
     parts: list[str] = []
     if count == 1:
         parts.append(text(language, "single"))
@@ -449,7 +496,7 @@ def _answer(
     lines.append(f"![{alt}]({sheet_url})")
     if count > 1:
         links = " · ".join(
-            f"[{n}]({choice_url(base, picture_set.set_id, n)})"
+            f"[{text(language, 'label', n=n)}]({choice_url(base, picture_set.set_id, n)})"
             for n in range(1, count + 1)
         )
         lines.append(f"{text(language, 'links')} {links}")
@@ -479,7 +526,8 @@ async def process_picture_turn(
     language = request.lang if request.lang in ("en", "fr", "de", "es", "it") else "en"
     request_text = request.user_text
     item.task_type = "drawing"
-    ceiling = min(CEILING, cost_limit) if cost_limit is not None else CEILING
+    own = turn_ceiling()
+    ceiling = min(own, cost_limit) if cost_limit is not None else own
     limit = request.timeout_seconds if wall_clock_limit is None else wall_clock_limit
     deadline = started + max(60.0, limit - DEADLINE_MARGIN)
     errors: list[str] = []
@@ -585,6 +633,12 @@ async def process_picture_turn(
                     artifact_id, version, title, filename, language, temporary=False
                 )
     item.reponse = _answer(language, request_text, picture_set, urls, sheet_url, footer)
+    # Server-made references: the answer filter keeps only these image and
+    # link targets (source_truth.drawing_references).
+    item.images = [{"reference": sheet_url, "kind": "picture"}] + [
+        {"reference": reference, "kind": "picture"}
+        for reference in picture_links(picture_set, urls)
+    ]
     item.state = "done"
     item.latence_ms["picture_ready"] = (time.monotonic() - started) * 1000
     LOGGER.info(

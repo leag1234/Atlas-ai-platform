@@ -160,3 +160,56 @@ class GatewayModelPayloadTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SingleAttemptTests(unittest.IsolatedAsyncioTestCase):
+    def test_default_is_not_serialised_and_legacy_refuses_it(self) -> None:
+        with patch.dict(os.environ, environment()):
+            self.assertNotIn("single_attempt", _request().model_dump())
+            with self.assertRaisesRegex(ValidationError, "invalid_legacy_profile"):
+                AgentRequest(
+                    messages=[{"role": "user", "content": "hello"}],
+                    tools=[],
+                    timeout=5.0,
+                    single_attempt=True,
+                )
+
+    async def _run(self, single: bool, first: Response) -> tuple[Session, object]:
+        from quality import stream_quality
+
+        session = Session([first, Response()])
+        outcome: object = None
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.aiohttp.ClientSession", return_value=session),
+            patch("provider_retry.retry_stream", side_effect=_identity_retry),
+        ):
+            request = _request(single_attempt=True) if single else _request()
+            try:
+                async for event in stream_quality(AgentProvider(), request):
+                    if "result" in event:
+                        outcome = event["result"]
+            except Exception as error:  # noqa: BLE001
+                outcome = error
+        return session, outcome
+
+    async def test_cut_answer_is_not_recovered_on_another_model(self) -> None:
+        from test_streaming_decoder import end, frame
+
+        cut = Response(chunks=[frame({"content": "<svg><g>"}), end("length", 40)])
+        session, outcome = await self._run(True, cut)
+        self.assertEqual(len(session.calls), 1)
+        self.assertIsInstance(outcome, Exception)
+
+    async def test_provider_failure_is_not_retried(self) -> None:
+        session, outcome = await self._run(True, Response(status=500))
+        self.assertEqual(len(session.calls), 1)
+        self.assertIsInstance(outcome, Exception)
+
+    async def test_default_request_body_is_unchanged(self) -> None:
+        plain = await _body(_request(), environment())
+        single = await _body(_request(single_attempt=True), environment())
+        self.assertNotIn("single_attempt", plain)
+        self.assertEqual(
+            json.dumps(plain, sort_keys=True), json.dumps(single, sort_keys=True)
+        )

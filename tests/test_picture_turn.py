@@ -245,6 +245,36 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         images = list((self.folder / "images").glob("*.png"))
         self.assertGreaterEqual(len(images), 5)  # four candidates and the sheet
 
+    async def test_answer_survives_the_answer_filters(self) -> None:
+        from services.orchestrator.image_truth import ImageVerifier
+        from services.orchestrator.source_truth import (
+            drawing_references,
+            inline_source_markers,
+            visible_sources,
+            without_unretrieved,
+        )
+
+        item = await self.run_turn(FakeGateway("banc"))
+        allowed = drawing_references(item) | {
+            f"/api/atlas/artifacts/{a['id']}/versions/{a['version']}/{action}"
+            for a in item.artifacts
+            for action in ("open", "download")
+        }
+        text = ImageVerifier().feed(
+            item.reponse,
+            {str(image["reference"]) for image in item.images},
+            final=True,
+        )
+        text = without_unretrieved(text, allowed)
+        text = inline_source_markers(text, visible_sources(item))
+        self.assertIn("![Propositions 1 à 4](https://atlas.example.test/images/", text)
+        for n in range(1, 5):
+            self.assertIn(
+                f"[Image {n}](https://atlas.example.test/images/picture/", text
+            )
+        self.assertIn("/versions/1/open", text)
+        self.assertNotIn("unverified", text)
+
     async def test_partial_result_when_drafts_fail(self) -> None:
         failures: dict[int, Exception] = {
             0: GatewayError("provider_error", 502),
@@ -263,13 +293,39 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.state, "done")
         self.assertNotIn("/images/", item.reponse)
 
-    async def test_budget_refusal_is_never_a_provider_failure(self) -> None:
+    async def test_quota_refusal_is_never_a_provider_failure(self) -> None:
         failures: dict[int, Exception] = {
-            1: GatewayError("cost_budget", 429, "Cost reservation: 30000 microEUR")
+            1: GatewayError("provider_quota", 402, "Provider credit exhausted")
         }
         with self.assertRaises(GatewayError) as raised:
             await self.run_turn(FakeGateway("banc", failures))
-        self.assertEqual(raised.exception.code, "cost_budget")
+        self.assertEqual(raised.exception.code, "provider_quota")
+
+    async def test_living_map_over_its_share_does_not_end_the_turn(self) -> None:
+        gateway = FakeGateway("banc")
+        original = gateway.__call__
+
+        async def living_refused(
+            payload: dict[str, Any], seconds: float
+        ) -> dict[str, Any]:
+            if "LIVING BEING" in str(payload["messages"][0]["content"]):
+                raise GatewayError(
+                    "cost_budget", 429, "Cost reservation: 6583 microEUR"
+                )
+            return await original(payload, seconds)
+
+        item = Interaction()
+        request = Request(gateway.data["request"])
+        await turn.process_picture_turn(request, item, complete=living_refused)
+        self.assertEqual(item.reponse.count("/images/picture/"), 4)
+
+    async def test_a_draft_over_its_share_is_dropped(self) -> None:
+        failures: dict[int, Exception] = {
+            1: GatewayError("cost_budget", 429, "Cost reservation: 19891 microEUR")
+        }
+        item = await self.run_turn(FakeGateway("banc", failures))
+        self.assertEqual(item.reponse.count("/images/picture/"), 3)
+        self.assertIn("picture_draft_cost_budget", item.erreurs)
 
     async def test_too_little_budget_left_is_a_measured_refusal(self) -> None:
         item = Interaction()
@@ -335,6 +391,31 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(mark.group(0), str(current.artifact.get("content", "")))
         self.assertEqual(choose(set_id, 7).status_code, 404)
         self.assertEqual(choose("z" * 32, 1).status_code, 404)
+
+    async def test_every_call_is_single_attempt_within_the_ceiling(self) -> None:
+        gateway = FakeGateway("banc")
+        with patch.dict(os.environ, {"ATLAS_PICTURE_TURN_EUR": "0.12"}):
+            self.assertEqual(turn.turn_ceiling(), Decimal("0.12"))
+            await self.run_turn(gateway)
+        self.assertTrue(all(p.get("single_attempt") for p in gateway.payloads))
+        # The checklist is settled at its measured cost before the others
+        # reserve: their allowances and that cost stay within the ceiling.
+        later = sum(Decimal(p["budget_eur"]) for p in gateway.payloads[1:])
+        self.assertLessEqual(later + Decimal("0.0008"), Decimal("0.12"))
+        drafts = [
+            Decimal(p["budget_eur"])
+            for p in gateway.payloads
+            if p.get("produces_files")
+        ]
+        self.assertGreater(min(drafts), Decimal("0.027"))
+        for raw, expected in (
+            ("", "0.10"),
+            ("abc", "0.10"),
+            ("-1", "0.10"),
+            ("9", "0.30"),
+        ):
+            with patch.dict(os.environ, {"ATLAS_PICTURE_TURN_EUR": raw}):
+                self.assertEqual(turn.turn_ceiling(), Decimal(expected))
 
     async def test_unavailable_without_the_painter_profile(self) -> None:
         with patch.dict(os.environ, {"ATLAS_HIDDEN_PROFILES": ""}):

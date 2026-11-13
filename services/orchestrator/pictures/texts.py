@@ -9,11 +9,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "partial_one": "Only one of the four drafts could be finished.",
         "partial": "Only {n} of the four drafts could be finished.",
         "hint": (
-            "Click a number to choose a picture and see it full size, or answer "
-            'for example "the second". Without a choice, the first one is used '
-            "for any change."
+            'Click "Picture 2" (for example) to choose it and see it full size, '
+            'or answer "the second". Without a choice, the first one is used for '
+            "any change."
         ),
-        "links": "Pictures:",
+        "links": "Choose:",
+        "label": "Picture {n}",
         "sheet": "Proposals 1 to {n}",
         "photo": (
             "These are illustrations drawn by code, not photographs: no realistic "
@@ -35,11 +36,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "partial_one": "Une seule des quatre esquisses a pu être terminée.",
         "partial": "Seules {n} des quatre esquisses ont pu être terminées.",
         "hint": (
-            "Cliquez sur un numéro pour choisir une image et la voir en grand, ou "
-            "répondez par exemple « la deuxième ». Sans choix, la première sert "
-            "pour la suite."
+            "Cliquez par exemple sur « Image 2 » pour la choisir et la voir en "
+            "grand, ou répondez « la deuxième ». Sans choix, la première sert pour "
+            "la suite."
         ),
-        "links": "Images :",
+        "links": "Choisir :",
+        "label": "Image {n}",
         "sheet": "Propositions 1 à {n}",
         "photo": (
             "Ce sont des illustrations dessinées par du code, pas des photographies : "
@@ -66,11 +68,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "partial_one": "Nur einer der vier Entwürfe konnte fertiggestellt werden.",
         "partial": "Nur {n} der vier Entwürfe konnten fertiggestellt werden.",
         "hint": (
-            "Klicken Sie auf eine Nummer, um ein Bild zu wählen und groß zu sehen, "
-            "oder antworten Sie zum Beispiel „das zweite“. Ohne Wahl gilt das erste "
-            "für weitere Änderungen."
+            "Klicken Sie zum Beispiel auf „Bild 2“, um es zu wählen und groß zu "
+            "sehen, oder antworten Sie „das zweite“. Ohne Wahl gilt das erste für "
+            "weitere Änderungen."
         ),
-        "links": "Bilder:",
+        "links": "Wählen:",
+        "label": "Bild {n}",
         "sheet": "Vorschläge 1 bis {n}",
         "photo": (
             "Das sind mit Code gezeichnete Illustrationen, keine Fotos: realistische "
@@ -92,11 +95,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "partial_one": "Solo se pudo terminar uno de los cuatro bocetos.",
         "partial": "Solo se pudieron terminar {n} de los cuatro bocetos.",
         "hint": (
-            "Haz clic en un número para elegir una imagen y verla en grande, o "
-            "responde por ejemplo «la segunda». Sin elección, la primera se usa "
-            "para los cambios."
+            "Haz clic por ejemplo en «Imagen 2» para elegirla y verla en grande, o "
+            "responde «la segunda». Sin elección, la primera se usa para los "
+            "cambios."
         ),
-        "links": "Imágenes:",
+        "links": "Elegir:",
+        "label": "Imagen {n}",
         "sheet": "Propuestas 1 a {n}",
         "photo": (
             "Son ilustraciones dibujadas con código, no fotografías: aquí no se "
@@ -118,11 +122,12 @@ TEXTS: dict[str, dict[str, str]] = {
         "partial_one": "È stato possibile completare solo uno dei quattro bozzetti.",
         "partial": "È stato possibile completare solo {n} dei quattro bozzetti.",
         "hint": (
-            "Fai clic su un numero per scegliere un'immagine e vederla in grande, "
-            "oppure rispondi per esempio «la seconda». Senza scelta, la prima vale "
-            "per le modifiche."
+            "Fai clic per esempio su «Immagine 2» per sceglierla e vederla in "
+            "grande, oppure rispondi «la seconda». Senza scelta, la prima vale per "
+            "le modifiche."
         ),
-        "links": "Immagini:",
+        "links": "Scegli:",
+        "label": "Immagine {n}",
         "sheet": "Proposte da 1 a {n}",
         "photo": (
             "Sono illustrazioni disegnate dal codice, non fotografie: qui non si "
