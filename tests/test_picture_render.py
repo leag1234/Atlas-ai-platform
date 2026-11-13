@@ -160,6 +160,18 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(int(g.visible("hill").sum()), int(hill.sum()))
 
 
+class InstanceTests(unittest.TestCase):
+    def test_numbered_instances_win_over_the_plain_group(self) -> None:
+        from services.orchestrator.pictures.geometry import thing_instances
+
+        named = ["fox", "fox-2", "fox-10", "fox-1", "foxes-3", "hen"]
+        self.assertEqual(
+            thing_instances(named, "fox"), ["fox-1", "fox-2", "foxes-3", "fox-10"]
+        )
+        self.assertEqual(thing_instances(["hens"], "hen"), ["hens"])
+        self.assertEqual(thing_instances(["dog"], "cat"), [])
+
+
 class SvgDocTests(unittest.TestCase):
     def test_transforms_heads_and_boxes(self) -> None:
         from services.orchestrator.pictures.svg_doc import (
