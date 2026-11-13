@@ -272,6 +272,29 @@ class SaveNewFilesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved, ["counter/README.md", "counter/count.py"])
         self.assertFalse(any(".git" in str(s) for s in report["skipped"]))
 
+    async def test_a_cloned_repository_is_not_saved(self) -> None:
+        # A clone is material, not the user's work: it has a remote.
+        patch = (
+            "diff --git a/folder-a/lib b/folder-a/lib\n"
+            "new file mode 160000\n"
+            "--- /dev/null\n+++ b/folder-a/lib\n@@ -0,0 +1 @@\n"
+            "+Subproject commit 1234567890abcdef1234567890abcdef12345678\n"
+        )
+        files = {
+            "folder-a/lib/README.md": b"# Library\n",
+            "folder-a/lib/core.py": b"print(1)\n",
+            "folder-a/lib/.git/config": b'[core]\n[remote "origin"]\n\turl = https://example.org/lib.git\n',
+        }
+        workspace = FakeWorkspace(patch, files)
+        with mock.patch.object(terminal_client, "ProjectPublisher", FakePublisher):
+            report = await save_new_files(
+                self.execution,
+                workspace,
+                self.tools,
+                self.execution.session["base_file_versions"],
+            )
+        self.assertEqual(report["saved"], [])
+
     def test_nested_repository_entries_are_marked(self) -> None:
         patch = (
             "diff --git a/repo b/repo\nnew file mode 160000\n"
