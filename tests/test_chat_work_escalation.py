@@ -846,15 +846,19 @@ class DroppedConnectionTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self, *args: object) -> None:
                 pass
 
-            async def public(self, method: str, path: str) -> tuple[int, dict[str, object]]:
+            async def public(
+                self, method: str, path: str
+            ) -> tuple[int, dict[str, object]]:
                 return 200, {
                     "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
                     "revision": 1,
                     "effective_limits": {"expanded_bytes": 1},
                 }
 
-            async def call(self, operation: str, data: dict[str, object]) -> dict[str, object]:
-                acquired.append(data["request_id"])
+            async def call(
+                self, operation: str, data: dict[str, object]
+            ) -> dict[str, object]:
+                acquired.append(str(data["request_id"]))
                 raise RuntimeError("stop after acquire")
 
         req = request("Fais-moi un script")
