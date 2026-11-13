@@ -388,7 +388,7 @@ async def run(
                             "content": time_closing_instruction(query.lang),
                         }
                     )
-                    logging.getLogger(__name__).info(
+                    logging.getLogger(__name__).warning(
                         json.dumps(
                             {
                                 "event": "research_time_closing",
@@ -424,7 +424,7 @@ async def run(
                     raise ValueError("invalid_model_response")
                 turn = received
                 if not limits.code_mode:
-                    logging.getLogger(__name__).info(
+                    logging.getLogger(__name__).warning(
                         json.dumps(
                             {
                                 "event": "chat_model_round",
@@ -818,7 +818,7 @@ async def run(
                     # (staging 2026-11-13, 21 calls to the wall clock) could not
                     # be read. Tool name, outcome code and duration only.
                     code = output.get("error")
-                    logging.getLogger(__name__).info(
+                    logging.getLogger(__name__).warning(
                         json.dumps(
                             {
                                 "event": "work_tool",

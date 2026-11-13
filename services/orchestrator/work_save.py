@@ -71,12 +71,18 @@ def parse_patch(patch: str) -> tuple[list[str], list[str], set[str]]:
 def nested_repository_files(paths: list[str], contents: dict[str, bytes]) -> list[str]:
     """Replace each nested repository entry (ending "/") by its archived files.
 
-    The repository's own metadata (.git) stays out, like any skipped part.
+    Only a repository created in the workspace is the user's work: a clone (it
+    has a remote) is material, and saving it put 50 files of a cloned project
+    into the user's project (staging 2026-11-13). The repository's own
+    metadata (.git) stays out, like any skipped part.
     """
     expanded: list[str] = []
     for path in paths:
         if not path.endswith("/"):
             expanded.append(path)
+            continue
+        config = contents.get(path + ".git/config", b"")
+        if b"[remote " in config:
             continue
         expanded += sorted(
             name
