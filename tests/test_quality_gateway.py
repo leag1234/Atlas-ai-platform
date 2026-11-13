@@ -732,6 +732,27 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(all(page["text"] for page in pages))
 
+    async def test_short_call_gets_its_whole_budget_on_the_first_attempt(self) -> None:
+        # Staging 2026-11-13: routing and title calls were cut at 1.2 to 4 s while
+        # the fast model answered in 0.4 to 6.6 s.
+        budgets: dict[int, float] = {}
+
+        async def transport(
+            current: AgentRequest, model: str, timeout: float
+        ) -> AsyncGenerator[dict[str, object], None]:
+            budgets[current.max_tokens] = timeout
+            yield result("ok", 5)
+
+        with (
+            patch.dict(os.environ, environment()),
+            patch("stream_transport.attempt", transport),
+        ):
+            for tokens in (120, 3000):
+                original = request(max_tokens=tokens, timeout=8.0)
+                _ = [e async for e in stream_quality(AgentProvider(), original)]
+        self.assertGreater(budgets[120], 7.0)
+        self.assertLess(budgets[3000], 7.0)
+
     async def test_text_only_model_uses_vision_capable_alternate(self) -> None:
         from test_vision_schema import payload, picture
 

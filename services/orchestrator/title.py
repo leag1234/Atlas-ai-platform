@@ -18,6 +18,8 @@ from packages.language import question_language
 _TITLE_TASK = "Generate a concise title summarizing the chat history."
 _MAX_WORDS = 7
 _MAX_CHARS = 60
+# The title is written while the answer streams and delays nobody.
+TITLE_SECONDS = 8
 _FALLBACK = {
     "fr": "Nouvelle conversation",
     "en": "New conversation",
@@ -121,7 +123,7 @@ def _payload(question: str, language: str) -> dict[str, Any]:
         response_format={"type": "json_object"},
         profile=request_router.profile(),
         max_tokens=40,
-        timeout=4,
+        timeout=TITLE_SECONDS,
         budget_eur="0.005",
         local_enabled=False,
     )
@@ -135,9 +137,9 @@ async def model_title(
 
     cost = Decimal(0)
     try:
-        async with asyncio.timeout(4):
+        async with asyncio.timeout(TITLE_SECONDS):
             result = await (complete or request_router._gateway)(
-                _payload(question, language), 4
+                _payload(question, language), TITLE_SECONDS
             )
         try:
             cost = Decimal(str(result.get("cost_eur") or 0))
