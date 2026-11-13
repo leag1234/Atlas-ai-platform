@@ -1,0 +1,59 @@
+{
+ "request": "a hedgehog and a snail having tea, with a tiny teapot and cups",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "hedgehog",
+    "words": "a hedgehog",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "snail",
+    "words": "a snail",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "teapot",
+    "words": "a tiny teapot",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "cups",
+    "words": "cups",
+    "kind": "object",
+    "count": null,
+    "plural": true,
+    "where": "other",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "holding",
+    "a": "teapot",
+    "b": "hedgehog",
+    "words": "having tea"
+   },
+   {
+    "type": "holding",
+    "a": "cups",
+    "b": "hedgehog",
+    "words": "having tea"
+   }
+  ],
+  "actions": []
+ }
+}

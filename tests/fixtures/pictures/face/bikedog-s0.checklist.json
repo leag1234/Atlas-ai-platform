@@ -1,0 +1,87 @@
+{
+ "request": "a kid riding a bike down a hill with his dog running behind",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "kid",
+    "words": "a kid",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "bike",
+    "words": "a bike",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "hill",
+    "words": "a hill",
+    "kind": "place",
+    "count": null,
+    "plural": false,
+    "where": "none",
+    "parts": []
+   },
+   {
+    "id": "dog",
+    "words": "his dog",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "kid",
+    "b": "bike",
+    "words": "riding"
+   },
+   {
+    "type": "on",
+    "a": "bike",
+    "b": "hill",
+    "words": "down a hill"
+   },
+   {
+    "type": "behind",
+    "a": "dog",
+    "b": "kid",
+    "words": "running behind"
+   }
+  ],
+  "actions": [
+   {
+    "who": "kid",
+    "verb": "ride",
+    "words": "riding",
+    "checks": [
+     {
+      "check": "contact",
+      "with": "bike"
+     }
+    ]
+   },
+   {
+    "who": "dog",
+    "verb": "run",
+    "words": "running",
+    "checks": [
+     {
+      "check": "dynamic"
+     }
+    ]
+   }
+  ]
+ }
+}

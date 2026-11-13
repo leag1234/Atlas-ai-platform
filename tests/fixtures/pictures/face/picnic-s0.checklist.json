@@ -1,0 +1,118 @@
+{
+ "request": "un ours et un lapin qui pique-niquent sur une nappe a carreaux, avec un panier, des pommes et une théière",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "bear",
+    "words": "un ours",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "rabbit",
+    "words": "un lapin",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "picnic-blanket",
+    "words": "une nappe a carreaux",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "basket",
+    "words": "un panier",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "apples",
+    "words": "des pommes",
+    "kind": "object",
+    "count": null,
+    "plural": true,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "teapot",
+    "words": "une théière",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "bear",
+    "b": "picnic-blanket",
+    "words": "sur une nappe a carreaux"
+   },
+   {
+    "type": "on",
+    "a": "rabbit",
+    "b": "picnic-blanket",
+    "words": "sur une nappe a carreaux"
+   },
+   {
+    "type": "on",
+    "a": "basket",
+    "b": "picnic-blanket",
+    "words": "sur une nappe a carreaux"
+   },
+   {
+    "type": "on",
+    "a": "apples",
+    "b": "picnic-blanket",
+    "words": "sur une nappe a carreaux"
+   },
+   {
+    "type": "on",
+    "a": "teapot",
+    "b": "picnic-blanket",
+    "words": "sur une nappe a carreaux"
+   }
+  ],
+  "actions": [
+   {
+    "who": "bear",
+    "verb": "pique-niquer",
+    "words": "pique-niquent",
+    "checks": [
+     {
+      "check": "near",
+      "with": "rabbit"
+     }
+    ]
+   },
+   {
+    "who": "rabbit",
+    "verb": "pique-niquer",
+    "words": "pique-niquent",
+    "checks": [
+     {
+      "check": "near",
+      "with": "bear"
+     }
+    ]
+   }
+  ]
+ }
+}

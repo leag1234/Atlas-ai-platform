@@ -1,0 +1,50 @@
+{
+ "request": "le chat dort sur le canapé à coté d'une lampe",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "chat",
+    "words": "le chat",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "canape",
+    "words": "le canapé",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "lampe",
+    "words": "une lampe",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "chat",
+    "b": "canape",
+    "words": "sur le canapé"
+   },
+   {
+    "type": "near",
+    "a": "lampe",
+    "b": "canape",
+    "words": "à coté d'une lampe"
+   }
+  ],
+  "actions": []
+ }
+}
