@@ -446,3 +446,136 @@ class SheetTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FollowupTests(unittest.IsolatedAsyncioTestCase):
+    """A change to a chosen picture goes through the painter and the kits."""
+
+    def setUp(self) -> None:
+        self.folder = Path(tempfile.mkdtemp(prefix="picture-change-"))
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        environment = ENVIRONMENT | {
+            "ATLAS_IMAGE_DIR": str(self.folder / "images"),
+            "ATLAS_PICTURE_DIR": str(self.folder / "sets"),
+            "ATLAS_DATA_DIR": str(self.folder / "data"),
+            "ATLAS_ARTIFACTS": "1",
+        }
+        patcher = patch.dict(os.environ, environment)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    async def picture(
+        self, gateway: FakeGateway
+    ) -> tuple[Interaction, store.PictureSet]:
+        item = Interaction()
+        await turn.process_picture_turn(
+            Request(gateway.data["request"]), item, complete=gateway
+        )
+        set_id = latest_set_id([{"role": "assistant", "content": item.reponse}])
+        assert set_id is not None
+        picture_set = store.load(set_id)
+        assert picture_set is not None
+        return item, picture_set
+
+    @staticmethod
+    def current(answer: str, owner: str = "owner@example.test") -> Any:
+        from services.orchestrator.artifact_tools import current_artifact_message
+
+        return current_artifact_message(
+            [{"role": "assistant", "content": answer}, {"role": "user", "content": ""}],
+            owner,
+        )
+
+    async def change(
+        self, gateway: FakeGateway, answer: str, text: str
+    ) -> tuple[bool, Interaction]:
+        from services.orchestrator.pictures.followup import process_picture_followup
+
+        item = Interaction()
+        done = await process_picture_followup(
+            Request(text), item, self.current(answer), complete=gateway
+        )
+        return done, item
+
+    async def test_the_painter_edits_its_own_drawing_twice(self) -> None:
+        gateway = FakeGateway("cats")
+        first, picture_set = await self.picture(gateway)
+        self.assertTrue(picture_set.current_source)
+        self.assertEqual(picture_set.current_source, picture_set.candidates[0].source)
+        done, changed = await self.change(
+            gateway, first.reponse, "rends le banc plus grand"
+        )
+        self.assertTrue(done)
+        payload = gateway.payloads[-1]
+        self.assertTrue(payload["single_attempt"])
+        self.assertEqual(payload["profile"], "atlas-mistral")
+        roles = [m["role"] for m in payload["messages"]]
+        self.assertEqual(roles, ["system", "user", "assistant", "user"])
+        self.assertEqual(payload["messages"][2]["content"], picture_set.current_source)
+        self.assertIn("rends le banc plus grand", payload["messages"][3]["content"])
+        self.assertIn("Voici l'image modifiée", changed.reponse)
+        self.assertIn("/versions/2/open", changed.reponse)
+        after = store.load(picture_set.set_id)
+        assert after is not None
+        self.assertEqual(after.artifact_version, 2)
+        self.assertIn('id="mark-4"', after.current_source)
+        # The second change starts from the first change's drawing.
+        done, again = await self.change(gateway, changed.reponse, "make it smaller")
+        self.assertTrue(done)
+        self.assertEqual(
+            gateway.payloads[-1]["messages"][2]["content"], after.current_source
+        )
+        self.assertIn("/versions/3/open", again.reponse)
+
+    async def test_a_drawing_too_large_is_drawn_again_by_the_painter(self) -> None:
+        from services.orchestrator.pictures import followup
+
+        gateway = FakeGateway("cats")
+        first, _ = await self.picture(gateway)
+        with patch.object(followup, "SOURCE_LIMIT", 10):
+            done, changed = await self.change(gateway, first.reponse, "plus de soleil")
+        self.assertTrue(done)
+        payload = gateway.payloads[-1]
+        self.assertEqual([m["role"] for m in payload["messages"]], ["system", "user"])
+        self.assertTrue(payload["messages"][1]["content"].endswith("plus de soleil"))
+        self.assertIn("redessinée", changed.reponse)
+
+    async def test_other_artifacts_and_other_owners_keep_the_old_path(self) -> None:
+        gateway = FakeGateway("cats")
+        first, picture_set = await self.picture(gateway)
+        from services.orchestrator.pictures.followup import process_picture_followup
+
+        other = Request("plus grand")
+        other.artifact_owner = "someone@example.test"
+        self.assertFalse(
+            await process_picture_followup(
+                other, Interaction(), self.current(first.reponse), complete=gateway
+            )
+        )
+
+        class Current:
+            artifact = {"artifact_id": "f" * 32, "version": 1}
+
+        self.assertFalse(
+            await process_picture_followup(
+                Request("plus grand"), Interaction(), Current(), complete=gateway
+            )
+        )
+        stale = self.current(first.reponse)
+        stale.artifact["version"] = picture_set.artifact_version + 1
+        self.assertFalse(
+            await process_picture_followup(
+                Request("plus grand"), Interaction(), stale, complete=gateway
+            )
+        )
+
+    async def test_failure_keeps_the_version_and_quota_is_refused(self) -> None:
+        gateway = FakeGateway("cats")
+        first, _ = await self.picture(gateway)
+        gateway.failures = {4: GatewayError("provider_error", 502)}
+        done, changed = await self.change(gateway, first.reponse, "plus grand")
+        self.assertTrue(done)
+        self.assertIn("inchangée", changed.reponse)
+        gateway.failures = {5: GatewayError("provider_quota", 402, "credit")}
+        with self.assertRaises(GatewayError):
+            await self.change(gateway, first.reponse, "plus grand")

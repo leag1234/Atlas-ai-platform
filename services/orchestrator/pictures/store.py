@@ -32,6 +32,8 @@ class Candidate:
     image_key: str
     svg: str
     measure: dict[str, Any] = field(default_factory=dict)
+    # The painter's own SVG (sanitised, before the kits).
+    source: str = ""
 
 
 @dataclass
@@ -47,6 +49,12 @@ class PictureSet:
     artifact_id: str = ""
     artifact_version: int = 0
     artifact_candidate: int = 0
+    # What a later change needs: the request, its checklist and living map,
+    # and the painter's SVG of the artifact's current version.
+    request: str = ""
+    checklist: dict[str, Any] = field(default_factory=dict)
+    living: dict[str, bool] = field(default_factory=dict)
+    current_source: str = ""
 
 
 def directory() -> Path:
@@ -168,4 +176,37 @@ def choose(set_id: str, index: int) -> PictureSet | None:
             return None
         picture_set.chosen = index
         _write(picture_set)
+    return picture_set
+
+
+def _pointer(artifact_id: str) -> Path:
+    if not SET_ID.fullmatch(artifact_id):
+        raise ValueError("invalid_artifact")
+    folder = _root() / "by-artifact"
+    folder.mkdir(exist_ok=True, mode=0o700)
+    return folder / artifact_id
+
+
+def link_artifact(picture_set: PictureSet) -> None:
+    """Remember which set holds an artifact (its later changes need the set)."""
+    path = _pointer(picture_set.artifact_id)
+    with open(
+        os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600),
+        "w",
+    ) as output:
+        output.write(picture_set.set_id)
+
+
+def by_artifact(artifact_id: str) -> PictureSet | None:
+    """The picture set an artifact belongs to, or None."""
+    try:
+        path = _pointer(artifact_id)
+        if path.is_symlink():
+            return None
+        set_id = path.read_text().strip()
+    except (OSError, ValueError):
+        return None
+    picture_set = load(set_id)
+    if picture_set is None or picture_set.artifact_id != artifact_id:
+        return None
     return picture_set

@@ -104,6 +104,9 @@ def process_draft(payload: dict[str, Any]) -> dict[str, Any]:
     living: dict[str, bool] = payload.get("living") or {}
     report: dict[str, Any] = {}
     svg = sanitise(str(payload["svg"]))
+    # The painter's own drawing with its pose and animal declarations: a later
+    # change starts from it, so the kits can draw it again.
+    source = svg
     if payload.get("animal_kit"):
         svg = _step(report, "animals", svg, lambda s: animal_kit.compose(s, ck, living))
     svg = _step(report, "bodies", svg, lambda s: body_kit.compose(s, ck, living))
@@ -140,6 +143,8 @@ def process_draft(payload: dict[str, Any]) -> dict[str, Any]:
             if key in measure
         },
         "report": report,
+        "source": source,
+        "living": living,
     }
 
 

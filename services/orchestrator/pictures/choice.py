@@ -133,6 +133,7 @@ def _write_choice(
         return None
     picture_set.artifact_version = int(stored["version"])
     picture_set.artifact_candidate = index
+    picture_set.current_source = picture_set.candidates[index].source
     return str(stored["id"]), int(stored["version"]), current.filename
 
 

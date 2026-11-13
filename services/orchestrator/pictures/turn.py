@@ -594,6 +594,7 @@ async def process_picture_turn(
                 image_key=url.rsplit("/", 1)[-1],
                 svg=candidate["svg"],
                 measure=candidate.get("measure") or {},
+                source=str(candidate.get("source") or ""),
             )
             for url, candidate in zip(urls, candidates)
         ],
@@ -621,7 +622,12 @@ async def process_picture_turn(
                 artifact_id, version = str(stored["id"]), int(stored["version"])
                 picture_set.artifact_id = artifact_id
                 picture_set.artifact_version = version
+                picture_set.request = request_text
+                picture_set.checklist = ck or {}
+                picture_set.living = dict(candidates[0].get("living") or {})
+                picture_set.current_source = picture_set.candidates[0].source
                 await asyncio.to_thread(store.update, picture_set)
+                await asyncio.to_thread(store.link_artifact, picture_set)
                 item.artifacts = [
                     {
                         "id": artifact_id,
