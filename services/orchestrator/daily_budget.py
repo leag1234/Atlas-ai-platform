@@ -44,6 +44,10 @@ def _limit(name: str) -> Decimal | int | None:
     return value if value > 0 else None
 
 
+# The budget bucket of an API key with its own budget (api_keys.py).
+OWN_BUDGET_PREFIX = "api-key:"
+
+
 def _exempt_users() -> frozenset[str]:
     """Budget buckets the owner exempts from per-user caps (test accounts)."""
     raw = os.environ.get("ATLAS_BUDGET_EXEMPT_USERS", "")
@@ -238,7 +242,14 @@ class DailyLedger:
         self, user: str, amount: Decimal, lang: str, *, user_limits: bool = True
     ) -> CostReservation:
         # Exempt test accounts skip the per-user caps; instance caps still apply.
-        user_limits = user_limits and user not in _exempt_users()
+        # So does an API key with its own budget (bucket "api-key:<id>"): its weekly
+        # key cap governs it on every path. The chat path applied the 30 EUR user
+        # month to such a key while the API path did not (production, 2026-11-13).
+        user_limits = (
+            user_limits
+            and user not in _exempt_users()
+            and not user.startswith(OWN_BUDGET_PREFIX)
+        )
         limits = (
             (
                 "daily_cost",
