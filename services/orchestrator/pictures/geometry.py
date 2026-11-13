@@ -120,7 +120,7 @@ def _expand_use(root: ET.Element) -> None:
 def thing_instances(named: Iterable[str], tid: str) -> list[str]:
     """Named groups standing for a checklist thing: its numbered instances
     (tid-1, tid-2 ...) when there are some, else tid itself or its plural."""
-    names = set(named)
+    names = list(named)
     numbered = sorted(
         (n for n in names if re.fullmatch(re.escape(tid) + r"s?-\d+", n)),
         key=lambda n: int(n.rsplit("-", 1)[1]),
