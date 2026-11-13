@@ -232,6 +232,12 @@
       showCopied(button, bubble);
     });
   };
+  // A sent message collapses only when it is taller than one screen of reading: 25 rendered lines are
+  // 600 px at the default 16 px size (two thirds of a 900 px laptop window, the composer stays visible),
+  // so a message that fits on one screen is always shown whole (owner report 2026-11-13: a 10-line
+  // message was folded). The collapsed view keeps 12 lines (chat-ui.css), so folding always hides
+  // at least as much as it shows. Rendered lines, not characters: the same rule holds on a phone.
+  const LONG_MESSAGE_LINES = 25;
   const lineHeight = content => {
     const value = parseFloat(getComputedStyle(content).lineHeight);
     return Number.isFinite(value) ? value : parseFloat(getComputedStyle(content).fontSize) * 1.5;
@@ -321,7 +327,7 @@
     const toggle = bubble.querySelector(".atlas-message-toggle");
     const wasExpanded = toggle && toggle.getAttribute("aria-expanded") === "true";
     bubble.classList.remove("atlas-message-collapsed");
-    const isLong = content.scrollHeight > lineHeight(content) * 6.1;
+    const isLong = content.scrollHeight > lineHeight(content) * (LONG_MESSAGE_LINES + 0.1);
     bubble.classList.toggle("atlas-long-message", isLong);
     if (!isLong) { if (toggle) toggle.remove(); return; }
     const words = translations[locale()];

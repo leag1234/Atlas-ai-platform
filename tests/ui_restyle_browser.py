@@ -404,7 +404,7 @@ def bubble_capture(
         line_height = collapsed.evaluate(
             "node => parseFloat(getComputedStyle(node).lineHeight)"
         )
-        assert collapsed_height <= line_height * 8 + 1, (collapsed_height, line_height)
+        assert collapsed_height <= line_height * 12 + 1, (collapsed_height, line_height)
         assert toggle.get_attribute("aria-expanded") == "false"
         long_bubble.screenshot(path=OUTPUT / name)
         toggle.focus()
