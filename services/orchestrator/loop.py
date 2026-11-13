@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from collections import Counter
 from collections.abc import Awaitable, Callable
@@ -802,6 +803,7 @@ async def run(
                 reserve(tools.estimate(call))
                 result.tool_calls += 1
                 counts["web_search" if call.name == "web_images" else call.name] += 1
+                tool_started = clock()
                 output = await invoke(
                     references.reopen(call)
                     if references is not None and call.name == "reopen_result"
@@ -811,6 +813,25 @@ async def run(
                 )
                 if not isinstance(output, dict):
                     raise ValueError("invalid_tool_response")
+                if limits.code_mode:
+                    # Work steps are not in the interaction record: a looping turn
+                    # (staging 2026-11-13, 21 calls to the wall clock) could not
+                    # be read. Tool name, outcome code and duration only.
+                    code = output.get("error")
+                    logging.getLogger(__name__).info(
+                        json.dumps(
+                            {
+                                "event": "work_tool",
+                                "tool": call.name,
+                                # A code, never a message that could quote content.
+                                "error": code
+                                if isinstance(code, str)
+                                and re.fullmatch(r"[a-z_]{1,40}", code)
+                                else (None if code is None else "other"),
+                                "seconds": round(clock() - tool_started, 1),
+                            }
+                        )
+                    )
                 same_failures = 0
                 if failures is not None:
                     output, same_failures = failures.record(call.name, output)
