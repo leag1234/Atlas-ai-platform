@@ -55,11 +55,36 @@ def parse_patch(patch: str) -> tuple[list[str], list[str], set[str]]:
         if "GIT binary patch" in chunk:
             binary.add(target)
             continue
-        if "new file mode" in chunk:
+        if "new file mode 160000" in chunk:
+            # A git repository created inside the workspace ("make a local git
+            # repo") shows as one gitlink entry, not as its files: its files
+            # were never saved (staging 2026-11-13). They are expanded from
+            # the export archive by nested_repository_files.
+            new.append(target + "/")
+        elif "new file mode" in chunk:
             new.append(target)
         elif target != "/dev/null":
             modified.append(target)
     return new, modified, binary
+
+
+def nested_repository_files(paths: list[str], contents: dict[str, bytes]) -> list[str]:
+    """Replace each nested repository entry (ending "/") by its archived files.
+
+    The repository's own metadata (.git) stays out, like any skipped part.
+    """
+    expanded: list[str] = []
+    for path in paths:
+        if not path.endswith("/"):
+            expanded.append(path)
+            continue
+        expanded += sorted(
+            name
+            for name in contents
+            if name.startswith(path)
+            and ".git" not in PurePosixPath(name[len(path) :]).parts
+        )
+    return expanded
 
 
 def archive_files(raw: bytes) -> dict[str, bytes]:
@@ -279,6 +304,7 @@ async def _export_and_save_new_files(
     new_paths, modified, binary = parse_patch(str(exported.get("patch") or ""))
     report["modified"] = modified
     contents = archive_files(base64.b64decode(exported["archive"], validate=True))
+    new_paths = nested_repository_files(new_paths, contents)
     bases = base_workspace_paths(base)
     status, folders = await execution.broker.public("GET", "folders")
     if status != 200:
