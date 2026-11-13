@@ -212,6 +212,7 @@ async def run(
     include_intermediate: bool = True,
     final_only: bool = False,
     before_final: Callable[[list[str]], str | None] | None = None,
+    after_tools: Callable[[list[tuple[str, Message]]], str | None] | None = None,
 ) -> Result:
     result = CodeResult() if limits.code_mode else Result()
     deadline = clock() + limits.wall_clock
@@ -423,7 +424,21 @@ async def run(
                 if not isinstance(received, Turn):
                     raise ValueError("invalid_model_response")
                 turn = received
-                if not limits.code_mode:
+                if limits.code_mode:
+                    # One line per Work model call: the time spent after a
+                    # file was published could not be told from the tools
+                    # (staging 2026-11-13). Duration and call count only.
+                    logging.getLogger(__name__).warning(
+                        json.dumps(
+                            {
+                                "event": "work_model_round",
+                                "seconds": round(clock() - call_started, 1),
+                                "calls": len(turn.calls),
+                                "remaining_seconds": round(deadline - clock(), 1),
+                            }
+                        )
+                    )
+                else:
                     logging.getLogger(__name__).warning(
                         json.dumps(
                             {
@@ -597,6 +612,8 @@ async def run(
             )
             pending_calls = list(turn.calls)
             retried = False
+            # The tools of this batch that ran, with their results, for after_tools.
+            executed: list[tuple[str, Message]] = []
             for call in pending_calls:
                 if call not in turn.calls:
                     messages.append(
@@ -942,6 +959,7 @@ async def run(
                             "content": json.dumps(output, ensure_ascii=False),
                         }
                     )
+                executed.append((call.name, output))
                 if closes_on_limit and limit_refusal is None and limit_code(output):
                     limit_refusal = dict(output)
                 if same_failures:
@@ -997,6 +1015,12 @@ async def run(
                     )
                     result.state = "done"
                     return result
+            # After every result of the batch, before the next model call: an
+            # instruction the turn adds once these results are in (work_closing.py).
+            if after_tools is not None and executed:
+                step = after_tools(executed)
+                if step is not None:
+                    messages.append({"role": "user", "content": step})
     except Stop as exc:
         result.reason = str(exc)
     except ValidationError as exc:
