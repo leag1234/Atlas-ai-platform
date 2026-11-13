@@ -41,6 +41,22 @@ REMOTE_FIX_HINTS = {
         "The command could not be parsed (unbalanced quotes or an empty part). Fix it and run it again."
     ),
 }
+# A remote call naming no known machine or target: the model guessed names
+# (the person's "Mac", "hardy") one after the other on staging (2026-11-13).
+UNKNOWN_TARGET_HINT = (
+    "No machine or target has this name. Call list_targets once and use an exact name from it. "
+    "If the user's machine is not there, ask in one short question for its address and account; "
+    "never try other guessed names."
+)
+
+
+def remote_target(arguments: str) -> str:
+    """The target named by a remote call, or an empty string."""
+    try:
+        value = json.loads(arguments or "{}")
+    except ValueError:
+        return ""
+    return str(value.get("target") or "") if isinstance(value, dict) else ""
 
 
 class Arguments(BaseModel):
@@ -503,6 +519,9 @@ class WorkTools(CodeTools):
         # must still see (name -> command), for the final answer.
         self.machines_declared: set[str] = set()
         self.machine_commands: dict[str, str] = {}
+        # Machines found out of reach in this turn (name or host -> outcome):
+        # later calls for them answer at once instead of connecting again.
+        self.machines_unreachable: dict[str, dict[str, Any]] = {}
         # Turn-specific system text (the machine rules on a remote turn).
         self.instructions = ""
         # Set by the Work turn when the request asks for code to be run.
@@ -724,15 +743,23 @@ class WorkTools(CodeTools):
                 )
                 return result
         if call.name in {"list_targets", "remote_run", "remote_status", "remote_fetch"}:
-            from services.orchestrator import work_remote_tools
+            from services.orchestrator import work_machine_tools, work_remote_tools
             from services.retrieval.project_identity import ProjectError
 
+            target = remote_target(call.arguments)
             try:
-                result = await work_remote_tools.execute(
-                    self, call.name, call.arguments, timeout
+                known = work_machine_tools.ended(self, target)
+                result = (
+                    known
+                    if known is not None and call.name in {"remote_run", "remote_fetch"}
+                    else await work_remote_tools.execute(
+                        self, call.name, call.arguments, timeout
+                    )
                 )
             except ProjectError as exc:
                 result = dict(exc.body)
+                if target and result.get("error") == "not_found":
+                    result.setdefault("next_step", UNKNOWN_TARGET_HINT)
             except (ValueError, OSError, RuntimeError, TimeoutError) as exc:
                 code = str(exc) or exc.__class__.__name__
                 logging.getLogger(__name__).warning(
@@ -749,6 +776,8 @@ class WorkTools(CodeTools):
                         "Correct the command or target from this error; do not resend an identical request.",
                     ),
                 )
+            if target and str(result.get("error")) in work_machine_tools.UNREACHABLE:
+                result = work_machine_tools.unreachable(self, result, target)
             await self.emit(
                 "tool",
                 tool=call.name,

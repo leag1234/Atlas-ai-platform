@@ -175,6 +175,34 @@ class RepeatedFailureTests(unittest.TestCase):
         ]
         self.assertEqual(stops[-1], SAME_FAILURE_STOP)
 
+    def test_an_unreachable_machine_retried_by_any_machine_tool_stops(
+        self,
+    ) -> None:
+        # One machine, retried with machine_add and machine_verify in turn:
+        # the machine tools share their count.
+        for code in ("machine_local_network", "runner_target_address_denied"):
+            with self.subTest(code=code):
+                failures = RepeatedFailures()
+                stops = [
+                    failures.record(tool, {"error": code, "message": "m"})[1]
+                    for tool in ("machine_add", "machine_verify") * 3
+                ]
+                self.assertEqual(stops[: SAME_FAILURE_STOP - 1], [0] * 4)
+                self.assertEqual(stops[SAME_FAILURE_STOP - 1], SAME_FAILURE_STOP)
+
+    def test_a_machine_refusal_the_person_fixes_never_stops(self) -> None:
+        failures = RepeatedFailures()
+        for _ in range(SAME_FAILURE_STOP + 3):
+            output, stop = failures.record(
+                "machine_verify", {"error": "credential_unavailable"}
+            )
+            self.assertEqual(stop, 0)
+        self.assertNotIn("the turn stops", str(output[NOTE_KEY]))
+        # Still a result to relay at the end of the turn, not a broken step.
+        self.assertEqual(
+            open_failures({"machine_add": "machine_local_network"}, []), {}
+        )
+
     def test_open_failures_uses_the_same_relayed_tools(self) -> None:
         self.assertEqual(
             open_failures(

@@ -410,6 +410,188 @@ class MachineToolTests(unittest.TestCase):
         self.assertEqual(refused["fields"], ["private_key"])
 
 
+LOCAL_HOSTS = (
+    "192.168.0.25",
+    "10.0.0.12",
+    "172.20.4.9",
+    "169.254.10.1",
+    "127.0.0.1",
+    "100.101.102.103",
+    "localhost",
+    "nas",
+    "atelier-mac.local",
+    "Box.Lan",
+    "printer.home.arpa",
+)
+REACHABLE_HOSTS = ("build.example.org", "198.51.100.7", "203.0.113.5", "192.0.2.10")
+
+
+@patch.dict(os.environ, ENV)
+class UnreachableMachineTests(unittest.TestCase):
+    """A machine Atlas cannot reach ends the machine attempts of the turn at once.
+
+    Staging, 2026-11-13: a request to work on a machine of the person's home
+    network went through about twenty machine and remote calls until the wall
+    clock stopped the turn, then asked the person to run the commands himself.
+    """
+
+    def test_local_network_hosts_are_recognised_as_written(self) -> None:
+        for host in LOCAL_HOSTS:
+            with self.subTest(host=host):
+                self.assertTrue(machines.local_network(host))
+        # IPv6 and hostile text are refused by the backend as invalid input.
+        for host in REACHABLE_HOSTS + (
+            "$(id)",
+            "-oProxyCommand=id",
+            "",
+            "::1",
+            "fe80::1",
+        ):
+            with self.subTest(host=host):
+                self.assertFalse(machines.local_network(host))
+
+    def test_networks_the_operator_made_reachable_are_left_to_the_broker(
+        self,
+    ) -> None:
+        with patch.dict(
+            os.environ, {"ATLAS_RUNNER_PERSONAL_NETWORKS": "192.168.0.0/16, bad"}
+        ):
+            self.assertFalse(machines.local_network("192.168.0.25"))
+            self.assertFalse(machines.local_network("nas"))
+            self.assertTrue(machines.local_network("10.0.0.12"))
+
+    def test_a_local_address_is_refused_before_any_declaration(self) -> None:
+        for lang, words in (("fr", "réseau local"), ("en", "local network")):
+            for host in ("192.168.0.25", "gael-macbook.local", "hardy"):
+                with self.subTest(lang=lang, host=host):
+                    backend = Backend()
+                    tools = work_tools(backend, lang=lang)
+                    refused = call(
+                        tools, "machine_add", name="maison", host=host, user="dev"
+                    )
+                    self.assertEqual(refused["error"], "machine_local_network")
+                    self.assertIn(words, refused["message"])
+                    self.assertIn(host, refused["message"])
+                    self.assertNotIn("install_command", refused)
+                    self.assertIn("own workspace", refused["next_step"])
+                    self.assertIn("never give the user commands", refused["next_step"])
+                    self.assertIn("never show error codes", refused["next_step"])
+                    self.assertEqual(backend.rows, {})
+                    self.assertEqual(backend.calls, [])
+                    self.assertEqual(tools.machine_commands, {})
+
+    def test_retries_of_an_unreachable_machine_never_reach_the_backend(
+        self,
+    ) -> None:
+        backend = Backend()
+        tools = work_tools(backend, lang="fr")
+        first = call(tools, "machine_add", name="mac", host="192.168.0.25", user="dev")
+        # Another name for the same address, then the same name, then a check.
+        for tool, arguments in (
+            ("machine_add", dict(name="Mac-Gael", host="192.168.0.25", user="gael")),
+            ("machine_add", dict(name="MAC", host="10.0.0.3", user="dev")),
+            ("machine_verify", dict(name="mac")),
+        ):
+            with self.subTest(tool=tool, arguments=arguments):
+                again = call(tools, tool, **arguments)
+                self.assertEqual(again["error"], "machine_local_network")
+                self.assertEqual(again["message"], first["message"])
+        self.assertEqual(backend.calls, [])
+
+    def test_a_declared_machine_on_a_local_address_is_never_connected(self) -> None:
+        backend = Backend()
+        member = "member-a"
+        identifier = str(uuid4())
+        backend.rows[identifier] = dict(
+            id=identifier,
+            owner_member_id=member,
+            name="atelier",
+            host="10.0.0.12",
+            user="dev",
+            port=22,
+            status="unverified",
+            verified_at=None,
+            host_key_fingerprints=[],
+            permission_mode="auto",
+            revision=1,
+            last_probe=None,
+            install_command=install_command("dev", "10.0.0.12", 22, KEY),
+        )
+        tools = work_tools(backend, member=member)
+        result = call(tools, "machine_verify", name="atelier")
+        self.assertEqual(result["error"], "machine_local_network")
+        self.assertIn("10.0.0.12", result["message"])
+        self.assertFalse(any(c[2].endswith("/verify") for c in backend.calls))
+
+    def test_a_machine_that_does_not_answer_is_tried_once_per_turn(self) -> None:
+        for code in ("runner_transport_failed", "runner_target_unresolved"):
+            with self.subTest(code=code):
+                backend = Backend()
+                call(
+                    work_tools(backend),
+                    "machine_add",
+                    name="build",
+                    host="build.example.org",
+                    user="dev",
+                )
+                backend.outcome = dict(status="unavailable", error=code)
+                tools = work_tools(backend)
+                first = call(tools, "machine_verify", name="build")
+                self.assertEqual(first["error"], code)
+                self.assertIn("own workspace", first["next_step"])
+                again = call(tools, "machine_verify", name="Build")
+                self.assertEqual(again["error"], code)
+                verifications = [c for c in backend.calls if c[2].endswith("/verify")]
+                self.assertEqual(len(verifications), 1)
+                # The remote commands on it answer at once too: the test broker
+                # fails on any remote operation.
+                remote = call(tools, "remote_run", target="build", command="df -h")
+                self.assertEqual(remote["error"], code)
+                self.assertEqual(remote["trust"], "untrusted")
+
+    def test_a_refusal_the_person_can_fix_is_not_an_end(self) -> None:
+        backend = Backend()
+        call(
+            work_tools(backend),
+            "machine_add",
+            name="build",
+            host="build.example.org",
+            user="dev",
+        )
+        backend.outcome = dict(status="unavailable", error="credential_unavailable")
+        tools = work_tools(backend)
+        result = call(tools, "machine_verify", name="build")
+        self.assertIn("install_command", result)
+        self.assertEqual(tools.machines_unreachable, {})
+        call(tools, "machine_verify", name="build")
+        verifications = [c for c in backend.calls if c[2].endswith("/verify")]
+        self.assertEqual(len(verifications), 2)
+
+    def test_a_guessed_machine_name_is_told_to_ask_instead(self) -> None:
+        from services.retrieval.project_identity import ProjectError
+
+        tools = work_tools(Backend())
+
+        async def missing(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            raise ProjectError(404, "not_found")
+
+        with patch("services.orchestrator.work_remote_tools.execute", new=missing):
+            for target in ("hardy", "Mac de Gael", "mon-mac"):
+                with self.subTest(target=target):
+                    result = call(tools, "remote_run", target=target, command="ls")
+                    self.assertEqual(result["error"], "not_found")
+                    self.assertIn("never try other guessed names", result["next_step"])
+            status = call(tools, "remote_status", command_id=str(uuid4()))
+        self.assertNotIn("guessed", str(status.get("next_step", "")))
+
+    def test_the_rules_name_the_local_network_and_the_own_workspace(self) -> None:
+        for unattended in (True, False):
+            text = machines.instructions(unattended)
+            self.assertIn("local network", text)
+            self.assertIn("own workspace", text)
+            self.assertIn("Never guess a name for remote_run", text)
+
+
 class SelectionTests(unittest.TestCase):
     def test_remote_group_offers_the_machine_tools_within_capacity(self) -> None:
         selection = WorkToolSelection("remote")
