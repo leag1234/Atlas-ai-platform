@@ -35,7 +35,15 @@ SEARCH_LIMITS = {
     "search_rate_limited": "the web search service is limiting requests for the moment",
 }
 SEARCH_TOOLS = frozenset({"web_search", "web_images"})
-CLOSING_MARK = "Research is closed for this turn: a search limit was reached."
+CLOSED_PREFIX = "Research is closed for this turn:"
+CLOSING_MARK = CLOSED_PREFIX + " a search limit was reached."
+TIME_CLOSING_MARK = CLOSED_PREFIX + " its time is nearly used up."
+
+# The share of a chat turn kept for writing the answer once research has started.
+# A researched answer on staging (2026-11-13) ran three searches and two page
+# reads, then began its writing call at 100 to 110 s of a 120 s turn: six turns
+# out of ten were cut with nothing shown. One research round took 15 to 20 s.
+WRITING_RESERVE_SECONDS = 45.0
 
 
 def limit_code(output: Mapping[str, object]) -> str | None:
@@ -68,6 +76,26 @@ def closing_instruction(code: str, language: str) -> str:
     )
 
 
+def time_closing_instruction(language: str) -> str:
+    """The instruction of the closing call when the turn's research time is used up."""
+    return (
+        TIME_CLOSING_MARK + "\n"
+        "No tool is available for the rest of this turn. Rules for the answer "
+        "you write now:\n"
+        "1. Write the final answer for the user from the results already "
+        "obtained in this conversation, and from your own knowledge where they "
+        "are silent.\n"
+        "2. If a point the user asked about could not be checked in the results, "
+        "say so plainly for that point, in one short sentence, and say what the "
+        "user can check or ask next. Do not invent it.\n"
+        "3. Do not recount what was tried: no search attempts, no tool names, no "
+        "timing. Do not describe your plan, and never announce what you are "
+        "going to write: write the answer itself.\n"
+        "4. Give no source name, link or consultation date that was not "
+        "retrieved in this conversation." + language_instruction(language)
+    )
+
+
 def closing_requested(messages: Sequence[Mapping[str, object]]) -> bool:
     """Whether the loop closed the research of this turn: no tool is offered.
 
@@ -81,6 +109,6 @@ def closing_requested(messages: Sequence[Mapping[str, object]]) -> bool:
         instructed |= (
             message.get("role") == "user"
             and isinstance(content := message.get("content"), str)
-            and content.startswith(CLOSING_MARK)
+            and content.startswith(CLOSED_PREFIX)
         )
     return False

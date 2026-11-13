@@ -3,8 +3,10 @@
 from services.orchestrator.closing import (
     LIMIT_CLOSED,
     SEARCH_TOOLS,
+    WRITING_RESERVE_SECONDS,
     closing_instruction,
     limit_code,
+    time_closing_instruction,
 )
 from services.orchestrator.code_verification import VerificationStatus
 from services.orchestrator.tool_failures import (
@@ -19,6 +21,7 @@ from packages.limits import LimitError
 import asyncio
 import json
 import logging
+import os
 import time
 from collections import Counter
 from collections.abc import Awaitable, Callable
@@ -237,6 +240,17 @@ async def run(
     # Chat only: the first search refused for a limit, and whether the model
     # was told that its next call closes the turn (see closing.py).
     closes_on_limit = bool(limits.profile) and not limits.code_mode
+    last_call_started = 0.0
+    # Once research has started, a chat turn keeps this much time for writing
+    # its answer; never more than a third of a short turn.
+    writing_reserve = min(
+        float(
+            os.environ.get(
+                "ATLAS_CHAT_WRITING_RESERVE_SECONDS", WRITING_RESERVE_SECONDS
+            )
+        ),
+        limits.wall_clock / 3,
+    )
     limit_refusal: Message | None = None
     closed = False
     protocol_recovered = False
@@ -355,6 +369,33 @@ async def run(
                             }
                         )
                     )
+                # One research cycle: a model call and the tools it asked for.
+                cycle = clock() - last_call_started if last_call_started else 0.0
+                if (
+                    closes_on_limit
+                    and not closed
+                    and result.tool_calls
+                    and remaining() - cycle < writing_reserve
+                ):
+                    # Research stops while the answer can still be written: one
+                    # more cycle would eat into the writing reserve. The next
+                    # call is offered no tool (see closing.py).
+                    closed = True
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": time_closing_instruction(query.lang),
+                        }
+                    )
+                    logging.getLogger(__name__).info(
+                        json.dumps(
+                            {
+                                "event": "research_time_closing",
+                                "remaining_seconds": round(remaining(), 1),
+                                "tools_executed": result.tool_calls,
+                            }
+                        )
+                    )
                 prepare_context = getattr(type(model), "prepare_context", None)
                 if prepare_context is not None:
                     await prepare_context(model, messages)
@@ -362,6 +403,7 @@ async def run(
                 reserve(reserved)
                 if isinstance(result, CodeResult):
                     result.model_calls += 1
+                call_started = last_call_started = clock()
                 received = await invoke(
                     model.complete(
                         messages,
@@ -380,6 +422,17 @@ async def run(
                 if not isinstance(received, Turn):
                     raise ValueError("invalid_model_response")
                 turn = received
+                if not limits.code_mode:
+                    logging.getLogger(__name__).info(
+                        json.dumps(
+                            {
+                                "event": "chat_model_round",
+                                "seconds": round(clock() - call_started, 1),
+                                "calls": len(turn.calls),
+                                "remaining_seconds": round(deadline - clock(), 1),
+                            }
+                        )
+                    )
                 if turn.usage is not None:
                     if (
                         turn.usage.tokens > reserved.tokens
