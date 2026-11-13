@@ -345,6 +345,7 @@ async def execute_turn(
     references: ResultReferences | None = None,
 ) -> CodeResult:
     from packages.language import language_instruction
+    from services.orchestrator.work_closing import closing_step
 
     history: list[Message] = [
         {"role": m.role, "content": redact(m.text)} for m in request.messages[:-1]
@@ -395,6 +396,13 @@ async def execute_turn(
         # not the answer: it was glued in front of the result without a space.
         final_only=isinstance(tools, WorkTools),
         before_final=None if guard is None else partial(guard.next_step, RUN_TOOL),
+        # Once the requested file is published, the turn ends with a short
+        # closing message instead of answering the request again.
+        after_tools=partial(
+            closing_step, tools, bool(getattr(model, "produces_files", False))
+        )
+        if isinstance(tools, WorkTools)
+        else None,
     )
     assert isinstance(result, CodeResult)
     if isinstance(tools, WorkTools) and guard is not None and result.state == "done":
