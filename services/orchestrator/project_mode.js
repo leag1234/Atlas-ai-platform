@@ -385,16 +385,21 @@
   }
   async function choose(value) {
     cleanup(); lifecycle = new AbortController(); const current = generation;
-    scope = value; projects = []; conversations = []; files = []; folders = []; archivedConversations = []; showArchived = false; conversationSearch = ''; searchResults = null; center.replaceChildren(); right.replaceChildren(); say(t('loading'));
+    // The project list stays until the new one arrives: emptying it removed the sidebar list during every load.
+    scope = value; conversations = []; files = []; folders = []; archivedConversations = []; showArchived = false; conversationSearch = ''; searchResults = null; center.replaceChildren(loadingState()); right.replaceChildren(); say('');
     for (const key of ['org', 'project', 'conversation', 'session']) if (value[key] && !uuid(value[key])) throw new Error(t('selectionError'));
     if (value.tasks && value.project) throw new Error(t('selectionError'));
     if (value.org && !memberships.some(m => m.org_id === value.org)) throw new Error(t('selectionError'));
+    // Everything the page needs is requested at once: these reads do not depend on each other, and in
+    // sequence each round trip added its full latency before the first message showed (14 s measured
+    // on staging under load). The selection is still checked against the project list before use.
+    const early = value.org && value.project ? prefetch(value) : null;
     if (value.org) projects = await list(`/api/atlas/orgs/${value.org}/projects`);
     if (current !== generation) return;
     if (value.project) {
       if (!projects.some(p => p.id === value.project)) throw new Error(t('selectionError'));
-      projectInfo = {...projects.find(p => p.id === value.project), ...await api(base())}; action = 'chat';
-      conversations = await list(base() + '/conversations');
+      projectInfo = {...projects.find(p => p.id === value.project), ...await early.info}; action = 'chat';
+      conversations = await early.conversations;
       // An archived conversation stays readable; it is only hidden from the default list.
       if (value.conversation && !conversations.some(c => c.id === value.conversation) && !(await list(base() + '/conversations?archived=1')).some(c => c.id === value.conversation)) throw new Error(t('selectionError'));
     }
@@ -404,11 +409,29 @@
     document.body.classList.add('atlas-project-open');
     hostMain()?.setAttribute('inert', '');
     say('');
-    if (value.project) await mountConversation(current); else if (value.tasks) await tasksPage(); else projectsPage();
+    if (value.project) await mountConversation(current, early); else if (value.tasks) await tasksPage(); else projectsPage();
+  }
+  // The independent reads of a project page, started together. Each promise also gets a no-op handler so a
+  // read that fails while an earlier one is awaited is not reported as unhandled; awaiting it still throws.
+  function prefetch(value) {
+    const path = `/api/atlas/orgs/${value.org}/projects/${value.project}`;
+    const reads = {
+      info: api(path), conversations: list(path + '/conversations'), files: list(path + '/files'), folders: list(path + '/folders'),
+      turns: value.conversation ? list(path + '/conversations/' + value.conversation + '/turns') : null,
+      panels: Promise.all([api(path + '/instructions'), list(path + '/memory'), list(path + '/deliverables'), api(path + '/scheduled-tasks?limit=100')])
+    };
+    for (const read of Object.values(reads)) read?.catch(() => {});
+    return reads;
+  }
+  // Shown at once in the project pane until its content arrives (it stayed empty for seconds).
+  function loadingState() {
+    const state = node('div', null, 'atlas-project-loading'); state.setAttribute('role', 'status');
+    state.append(node('span', null, 'atlas-project-loading-mark'), node('span', t('loading')));
+    return state;
   }
   const eligibleFiles = () => files.filter(f => f.locality !== 'local_only' && f.availability !== 'not_retained' && f.id !== projectInfo.instructions_file_id && folders.some(folder => folder.id === f.folder_id && folder.model_use === 'allow'));
-  async function mountConversation(current) {
-    [files, folders] = await Promise.all([list(base() + '/files'), list(base() + '/folders')]);
+  async function mountConversation(current, early = null) {
+    [files, folders] = await Promise.all(early ? [early.files, early.folders] : [list(base() + '/files'), list(base() + '/folders')]);
     if (current !== generation) return;
     center.replaceChildren(); root.dataset.view = scope.conversation ? 'conversation' : 'project'; projectHeading();
     eligibleFiles().forEach(f => selected.add(f.version_id));
@@ -442,8 +465,10 @@
     composer.addEventListener('submit', guarded(submit));
     input.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!send.disabled) composer.requestSubmit(); } });
     const history = node('div', null, 'atlas-project-history'); history.append(transcript, activity); center.append(history, composer);
-    if (!scope.conversation) { history.hidden = true; conversationList(); controls(); await panels(); return; }
-    await refreshTurns();
+    // The side panels load with the conversation, not after its events.
+    const sidePanels = panels(early?.panels); sidePanels.catch(() => {});
+    if (!scope.conversation) { history.hidden = true; conversationList(); controls(); await sidePanels; return; }
+    await refreshTurns(early?.turns);
     if (scope.session) {
       session = await api(base() + '/work-sessions/' + scope.session);
       if (session.conversation_id !== scope.conversation) throw new Error(t('selectionError'));
@@ -452,7 +477,7 @@
       for (const version of session.base_file_versions) if (files.some(f => f.version_id === version.version_id)) selected.add(version.version_id);
     }
     await setAction();
-    await replay(); await restoreSession(); await panels();
+    await replay(); await restoreSession(); await sidePanels;
     if (current === generation) { input.focus(); schedule(current); loadVoiceConfig(); }
   }
   // The turn being produced: re-renders from the server list must not erase it (the transcript
@@ -619,9 +644,9 @@
     }).catch(() => {content.dataset.format = 'text';});
     return content;
   }
-  async function refreshTurns() {
+  async function refreshTurns(prefetched = null) {
     const current = generation;
-    const result = await list(base() + '/conversations/' + scope.conversation + '/turns'); checkScope(current); turns = result; if (!sending) renderTurns(); renderEvents();
+    const result = await (prefetched || list(base() + '/conversations/' + scope.conversation + '/turns')); checkScope(current); turns = result; if (!sending) renderTurns(); renderEvents();
   }
   let recorder = null, micStream = null, micChunks = [];
   async function dictate() {
@@ -862,9 +887,9 @@
   }
   let panelData, sideResize, hostResize, observedHost;
   const detail = (key, value) => node('p', `${t(key)}: ${value == null ? t('unknown') : value}`, 'atlas-project-detail');
-  async function panels() {
+  async function panels(prefetched = null) {
     const current = generation;
-    const [instructions, memory, deliverables, scheduled] = await Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables'),api(base()+'/scheduled-tasks?limit=100')]);
+    const [instructions, memory, deliverables, scheduled] = await (prefetched || Promise.all([api(base() + '/instructions'),list(base() + '/memory'),list(base() + '/deliverables'),api(base()+'/scheduled-tasks?limit=100')]));
     checkScope(current); panelData = {instructions,memory,deliverables,scheduled}; renderPanels(); renderTurns();
   }
   async function requestChange(key, value) {
@@ -1197,6 +1222,8 @@
       dialog.append(node('h2', moveText('choose'))); projectControls(dialog);
       const cancel = button('cancel', () => dialog.close()); dialog.append(cancel);
       dialog.addEventListener('close', () => dialog.remove(), {once:true}); document.body.append(dialog); dialog.showModal();
+      // Opening the list does not focus its search field: on a phone that raised the keyboard over the projects.
+      dialog.tabIndex = -1; dialog.focus();
       return;
     }
     const panel = node('div', null, 'atlas-project-move-menu');
@@ -1495,12 +1522,12 @@
     if (/^\/(auth|admin)/.test(location.pathname)) return;
     if (booting) return; booting = true;
     try {
-      const me = await fetch('/api/atlas/me', {credentials:'same-origin'});
-      if (!me.ok) {if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) throw new Error(`${t('failure')} (${me.status})`); return;}
+      // Both identities are read together: in sequence they delayed the project page by a round trip.
+      const [me, host] = await identityReads();
+      if (!me.ok) {if (projectRoute()) throw Object.assign(new Error(`${t('failure')} (${me.status})`), {status:me.status}); pendingState(false); return;}
       memberships = (await me.json()).memberships;
       if (!scope && memberships[0]?.org_id) scope = {org: memberships[0].org_id};
-      const host = await fetch('/api/v1/auths/', {credentials:'same-origin'});
-      if (!host.ok) {if (!owned && !selections().has('project')) return; throw new Error(t('signIn'));}
+      if (!host.ok) {if (!owned && !selections().has('project')) { pendingState(false); return; } throw new Error(t('signIn'));}
       identity = (await host.json()).id; if (!identity) throw new Error(t('signIn'));
       document.getElementById('atlas-project-failure')?.remove();
       for (let i = sessionStorage.length - 1; i >= 0; i--) { const key = sessionStorage.key(i); if (key.startsWith('atlas-project:') && key !== storageKey()) sessionStorage.removeItem(key); }
@@ -1508,8 +1535,31 @@
       if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) await mount();
     } catch(error) {showFailure(error);} finally {booting = false;}
   }
+  // A project page opened while the service is briefly unreachable (a network error or a 5xx on these two
+  // reads, seen once right after a move) retries twice before reporting; the reads change nothing.
+  async function identityReads() {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const reads = await Promise.all([fetch('/api/atlas/me', {credentials:'same-origin'}), fetch('/api/v1/auths/', {credentials:'same-origin'})]);
+        if (attempt < 2 && projectRoute() && reads.some(read => read.status >= 500)) throw Object.assign(new Error('transient'), {transient:true});
+        return reads;
+      } catch (error) {
+        if (attempt >= 2 || !projectRoute() || !(error instanceof TypeError || error.transient)) throw error;
+        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      }
+    }
+  }
+  const projectRoute = () => owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects');
+  // A project address shows its loading state as soon as this script runs, before the chat shell has
+  // finished starting (the pane stayed empty for seconds); the project view replaces it once mounted.
+  function pendingState(show) {
+    document.getElementById('atlas-project-pending')?.remove();
+    if (!show) return;
+    const pending = node('div', null, 'atlas-project-pending'); pending.id = 'atlas-project-pending'; pending.append(loadingState());
+    document.body.append(pending);
+  }
   function showFailure(error) {
-    cleanup(); root?.remove(); document.getElementById('atlas-project-failure')?.remove();
+    pendingState(false); cleanup(); root?.remove(); document.getElementById('atlas-project-failure')?.remove();
     const warning = node('aside','','atlas-project-failure'); errorNotice(warning,error,'shellFailure'); warning.id = 'atlas-project-failure'; warning.setAttribute('role','alert');
     warning.append(button('close',() => warning.remove())); document.body.append(warning);
   }
@@ -1531,7 +1581,7 @@
     icon.append(frame, rail); menu.append(icon);
     menu.addEventListener('click', () => document.getElementById('sidebar-toggle-button')?.click());
     mobile.append(menu,home,button('projects',() => choose({org:scope.org})));
-    root.append(mobile,left,center,right,notice); document.body.append(root);
+    root.append(mobile,left,center,right,notice); document.body.append(root); pendingState(false);
     const side = document.getElementById('atlas-side-view');
     if (side) {sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width',side.getBoundingClientRect().width+'px')); sideResize.observe(side);}
     const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session'),tasks:q.get('tasks') === 'true'};
@@ -1546,13 +1596,13 @@
       const prior = route; route = location.pathname; cleanup(); root?.remove();
       if (route.startsWith('/admin/settings')) guarded(adminEntry)();
       if (/^\/(auth|admin)/.test(prior) && !/^\/(auth|admin)/.test(route)) boot();
-      if (/^\/(auth|admin)/.test(route)) { if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
+      if (/^\/(auth|admin)/.test(route)) { pendingState(false); if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
     }
   });
   window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) guarded(mount)(); });
   document.addEventListener('click', event => {const link = event.target.closest?.('#sidebar a, a#sidebar-new-chat-button, #pinned-menu-items-list a'); if (link && root?.isConnected) ordinary();});
   window.addEventListener('resize', installNavigation);
   window.addEventListener('pagehide', cleanup);
-  const start = () => { watch.observe(document.body, { childList: true, subtree: true }); boot(); };
+  const start = () => { if (projectRoute() && !/^\/(auth|admin)/.test(location.pathname)) pendingState(true); watch.observe(document.body, { childList: true, subtree: true }); boot(); };
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', start, { once: true }) : start();
 })();

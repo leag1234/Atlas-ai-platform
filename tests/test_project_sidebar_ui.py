@@ -122,3 +122,70 @@ class ImportedDrawingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProjectOpenTests(unittest.TestCase):
+    def test_independent_reads_start_together_and_feed_the_page(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn(
+            "const early = value.org && value.project ? prefetch(value) : null;", js
+        )
+        body = js[js.index("function prefetch(value)") :][:900]
+        for read_name in (
+            "info:",
+            "conversations:",
+            "files:",
+            "folders:",
+            "turns:",
+            "panels:",
+        ):
+            self.assertIn(read_name, body)
+        self.assertIn(
+            "for (const read of Object.values(reads)) read?.catch(() => {});", body
+        )
+        self.assertIn("await mountConversation(current, early)", js)
+        self.assertIn("await refreshTurns(early?.turns);", js)
+        self.assertIn("const sidePanels = panels(early?.panels);", js)
+
+    def test_the_pane_shows_a_loading_state_at_once(self) -> None:
+        js = read("project_mode.js")
+        css = read("project_mode.css")
+        self.assertIn("center.replaceChildren(loadingState());", js)
+        self.assertIn(".atlas-project-loading {", css)
+
+
+class MoveDialogTests(unittest.TestCase):
+    def test_search_ring_is_scoped_to_open_webui_dialogs(self) -> None:
+        css = read("chat-ui.css")
+        self.assertIn(
+            ":is([role=dialog],dialog):not(.atlas-project-dialog) :has(> input[placeholder]:focus)",
+            css,
+        )
+
+    def test_phone_list_does_not_focus_its_search_field(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn("dialog.tabIndex = -1; dialog.focus();", js)
+        css = read("project_mode.css")
+        self.assertIn(
+            ".atlas-project-move-dialog .atlas-project-move-form { flex:1 1 auto; min-height:0; overflow:auto;",
+            css,
+        )
+
+
+class ProjectBootTests(unittest.TestCase):
+    def test_project_address_shows_its_loading_state_before_mounting(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn(
+            "if (projectRoute() && !/^\\/(auth|admin)/.test(location.pathname)) pendingState(true);",
+            js,
+        )
+        self.assertIn("document.body.append(root); pendingState(false);", js)
+        self.assertIn("pendingState(false); cleanup(); root?.remove();", js)
+
+    def test_identity_reads_are_parallel_and_retried_only_when_transient(self) -> None:
+        js = read("project_mode.js")
+        body = js[js.index("async function identityReads()") :][:900]
+        self.assertIn("Promise.all([fetch('/api/atlas/me'", body)
+        self.assertIn("read.status >= 500", body)
+        self.assertIn("error instanceof TypeError || error.transient", body)
+        self.assertIn("attempt >= 2", body)
