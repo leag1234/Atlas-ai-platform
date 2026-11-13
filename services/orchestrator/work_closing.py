@@ -34,7 +34,8 @@ PUBLISHING = "publish_document"
 
 CLOSING_INSTRUCTION = (
     "The requested file is published and verified ({files}). The user already "
-    "has its download and preview links: do not write them. If the request asked "
+    "gets its download and preview links with your reply: do not write them "
+    "and do not say where they are (above, below). If the request asked "
     "only for this file, end the turn now: reply in one or two short sentences, "
     "in the language of the request, that say what was delivered. Do not "
     "summarize the document, list its sections or its sources, or offer more "
