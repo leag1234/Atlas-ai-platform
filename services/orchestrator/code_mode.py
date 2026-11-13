@@ -754,6 +754,7 @@ async def process_work(
     collect_workspace: Callable[[Workspace], Awaitable[None]] | None = None,
     saved_reply: str | None = None,
     wall_clock: float | None = None,
+    turn_request_id: str | None = None,
 ) -> None:
     """Task-G handoff after verified identity and scoped conversation/context selection.
 
@@ -761,7 +762,9 @@ async def process_work(
     current authority for each operation; disconnect cancellation follows the same
     cleanup boundary as an explicit cancel. wall_clock, when given, lowers the
     turn's time limit (a chat turn's Work ends before the chat deadline); the
-    project interface leaves it out and keeps the Work limit.
+    project interface leaves it out and keeps the Work limit. turn_request_id,
+    when given, identifies this run of the turn instead of the chat request id:
+    a run started again after a failed one needs its own lease and reservation.
     """
     from uuid import UUID
     from dataclasses import replace
@@ -781,20 +784,17 @@ async def process_work(
     if session["conversation_id"] != request.conversation_id:
         raise ProjectError(404, "not_found")
     limits = settings()
+    run_id = str(UUID(turn_request_id or item.request_id.removeprefix("chatcmpl-")))
     acquired = await broker.call(
         "acquire",
         dict(
             session_id=session_id,
-            request_id=str(UUID(item.request_id.removeprefix("chatcmpl-"))),
+            request_id=run_id,
             expected_revision=session["revision"],
             storage_bytes=session["effective_limits"]["expanded_bytes"],
         ),
     )
-    execution = WorkExecution(
-        broker,
-        acquired["session"],
-        str(UUID(item.request_id.removeprefix("chatcmpl-"))),
-    )
+    execution = WorkExecution(broker, acquired["session"], run_id)
     if dispatch is not None:
         dispatch.session_id = session_id
         dispatch.generation = execution.session["lease"]["generation"]

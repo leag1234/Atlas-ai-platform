@@ -5,6 +5,7 @@ import os
 import aiohttp
 import unittest
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 from packages.work_intent import needs_work
 from services.orchestrator.chat_schema import ChatRequest
@@ -790,10 +791,10 @@ class DroppedConnectionTests(unittest.IsolatedAsyncioTestCase):
         req.__dict__["artifact_owner"] = "user@example.com"
         item = Interaction()
 
-        calls: list[int] = []
+        calls: list[object] = []
 
         async def failing_work(r, i, **kwargs):  # type: ignore[no-untyped-def]
-            calls.append(1)
+            calls.append(kwargs.get("turn_request_id"))
             if len(calls) == 1:
                 raise aiohttp.ClientOSError("connection reset")
             i.state, i.reponse, i.task_type = "done", "Script ran.", "work"
@@ -830,6 +831,56 @@ class DroppedConnectionTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await escalate_to_work(req, item))
         self.assertEqual(len(calls), 2)
         self.assertEqual((item.state, item.reponse), ("done", "Script ran."))
+        # The first run is the chat request; the second is a new run with its
+        # own id (lease and reservation), never the failed run's id again.
+        self.assertIsNone(calls[0])
+        self.assertEqual(str(UUID(str(calls[1]))), calls[1])
+
+    async def test_a_new_run_acquires_under_its_own_id(self) -> None:
+        from services.orchestrator import code_mode
+        from services.orchestrator.interactions import Interaction
+
+        acquired: list[str] = []
+
+        class Broker:
+            def __init__(self, *args: object) -> None:
+                pass
+
+            async def public(self, method: str, path: str) -> tuple[int, dict]:
+                return 200, {
+                    "conversation_id": "123e4567-e89b-12d3-a456-426614174003",
+                    "revision": 1,
+                    "effective_limits": {"expanded_bytes": 1},
+                }
+
+            async def call(self, operation: str, data: dict) -> dict:
+                acquired.append(data["request_id"])
+                raise RuntimeError("stop after acquire")
+
+        req = request("Fais-moi un script")
+        req = req.model_copy(
+            update={"conversation_id": "123e4567-e89b-12d3-a456-426614174003"}
+        )
+        item = Interaction()
+        fresh = "123e4567-e89b-12d3-a456-426614174099"
+        with (
+            patch("services.orchestrator.code_api.ExecutionBroker", Broker),
+            patch("services.orchestrator.code_mode.settings", return_value=None),
+        ):
+            for run_id in (None, fresh):
+                with self.assertRaises(RuntimeError):
+                    await code_mode.process_work(
+                        req,
+                        item,
+                        subject="user@example.com",
+                        org_id="123e4567-e89b-12d3-a456-426614174000",
+                        project_id="123e4567-e89b-12d3-a456-426614174002",
+                        session_id="123e4567-e89b-12d3-a456-426614174004",
+                        turn_request_id=run_id,
+                    )
+        self.assertEqual(
+            acquired, [str(UUID(item.request_id.removeprefix("chatcmpl-"))), fresh]
+        )
 
 
 class NamedOfficeFormatTests(unittest.TestCase):
