@@ -355,3 +355,19 @@ html.dark .atlas-project-move-menu, html.dark .atlas-project-row-menu { backgrou
 .atlas-project-turn .answer img { display:block; max-width:100%; height:auto; margin:10px 0; border-radius:var(--atlas-radius-sm,8px); }
 /* A project's conversations sit one step in under it, like the chats of an Open WebUI folder (the generic row margin removed the indent). */
 .atlas-project-host-projects .atlas-project-host-conversation { margin-left:12px; }
+/* The project pane shows its loading state at once, centred in the empty pane, until the content arrives. */
+.atlas-project-loading { display:flex; align-items:center; justify-content:center; gap:10px; flex:1; min-height:160px; color:var(--atlas-muted); font-size:var(--atlas-ui-size,14px); }
+.atlas-project-loading-mark { width:16px; height:16px; border:2px solid var(--atlas-border); border-top-color:var(--atlas-accent); border-radius:50%; animation:atlas-project-spin .8s linear infinite; }
+@media (prefers-reduced-motion:reduce) { .atlas-project-loading-mark { animation:none; } }
+/* The phone move dialog is a menu: the same rows as the desktop menu, the heading fixed, only the list scrolling. */
+.atlas-project-dialog.atlas-project-move-dialog { display:flex; flex-direction:column; width:min(360px,calc(100vw - 32px)); max-height:min(70dvh,560px); padding:6px; border-radius:14px; overflow:hidden; }
+.atlas-project-dialog.atlas-project-move-dialog:not([open]) { display:none; }
+.atlas-project-move-dialog h2 { flex:none; margin:0; line-height:1.4; }
+.atlas-project-move-dialog .atlas-project-move-form { flex:1 1 auto; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:2px; margin:0; padding:0; border:0; border-radius:0; box-shadow:none; }
+.atlas-project-move-dialog .atlas-project-move-form > * { flex:none; }
+.atlas-project-move-dialog .atlas-project-move-form button { margin:0; min-height:44px; }
+.atlas-project-move-dialog input[type=search] { margin:0 0 4px; border:0; border-bottom:1px solid var(--atlas-border); border-radius:0; background:transparent; }
+.atlas-project-move-dialog > button { flex:none; align-self:flex-end; margin:6px; }
+/* Before the project view is mounted, the same frame holds its loading state over the starting chat shell. */
+.atlas-project-pending { position:fixed; z-index:35; inset:14px 14px 14px calc(var(--atlas-sidebar-width,250px) + 28px); display:flex; border-radius:var(--atlas-radius,20px); background:var(--atlas-chat-panel,var(--atlas-bg)); color:var(--atlas-text); }
+@media (max-width:767px) { .atlas-project-pending { inset:0; border-radius:0; } }

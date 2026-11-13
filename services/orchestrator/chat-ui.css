@@ -584,9 +584,10 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 .atlas-rail-open:is(:hover,:focus-visible) { background:var(--atlas-surface); }
 
 /* Sidebar search (Ctrl+K): no wide outline over the magnifier on the focused input (owner report 2026-11-10). */
-:is([role=dialog],dialog) input[placeholder]:focus { outline:none!important; box-shadow:none!important; }
+/* Scoped to Open WebUI's dialogs: Atlas dialogs (the project move list) are not search panels and got the ring around their whole list. */
+:is([role=dialog],dialog):not(.atlas-project-dialog) input[placeholder]:focus { outline:none!important; box-shadow:none!important; }
 /* The search field's container shows focus with a thin accent ring inside the dialog bounds. */
-:is([role=dialog],dialog) :has(> input[placeholder]:focus) { border-radius:10px; box-shadow:inset 0 0 0 1px var(--atlas-accent); }
+:is([role=dialog],dialog):not(.atlas-project-dialog) :has(> input[placeholder]:focus) { border-radius:10px; box-shadow:inset 0 0 0 1px var(--atlas-accent); }
 /* The selected chat row's "..." menu button follows the selected text colour (owner request), grey pill included. */
 #sidebar :has(> a.selected) :is(button,button svg) { color:var(--atlas-row-selected-fg)!important; }
 /* Open WebUI's chat controls panel (system prompt and Ollama parameters) is not part of Atlas: hide its button and panel. */
