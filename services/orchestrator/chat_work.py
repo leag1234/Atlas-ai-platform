@@ -523,6 +523,11 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
                 project_id=project,
                 session_id=session_id,
                 wall_clock=work_time_limit(),
+                # The run after a failed one is a new run of the turn: it needs
+                # its own lease and reservation. Reusing the chat request id
+                # refused it at once (ProjectError) and the turn ended after a
+                # dropped engine connection (staging 2026-11-13).
+                turn_request_id=None if attempt == 0 else str(uuid4()),
             )
             failure = ""
         except asyncio.CancelledError:
@@ -536,10 +541,13 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
                 # left to retry or for the chat to answer alone.
                 item.erreurs.append("time_limit")
                 break
-            # A connection dropped before the turn started (state still "received":
-            # nothing ran, nothing was saved) is retried once. On staging a script
-            # turn fell back to "code execution is not available" on one dropped
-            # connection (ClientOSError, 2026-11-11).
+            # A dropped connection while nothing was delivered (state still
+            # "received", no answer) is retried once, as a new run with a fresh
+            # runtime: the failed run released its lease and removed its
+            # containers. On staging a script turn fell back to "code execution
+            # is not available" on one dropped connection (ClientOSError,
+            # 2026-11-11); an engine connection dropped 9 s into a turn
+            # (ServerDisconnectedError, 2026-11-13).
             if (
                 attempt == 0
                 and isinstance(exc, (aiohttp.ClientError, OSError))
