@@ -142,6 +142,9 @@ class GatewayModel:
         # Highest reasoning effort the gateway actually used for a delivered turn.
         self.reasoning_used = "none"
         self.cost_ceiling: Decimal | None = None
+        # Profile calls only: the bounded sampling temperature the gateway
+        # passes on (None keeps the provider at temperature 0).
+        self.sampling_temperature: float | None = None
         self.context_samples: list[dict[str, object]] = []
         from services.orchestrator.session_context import SessionContext
 
@@ -536,6 +539,8 @@ class GatewayModel:
                 payload["reasoning_disabled"] = True
             if self.reasoning_ceiling is not None:
                 payload["reasoning_ceiling"] = self.reasoning_ceiling
+            if self.sampling_temperature is not None:
+                payload["sampling_temperature"] = self.sampling_temperature
         if self.privacy == "strict":
             payload["privacy"] = "strict"
         if self.produces_files:

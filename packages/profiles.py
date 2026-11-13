@@ -168,3 +168,22 @@ def context_window(profile: str, *, vision: bool = False) -> int:
     if type(window) is not int or window <= 0:
         raise ValueError("invalid_context_window")
     return window
+
+
+# Steps of the picture chain (services/orchestrator/pictures), each bound to a
+# declared profile by `picture_roles` in services/model-gateway/routing.yaml.
+PICTURE_ROLES = ("picture_painter", "picture_checklist")
+
+
+def picture_profile(role: str) -> str | None:
+    """The profile a picture step runs on, or None when it is not enabled here."""
+    import yaml
+
+    if role not in PICTURE_ROLES:
+        raise ValueError("unknown_picture_role")
+    path = Path(__file__).resolve().parents[1] / "services/model-gateway/routing.yaml"
+    roles = yaml.safe_load(path.read_text()).get("picture_roles") or {}
+    profile = roles.get(role)
+    if not isinstance(profile, str) or not accepted_profile(profile):
+        return None
+    return profile

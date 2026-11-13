@@ -309,7 +309,9 @@ async def attempt(
         ),
         **provider_settings.json_options(request.response_format, routed),
         "max_tokens": request.max_tokens,
-        "temperature": 0,
+        "temperature": 0
+        if request.sampling_temperature is None
+        else request.sampling_temperature,
         # Validation keeps client requests at none; only the quality controller
         # sets a per-model configured effort on an internal attempt copy.
         "reasoning_effort": request.reasoning_effort,

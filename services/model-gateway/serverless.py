@@ -1,6 +1,11 @@
 """M8 task policy: validated capabilities and conservative two-attempt reservation."""
 
-from packages.profiles import HIDDEN_PROFILES, PROFILES, enabled_hidden_profiles
+from packages.profiles import (
+    HIDDEN_PROFILES,
+    PICTURE_ROLES,
+    PROFILES,
+    enabled_hidden_profiles,
+)
 from packages.limits import ProviderLimitError
 from packages.context_limit import ContextExceeded
 
@@ -114,6 +119,14 @@ class ServerlessPolicy:
             role not in self.config for role in self.public_profiles.values()
         ):
             raise ValueError("invalid_public_profiles")
+        # Roles of the picture chain name a declared profile, public or hidden.
+        self.picture_roles: dict[str, str] = routing.get("picture_roles", {})
+        if set(self.picture_roles) != set(PICTURE_ROLES) or any(
+            profile not in self.public_profiles
+            and profile not in declared_hidden_profiles
+            for profile in self.picture_roles.values()
+        ):
+            raise ValueError("invalid_picture_roles")
         self.prices = yaml.safe_load((root / "pricing.yaml").read_text())["models"]
         self.config, self.prices = configure(self.config, self.prices)
         self.hidden_profiles: dict[str, str] = {}

@@ -123,6 +123,12 @@ class AgentRequest(BaseModel):
     budget_eur: str | None = Field(
         default=None, max_length=40, exclude_if=lambda value: value is None
     )
+    # Sampling temperature of a profile call, bounded. Unset, the provider
+    # receives temperature 0 exactly as before; a caller that needs distinct
+    # drafts of one request (pictures by code) sets it.
+    sampling_temperature: float | None = Field(
+        default=None, ge=0, le=1, exclude_if=lambda value: value is None
+    )
 
     @model_validator(mode="after")
     def quality(self) -> Self:
@@ -170,6 +176,7 @@ class AgentRequest(BaseModel):
                 or self.budget_eur is not None
                 or self.reasoning_effort == "high"
                 or self.reasoning_ceiling is not None
+                or self.sampling_temperature is not None
             ):
                 raise ValueError("invalid_legacy_profile")
             self.reasoning_effort = "none"

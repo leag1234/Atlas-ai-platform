@@ -94,3 +94,13 @@ the same max_tokens and cost reservation, and an empty or truncated answer
 tokens; the following turns of that answer stay without reasoning. No provider
 is configured with a verified separate reasoning-token budget, so this retry is the guard.
 Responses report the effort actually used as `atlas.reasoning_effort`.
+
+Sampling: profile calls send `temperature: 0` unless the caller sets
+`sampling_temperature` (0 to 1) on `/agent/complete` or `/agent/stream`; the
+request body is otherwise unchanged, and legacy (profile-less) calls refuse the
+field. The picture chain (services/orchestrator/pictures) uses 0.7 so that its
+four parallel drafts of one request differ. `picture_roles` in routing.yaml binds
+each picture step (`picture_painter`, `picture_checklist`) to a declared profile;
+the orchestrator reads it with `packages.profiles.picture_profile`, so no model
+name appears outside the gateway, and a painter profile that is not enabled
+leaves the picture chain off.
