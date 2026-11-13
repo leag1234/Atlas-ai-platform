@@ -886,12 +886,11 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
     # Work deadline the chat limits were refused and the person got a raw
     # failure (staging 2026-11-10, a presentation asked after a Work conflict).
     request.__dict__["work_declined"] = True
-    from services.orchestrator.location import location_dependent
+    # A turn whose answer depends on where the person is: the stated place, the
+    # consented browser position, or one short question; never a guessed city.
+    from services.orchestrator.location_route import location_turn
 
-    if not request.continuation and location_dependent(request.user_text):
-        from services.orchestrator.nearby_chat import process_nearby
-
-        await process_nearby(request, item)
+    if not request.continuation and await location_turn(request, item):
         return
     if (
         extended_enabled()

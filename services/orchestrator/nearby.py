@@ -10,6 +10,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import time
 from zoneinfo import ZoneInfo
 from typing import Any
@@ -18,7 +19,18 @@ import aiohttp
 from opening_hours import OpeningHours, State, validate
 
 from services.orchestrator.cache import Cache
-from services.orchestrator.location import CATEGORIES, Position, categories
+from services.orchestrator.location import (
+    CATEGORIES,
+    Position,
+    categories,
+    category_tags,
+)
+
+
+# A word joining a street or landmark to its town in free text (fr, en, de, es, it).
+PLACE_JOINER = re.compile(
+    r"\s+(?:à|a|au|aux|in|at|near|bei|en|a la|in der)\s+", re.IGNORECASE
+)
 
 
 class NearbyError(ValueError):
@@ -93,6 +105,11 @@ def re_school_holiday(expression: str) -> bool:
     return bool(re.search(r"\bSH\b", expression))
 
 
+# How many closer places without listed hours are added to the five shown
+# (nearby_presentation shows up to eight).
+UNKNOWN_EXTRA = 3
+
+
 def rank(
     candidates: list[dict[str, Any]], open_now: bool = True
 ) -> list[dict[str, Any]]:
@@ -131,6 +148,20 @@ def rank(
             )
             if replace is not None:
                 chosen[replace] = candidate
+    # Opening first hides a place without listed hours that is closer than the
+    # places shown (owner report 2026-11-13: close bakeries were missing). It may
+    # well be open: keep the nearest few, in their own "hours not listed" group.
+    if open_now and chosen:
+        farthest = max(p["distance_m"] for p in chosen)
+        closer_unknown = [
+            p
+            for p in sorted(ordered, key=lambda p: p["distance_m"])
+            if p["opening"]["status"] == "unknown"
+            and not p["opening"]["next_opening"]
+            and p["distance_m"] < farthest
+            and not any(p is c for c in chosen)
+        ]
+        chosen.extend(closer_unknown[:UNKNOWN_EXTRA])
     return sorted(chosen, key=key)
 
 
@@ -216,6 +247,14 @@ class OSM:
             "geocode",
             {"q": place, "format": "jsonv2", "limit": "1", "addressdetails": "1"},
         )
+        # People write "Station Square in Caen" or "Main Street in Leeds"; the
+        # search engine wants "Station Square, Caen". One retry, same policy.
+        joined = PLACE_JOINER.sub(", ", place)
+        if not data and joined != place:
+            data = await self.request(
+                "geocode",
+                {"q": joined, "format": "jsonv2", "limit": "1", "addressdetails": "1"},
+            )
         try:
             row = data[0]
             if not isinstance(row, dict):
@@ -288,8 +327,9 @@ class OSM:
         cached = self.cache.get(key)
         if cached is None:
             selectors = "".join(
-                f'nwr["{CATEGORIES[k][0]}"="{CATEGORIES[k][1]}"]({bbox});'
+                f'nwr["{tag}"="{value}"]({bbox});'
                 for k in requested
+                for tag, value in category_tags(k)
             )
             for endpoint in endpoints:
                 try:
@@ -358,7 +398,9 @@ class OSM:
                     (
                         k
                         for k in requested
-                        if tags.get(CATEGORIES[k][0]) == CATEGORIES[k][1]
+                        if any(
+                            tags.get(tag) == value for tag, value in category_tags(k)
+                        )
                     ),
                     None,
                 )
@@ -422,118 +464,174 @@ class OSM:
         self, origin: Position, requested: list[str], radius: int, language: str
     ) -> dict[str, Any]:
         # Fixed shared cells: no original/rounded request position or identity
-        # enters a key or cached result. Search only requested categories once.
+        # enters a key or cached result. Search only requested categories.
         cell_lat = (math.floor(origin.latitude * 50) + 0.5) / 50
         cell_lon = (math.floor(origin.longitude * 50) + 0.5) / 50
         pad = (math.ceil(radius / 1500) * 1500) / 110000
         lon_pad = pad / max(0.01, math.cos(math.radians(cell_lat)))
-        box = [
+        box = (
             max(-180, cell_lon - 0.01 - lon_pad),
             min(90, cell_lat + 0.01 + pad),
             min(180, cell_lon + 0.01 + lon_pad),
             max(-90, cell_lat - 0.01 - pad),
-        ]
-        viewbox = ",".join(f"{v:.4f}" for v in box)
+        )
         endpoint = os.environ.get(
             "ATLAS_NOMINATIM_URL", "https://nominatim.openstreetmap.org/search"
         )
         elements: list[dict[str, Any]] = []
+        seen: set[tuple[str, object]] = set()
         for kind in requested:
             term = CATEGORY_TERMS[kind].get(language, CATEGORY_TERMS[kind]["en"])
-            key = (
-                "public-pois:"
-                + hashlib.sha256(f"{endpoint}:{viewbox}:{term}".encode()).hexdigest()
-            )
-            cached = self.cache.get(key)
-            if cached is None:
-                try:
-                    rows = await self.request(
-                        "geocode",
-                        dict(
-                            q=term,
-                            format="jsonv2",
-                            extratags="1",
-                            addressdetails="1",
-                            limit="10",
-                            bounded="1",
-                            viewbox=viewbox,
-                            **{"accept-language": language},
-                        ),
-                    )
-                    if not isinstance(rows, list):
-                        raise NearbyError("osm_invalid_response")
-                    public = []
-                    for row in rows:
-                        if not isinstance(row, dict) or row.get("osm_type") not in {
-                            "node",
-                            "way",
-                            "relation",
-                        }:
-                            continue
-                        if (
-                            row.get("type") != CATEGORIES[kind][1]
-                            or row.get("category", row.get("class"))
-                            != CATEGORIES[kind][0]
-                        ):
-                            continue
-                        tags = row.get("extratags") or {}
-                        address = row.get("address") or {}
-                        if not isinstance(tags, dict) or not isinstance(address, dict):
-                            continue
-                        tags = {
-                            key: value
-                            for key, value in tags.items()
-                            if key
-                            in {
-                                "opening_hours",
-                                "phone",
-                                "website",
-                                "contact:phone",
-                                "contact:website",
-                                "contact:housenumber",
-                                "contact:street",
-                                "contact:postcode",
-                                "contact:city",
-                            }
-                            and isinstance(value, str)
-                        }
-                        tags["name"] = str(row.get("name", ""))
-                        tags[CATEGORIES[kind][0]] = CATEGORIES[kind][1]
-                        for key_part, value in (
-                            ("housenumber", address.get("house_number")),
-                            ("street", address.get("road")),
-                            ("postcode", address.get("postcode")),
-                            ("country", address.get("country_code")),
-                            (
-                                "city",
-                                address.get(
-                                    "city", address.get("town", address.get("village"))
-                                ),
-                            ),
-                        ):
-                            if isinstance(value, str):
-                                tags["addr:" + key_part] = value
-                        if tags.get("addr:city"):
-                            self.area = tags["addr:city"][:100]
-                        public.append(
-                            dict(
-                                type=row["osm_type"],
-                                id=row.get("osm_id"),
-                                lat=row.get("lat"),
-                                lon=row.get("lon"),
-                                tags=tags,
-                            )
-                        )
-                    cached = {"elements": public}
-                    self.cache.put(key, cached, 900)
-                except NearbyError as exc:
-                    self.failures.append("nominatim:" + str(exc))
+            # Nominatim returns at most NOMINATIM_LIMIT rows by relevance, not by
+            # distance: in a dense town centre one search misses close places
+            # (owner report 2026-11-13, Caen). A full answer splits the box in
+            # four, within a fixed number of requests per category.
+            boxes: list[tuple[tuple[float, float, float, float], int]] = [(box, 0)]
+            requests = 0
+            while boxes and requests < NOMINATIM_REQUESTS:
+                current, depth = boxes.pop(0)
+                cached, asked = await self.nominatim_box(
+                    endpoint, current, term, kind, language
+                )
+                requests += asked
+                if cached is None:
                     continue
-            public_elements = cached.get("elements")
-            if isinstance(public_elements, list):
-                elements.extend(p for p in public_elements if isinstance(p, dict))
+                public_elements = cached.get("elements")
+                if isinstance(public_elements, list):
+                    for p in public_elements:
+                        if not isinstance(p, dict):
+                            continue
+                        identity = (str(p.get("type")), p.get("id"))
+                        if identity in seen:
+                            continue
+                        seen.add(identity)
+                        elements.append(p)
+                if cached.get("saturated") and depth < NOMINATIM_SPLIT_DEPTH:
+                    west, north, east, south = current
+                    middle_lon, middle_lat = (west + east) / 2, (north + south) / 2
+                    boxes.extend(
+                        (quadrant, depth + 1)
+                        for quadrant in (
+                            (west, north, middle_lon, middle_lat),
+                            (middle_lon, north, east, middle_lat),
+                            (west, middle_lat, middle_lon, south),
+                            (middle_lon, middle_lat, east, south),
+                        )
+                    )
+            if boxes:
+                self.failures.append("nominatim:coverage_limited")
         return {"elements": elements, "provider": "nominatim"}
 
+    async def nominatim_box(
+        self,
+        endpoint: str,
+        box: tuple[float, float, float, float],
+        term: str,
+        kind: str,
+        language: str,
+    ) -> tuple[dict[str, Any] | None, int]:
+        """One public box search (cached): (result or None, requests made)."""
+        viewbox = ",".join(f"{v:.4f}" for v in box)
+        key = (
+            "public-pois:"
+            + hashlib.sha256(
+                f"{endpoint}:{viewbox}:{term}:{NOMINATIM_LIMIT}".encode()
+            ).hexdigest()
+        )
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached, 0
+        tag_pairs = category_tags(kind)
+        try:
+            rows = await self.request(
+                "geocode",
+                dict(
+                    q=term,
+                    format="jsonv2",
+                    extratags="1",
+                    addressdetails="1",
+                    limit=str(NOMINATIM_LIMIT),
+                    bounded="1",
+                    viewbox=viewbox,
+                    **{"accept-language": language},
+                ),
+            )
+            if not isinstance(rows, list):
+                raise NearbyError("osm_invalid_response")
+            public = []
+            for row in rows:
+                if not isinstance(row, dict) or row.get("osm_type") not in {
+                    "node",
+                    "way",
+                    "relation",
+                }:
+                    continue
+                if (
+                    row.get("category", row.get("class")),
+                    row.get("type"),
+                ) not in tag_pairs:
+                    continue
+                tags = row.get("extratags") or {}
+                address = row.get("address") or {}
+                if not isinstance(tags, dict) or not isinstance(address, dict):
+                    continue
+                tags = {
+                    key: value
+                    for key, value in tags.items()
+                    if key
+                    in {
+                        "opening_hours",
+                        "phone",
+                        "website",
+                        "contact:phone",
+                        "contact:website",
+                        "contact:housenumber",
+                        "contact:street",
+                        "contact:postcode",
+                        "contact:city",
+                    }
+                    and isinstance(value, str)
+                }
+                tags["name"] = str(row.get("name", ""))
+                tags[CATEGORIES[kind][0]] = CATEGORIES[kind][1]
+                for key_part, value in (
+                    ("housenumber", address.get("house_number")),
+                    ("street", address.get("road")),
+                    ("postcode", address.get("postcode")),
+                    ("country", address.get("country_code")),
+                    (
+                        "city",
+                        address.get(
+                            "city", address.get("town", address.get("village"))
+                        ),
+                    ),
+                ):
+                    if isinstance(value, str):
+                        tags["addr:" + key_part] = value
+                if tags.get("addr:city"):
+                    self.area = tags["addr:city"][:100]
+                public.append(
+                    dict(
+                        type=row["osm_type"],
+                        id=row.get("osm_id"),
+                        lat=row.get("lat"),
+                        lon=row.get("lon"),
+                        tags=tags,
+                    )
+                )
+            cached = {"elements": public, "saturated": len(rows) >= NOMINATIM_LIMIT}
+            self.cache.put(key, cached, 900)
+            return cached, 1
+        except NearbyError as exc:
+            self.failures.append("nominatim:" + str(exc))
+            return None, 1
+
+
+# Nominatim's own maximum per search; a full box is split in four, at most twice
+# deep and NOMINATIM_REQUESTS searches per category (one per second by policy).
+NOMINATIM_LIMIT = 40
+NOMINATIM_SPLIT_DEPTH = 2
+NOMINATIM_REQUESTS = 9
 
 CATEGORY_TERMS = {
     "bakery": {

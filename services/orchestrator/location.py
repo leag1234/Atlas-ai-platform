@@ -54,6 +54,18 @@ CATEGORIES = {
 }
 
 
+# Other OSM tags that mean the same kind of place. A bakery mapped only as a
+# craft (craft=bakery, without shop=bakery) is still a place that sells bread.
+ALTERNATIVE_TAGS: dict[str, tuple[tuple[str, str], ...]] = {
+    "bakery": (("craft", "bakery"),),
+}
+
+
+def category_tags(kind: str) -> tuple[tuple[str, str], ...]:
+    """Every (key, value) OSM tag that identifies a place of this category."""
+    return ((CATEGORIES[kind][0], CATEGORIES[kind][1]), *ALTERNATIVE_TAGS.get(kind, ()))
+
+
 def categories(text: str) -> list[str]:
     value = normalized(text)
     return [
@@ -90,6 +102,12 @@ class Position(BaseModel):
         return self
 
 
+# Beyond this uncertainty a browser position is not used silently: the reply
+# says so and asks for an address (owner report 2026-11-13, a desktop browser
+# located the person at their provider's network).
+COARSE_ACCURACY_M = 1000
+
+
 class Location(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     consent: Literal["once", "always", "refused", "denied"]
@@ -98,6 +116,19 @@ class Location(BaseModel):
         default=None, min_length=2, max_length=200, repr=False, exclude=True
     )
     timezone: str | None = Field(default=None, max_length=80)
+    # Radius in metres of the browser's own uncertainty (Geolocation API
+    # coords.accuracy). A large radius means a network or IP estimate, which
+    # often places the person at their access provider rather than where they are.
+    accuracy: int | None = Field(default=None, ge=0, le=40_000_000, exclude=True)
+
+    @property
+    def coarse(self) -> bool:
+        """A browser fix too imprecise to say which shops are around the person."""
+        return (
+            self.position is not None
+            and self.accuracy is not None
+            and self.accuracy > COARSE_ACCURACY_M
+        )
 
     @model_validator(mode="after")
     def validate_consent(self) -> Self:
