@@ -1,7 +1,7 @@
 """Bounded table evidence: exact decimal sums, no formula or user-code execution."""
 
 import csv
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import Context, Decimal, InvalidOperation, localcontext
 import io
 import json
 from pathlib import Path
@@ -179,6 +179,10 @@ def _bounds(rows: int, columns: int) -> None:
         )
 
 
+# Significant digits a spreadsheet keeps for a number (IEEE double, as Excel shows it).
+SPREADSHEET_DIGITS = 15
+
+
 def _number(cell: Cell) -> Decimal | None:
     text, unsafe = cell
     if (
@@ -194,6 +198,18 @@ def _number(cell: Cell) -> Decimal | None:
     except InvalidOperation:
         return None
     exponent = value.as_tuple().exponent
+    if (
+        value.is_finite()
+        and isinstance(exponent, int)
+        and exponent < -12
+        and len(value.as_tuple().digits) > SPREADSHEET_DIGITS
+    ):
+        # A spreadsheet stores 96.4 as the nearest binary double and writes it
+        # back as 96.40000000000001: rounded to the 15 significant digits a
+        # spreadsheet keeps, it is 96.4 again. These columns were rejected as
+        # ambiguous and their totals left to the model (corpus 2026-11-13).
+        value = Context(prec=SPREADSHEET_DIGITS).create_decimal(value).normalize()
+        exponent = value.as_tuple().exponent
     if (
         not value.is_finite()
         or value.copy_abs() >= Decimal("1e30")
