@@ -34,6 +34,39 @@
     }
     refresh();
   }
+  // Open WebUI 0.11.3 on SQLite can lose a generated title: a streaming message
+  // save that read the chat before the title was written puts "New Chat" back
+  // (staging 2026-11-12, about one chat in twelve; Atlas answered every title
+  // request). The title sent to the page is kept, and once the answer is done
+  // it is saved again if the stored chat still has the default title.
+  const generatedTitles = new Map();
+  function keepTitle(event) {
+    const chat = event?.chat_id;
+    const { type, data } = event?.data || {};
+    if (!chat) return;
+    const entry = generatedTitles.get(chat) || {};
+    if (type === 'chat:title' && typeof data === 'string' && data.trim()) entry.title = data.trim();
+    else if ((type === 'chat:completion' || type === 'response:completion') && data?.done) entry.done = true;
+    else return;
+    generatedTitles.set(chat, entry);
+    if (entry.title && entry.done && !entry.scheduled) {
+      entry.scheduled = true;
+      setTimeout(() => restoreTitle(chat, entry.title), 1500);
+    }
+  }
+  async function restoreTitle(chat, title) {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const address = '/api/v1/chats/' + encodeURIComponent(chat);
+    try {
+      const stored = await window.fetch(address, { credentials: 'same-origin', headers });
+      if (stored.ok && (await stored.json()).title === 'New Chat') {
+        await window.fetch(address, { method: 'POST', credentials: 'same-origin', headers, body: JSON.stringify({ chat: { title } }) });
+      }
+    } catch { /* The stored title stays as it is. */ }
+    generatedTitles.delete(chat);
+  }
   // Observe Engine.IO frames without consuming or changing native socket events.
   const Socket = window.WebSocket;
   window.WebSocket = class extends Socket {
@@ -44,7 +77,7 @@
         if (typeof event.data !== 'string' || !event.data.startsWith('42')) return;
         try {
           const [name, payload] = JSON.parse(event.data.slice(event.data.indexOf('[')));
-          if (name === 'events') eventReceived(payload);
+          if (name === 'events') { keepTitle(payload); eventReceived(payload); }
         } catch { /* Other Engine.IO frames are owned by the native client. */ }
       });
       this.addEventListener('close', () => turns.forEach(interrupt));
@@ -73,7 +106,7 @@
       if (url.origin === location.origin && url.pathname.includes('/ws/socket.io') && result.ok) {
         result.clone().text().then(text => text.split('\x1e').forEach(frame => {
           if (!frame.startsWith('42')) return;
-          try { const [name, payload] = JSON.parse(frame.slice(frame.indexOf('['))); if (name === 'events') eventReceived(payload); } catch { /* Not an event frame. */ }
+          try { const [name, payload] = JSON.parse(frame.slice(frame.indexOf('['))); if (name === 'events') { keepTitle(payload); eventReceived(payload); } } catch { /* Not an event frame. */ }
         })).catch(() => {});
       }
       return result;
