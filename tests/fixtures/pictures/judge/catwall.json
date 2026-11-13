@@ -1,0 +1,53 @@
+{
+ "request": "a cat in profile walking on top of a brick wall",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "cat",
+    "words": "a cat",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "brick-wall",
+    "words": "a brick wall",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "cat",
+    "b": "brick-wall",
+    "words": "on top of"
+   }
+  ],
+  "actions": [
+   {
+    "who": "cat",
+    "verb": "walk",
+    "words": "walking",
+    "checks": [
+     {
+      "check": "contact",
+      "with": "brick-wall"
+     },
+     {
+      "check": "dynamic"
+     }
+    ]
+   }
+  ]
+ },
+ "living": {
+  "cat": true
+ }
+}

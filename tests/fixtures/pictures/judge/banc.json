@@ -1,0 +1,81 @@
+{
+ "request": "une femme assise sur un banc qui lit le journal, son chien couché a ses pieds",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "woman",
+    "words": "une femme",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "bench",
+    "words": "un banc",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "newspaper",
+    "words": "le journal",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "dog",
+    "words": "son chien",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "woman",
+    "b": "bench",
+    "words": "assise sur un banc"
+   },
+   {
+    "type": "holding",
+    "a": "newspaper",
+    "b": "woman",
+    "words": "lit le journal"
+   },
+   {
+    "type": "near",
+    "a": "dog",
+    "b": "woman",
+    "words": "a ses pieds"
+   }
+  ],
+  "actions": [
+   {
+    "who": "woman",
+    "verb": "read",
+    "words": "lit le journal",
+    "checks": [
+     {
+      "check": "contact",
+      "with": "newspaper"
+     }
+    ]
+   }
+  ]
+ },
+ "living": {
+  "woman": true,
+  "dog": true
+ }
+}

@@ -1,0 +1,62 @@
+{
+ "request": "un chien noir et blanc qui cour après une balle dans un parc",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "dog",
+    "words": "un chien noir et blanc",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "ball",
+    "words": "une balle",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "park",
+    "words": "un parc",
+    "kind": "place",
+    "count": null,
+    "plural": false,
+    "where": "none",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "near",
+    "a": "dog",
+    "b": "ball",
+    "words": "cour après une balle"
+   }
+  ],
+  "actions": [
+   {
+    "who": "dog",
+    "verb": "courir",
+    "words": "cour après une balle",
+    "checks": [
+     {
+      "check": "near",
+      "with": "ball"
+     },
+     {
+      "check": "dynamic"
+     }
+    ]
+   }
+  ]
+ },
+ "living": {
+  "dog": true
+ }
+}
