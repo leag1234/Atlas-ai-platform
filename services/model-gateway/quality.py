@@ -357,6 +357,8 @@ async def stream_quality(
     def select_affordable_model() -> None:
         nonlocal role, model, fallback_role, fallback
         alternate = policy.models[fallback_role]
+        if request.single_attempt:
+            return
         if policy.cost(model, incoming, 1) > budget:
             selected = None
             if policy.cost(alternate, incoming, 1) <= budget:
@@ -489,7 +491,7 @@ async def stream_quality(
         # Actual cost is reserved immediately before each transport call.
         recovery = (
             policy.cost(policy.models[fallback_role], incoming, 1000)
-            if index == 0
+            if index == 0 and not request.single_attempt
             else Decimal(0)
         )
         if (
@@ -566,7 +568,11 @@ async def stream_quality(
                 widened > current.max_tokens
                 and spent
                 + policy.cost(model, incoming, widened)
-                + policy.cost(model, incoming, 3000)
+                + (
+                    Decimal(0)
+                    if request.single_attempt
+                    else policy.cost(model, incoming, 3000)
+                )
                 <= budget
             ):
                 current = current.model_copy(update={"max_tokens": widened})
@@ -854,6 +860,7 @@ async def stream_quality(
             )
             if (
                 index
+                or request.single_attempt
                 or (answer_started and not complete_response)
                 or (
                     bool(os.environ.get("ATLAS_PROVIDER"))
@@ -1043,7 +1050,7 @@ async def stream_quality(
                 )
                 result = dict(result, text=clean, finish_reason="stop")
                 incomplete, trimmed = False, True
-            elif index or answer_started:
+            elif index or answer_started or request.single_attempt:
                 if malformed_name is not None:
                     raise MalformedToolCall(malformed_name.measured, index)
                 if index and (not str(result.get("text", "")).strip()):
@@ -1066,7 +1073,7 @@ async def stream_quality(
             or incomplete
             or (not str(result.get("text", "")).strip() and not result.get("calls"))
         ):
-            if index:
+            if index or request.single_attempt:
                 if malformed_name is not None:
                     raise MalformedToolCall(malformed_name.measured, index)
                 raise ProviderFailure(

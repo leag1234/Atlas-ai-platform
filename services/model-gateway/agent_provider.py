@@ -129,6 +129,10 @@ class AgentRequest(BaseModel):
     sampling_temperature: float | None = Field(
         default=None, ge=0, le=1, exclude_if=lambda value: value is None
     )
+    # One attempt on the profile's own model: no recovery attempt and no other
+    # role. A caller that runs several drafts (pictures by code) drops a failed
+    # one instead of paying a recovery, never a silent costlier fallback.
+    single_attempt: bool = Field(default=False, exclude_if=lambda value: value is False)
 
     @model_validator(mode="after")
     def quality(self) -> Self:
@@ -177,6 +181,7 @@ class AgentRequest(BaseModel):
                 or self.reasoning_effort == "high"
                 or self.reasoning_ceiling is not None
                 or self.sampling_temperature is not None
+                or self.single_attempt
             ):
                 raise ValueError("invalid_legacy_profile")
             self.reasoning_effort = "none"

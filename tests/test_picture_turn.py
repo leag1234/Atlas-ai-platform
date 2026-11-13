@@ -392,6 +392,31 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(choose(set_id, 7).status_code, 404)
         self.assertEqual(choose("z" * 32, 1).status_code, 404)
 
+    async def test_every_call_is_single_attempt_within_the_ceiling(self) -> None:
+        gateway = FakeGateway("banc")
+        with patch.dict(os.environ, {"ATLAS_PICTURE_TURN_EUR": "0.12"}):
+            self.assertEqual(turn.turn_ceiling(), Decimal("0.12"))
+            await self.run_turn(gateway)
+        self.assertTrue(all(p.get("single_attempt") for p in gateway.payloads))
+        # The checklist is settled at its measured cost before the others
+        # reserve: their allowances and that cost stay within the ceiling.
+        later = sum(Decimal(p["budget_eur"]) for p in gateway.payloads[1:])
+        self.assertLessEqual(later + Decimal("0.0008"), Decimal("0.12"))
+        drafts = [
+            Decimal(p["budget_eur"])
+            for p in gateway.payloads
+            if p.get("produces_files")
+        ]
+        self.assertGreater(min(drafts), Decimal("0.027"))
+        for raw, expected in (
+            ("", "0.10"),
+            ("abc", "0.10"),
+            ("-1", "0.10"),
+            ("9", "0.30"),
+        ):
+            with patch.dict(os.environ, {"ATLAS_PICTURE_TURN_EUR": raw}):
+                self.assertEqual(turn.turn_ceiling(), Decimal(expected))
+
     async def test_unavailable_without_the_painter_profile(self) -> None:
         with patch.dict(os.environ, {"ATLAS_HIDDEN_PROFILES": ""}):
             self.assertFalse(turn.available())

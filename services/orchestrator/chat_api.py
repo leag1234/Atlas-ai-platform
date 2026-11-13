@@ -360,6 +360,10 @@ async def chat(request: Request) -> Response:
             # exists: the download relay serves it to this identity only.
             record_owner(item.request_id, artifact_owner)
             reserve = Decimal("0.30" if payload.has_attachments else "0.10")
+            if payload.picture_turn:
+                from services.orchestrator.pictures.turn import turn_ceiling
+
+                reserve = max(reserve, turn_ceiling())
             if payload.code_mode and project_mode():
                 return public_error(ProjectError(409, "feature_not_available"))
             if payload.code_mode or payload.project_action == "work":

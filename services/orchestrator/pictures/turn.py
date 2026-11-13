@@ -48,6 +48,7 @@ from services.orchestrator.pictures.worker import PictureJobError, run_job
 
 LOGGER = logging.getLogger(__name__)
 CEILING = Decimal("0.10")
+CEILING_LIMIT = Decimal("0.30")
 CHECKLIST_BUDGET = Decimal("0.01")
 LIVING_BUDGET = Decimal("0.005")
 # Below this a draft cannot be written (spike: 0.0094 to 0.0105 EUR each).
@@ -80,6 +81,19 @@ PHOTO = re.compile(
 )
 
 Complete = Callable[[dict[str, Any], float], Awaitable[dict[str, Any]]]
+
+
+def turn_ceiling() -> Decimal:
+    """Ceiling of every call of one picture turn (ATLAS_PICTURE_TURN_EUR,
+    default 0.10 EUR as the chat turn, at most 0.30)."""
+    raw = os.environ.get("ATLAS_PICTURE_TURN_EUR", "").strip()
+    try:
+        value = Decimal(raw) if raw else CEILING
+    except ArithmeticError:
+        return CEILING
+    if not value.is_finite() or value <= 0:
+        return CEILING
+    return min(value, CEILING_LIMIT)
 
 
 def soft_seconds() -> float:
@@ -205,9 +219,18 @@ async def _checklist(
             "timeout": CHECKLIST_SECONDS,
             "budget_eur": _budget(min(CHECKLIST_BUDGET, spend.remaining())),
             "sampling_temperature": temperature,
+            "single_attempt": True,
             "local_enabled": False,
         }
-        reply = await complete(payload, CHECKLIST_SECONDS + 5)
+        try:
+            reply = await complete(payload, CHECKLIST_SECONDS + 5)
+        except Exception as error:  # noqa: BLE001 - the second try, then no checklist
+            if _refusal(error) and _code(error) not in DRAFT_SHARE:
+                raise
+            if _code(error) in DRAFT_SHARE:
+                spend.reserved_unknown += CHECKLIST_BUDGET
+            LOGGER.warning("picture_checklist_failed code=%s", _code(error))
+            continue
         spend.settle(reply)
         ck, _ = checklist.parse_checklist(str(reply.get("text") or ""), request_text)
         if ck is not None:
@@ -233,6 +256,7 @@ async def _living(
         "max_tokens": checklist.LIVING_MAX_TOKENS,
         "timeout": LIVING_SECONDS,
         "budget_eur": _budget(min(LIVING_BUDGET, spend.remaining())),
+        "single_attempt": True,
         "local_enabled": False,
     }
     try:
@@ -330,6 +354,8 @@ async def draw(
             "timeout": min(seconds, 290.0),
             "budget_eur": _budget(per_draft),
             "sampling_temperature": painter.TEMPERATURE,
+            # No recovery on another role: a draft that fails is dropped.
+            "single_attempt": True,
             "local_enabled": False,
         }
         try:
@@ -500,7 +526,8 @@ async def process_picture_turn(
     language = request.lang if request.lang in ("en", "fr", "de", "es", "it") else "en"
     request_text = request.user_text
     item.task_type = "drawing"
-    ceiling = min(CEILING, cost_limit) if cost_limit is not None else CEILING
+    own = turn_ceiling()
+    ceiling = min(own, cost_limit) if cost_limit is not None else own
     limit = request.timeout_seconds if wall_clock_limit is None else wall_clock_limit
     deadline = started + max(60.0, limit - DEADLINE_MARGIN)
     errors: list[str] = []
