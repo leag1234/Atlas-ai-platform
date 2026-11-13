@@ -1,0 +1,101 @@
+{
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "barman",
+    "words": "a barman",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "bar",
+    "words": "the bar",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "beer",
+    "words": "a beer",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "customer",
+    "words": "a custumer",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": [
+     {
+      "name": "hair",
+      "words": "long red hair",
+      "count": null
+     }
+    ]
+   },
+   {
+    "id": "stool",
+    "words": "a stool",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "behind",
+    "a": "barman",
+    "b": "bar",
+    "words": "behind the bar"
+   },
+   {
+    "type": "in_front_of",
+    "a": "customer",
+    "b": "bar",
+    "words": "in front of the bar"
+   },
+   {
+    "type": "on",
+    "a": "customer",
+    "b": "stool",
+    "words": "sitting on a stool"
+   },
+   {
+    "type": "holding",
+    "a": "beer",
+    "b": "barman",
+    "words": "pouring a beer"
+   }
+  ],
+  "actions": [
+   {
+    "who": "barman",
+    "verb": "pour",
+    "words": "pouring a beer",
+    "checks": [
+     {
+      "check": "contact",
+      "with": "beer"
+     }
+    ]
+   }
+  ]
+ },
+ "living": {
+  "barman": true,
+  "customer": true
+ }
+}

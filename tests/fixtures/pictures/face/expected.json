@@ -1,0 +1,18 @@
+{
+ "bikedog-s0": {
+  "face": "ba19dcc8e261f42e2bac5ae4039bf50c28bb0262fe8e5043bce2ab94313421b5",
+  "finish": "22b705babc45ffe831854e5cdb43dbaf188a28c873de40e3dab479d44b2f80bf"
+ },
+ "chatcanape-s0": {
+  "face": "f7fd9beb8b38f8b90793169f663bf86c069fe3e215e4214f2bb82e1d77d89523",
+  "finish": "58d1b9e00f73d6aec9d59b3326455d1e06565cbacfd6b4b3a912f654bcd7a8e9"
+ },
+ "picnic-s0": {
+  "face": "78edc179450c02fe77842f11d0f4cbb53896c417eb8e51a5eb9bf29c57a88f8d",
+  "finish": "ea515540f613bc45d63a2d5b69bf8f56eda69a096a5ee526ddfb30a8700fc687"
+ },
+ "tea-s1": {
+  "face": "fd02f54049f65d390d55650e4168cb7e95ab0e49acee234050c3f3c721feffaf",
+  "finish": "1253b8a47196f0ab41816b0756cdc5b105475ff2b8cc1071878d6fa5f25f6c85"
+ }
+}

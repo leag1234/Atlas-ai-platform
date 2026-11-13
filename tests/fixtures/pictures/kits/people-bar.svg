@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b1d2e"/>
+      <stop offset="0.55" stop-color="#4a2f3d"/>
+      <stop offset="1" stop-color="#1a1218"/>
+    </linearGradient>
+    <linearGradient id="shelf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b4326"/>
+      <stop offset="1" stop-color="#3a2415"/>
+    </linearGradient>
+    <linearGradient id="counterTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a86b3c"/>
+      <stop offset="0.5" stop-color="#7c4a27"/>
+      <stop offset="1" stop-color="#4c2b17"/>
+    </linearGradient>
+    <linearGradient id="counterFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5b351d"/>
+      <stop offset="1" stop-color="#241209"/>
+    </linearGradient>
+    <linearGradient id="beerGlass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff7d6" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#f6b73c" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#c67b12" stop-opacity="0.95"/>
+    </linearGradient>
+    <radialGradient id="lampGlow" cx="0.5" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#ffd98a" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#ffb84d" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ffb84d" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="skinB" cx="0.42" cy="0.35" r="0.8">
+      <stop offset="0" stop-color="#f0c49a"/>
+      <stop offset="1" stop-color="#b97a4e"/>
+    </radialGradient>
+    <radialGradient id="skinC" cx="0.42" cy="0.32" r="0.85">
+      <stop offset="0" stop-color="#ffd9b8"/>
+      <stop offset="1" stop-color="#d99a6c"/>
+    </radialGradient>
+    <linearGradient id="redHair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7a3d"/>
+      <stop offset="0.45" stop-color="#d92f1e"/>
+      <stop offset="1" stop-color="#7d1208"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="soft2" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#wall)"/>
+  <ellipse cx="512" cy="250" rx="430" ry="300" fill="url(#lampGlow)" filter="url(#soft)"/>
+  <ellipse cx="512" cy="900" rx="520" ry="120" fill="#000" opacity="0.35" filter="url(#soft)"/>
+  <path d="M0 760 C220 700 380 735 512 705 C690 660 820 720 1024 675 L1024 1024 L0 1024 Z" fill="#120b10" opacity="0.75"/>
+
+  <g id="bar">
+    <rect x="80" y="120" width="864" height="430" rx="18" fill="#1d1118" opacity="0.72"/>
+    <rect x="120" y="150" width="784" height="70" fill="url(#shelf)"/>
+    <rect x="120" y="285" width="784" height="70" fill="url(#shelf)"/>
+    <rect x="120" y="420" width="784" height="70" fill="url(#shelf)"/>
+    <g opacity="0.9">
+      <rect x="155" y="170" width="22" height="50" rx="6" fill="#2f7d4f"/><rect x="190" y="165" width="18" height="55" rx="6" fill="#8a4b1f"/><rect x="225" y="175" width="24" height="45" rx="6" fill="#274b8f"/><rect x="270" y="168" width="20" height="52" rx="6" fill="#7d2434"/><rect x="315" y="172" width="26" height="48" rx="6" fill="#a67c1b"/>
+      <rect x="610" y="170" width="22" height="50" rx="6" fill="#6d3b8f"/><rect x="650" y="165" width="18" height="55" rx="6" fill="#2f7d4f"/><rect x="690" y="175" width="24" height="45" rx="6" fill="#9c5a1c"/><rect x="735" y="168" width="20" height="52" rx="6" fill="#274b8f"/><rect x="780" y="172" width="26" height="48" rx="6" fill="#7d2434"/>
+      <rect x="170" y="305" width="20" height="50" rx="6" fill="#8a4b1f"/><rect x="215" y="300" width="24" height="55" rx="6" fill="#2f7d4f"/><rect x="265" y="308" width="18" height="47" rx="6" fill="#a67c1b"/><rect x="640" y="305" width="22" height="50" rx="6" fill="#7d2434"/><rect x="690" y="300" width="20" height="55" rx="6" fill="#274b8f"/><rect x="745" y="308" width="26" height="47" rx="6" fill="#6d3b8f"/>
+    </g>
+    <rect x="60" y="560" width="904" height="70" rx="12" fill="url(#counterTop)" filter="url(#shadow)"/>
+    <rect x="80" y="630" width="864" height="260" fill="url(#counterFront)"/>
+    <path d="M80 630 H944" stroke="#c98a4b" stroke-width="5" opacity="0.65"/>
+    <g opacity="0.28" stroke="#1c0d07" stroke-width="8">
+      <path d="M170 640 V880"/><path d="M330 640 V880"/><path d="M512 640 V880"/><path d="M694 640 V880"/><path d="M854 640 V880"/>
+    </g>
+    <ellipse cx="512" cy="585" rx="430" ry="28" fill="#ffd28a" opacity="0.18" filter="url(#soft2)"/>
+    <circle id="anchor-bar-counter" cx="512" cy="595" r="3" fill="none"/>
+  </g>
+
+  <g id="stool">
+    <ellipse cx="690" cy="835" rx="105" ry="24" fill="#000" opacity="0.35" filter="url(#soft2)"/>
+    <path d="M620 720 C620 700 760 700 760 720 L748 760 C748 775 632 775 632 760 Z" fill="#7a4a24" filter="url(#shadow)"/>
+    <ellipse cx="690" cy="716" rx="72" ry="22" fill="#b97a3f"/>
+    <ellipse cx="690" cy="712" rx="58" ry="15" fill="#d79a5b" opacity="0.8"/>
+    <path d="M640 758 L610 900 M740 758 L770 900 M675 762 L665 905 M705 762 L715 905" stroke="#3a2113" stroke-width="14" stroke-linecap="round"/>
+    <path d="M612 858 H768" stroke="#3a2113" stroke-width="10" stroke-linecap="round"/>
+    <circle id="anchor-stool-seat" cx="690" cy="714" r="3" fill="none"/>
+  </g>
+
+  <g id="beer">
+    <ellipse cx="512" cy="640" rx="70" ry="14" fill="#000" opacity="0.28" filter="url(#soft2)"/>
+    <path d="M470 500 L554 500 L540 640 C540 662 484 662 484 640 Z" fill="#dff4ff" opacity="0.28"/>
+    <path d="M478 525 L546 525 L536 632 C536 650 488 650 488 632 Z" fill="url(#beerGlass)" opacity="0.95"/>
+    <path d="M470 500 C480 470 544 470 554 500 C540 522 484 522 470 500 Z" fill="#fff8e8"/>
+    <circle cx="492" cy="492" r="8" fill="#fff8e8"/><circle cx="515" cy="485" r="10" fill="#fff8e8"/><circle cx="535" cy="494" r="7" fill="#fff8e8"/>
+    <path d="M512 430 C505 455 505 480 512 505" stroke="#f8c85a" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
+    <path d="M486 535 C500 545 525 545 540 535" stroke="#fff3c4" stroke-width="4" fill="none" opacity="0.7"/>
+    <circle id="anchor-beer-glass" cx="512" cy="560" r="3" fill="none"/>
+  </g>
+
+  <g id="barman">
+    <desc class="pose">{"facing": "three-quarter-right", "build": "adult", "shape": "broad", "skin": "#d99a6c", "joints": {"head": [360, 300], "neck": [360, 365], "near_shoulder": [315, 385], "far_shoulder": [405, 382], "near_elbow": [455, 455], "far_elbow": [300, 450], "near_wrist": [512, 505], "far_wrist": [285, 500], "near_hip": [330, 585], "far_hip": [395, 585], "near_knee": [325, 720], "far_knee": [400, 720], "near_ankle": [320, 850], "far_ankle": [405, 850]}, "clothes": {"top": {"type": "shirt", "color": "#f2ede2"}, "sleeves": "long", "bottom": {"type": "trousers", "color": "#20242c"}, "shoes": {"type": "shoes", "color": "#111111"}, "extra": [{"type": "vest", "color": "#3a2b22"}, {"type": "apron", "color": "#26343a"}]}, "contacts": [{"joint": "near_wrist", "kind": "hold", "anchor": "anchor-beer-glass"}], "relations": [{"thing": "bar", "rel": "behind"}, {"thing": "beer", "rel": "holding"}]}</desc>
+    <g id="barman-head" data-facing="three-quarter-right" data-expression="focused" data-gaze="right" data-species="human" data-age="adult">
+      <ellipse cx="360" cy="300" rx="48" ry="56" fill="url(#skinB)"/>
+      <path d="M315 285 C320 235 400 235 405 285 C398 260 322 260 315 285 Z" fill="#3a2a20"/>
+      <path d="M318 292 C330 250 390 250 402 292 C392 268 328 268 318 292 Z" fill="#241a14"/>
+      <g id="barman-face">
+        <path d="M338 292 q10 -8 22 -2" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M372 290 q12 -6 22 2" stroke="#2a1a12" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <ellipse cx="348" cy="306" rx="6" ry="7" fill="#1c1210"/><ellipse cx="388" cy="306" rx="6" ry="7" fill="#1c1210"/>
+        <path d="M366 318 q-6 16 4 22" stroke="#a96b45" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M344 344 q18 12 38 2" stroke="#7c3f2a" stroke-width="5" fill="none" stroke-linecap="round"/>
+        <path d="M330 330 q-8 8 -2 16 M398 330 q8 8 2 16" stroke="#b97a4e" stroke-width="3" fill="none" opacity="0.7"/>
+      </g>
+    </g>
+  </g>
+
+  <g id="customer">
+    <desc class="pose">{"facing": "three-quarter-left", "build": "adult", "shape": "slim", "skin": "#f1c27d", "joints": {"head": [650, 350], "neck": [650, 420], "near_shoulder": [610, 440], "far_shoulder": [690, 438], "near_elbow": [560, 520], "far_elbow": [705, 515], "near_wrist": [535, 585], "far_wrist": [720, 575], "near_hip": [650, 625], "far_hip": [690, 620], "near_knee": [735, 640], "far_knee": [610, 650], "near_ankle": [760, 800], "far_ankle": [600, 810]}, "clothes": {"top": {"type": "sweater", "color": "#7a1f2b"}, "sleeves": "long", "bottom": {"type": "trousers", "color": "#2e3a4a"}, "shoes": {"type": "sneakers", "color": "#e8e8e8"}, "extra": []}, "contacts": [{"joint": "hips", "kind": "sit", "anchor": "anchor-stool-seat"}], "relations": [{"thing": "bar", "rel": "in-front-of"}, {"thing": "stool", "rel": "on"}, {"thing": "beer", "rel": "beside"}]}</desc>
+    <g id="customer-head" data-facing="three-quarter-left" data-expression="smile" data-gaze="left" data-species="human" data-age="adult">
+      <path d="M600 330 C585 250 715 245 705 335 C735 390 720 500 690 560 C705 470 690 410 650 405 C610 410 600 470 615 560 C585 500 570 390 600 330 Z" fill="url(#redHair)"/>
+      <ellipse cx="650" cy="350" rx="46" ry="54" fill="url(#skinC)"/>
+      <path d="M604 340 C610 285 690 285 696 340 C680 305 620 305 604 340 Z" fill="#c9281a"/>
+      <path d="M612 320 C640 285 675 300 690 330 C665 312 635 312 612 320 Z" fill="#ff6a35" opacity="0.75"/>
+      <g id="customer-face">
+        <path d="M622 342 q11 -8 23 -3" stroke="#5a1d12" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M660 339 q12 -5 22 3" stroke="#5a1d12" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <ellipse cx="632" cy="358" rx="6" ry="7" fill="#241612"/><ellipse cx="672" cy="358" rx="6" ry="7" fill="#241612"/>
+        <path d="M650 368 q-6 15 4 21" stroke="#c07a52" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path d="M628 392 q22 16 44 0" stroke="#a8433a" stroke-width="5" fill="none" stroke-linecap="round"/>
+        <circle cx="616" cy="380" r="7" fill="#e58a72" opacity="0.55"/><circle cx="686" cy="380" r="7" fill="#e58a72" opacity="0.55"/>
+      </g>
+    </g>
+  </g>
+</svg>

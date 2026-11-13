@@ -1,0 +1,62 @@
+{
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "cavaliere",
+    "words": "une cavaliere",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "cheval",
+    "words": "un cheval blanc",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "plage",
+    "words": "la plage",
+    "kind": "place",
+    "count": null,
+    "plural": false,
+    "where": "none",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "cavaliere",
+    "b": "cheval",
+    "words": "sur"
+   }
+  ],
+  "actions": [
+   {
+    "who": "cheval",
+    "verb": "galoper",
+    "words": "au galop",
+    "checks": [
+     {
+      "check": "dynamic"
+     },
+     {
+      "check": "near",
+      "with": "plage"
+     }
+    ]
+   }
+  ]
+ },
+ "living": {
+  "cavaliere": true,
+  "cheval": true
+ }
+}

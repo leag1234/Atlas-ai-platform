@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="wallGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eed7b4"/>
+      <stop offset="1" stop-color="#cfae83"/>
+    </linearGradient>
+    <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8a5a38"/>
+      <stop offset="1" stop-color="#4e3120"/>
+    </linearGradient>
+    <linearGradient id="sofaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b06a4a"/>
+      <stop offset="1" stop-color="#7c4229"/>
+    </linearGradient>
+    <linearGradient id="cushionGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cd8f66"/>
+      <stop offset="1" stop-color="#a05f42"/>
+    </linearGradient>
+    <linearGradient id="armGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a35f43"/>
+      <stop offset="1" stop-color="#7c4229"/>
+    </linearGradient>
+    <linearGradient id="catGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2a852"/>
+      <stop offset="1" stop-color="#d97a2b"/>
+    </linearGradient>
+    <linearGradient id="shadeGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2a94e"/>
+      <stop offset="1" stop-color="#ffe9b0"/>
+    </linearGradient>
+    <radialGradient id="glowGrad" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd68c" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#ffbe6e" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#ffb464" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="coneGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffdc96" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#ffdc96" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="soft2" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <!-- room -->
+  <rect x="0" y="0" width="1024" height="700" fill="url(#wallGrad)"/>
+  <rect x="0" y="688" width="1024" height="14" fill="#c9a87e"/>
+  <rect x="0" y="700" width="1024" height="324" fill="url(#floorGrad)"/>
+  <g stroke="#3a2415" stroke-opacity="0.25" stroke-width="3">
+    <line x1="0" y1="762" x2="1024" y2="762"/>
+    <line x1="0" y1="826" x2="1024" y2="826"/>
+    <line x1="0" y1="892" x2="1024" y2="892"/>
+    <line x1="0" y1="960" x2="1024" y2="960"/>
+  </g>
+
+  <!-- wall picture -->
+  <g>
+    <rect x="170" y="140" width="150" height="110" fill="#f7ecd7" stroke="#7a5a3a" stroke-width="6"/>
+    <circle cx="222" cy="176" r="14" fill="#e8b04a"/>
+    <path d="M170 250 Q 220 200 245 232 Q 280 205 320 250 Z" fill="#8aa06a"/>
+  </g>
+
+  <!-- shadows -->
+  <ellipse cx="420" cy="742" rx="330" ry="24" fill="#281409" opacity="0.35" filter="url(#soft2)"/>
+  <ellipse cx="855" cy="918" rx="85" ry="13" fill="#281409" opacity="0.35" filter="url(#soft)"/>
+  <ellipse cx="395" cy="578" rx="135" ry="17" fill="#3c1e0a" opacity="0.3" filter="url(#soft)"/>
+
+  <!-- sofa -->
+  <g id="canape">
+    <g id="canape-pied-1"><rect x="168" y="678" width="20" height="52" rx="6" fill="#4e2c1a"/></g>
+    <g id="canape-pied-2"><rect x="652" y="678" width="20" height="52" rx="6" fill="#4e2c1a"/></g>
+    <g id="canape-pied-3"><rect x="300" y="682" width="18" height="46" rx="6" fill="#3f2413"/></g>
+    <g id="canape-pied-4"><rect x="520" y="682" width="18" height="46" rx="6" fill="#3f2413"/></g>
+    <g id="canape-dossier">
+      <rect x="150" y="362" width="540" height="205" rx="26" fill="url(#sofaGrad)"/>
+    </g>
+    <g id="canape-coussin-1"><rect x="172" y="388" width="248" height="152" rx="18" fill="url(#cushionGrad)"/></g>
+    <g id="canape-coussin-2"><rect x="430" y="388" width="248" height="152" rx="18" fill="url(#cushionGrad)"/></g>
+    <g id="canape-base"><rect x="150" y="548" width="540" height="138" rx="20" fill="url(#sofaGrad)"/></g>
+    <g id="canape-coussin-3"><rect x="172" y="530" width="248" height="66" rx="14" fill="url(#cushionGrad)"/></g>
+    <g id="canape-coussin-4"><rect x="430" y="530" width="248" height="66" rx="14" fill="url(#cushionGrad)"/></g>
+    <g id="canape-bras-1"><rect x="118" y="468" width="82" height="218" rx="28" fill="url(#armGrad)"/></g>
+    <g id="canape-bras-2"><rect x="640" y="468" width="82" height="218" rx="28" fill="url(#armGrad)"/></g>
+    <g id="canape-oreiller">
+      <rect x="560" y="452" width="104" height="104" rx="20" fill="#e3c98f" transform="rotate(-12 612 504)"/>
+      <rect x="572" y="464" width="80" height="80" rx="14" fill="#efdcab" transform="rotate(-12 612 504)"/>
+    </g>
+  </g>
+
+  <!-- sleeping cat -->
+  <g id="chat">
+    <g id="chat-corps">
+      <ellipse cx="395" cy="508" rx="118" ry="62" fill="url(#catGrad)" transform="rotate(-6 395 508)"/>
+      <g stroke="#c4661f" stroke-width="7" stroke-linecap="round" fill="none" opacity="0.8">
+        <path d="M352 452 q 10 32 2 62"/>
+        <path d="M392 446 q 10 34 2 66"/>
+        <path d="M432 450 q 10 32 2 62"/>
+      </g>
+    </g>
+    <g id="chat-queue">
+      <path d="M498 500 C 545 538 522 586 438 592 C 366 597 302 588 286 566" fill="none" stroke="#d97a2b" stroke-width="25" stroke-linecap="round"/>
+      <g stroke="#b85c1a" stroke-width="6" stroke-linecap="round">
+        <path d="M512 540 l 14 10"/>
+        <path d="M492 570 l 12 12"/>
+        <path d="M448 590 l 6 14"/>
+      </g>
+    </g>
+    <g id="chat-patte-1"><ellipse cx="288" cy="562" rx="24" ry="13" fill="#e8933f"/></g>
+    <g id="chat-patte-2"><ellipse cx="322" cy="570" rx="24" ry="13" fill="#e8933f"/></g>
+    <g id="chat-patte-3"><ellipse cx="458" cy="548" rx="42" ry="22" fill="#e8933f" transform="rotate(-10 458 548)"/></g>
+    <g id="chat-patte-4"><ellipse cx="430" cy="560" rx="30" ry="15" fill="#d97a2b"/></g>
+    <g id="chat-head" data-facing="three-quarter-left" data-expression="asleep" data-gaze="down" data-species="feline" data-age="adult">
+      <path d="M262 442 L 250 396 L 294 420 Z" fill="#d97a2b"/>
+      <path d="M322 428 L 344 390 L 358 438 Z" fill="#d97a2b"/>
+      <path d="M264 434 L 258 408 L 282 422 Z" fill="#e8a0a0"/>
+      <path d="M328 424 L 342 402 L 350 432 Z" fill="#e8a0a0"/>
+      <circle cx="302" cy="474" r="55" fill="url(#catGrad)"/>
+      <g stroke="#c4661f" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.85">
+        <path d="M292 424 q 2 12 0 20"/>
+        <path d="M304 420 q 2 12 0 22"/>
+        <path d="M316 424 q 2 12 0 20"/>
+      </g>
+      <g id="chat-face">
+        <path d="M272 472 q 9 8 18 0" fill="none" stroke="#4a2c12" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M310 470 q 9 8 18 0" fill="none" stroke="#4a2c12" stroke-width="3.5" stroke-linecap="round"/>
+        <path d="M296 488 L 308 488 L 302 496 Z" fill="#c96a6a"/>
+        <path d="M302 496 q -4 7 -11 6 M302 496 q 4 7 11 6" fill="none" stroke="#4a2c12" stroke-width="3" stroke-linecap="round"/>
+        <g stroke="#fff6ea" stroke-width="2" stroke-opacity="0.75" stroke-linecap="round">
+          <line x1="276" y1="488" x2="234" y2="482"/>
+          <line x1="277" y1="495" x2="236" y2="498"/>
+          <line x1="326" y1="486" x2="366" y2="480"/>
+          <line x1="326" y1="493" x2="364" y2="498"/>
+        </g>
+        <ellipse cx="268" cy="500" rx="9" ry="6" fill="#f2b0a0" opacity="0.5"/>
+        <ellipse cx="336" cy="498" rx="9" ry="6" fill="#f2b0a0" opacity="0.5"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- lamp -->
+  <g id="lampe">
+    <g id="lampe-pied">
+      <ellipse cx="850" cy="906" rx="58" ry="15" fill="#3a3f4a"/>
+      <ellipse cx="850" cy="900" rx="50" ry="12" fill="#4a5060"/>
+      <rect x="843" y="428" width="14" height="476" rx="6" fill="#4a5060"/>
+    </g>
+    <g id="lampe-ampoule">
+      <circle cx="850" cy="418" r="34" fill="#ffdf9e" opacity="0.9" filter="url(#soft)"/>
+      <circle cx="850" cy="418" r="17" fill="#fff3c4"/>
+    </g>
+    <g id="lampe-abat-jour">
+      <path d="M792 298 L 908 298 L 936 432 L 764 432 Z" fill="url(#shadeGrad)"/>
+      <path d="M792 298 L 908 298 L 912 318 L 788 318 Z" fill="#e89a3f" opacity="0.6"/>
+      <ellipse cx="850" cy="432" rx="86" ry="10" fill="#fff0bd"/>
+    </g>
+  </g>
+
+  <!-- light -->
+  <polygon points="768,436 932,436 1024,740 620,740" fill="url(#coneGrad)"/>
+  <circle cx="850" cy="370" r="310" fill="url(#glowGrad)"/>
+  <ellipse cx="850" cy="905" rx="190" ry="32" fill="#ffd28c" opacity="0.28" filter="url(#soft2)"/>
+  <ellipse cx="560" cy="520" rx="220" ry="90" fill="#ffd28c" opacity="0.12" filter="url(#soft2)"/>
+</svg>

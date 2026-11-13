@@ -1,0 +1,53 @@
+{
+ "request": "Three cats in a hot-air balloon, one of them wearing a red scarf.",
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "cat",
+    "words": "Three cats",
+    "kind": "character",
+    "count": 3,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "hot-air-balloon",
+    "words": "hot-air balloon",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "air",
+    "parts": []
+   },
+   {
+    "id": "red-scarf",
+    "words": "red scarf",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "inside",
+    "a": "cat",
+    "b": "hot-air-balloon",
+    "words": "in a hot-air balloon"
+   },
+   {
+    "type": "wearing",
+    "a": "red-scarf",
+    "b": "cat",
+    "words": "wearing a red scarf"
+   }
+  ],
+  "actions": []
+ },
+ "living": {
+  "cat": true
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "cats": {
+  "J": 0,
+  "P": 2,
+  "Q": 0.7314,
+  "flags": {
+   "a": true,
+   "b": false,
+   "c": false,
+   "d": true
+  }
+ },
+ "catwall": {
+  "J": 1,
+  "P": 1,
+  "Q": 0.8983,
+  "flags": {
+   "a": true,
+   "b": false,
+   "c": false,
+   "d": false
+  }
+ },
+ "chiencourt": {
+  "J": 1,
+  "P": 1,
+  "Q": 0.6086,
+  "flags": {
+   "a": false,
+   "b": true,
+   "c": false,
+   "d": false
+  }
+ },
+ "banc": {
+  "J": 0,
+  "P": 0,
+  "Q": 0.6212,
+  "flags": {
+   "a": false,
+   "b": false,
+   "c": false,
+   "d": false
+  }
+ }
+}

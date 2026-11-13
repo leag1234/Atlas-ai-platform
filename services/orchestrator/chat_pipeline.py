@@ -1131,6 +1131,31 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
             item.erreurs.append(result.reason)
 
 
+def _pictures_by_code() -> bool:
+    """Pictures by code are on and their steps have their profiles here."""
+    from services.orchestrator.pictures.turn import available
+
+    return available()
+
+
+async def _picture_turn(
+    request: ChatRequest,
+    item: Interaction,
+    cost_limit: Decimal | None,
+    wall_clock_limit: float | None,
+    store_artifact: bool,
+) -> None:
+    from services.orchestrator.pictures.turn import process_picture_turn
+
+    await process_picture_turn(
+        request,
+        item,
+        cost_limit=cost_limit,
+        wall_clock_limit=wall_clock_limit,
+        store_artifact=store_artifact,
+    )
+
+
 async def _process(
     request: ChatRequest,
     item: Interaction,
@@ -1157,6 +1182,21 @@ async def _process(
         if artifact_eligible
         else None
     )
+    from services.orchestrator import pictures
+
+    if pictures.enabled() and not request.continuation and not request.has_attachments:
+        from services.orchestrator.pictures.choice import (
+            current_after_click,
+            handle_choice,
+        )
+
+        # "La deuxième" right after four candidates chooses one of them.
+        if await handle_choice(request, item):
+            return
+        if artifact_eligible:
+            artifact_current = await asyncio.to_thread(
+                current_after_click, request, artifact_current, item.request_id
+            )
     from services.orchestrator import request_router
 
     # The model routing decision (ATLAS_MODEL_ROUTER=1) is read first; the
@@ -1199,17 +1239,19 @@ async def _process(
         # The file is written in the streamed answer, never in tool arguments,
         # and a follow-up changes the conversation's current artifact.
         item.task_type = "artifact"
+        drawing_kind = (
+            routed.kind == "drawing"
+            if routed is not None
+            else svg_requested(request.user_text)
+        )
+        if artifact_intent == "create" and drawing_kind and _pictures_by_code():
+            await _picture_turn(request, item, cost_limit, wall_clock_limit, True)
+            return
         await process_app_turn(
             request,
             item,
             intent=artifact_intent,
-            kind="drawing"
-            if (
-                routed.kind == "drawing"
-                if routed is not None
-                else svg_requested(request.user_text)
-            )
-            else "app",
+            kind="drawing" if drawing_kind else "app",
             current=artifact_current,
             cost_limit=cost_limit,
             wall_clock_limit=wall_clock_limit,
@@ -1316,6 +1358,16 @@ async def _process(
         )
         and artifact_intent is None
     )
+    if (
+        drawing
+        and artifact_intent is None
+        and not is_spatial_drawing_request(request.user_text)
+        and _pictures_by_code()
+    ):
+        await _picture_turn(
+            request, item, cost_limit, wall_clock_limit, artifact_eligible
+        )
+        return
     if drawing and artifact_intent is None:
         request = request.model_copy(
             update={"lang": simple_drawing_language(request.user_text, request.lang)}
@@ -1328,6 +1380,12 @@ async def _process(
         and artifact_intent is None
         and explicit_image_request(request.user_text)
     ):
+        if _pictures_by_code() and not is_spatial_drawing_request(request.user_text):
+            # With pictures by code a drawing is made, never refused.
+            await _picture_turn(
+                request, item, cost_limit, wall_clock_limit, artifact_eligible
+            )
+            return
         # Lexical routing only: a routed drawing never reaches this refusal.
         item.reponse, item.state, item.task_type = (
             unavailable_reply(request.lang),
