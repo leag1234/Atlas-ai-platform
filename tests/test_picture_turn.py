@@ -139,6 +139,13 @@ class PainterTests(unittest.TestCase):
         self.assertIn("data-label", user)
         self.assertIn("Labels, for the program", user)
         self.assertEqual(painter.labels_group(ck), "labels")
+        things: list[Any] = list(ck["things"])
+        diagram = {**ck, "things": things[:1]}
+        text = painter.messages("un schéma d'un vélo", diagram, animal_kit=False)
+        self.assertIn("Labels, for the program", text[1]["content"])
+        scene = {**diagram, "genre": "scene"}
+        text = painter.messages("un vélo", scene, animal_kit=False)
+        self.assertNotIn("Labels, for the program", text[1]["content"])
 
 
 class ChoiceTests(unittest.TestCase):
@@ -264,8 +271,23 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
             await self.run_turn(FakeGateway("banc", failures))
         self.assertEqual(raised.exception.code, "cost_budget")
 
+    async def test_too_little_budget_left_is_a_measured_refusal(self) -> None:
+        item = Interaction()
+        gateway = FakeGateway("banc")
+        request = Request(gateway.data["request"])
+        with self.assertRaises(GatewayError) as raised:
+            await turn.process_picture_turn(
+                request, item, cost_limit=Decimal("0.02"), complete=gateway
+            )
+        self.assertEqual(raised.exception.code, "cost_budget")
+        self.assertIn("remaining limit", raised.exception.detail)
+        self.assertFalse([p for p in gateway.payloads if p.get("produces_files")])
+
     async def test_soft_deadline_keeps_what_is_finished(self) -> None:
-        with patch.object(turn, "SOFT_SECONDS", 2.5):
+        with (
+            patch.dict(os.environ, {"ATLAS_PICTURE_SOFT_SECONDS": "30"}),
+            patch.object(turn, "soft_seconds", lambda: 2.5),
+        ):
             item = await self.run_turn(FakeGateway("banc", delay=1.0))
         # Draft 1 (1 s) is finished; drafts 3 and 4 are still painting at 2.5 s.
         count = item.reponse.count("/images/picture/")

@@ -50,6 +50,8 @@ LOGGER = logging.getLogger(__name__)
 CEILING = Decimal("0.10")
 CHECKLIST_BUDGET = Decimal("0.01")
 LIVING_BUDGET = Decimal("0.005")
+# Below this a draft cannot be written (spike: 0.0094 to 0.0105 EUR each).
+MINIMUM_DRAFT_BUDGET = Decimal("0.008")
 CHECKLIST_SECONDS = 25.0
 LIVING_SECONDS = 15.0
 # The painter keeps going until this many seconds after the drafts started;
@@ -74,6 +76,16 @@ PHOTO = re.compile(
 )
 
 Complete = Callable[[dict[str, Any], float], Awaitable[dict[str, Any]]]
+
+
+def soft_seconds() -> float:
+    """Painting time after which the finished drafts are kept
+    (ATLAS_PICTURE_SOFT_SECONDS, 30 to 240; default 120 as in the design note)."""
+    try:
+        value = float(os.environ.get("ATLAS_PICTURE_SOFT_SECONDS", "") or SOFT_SECONDS)
+    except ValueError:
+        return SOFT_SECONDS
+    return min(max(value, 30.0), 240.0)
 
 
 async def _gateway(payload: dict[str, Any], seconds: float) -> dict[str, Any]:
@@ -269,6 +281,22 @@ async def draw(
         _living(request_text, ck, checklist_profile, spend, call)
     )
     per_draft = (spend.remaining() - LIVING_BUDGET) / painter.DRAFTS
+    if per_draft < MINIMUM_DRAFT_BUDGET:
+        # D5: what is left of the turn's allowance cannot pay for the drafts.
+        from services.orchestrator.loop import GatewayError
+
+        needed = int(
+            (MINIMUM_DRAFT_BUDGET * painter.DRAFTS + LIVING_BUDGET) * 1_000_000
+        )
+        left = int(spend.remaining() * 1_000_000)
+        raise Refused(
+            GatewayError(
+                "cost_budget",
+                429,
+                f"Cost reservation: {needed} microEUR, remaining limit {left} "
+                f"microEUR; request ceiling {ceiling} EUR",
+            )
+        )
     messages = painter.messages(request_text, ck, animal_kit=animal_kit_enabled())
     drafts = [Draft(index) for index in range(painter.DRAFTS)]
     living: dict[str, bool] | None = None
@@ -332,7 +360,7 @@ async def draw(
     try:
         while pending:
             now = time.monotonic()
-            soft = painting_started + SOFT_SECONDS
+            soft = painting_started + soft_seconds()
             if now >= soft and any(not d.painting and not d.error for d in drafts):
                 # Past the soft deadline: stop what is still painting, let the
                 # drafts already being finished by code complete.

@@ -195,7 +195,11 @@ _LABEL_BY_CODE = (
 
 
 def has_labels(ck: dict[str, Any]) -> bool:
-    return any(thing.get("kind") == "labels" for thing in ck.get("things", []))
+    """Labels by code: the request asks for labels, or for a diagram (the
+    checklist does not always list "the names of the parts" as labels)."""
+    return ck.get("genre") == "diagram" or any(
+        thing.get("kind") == "labels" for thing in ck.get("things", [])
+    )
 
 
 def labels_group(ck: dict[str, Any]) -> str:
