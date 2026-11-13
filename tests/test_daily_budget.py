@@ -78,6 +78,25 @@ class DailyBudgetTests(unittest.TestCase):
                 ledger.reserve_cost("probe-b", Decimal("0.80"), "en")
             self.assertEqual(caught.exception.category, "global_monthly_cost")
 
+    def test_own_budget_keys_skip_user_caps_on_every_path(self) -> None:
+        # The chat path reserves without user_limits=False; the bucket of a key
+        # with its own budget is still governed by its weekly key cap only.
+        env = {"ATLAS_USER_MONTHLY_EUR": "1", "ATLAS_GLOBAL_MONTHLY_EUR": "2.50"}
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(os.environ, env, clear=True),
+        ):
+            ledger = DailyLedger(Path(root) / "ledger.sqlite")
+            ledger.reserve_cost("api-key:0123abcd", Decimal("0.90"), "en")
+            ledger.reserve_cost("api-key:0123abcd", Decimal("0.90"), "en")
+            with self.assertRaises(BudgetRefusal) as caught:
+                ledger.reserve_cost("api-key:0123abcd", Decimal("0.80"), "en")
+            self.assertEqual(caught.exception.category, "global_monthly_cost")
+            # A person whose name merely contains the prefix is still capped.
+            with self.assertRaises(BudgetRefusal) as caught:
+                ledger.reserve_cost("user-api-key:x", Decimal("1.10"), "en")
+            self.assertEqual(caught.exception.category, "monthly_cost")
+
     def test_paris_midnight_and_month_rollover(self) -> None:
         env = {"ATLAS_USER_DAILY_EUR": "1", "ATLAS_USER_MONTHLY_EUR": "1"}
         with (
