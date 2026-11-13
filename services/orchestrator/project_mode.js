@@ -69,7 +69,9 @@
     if (value.kind === 'table_cell') return `${t('table')} ${value.table}, ${t('row')} ${value.row}, ${t('column')} ${value.column}`;
     return t('unknown');
   }
-  const guarded = fn => async event => { try { await fn(event); } catch (error) { if (error.name !== 'AbortError' && root?.isConnected) failure(error); } };
+  // A failure is shown in the project view, or in the open Atlas dialog when the action came from the chat
+  // sidebar (renaming a project there while a chat is open has no project view to report into).
+  const guarded = fn => async event => { try { await fn(event); } catch (error) { if (error.name !== 'AbortError' && (root?.isConnected || document.querySelector('dialog.atlas-project-dialog[open]'))) failure(error); } };
   function checkScope(current) { if (current !== generation) throw new DOMException('Scope changed', 'AbortError'); }
   function button(key, fn, cls) { const b = node('button', t(key), cls); b.type = 'button'; b.addEventListener('click', guarded(fn)); return b; }
   function field(key, control) { const label = node('label', t(key)); label.append(control); control.setAttribute('aria-label', t(key)); return label; }
@@ -105,7 +107,7 @@
     generation++; sideResize?.disconnect(); hostResize?.disconnect(); observedHost = null; lifecycle?.abort(); stream?.abort(); clearTimeout(polling); clearTimeout(searchTimer);
     window.atlasSideView?.close(); document.body.classList.remove('atlas-project-open');
     document.querySelector('[data-atlas-project-host-main]')?.removeAttribute('inert');
-    projectSummaries.clear(); events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined;
+    projectSummaries.clear(); openedApps.clear(); events.clear(); liveRequests.clear(); replayAfter = 0; configuring = uploading = false; turns = []; selected.clear(); session = null; sending = false; panelData = undefined;
   }
   function picker(key, values, selectedID, change) {
     const select = node('select'); select.append(new Option('—', ''));
@@ -475,7 +477,10 @@
       const article = node('article', null, 'atlas-project-turn'); article.dataset.turn = turn.id;
       const answers = turn.content_refs.filter(ref => ref.kind !== 'question' && ref.text);
       if (answers.length) article.append(node('small', `Atlas · ${t(turn.state)}`));
-      answers.forEach(ref => article.append(prose(withoutFileLinks(ref.text), 'answer')));
+      // An imported app link repeats the link already written in the answer text: show it once.
+      const appTarget = ref => ref.text.match(/\]\((\/api\/atlas\/artifacts\/[0-9a-f]{32}\/versions\/\d+\/open)[#)]/)?.[1];
+      const repeated = ref => ref.kind === 'artifact_link' && appTarget(ref) && answers.some(other => other.kind !== 'artifact_link' && other.text.includes(appTarget(ref)));
+      answers.filter(ref => !repeated(ref)).forEach(ref => article.append(prose(withoutFileLinks(ref.text), 'answer')));
       const steps = [...events.values()].filter(e => e.version && e.request_id === turn.request_id && (!e.conversation_id || e.conversation_id === scope.conversation));
       if (steps.length) {
         const group = node('details', null, 'atlas-project-disclosure'); group.dataset.steps = turn.request_id;
@@ -510,6 +515,7 @@
       transcript.append(card);
     }
     keepPendingTurn();
+    openLatestApp();
   }
   function withoutFileLinks(text) {
     const cards = panelData?.deliverables || [];
@@ -537,6 +543,47 @@
     }));
     return link;
   }
+  // A conversation moved from the chat keeps the chat's own links (owner report 2026-11-13: its drawings were gone
+  // in the project). An app or drawing link opens the side view as in the chat; a download link stays a download.
+  // Both are the user's artifact routes, which the server authorises by owner, not by conversation.
+  const artifactRoute = /^\/api\/atlas\/artifacts\/([0-9a-f]{32})\/versions\/([1-9][0-9]{0,3})\/(open|download)$/;
+  function artifactApp(href, label) {
+    let url; try { url = new URL(href, location.origin); } catch { return null; }
+    const match = url.pathname.match(artifactRoute);
+    if (url.origin !== location.origin || url.username || url.password || url.search || !match) return null;
+    const transport = new URLSearchParams(url.hash.slice(1));
+    return {route:match[3], path:url.pathname, descriptor:{kind:'app', artifact:match[1], version:Number(match[2]), src:url.pathname, download:url.pathname.replace(/\/open$/, '/download'), title:transport.get('title') || label, slot:transport.get('slot') === 'bottom' ? 'bottom' : 'top'}};
+  }
+  function answerLink(label, href) {
+    const app = artifactApp(href, label);
+    if (!app) return scopedLink(label, href);
+    const link = node('a', label); link.href = app.path;
+    if (app.route === 'download') { link.download = ''; return link; }
+    link.dataset.atlasApp = `${app.descriptor.artifact}:${app.descriptor.version}`;
+    link.addEventListener('click', event => { if (!window.atlasSideView) return; event.preventDefault(); window.atlasSideView.open(app.descriptor).catch(() => {}); });
+    return link;
+  }
+  // Generated images (raster or drawing) are served by this instance under /images/; the chat shows them inline.
+  const generatedImage = /^\/images\/(?:svg\/)?[a-f0-9]{32}$/;
+  function answerImage(source, alt) {
+    let url; try { url = new URL(source, location.origin); } catch { return null; }
+    if (url.username || url.password || !generatedImage.test(url.pathname)) return null;
+    const image = node('img'); image.src = url.pathname; image.alt = alt || ''; image.loading = 'lazy'; image.decoding = 'async';
+    return image;
+  }
+  // The newest app or drawing of an opened conversation opens in the side view on a wide screen, as in the chat.
+  const openedApps = new Set();
+  function openLatestApp() {
+    if (!window.atlasSideView || !matchMedia('(min-width: 768px)').matches || !scope?.conversation) return;
+    let latest = null;
+    for (const turn of turns) for (const ref of turn.content_refs) if (ref.kind !== 'question' && ref.text) for (const match of ref.text.matchAll(/\[([^\[\]]+)\]\(([^)\s]+)\)/g)) {
+      const app = artifactApp(match[2], match[1]);
+      if (app?.route === 'open') latest = app.descriptor;
+    }
+    const identity = latest && `${scope.conversation}:${latest.artifact}:${latest.version}`;
+    if (!identity || openedApps.has(identity)) return;
+    openedApps.add(identity); window.atlasSideView.open(latest).catch(() => {});
+  }
   function prose(text, cls) {
     const content = node('div', null, cls), plain = node('pre'); content.append(plain);
     // Safe text remains usable if the optional local Markdown asset cannot load.
@@ -544,7 +591,7 @@
     let offset = 0;
     for (const match of text.matchAll(pattern)) {
       plain.append(document.createTextNode(text.slice(offset,match.index)));
-      try {plain.append(scopedLink(match[1],match[2]));} catch {plain.append(document.createTextNode(match[0]));}
+      try {plain.append(answerLink(match[1],match[2]));} catch {plain.append(document.createTextNode(match[0]));}
       offset = match.index + match[0].length;
     }
     plain.append(document.createTextNode(text.slice(offset)));
@@ -553,16 +600,18 @@
     markdownModule ||= import('/static/atlas/vendor/marked/marked.esm.js');
     markdownModule.then(({marked}) => {
       if (current !== generation || !content.isConnected) return;
-      const renderer = new marked.Renderer(); renderer.html = () => ''; renderer.image = () => '';
+      const renderer = new marked.Renderer(); renderer.html = () => '';
       const parsed = new DOMParser().parseFromString(marked.parse(text,{renderer,async:false}),'text/html');
-      const allowed = new Set('P BR HR H1 H2 H3 H4 H5 H6 BLOCKQUOTE UL OL LI PRE CODE STRONG EM DEL TABLE THEAD TBODY TR TH TD A'.split(' '));
+      const allowed = new Set('P BR HR H1 H2 H3 H4 H5 H6 BLOCKQUOTE UL OL LI PRE CODE STRONG EM DEL TABLE THEAD TBODY TR TH TD A IMG'.split(' '));
       const fragment = document.createDocumentFragment();
       const copy = (source,target) => {
         for (const child of source.childNodes) {
           if (child.nodeType === Node.TEXT_NODE) {target.append(document.createTextNode(child.textContent)); continue;}
           if (child.nodeType !== Node.ELEMENT_NODE || !allowed.has(child.tagName)) continue;
+          // Only this instance's generated images are shown; any other image keeps its description as text.
+          if (child.tagName === 'IMG') { const image = answerImage(child.getAttribute('src') || '', child.getAttribute('alt')); target.append(image || document.createTextNode(child.getAttribute('alt') || '')); continue; }
           if (child.tagName === 'A') {
-            try {target.append(scopedLink(child.textContent,child.getAttribute('href')));} catch {target.append(document.createTextNode(child.textContent));}
+            try {target.append(answerLink(child.textContent,child.getAttribute('href')));} catch {target.append(document.createTextNode(child.textContent));}
           } else {const element = node(child.tagName); copy(child,element); target.append(element);}
         }
       };
@@ -1035,7 +1084,7 @@
     sidebar.querySelector('button[class*="cursor-[w-resize]"]')?.click();
   };
   document.addEventListener('click', event => {
-    if (event.target instanceof Element && event.target.closest('#atlas-project-navigation button:not([aria-label="' + t('newProject') + '"]), #atlas-project-sidebar-list button')) setTimeout(closePhoneSidebar, 0);
+    if (event.target instanceof Element && event.target.closest('#atlas-project-navigation button:not([aria-label="' + t('newProject') + '"]), #atlas-project-sidebar-list :is(.atlas-project-sidebar-row,.atlas-project-sidebar-all)')) setTimeout(closePhoneSidebar, 0);
   });
   // Atlas dialogs close like the chat's modals: Escape, or a tap that starts and ends on the backdrop
   // (on a phone the move dialog could only be closed with its Cancel button).
@@ -1197,6 +1246,77 @@
       break;
     }
   }
+  // Project actions from the chat sidebar: the same requests as the project page and cards, usable while a chat is open
+  // (no project view mounted), so they refresh the sidebar and only re-route a project view that shows the changed project.
+  const projectPath = project => `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
+  function sidebarProjectActions(project) {
+    const actions = [];
+    if (project.role !== 'viewer') actions.push(['rename', () => renameSidebarProject(project)]);
+    if (project.role === 'owner' || !project.role) actions.push(['archive', () => archiveSidebarProject(project)], ['deleteProject', () => deleteSidebarProject(project)]);
+    return actions;
+  }
+  async function afterSidebarChange(project) {
+    if (root?.isConnected && center && (scope.project === project.id || root.dataset.view === 'projects')) { await choose({org:scope.org}); return; }
+    if (owned && left) navigation();
+    installNavigation();
+  }
+  function renameSidebarProject(project) {
+    return nameDialog('renameProject', async name => {
+      const value = await jsonResponse(await request(projectPath(project), {method:'PATCH', headers:{'If-Match':`"${project.revision}"`}, body:{name}}), generation);
+      projects = projects.map(item => item.id === value.id ? {...item, ...value} : item);
+      if (projectInfo?.id === value.id) projectInfo = {...projectInfo, ...value};
+      if (root?.isConnected && center && scope.project === value.id) projectHeading();
+      if (owned && left) navigation();
+      installNavigation();
+    }, project.name);
+  }
+  async function archiveSidebarProject(project) {
+    if (!await confirmDialog(t('confirmArchiveProject'), project.name, 'archive')) return;
+    const value = await jsonResponse(await request(projectPath(project), {method:'PATCH', headers:{'If-Match':`"${project.revision}"`}, body:{state:'archived'}}), generation);
+    projects = projects.map(item => item.id === value.id ? {...item, ...value} : item);
+    await afterSidebarChange(project);
+  }
+  async function deleteSidebarProject(project) {
+    if (!await confirmDialog(t('confirmDeleteProject'), project.name, 'deleteProject')) return;
+    await request(projectPath(project), {method:'DELETE', headers:{'If-Match':`"${project.revision}"`}});
+    projects = projects.filter(item => item.id !== project.id); projectSummaries.clear();
+    await afterSidebarChange(project);
+  }
+  // The "..." control and its menu follow Open WebUI's chat rows: shown on hover or focus, a small menu under the control.
+  let rowMenu = null;
+  function closeRowMenu() {
+    if (!rowMenu) return;
+    const {trigger, panel, outside, key} = rowMenu; rowMenu = null;
+    trigger.setAttribute('aria-expanded', 'false'); panel.remove();
+    document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', key, true);
+  }
+  function openRowMenu(trigger, actions) {
+    const reopened = rowMenu?.trigger === trigger; closeRowMenu(); if (reopened) return;
+    const panel = node('div', null, 'atlas-project-row-menu'); panel.setAttribute('role', 'menu');
+    for (const [key, action] of actions) {
+      const entry = node('button', t(key)); entry.type = 'button'; entry.setAttribute('role', 'menuitem');
+      entry.addEventListener('click', guarded(async () => { closeRowMenu(); await action(); }));
+      panel.append(entry);
+    }
+    document.body.append(panel);
+    const box = trigger.getBoundingClientRect(), size = panel.getBoundingClientRect();
+    panel.style.left = Math.max(8, Math.min(box.left, innerWidth - size.width - 8)) + 'px';
+    panel.style.top = (box.bottom + 4 + size.height <= innerHeight - 8 ? box.bottom + 4 : Math.max(8, box.top - size.height - 4)) + 'px';
+    const outside = event => { if (!panel.contains(event.target) && !trigger.contains(event.target)) closeRowMenu(); };
+    const key = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRowMenu(); trigger.focus(); } };
+    document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', key, true);
+    rowMenu = {trigger, panel, outside, key}; trigger.setAttribute('aria-expanded', 'true'); panel.querySelector('button')?.focus();
+  }
+  function rowMenuButton(name, actions) {
+    const control = node('button', null, 'atlas-project-sidebar-menu-button'); control.type = 'button';
+    control.setAttribute('aria-label', `${t('projectActions')}: ${name}`); control.title = t('projectActions');
+    control.setAttribute('aria-haspopup', 'menu'); control.setAttribute('aria-expanded', 'false');
+    const icon = document.createElementNS('http://www.w3.org/2000/svg','svg'); icon.setAttribute('viewBox','0 0 24 24'); icon.setAttribute('fill','currentColor'); icon.setAttribute('width','16'); icon.setAttribute('height','16'); icon.setAttribute('aria-hidden','true');
+    for (const x of [5, 12, 19]) { const dot = document.createElementNS('http://www.w3.org/2000/svg','circle'); dot.setAttribute('cx', String(x)); dot.setAttribute('cy', '12'); dot.setAttribute('r', '1.6'); icon.append(dot); }
+    control.append(icon);
+    control.addEventListener('click', event => { event.stopPropagation(); openRowMenu(control, actions); });
+    return control;
+  }
   function installNavigation() {
     if (owned || !identity || /^\/(auth|admin)/.test(location.pathname)) return;
     const sidebar = document.querySelector('#pinned-menu-items-list') || document.querySelector('#sidebar');
@@ -1208,10 +1328,13 @@
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
-    const listedProjects = [...projects].sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8);
+    // The eight most recent active projects, and always the open one (it carries the current conversation).
+    const listedProjects = projects.filter(value => !value.hidden && value.state !== 'archived').sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8);
+    const openProject = projects.find(value => value.id === scope?.project);
+    if (openProject && !listedProjects.includes(openProject)) listedProjects.push(openProject);
     const signature = JSON.stringify({
       org: scope?.org,
-      projects: listedProjects.map(value => [value.id, value.name]),
+      projects: listedProjects.map(value => [value.id, value.name, value.revision, value.role]),
       project: scope?.project,
       conversations: conversations.map(value => [value.id, shortTitle(value.title)]),
       conversation: scope?.conversation
@@ -1223,9 +1346,15 @@
       list.dataset.signature = signature;
       list.append(node('h2', t('projects')));
       for (const value of listedProjects) {
-        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button';
-        if (value.id === scope.project) row.setAttribute('aria-current','page');
-        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); list.append(row);
+        // A project row is an Open WebUI sidebar row: the selected pill when its page is open, a "..." menu on hover.
+        const item = node('div', null, 'atlas-project-sidebar-item');
+        const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button'; row.dataset.sidebarProject = value.id;
+        // With one of its conversations open, the project is the current location, not the current page.
+        if (value.id === scope.project) row.setAttribute('aria-current', scope.conversation ? 'true' : 'page');
+        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); item.append(row);
+        const actions = sidebarProjectActions(value);
+        if (actions.length) item.append(rowMenuButton(value.name, actions));
+        list.append(item);
         if (value.id === scope.project) for (const conversation of conversations) {
           const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row atlas-project-host-conversation'); chat.type = 'button';
           if (conversation.id === scope.conversation) chat.setAttribute('aria-current','page');

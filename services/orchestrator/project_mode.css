@@ -283,12 +283,14 @@ html.dark #atlas-project .atlas-project-file-card a {color:var(--atlas-accent,#8
 .atlas-project-host-projects .atlas-project-sidebar-row, .atlas-project-host-projects .atlas-project-sidebar-all { display:block; width:100%; border:0; margin:0; padding:7px 8px; border-radius:var(--atlas-radius-sm,8px); background:transparent; color:var(--atlas-text); font:inherit; font-size:14px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
 .atlas-project-host-projects .atlas-project-sidebar-all { color:var(--atlas-muted); font-size:13px; }
 .atlas-project-host-projects .atlas-project-sidebar-row:hover, .atlas-project-host-projects .atlas-project-sidebar-all:hover { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); }
-.atlas-project-host-projects .atlas-project-sidebar-row[aria-current=page] { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); font-weight:600; }
+/* The open project, project conversation or task page is the selected row, exactly like a selected chat (same tokens as #sidebar a.selected in chat-ui.css);
+   !important wins over the sidebar's "#sidebar button { color:inherit }", which left black text on the accent (owner report 2026-11-13). */
+.atlas-project-host-projects .atlas-project-sidebar-row[aria-current=page] { background:var(--atlas-row-selected-bg,var(--atlas-accent))!important; color:var(--atlas-row-selected-fg,var(--atlas-on-accent))!important; font-weight:inherit; }
+/* A project whose conversation is open is the current location: bold, not a second selected pill. */
+.atlas-project-host-projects .atlas-project-sidebar-row[aria-current=true] { font-weight:600; }
 /* Dark dialogs take the raised chat surface, not the page black. */
 html.dark .atlas-project-dialog { background:var(--atlas-surface)!important; }
 html.dark .atlas-project-dialog input, html.dark .atlas-project-dialog button { background:var(--atlas-bg); color:var(--atlas-text); border-color:var(--atlas-border); }
-/* The open project conversation is the current row: same red highlight as a chat (owner request). */
-.atlas-project-host-projects .atlas-project-host-conversation[aria-current=page] { background:var(--atlas-accent); color:var(--atlas-on-accent); font-weight:inherit; }
 /* With a project page open, the last native chat is no longer current: it loses its highlight. */
 body:has(> #atlas-project) #sidebar a.selected { background:transparent!important; color:var(--atlas-text)!important; }
 body:has(> #atlas-project) #sidebar :has(> a.selected) :is(button,button svg) { color:var(--atlas-muted)!important; }
@@ -324,3 +326,32 @@ html.dark .atlas-project-move-dialog form button, html.dark .atlas-project-move-
 html.dark .atlas-project-move-dialog form button:hover, html.dark .atlas-project-move-menu button:hover { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); }
 /* The project composer has no resize grip, like the chat composer (Firefox and WebKit drew one). */
 #atlas-project .atlas-project-composer textarea { resize:none; }
+/* Project surfaces appended to the page body (the move menu, row menus, dialogs) sit outside .atlas-project and #atlas-project:
+   the project tokens are defined on the root too, so none of them resolves to an empty value. The move menu had no
+   background at all and the conversation behind it showed through its entries (owner report 2026-11-13). */
+html { --project-bg:var(--atlas-bg); --project-card:var(--atlas-bg); --project-line:var(--atlas-border); --project-ink:var(--atlas-text); --project-muted:var(--atlas-muted); --project-accent:var(--atlas-accent); --project-hover:var(--atlas-side); }
+/* Menus over the chat use the raised surface in dark mode, like the native menus. */
+html.dark .atlas-project-move-menu, html.dark .atlas-project-row-menu { background:var(--atlas-surface); }
+/* The move menu is a column: its heading stays in place and only the project list scrolls. */
+.atlas-project-move-menu { display:flex; flex-direction:column; gap:0; overflow:hidden; }
+.atlas-project-move-menu h2 { flex:none; margin:0; line-height:1.4; }
+.atlas-project-move-menu .atlas-project-move-form { flex:1 1 auto; min-height:0; overflow:auto; display:flex; flex-direction:column; gap:2px; margin:0; padding:0; }
+.atlas-project-move-menu .atlas-project-move-form > * { flex:none; }
+/* A project row in the chat sidebar holds its "..." control at its right end, like a chat row. */
+.atlas-project-host-projects .atlas-project-sidebar-item { position:relative; }
+.atlas-project-host-projects .atlas-project-sidebar-item > .atlas-project-sidebar-row { padding-right:34px; }
+.atlas-project-host-projects .atlas-project-sidebar-menu-button { position:absolute; top:50%; right:4px; transform:translateY(-50%); display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; margin:0; padding:0; border:0; border-radius:6px; background:transparent; color:var(--atlas-muted)!important; opacity:0; cursor:pointer; }
+/* Shown on hover, keyboard focus, while its menu is open, and on the selected row. */
+.atlas-project-host-projects .atlas-project-sidebar-item:is(:hover,:focus-within) .atlas-project-sidebar-menu-button, .atlas-project-host-projects .atlas-project-sidebar-menu-button[aria-expanded=true] { opacity:1; }
+.atlas-project-host-projects .atlas-project-sidebar-menu-button:hover { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); }
+.atlas-project-host-projects .atlas-project-sidebar-item:has(> [aria-current=page]) .atlas-project-sidebar-menu-button { opacity:1; color:var(--atlas-row-selected-fg,var(--atlas-on-accent))!important; }
+/* Touch screens have no hover: the control stays visible. */
+@media (hover:none),(pointer:coarse) { .atlas-project-host-projects .atlas-project-sidebar-menu-button { opacity:1; } }
+/* The project row menu looks like the native chat row menu. */
+.atlas-project-row-menu { position:fixed; z-index:80; display:flex; flex-direction:column; gap:1px; min-width:180px; max-width:min(320px,90vw); padding:4px; border:1px solid var(--atlas-border); border-radius:12px; background:var(--atlas-bg); color:var(--atlas-text); box-shadow:0 12px 32px #0003; font-family:var(--atlas-body-font); font-size:14px; }
+.atlas-project-row-menu button { display:block; width:100%; margin:0; padding:7px 10px; border:0; border-radius:8px; background:transparent; color:inherit; font:inherit; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.atlas-project-row-menu button:is(:hover,:focus-visible) { background:color-mix(in srgb, var(--atlas-text) 8%, transparent); outline:none; }
+/* Generated images of a conversation moved from the chat stay inline in the project, within the reading column. */
+.atlas-project-turn .answer img { display:block; max-width:100%; height:auto; margin:10px 0; border-radius:var(--atlas-radius-sm,8px); }
+/* A project's conversations sit one step in under it, like the chats of an Open WebUI folder (the generic row margin removed the indent). */
+.atlas-project-host-projects .atlas-project-host-conversation { margin-left:12px; }

@@ -29,7 +29,10 @@ class PhoneNavigationTests(unittest.TestCase):
     ) -> None:
         script = Path("services/orchestrator/project_mode.js").read_text()
         self.assertIn("const closePhoneSidebar = () =>", script)
-        self.assertIn("#atlas-project-sidebar-list button", script)
+        self.assertIn(
+            "#atlas-project-sidebar-list :is(.atlas-project-sidebar-row,.atlas-project-sidebar-all)",
+            script,
+        )
         self.assertIn("atlas-project-sidebar-open", script)
         css = Path("services/orchestrator/project_mode.css").read_text()
         self.assertIn(".atlas-project-page-heading > button { white-space:nowrap;", css)
