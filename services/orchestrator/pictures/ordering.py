@@ -11,9 +11,6 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from services.orchestrator.pictures.checks import Checks, code_flags
-from services.orchestrator.pictures.judge import judge
-
 FAILED_MEASURE = {"J": 99, "Q": 0, "P": 4}
 
 
@@ -52,6 +49,11 @@ def measure(
 ) -> dict[str, Any]:
     """Judge items failed (J), code checks failed (P, flags) and quality (Q) of
     one draft, after the body and animal kits ran on it."""
+    # Measuring needs the renderer and numpy: imported here, in the picture
+    # worker, so that ranking stays light for the chat process.
+    from services.orchestrator.pictures.checks import Checks, code_flags
+    from services.orchestrator.pictures.judge import judge
+
     try:
         visible, _ = strip_hidden(svg)
         _, summary = judge(visible, ck)

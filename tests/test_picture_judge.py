@@ -220,5 +220,27 @@ class RankTests(unittest.TestCase):
         )
 
 
+class LightImportTests(unittest.TestCase):
+    def test_ids_follow_the_geometry_rule(self) -> None:
+        from services.orchestrator.pictures import checklist, geometry
+
+        for raw in ("Red Fox", " fox--2 ", "Été-chaud", None, "a_b c"):
+            self.assertEqual(checklist.norm_id(raw), geometry.norm_id(raw))
+
+    def test_chat_process_imports_stay_light(self) -> None:
+        import subprocess
+        import sys
+
+        code = (
+            "import sys; import services.orchestrator.pictures.checklist, "
+            "services.orchestrator.pictures.ordering; "
+            "print(int(any(m in sys.modules for m in ('scipy', 'resvg_py'))))"
+        )
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, check=True
+        )
+        self.assertEqual(out.stdout.strip(), "0")
+
+
 if __name__ == "__main__":
     unittest.main()

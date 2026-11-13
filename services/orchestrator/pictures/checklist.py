@@ -14,7 +14,6 @@ import re
 import unicodedata
 from typing import Any
 
-from services.orchestrator.pictures.geometry import norm_id
 from services.orchestrator.pictures.svg_text import extract_json
 
 KINDS = ("character", "object", "place", "text", "labels")
@@ -94,6 +93,12 @@ Rules:
 
 LIVING_SYSTEM = """You read a request for a picture and a list of things in it (id: words). For each id answer whether it is a LIVING BEING drawn with a body of flesh, fur, feathers or skin (a person, an animal, an imaginary creature): true. A machine, a robot, a vehicle, a building, a plant, an object, a garment, a place: false.
 Return one JSON object {"id": true or false, ...} with exactly the ids given. No comment."""
+
+
+def norm_id(text: object) -> str:
+    """An id as the groups of a drawing use it (same rule as geometry.norm_id;
+    kept here so the chat process never loads the renderer for a checklist)."""
+    return re.sub(r"[^a-z0-9]+", "-", str(text or "").strip().lower()).strip("-")
 
 
 def fold(text: object) -> str:
