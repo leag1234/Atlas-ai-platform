@@ -90,6 +90,12 @@ class AgentRequest(BaseModel):
         default=None, exclude_if=lambda value: value is None
     )
     timeout: float = Field(gt=0, le=300)
+    # The caller's own time left (a Work turn's wall clock), in seconds. A call
+    # still receiving output keeps running past `timeout` up to this bound; a
+    # call that goes silent is still cut (quality.PROGRESS_STALL_SECONDS).
+    progress_timeout: float | None = Field(
+        default=None, gt=0, le=86400, exclude_if=lambda value: value is None
+    )
     local_enabled: bool = True
     privacy: Literal["standard", "strict"] = Field(
         default="standard", exclude_if=lambda value: value == "standard"
@@ -151,6 +157,11 @@ class AgentRequest(BaseModel):
             raise LimitError(
                 "timeout_budget", int(self.timeout * 1000), deadline * 1000, "ms"
             )
+        if self.progress_timeout is not None and (
+            self.profile is None or self.privacy == "strict"
+        ):
+            # Only the quality controller watches for a silent call.
+            raise ValueError("invalid_progress_timeout")
         if self.profile is None:
             if (
                 self.has_attachments

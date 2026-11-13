@@ -98,6 +98,10 @@ STREAM_BYTES_PER_TOKEN = 1024
 
 # Arguments this long are a document or an app being written, not a stalled call.
 TOOL_PROGRESS_CHARS = 2000
+# After the first signal, a further one each time this many characters arrive:
+# the quality controller cuts a call that stays silent (PROGRESS_STALL_SECONDS),
+# and tool arguments are never forwarded while they are written.
+TOOL_PROGRESS_STEP = 500
 
 
 class StreamDecoder:
@@ -121,6 +125,7 @@ class StreamDecoder:
         self.text = ""
         self.calls: dict[int, dict[str, str]] = {}
         self.tool_progress_sent = False
+        self.tool_progress_at = 0
         self.ignored_calls = False
         self.usage: dict[str, object] | None = None
         self.reason: str | None = None
@@ -209,15 +214,19 @@ class StreamDecoder:
                         self.calls.clear()
                         raise MalformedToolCall(len(target["name"]))
                     target["arguments"] += call.function.arguments
+                    written = sum(len(c["arguments"]) for c in self.calls.values())
                     if (
-                        not self.tool_progress_sent
-                        and len(target["arguments"]) >= TOOL_PROGRESS_CHARS
+                        len(target["arguments"]) >= TOOL_PROGRESS_CHARS
+                        if not self.tool_progress_sent
+                        else written >= self.tool_progress_at + TOOL_PROGRESS_STEP
                     ):
                         # Tool arguments are not forwarded while they are written.
-                        # Tell the caller once that a long call (a whole document
-                        # or app) is under way, so that it is not cut as silent.
+                        # Tell the caller that a long call (a whole document or
+                        # app) is under way, then that it is still being written,
+                        # so that it is not cut as silent.
                         self.tool_progress_sent = True
-                        events.append({"tool_progress": len(target["arguments"])})
+                        self.tool_progress_at = written
+                        events.append({"tool_progress": written})
                     # Arguments have no length cap of their own: an app is
                     # written in one call, and max_tokens bounds the output.
                     for key, maximum in (("id", 200),):

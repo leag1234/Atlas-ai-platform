@@ -77,7 +77,11 @@ def serve(
 
             async def bounded_relay() -> None:
                 try:
-                    async with asyncio.timeout(validated.timeout):
+                    # A call still receiving output may run to progress_timeout;
+                    # the quality controller cuts a silent one before that.
+                    async with asyncio.timeout(
+                        max(validated.timeout, validated.progress_timeout or 0)
+                    ):
                         await relay()
                 except (ValueError, RuntimeError, TimeoutError, OSError) as exc:
                     known = {
