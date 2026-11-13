@@ -76,6 +76,27 @@ class ArithmeticTests(unittest.TestCase):
         self.assertEqual(table["totals"]["Units"]["count"], 2)
         self.assertEqual(table["totals"]["Units"]["missing"], 1)
 
+    def test_binary_float_artifacts_are_summed_by_code(self) -> None:
+        # A spreadsheet writes 96.4 as 96.40000000000001: these columns were
+        # rejected as ambiguous and their totals left to the model, which got
+        # one wrong (corpus case of a household budget, 2026-11-13).
+        book = Workbook()
+        sheet = book.active
+        assert sheet is not None
+        sheet.append(["Month", "Transport", "Rent"])
+        for month, transport in (
+            ("Jan", 96.4 + 1e-14),
+            ("Feb", 0.1 + 0.2),
+            ("Mar", 1084.1),
+        ):
+            sheet.append([month, transport, 750])
+        buffer = io.BytesIO()
+        book.save(buffer)
+        result = extract_document(attachment("budget.xlsx", buffer.getvalue()))
+        table = result.computed_tables[0]
+        self.assertEqual(table["totals"]["Transport"]["sum"], "1180.8")
+        self.assertEqual(table["totals"]["Rent"]["sum"], "2250")
+
     def test_multiple_sheets_remain_separate(self) -> None:
         book = Workbook()
         first = book.active
