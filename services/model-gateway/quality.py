@@ -474,16 +474,15 @@ async def stream_quality(
     # Finalization instructions may invalidate the initial affordability check.
     select_affordable_model()
     for index in range(2):
-        remaining = request.timeout - (monotonic() - started)
+        elapsed = monotonic() - started
+        remaining = request.timeout - elapsed
         if remaining <= 0:
             if malformed_name is not None:
                 raise MalformedToolCall(malformed_name.measured, index) from None
             raise TimeoutError("timeout")
         # How long an attempt still receiving output may run: the caller's own
         # time left, never less than this request's deadline.
-        active = max(request.timeout, request.progress_timeout or 0) - (
-            monotonic() - started
-        )
+        active = max(request.timeout, request.progress_timeout or 0) - elapsed
         active_deadline = asyncio.get_running_loop().time() + active
         # Retain room for one bounded recovery, not all future tool turns.
         # Actual cost is reserved immediately before each transport call.
