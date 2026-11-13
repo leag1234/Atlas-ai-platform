@@ -242,6 +242,44 @@ class SaveNewFilesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["modified"], ["folder-a/old.py"])
         self.assertEqual(report["not_saved"], [])
 
+    async def test_a_nested_repository_is_saved_as_its_files(self) -> None:
+        # "Commit it in a local git repository": the workspace diff shows the
+        # new repository as one gitlink entry (mode 160000), never its files.
+        patch = (
+            "diff --git a/folder-a/counter b/folder-a/counter\n"
+            "new file mode 160000\n"
+            "index 0000000..1234567\n"
+            "--- /dev/null\n"
+            "+++ b/folder-a/counter\n"
+            "@@ -0,0 +1 @@\n"
+            "+Subproject commit 1234567890abcdef1234567890abcdef12345678\n"
+        )
+        files = {
+            "folder-a/counter/count.py": b"print(1)\n",
+            "folder-a/counter/README.md": b"# Counter\n",
+            "folder-a/counter/.git/HEAD": b"ref: refs/heads/main\n",
+            "folder-a/counter/.git/config": b"[core]\n",
+        }
+        workspace = FakeWorkspace(patch, files)
+        with mock.patch.object(terminal_client, "ProjectPublisher", FakePublisher):
+            report = await save_new_files(
+                self.execution,
+                workspace,
+                self.tools,
+                self.execution.session["base_file_versions"],
+            )
+        saved = sorted(s["path"] for s in report["saved"])
+        self.assertEqual(saved, ["counter/README.md", "counter/count.py"])
+        self.assertFalse(any(".git" in str(s) for s in report["skipped"]))
+
+    def test_nested_repository_entries_are_marked(self) -> None:
+        patch = (
+            "diff --git a/repo b/repo\nnew file mode 160000\n"
+            "--- /dev/null\n+++ b/repo\n@@ -0,0 +1 @@\n+Subproject commit abc\n"
+        )
+        new, _, _ = parse_patch(patch)
+        self.assertEqual(new, ["repo/"])
+
     async def test_base_file_new_mode_is_not_saved(self) -> None:
         patch = PATCH + (
             "diff --git a/folder-a/old.py b/folder-a/old.py\n"
