@@ -238,8 +238,12 @@ async def _living(
     try:
         reply = await complete(payload, LIVING_SECONDS + 5)
     except Exception as error:  # noqa: BLE001 - every character then counts as living
-        if _refusal(error):
+        if _refusal(error) and _code(error) not in DRAFT_SHARE:
             raise
+        # Its own small share spent (a recovery it could not pay): the map is
+        # optional, the turn goes on; what it may have cost is kept.
+        if _code(error) in DRAFT_SHARE:
+            spend.reserved_unknown += LIVING_BUDGET
         LOGGER.warning("picture_living_failed code=%s", _code(error))
         return checklist.parse_living(None, ck)
     spend.settle(reply)

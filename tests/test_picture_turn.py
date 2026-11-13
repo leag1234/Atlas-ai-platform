@@ -301,6 +301,24 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
             await self.run_turn(FakeGateway("banc", failures))
         self.assertEqual(raised.exception.code, "provider_quota")
 
+    async def test_living_map_over_its_share_does_not_end_the_turn(self) -> None:
+        gateway = FakeGateway("banc")
+        original = gateway.__call__
+
+        async def living_refused(
+            payload: dict[str, Any], seconds: float
+        ) -> dict[str, Any]:
+            if "LIVING BEING" in str(payload["messages"][0]["content"]):
+                raise GatewayError(
+                    "cost_budget", 429, "Cost reservation: 6583 microEUR"
+                )
+            return await original(payload, seconds)
+
+        item = Interaction()
+        request = Request(gateway.data["request"])
+        await turn.process_picture_turn(request, item, complete=living_refused)
+        self.assertEqual(item.reponse.count("/images/picture/"), 4)
+
     async def test_a_draft_over_its_share_is_dropped(self) -> None:
         failures: dict[int, Exception] = {
             1: GatewayError("cost_budget", 429, "Cost reservation: 19891 microEUR")
