@@ -76,6 +76,21 @@ class CanonicalUrlTests(unittest.TestCase):
         self.assertNotIn("release/python-3152", cleaned)
 
 
+class InvalidAddressTests(unittest.TestCase):
+    def test_addresses_the_parser_refuses_do_not_break_the_answer(self) -> None:
+        for cited in (
+            "https://[bad/x",
+            "https://example.com:abc/x",
+            "https://ex[ample.com/a",
+        ):
+            with self.subTest(cited=cited):
+                cleaned = without_unretrieved(
+                    "See " + cited + " for details.",
+                    {"https://www.python.org/downloads"},
+                )
+                self.assertNotIn(cited, cleaned)
+
+
 class BareLabelTests(unittest.TestCase):
     def test_a_source_label_left_empty_is_dropped(self) -> None:
         # Staging battery 2026-11-12: "**Source officielle :**" stayed empty
