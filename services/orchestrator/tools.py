@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from services.orchestrator import mcp_client
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal
+from services.orchestrator.calculator import DESCRIPTION as CALCULATOR_DESCRIPTION
 from services.orchestrator.calculator import calculate
 from services.orchestrator.content import hierarchical_summary
 from packages.evidence import estimated_tokens
@@ -90,7 +91,7 @@ class Arguments(BaseModel):
 
 
 class Calculator(Arguments):
-    expr: str = Field(min_length=1, max_length=512)
+    expr: str = Field(min_length=1, max_length=512, description=CALCULATOR_DESCRIPTION)
 
 
 class Search(Arguments):
