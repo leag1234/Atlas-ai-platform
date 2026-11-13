@@ -1259,6 +1259,24 @@ async def _process(
             if routed is not None
             else svg_requested(request.user_text)
         )
+        if (
+            artifact_intent == "modify"
+            and artifact_current is not None
+            and _pictures_by_code()
+        ):
+            from services.orchestrator.pictures.followup import (
+                process_picture_followup,
+            )
+
+            # A change to a picture by code goes through the picture chain.
+            if await process_picture_followup(
+                request,
+                item,
+                artifact_current,
+                cost_limit=cost_limit,
+                wall_clock_limit=wall_clock_limit,
+            ):
+                return
         if artifact_intent == "create" and drawing_kind and _pictures_by_code():
             await _picture_turn(request, item, cost_limit, wall_clock_limit, True)
             return

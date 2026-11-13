@@ -27,6 +27,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "drawing": "Drawing four proposals…",
         "drawing_done": "Drawing four proposals… {done} of 4 finished",
         "finishing": "Finishing the pictures…",
+        "changed": "Here is the changed picture.",
+        "redrawn": "The stored drawing was too large to edit: the picture was drawn again from your first request with this change.",
+        "changing": "Changing the picture…",
     },
     "fr": {
         "intro": (
@@ -59,6 +62,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "drawing": "Dessin de quatre propositions…",
         "drawing_done": "Dessin de quatre propositions… {done} sur 4 terminées",
         "finishing": "Finition des images…",
+        "changed": "Voici l'image modifiée.",
+        "redrawn": "Le dessin conservé était trop volumineux pour être retouché : l'image a été redessinée à partir de votre première demande avec cette modification.",
+        "changing": "Modification de l'image…",
     },
     "de": {
         "intro": (
@@ -88,6 +94,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "drawing": "Vier Vorschläge werden gezeichnet…",
         "drawing_done": "Vier Vorschläge werden gezeichnet… {done} von 4 fertig",
         "finishing": "Bilder werden fertiggestellt…",
+        "changed": "Hier ist das geänderte Bild.",
+        "redrawn": "Die gespeicherte Zeichnung war zu groß zum Bearbeiten: Das Bild wurde aus Ihrer ersten Anfrage mit dieser Änderung neu gezeichnet.",
+        "changing": "Bild wird geändert…",
     },
     "es": {
         "intro": "Aquí tienes {n} propuestas; la primera, enmarcada, es la que sugiero.",
@@ -115,6 +124,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "drawing": "Dibujando cuatro propuestas…",
         "drawing_done": "Dibujando cuatro propuestas… {done} de 4 terminadas",
         "finishing": "Terminando las imágenes…",
+        "changed": "Aquí está la imagen modificada.",
+        "redrawn": "El dibujo guardado era demasiado grande para retocarlo: la imagen se ha vuelto a dibujar a partir de su primera petición con este cambio.",
+        "changing": "Modificando la imagen…",
     },
     "it": {
         "intro": "Ecco {n} proposte; la prima, incorniciata, è quella che suggerisco.",
@@ -142,6 +154,9 @@ TEXTS: dict[str, dict[str, str]] = {
         "drawing": "Disegno di quattro proposte…",
         "drawing_done": "Disegno di quattro proposte… {done} su 4 completate",
         "finishing": "Rifinitura delle immagini…",
+        "changed": "Ecco l'immagine modificata.",
+        "redrawn": "Il disegno salvato era troppo grande da ritoccare: l'immagine è stata ridisegnata dalla prima richiesta con questa modifica.",
+        "changing": "Modifica dell'immagine…",
     },
 }
 
