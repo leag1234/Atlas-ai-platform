@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3a67"/>
+      <stop offset="0.55" stop-color="#54608a"/>
+      <stop offset="1" stop-color="#2a2438"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a3d2b"/>
+      <stop offset="1" stop-color="#2c1d18"/>
+    </linearGradient>
+    <radialGradient id="moon" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff8d6"/>
+      <stop offset="0.55" stop-color="#d9e6ff"/>
+      <stop offset="1" stop-color="#d9e6ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8a5a36"/>
+      <stop offset="1" stop-color="#4b2d1d"/>
+    </linearGradient>
+    <linearGradient id="blanket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8fd0ff"/>
+      <stop offset="0.55" stop-color="#5aa7e8"/>
+      <stop offset="1" stop-color="#2f6fb8"/>
+    </linearGradient>
+    <linearGradient id="pillow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff7ea"/>
+      <stop offset="1" stop-color="#d9c7ad"/>
+    </linearGradient>
+    <radialGradient id="lampGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffd98a" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#ffb85c" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#ffb85c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="skinBoy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd9b8"/>
+      <stop offset="1" stop-color="#e8a97e"/>
+    </linearGradient>
+    <linearGradient id="skinMom" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6c9a0"/>
+      <stop offset="1" stop-color="#d99a6c"/>
+    </linearGradient>
+    <linearGradient id="hairBrown" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b3f24"/>
+      <stop offset="0.5" stop-color="#4a2817"/>
+      <stop offset="1" stop-color="#2b170d"/>
+    </linearGradient>
+    <linearGradient id="bearFur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b98254"/>
+      <stop offset="1" stop-color="#7a4c2b"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="tiny" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#wall)"/>
+  <rect y="760" width="1024" height="264" fill="url(#floor)"/>
+  <ellipse cx="512" cy="900" rx="430" ry="70" fill="#000" opacity="0.28" filter="url(#soft)"/>
+
+  <g id="window-night">
+    <rect x="80" y="110" width="220" height="300" rx="14" fill="#101a33" stroke="#d8e6ff" stroke-opacity="0.35" stroke-width="5"/>
+    <rect x="96" y="126" width="188" height="268" rx="8" fill="#182b52"/>
+    <line x1="190" y1="126" x2="190" y2="394" stroke="#d8e6ff" stroke-opacity="0.28" stroke-width="5"/>
+    <line x1="96" y1="260" x2="284" y2="260" stroke="#d8e6ff" stroke-opacity="0.28" stroke-width="5"/>
+    <circle cx="145" cy="180" r="58" fill="url(#moon)"/>
+    <circle cx="145" cy="180" r="24" fill="#fff6cf"/>
+    <circle cx="238" cy="330" r="3" fill="#eaf2ff"/>
+    <circle cx="120" cy="320" r="2.5" fill="#eaf2ff"/>
+    <circle cx="255" cy="150" r="2.5" fill="#eaf2ff"/>
+    <circle cx="220" cy="220" r="2" fill="#eaf2ff"/>
+    <path d="M96 394 C150 360 230 360 284 394 L284 394 L96 394 Z" fill="#0b1226" opacity="0.65"/>
+  </g>
+
+  <g id="lamp">
+    <ellipse cx="930" cy="300" rx="150" ry="150" fill="url(#lampGlow)"/>
+    <line x1="930" y1="330" x2="930" y2="760" stroke="#3a2a20" stroke-width="12" stroke-linecap="round"/>
+    <path d="M880 330 L980 330 L955 250 L905 250 Z" fill="#f4c46a" stroke="#7a4b22" stroke-width="5"/>
+    <ellipse cx="930" cy="770" rx="70" ry="18" fill="#2a1b14"/>
+  </g>
+
+  <g id="lit" filter="url(#shadow)">
+    <circle id="anchor-lit-pillow" cx="405" cy="535" r="3" fill="none"/>
+    <circle id="anchor-lit-bed" cx="560" cy="650" r="3" fill="none"/>
+    <rect x="235" y="330" width="70" height="430" rx="18" fill="url(#wood)"/>
+    <rect x="235" y="330" width="70" height="70" rx="18" fill="#9a6840"/>
+    <rect x="790" y="430" width="62" height="330" rx="16" fill="url(#wood)"/>
+    <rect x="270" y="500" width="560" height="250" rx="24" fill="#6b4327"/>
+    <rect x="290" y="520" width="520" height="190" rx="18" fill="#c8b08a"/>
+    <rect x="305" y="535" width="490" height="150" rx="14" fill="#f1e4c8"/>
+    <ellipse cx="405" cy="560" rx="105" ry="55" fill="url(#pillow)"/>
+    <path d="M360 610 C470 560 650 585 795 625 L795 685 L360 685 Z" fill="url(#blanket)"/>
+    <path d="M360 610 C470 560 650 585 795 625" fill="none" stroke="#d8f1ff" stroke-width="7" stroke-linecap="round" opacity="0.75"/>
+    <path d="M395 640 C520 610 650 625 780 655" fill="none" stroke="#2b5f9e" stroke-width="4" opacity="0.35"/>
+    <rect x="250" y="735" width="42" height="70" rx="10" fill="#3b2417"/>
+    <rect x="790" y="735" width="42" height="70" rx="10" fill="#3b2417"/>
+  </g>
+
+  <g id="ours-en-peluche" filter="url(#shadow)">
+    <circle id="anchor-ours-paw" cx="612" cy="612" r="3" fill="none"/>
+    <g id="ours-en-peluche-body">
+      <ellipse cx="650" cy="650" rx="72" ry="82" fill="url(#bearFur)"/>
+      <ellipse cx="650" cy="675" rx="42" ry="48" fill="#d8b083" opacity="0.85"/>
+    </g>
+    <g id="ours-en-peluche-arm-1">
+      <ellipse cx="600" cy="620" rx="24" ry="48" transform="rotate(28 600 620)" fill="url(#bearFur)"/>
+      <circle cx="612" cy="612" r="18" fill="#8a5a34"/>
+    </g>
+    <g id="ours-en-peluche-arm-2">
+      <ellipse cx="700" cy="625" rx="22" ry="45" transform="rotate(-24 700 625)" fill="url(#bearFur)"/>
+      <circle cx="690" cy="612" r="17" fill="#8a5a34"/>
+    </g>
+    <g id="ours-en-peluche-leg-1">
+      <ellipse cx="615" cy="720" rx="28" ry="42" transform="rotate(18 615 720)" fill="url(#bearFur)"/>
+      <ellipse cx="608" cy="748" rx="24" ry="18" fill="#d8b083"/>
+    </g>
+    <g id="ours-en-peluche-leg-2">
+      <ellipse cx="690" cy="722" rx="28" ry="42" transform="rotate(-16 690 722)" fill="url(#bearFur)"/>
+      <ellipse cx="700" cy="750" rx="24" ry="18" fill="#d8b083"/>
+    </g>
+    <g id="ours-en-peluche-head" data-facing="three-quarter-left" data-expression="neutral" data-gaze="left" data-species="ursine" data-age="child">
+      <circle cx="585" cy="540" r="24" fill="url(#bearFur)"/>
+      <circle cx="715" cy="540" r="24" fill="url(#bearFur)"/>
+      <circle cx="585" cy="540" r="11" fill="#d8b083"/>
+      <circle cx="715" cy="540" r="11" fill="#d8b083"/>
+      <circle cx="650" cy="565" r="72" fill="url(#bearFur)"/>
+      <g id="ours-en-peluche-face">
+        <ellipse cx="650" cy="590" rx="34" ry="26" fill="#d8b083"/>
+        <ellipse cx="650" cy="580" rx="12" ry="9" fill="#3a2418"/>
+        <path d="M650 589 C642 600 638 604 630 606 M650 589 C658 600 662 604 670 606" fill="none" stroke="#3a2418" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="622" cy="552" r="7" fill="#241611"/>
+        <circle cx="678" cy="552" r="7" fill="#241611"/>
+        <circle cx="624" cy="550" r="2" fill="#fff"/>
+        <circle cx="680" cy="550" r="2" fill="#fff"/>
+        <path d="M606 535 C616 528 632 528 640 535 M660 535 C668 528 684 528 694 535" fill="none" stroke="#4a2c18" stroke-width="4" stroke-linecap="round"/>
+      </g>
+    </g>
+  </g>
+
+  <g id="livre" filter="url(#shadow)">
+    <circle id="anchor-livre" cx="835" cy="585" r="3" fill="none"/>
+    <path d="M735 560 C790 535 835 535 880 560 L880 650 C835 625 790 625 735 650 Z" fill="#fff6df" stroke="#8a6a45" stroke-width="5"/>
+    <path d="M880 560 C925 535 970 535 1015 560 L1015 650 C970 625 925 625 880 650 Z" fill="#f3e7c9" stroke="#8a6a45" stroke-width="5" transform="translate(-80 0)"/>
+    <line x1="807" y1="548" x2="807" y2="638" stroke="#8a6a45" stroke-width="4"/>
+    <text id="histoire" x="770" y="590" font-family="Liberation Sans" font-size="24" fill="#5a4632">Il était une fois…</text>
+    <text x="770" y="620" font-family="Liberation Sans" font-size="18" fill="#7a6650">une douce histoire</text>
+    <text x="845" y="590" font-family="Liberation Sans" font-size="18" fill="#7a6650">pour guérir</text>
+    <text x="845" y="620" font-family="Liberation Sans" font-size="18" fill="#7a6650">les rêves</text>
+  </g>
+
+  <g id="chaise">
+    <circle id="anchor-chaise-seat" cx="930" cy="650" r="3" fill="none"/>
+    <rect x="875" y="625" width="120" height="28" rx="12" fill="url(#wood)" filter="url(#shadow)"/>
+    <line x1="895" y1="650" x2="880" y2="820" stroke="#4b2d1d" stroke-width="12" stroke-linecap="round"/>
+    <line x1="975" y1="650" x2="990" y2="820" stroke="#4b2d1d" stroke-width="12" stroke-linecap="round"/>
+    <rect x="865" y="430" width="24" height="210" rx="10" fill="url(#wood)"/>
+  </g>
+
+  <g id="petit-garcon">
+    <desc class="pose">{"facing": "three-quarter-right", "build": "child", "shape": "slim", "skin": "#f1c27d", "joints": {"head": [430, 505], "neck": [462, 525], "near_shoulder": [492, 540], "far_shoulder": [482, 532], "near_elbow": [545, 575], "far_elbow": [535, 566], "near_wrist": [612, 612], "far_wrist": [585, 600], "near_hip": [625, 625], "far_hip": [615, 617], "near_knee": [725, 655], "far_knee": [715, 647], "near_ankle": [805, 685], "far_ankle": [795, 677]}, "clothes": {"top": {"type": "sweater", "color": "#7fb3d5"}, "sleeves": "long", "bottom": {"type": "none", "color": "#7fb3d5"}, "shoes": {"type": "bare", "color": "#f1c27d"}, "extra": []}, "relations": [{"thing": "lit", "rel": "lying-in"}, {"thing": "ours-en-peluche", "rel": "holding"}, {"thing": "livre", "rel": "in-front-of"}], "contacts": [{"joint": "near_wrist", "kind": "hold", "anchor": "anchor-ours-paw"}, {"joint": "hips", "kind": "touch", "anchor": "anchor-lit-bed"}]}</desc>
+    <g id="petit-garcon-head" data-facing="three-quarter-right" data-expression="sad" data-gaze="down" data-species="human" data-age="child">
+      <path d="M365 500 C360 430 405 385 455 392 C505 399 525 445 515 505 C510 535 495 555 470 560 C430 568 375 545 365 500 Z" fill="url(#skinBoy)"/>
+      <path d="M360 485 C350 420 400 375 455 382 C510 389 535 430 525 490 C500 455 470 430 430 432 C400 434 375 455 360 485 Z" fill="#5b3a21"/>
+      <path d="M372 430 C395 405 455 398 500 420 C475 412 430 410 400 425 C388 431 378 438 372 430 Z" fill="#6f4a2c"/>
+      <g id="petit-garcon-face">
+        <path d="M398 500 C408 492 424 492 434 500" fill="none" stroke="#5a3a22" stroke-width="5" stroke-linecap="round"/>
+        <path d="M462 500 C472 492 488 492 498 500" fill="none" stroke="#5a3a22" stroke-width="5" stroke-linecap="round"/>
+        <ellipse cx="416" cy="522" rx="8" ry="10" fill="#2b1c14"/>
+        <ellipse cx="480" cy="522" rx="8" ry="10" fill="#2b1c14"/>
+        <circle cx="418" cy="519" r="2.5" fill="#fff"/>
+        <circle cx="482" cy="519" r="2.5" fill="#fff"/>
+        <path d="M444 535 C450 542 456 542 462 535" fill="none" stroke="#c98a63" stroke-width="4" stroke-linecap="round"/>
+        <path d="M438 565 C452 558 470 558 484 566" fill="none" stroke="#a85f43" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="398" cy="545" r="10" fill="#ff9d8a" opacity="0.35" filter="url(#tiny)"/>
+        <circle cx="500" cy="545" r="10" fill="#ff9d8a" opacity="0.35" filter="url(#tiny)"/>
+      </g>
+    </g>
+  </g>
+
+  <g id="maman">
+    <desc class="pose">{"facing": "three-quarter-left", "build": "adult", "shape": "average", "skin": "#f1c27d", "joints": {"head": [905, 430], "neck": [900, 490], "near_shoulder": [875, 510], "far_shoulder": [930, 505], "near_elbow": [835, 560], "far_elbow": [930, 565], "near_wrist": [835, 585], "far_wrist": [900, 590], "near_hip": [895, 650], "far_hip": [940, 645], "near_knee": [900, 720], "far_knee": [945, 715], "near_ankle": [890, 815], "far_ankle": [950, 810]}, "clothes": {"top": {"type": "sweater", "color": "#b56576"}, "sleeves": "long", "bottom": {"type": "long-skirt", "color": "#6d597a"}, "shoes": {"type": "sandals", "color": "#3b2a20"}, "extra": []}, "relations": [{"thing": "lit", "rel": "beside"}, {"thing": "livre", "rel": "holding"}, {"thing": "chaise", "rel": "on"}, {"thing": "petit-garcon", "rel": "beside"}], "contacts": [{"joint": "hips", "kind": "sit", "anchor": "anchor-chaise-seat"}, {"joint": "near_wrist", "kind": "hold", "anchor": "anchor-livre"}]}</desc>
+    <g id="maman-head" data-facing="three-quarter-left" data-expression="smile" data-gaze="left" data-species="human" data-age="adult">
+      <path d="M835 430 C825 340 875 300 930 310 C990 320 1015 380 1000 455 C1030 520 1010 620 965 650 C985 560 965 500 950 455 C945 520 930 610 900 640 C875 610 865 520 860 455 C850 500 835 560 815 600 C800 540 810 480 835 430 Z" fill="url(#hairBrown)"/>
+      <path d="M845 430 C840 365 880 330 925 335 C975 340 995 390 985 450 C980 500 955 535 915 540 C875 545 850 500 845 430 Z" fill="url(#skinMom)"/>
+      <g id="maman-face">
+        <path d="M865 440 C875 432 890 432 900 440" fill="none" stroke="#4a2c18" stroke-width="5" stroke-linecap="round"/>
+        <path d="M925 440 C935 432 950 432 960 440" fill="none" stroke="#4a2c18" stroke-width="5" stroke-linecap="round"/>
+        <ellipse cx="882" cy="462" rx="8" ry="9" fill="#2b1c14"/>
+        <ellipse cx="942" cy="462" rx="8" ry="9" fill="#2b1c14"/>
+        <circle cx="884" cy="459" r="2.5" fill="#fff"/>
+        <circle cx="944" cy="459" r="2.5" fill="#fff"/>
+        <path d="M908 478 C914 486 922 486 928 478" fill="none" stroke="#c98a63" stroke-width="4" stroke-linecap="round"/>
+        <path d="M885 510 C905 525 935 525 955 508" fill="none" stroke="#b85c49" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="862" cy="492" r="11" fill="#ff9d8a" opacity="0.3" filter="url(#tiny)"/>
+        <circle cx="965" cy="492" r="11" fill="#ff9d8a" opacity="0.3" filter="url(#tiny)"/>
+      </g>
+    </g>
+  </g>
+
+  <g id="light-and-shadow">
+    <path d="M300 120 L520 760 L250 760 Z" fill="#cfe4ff" opacity="0.10" filter="url(#soft)"/>
+    <path d="M905 250 L1024 760 L760 760 Z" fill="#ffd98a" opacity="0.12" filter="url(#soft)"/>
+    <ellipse cx="520" cy="760" rx="360" ry="45" fill="#000" opacity="0.22" filter="url(#soft)"/>
+    <ellipse cx="930" cy="825" rx="150" ry="28" fill="#000" opacity="0.25" filter="url(#soft)"/>
+  </g>
+</svg>

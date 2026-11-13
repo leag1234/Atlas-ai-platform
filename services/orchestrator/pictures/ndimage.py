@@ -53,3 +53,15 @@ def label_sums(values: Array, labelled: Labels, count: int) -> list[float]:
 
 def uniform_filter(values: Array, size: int) -> Array:
     return cast(Array, _ndi.uniform_filter(values, size))
+
+
+def binary_closing(mask: Mask, structure: Mask | None = None) -> Mask:
+    return cast(Mask, _ndi.binary_closing(mask, structure=structure))
+
+
+def binary_fill_holes(mask: Mask) -> Mask:
+    return cast(Mask, _ndi.binary_fill_holes(mask))
+
+
+def median_filter(values: Array, size: int, mode: str = "reflect") -> Array:
+    return cast(Array, _ndi.median_filter(values, size=size, mode=mode))

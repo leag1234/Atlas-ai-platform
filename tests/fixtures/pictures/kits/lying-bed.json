@@ -1,0 +1,96 @@
+{
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "petit-garcon",
+    "words": "un petit garçon",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "lit",
+    "words": "son lit",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "ours-en-peluche",
+    "words": "son ours en peluche",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   },
+   {
+    "id": "maman",
+    "words": "sa maman",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "other",
+    "parts": [
+     {
+      "name": "longs-cheveux-bruns",
+      "words": "aux long cheveux bruns",
+      "count": null
+     }
+    ]
+   },
+   {
+    "id": "histoire",
+    "words": "une histoire",
+    "kind": "text",
+    "count": null,
+    "plural": false,
+    "where": "none",
+    "parts": [],
+    "text": "une histoire"
+   }
+  ],
+  "relations": [
+   {
+    "type": "inside",
+    "a": "petit-garcon",
+    "b": "lit",
+    "words": "dans son lit"
+   },
+   {
+    "type": "holding",
+    "a": "ours-en-peluche",
+    "b": "petit-garcon",
+    "words": "avec son ours en peluche"
+   },
+   {
+    "type": "near",
+    "a": "maman",
+    "b": "lit",
+    "words": "assise à coté lui"
+   }
+  ],
+  "actions": [
+   {
+    "who": "maman",
+    "verb": "lit",
+    "words": "lit une histoire",
+    "checks": [
+     {
+      "check": "near",
+      "with": "petit-garcon"
+     }
+    ]
+   }
+  ]
+ },
+ "living": {
+  "petit-garcon": true,
+  "maman": true
+ }
+}

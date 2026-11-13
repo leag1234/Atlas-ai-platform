@@ -1,0 +1,52 @@
+{
+ "checklist": {
+  "genre": "scene",
+  "things": [
+   {
+    "id": "giraffe",
+    "words": "A giraffe",
+    "kind": "character",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "skateboard",
+    "words": "a skateboard",
+    "kind": "object",
+    "count": null,
+    "plural": false,
+    "where": "ground",
+    "parts": []
+   },
+   {
+    "id": "stack-of-four-books",
+    "words": "a stack of four books",
+    "kind": "object",
+    "count": 4,
+    "plural": false,
+    "where": "other",
+    "parts": []
+   }
+  ],
+  "relations": [
+   {
+    "type": "on",
+    "a": "giraffe",
+    "b": "skateboard",
+    "words": "on a skateboard"
+   },
+   {
+    "type": "holding",
+    "a": "stack-of-four-books",
+    "b": "giraffe",
+    "words": "carrying a stack of four books"
+   }
+  ],
+  "actions": []
+ },
+ "living": {
+  "giraffe": true
+ }
+}

@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe7ff"/>
+      <stop offset="0.62" stop-color="#e8f7ff"/>
+      <stop offset="1" stop-color="#fff4d6"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9b36c"/>
+      <stop offset="1" stop-color="#a97c3f"/>
+    </linearGradient>
+    <linearGradient id="deck" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a5c"/>
+      <stop offset="0.55" stop-color="#e4572e"/>
+      <stop offset="1" stop-color="#8f2d56"/>
+    </linearGradient>
+    <linearGradient id="giraffeCoat" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2c14e"/>
+      <stop offset="1" stop-color="#c98a2b"/>
+    </linearGradient>
+    <linearGradient id="muzzle" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7d98b"/>
+      <stop offset="1" stop-color="#b9782f"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff9c4"/>
+      <stop offset="0.55" stop-color="#ffd54f"/>
+      <stop offset="1" stop-color="#ffb300" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <filter id="tinyBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+    <filter id="bookShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="5" dy="7" stdDeviation="4" flood-color="#5b3a1a" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#sky)"/>
+  <circle cx="835" cy="150" r="150" fill="url(#sun)"/>
+  <g fill="#ffffff" opacity="0.82" filter="url(#tinyBlur)">
+    <ellipse cx="190" cy="160" rx="86" ry="28"/>
+    <ellipse cx="250" cy="145" rx="64" ry="24"/>
+    <ellipse cx="690" cy="235" rx="96" ry="30"/>
+    <ellipse cx="760" cy="220" rx="58" ry="22"/>
+  </g>
+  <rect y="760" width="1024" height="264" fill="url(#ground)"/>
+  <path d="M0 760 C180 735 330 785 512 760 C720 732 860 786 1024 758 L1024 1024 L0 1024 Z" fill="#c99a55" opacity="0.55"/>
+  <g stroke="#8a6335" stroke-width="4" opacity="0.35" stroke-linecap="round">
+    <path d="M80 850 h180 M300 910 h240 M720 875 h220 M120 965 h300 M560 955 h360"/>
+  </g>
+  <ellipse cx="585" cy="835" rx="285" ry="42" fill="#4b2d16" opacity="0.28" filter="url(#soft)"/>
+
+  <g id="skateboard">
+    <circle id="anchor-skateboard-deck" cx="560" cy="770" r="3" fill="none"/>
+    <path d="M405 760 C455 742 690 742 742 760 C760 766 760 786 742 792 C690 810 455 810 405 792 C387 786 387 766 405 760 Z" fill="url(#deck)"/>
+    <path d="M420 766 C480 752 665 752 728 766" fill="none" stroke="#ffd0a8" stroke-width="7" opacity="0.65" stroke-linecap="round"/>
+    <path d="M430 792 C500 806 650 806 720 792" fill="none" stroke="#5f1f3d" stroke-width="5" opacity="0.55" stroke-linecap="round"/>
+    <g>
+      <path d="M455 792 l-22 34 h38 l18 -34 Z" fill="#6d6a75"/>
+      <path d="M690 792 l-18 34 h38 l22 -34 Z" fill="#6d6a75"/>
+      <circle cx="470" cy="842" r="25" fill="#2f2b33"/>
+      <circle cx="470" cy="842" r="12" fill="#c9c4d4"/>
+      <circle cx="470" cy="842" r="5" fill="#6d6a75"/>
+      <circle cx="705" cy="842" r="25" fill="#2f2b33"/>
+      <circle cx="705" cy="842" r="12" fill="#c9c4d4"/>
+      <circle cx="705" cy="842" r="5" fill="#6d6a75"/>
+    </g>
+    <ellipse cx="470" cy="872" rx="42" ry="9" fill="#3a2413" opacity="0.25" filter="url(#tinyBlur)"/>
+    <ellipse cx="705" cy="872" rx="42" ry="9" fill="#3a2413" opacity="0.25" filter="url(#tinyBlur)"/>
+  </g>
+
+  <g id="stack-of-four-books-4" filter="url(#bookShadow)">
+    <g transform="rotate(-4 650 326)">
+      <rect x="586" y="306" width="132" height="24" rx="5" fill="#2e7d32"/>
+      <rect x="592" y="310" width="120" height="16" rx="3" fill="#f7f1d6"/>
+      <path d="M586 306 h132 v6 h-132 Z" fill="#66bb6a" opacity="0.7"/>
+      <circle id="anchor-book-bottom" cx="652" cy="330" r="3" fill="none"/>
+    </g>
+  </g>
+  <g id="stack-of-four-books-3" filter="url(#bookShadow)">
+    <g transform="rotate(3 650 286)">
+      <rect x="578" y="266" width="146" height="25" rx="5" fill="#1565c0"/>
+      <rect x="585" y="271" width="132" height="15" rx="3" fill="#fff8e1"/>
+      <path d="M578 266 h146 v6 h-146 Z" fill="#64b5f6" opacity="0.65"/>
+    </g>
+  </g>
+  <g id="stack-of-four-books-2" filter="url(#bookShadow)">
+    <g transform="rotate(-2 650 246)">
+      <rect x="590" y="226" width="124" height="24" rx="5" fill="#c62828"/>
+      <rect x="597" y="231" width="110" height="14" rx="3" fill="#fffde7"/>
+      <path d="M590 226 h124 v6 h-124 Z" fill="#ef9a9a" opacity="0.65"/>
+    </g>
+  </g>
+  <g id="stack-of-four-books-1" filter="url(#bookShadow)">
+    <g transform="rotate(5 650 207)">
+      <rect x="584" y="188" width="136" height="24" rx="5" fill="#6a1b9a"/>
+      <rect x="591" y="193" width="122" height="14" rx="3" fill="#f3e5f5"/>
+      <path d="M584 188 h136 v6 h-136 Z" fill="#ce93d8" opacity="0.7"/>
+    </g>
+  </g>
+
+  <g id="giraffe">
+    <desc class="animal">{"family":"giraffe","pose":"standing","facing":"profile-right","coat":{"color":"#e8b04b","belly":"#f7dfae","pattern":"spots","pattern_color":"#8a5a24","fur":"short","mane":"#6f4518","feet":"#5b3a1a"},"tail":"tuft","joints":{"head":[650,360],"neck_base":[565,455],"withers":[535,430],"croup":[360,440],"tail_base":[340,450],"tail_tip":[318,560],"near_front_elbow":[545,525],"near_front_knee":[560,640],"near_front_foot":[560,770],"far_front_elbow":[525,520],"far_front_knee":[505,640],"far_front_foot":[500,770],"near_hind_knee":[405,535],"near_hind_hock":[365,625],"near_hind_foot":[390,770],"far_hind_knee":[425,530],"far_hind_hock":[405,620],"far_hind_foot":[430,770]},"relations":[{"thing":"skateboard","rel":"on"},{"thing":"stack-of-four-books-4","rel":"holding"}],"contacts":[{"joint":"near_front_foot","kind":"step","anchor":"anchor-skateboard-deck"},{"joint":"far_front_foot","kind":"step","anchor":"anchor-skateboard-deck"},{"joint":"near_hind_foot","kind":"step","anchor":"anchor-skateboard-deck"},{"joint":"far_hind_foot","kind":"step","anchor":"anchor-skateboard-deck"},{"joint":"head","kind":"touch","anchor":"anchor-book-bottom"}]}</desc>
+    <g id="giraffe-head" data-facing="profile-right" data-expression="focused" data-gaze="forward" data-species="other" data-age="adult">
+      <g>
+        <path d="M612 300 C590 270 585 235 596 205 C606 178 632 168 650 184 C668 168 694 178 704 205 C715 235 710 270 688 300 C724 318 742 352 736 386 C730 424 696 444 650 438 C604 444 570 424 564 386 C558 352 576 318 612 300 Z" fill="url(#giraffeCoat)"/>
+        <path d="M596 205 C586 176 592 145 612 132 C626 123 642 128 650 184 Z" fill="#d99b35"/>
+        <path d="M704 205 C714 176 708 145 688 132 C674 123 658 128 650 184 Z" fill="#d99b35"/>
+        <circle cx="612" cy="132" r="13" fill="#7a4a1d"/>
+        <circle cx="688" cy="132" r="13" fill="#7a4a1d"/>
+        <path d="M585 250 C560 238 540 246 532 268 C552 282 578 278 596 262 Z" fill="#d99b35"/>
+        <path d="M715 250 C740 238 760 246 768 268 C748 282 722 278 704 262 Z" fill="#d99b35"/>
+        <path d="M650 438 C690 446 724 430 736 398 C744 376 738 356 720 346 C690 332 620 332 590 348 C572 358 566 378 574 398 C586 428 610 444 650 438 Z" fill="url(#muzzle)"/>
+        <g fill="#8a5a24" opacity="0.72">
+          <ellipse cx="612" cy="318" rx="13" ry="10"/>
+          <ellipse cx="650" cy="292" rx="12" ry="9"/>
+          <ellipse cx="690" cy="320" rx="14" ry="10"/>
+          <ellipse cx="632" cy="366" rx="11" ry="8"/>
+          <ellipse cx="676" cy="372" rx="12" ry="8"/>
+          <ellipse cx="700" cy="386" rx="9" ry="7"/>
+          <ellipse cx="586" cy="372" rx="10" ry="8"/>
+        </g>
+        <path d="M704 382 C716 378 728 380 736 388" fill="none" stroke="#6b3f18" stroke-width="5" stroke-linecap="round"/>
+        <path d="M690 410 C706 420 724 418 734 406" fill="none" stroke="#6b3f18" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+      </g>
+      <g id="giraffe-face">
+        <ellipse cx="666" cy="330" rx="13" ry="15" fill="#fff"/>
+        <circle cx="670" cy="332" r="7" fill="#2b1c10"/>
+        <circle cx="672" cy="329" r="2.4" fill="#fff"/>
+        <path d="M646 306 C658 298 676 298 688 306" fill="none" stroke="#5b3a1a" stroke-width="5" stroke-linecap="round"/>
+        <ellipse cx="724" cy="386" rx="5" ry="7" fill="#5b3a1a"/>
+        <path d="M690 410 C704 419 722 417 733 407" fill="none" stroke="#5b3a1a" stroke-width="4" stroke-linecap="round"/>
+        <ellipse cx="632" cy="392" rx="10" ry="6" fill="#e59a4b" opacity="0.45"/>
+      </g>
+    </g>
+  </g>
+
+  <path d="M360 812 C470 792 690 792 800 814" fill="none" stroke="#fff2c2" stroke-width="5" opacity="0.35" stroke-linecap="round"/>
+</svg>
