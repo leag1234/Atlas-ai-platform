@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from packages import privacy
+
 
 @lru_cache(maxsize=1)
 def presets() -> dict[str, Any]:
@@ -44,7 +46,21 @@ def validate_endpoint(value: str, local: bool = False) -> str:
     return value.rstrip("/")
 
 
+def owned(provider: str | None) -> bool:
+    """Whether a preset is an owned or controlled endpoint (``"privacy": "owned"``)."""
+    preset = presets().get(provider) if provider else None
+    return isinstance(preset, dict) and preset.get("privacy") == "owned"
+
+
+def require(provider: str | None, capability: str = "inference") -> None:
+    """The strict privacy check of every provider call: credentials and endpoints of a
+    shared provider are never handed out while the request is strict."""
+    if privacy.is_strict() and not owned(provider):
+        raise privacy.StrictPrivacyUnavailable(capability)
+
+
 def endpoint() -> str:
+    require(os.environ.get("ATLAS_PROVIDER"))
     preset = selected()
     value = (
         os.environ.get("ATLAS_PROVIDER_BASE_URL") or preset.get("base_url")
@@ -57,6 +73,7 @@ def endpoint() -> str:
 
 
 def api_key() -> str:
+    require(os.environ.get("ATLAS_PROVIDER"))
     if selected() is None:
         return os.environ["SCW_GENERATIVE_API_KEY"]
     return os.environ.get("ATLAS_PROVIDER_API_KEY", "")
@@ -67,13 +84,14 @@ def api_key_for(provider: str) -> str:
     preset = presets().get(provider)
     if not preset or not preset.get("api_key_env"):
         raise ValueError("unknown_provider")
+    require(provider)
     return os.environ.get(str(preset["api_key_env"]), "")
 
 
 def owned_endpoint() -> str:
     value = os.environ.get("ATLAS_OWNED_VLLM_BASE_URL", "")
     if not value:
-        raise ValueError("strict_privacy_unavailable")
+        raise privacy.StrictPrivacyUnavailable("inference")
     return validate_endpoint(
         value, urlsplit(value).hostname in {"localhost", "127.0.0.1", "::1"}
     )

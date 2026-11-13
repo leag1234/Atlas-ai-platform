@@ -2,6 +2,7 @@
 
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
+from packages import privacy
 
 import json
 import logging
@@ -49,7 +50,7 @@ class Gateway:
         request = Request(
             self.url + "/" + operation,
             data=data,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **privacy.headers()},
         )
         try:
             with urlopen(request, timeout=self.timeout) as response:

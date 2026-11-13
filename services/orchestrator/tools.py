@@ -1,5 +1,6 @@
 """Strict tool arguments; all untrusted results cross one explicit envelope."""
 
+from packages.privacy import require_shared
 from packages.limits import LimitError
 from packages.ports import atlas_ports
 
@@ -177,6 +178,7 @@ class Runtime:
         )
 
     async def search(self, request: Search, timeout: float) -> Message:
+        require_shared("web_search")  # strict privacy: no web search (packages.privacy)
         providers = search_providers()
         available = tuple(
             provider

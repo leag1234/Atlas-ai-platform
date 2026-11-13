@@ -91,6 +91,10 @@ class Web:
         max_bytes: int = MAX_BYTES,
         image: bool = False,
     ) -> tuple[int, str, bytes]:
+        from packages.privacy import require_shared
+
+        # Every page, image or robots.txt read leaves Atlas: not in strict privacy.
+        require_shared("web_fetch")
         validate_url(url)
         connector = aiohttp.TCPConnector(
             resolver=PublicResolver(), use_dns_cache=False, force_close=True

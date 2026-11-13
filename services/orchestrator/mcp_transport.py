@@ -23,6 +23,9 @@ async def invoke(
     *,
     method: str = "tools/call",
 ) -> dict[str, object]:
+    from packages.privacy import require_shared
+
+    require_shared("connectors")
     process = await asyncio.create_subprocess_exec(
         command,
         *args,

@@ -2,6 +2,7 @@
 
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
+from packages import privacy
 
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -41,7 +42,7 @@ async def receive(
             read_bufsize=800000,
         ) as client:
             async with client.post(
-                url, json=payload, allow_redirects=False
+                url, json=payload, allow_redirects=False, headers=privacy.headers()
             ) as response:
                 if response.status != 200:
                     raise RuntimeError("gateway_error")
@@ -61,6 +62,12 @@ async def receive(
                     event = json.loads(line[5:])
                     if not isinstance(event, dict):
                         raise ValueError("invalid_stream")
+                    if event.get("error") == privacy.CODE:
+                        from services.orchestrator.loop import StrictPrivacyRefusal
+
+                        raise StrictPrivacyRefusal(
+                            str(event.get("capability") or "inference")[:64]
+                        )
                     if event.get("error") == "provider_failure":
                         from services.orchestrator.model import GatewayError
 

@@ -1004,6 +1004,10 @@ async def process_work(
                 )
             )
             selection = tools.selection
+            from packages.privacy import elevate
+
+            # The project's level holds for every call of this Work turn.
+            elevate(project.get("privacy"))
             if str(project.get("privacy", "standard")) == "strict":
                 selection.disable_research()
             else:

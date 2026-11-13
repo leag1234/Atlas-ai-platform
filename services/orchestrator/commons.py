@@ -135,6 +135,10 @@ async def find_drawing(
     record_response: Callable[[str, object], None] | None = None,
 ) -> CommonsDrawing | None:
     """Look up a short object name, at most two requests and eight seconds total."""
+    from packages.privacy import require_shared
+
+    # A public media library receives the subject: not in strict privacy.
+    require_shared("web_search")
     subject = " ".join(question.split())
     subject = re.sub(
         r"\b(?:alpha|beta|gamma)(?:[- ]type)?\b|\b(?:type|cutaway|schematic|diagram|animation)\b|\bcross[- ]section\b",

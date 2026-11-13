@@ -3,6 +3,7 @@
 import provider_settings
 
 from packages.limits import LimitError, ProviderLimitError, MalformedToolCall
+from packages import privacy
 
 from packages.profiles import accepted_profile
 
@@ -133,6 +134,15 @@ class AgentRequest(BaseModel):
     # role. A caller that runs several drafts (pictures by code) drops a failed
     # one instead of paying a recovery, never a silent costlier fallback.
     single_attempt: bool = Field(default=False, exclude_if=lambda value: value is False)
+
+    @model_validator(mode="before")
+    @classmethod
+    def request_level(cls, data: object) -> object:
+        # A strict request stays strict for every call made on its behalf, whatever
+        # the caller put in the body: the level is never lowered.
+        if privacy.is_strict() and isinstance(data, dict):
+            return {**data, "privacy": "strict"}
+        return data
 
     @model_validator(mode="after")
     def quality(self) -> Self:

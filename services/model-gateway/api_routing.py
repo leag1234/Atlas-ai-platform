@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from packages import privacy
+
 
 PUBLIC_MODELS = (
     "atlas-code",
@@ -94,10 +96,13 @@ def targets(
     name: str, effort: str, *, strict: bool = False, pinned: bool = False
 ) -> tuple[str, tuple[Target, ...]]:
     usage = public_model(name)
+    strict = strict or privacy.is_strict()
     if pinned:
         target = pinned_target(name)
         if target is None:
             raise ValueError("invalid_model")
+        if strict and target.privacy != "owned":
+            raise privacy.StrictPrivacyUnavailable("inference")
         return usage, (target,)
     entries = config().get("usages", {}).get(usage, {}).get(effort)
     if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
@@ -115,7 +120,7 @@ def targets(
     if strict:
         selected = tuple(target for target in selected if target.privacy == "owned")
         if not selected:
-            raise ValueError("strict_privacy_unavailable")
+            raise privacy.StrictPrivacyUnavailable("inference")
     if not selected or effort not in EFFORTS:
         raise ValueError("invalid_model")
     return usage, selected
@@ -133,6 +138,8 @@ def supports_structured_output(name: str, effort: str) -> bool:
 
     try:
         _, entries = targets(name, effort, pinned=pinned_target(name) is not None)
+    except privacy.StrictPrivacyUnavailable:
+        raise
     except ValueError:
         return False
     declared = config().get("structured_output", {})

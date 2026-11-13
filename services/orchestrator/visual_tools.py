@@ -221,6 +221,9 @@ def provider_status(provider: str, status: int, body: object) -> None:
 
 
 async def search_images(query: str, provider: str, timeout: float) -> Message:
+    from packages.privacy import require_shared
+
+    require_shared("web_search")
     credential = os.environ.get(
         "TAVILY_API_KEY" if provider == "tavily" else "SERPAPI_KEY"
     )

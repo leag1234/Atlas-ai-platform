@@ -115,7 +115,7 @@
   },
   # Source: operator-supplied; strict privacy requires a fully owner-controlled endpoint.
   "owned-vllm": {
-    "name": "Owned OpenAI-compatible vLLM endpoint", "base_url": null,
+    "name": "Owned OpenAI-compatible vLLM endpoint", "base_url": null, "privacy": "owned",
     "reasoning_values": [],
     "api_key_env": "ATLAS_OWNED_VLLM_API_KEY",
     "text_model": "owned-vllm-model", "vision_model": null,

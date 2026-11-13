@@ -177,6 +177,10 @@ class OSM:
     async def request(
         self, service: str, parameters: dict[str, str], endpoint: str | None = None
     ) -> Any:
+        from packages.privacy import require_shared
+
+        # A public map service receives the place asked: not in strict privacy.
+        require_shared("places_search")
         contact = os.environ.get(
             "ATLAS_OSM_CONTACT", "https://github.com/leag1234/atlas-ai-platform/issues"
         ).strip()

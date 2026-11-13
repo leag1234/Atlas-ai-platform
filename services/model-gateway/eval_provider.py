@@ -1,6 +1,8 @@
 """POC-R2/F8: bounded evaluation transport, provider usage and observed SSE timing."""
 
 import json
+
+import provider_settings
 import math
 import logging
 import os
@@ -155,6 +157,8 @@ class EvalProvider:
             raise LimitError(
                 "eval_request_budget", math.ceil(reservation * 1e6), 50000, "micro EUR"
             )
+        # Evaluation only; still never a shared provider for a strict request.
+        provider_settings.require(None, "evaluation")
         endpoint = os.environ["SCW_GENERATIVE_BASE_URL"].rstrip("/")
         if not endpoint.startswith("https://"):
             raise ValueError("provider_configuration")
