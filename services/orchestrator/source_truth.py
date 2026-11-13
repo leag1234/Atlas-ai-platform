@@ -118,9 +118,15 @@ def canonical_url(url: str) -> str:
     slash and a fragment do not make another page. A retrieved page cited as
     "https://www.python.org/downloads/" was removed as unretrieved because the
     fetch had no final slash (staging 2026-11-12)."""
-    parsed = urlparse(url.strip().strip("<>"))
-    host = (parsed.hostname or "").lower().removeprefix("www.")
-    port = f":{parsed.port}" if parsed.port else ""
+    try:
+        parsed = urlparse(url.strip().strip("<>"))
+        host = (parsed.hostname or "").lower().removeprefix("www.")
+        port = f":{parsed.port}" if parsed.port else ""
+    except ValueError:
+        # An address the standard parser refuses ("[" in the host, a port that
+        # is not a number) is compared as written: an answer quoting one failed
+        # with an unexpected stream exception (staging 2026-11-13).
+        return url.strip().strip("<>").lower()
     path = parsed.path.rstrip("/")
     query = f"?{parsed.query}" if parsed.query else ""
     return f"{host}{port}{path}{query}"

@@ -52,6 +52,7 @@ CONTEXT_TRUNCATION_MARKER = "\n[atlas: fetched page truncated to fit model conte
 # Work steps contain source and tool output, which averages about three bytes
 # per token; other requests keep the conservative byte-for-token reservation.
 WORK_BYTES_PER_TOKEN = 3
+SHORT_CALL_TOKENS = 200
 
 # These calls are the requested work itself; switch_tool_group is offered at
 # every Work step.
@@ -588,8 +589,16 @@ async def stream_quality(
         event_count = 0
         result: dict[str, object] | None = None
         # Reserve time for recovery, still under the original request deadline.
+        # A short call (a routing decision, a title: at most SHORT_CALL_TOKENS of
+        # output) keeps no recovery reserve: retrying the same slow provider
+        # with the rest gave nothing, while one attempt with the whole budget
+        # usually answers (staging 2026-11-13: first token between 0.4 and 6.6 s,
+        # first attempts cut at 1.2 to 4 s).
+        short = current.max_tokens <= SHORT_CALL_TOKENS
         allotted = (
-            remaining * (0.5 if complete_response else 0.8) if index == 0 else remaining
+            remaining * (0.5 if complete_response else 0.8)
+            if index == 0 and not short
+            else remaining
         )
         full_deadline = asyncio.get_running_loop().time() + remaining
         try:
