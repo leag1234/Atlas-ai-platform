@@ -248,7 +248,7 @@ class OSM:
             {"q": place, "format": "jsonv2", "limit": "1", "addressdetails": "1"},
         )
         # People write "Station Square in Caen" or "Main Street in Leeds"; the
-        # search engine wants "place de la Gare, Caen". One retry, same policy.
+        # search engine wants "Station Square, Caen". One retry, same policy.
         joined = PLACE_JOINER.sub(", ", place)
         if not data and joined != place:
             data = await self.request(
