@@ -70,6 +70,10 @@ REFUSALS = frozenset(
         "provider_quota",
     }
 )
+# A draft that exhausts its own share of the turn's ceiling (a long draft and
+# its recovery) is dropped like a failed draft: the ceiling is the turn's own
+# split, not the user's budget, which the early refusal and the caller check.
+DRAFT_SHARE = frozenset({"cost_budget", "cost"})
 PHOTO = re.compile(
     r"(?i)\b(photo\w*|fotogra\w*|fotos?|r[ée]alistes?|realistic\w*|realisti\w*"
     r"|realistas?|realistisch\w*)\b"
@@ -381,7 +385,7 @@ async def draw(
                 failure = task.exception()
                 if failure is None:
                     continue
-                if _refusal(failure):
+                if _refusal(failure) and _code(failure) not in DRAFT_SHARE:
                     refusal = refusal or failure
                     for other in pending:
                         other.cancel()

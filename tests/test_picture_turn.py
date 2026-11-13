@@ -293,13 +293,21 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.state, "done")
         self.assertNotIn("/images/", item.reponse)
 
-    async def test_budget_refusal_is_never_a_provider_failure(self) -> None:
+    async def test_quota_refusal_is_never_a_provider_failure(self) -> None:
         failures: dict[int, Exception] = {
-            1: GatewayError("cost_budget", 429, "Cost reservation: 30000 microEUR")
+            1: GatewayError("provider_quota", 402, "Provider credit exhausted")
         }
         with self.assertRaises(GatewayError) as raised:
             await self.run_turn(FakeGateway("banc", failures))
-        self.assertEqual(raised.exception.code, "cost_budget")
+        self.assertEqual(raised.exception.code, "provider_quota")
+
+    async def test_a_draft_over_its_share_is_dropped(self) -> None:
+        failures: dict[int, Exception] = {
+            1: GatewayError("cost_budget", 429, "Cost reservation: 19891 microEUR")
+        }
+        item = await self.run_turn(FakeGateway("banc", failures))
+        self.assertEqual(item.reponse.count("/images/picture/"), 3)
+        self.assertIn("picture_draft_cost_budget", item.erreurs)
 
     async def test_too_little_budget_left_is_a_measured_refusal(self) -> None:
         item = Interaction()
