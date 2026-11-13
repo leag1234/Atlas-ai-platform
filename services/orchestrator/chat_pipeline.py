@@ -27,7 +27,7 @@ from services.orchestrator.loop import Call, Limits, Message, Query, run
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.tools import Rag, Runtime, search_providers
 from services.orchestrator.stream_client import Sink, sink_context
-from services.orchestrator import grounding
+from services.orchestrator import grounding, number_provenance
 from services.orchestrator.vision import process_vision
 from services.orchestrator.search_policy import required_research, corpus_allowed
 from services.orchestrator.followup import (
@@ -291,10 +291,14 @@ class ChatTools(Runtime):
             self.terminal = TerminalClient(item.request_id)
 
     async def execute(self, call: Call, timeout: float) -> Message:
-        return await self._execute(call, timeout, trusted_render=False)
+        return number_provenance.observe(
+            await self._execute(call, timeout, trusted_render=False)
+        )
 
     async def execute_trusted_render(self, call: Call, timeout: float) -> Message:
-        return await self._execute(call, timeout, trusted_render=True)
+        return number_provenance.observe(
+            await self._execute(call, timeout, trusted_render=True)
+        )
 
     async def _execute(
         self, call: Call, timeout: float, *, trusted_render: bool
@@ -717,6 +721,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         else None
     )
     checking = grounding.current.set(check)
+    # Number provenance stage 0: counts computed numbers without evidence; log only.
+    provenance = number_provenance.Provenance() if number_provenance.enabled() else None
+    tracking = number_provenance.current.set(provenance)
     sink = sink_context.get()
     held = sink_context.set(_HeldAnswer(sink)) if check and sink else None
     from services.orchestrator.source_truth import urls as text_urls, user_urls
@@ -740,6 +747,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         if held is not None:
             sink_context.reset(held)
         grounding.current.reset(checking)
+        number_provenance.current.reset(tracking)
         context_usage.parts.reset(components)
         context_usage.samples.reset(capture)
     from services.orchestrator.source_truth import clean_citation_residue
@@ -762,6 +770,13 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             item.reponse,
             request.user_text,
             conversation_language(request.conversation_messages, request.ui_locale),
+        )
+    if provenance is not None and item.state == "done" and item.task_type != "work":
+        number_provenance.record(
+            provenance,
+            item.reponse,
+            [m.text for m in request.messages],
+            item.task_type,
         )
     if item.state == "done" and not item.reponse.strip():
         item.erreurs.append("empty_answer")
@@ -1687,6 +1702,8 @@ async def _process(
         # model's preferred PDF library, and an unread document invites invention.
         read_document_bytes=bool(request.documents),
     )
+    if (tracker := number_provenance.current.get()) is not None:
+        tracker.collect(attachment_sources)
     notice = failure_notice(attachment_sources, request.lang)
     if attachment_sources and model.sink:
         pages, failed_pages, ocr_pages = reading_progress(attachment_sources)
