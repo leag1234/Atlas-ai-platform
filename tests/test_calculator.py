@@ -128,16 +128,19 @@ class CalculatorTests(unittest.TestCase):
             with self.subTest(expr=expr), self.assertRaises(ValueError):
                 calculate(expr)
 
-    def test_tool_description_lists_operations(self) -> None:
+    def test_description_lists_operations_and_schema_is_unchanged(self) -> None:
+        # The grammar is documented in code; the tool schema sent to the model stays
+        # as recorded in the journey replays until the next recording refresh.
+        from services.orchestrator.calculator import DESCRIPTION
         from services.orchestrator.tools import declarations
 
+        for operation in ("sqrt(x)", "pow(x, y)", "round(x, n)", "percent(p, x)"):
+            self.assertIn(operation, DESCRIPTION)
+        self.assertIn("percent_change(old, new)", DESCRIPTION)
         tools = json.loads(json.dumps(declarations()))
         calculator = next(
             tool["function"]
             for tool in tools
             if tool["function"]["name"] == "calculator"
         )
-        description = calculator["parameters"]["properties"]["expr"]["description"]
-        for operation in ("sqrt(x)", "pow(x, y)", "round(x, n)", "percent(p, x)"):
-            self.assertIn(operation, description)
-        self.assertIn("percent_change(old, new)", description)
+        self.assertNotIn("description", calculator["parameters"]["properties"]["expr"])
