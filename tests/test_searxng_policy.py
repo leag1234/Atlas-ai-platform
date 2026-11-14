@@ -127,7 +127,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             if len(self.started) == 2:
                 break
             await asyncio.sleep(0.001)
-        self.assertEqual(set(self.started), {"duckduckgo", "wikipedia"})
+        self.assertEqual(set(self.started), {sx.ENGINES[0], "wikipedia"})
         self.assertEqual(self.peak, 2)
         self.hold.set()
         output = await task
@@ -139,12 +139,25 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.seen), 2)
 
     async def test_sparse_primary_uses_brave_without_other_fallbacks(self) -> None:
-        self.scripts["duckduckgo"] = "few"
+        self.scripts[sx.ENGINES[0]] = "few"
         result = await self.search()
         self.assertEqual(result["outcome"], "ok")
         self.assertEqual(
-            [e for e in self.started if e != "wikipedia"], ["duckduckgo", "brave"]
+            [e for e in self.started if e != "wikipedia"], list(sx.ENGINES[:2])
         )
+
+    async def test_local_cooldown_skip_is_not_partial(self) -> None:
+        circuit = self.state.circuits.setdefault(
+            f"http://127.0.0.1:{self.port}:{sx.ENGINES[0]}", sx.Circuit()
+        )
+        circuit.next_call = time.monotonic() + 60
+        result = await self.search()
+        self.assertEqual(result["outcome"], "ok")
+        self.assertNotIn("message", result)
+        self.assertEqual([e for e in self.started if e != "wikipedia"], [sx.ENGINES[1]])
+        engines = result["engines"]
+        assert isinstance(engines, list)
+        self.assertEqual(engines[0]["reason"], "cooldown")
 
     async def test_fallbacks_are_ordered_and_individual(self) -> None:
         self.scripts = {engine: "empty" for engine in sx.ENGINES[:-1]}
@@ -170,10 +183,10 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                 self.scripts = {engine: signal for engine in (*sx.ENGINES, "wikipedia")}
                 result = await self.search(query=signal)
                 self.assertEqual(result["outcome"], "upstream_blocked")
-                self.assertEqual(len(self.seen), 7)
+                self.assertEqual(len(self.seen), len(sx.ENGINES) + 1)
                 again = await self.search(query=signal + " distinct")
                 self.assertEqual(again["outcome"], "upstream_blocked")
-                self.assertEqual(len(self.seen), 7)
+                self.assertEqual(len(self.seen), len(sx.ENGINES) + 1)
                 if signal in {"403", "429"}:
                     self.assertGreater(
                         self.state.circuits[
@@ -353,16 +366,15 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             Search(query="!google CERN :auto <999", lang="de"), 2
         )
         self.assertEqual(result["language"], "de")
-        self.assertEqual(set(self.started), {"duckduckgo", "wikipedia"})
+        self.assertEqual(set(self.started), {sx.ENGINES[0], "wikipedia"})
         self.assertTrue(all(request["language"] == "de-DE" for request in self.seen))
         self.assertTrue(
             all(
                 request["q"] == '"!google" CERN ":auto" "<999"' for request in self.seen
             )
         )
-        self.assertTrue(
-            all(request["categories"] == "general" for request in self.seen)
-        )
+        # "categories" next to "engines" would make SearXNG ask every engine.
+        self.assertTrue(all("categories" not in request for request in self.seen))
 
     async def test_independent_cooldowns_and_health_probes_over_http(self) -> None:
         params = {"q": "CERN", "language": "en", "format": "json"}
@@ -401,17 +413,22 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((await attempt("qwant"))["reason"], "cooldown")
 
-    async def test_news_keeps_wikipedia_in_general_category(self) -> None:
+    async def test_news_time_range_only_where_the_engine_supports_it(self) -> None:
+        # SearXNG skips an engine without time-range support when the request
+        # carries one: the news search then read as empty for that engine.
+        self.scripts = {engine: "empty" for engine in sx.ENGINES}
         await sx.search(
             self.cache, f"http://127.0.0.1:{self.port}", "CERN", "de", 1, True, 2
         )
         wiki = next(
             request for request in self.seen if request["engines"] == "wikipedia"
         )
-        self.assertEqual(wiki["categories"], "general")
-        self.assertTrue(
-            all(request["categories"] == "general" for request in self.seen)
-        )
+        self.assertTrue(all("categories" not in request for request in self.seen))
+        for request in self.seen:
+            self.assertEqual(
+                request.get("time_range"),
+                "month" if request["engines"] in sx.TIME_RANGE_ENGINES else None,
+            )
         self.assertNotIn("time_range", wiki)
         self.assertEqual(wiki["language"], "de-DE")
 
@@ -701,6 +718,30 @@ class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
         for row in results:
             row["engines"] = None
         self.assertEqual(sx.parse_results(data, "brave")["results"], [])
+
+    def test_sidecar_settings_load_every_engine_and_no_default(self) -> None:
+        # An engine name SearXNG does not load, or "categories" next to
+        # "engines", falls back to the default category. With every engine
+        # disabled that fallback reaches no engine instead of all of them.
+        import yaml
+
+        settings = yaml.safe_load(Path("infra/searxng/settings.yml").read_text())
+        kept = settings["use_default_settings"]["engines"]["keep_only"]
+        entries = {entry["name"]: entry for entry in settings["engines"]}
+        self.assertEqual(set(kept), {*sx.SUPPORTED, "wikipedia"})
+        self.assertEqual(set(entries), set(kept))
+        for name, entry in entries.items():
+            self.assertIs(entry["disabled"], True, name)
+            self.assertIs(entry.get("inactive", False), False, name)
+        self.assertEqual(entries["wikipedia"]["display_type"], ["list"])
+        self.assertFalse(settings["server"]["limiter"])
+        self.assertLessEqual(sx.TIME_RANGE_ENGINES, {*sx.SUPPORTED})
+        # Engine lists already deployed in instance environments stay valid.
+        with patch.dict(
+            os.environ,
+            {"ATLAS_SEARXNG_ENGINES": "duckduckgo,bing,brave,qwant,google,startpage"},
+        ):
+            self.assertEqual(sx.Policy.environment().engines[1], "bing")
 
     def test_policy_limits_and_circuit_independence(self) -> None:
         self.assertEqual(sx.Policy.environment().fallback_interval, 30)
