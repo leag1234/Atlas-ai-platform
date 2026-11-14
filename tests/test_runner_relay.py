@@ -278,6 +278,33 @@ class DialogueTests(unittest.TestCase):
         )
         self.assertEqual(machines.complete_approvals(block, {"k": block}), block)
 
+    def test_an_approved_command_that_did_not_run_is_written_by_code(self) -> None:
+        from services.orchestrator.code_mode import WORK_FAILURE, work_failure_reply
+        from services.orchestrator.interactions import Interaction
+
+        failures = {
+            "k": dict(machine="portable", command="git push origin main", error="x")
+        }
+        block = machines.approval_block("portable", "git push origin main", ".", "fr")
+        item = Interaction()
+        item.state = "failed"
+        item.work_failure = dict(
+            category="approval_failed",
+            answer=machines.approval_failure_answer(failures, "fr"),
+            question=block,
+        )
+        reply = work_failure_reply(item, "fr")
+        assert reply is not None
+        words = WORK_FAILURE["fr"]
+        self.assertTrue(reply.startswith("Non lancée sur **portable** : `git push"))
+        self.assertIn(words["template"].format(reason=words["approval_failed"]), reply)
+        self.assertTrue(reply.endswith(block))
+        shown = machines.approval_shown(reply)
+        assert shown is not None
+        self.assertEqual(shown["command"], "git push origin main")
+        for lang in ("en", "fr", "de", "es", "it"):
+            self.assertIn("portable", machines.approval_failure_answer(failures, lang))
+
     def test_only_a_plain_yes_or_no_answers(self) -> None:
         for text in (
             "yes",

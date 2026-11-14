@@ -207,6 +207,61 @@ class LoopFailureTests(unittest.IsolatedAsyncioTestCase):
             "en attente de votre approbation pour exécuter python3 -m unittest -v sur Test Linux",
         )
 
+    async def test_a_question_asked_in_the_conversation_is_the_whole_answer(
+        self,
+    ) -> None:
+        from services.orchestrator.loop import Call
+        from services.orchestrator.work_machine_tools import (
+            approval_block,
+            approval_shown,
+            complete_approvals,
+        )
+
+        block = approval_block("portable", "git push origin main", ".", "fr")
+
+        class Model:
+            def estimate(self, messages: list[dict[str, object]]) -> Reservation:
+                return Reservation(1, Decimal(0))
+
+            async def complete(
+                self, messages: list[dict[str, object]], timeout: float
+            ) -> Turn:
+                arguments = dict(target="portable", command="git push origin main")
+                return Turn(
+                    "Je pousse le commit.",
+                    (Call("run", "remote_run", json.dumps(arguments)),),
+                )
+
+        class Tools:
+            def estimate(self, call: object) -> Reservation:
+                return Reservation(1, Decimal(0))
+
+            async def execute(self, call: object, timeout: float) -> dict[str, object]:
+                return dict(
+                    state="awaiting_approval",
+                    command_id="command",
+                    approval_question=block,
+                )
+
+        with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
+            result = await run(
+                Query(question="Pousse le commit.", lang="fr"),
+                Model(),
+                Tools(),
+                "system",
+                Limits(
+                    profile="atlas-qwen", tokens=None, code_mode=True, model_calls=1
+                ),
+            )
+
+        # No lowercase "en attente de votre approbation" line above it.
+        self.assertEqual(result.text, block)
+        answer = complete_approvals(result.text, {"k": block})
+        self.assertEqual(answer, block)
+        shown = approval_shown(answer)
+        assert shown is not None
+        self.assertEqual(shown["command"], "git push origin main")
+
     async def test_cost_budget_gateway_failure_is_a_budget_stop(self) -> None:
         with patch.dict(os.environ, {"ATLAS_PROJECT_MODE": "1"}):
 

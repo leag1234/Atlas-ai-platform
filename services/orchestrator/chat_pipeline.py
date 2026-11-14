@@ -522,10 +522,13 @@ class ChatTools(Runtime):
                     or not isinstance(data, dict)
                     or not data.get("results")
                 )
-                and (
-                    not self.item.retrieved_urls
-                    or output.get("error") in {"quota_exceeded", "search_rate_limited"}
-                )
+                # Sources already retrieved in this turn are kept: a later
+                # quota or rate refusal closes the research (closing.py) and the
+                # answer is written from them, naming the limit (D5). Only a
+                # turn without any retrieved source is refused here (staging
+                # 2026-11-14: a second search reached an exhausted provider and
+                # the whole sourced answer was refused with 503).
+                and not self.item.retrieved_urls
             ):
                 # Stop before another inference can silently replace failed research
                 # with remembered facts, including during streamed responses.

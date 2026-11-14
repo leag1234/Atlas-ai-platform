@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from packages.artifact_intent import Intent
 from packages.model_json import object_content, unique_object
+from packages.work_intent import manages_machine
 
 if TYPE_CHECKING:
     from services.orchestrator.chat_schema import ChatRequest
@@ -168,7 +169,7 @@ kind is one of:
 - "app": something interactive to USE in the browser: game, quiz, flashcards, tool, calculator, converter, timer, simulator, music or drum toy, interactive chart, small web page.
 - "file": a real file to download: Word, Excel, PowerPoint, PDF, CSV or Markdown file, spreadsheet, slide deck, a CV or a letter as a document.
 - "run": code or tests to execute, data to compute by running a program, or a program to build that is not a single web page (Python script, bot, server, API, scraper). A script or function only to write and show is "answer".
-- "remote": an action on a computer the user owns and reaches over SSH (their server, VPS, NAS, a named machine). Bookings, payments, phone calls, messages to people and smart-home devices are not "remote": they are "other".
+- "remote": an action on a computer the user owns and reaches over SSH or connected to this assistant (their server, VPS, NAS, laptop, a named machine), including connecting, renaming, forgetting, removing or disconnecting one of those machines. Bookings, payments, phone calls, messages to people and smart-home devices are not "remote": they are "other".
 - "other": none of these.
 
 file_format, only when kind is "file", else null: "docx", "xlsx", "pptx", "pdf", "csv" or "md"; null when no format is named or clearly implied. A spreadsheet, budget or tracking table is "xlsx"; a slide deck "pptx"; a Word document "docx".
@@ -199,6 +200,7 @@ Examples (last message, then the reply):
 "je suis devant la mairie de Rennes, il me faut un distributeur" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": "mairie, Rennes"}
 "écris un script python qui trie mes photos par date et lance-le" {"kind": "run", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "vérifie l'espace disque de mon VPS" {"kind": "remote", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
+"oublie mon ordi portable" {"kind": "remote", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 After an assistant turn that delivered an app: "rends les boutons plus gros" {"kind": "app", "file_format": null, "follow_up": true, "needs_research": false, "needs_location": false, "origin": null}"""
 
 _HISTORY_TURNS = 4
@@ -386,6 +388,14 @@ async def route(request: ChatRequest) -> Decision | None:
         for message in request.conversation_messages[:-1]
     ]
     routed, milliseconds, cost, reason = await classify(request.user_text, history)
+    if (
+        routed is not None
+        and routed.kind != "remote"
+        and manages_machine(request.user_text)
+    ):
+        # Forgetting or removing a machine is done by the machine tools; the
+        # chat alone said "noted" and removed nothing (staging 2026-11-14).
+        routed = Decision(kind="remote")
     request.__dict__[DECISION_KEY] = routed
     request.__dict__[COST_KEY] = cost
     log.info(

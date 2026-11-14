@@ -17,7 +17,11 @@
    after more than LATE_SHARE of its time: a failure then is the drawing
    failure sentence (CpuLate), never a second long wait for painting.
 4. A diagram: the picture is wordless; one locate call per picture gives
-   where each part is drawn, and code places the words (cpu_finish).
+   where each part is drawn, and code places the words (cpu_finish). Words
+   to show (a name on a logo) are set by code in the band the picture left
+   empty (text_setting). Counted or unusual details asked for are checked
+   on each picture by one vision call (cpu_checks); the answer names those
+   a picture may not show.
 5. The finished pictures go back to the picture turn (turn.py), which stores
    them, makes the contact sheet and the artifact, and answers.
 
@@ -36,7 +40,7 @@ from decimal import Decimal
 from typing import Any
 
 from packages.profiles import picture_profile
-from services.orchestrator.pictures import cpu_server, locate, rewrite
+from services.orchestrator.pictures import cpu_checks, cpu_server, locate, rewrite
 from services.orchestrator.pictures.worker import PictureJobError, run_job
 
 LOGGER = logging.getLogger(__name__)
@@ -169,7 +173,9 @@ async def _rewrite(
             "picture_cpu_rewrite_" + _code(error), spend.total
         ) from None
     spend.settle(reply)
-    parsed = rewrite.parse(str(reply.get("text") or ""))
+    parsed = rewrite.parse(
+        str(reply.get("text") or ""), source=str(messages[-1]["content"])
+    )
     if parsed is None:
         raise CpuUnavailable("picture_cpu_rewrite_invalid", spend.total)
     return parsed
@@ -274,8 +280,18 @@ async def pictures(
                 )
             )
         )
+    checked: list[list[str] | None] = [None for _ in kept]
+    if plan.checks:
+        checked = list(
+            await asyncio.gather(
+                *(
+                    cpu_checks.unmet(plan.checks, r.image, profile, spend, call, errors)
+                    for _, r in kept
+                )
+            )
+        )
     finished: list[dict[str, Any]] = []
-    for (seed, result), points in zip(kept, located):
+    for (seed, result), points, unmet in zip(kept, located, checked):
         if plan.diagram and not points:
             errors.append("picture_cpu_unlocated")
             continue
@@ -287,6 +303,7 @@ async def pictures(
                     "title": plan.title,
                     "labels": plan.labels if plan.diagram else [],
                     "points": {k: list(v) for k, v in points.items()},
+                    "text": [] if plan.diagram else plan.text,
                 },
                 seconds=FINISH_SECONDS,
             )
@@ -308,6 +325,7 @@ async def pictures(
                 "prompt": plan.prompt,
                 "labels": dict(job.get("report") or {}),
                 "render_seconds": result.render_seconds,
+                "unmet": unmet,
             }
         )
     return finished, filtered, timings
@@ -332,7 +350,9 @@ async def draw(
     clock = Clock(started, deadline)
     expected = await _ready(CANDIDATES, clock)
     await _status("reading", language)
-    plan = await _rewrite(rewrite.messages(request_text), profile, spend, complete)
+    plan = await _rewrite(
+        rewrite.messages(request_text, language=language), profile, spend, complete
+    )
     drawing = CpuDrawing(rewrite=plan)
     drawing.timings["cpu_rewrite"] = (time.monotonic() - started) * 1000
     if plan.refused:
@@ -420,6 +440,7 @@ async def change(
                 picture_set.request,
                 previous=picture_set.prompt,
                 change=request.user_text,
+                language=language,
             ),
             profile,
             spend,
@@ -496,9 +517,10 @@ async def change(
     item.artifacts = [
         {"id": picture_set.artifact_id, "version": picture_set.artifact_version}
     ]
+    checks = cpu_checks.note(language, plan.checks, [result.get("unmet")])
     item.reponse = "\n\n".join(
         [
-            text(language, "changed"),
+            " ".join(filter(None, [text(language, "changed"), checks])),
             f"![{picture_set.title}]({image})",
             footer(
                 picture_set.artifact_id,

@@ -127,7 +127,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             if len(self.started) == 2:
                 break
             await asyncio.sleep(0.001)
-        self.assertEqual(set(self.started), {"duckduckgo", "wikipedia"})
+        self.assertEqual(set(self.started), {sx.ENGINES[0], "wikipedia"})
         self.assertEqual(self.peak, 2)
         self.hold.set()
         output = await task
@@ -139,12 +139,25 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.seen), 2)
 
     async def test_sparse_primary_uses_brave_without_other_fallbacks(self) -> None:
-        self.scripts["duckduckgo"] = "few"
+        self.scripts[sx.ENGINES[0]] = "few"
         result = await self.search()
         self.assertEqual(result["outcome"], "ok")
         self.assertEqual(
-            [e for e in self.started if e != "wikipedia"], ["duckduckgo", "brave"]
+            [e for e in self.started if e != "wikipedia"], list(sx.ENGINES[:2])
         )
+
+    async def test_local_cooldown_skip_is_not_partial(self) -> None:
+        circuit = self.state.circuits.setdefault(
+            f"http://127.0.0.1:{self.port}:{sx.ENGINES[0]}", sx.Circuit()
+        )
+        circuit.next_call = time.monotonic() + 60
+        result = await self.search()
+        self.assertEqual(result["outcome"], "ok")
+        self.assertNotIn("message", result)
+        self.assertEqual([e for e in self.started if e != "wikipedia"], [sx.ENGINES[1]])
+        engines = result["engines"]
+        assert isinstance(engines, list)
+        self.assertEqual(engines[0]["reason"], "cooldown")
 
     async def test_fallbacks_are_ordered_and_individual(self) -> None:
         self.scripts = {engine: "empty" for engine in sx.ENGINES[:-1]}
@@ -170,10 +183,10 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                 self.scripts = {engine: signal for engine in (*sx.ENGINES, "wikipedia")}
                 result = await self.search(query=signal)
                 self.assertEqual(result["outcome"], "upstream_blocked")
-                self.assertEqual(len(self.seen), 7)
+                self.assertEqual(len(self.seen), len(sx.ENGINES) + 1)
                 again = await self.search(query=signal + " distinct")
                 self.assertEqual(again["outcome"], "upstream_blocked")
-                self.assertEqual(len(self.seen), 7)
+                self.assertEqual(len(self.seen), len(sx.ENGINES) + 1)
                 if signal in {"403", "429"}:
                     self.assertGreater(
                         self.state.circuits[
@@ -353,16 +366,15 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             Search(query="!google CERN :auto <999", lang="de"), 2
         )
         self.assertEqual(result["language"], "de")
-        self.assertEqual(set(self.started), {"duckduckgo", "wikipedia"})
+        self.assertEqual(set(self.started), {sx.ENGINES[0], "wikipedia"})
         self.assertTrue(all(request["language"] == "de-DE" for request in self.seen))
         self.assertTrue(
             all(
                 request["q"] == '"!google" CERN ":auto" "<999"' for request in self.seen
             )
         )
-        self.assertTrue(
-            all(request["categories"] == "general" for request in self.seen)
-        )
+        # "categories" next to "engines" would make SearXNG ask every engine.
+        self.assertTrue(all("categories" not in request for request in self.seen))
 
     async def test_independent_cooldowns_and_health_probes_over_http(self) -> None:
         params = {"q": "CERN", "language": "en", "format": "json"}
@@ -401,17 +413,22 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((await attempt("qwant"))["reason"], "cooldown")
 
-    async def test_news_keeps_wikipedia_in_general_category(self) -> None:
+    async def test_news_time_range_only_where_the_engine_supports_it(self) -> None:
+        # SearXNG skips an engine without time-range support when the request
+        # carries one: the news search then read as empty for that engine.
+        self.scripts = {engine: "empty" for engine in sx.ENGINES}
         await sx.search(
             self.cache, f"http://127.0.0.1:{self.port}", "CERN", "de", 1, True, 2
         )
         wiki = next(
             request for request in self.seen if request["engines"] == "wikipedia"
         )
-        self.assertEqual(wiki["categories"], "general")
-        self.assertTrue(
-            all(request["categories"] == "general" for request in self.seen)
-        )
+        self.assertTrue(all("categories" not in request for request in self.seen))
+        for request in self.seen:
+            self.assertEqual(
+                request.get("time_range"),
+                "month" if request["engines"] in sx.TIME_RANGE_ENGINES else None,
+            )
         self.assertNotIn("time_range", wiki)
         self.assertEqual(wiki["language"], "de-DE")
 
@@ -519,28 +536,65 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             "The search engines returned no matching results. This does not establish that no information exists.",
         )
 
-    async def test_pipeline_keeps_quota_refusal_terminal_with_earlier_sources(
+    async def test_pipeline_keeps_earlier_sources_after_a_quota_refusal(
         self,
     ) -> None:
-        item = Interaction(retrieved_urls=["https://example.test/earlier"])
+        # Staging 2026-11-14: a first search was served with five pages, a
+        # second one reached an exhausted provider, and the whole sourced
+        # answer was refused with 503. The refusal now closes the research and
+        # the answer is written from the pages already retrieved.
+        for code, status in (("quota_exceeded", 432), ("search_rate_limited", 429)):
+            with self.subTest(code=code):
+                refusal = {
+                    "error": code,
+                    "provider_status": status,
+                    "attempts": [
+                        {"provider": "searxng", "outcome": "empty_results"},
+                        {"provider": "tavily", "outcome": code},
+                    ],
+                }
+                item = Interaction(retrieved_urls=["https://example.test/earlier"])
+                with patch.object(Runtime, "execute", AsyncMock(return_value=refusal)):
+                    output = await ChatTools(item).execute(
+                        Call(
+                            "s",
+                            "web_search",
+                            json.dumps({"query": "CERN", "lang": "en"}),
+                        ),
+                        2,
+                    )
+                self.assertEqual(output, refusal)
+                self.assertIn(code, item.erreurs)
+                self.assertEqual(item.retrieved_urls, ["https://example.test/earlier"])
+
+    async def test_pipeline_refuses_honestly_when_no_provider_served(self) -> None:
+        item = Interaction()
         with patch.object(
             Runtime,
             "execute",
             AsyncMock(
                 return_value={
                     "error": "quota_exceeded",
-                    "provider_status": 429,
-                    "attempts": [{"provider": "tavily", "outcome": "quota_exceeded"}],
+                    "provider_status": 432,
+                    "attempts": [
+                        {"provider": "searxng", "outcome": "empty_results"},
+                        {"provider": "tavily", "outcome": "quota_exceeded"},
+                        {"provider": "serpapi", "outcome": "global_monthly_search"},
+                    ],
                 }
             ),
         ):
-            with self.assertRaisesRegex(GatewayError, "quota_exceeded"):
+            with self.assertRaises(GatewayError) as raised:
                 await ChatTools(item).execute(
                     Call(
                         "s", "web_search", json.dumps({"query": "CERN", "lang": "en"})
                     ),
                     2,
                 )
+        self.assertEqual(raised.exception.code, "quota_exceeded")
+        self.assertEqual(raised.exception.status, 503)
+        self.assertIn("quota exhausted. Provider HTTP 432.", raised.exception.detail)
+        self.assertNotIn("provider failed", raised.exception.detail)
 
 
 class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
@@ -664,6 +718,30 @@ class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
         for row in results:
             row["engines"] = None
         self.assertEqual(sx.parse_results(data, "brave")["results"], [])
+
+    def test_sidecar_settings_load_every_engine_and_no_default(self) -> None:
+        # An engine name SearXNG does not load, or "categories" next to
+        # "engines", falls back to the default category. With every engine
+        # disabled that fallback reaches no engine instead of all of them.
+        import yaml
+
+        settings = yaml.safe_load(Path("infra/searxng/settings.yml").read_text())
+        kept = settings["use_default_settings"]["engines"]["keep_only"]
+        entries = {entry["name"]: entry for entry in settings["engines"]}
+        self.assertEqual(set(kept), {*sx.SUPPORTED, "wikipedia"})
+        self.assertEqual(set(entries), set(kept))
+        for name, entry in entries.items():
+            self.assertIs(entry["disabled"], True, name)
+            self.assertIs(entry.get("inactive", False), False, name)
+        self.assertEqual(entries["wikipedia"]["display_type"], ["list"])
+        self.assertFalse(settings["server"]["limiter"])
+        self.assertLessEqual(sx.TIME_RANGE_ENGINES, {*sx.SUPPORTED})
+        # Engine lists already deployed in instance environments stay valid.
+        with patch.dict(
+            os.environ,
+            {"ATLAS_SEARXNG_ENGINES": "duckduckgo,bing,brave,qwant,google,startpage"},
+        ):
+            self.assertEqual(sx.Policy.environment().engines[1], "bing")
 
     def test_policy_limits_and_circuit_independence(self) -> None:
         self.assertEqual(sx.Policy.environment().fallback_interval, 30)

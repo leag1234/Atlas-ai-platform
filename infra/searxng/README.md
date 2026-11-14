@@ -26,7 +26,11 @@ this settings file read-only and uses an offset-qualified Docker volume named
 `atlas-searxng-data-<base>` for runtime data. The settings enable only HTML and
 JSON responses, moderate safe search, automatic language detection, no limiter,
 no image proxy, no metrics, and no autocomplete. Granian access logging is
-disabled so query URLs are not written to container logs.
+disabled so query URLs are not written to container logs. Every engine is
+disabled for category searches: ATLAS names one engine per request, and a
+request that names no loaded engine reaches no engine instead of all of them
+(see `runbooks/searxng.md`). Changing this file takes effect when the sidecar
+container is recreated, which `make serve` does at each start.
 
 To use a different stack offset, set `ATLAS_PORT_BASE`; the provider port is
 the `searxng` entry in `packages/ports.py` (8888 plus the offset). Do not expose

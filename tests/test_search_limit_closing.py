@@ -38,6 +38,7 @@ from services.orchestrator.loop import (
 )
 from services.orchestrator.model import Configuration, GatewayModel
 from services.orchestrator.stream_client import Sink, sink_context
+from services.orchestrator.tools import Runtime, SearchQuotaError
 
 QUESTION = "what's the latest news on the Harbour Act? include sources"
 NOTE = "The first results are off topic. I will run a more precise search."
@@ -412,6 +413,59 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("2 of 1", refusal["message"])
         self.assertTrue(closing_requested(model.seen[1]))
         self.assertEqual(offered(model.seen[1]), [])
+
+    async def test_a_quota_refusal_after_served_results_keeps_the_answer(
+        self,
+    ) -> None:
+        # Staging 2026-11-14: the first search was served by the local engine,
+        # the second reached an exhausted provider, and the sourced answer was
+        # refused with 503. The refusal now closes the research instead.
+        served = {
+            "provider": "searxng",
+            "outcome": "partial_results",
+            "results": [
+                {
+                    "title": "Harbour Act",
+                    "link": "https://example.org/harbour-act",
+                    "snippet": "Three stages.",
+                }
+            ],
+        }
+        empty = {"provider": "searxng", "outcome": "empty_results", "results": []}
+        model = Scripted(
+            [Turn("", (search("s1"),)), Turn("", (search("s2"),)), Turn(ANSWER)]
+        )
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_WEB_CACHE": root + "/cache",
+                    "ATLAS_SEARCH_PROVIDER": "searxng,tavily",
+                    "TAVILY_API_KEY": "fixture",
+                },
+            ),
+            patch.object(Runtime, "searxng", AsyncMock(side_effect=[served, empty])),
+            patch.object(
+                Runtime, "tavily", AsyncMock(side_effect=SearchQuotaError(432))
+            ),
+        ):
+            item = Interaction()
+            result = await run(
+                Query(question=QUESTION, lang="en"),
+                model,
+                ChatTools(item),
+                "",
+                Limits(profile=PROFILES[0]),
+                final_only=True,
+            )
+        self.assertEqual((result.state, result.text), ("done", ANSWER))
+        refusal = json.loads(str(model.seen[2][-2]["content"]))
+        self.assertEqual(
+            (refusal["error"], refusal["provider_status"]), ("quota_exceeded", 432)
+        )
+        self.assertTrue(closing_requested(model.seen[2]))
+        self.assertEqual(item.retrieved_urls, ["https://example.org/harbour-act"])
 
     async def test_work_keeps_its_tools_after_a_refused_search(self) -> None:
         model = Scripted([Turn("", (search("s1"),)), Turn(ANSWER)])

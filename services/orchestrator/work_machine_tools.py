@@ -403,14 +403,17 @@ def public(machine: Json) -> Json:
     """What the model sees of a machine: no credential reference, no key material."""
     fingerprints = machine.get("host_key_fingerprints") or []
     if machine.get("transport") == "relay":
+        # Words to relay, not a field to print: "connected: false" reached the
+        # person as is (staging 2026-11-14).
         return dict(
             name=machine.get("name"),
-            kind="connected computer",
+            kind="the user's own computer",
             user=machine.get("user"),
             folder=machine.get("work_root"),
             os=machine.get("os"),
-            connected=bool(machine.get("connected")),
-            verified=bool(machine.get("verified_at")),
+            status="reachable now"
+            if machine.get("connected")
+            else "not reachable now (its connection window is closed)",
             permission_mode=machine.get("permission_mode"),
         )
     return dict(
@@ -446,6 +449,50 @@ async def listing(tools: Any) -> list[Json] | Json:
     return [item for item in body["items"] if isinstance(item, dict)]
 
 
+# How people name their own computer, in the five interface languages: the
+# model called machine_verify with "laptop" for a computer the person had named
+# "portable" (staging 2026-11-14).
+COMPUTER_WORDS = frozenset(
+    {
+        "laptop",
+        "notebook",
+        "computer",
+        "desktop",
+        "pc",
+        "mac",
+        "macbook",
+        "imac",
+        "workstation",
+        "portable",
+        "ordinateur",
+        "ordi",
+        "fixe",
+        "rechner",
+        "ordenador",
+        "portatil",
+        "computadora",
+        "portatile",
+        "fisso",
+    }
+)
+_OWN = frozenset(
+    {"my", "mon", "ma", "mein", "meinen", "meiner", "mi", "mio", "mia", "il", "le"}
+    | {"la", "the", "own", "local", "perso", "personal", "personnel", "de", "du"}
+)
+
+
+def name_words(name: str) -> list[str]:
+    """A machine name as words: no accents, case or possessive ("Mon-Portable")."""
+    import unicodedata
+
+    plain = "".join(
+        c
+        for c in unicodedata.normalize("NFKD", name.casefold())
+        if not unicodedata.combining(c)
+    )
+    return [w for w in re.split(r"[\W_]+", plain) if w and w not in _OWN]
+
+
 def find(machines: list[Json], name: str) -> Json | None:
     exact = [m for m in machines if m.get("name") == name]
     if exact:
@@ -455,7 +502,17 @@ def find(machines: list[Json], name: str) -> Json | None:
         for m in machines
         if str(m.get("name", "")).casefold().strip() == name.casefold().strip()
     ]
-    return folded[0] if len(folded) == 1 else None
+    if folded:
+        return folded[0] if len(folded) == 1 else None
+    words = name_words(name)
+    same = [m for m in machines if words and name_words(str(m.get("name"))) == words]
+    if same:
+        return same[0] if len(same) == 1 else None
+    # "my laptop" for the person's only connected computer, whatever its name.
+    computers = [m for m in machines if m.get("transport") == "relay"]
+    if words and set(words) <= COMPUTER_WORDS and len(computers) == 1:
+        return computers[0]
+    return None
 
 
 def unknown(machines: list[Json], name: str, lang: str) -> Json:
@@ -980,7 +1037,8 @@ PROJECT_MODE = """
 
 RELAY_RULES = """
 - The user's own computer (laptop, desktop) and the machines of their local network (192.168.x.x, 10.x.x.x, .local or bare names) are reached by connecting that computer: call machine_connect once, show connect_command and end your turn; when the user says it is connected, call machine_verify, then continue the original request. Never ask for an address, an account or a password for it.
-- On a connected computer, remote_run starts in the folder the user connected from, in their own environment: build, test and commit there as they would. Reach a machine of their local network with remote_run on the connected computer: ssh <name> <command>, using the names and keys the user already has. Write files with remote_write_file (paths relative to that folder); read them with remote_run (cat, head) or remote_fetch.
+- The user names a machine that is not declared and gives no address: it is a machine of their local network. When one of their computers is connected, run remote_run on that computer at once: ssh <name> <command>, with the name exactly as the user wrote it; ask for anything only if that ssh fails. When none is connected, call machine_connect for their computer. Never ask for its address or account first.
+- On a connected computer, remote_run starts in the folder the user connected from, in their own environment: build, test and commit there as they would. Leave cwd out (never the folder's own name) and never start a command with cd. Reach a machine of their local network with remote_run on the connected computer: ssh <name> <command>, using the names and keys the user already has. Write files with remote_write_file (paths relative to that folder); read them with remote_run (cat, head) or remote_fetch.
 - Commands that delete, push, publish, use sudo, run inline code, act on another host or write outside that folder wait for the user's yes: when remote_run returns approval_question, show it as returned and end your turn. Never ask the user to run such a command themselves instead."""
 
 
@@ -988,11 +1046,18 @@ def instructions(unattended_turn: bool) -> str:
     text = INSTRUCTIONS + (CHAT_MODE if unattended_turn else PROJECT_MODE)
     if not relay_enabled():
         return text
+    # With a relay, a machine of the local network is reached through the
+    # user's connected computer: the rules that say to ask for an address (or
+    # that such a machine is out of reach) contradicted that, and the model
+    # asked for the address of a machine "ssh <name>" reached (staging 2026-11-14).
     lines = [
         line
         for line in text.split("\n")
         if not line.startswith(
-            "- A machine Atlas cannot reach (an address of the user's local network"
+            (
+                "- A machine Atlas cannot reach (an address of the user's local network",
+                "- The user names a machine that is not declared and gives no address",
+            )
         )
     ]
     return "\n".join(lines) + RELAY_RULES
@@ -1079,3 +1144,25 @@ def complete_approvals(answer: str, blocks: dict[str, str]) -> str:
     if not missing:
         return answer
     return (answer.rstrip() + "\n\n" if answer.strip() else "") + "\n\n".join(missing)
+
+
+# What did not run, written by code when a command the person approved fails.
+NOT_RUN = {
+    "en": "Not run on **{machine}**: `{command}`",
+    "fr": "Non lancée sur **{machine}** : `{command}`",
+    "de": "Nicht ausgeführt auf **{machine}**: `{command}`",
+    "es": "No ejecutado en **{machine}**: `{command}`",
+    "it": "Non eseguito su **{machine}**: `{command}`",
+}
+
+
+def approval_failure_answer(failures: dict[str, Json], lang: str) -> str:
+    """The commands approved in the conversation that did not run, one per line."""
+    words = NOT_RUN.get(lang, NOT_RUN["en"])
+    return "\n".join(
+        words.format(
+            machine=str(found["machine"]),
+            command=str(found["command"]).replace("`", "'"),
+        )
+        for found in failures.values()
+    )

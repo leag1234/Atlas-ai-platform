@@ -4,12 +4,14 @@ use_default_settings:
   engines:
     keep_only:
       - duckduckgo
-      - brave
-      - wikipedia
-      - qwant
       - startpage
-      - bing
+      - mojeek
+      - seznam
+      - qwant
+      - brave
       - google
+      - bing
+      - wikipedia
 
 general:
   enable_metrics: false
@@ -38,18 +40,34 @@ server:
   image_proxy: false
   public_instance: false
 
-# The client queries one web engine at a time; Wikipedia runs in parallel.
-# Ecosia is absent from the pinned 2026.10.17 engine registry.
+# The client asks one engine per request with the "engines" parameter, which
+# selects an engine even when it is disabled. Every engine is disabled so that
+# a request naming no loaded engine, or adding "categories", reaches no engine
+# instead of all of them (SearXNG's webadapter falls back to the whole default
+# category). Startpage and Mojeek are inactive upstream because they answer
+# with a proof-of-work challenge; the pinned engines solve it, and the cost is
+# small at this instance's volume (measured 2026-11-14).
 engines:
   - name: wikipedia
     display_type: [list]
-  - name: qwant
-    disabled: false
-  - name: bing
-    disabled: false
+    disabled: true
+  - name: duckduckgo
+    disabled: true
   - name: startpage
-    # The pinned engine declares Startpage inactive: it requires an Anubis
-    # proof-of-work CAPTCHA and returned no usable results in the local matrix.
+    disabled: true
+    inactive: false
+  - name: mojeek
+    disabled: true
+    inactive: false
+  - name: seznam
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: google
+    disabled: true
+  - name: bing
     disabled: true
 
 outgoing:

@@ -45,18 +45,28 @@ The UI layer detects structure, never a version string.
   `UI_VISIBILITY={"chat.artifacts":false}` (Open WebUI 0.12.4 and later; v0.11.3 has no such
   setting and ignores it). When the Atlas side view is open, the 0.13 tab bar stays visible.
 - Voice button: matched by `#voice-input-button` as well as its label (0.13 translates it).
+- Folders header in project mode: projects replace Open WebUI folders, so project mode hides the
+  folders section. 0.13 wraps the section toggle in a heading inside the header row; hiding
+  only the toggle's parent left the "New Folder" "+" alone under the project entries. The rule
+  now hides the whole header row in either structure (`project_mode.css`, `project_mode.js`).
+- Notifications (owner decision 2026-11-14): 0.13 adds an inbox with a bell in the sidebar
+  header. `infra/chat-ui.env` sets `ENABLE_NOTIFICATIONS=False`, which removes the bell and the
+  inbox API for every account, admins included (no `UI_VISIBILITY` key covers it; 0.11 ignores
+  the setting).
+- Native code preview (owner decision 2026-11-14): `UI_VISIBILITY` also sets
+  `"chat.code_preview":false`, which hides the "Preview" button of HTML and SVG code blocks for
+  non-admin users; the side view chip stays the path to a rendered page.
 - Chat requests: `ChatRequest` maps OpenAI `{"type": "file"}` parts to `documents`, as the
   chat adapter already did. Both releases send attached documents this way through the Atlas
   filter; any direct validation of an Open WebUI request now accepts them.
 
 ## Remaining visible differences on 0.13.3 (owner decision, not changed)
 
-- New native controls stay visible to users: notifications bell in the sidebar header,
-  split-screen button at the right of the tab bar, "Tabs" workspace on large screens.
+- New native controls stay visible to users: split-screen button at the right of the tab bar,
+  "Tabs" workspace on large screens.
 - The chat menu ("...") sits on the title tab instead of the header row.
-- The native "Preview" view of code blocks (`chat.code_preview`) is not hidden; Atlas's side
-  view chip stays the primary path.
-- Admins see every native control (`UI_VISIBILITY` only applies to non-admin users).
+- Admins see every native control that `UI_VISIBILITY` hides (it only applies to non-admin
+  users), the code preview included.
 
 ## Upstream changes that matter to Atlas (v0.11.4 to v0.13.3)
 

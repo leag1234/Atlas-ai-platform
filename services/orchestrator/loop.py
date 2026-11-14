@@ -1018,6 +1018,16 @@ async def run(
                     )
                     result.state = "done"
                     return result
+                question = output.get("approval_question")
+                if output.get("state") == "awaiting_approval" and isinstance(
+                    question, str
+                ):
+                    # A question asked in the conversation, written by code: it
+                    # is the answer. A lowercase "waiting for your approval"
+                    # line above it said the same twice (staging 2026-11-14).
+                    result.text = question
+                    result.state = "done"
+                    return result
                 if output.get("state") == "awaiting_approval":
                     try:
                         arguments = json.loads(call.arguments)

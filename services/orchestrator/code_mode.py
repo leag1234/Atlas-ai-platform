@@ -182,6 +182,7 @@ WORK_FAILURE = {
         "budget": "the budget limit for this turn was reached",
         "machine_busy": "your machine is already used by other conversations; try again in a few minutes",
         "machine_minutes": "the monthly command time of this machine is used up",
+        "approval_failed": "a command you approved could not be started",
         "other": "the work stopped before finishing",
     },
     "fr": {
@@ -194,6 +195,7 @@ WORK_FAILURE = {
         "budget": "la limite de budget de ce tour a été atteinte",
         "machine_busy": "votre machine est déjà utilisée par d'autres conversations ; réessayez dans quelques minutes",
         "machine_minutes": "le temps de commande mensuel de cette machine est épuisé",
+        "approval_failed": "une commande que vous avez autorisée n'a pas pu démarrer",
         "other": "le travail s'est arrêté avant la fin",
     },
     "de": {
@@ -206,6 +208,7 @@ WORK_FAILURE = {
         "budget": "das Budgetlimit dieses Durchgangs wurde erreicht",
         "machine_busy": "Ihre Maschine wird bereits von anderen Unterhaltungen genutzt; versuchen Sie es in einigen Minuten erneut",
         "machine_minutes": "die monatliche Befehlszeit dieser Maschine ist aufgebraucht",
+        "approval_failed": "ein von Ihnen erlaubter Befehl konnte nicht gestartet werden",
         "other": "die Arbeit wurde vor dem Abschluss beendet",
     },
     "es": {
@@ -218,6 +221,7 @@ WORK_FAILURE = {
         "budget": "se alcanzó el límite de presupuesto de este turno",
         "machine_busy": "su máquina ya la usan otras conversaciones; vuelva a intentarlo en unos minutos",
         "machine_minutes": "se agotó el tiempo mensual de comandos de esta máquina",
+        "approval_failed": "un comando que usted autorizó no se pudo iniciar",
         "other": "el trabajo se detuvo antes de terminar",
     },
     "it": {
@@ -230,6 +234,7 @@ WORK_FAILURE = {
         "budget": "è stato raggiunto il limite di budget di questo turno",
         "machine_busy": "la tua macchina è già usata da altre conversazioni; riprova tra qualche minuto",
         "machine_minutes": "il tempo mensile dei comandi di questa macchina è esaurito",
+        "approval_failed": "un comando che hai autorizzato non è stato avviato",
         "other": "il lavoro si è interrotto prima della fine",
     },
 }
@@ -326,7 +331,15 @@ def work_failure_reply(item: Interaction, lang: str) -> str | None:
         return None
     words = WORK_FAILURE.get(lang, WORK_FAILURE["en"])
     message = words["template"].format(reason=words[failure["category"]])
-    return "\n\n".join(p for p in (failure.get("answer", "").strip(), message) if p)
+    return "\n\n".join(
+        p
+        for p in (
+            failure.get("answer", "").strip(),
+            message,
+            failure.get("question", "").strip(),
+        )
+        if p
+    )
 
 
 def claims_success(text: str) -> bool:
@@ -1338,14 +1351,8 @@ async def process_work(
                 )
             item.cout_eur = float(model.spent)
             item.tokens = {"in": model.input_tokens, "out": model.output_tokens}
-            reason = result.reason or next(
-                iter(
-                    open_failures(
-                        tools.validation_failures, tools.deliverables
-                    ).values()
-                ),
-                "",
-            )
+            still_open = open_failures(tools.validation_failures, tools.deliverables)
+            reason = result.reason or next(iter(still_open.values()), "")
             terminal = (
                 "completed" if result.state == "done" and not reason else "failed"
             )
@@ -1355,7 +1362,29 @@ async def process_work(
                 reason = reason or result.state
                 category = work_failure_category(reason, tool_failure=tool_failure)
                 item.erreurs.append(reason)
-                if category is not None:
+                from services.orchestrator.work_machine_tools import (
+                    approval_failure_answer,
+                )
+
+                approved = approval_failure_answer(
+                    tools.machine_approval_failures, request.lang
+                )
+                if (
+                    tool_failure
+                    and approved
+                    and {"remote_run", "remote_write_file"} & set(still_open)
+                ):
+                    # A command the person approved did not run: the answer
+                    # is written by code (what did not run, and the question
+                    # still open), never the model's, which claimed it done
+                    # (staging 2026-11-14).
+                    item.work_failure = dict(
+                        category="approval_failed",
+                        answer=approved,
+                        question="\n\n".join(tools.machine_approvals.values()),
+                    )
+                    item.reponse = str(work_failure_reply(item, request.lang))
+                elif category is not None:
                     # A stopped loop's text is a diagnostic, not the model's answer.
                     item.work_failure = dict(
                         category=category,

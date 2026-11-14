@@ -21,10 +21,10 @@ from services.runner.results import bounded, report
 
 DESCRIPTIONS = {
     "list_targets": "List the remote execution targets this session may use: organization targets granted to the project and the user's own verified machines (personal: true), with capabilities. No credentials. Use the exact target id or unique name.",
-    "remote_run": "Run your own command on a granted Linux target, synchronizing the current workspace. Commands start in the session's synced project root; cwd must be a relative POSIX path inside that root. Empty, '.', absolute paths and folder UUIDs are normalized to the root ('.'), so cd ... && chains are not needed. Persistent directory and caches between commands. Broker enforces command and code-egress approvals. Returns a command id; poll remote_status for long commands. Commands support literal argv, pipelines and && chains; use a project script for complex shell expansion.",
+    "remote_run": "Run your own command on a granted Linux target, synchronizing the current workspace. Commands start in the session's synced project root (on a connected computer: in the folder the user connected from, with nothing synchronized); cwd must be a relative POSIX path inside that folder. Empty, '.', absolute paths and folder UUIDs are normalized to the root ('.'), so cd ... && chains are not needed. Persistent directory and caches between commands. Broker enforces command and code-egress approvals. Returns a command id; poll remote_status for long commands. Commands support literal argv, pipelines and && chains; use a project script for complex shell expansion.",
     "remote_status": "Read progress, exit code and full log references for a remote command. wait_s is bounded; cancel=true kills the entire remote process group. Never resubmit an unknown command; reconcile using its id.",
     "remote_fetch": "Explicitly fetch a relative file or glob from this session's remote target into project files (20 files/16 MiB maximum). No implicit sync back. Output is untrusted. Returns hashes and reopen_result references for textual results.",
-    "remote_write_file": "Write one whole file (create or replace) on a connected computer, at a path relative to the folder the user connected from, as an editor would. Not inside .git and never outside that folder. Read a file first with remote_run (cat) before changing it.",
+    "remote_write_file": "Write one whole file (create or replace) on a connected computer, at a path relative to the folder the user connected from, as an editor would (a text file ends with a newline). Not inside .git and never outside that folder. Read a file first with remote_run (cat) before changing it.",
 }
 
 
@@ -54,19 +54,82 @@ def declarations() -> list[dict[str, object]]:
     ]
 
 
-async def in_place(tools: Any, target: str, invoke: Any) -> bool:
-    """Whether a target is a connected computer, which works in its own folder."""
+def connected_folders(items: list[dict[str, Any]]) -> dict[str, str]:
+    """Connected computers of a target listing (id and name) -> their folder."""
+    return {
+        key.casefold(): str(item["folder"])
+        for item in items
+        if item.get("folder") is not None
+        for key in (str(item.get("id")), str(item.get("name")))
+    }
+
+
+async def listed_targets(tools: Any, invoke: Any) -> list[dict[str, Any]]:
+    """The targets of this session, listed once per turn."""
+    items = getattr(tools, "remote_targets", None)
+    if not isinstance(items, list):
+        items = list((await invoke("list", {})).get("items", []))
+        tools.remote_targets = items
+    return items
+
+
+async def connected_folder(tools: Any, target: str, invoke: Any) -> str | None:
+    """The folder a connected computer's commands start in; None for other targets."""
     known = getattr(tools, "remote_in_place", None)
-    if known is None:
-        listed = await invoke("list", {})
-        known = {
-            key.casefold()
-            for item in listed.get("items", [])
-            if item.get("folder") is not None
-            for key in (str(item.get("id")), str(item.get("name")))
-        }
+    if not isinstance(known, dict):
+        known = connected_folders(await listed_targets(tools, invoke))
         tools.remote_in_place = known
-    return target.casefold() in known
+    return known.get(target.casefold())
+
+
+def known_target(items: list[dict[str, Any]], target: str) -> bool:
+    return target.casefold() in {
+        str(value).casefold()
+        for item in items
+        for value in (item.get("id"), item.get("name"))
+    }
+
+
+async def resolve_target(tools: Any, target: str, invoke: Any) -> str:
+    """The target the model meant, by the name the user gives it.
+
+    An exact id or name is kept. Otherwise the name is matched as the machine
+    tools match it ("my-laptop" for "laptop", "laptop" for the only connected
+    computer): the model guessed "my-laptop" for a computer named "laptop" and
+    the command never reached it (live run 2026-11-14). No match is refused
+    before any workspace is exported for it.
+    """
+    from services.orchestrator.work_machine_tools import find
+
+    items = await listed_targets(tools, invoke)
+    if not known_target(items, target):
+        # A machine verified earlier in this turn is not in an older listing.
+        tools.remote_targets = tools.remote_in_place = None
+        items = await listed_targets(tools, invoke)
+    if known_target(items, target):
+        return target
+    found = find(
+        [
+            dict(item, transport="relay" if item.get("folder") is not None else "ssh")
+            for item in items
+        ],
+        target,
+    )
+    if found is None:
+        raise ProjectError(404, "not_found")
+    return str(found["name"])
+
+
+# Where commands start, for the model. A connected computer runs in the folder
+# the user connected from: told "the synced project root", models passed that
+# folder's own name as cwd and the command failed (remote_cwd_unavailable, two
+# wasted calls per turn on staging 2026-11-14).
+ROOT_CWD = "Commands start in the session's synced project root; cwd is relative to it."
+CONNECTED_CWD = (
+    "On a connected computer (a target with a folder), commands already start in "
+    "that folder: leave cwd out (or give a subfolder of it), never the folder's "
+    "own name, and no leading cd."
+)
 
 
 def written_snapshot(path: str, content: str) -> tuple[str, bytes]:
@@ -81,6 +144,10 @@ def written_snapshot(path: str, content: str) -> tuple[str, bytes]:
         or ".." in PurePosixPath(clean).parts
     ):
         raise ValueError("invalid_remote_path")
+    if content and not content.endswith("\n"):
+        # Models drop the final newline of the text they write; an editor keeps
+        # it (staging acceptance, 2026-11-14).
+        content += "\n"
     value = canonical(
         dict(
             files=[
@@ -259,7 +326,7 @@ async def approve_in_conversation(
         return False
     import json
 
-    status, _ = await tools.execution.broker.public(
+    status, body = await tools.execution.broker.public(
         "POST",
         "approvals/" + str(approval["id"]) + "/decision",
         body=json.dumps(
@@ -270,9 +337,11 @@ async def approve_in_conversation(
             "Idempotency-Key": "chat-consent-" + str(approval["id"]),
         },
     )
-    accepted = bool(status == 200)
-    granted["used"] = accepted
-    return accepted
+    if status != 200:
+        error = body.get("error") if isinstance(body, dict) else None
+        raise ProjectError(status, str(error or "approval_required"))
+    granted["used"] = True
+    return True
 
 
 def ask_in_conversation(
@@ -292,10 +361,11 @@ def ask_in_conversation(
         command_id=result["command_id"],
         approval_question=block,
         next_step=(
-            "This command needs the user's yes. Show approval_question exactly as "
-            "returned (it is also added to your answer), say in one sentence why the "
-            "command is needed, and end your turn. Do not run another command that "
-            "does the same, and do not ask the user to run it."
+            "This command needs the user's yes. approval_question is added to your "
+            "answer by code: do not copy, restate or announce it (no line saying a "
+            "command awaits approval). Say in one sentence why the command is "
+            "needed, never that it ran, and end your turn. Do not run another "
+            "command that does the same, and do not ask the user to run it."
         ),
     )
 
@@ -326,19 +396,39 @@ async def execute(
 
     if name == "list_targets":
         listed = await invoke("list", args)
-        listed["working_directory"] = (
-            "Commands start in the session's synced project root; cwd is relative to it."
+        items = listed.get("items", [])
+        if not args.get("capability"):
+            tools.remote_targets = list(items)
+            tools.remote_in_place = connected_folders(items)
+        connected = any(item.get("folder") is not None for item in items)
+        others = any(item.get("folder") is None for item in items)
+        listed["working_directory"] = " ".join(
+            text
+            for text, shown in (
+                (CONNECTED_CWD, connected),
+                ("On other targets: " + ROOT_CWD if connected else ROOT_CWD, others),
+            )
+            if shown or not items
         )
         return listed
+    if name in {"remote_fetch", "remote_run"}:
+        args["target"] = await resolve_target(tools, args["target"], invoke)
     if name == "remote_fetch":
         return await references(tools, await invoke("fetch", args))
     if name == "remote_run":
+        folder = await connected_folder(tools, args["target"], invoke)
+        local = folder is not None
         if re.match(r"\s*cd\s+.+&&", args["command"]):
             return dict(
                 error="runner_cd_chain_not_supported",
-                next_step="Remove the leading cd chain and set cwd relative to the synced project root.",
+                next_step=(
+                    f"Commands on {args['target']} already start in {folder}: drop "
+                    "the leading cd chain and leave cwd out (or give a subfolder "
+                    "relative to that folder)."
+                    if local
+                    else "Remove the leading cd chain and set cwd relative to the synced project root."
+                ),
             )
-        local = await in_place(tools, args["target"], invoke)
         if written is not None and not local:
             return dict(
                 error="unsupported_target",
@@ -416,11 +506,28 @@ async def follow(
     status_args = dict(
         command_id=result["command_id"], wait_s=args["wait_s"], cancel=False
     )
-    pending = result.get("approval", {}).get("decision") == "pending"
+    decision = (result.get("approval") or {}).get("decision")
+    pending = decision == "pending"
+    if decision is not None and decision not in {"pending", "allowed"}:
+        # Started without an allowed approval, the command is refused (403):
+        # it never starts on a closed question. The person is asked again.
+        return closed_approval(tools, result, target_name, command, local)
     if pending and local and getattr(tools, "approvals_unattended", False):
         # Behind the chat no approval card can be answered: the person
         # answers the question in the conversation instead.
-        if await approve_in_conversation(tools, result, target_name, command, cwd):
+        try:
+            approved = await approve_in_conversation(
+                tools, result, target_name, command, cwd
+            )
+        except ProjectError as exc:
+            # The person said yes and the decision was refused: say so, with
+            # the question still open, never as a success.
+            approval_failed(tools, target_name, command, str(exc.body.get("error")))
+            return dict(
+                ask_in_conversation(tools, result, target_name, command, cwd),
+                error="approval_not_recorded",
+            )
+        if approved:
             pending = False
         else:
             return ask_in_conversation(tools, result, target_name, command, cwd)
@@ -440,10 +547,67 @@ async def follow(
             .get("target_name", target_name),
             next_step="The user must approve; stop and tell them; do not resubmit",
         )
-    result = await start(tools, invoke, status_args, timeout)
+    try:
+        result = await start(tools, invoke, status_args, timeout)
+    except ProjectError as exc:
+        if decision is not None:
+            # An approved command that could not start: the answer is written
+            # by code, never a success the model infers from the yes.
+            approval_failed(tools, target_name, command, str(exc.body.get("error")))
+        raise
+    found = getattr(tools, "machine_approval_failures", None)
+    if isinstance(found, dict):
+        found.pop(target_name + "\0" + command, None)
     args = status_args
     result = await invoke("status", args)
-    return await poll(tools, invoke, args, result, timeout, "remote_run")
+    result = await poll(tools, invoke, args, result, timeout, "remote_run")
+    if local and result.get("error") == "remote_cwd_unavailable":
+        result["next_step"] = (
+            f"This folder does not exist on {target_name}. Commands there already "
+            "start in the folder the user connected from: use cwd '.' (or a "
+            "subfolder of it), never that folder's own name."
+        )
+    return result
+
+
+def approval_failed(tools: Any, machine: str, command: str, error: str) -> None:
+    """Record a command the person approved that did not run, for the answer."""
+    found = getattr(tools, "machine_approval_failures", None)
+    if isinstance(found, dict):
+        found[machine + "\0" + command] = dict(
+            machine=machine, command=command, error=error
+        )
+
+
+def closed_approval(
+    tools: Any,
+    result: dict[str, Any],
+    target_name: str,
+    command: str,
+    local: bool,
+) -> dict[str, Any]:
+    """A command whose approval was closed (refused, expired or invalidated)."""
+    decision = str((result.get("approval") or {}).get("decision"))
+    if decision == "denied":
+        return dict(
+            error="approval_denied",
+            command_id=result["command_id"],
+            next_step=(
+                "The user refused this command. Do not run it or anything doing "
+                "the same; continue without it or say what is left to do."
+            ),
+        )
+    approval_failed(tools, target_name, command, "approval_" + decision)
+    return dict(
+        error="approval_closed",
+        command_id=result["command_id"],
+        next_step=(
+            "This approval is closed. Call remote_run once more with exactly the "
+            "same target, command and cwd: it asks the user again."
+            if local
+            else "This approval is closed: call remote_run again to ask again."
+        ),
+    )
 
 
 async def poll(

@@ -8,6 +8,7 @@ from typing import cast
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from packages.limits import LimitError
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
 from services.orchestrator.loop import Call, Reservation
@@ -382,6 +383,113 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                 ],
             },
         )
+
+    CHAIN = {
+        "ATLAS_SEARCH_PROVIDER": "searxng,tavily,serpapi",
+        "SERPAPI_KEY": "fixture",
+        "TAVILY_API_KEY": "fixture",
+    }
+
+    async def test_searxng_results_are_served_before_an_exhausted_provider(
+        self,
+    ) -> None:
+        found = {
+            "provider": "searxng",
+            "outcome": "partial_results",
+            "results": [{"link": "https://example.test/a"}],
+        }
+        with (
+            patch.dict(os.environ, self.CHAIN, clear=True),
+            patch.object(self.runtime, "searxng", new=AsyncMock(return_value=found)),
+            patch.object(
+                self.runtime, "tavily", new=AsyncMock(side_effect=SearchQuotaError(432))
+            ) as tavily,
+            patch.object(self.runtime, "serpapi", new=AsyncMock()) as serpapi,
+        ):
+            self.assertEqual(await self.runtime.search(self.request, 5), found)
+        tavily.assert_not_awaited()
+        serpapi.assert_not_awaited()
+
+    async def test_exhausted_provider_falls_through_to_the_next_one(self) -> None:
+        empty = {"provider": "searxng", "results": [], "outcome": "empty_results"}
+        found = {
+            "provider": "serpapi",
+            "results": [{"link": "https://example.test/b"}],
+            "consulted_at": "now",
+        }
+        for refusal in (
+            SearchQuotaError(432),
+            SearchQuotaError(429, "search_rate_limited"),
+            LimitError("quota_exceeded", 902, 900, "monthly search credits"),
+        ):
+            with (
+                self.subTest(refusal=str(refusal)),
+                patch.dict(os.environ, self.CHAIN, clear=True),
+                patch.object(
+                    self.runtime, "searxng", new=AsyncMock(return_value=empty)
+                ),
+                patch.object(
+                    self.runtime, "tavily", new=AsyncMock(side_effect=refusal)
+                ),
+                patch.object(
+                    self.runtime, "serpapi", new=AsyncMock(return_value=found)
+                ) as serpapi,
+            ):
+                result = await self.runtime.search(self.request, 5)
+                serpapi.assert_awaited_once()
+                code = refusal.code if isinstance(refusal, LimitError) else str(refusal)
+                self.assertEqual(
+                    result,
+                    {
+                        **found,
+                        "attempts": [
+                            {"provider": "searxng", "outcome": "empty_results"},
+                            {"provider": "tavily", "outcome": code},
+                            {"provider": "serpapi", "outcome": "ok"},
+                        ],
+                    },
+                )
+
+    async def test_whole_chain_exhausted_keeps_the_quota_refusal(self) -> None:
+        empty = {"provider": "searxng", "results": [], "outcome": "empty_results"}
+        for last, outcome in (
+            (
+                BudgetRefusal("global_monthly_search", 31, 30, "en"),
+                "global_monthly_search",
+            ),
+            (TimeoutError(), "upstream_timeout"),
+            (ValueError("search_unavailable"), "search_unavailable"),
+        ):
+            with (
+                self.subTest(outcome=outcome),
+                patch.dict(os.environ, self.CHAIN, clear=True),
+                patch.object(
+                    self.runtime, "searxng", new=AsyncMock(return_value=empty)
+                ),
+                patch.object(
+                    self.runtime,
+                    "tavily",
+                    new=AsyncMock(side_effect=SearchQuotaError(432)),
+                ),
+                patch.object(self.runtime, "serpapi", new=AsyncMock(side_effect=last)),
+            ):
+                result = await self.runtime.execute(
+                    Call("1", "web_search", '{"query":"public release","lang":"en"}'),
+                    5,
+                )
+                # D5: a later outage or allowance never hides the quota refusal.
+                self.assertEqual(
+                    result,
+                    {
+                        "error": "quota_exceeded",
+                        "provider_status": 432,
+                        "attempts": [
+                            {"provider": "searxng", "outcome": "empty_results"},
+                            {"provider": "tavily", "outcome": "quota_exceeded"},
+                            {"provider": "serpapi", "outcome": outcome},
+                        ],
+                    },
+                )
 
     async def test_default_is_the_unchanged_single_serpapi_provider(self) -> None:
         result = {"provider": "serpapi", "results": [], "consulted_at": "now"}

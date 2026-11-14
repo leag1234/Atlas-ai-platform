@@ -23,7 +23,21 @@ from services.orchestrator.cache import Cache
 from services.orchestrator.loop import Message
 from services.orchestrator.web import MAX_BYTES
 
-ENGINES = ("duckduckgo", "brave", "qwant", "startpage", "bing", "google")
+# Default order, measured from the server's IP on 2026-11-14 (40 queries per
+# engine): Startpage and DuckDuckGo answered 40 and 39 with relevant pages,
+# Mojeek (independent index) 32, Seznam 40 but with a Czech bias;
+# Qwant, Brave and Google refused every request and stay last so that they
+# rejoin when their block lifts. Bing answered every request, but about half
+# of its pages were unrelated to the query, so it is accepted when configured
+# and is not in the default order.
+ENGINES = ("startpage", "duckduckgo", "mojeek", "seznam", "qwant", "brave", "google")
+SUPPORTED = (*ENGINES, "bing")
+# Engines of the pinned image that implement a time range. SearXNG silently
+# skips any other engine when a request carries time_range, so a news search
+# would read as empty instead of asking it (staging 2026-11-14).
+TIME_RANGE_ENGINES = frozenset({"duckduckgo", "google", "startpage", "mojeek"})
+# Local pacing decisions: the engine was not asked, so it is not a failure.
+SKIPPED = frozenset({"cooldown", "quarantined"})
 LANGUAGES = {"en", "de", "es", "fr", "it", "nl"}
 SEARCH_REGIONS = {
     "fr": "fr-FR",
@@ -96,7 +110,7 @@ class Policy:
         if (
             not engines
             or len(set(engines)) != len(engines)
-            or any(engine not in ENGINES for engine in engines)
+            or any(engine not in SUPPORTED for engine in engines)
             or not 900 <= policy.quarantine <= 3600
             or policy.probe_interval < 60
             or policy.engine_interval < 3
@@ -228,9 +242,10 @@ async def engine_search(
                         "reason": "quarantined" if circuit.quarantined else "cooldown",
                         "retry_after": max(circuit.until, circuit.next_call) - now,
                     }
+                # The first two configured engines are the primary tier.
                 interval = (
                     policy.engine_interval
-                    if engine in {"duckduckgo", "brave", "wikipedia"}
+                    if engine == "wikipedia" or engine in policy.engines[:2]
                     else policy.fallback_interval
                 )
                 circuit.next_call = now + interval
@@ -385,11 +400,14 @@ async def run_search(
 ) -> Message:
     deadline = time.monotonic() + max(0.001, timeout - 0.05)
     evidence: list[Message] = []
+    # Never send "categories" with "engines": SearXNG then adds every enabled
+    # engine of the category to the explicit one, so each Atlas call reached
+    # all web engines at once and got this server's IP blocked (staging
+    # 2026-11-14: about six upstream requests per engine call).
     params = {
         "q": query,
         "format": "json",
         "language": search_region(language),
-        "categories": "general",
         "safesearch": "1",
     }
     if news:
@@ -412,7 +430,14 @@ async def run_search(
                 web_rows: dict[str, Message] = {}
                 for index, engine in enumerate(policy.engines):
                     result = await engine_search(
-                        state, endpoint, engine, params, policy, deadline
+                        state,
+                        endpoint,
+                        engine,
+                        params
+                        if engine in TIME_RANGE_ENGINES
+                        else {k: v for k, v in params.items() if k != "time_range"},
+                        policy,
+                        deadline,
                     )
                     evidence.append(result)
                     rows = result.get("results", [])
@@ -451,11 +476,18 @@ async def run_search(
                 if isinstance(row, dict):
                     results.setdefault(str(row["link"]), row)
     outcomes = {str(attempt["outcome"]) for attempt in evidence}
+    # An engine skipped for local pacing was not asked: when another engine
+    # answered, the skip does not make the results partial.
+    asked = {
+        str(attempt["outcome"])
+        for attempt in evidence
+        if attempt.get("reason") not in SKIPPED
+    }
     web_count = sum(row.get("engine") != "wikipedia" for row in results.values())
     outcome = (
         "partial_results"
         if results
-        and (outcomes - {"ok", "empty_results"} or web_count < (policy.minimum or n))
+        and (asked - {"ok", "empty_results"} or web_count < (policy.minimum or n))
         else "ok"
         if results
         else "upstream_blocked"
