@@ -591,6 +591,68 @@ class UnreachableMachineTests(unittest.TestCase):
             self.assertIn("own workspace", text)
             self.assertIn("Never guess a name for remote_run", text)
 
+    def test_with_a_relay_a_named_machine_is_tried_from_the_connected_computer(
+        self,
+    ) -> None:
+        from services.retrieval.project_identity import ProjectError
+
+        relay = {"ATLAS_RELAY_PUBLIC_URL": "wss://atlas.example.org/relay/"}
+        with patch.dict(os.environ, relay):
+            for unattended in (True, False):
+                text = machines.instructions(unattended)
+                # No rule left that asks for the address of such a machine.
+                self.assertNotIn("ask in one short question for its address", text)
+                self.assertNotIn("Never guess a name for remote_run", text)
+                self.assertIn("with the name exactly as the user wrote it", text)
+                self.assertIn("Leave cwd out", text)
+            tools = work_tools(Backend())
+
+            async def missing(*args: Any, **kwargs: Any) -> dict[str, Any]:
+                raise ProjectError(404, "not_found")
+
+            with patch("services.orchestrator.work_remote_tools.execute", new=missing):
+                result = call(tools, "remote_run", target="buildbox", command="ls")
+        self.assertIn("ssh <name> <command>", result["next_step"])
+        self.assertIn("Never try other guessed names", result["next_step"])
+
+    def computer(self, backend: Backend, name: str, member: str = "member-a") -> None:
+        identifier = str(uuid4())
+        backend.rows[identifier] = dict(
+            id=identifier,
+            owner_member_id=member,
+            name=name,
+            transport="relay",
+            user="ada",
+            work_root="/home/ada/orbit",
+            os="linux",
+            connected=False,
+            status="available",
+            verified_at="2026-11-14T10:00:00Z",
+            permission_mode="auto",
+            revision=1,
+        )
+
+    def test_a_connected_computer_is_found_by_how_the_user_calls_it(self) -> None:
+        backend = Backend()
+        self.computer(backend, "portable")
+        rows = list(backend.rows.values())
+        for said in ("laptop", "my laptop", "Mon-Portable", "ordinateur portable"):
+            with self.subTest(said=said):
+                found = machines.find(rows, said)
+                assert found is not None
+                self.assertEqual(found["name"], "portable")
+        self.assertIsNone(machines.find(rows, "buildbox"))
+        forget = call(work_tools(backend, lang="fr"), "machine_forget", name="laptop")
+        self.assertEqual(forget["error"], "confirmation_required")
+        self.assertIn("portable", forget["message"])
+        # Two computers: a generic word names neither of them.
+        self.computer(backend, "fixe-bureau")
+        self.assertIsNone(machines.find(list(backend.rows.values()), "laptop"))
+        listed = call(work_tools(backend), "machine_list")
+        for machine in listed["machines"]:
+            self.assertNotIn("connected", machine)
+            self.assertTrue(machine["status"].startswith("not reachable now"))
+
 
 class SelectionTests(unittest.TestCase):
     def test_remote_group_offers_the_machine_tools_within_capacity(self) -> None:

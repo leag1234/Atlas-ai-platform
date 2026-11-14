@@ -141,6 +141,51 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("sheep", logs.output[0])
         self.assertEqual(req.__dict__[request_router.COST_KEY], Decimal("0.0002"))
 
+    async def test_forgetting_a_machine_goes_to_the_machine_tools(self) -> None:
+        from packages.work_intent import manages_machine, work_reason
+
+        asked = [
+            "oublie mon ordinateur portable",
+            "oubli mon ordi portabl",
+            "retir la machine portable stp",
+            "suprime mon serveur build",
+            "déconnecte mon portable",
+            "forget my laptop",
+            "please remove my labtop",
+            "disconnect my computer",
+            "vergiss meinen Laptop",
+            "entferne meinen Rechner",
+            "olvida mi portátil",
+            "desconecta mi ordenador",
+            "dimentica il mio portatile",
+            "rimuovi il mio computer",
+        ]
+        others = [
+            "j'ai oublié mon portable dans le train",
+            "delete the server section of my CV",
+            "how do I remove my laptop from iCloud",
+            "retire le paragraphe sur les serveurs",
+            "oublie ça",
+        ]
+        for text in asked:
+            with self.subTest(text=text):
+                self.assertTrue(manages_machine(text))
+                self.assertEqual(work_reason(text), "remote")
+                # The router's answer is overridden: the chat alone removes nothing.
+                req = request(text)
+                gateway = AsyncMock(return_value=reply('{"kind": "answer"}'))
+                with (
+                    router_on(),
+                    patch("services.orchestrator.request_router._gateway", gateway),
+                ):
+                    self.assertEqual(
+                        await request_router.route(req), Decision(kind="remote")
+                    )
+        for text in others:
+            with self.subTest(text=text):
+                self.assertFalse(manages_machine(text))
+        self.assertIn("forgetting", request_router.SYSTEM)
+
     async def test_invalid_json_falls_back(self) -> None:
         req = request("Draw me a sheep")
         with (

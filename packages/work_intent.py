@@ -96,6 +96,41 @@ _REMOTE = re.compile(
     r"|\b(?:en|via|par|over|through|with)\s+ssh\b"
 )
 
+# Removing, forgetting or disconnecting one of the person's machines is done by
+# the machine tools: answered by the chat alone, "forget my laptop" (in French)
+# got "noted" and nothing was removed (staging 2026-11-14). The request opens
+# the message (an imperative, possibly after "please" or "can you"), so "I left
+# my laptop on the train" is not one. Stems and optional letters admit the
+# usual typos ("suprime", "forgt", "deconecte").
+_MANAGE = re.compile(
+    r"^\W*(?:(?:please|pls|stp|svp|bitte|por favor|per favore|peux[- ]tu|pouvez[- ]vous"
+    r"|tu peux|can you|could you|kannst du|konnen sie|puedes|puoi)\W+)?"
+    r"(?:oubli\w*|forg[eo]?t\w*|remov\w*|delet\w*|disc?onn?ect\w*|unlink\w*"
+    r"|deconn?ect\w*|retir\w*|supp?r?im\w*|enlev\w*|vergi?ss\w*|entfern\w*|trenn\w*"
+    r"|loe?sch\w*|olvid\w*|elimin\w*|borr\w*|desconn?ect\w*|dimentic\w*|rimuov\w*"
+    r"|scolleg\w*)"
+    r"\W+(?:\w+\W+){0,3}?"
+    r"(?:ordi\w*|portab\w*|portat\w*|lap?to?p\w*|labtop\w*|notebook\w*|comput\w*"
+    r"|compt\w*|pc|macbook\w*|mac|imac|machin\w*|macchin\w*|maschin\w*|rechner\w*"
+    r"|serv(?:er|eur|idor)\w*|vps|nas|desktop\w*|ordenador\w*)\b"
+)
+# What a document edit names instead ("delete the server section of my CV").
+_NOT_A_MACHINE = re.compile(
+    r"\b(?:cv|resume|documents?|fichiers?|files?|sections?|paragraph\w*|slides?|photos?"
+    r"|images?|e?mails?|messages?|textes?|text|tableau|table|charts?|graph\w*|lignes?|lines?)\b"
+)
+
+
+def manages_machine(text: str) -> bool:
+    """A short request to remove, forget or disconnect one of the person's machines."""
+    normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text)).strip()
+    return (
+        len(normalized.split()) <= 10
+        and _MANAGE.search(normalized) is not None
+        and _NOT_A_MACHINE.search(normalized) is None
+    )
+
+
 # Later turns of a conversation that already has its Work session: a change or a rerun stays there.
 _FOLLOW_UP = re.compile(
     r"\b(?:modifi\w*|ajout\w*|corrig\w*|chang\w*|remplac\w*|supprim\w*|enlev\w*|amelior\w*|refai[st]\w*"
@@ -120,7 +155,7 @@ def work_reason(
     normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text))
     if not normalized.strip() or _HOW_TO.search(normalized):
         return None
-    if _REMOTE.search(normalized):
+    if _REMOTE.search(normalized) or manages_machine(normalized):
         return "remote"
     if _RUN.search(normalized):
         return "run"

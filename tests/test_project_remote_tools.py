@@ -130,26 +130,246 @@ class RemoteToolTests(unittest.TestCase):
             execution = None
             workspace = None
             remote_references = None
+            remote_in_place = {"laptop": "/home/ada/orbit"}
+            remote_targets = [
+                dict(id="t-1", name="laptop", folder="/home/ada/orbit"),
+                dict(id="t-2", name="target", folder=None),
+            ]
 
             async def emit(self, *args: Any, **kwargs: Any) -> None:
                 return None
 
-        result = asyncio.run(
-            execute(
-                Tools(),
-                "remote_run",
-                json.dumps(
-                    dict(
-                        target="target",
-                        command="cd internal-uuid && python3 -m unittest -v",
-                        wait_s=0,
-                    )
-                ),
-                1,
+        def cd_chain(target: str) -> dict[str, Any]:
+            return asyncio.run(
+                execute(
+                    Tools(),
+                    "remote_run",
+                    json.dumps(
+                        dict(
+                            target=target,
+                            command="cd internal-uuid && python3 -m unittest -v",
+                            wait_s=0,
+                        )
+                    ),
+                    1,
+                )
             )
-        )
+
+        result = cd_chain("target")
         self.assertEqual(result["error"], "runner_cd_chain_not_supported")
         self.assertIn("cwd", result["next_step"])
+        self.assertIn("synced project root", result["next_step"])
+        # A connected computer starts in the user's folder: no cwd to set.
+        connected = cd_chain("Laptop")
+        self.assertEqual(connected["error"], "runner_cd_chain_not_supported")
+        self.assertIn("already start in /home/ada/orbit", connected["next_step"])
+        self.assertIn("leave cwd out", connected["next_step"])
+        self.assertNotIn("synced project root", connected["next_step"])
+
+    def test_list_targets_says_a_connected_computer_starts_in_its_folder(
+        self,
+    ) -> None:
+        import asyncio
+
+        items = [
+            dict(id="t1", name="portable", folder="/home/ada/orbit"),
+            dict(id="t2", name="build", folder=None),
+        ]
+
+        class Execution:
+            class Broker:
+                @staticmethod
+                async def call(operation: str, data: dict[str, Any]) -> dict[str, Any]:
+                    return dict(items=list(items))
+
+            broker = Broker()
+
+            def fence(self) -> dict[str, Any]:
+                return {}
+
+        class Tools:
+            execution = Execution()
+            remote_in_place: Any = None
+
+        tools = Tools()
+        result = asyncio.run(execute(tools, "list_targets", "{}", 1))
+        text = result["working_directory"]
+        self.assertIn("already start in that folder", text)
+        self.assertIn("never the folder's own name", text)
+        self.assertIn("On other targets", text)
+        self.assertEqual(
+            tools.remote_in_place,
+            {"t1": "/home/ada/orbit", "portable": "/home/ada/orbit"},
+        )
+        items.pop()
+        only = asyncio.run(execute(Tools(), "list_targets", "{}", 1))
+        self.assertNotIn("synced project root", only["working_directory"])
+
+    def test_a_target_is_found_by_the_name_the_user_gives_it(self) -> None:
+        import asyncio
+
+        from services.orchestrator import work_remote_tools
+        from services.retrieval.project_identity import ProjectError
+
+        listings = [
+            [dict(id="t-2", name="build", folder=None)],
+            [
+                dict(id="t-1", name="laptop", folder="/home/ada/orbit"),
+                dict(id="t-2", name="build", folder=None),
+            ],
+        ]
+
+        async def invoke(operation: str, values: dict[str, Any]) -> dict[str, Any]:
+            self.assertEqual(operation, "list")
+            return dict(items=listings.pop(0) if len(listings) > 1 else listings[0])
+
+        class Tools:
+            remote_targets: Any = None
+            remote_in_place: Any = None
+
+        tools = Tools()
+
+        def resolve(name: str) -> str:
+            return asyncio.run(work_remote_tools.resolve_target(tools, name, invoke))
+
+        self.assertEqual(resolve("build"), "build")
+        # Verified later in the turn: the listing is read again once.
+        self.assertEqual(resolve("my-laptop"), "laptop")
+        self.assertEqual(resolve("Laptop"), "Laptop")
+        self.assertEqual(resolve("ordinateur portable"), "laptop")
+        self.assertEqual(resolve("t-2"), "t-2")
+        with self.assertRaises(ProjectError):
+            resolve("buildbox")
+
+    def follow(
+        self,
+        statuses: list[dict[str, Any]],
+        decided: tuple[int, dict[str, Any]] = (200, {}),
+        granted: dict[str, Any] | None = None,
+    ) -> tuple[Any, list[str], Any]:
+        """work_remote_tools.follow on a connected computer behind the chat."""
+        import asyncio
+
+        from services.orchestrator import work_remote_tools
+
+        calls: list[str] = []
+        replies = list(statuses)
+
+        async def invoke(operation: str, values: dict[str, Any]) -> dict[str, Any]:
+            calls.append(operation)
+            if operation == "execute":
+                return dict(state="running", command_id="c")
+            return replies.pop(0) if replies else dict(state="succeeded")
+
+        tools = MagicMock()
+        tools.emit = AsyncMock()
+        tools.execution.check = AsyncMock()
+        tools.execution.broker.public = AsyncMock(return_value=decided)
+        tools.approvals_unattended = True
+        tools.lang = "fr"
+        tools.machine_approvals = {}
+        tools.machine_approval_failures = {}
+        tools.machine_approval = granted
+        tools.remote_references = None
+        args = dict(target="portable", command="git push", cwd=".", wait_s=0)
+        try:
+            result: Any = asyncio.run(
+                work_remote_tools.follow(
+                    tools,
+                    invoke,
+                    args,
+                    dict(state="awaiting_approval", command_id="c"),
+                    30,
+                    True,
+                )
+            )
+        except Exception as exc:
+            result = exc
+        return result, calls, tools
+
+    @staticmethod
+    def waiting(decision: str) -> dict[str, Any]:
+        return dict(
+            state="awaiting_approval",
+            command_id="c",
+            approval=dict(id="a", action_digest="d", decision=decision),
+        )
+
+    def test_a_closed_approval_is_never_started(self) -> None:
+        yes = dict(machine="portable", command="git push", cwd=".", allowed=True)
+        for decision in ("invalidated", "expired"):
+            with self.subTest(decision=decision):
+                result, calls, tools = self.follow(
+                    [self.waiting(decision)], granted=yes
+                )
+                self.assertEqual(result["error"], "approval_closed")
+                self.assertIn("asks the user again", result["next_step"])
+                self.assertNotIn("execute", calls)
+                tools.execution.broker.public.assert_not_awaited()
+                self.assertEqual(
+                    list(tools.machine_approval_failures.values())[0]["error"],
+                    "approval_" + decision,
+                )
+        refused, calls, tools = self.follow([self.waiting("denied")])
+        self.assertEqual(refused["error"], "approval_denied")
+        self.assertNotIn("execute", calls)
+        self.assertEqual(tools.machine_approval_failures, {})
+
+    def test_the_yes_of_the_conversation_approves_then_starts(self) -> None:
+        yes = dict(machine="Portable", command="git push", cwd=".", allowed=True)
+        result, calls, tools = self.follow([self.waiting("pending")], granted=yes)
+        self.assertEqual(result["state"], "succeeded", result)
+        self.assertEqual(calls, ["status", "execute", "status"])
+        tools.execution.broker.public.assert_awaited_once()
+        self.assertTrue(yes["used"])
+        # No yes (or a yes to another command): the question, never a start.
+        asked, calls, tools = self.follow([self.waiting("pending")])
+        self.assertEqual(asked["state"], "awaiting_approval")
+        self.assertIn("git push", asked["approval_question"])
+        self.assertNotIn("execute", calls)
+
+    def test_a_refused_decision_is_a_failure_with_the_question_open(self) -> None:
+        from services.retrieval.project_identity import ProjectError
+
+        yes = dict(machine="portable", command="git push", cwd=".", allowed=True)
+        result, calls, tools = self.follow(
+            [self.waiting("pending")], (409, {"error": "session_busy"}), yes
+        )
+        self.assertEqual(result["error"], "approval_not_recorded")
+        self.assertIn("git push", result["approval_question"])
+        self.assertNotIn("execute", calls)
+        self.assertEqual(
+            list(tools.machine_approval_failures.values()),
+            [dict(machine="portable", command="git push", error="session_busy")],
+        )
+        self.assertEqual(len(tools.machine_approvals), 1)
+
+        # Allowed, then refused at start: recorded, raised as before.
+        with patch(
+            "services.orchestrator.work_remote_tools.start",
+            new=AsyncMock(side_effect=ProjectError(403, "approval_required")),
+        ):
+            failed, calls, tools = self.follow([self.waiting("allowed")])
+        self.assertIsInstance(failed, ProjectError)
+        self.assertEqual(
+            list(tools.machine_approval_failures.values())[0]["error"],
+            "approval_required",
+        )
+
+    def test_a_written_file_ends_with_a_newline(self) -> None:
+        from services.orchestrator.project_forge import snapshot_files
+        from services.orchestrator.work_remote_tools import written_snapshot
+        import hashlib
+
+        for content, expected in (
+            ("print(1)", b"print(1)\n"),
+            ("a\nb\n", b"a\nb\n"),
+            ("", b""),
+        ):
+            with self.subTest(content=content):
+                _, value = written_snapshot("src/app.py", content)
+                files = snapshot_files(value, hashlib.sha256(value).hexdigest())
+                self.assertEqual(base64.b64decode(files[0]["content"]), expected)
 
     def test_remote_run_normalizes_unusable_cwd_to_synced_root(self) -> None:
         folder_id = str(uuid.uuid4())

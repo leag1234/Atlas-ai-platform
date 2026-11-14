@@ -49,6 +49,22 @@ UNKNOWN_TARGET_HINT = (
     "If the user's machine is not there, ask in one short question for its address and account; "
     "never try other guessed names."
 )
+# With a relay, a name the user gave is first tried from their connected
+# computer, where their own ssh settings resolve it (staging 2026-11-14).
+RELAY_TARGET_HINT = (
+    "No machine or target has this name. A machine of the user's local network is "
+    "reached through their connected computer: remote_run with that computer as "
+    "target (machine_list names it) and the command ssh <name> <command>; ask for "
+    "an address only if that ssh fails. If no computer is connected, ask in one "
+    "short question whether to connect their computer or for the machine's "
+    "address and account. Never try other guessed names."
+)
+
+
+def unknown_target_hint() -> str:
+    from services.orchestrator.work_machine_tools import relay_enabled
+
+    return RELAY_TARGET_HINT if relay_enabled() else UNKNOWN_TARGET_HINT
 
 
 def remote_target(arguments: str) -> str:
@@ -531,7 +547,12 @@ class WorkTools(CodeTools):
         # and the person's yes to the previous one (work_remote_tools.py).
         self.machine_approvals: dict[str, str] = {}
         self.machine_approval: dict[str, Any] | None = None
-        self.remote_in_place: set[str] | None = None
+        # Commands the person approved that did not run (machine, command, error).
+        self.machine_approval_failures: dict[str, dict[str, str]] = {}
+        # Targets listed in this turn, and its connected computers (id or
+        # name -> folder) (work_remote_tools.py).
+        self.remote_targets: list[dict[str, Any]] | None = None
+        self.remote_in_place: dict[str, str] | None = None
         # Turn-specific system text (the machine rules on a remote turn).
         self.instructions = ""
         # Set by the Work turn when the request asks for code to be run.
@@ -780,7 +801,7 @@ class WorkTools(CodeTools):
             except ProjectError as exc:
                 result = dict(exc.body)
                 if target and result.get("error") == "not_found":
-                    result.setdefault("next_step", UNKNOWN_TARGET_HINT)
+                    result.setdefault("next_step", unknown_target_hint())
             except (ValueError, OSError, RuntimeError, TimeoutError) as exc:
                 code = str(exc) or exc.__class__.__name__
                 logging.getLogger(__name__).warning(
