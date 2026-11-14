@@ -394,13 +394,10 @@ class Workspace:
             + "'; os.makedirs(p, exist_ok=True); os.chown(p,1000,1000)\n"
             # Carries expire: a session still active touches its carry directory
             # mtime on every turn, so only abandoned carries age out.
-            # With registry egress, HOME and package caches live in a sibling directory,
-            # mounted at /home/atlas, so the workspace itself stays empty for its first snapshot.
-            + (
-                "os.makedirs(p + '.home', exist_ok=True); os.chown(p + '.home',1000,1000)\n"
-                if self.egress
-                else ""
-            )
+            # HOME and tool caches (Go build cache, npm and pip caches) live in a sibling
+            # directory, mounted at /home/atlas, so the workspace itself stays empty for its
+            # first snapshot and a compiled standard library survives between commands.
+            + "os.makedirs(p + '.home', exist_ok=True); os.chown(p + '.home',1000,1000)\n"
             # Carries sit next to their session scope (org/project/session/workspace.carry,
             # four levels down) and expire: an active session rewrites its carry each turn.
             + "cutoff=time.time()-"
@@ -463,14 +460,8 @@ class Workspace:
                 "1000:1000",
                 "--mount",
                 f"type=volume,src={volume()},dst=/workspace,volume-subpath={self.key}",
-                *(
-                    [
-                        "--mount",
-                        f"type=volume,src={volume()},dst=/home/atlas,volume-subpath={self.key}.home",
-                    ]
-                    if self.egress
-                    else []
-                ),
+                "--mount",
+                f"type=volume,src={volume()},dst=/home/atlas,volume-subpath={self.key}.home",
             ],
             source,
             json.dumps({"action": action, "args": args}).encode(),
@@ -527,16 +518,17 @@ class Workspace:
         )
         memory = "2g" if self.egress else "768m"
         pids_limit = "256" if self.egress else "64"
-        environment = (
+        environment = ["HOME=/home/atlas"] + (
             [
-                "HOME=/home/atlas",
                 "PIP_USER=1",
                 "PIP_CACHE_DIR=/home/atlas/pip",
                 "npm_config_prefix=/home/atlas/npm",
                 "npm_config_cache=/home/atlas/npm-cache",
             ]
             if self.egress
-            else []
+            # Without a network npm would retry the registry until the command times out;
+            # offline it answers at once (ENOTCACHED) and still runs scripts and tests.
+            else ["npm_config_offline=true"]
         )
         proxy = (
             [
@@ -570,7 +562,9 @@ class Workspace:
             "--pids-limit",
             pids_limit,
             "--tmpfs",
-            "/tmp:rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
+            # exec: compiled toolchains (go test, go run) build and run binaries in /tmp;
+            # Docker mounts a tmpfs noexec unless told otherwise.
+            "/tmp:rw,exec,nosuid,nodev,size=128m,uid=1000,gid=1000",
             *(["--label", "atlas.work=" + self.scope_key] if self.scoped else []),
             *mount,
             "--entrypoint",

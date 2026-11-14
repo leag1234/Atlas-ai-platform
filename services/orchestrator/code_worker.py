@@ -152,7 +152,11 @@ def command(root: Path, text: str, timeout: float, memory_mb: int) -> dict[str, 
     timed_out = False
 
     def limits() -> None:
-        resource.setrlimit(resource.RLIMIT_AS, (memory_mb * 1024**2,) * 2)
+        # Bound memory actually written (data segment and private writable mappings),
+        # not address space: Go and Node.js reserve gigabytes of address space at start
+        # and abort under any RLIMIT_AS a sandbox can afford. The container memory limit
+        # stays the hard ceiling.
+        resource.setrlimit(resource.RLIMIT_DATA, (memory_mb * 1024**2,) * 2)
         resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_BYTES,) * 2)
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
@@ -173,6 +177,7 @@ def command(root: Path, text: str, timeout: float, memory_mb: int) -> dict[str, 
                     "PIP_CACHE_DIR",
                     "npm_config_prefix",
                     "npm_config_cache",
+                    "npm_config_offline",
                     "HTTP_PROXY",
                     "HTTPS_PROXY",
                     "NO_PROXY",
@@ -349,7 +354,7 @@ def perform(root: Path, action: str, args: dict[str, Any]) -> dict[str, Any]:
             root,
             args["command"],
             min(120, max(0.01, float(args.get("timeout_seconds", 30)))),
-            min(512, max(32, int(args.get("memory_mb", 256)))),
+            min(512, max(32, int(args.get("memory_mb", 512)))),
         )
     if action == "export":
         baseline = args["baseline"]

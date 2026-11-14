@@ -1,0 +1,12 @@
+# Work execution image: the pinned terminal image plus the official Go toolchain.
+# Every Work command, the files terminal and chat code execution run in this image
+# (services/orchestrator/terminal_stack.py, ATLAS_WORK_IMAGE). It already ships
+# Python 3.12, Node.js 22 with npm, gcc/g++, make and git; Go is the missing language.
+# Build from the repository root:
+#   docker build -f infra/docker/Dockerfile.work -t atlas-work:local .
+FROM ghcr.io/open-webui/open-terminal@sha256:3d52176700f2442e20556ef129ae980613389be773e269cf7fa0118f3b55669d
+
+USER root
+COPY infra/docker/install-go.sh /usr/local/share/atlas/install-go.sh
+RUN sh /usr/local/share/atlas/install-go.sh
+USER user

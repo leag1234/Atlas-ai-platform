@@ -106,6 +106,17 @@ are privileged access, not a guest isolation boundary.
    docker build -f infra/docker/Dockerfile --target runner -t atlas-project-runner:local .
    ```
 
+   Work commands run Python, Node.js and gcc in the pinned upstream terminal
+   image. To add Go (pinned official toolchain, offline defaults), build the
+   Work image and pin it by image ID in `ATLAS_WORK_IMAGE`; when the Work engine
+   is enabled, rebuild its image too (it installs the same toolchain):
+
+   ```sh
+   docker build -f infra/docker/Dockerfile.work -t atlas-work:local .
+   docker image inspect atlas-work:local --format '{{.Id}}'   # ATLAS_WORK_IMAGE=sha256:...
+   docker build -f infra/docker/Dockerfile.opencode-engine -t atlas-opencode-engine:local .
+   ```
+
    Install the project schema once with the operator DSN in
    `ATLAS_RETRIEVAL_DSN` (never the application DSN), following
    `runbooks/project-installation.md`; the equivalent command is:
