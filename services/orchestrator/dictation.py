@@ -4,19 +4,21 @@ Behind ATLAS_REALTIME_DICTATION=1 (off by default). The chat's voice button (cha
 and a standalone test page use it. The browser sends 16 kHz mono PCM frames; Atlas relays
 them to the selected engine and sends partial and final text back:
 
-- ``local``: the owned CPU engine (services/stt/streaming.py), allowed in strict privacy.
+- ``local``: the owned CPU engine (services/stt/streaming.py), allowed at every level.
   It is the default; at most ATLAS_DICTATION_LOCAL_MAX_SESSIONS streams run at once.
 - ``cloud``: the gateway's realtime transcription provider (realtime_transcription.py).
   The provider key stays on the server. It takes over when the local engine is busy or
-  missing, never in strict privacy: there no audio leaves Atlas.
+  missing, only at the Standard privacy level: in Strict and Enhanced no audio leaves
+  Atlas (audio cannot be pseudonymised; owner decision 2026-11-14).
 
-Strict privacy is decided here, not by the browser: a session started from a project
-(``scope`` names its organization and project) takes the project's own setting, read with
-the signed-in user's membership; a project that cannot be read counts as strict. The
-browser may only ask for strict, never lift it.
+The privacy level is decided here, not by the browser: the highest of the organisation
+minimum, the conversation's own level (``chat``, stored by Atlas) and, for a session started
+from a project (``scope`` names its organization and project), the project's setting, read
+with the signed-in user's membership; a project that cannot be read counts as strict. The
+browser may only raise the level, never lift it.
 
 Client messages: one JSON ``start`` ({"type": "start", "engine" ("auto" by default),
-"language", "scope", "privacy", "cleanup"}), then binary PCM s16le frames, then
+"language", "scope", "chat", "privacy", "cleanup"}), then binary PCM s16le frames, then
 {"type": "stop"}. Server messages: ``ready`` (engine, and ``fallback`` when the cloud
 engine replaced a busy local one), ``turn``, ``partial`` (text of the open utterance,
 replaced each time), ``final`` (a closed segment, by index), ``cleaned`` (a model-cleaned
@@ -142,6 +144,22 @@ class Refusal(Exception):
         } | extra
 
 
+def cloud_refusal(privacy: str) -> Refusal:
+    """Cloud dictation at a level that keeps audio in Atlas: a named refusal."""
+    code = (
+        "strict_privacy_unavailable"
+        if privacy == "strict"
+        else "privacy_feature_refused"
+    )
+    return Refusal(
+        code,
+        f"{privacy.capitalize()} privacy mode: no audio leaves Atlas, so cloud "
+        "dictation is off.",
+        privacy=privacy,
+        feature="dictation_cloud",
+    )
+
+
 _active: set[str] = set()  # users with an open session
 _local: set[str] = set()  # users with an open session on the local engine
 
@@ -180,12 +198,21 @@ async def project_privacy(email: str, org: str, project: str) -> str:
         )
     if status != 200:
         raise ProjectError(status, "project_unavailable")
-    return "strict" if value.get("privacy") == "strict" else "standard"
+    from packages.privacy import highest
+
+    return highest(value.get("privacy"))
 
 
 async def session_privacy(start: dict[str, Any], user: SocketUser) -> str:
-    """Strict privacy from the conversation's project; fail closed when it cannot be read."""
-    asked = "strict" if start.get("privacy") == "strict" else "standard"
+    """The session's level: organisation minimum, conversation, project and the browser's
+    own ask, the highest wins; fail closed when the project cannot be read."""
+    from packages.privacy import highest, minimum
+    from services.orchestrator.conversation_privacy import conversation_level
+
+    asked = highest(start.get("privacy"), minimum())
+    chat = start.get("chat")
+    if isinstance(chat, str) and chat:
+        asked = highest(asked, conversation_level(user.subject, chat))
     scope = start.get("scope")
     if not isinstance(scope, dict) or scope.get("project") is None:
         return asked
@@ -202,7 +229,7 @@ async def session_privacy(start: dict[str, Any], user: SocketUser) -> str:
         setting = await project_privacy(user.email, org, project)
     except Exception:  # noqa: BLE001 - an unreadable project setting counts as strict
         return "strict"
-    return "strict" if "strict" in (asked, setting) else "standard"
+    return highest(asked, setting)
 
 
 def local_installed() -> bool:
@@ -220,41 +247,41 @@ def cloud_configured() -> bool:
 def choose_engine(
     requested: object, privacy: str, limits: Limits, language: str | None = None
 ) -> tuple[str, bool]:
-    """Local first; the cloud engine when the local one is busy, never in strict privacy.
+    """Local first; the cloud engine when the local one is busy, only at the Standard
+    privacy level (Strict and Enhanced keep audio in Atlas).
 
-    A language outside the local engine's own goes to the cloud engine outside strict
-    privacy. Returns the engine and whether it replaced a busy local engine.
+    A language outside the local engine's own goes to the cloud engine at the Standard
+    level. Returns the engine and whether it replaced a busy local engine.
     """
     allowed = engines()
     if (
         requested != "local"
         and language is not None
         and language not in LOCAL_LANGUAGES
-        and privacy != "strict"
+        and privacy == "standard"
         and "cloud" in allowed
         and cloud_configured()
     ):
         return "cloud", False
     if requested == "cloud":
-        if privacy == "strict":
-            raise Refusal(
-                "strict_privacy_unavailable",
-                "Strict privacy mode: no audio leaves Atlas, so cloud dictation is off.",
-            )
+        if privacy != "standard":
+            raise cloud_refusal(privacy)
         if "cloud" not in allowed:
             raise Refusal("engine_unavailable", "This engine is not enabled.")
         return "cloud", False
     local = "local" in allowed and local_installed()
     if local and len(_local) < limits.max_local:
         return "local", False
-    if requested == "local" or privacy == "strict" or "cloud" not in allowed:
+    if requested == "local" or privacy != "standard" or "cloud" not in allowed:
         if not local:
             raise Refusal("engine_unavailable", "The local engine is not installed.")
         raise Refusal(
             "local_busy",
             "The local dictation engine is busy"
             + (
-                "; strict privacy keeps audio in Atlas." if privacy == "strict" else "."
+                f"; {privacy} privacy keeps audio in Atlas."
+                if privacy != "standard"
+                else "."
             ),
             privacy=privacy,
         )
@@ -593,11 +620,8 @@ async def stream_socket(socket: WebSocket) -> None:
         engine, fallback = choose_engine(
             start.get("engine"), privacy, limits, spoken_language(start.get("language"))
         )
-        if privacy == "strict" and engine != "local":
-            raise Refusal(
-                "strict_privacy_unavailable",
-                "Strict privacy mode: no audio leaves Atlas, so cloud dictation is off.",
-            )
+        if privacy != "standard" and engine != "local":
+            raise cloud_refusal(privacy)
         _active.add(user)
         if engine == "local":
             _local.add(user)

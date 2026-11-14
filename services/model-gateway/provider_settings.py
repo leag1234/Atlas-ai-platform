@@ -53,10 +53,11 @@ def owned(provider: str | None) -> bool:
 
 
 def require(provider: str | None, capability: str = "inference") -> None:
-    """The strict privacy check of every provider call: credentials and endpoints of a
-    shared provider are never handed out while the request is strict."""
-    if privacy.is_strict() and not owned(provider):
-        raise privacy.StrictPrivacyUnavailable(capability)
+    """The privacy check of every provider call: credentials and endpoints of a shared
+    provider are never handed out when the request's level does not allow it (Strict, or
+    Enhanced while content cannot be pseudonymised)."""
+    if not privacy.allows(capability) and not owned(provider):
+        raise privacy.refusal(capability)
 
 
 def endpoint() -> str:
@@ -91,7 +92,7 @@ def api_key_for(provider: str) -> str:
 def owned_endpoint() -> str:
     value = os.environ.get("ATLAS_OWNED_VLLM_BASE_URL", "")
     if not value:
-        raise privacy.StrictPrivacyUnavailable("inference")
+        raise privacy.refusal("inference")
     return validate_endpoint(
         value, urlsplit(value).hostname in {"localhost", "127.0.0.1", "::1"}
     )

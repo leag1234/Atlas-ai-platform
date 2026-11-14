@@ -523,7 +523,8 @@ cross-site mutations fail `403 origin_rejected`.
 ### 8.3 Strict privacy mode (SV 2026-10-31)
 - Owned or controlled inference only (dedicated rented server or a machine on the local
   network), never a shared multi-tenant API; no web search; explicit refusal
-  (`strict_privacy_unavailable`, HTTP 503 today) when no owned target is available. The
+  (`strict_privacy_unavailable`, HTTP 403 since 2026-11-14, 503 before) when no owned target
+  is available. The
   hosted web tools of the API keep their own codes (`web_search_unavailable_in_strict_privacy`,
   `web_fetch_unavailable_in_strict_privacy`, HTTP 400).
 - Activation per request (`X-Atlas-Privacy: strict`), per API key and per project. Built for
@@ -550,9 +551,18 @@ cross-site mutations fail `403 origin_rejected`.
   engine key) is not used, Atlas's own Work loop runs instead; dictation stays on the local
   engine; project file embeddings and reranking run on the gateway's local CPU models.
   The public API refuses embeddings and transcription in strict mode (no owned server).
-- Not built: ordinary chats outside projects have no level; per-organisation minimum;
-  an owned OCR engine. Not verified: conversation titles requested by the chat interface as
-  separate requests.
+- Three levels since 2026-11-14 (Standard, Enhanced, Strict; design note "privacy levels"):
+  ordinary chats have a level per conversation, chosen next to the composer and stored by
+  Atlas (`conversation_privacy.py`), applied to every request of that conversation (titles
+  included when the interface forwards the conversation id) and never lowered once the
+  conversation has messages. The deployment's organisation minimum is
+  `ATLAS_PRIVACY_MINIMUM`. Enhanced is offered only with `ATLAS_PRIVACY_ENHANCED=1`; until the
+  local pseudonymiser exists it sends nothing in clear (owned targets only; vision, OCR,
+  cloud dictation, embeddings, web and place search refused with `privacy_feature_refused`;
+  connectors allowed).
+- Not built: a per-organisation minimum in the project policy (the deployment setting
+  applies to every organisation); a level selector in the project header (the project API
+  sets it); an owned OCR engine.
 - PM-PRIV-01 (decision Q5, risk 4): strict mode is a deployment boundary, not a routing rule.
   A strict project uses owned inference for Chat, Work, OCR, vision, session-state updates,
   embeddings and reranking; has no web search; allows a connector or a runner only when its

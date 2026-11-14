@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 import aiohttp
 from fastapi import Request
 
-from packages.privacy import CODE, STATUS, StrictPrivacyUnavailable, describe
+from packages.privacy import StrictPrivacyUnavailable
 from packages import context_usage
 from packages.file_intent import produces_file
 from packages.language import conversation_language, language_instruction
@@ -514,7 +514,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         raise
     turn, context = state["turn"], state["context"]
     # The project's level holds for every call of this turn (packages.privacy).
-    from packages.privacy import elevate, is_strict
+    from packages.privacy import allows, elevate
 
     elevate(context.get("privacy"))
     if request._connector_scope:
@@ -574,7 +574,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
             item.reponse, item.state = memory_reply, "done"
         elif (
             request.project_action != "work"
-            and not is_strict()
+            and allows("places_search")
             and location_dependent(request.user_text)
         ):
             from services.orchestrator.nearby_chat import process_nearby
@@ -665,7 +665,7 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
                 model.tools.append(context_tools.schedules.declaration())
             if not request._api_key_request:
                 context_tools.connectors = await prepare_connectors(request)
-                if model.privacy == "strict":
+                if not allows("connectors"):
                     context_tools.connectors = None
             if context_tools.connectors is not None:
                 context_tools.connectors.bind(model)
@@ -758,8 +758,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         )
         raise
     except StrictPrivacyUnavailable as exc:
-        # Strict privacy without an owned target: a named refusal, not an outage.
-        refusal = ProjectError(STATUS, CODE, describe(exc.capability))
+        # A capability the project's level does not allow: a named refusal, not an
+        # outage (Strict without an owned target, or Enhanced).
+        refusal = ProjectError(exc.status, exc.code, exc.message)
         error = refusal.body
         logging.getLogger(__name__).warning(
             "project_turn_failed kind=StrictPrivacyUnavailable capability=%s",

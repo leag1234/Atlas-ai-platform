@@ -139,9 +139,10 @@ class AgentRequest(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def request_level(cls, data: object) -> object:
-        # A strict request stays strict for every call made on its behalf, whatever
-        # the caller put in the body: the level is never lowered.
-        if privacy.is_strict() and isinstance(data, dict):
+        # A request limited to owned targets (Strict, or Enhanced without the
+        # pseudonymiser) stays so for every call made on its behalf, whatever the
+        # caller put in the body: the level is never lowered.
+        if privacy.owned_only() and isinstance(data, dict):
             return {**data, "privacy": "strict"}
         return data
 

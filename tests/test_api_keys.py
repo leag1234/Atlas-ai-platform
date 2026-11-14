@@ -138,7 +138,7 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(row["privacy"], "strict")
         self.assertEqual(self.store.resolve(key, "192.0.2.1").privacy, "strict")
 
-    def test_strict_privacy_header_returns_explicit_503(self) -> None:
+    def test_strict_privacy_header_returns_explicit_403(self) -> None:
         _, key = self.create(scopes=["model"])
         with TestClient(app) as client:
             reply = client.post(
@@ -149,10 +149,11 @@ class KeyTests(unittest.TestCase):
                     "messages": [{"role": "user", "content": "Hello"}],
                 },
             )
-        self.assertEqual(reply.status_code, 503, reply.text)
+        # A permanent policy refusal: 403, so that SDKs do not retry it as an outage.
+        self.assertEqual(reply.status_code, 403, reply.text)
         self.assertEqual(reply.json()["error"]["type"], "strict_privacy_unavailable")
 
-    def test_strict_privacy_key_setting_returns_explicit_503(self) -> None:
+    def test_strict_privacy_key_setting_returns_explicit_403(self) -> None:
         _, key = self.create(scopes=["model"], privacy="strict")
         with TestClient(app) as client:
             reply = client.post(
@@ -163,7 +164,8 @@ class KeyTests(unittest.TestCase):
                     "messages": [{"role": "user", "content": "Hello"}],
                 },
             )
-        self.assertEqual(reply.status_code, 503, reply.text)
+        # A permanent policy refusal: 403, so that SDKs do not retry it as an outage.
+        self.assertEqual(reply.status_code, 403, reply.text)
         self.assertEqual(reply.json()["error"]["type"], "strict_privacy_unavailable")
 
     def test_hash_expiry_revocation_metadata_and_permissions(self) -> None:

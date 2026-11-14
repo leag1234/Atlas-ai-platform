@@ -61,8 +61,8 @@ def rewrite_plan() -> tuple[ServerlessPolicy, str, str, str, str, bool]:
         policy = ServerlessPolicy()
         role = rewrite_role()
         model = policy.models[role]
-        if privacy.is_strict():
-            # Strict privacy: AgentProvider sends a strict rewrite to the owned
+        if privacy.owned_only():
+            # Strict (or Enhanced) privacy: AgentProvider sends the rewrite to the owned
             # endpoint (or refuses it by name); shared credentials are never read.
             endpoint = api_key = ""
         else:

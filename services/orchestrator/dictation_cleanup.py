@@ -175,7 +175,7 @@ class Cleaner:
             "budget_eur": str(CALL_BUDGET_EUR),
             "local_enabled": False,
         }
-        if self.privacy == "strict":
+        if self.privacy != "standard":
             payload["privacy"] = "strict"
         self.calls += 1
         url = os.environ.get("ATLAS_GATEWAY_URL", atlas_ports().url("gateway"))

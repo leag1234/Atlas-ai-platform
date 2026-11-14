@@ -124,7 +124,8 @@ class EmbeddingsTests(unittest.TestCase):
             headers=self.key(["model"]) | {"x-atlas-privacy": "strict"},
             json={"input": "x"},
         )
-        self.assertEqual(reply.status_code, 503, reply.text)
+        self.assertEqual(reply.status_code, 403, reply.text)
+        self.assertEqual(reply.json()["error"]["code"], "strict_privacy_unavailable")
         self.assertEqual(self.calls, [])
         names = [
             row["id"]

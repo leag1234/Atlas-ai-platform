@@ -227,8 +227,8 @@ transcript. The request is charged by audio duration at 4 000 micro-euros per mi
 pass-through of the provider's published price); request-count and daily quotas apply. Errors:
 429 `provider_limit` when the provider refuses for quota or rate (never reported as an outage),
 502 `provider_error`, 503 `transcription_unavailable`, 400 `invalid_request` when the audio cannot
-be decoded. Strict privacy mode answers 503 `strict_privacy_unavailable`: no owned transcription
-server exists yet. `POST /audio/translations` answers 400 `translation_not_supported`: transcribe,
+be decoded. Strict privacy mode answers 403 `strict_privacy_unavailable` and Enhanced 403
+`privacy_feature_refused`: no owned transcription server exists yet. `POST /audio/translations` answers 400 `translation_not_supported`: transcribe,
 then translate the text with a chat model.
 
 ## 4 quater. Embeddings
@@ -440,13 +440,16 @@ is one euro) and the limits that apply to your key.
 | 400 `unknown field …`, `unsupported_parameter: …`, `unsupported_content: input_audio` | A field Atlas does not know, or an option no hosted model applies; the message names it | Remove it (see "OpenAI and Anthropic compatibility") |
 | 400 `storage_not_supported` | `previous_response_id`, `conversation` or `background`: Atlas stores nothing | Send the full history in `input` |
 | 400 `web_search_unavailable_in_strict_privacy` | The hosted web search was requested in strict privacy mode | Remove the tool or the strict header |
+| 400 `invalid_privacy_level` | `privacy` (field or `X-Atlas-Privacy` header) is not `standard`, `enhanced` or `strict` | Fix the value |
+| 403 `strict_privacy_unavailable` | Strict privacy was asked (request, key or organisation minimum) and no owned server exists for that capability | Do not retry: remove the strict level, or ask the operator for an owned server |
+| 403 `enhanced_privacy_unavailable` | Enhanced privacy was asked and this server cannot pseudonymise yet (or does not offer the level) | Do not retry: use another level |
+| 403 `privacy_feature_refused` | The feature named in `feature` (`vision`, `ocr`, `web_search`, `web_fetch`, `embeddings`, `transcription`, ...) is not allowed at the applied `level` | Do not retry: remove the feature or use another level |
 | 401 | Missing, wrong, expired or revoked key | Check the key and its expiry date |
 | 404 `storage_not_supported` | A stored response, conversation or completion was requested | Atlas stores nothing; keep your own history |
 | 409 `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
 | 429 with a JSON body | The budget of the key is reached; the message says whether day or week | Stop, or ask for a higher budget |
 | 429 with an HTML page | Rate limit | Wait 30 to 60 seconds and resume; do not restart all workers at once |
 | 502 or 503 | The service is restarting for a deployment (usually under a minute) | Wait and retry |
-| 503 `strict_privacy_unavailable` | You asked for strict privacy and no owned inference server exists yet | Remove the `X-Atlas-Privacy: strict` header |
 | 503 `key_service_unavailable` | A downstream failure; a common cause is a `max_tokens` too small for the reasoning effort | See section 3, then retry |
 
 Loop thresholds, counted over the last 12 tool calls of the history (same tool, same arguments, same
@@ -462,15 +465,49 @@ Any other malformed call is passed through unchanged.
 
 ## 9. Privacy
 
-Requests are served by open-weight models hosted by European providers (Mistral and Scaleway). A strict
-privacy mode (`X-Atlas-Privacy: strict`), which would only use inference servers fully controlled by the
-owner, exists but is not available until such a server is configured: until then it answers 503 and
-never falls back to a shared provider. Treat the service as a beta and do not send data you could not
-share with a hosting provider.
+Requests are served by open-weight models hosted by European providers (Mistral and Scaleway). Treat
+the service as a beta and do not send data you could not share with a hosting provider.
 
-### How strict privacy is configured (operator)
+### Privacy levels
 
-Strict privacy has no settings screen. Which routes accept it is part of the deployment: targets
+Every request is served at one of three levels:
+
+| Level | What leaves Atlas |
+|---|---|
+| `standard` (default) | Request content goes to the European providers of the active routes. |
+| `enhanced` | Identifiers detected by Atlas are to be replaced by tokens before content leaves Atlas (pseudonymisation). Not offered yet: see below. |
+| `strict` | Nothing leaves machines operated by Atlas or by the customer (a rented dedicated server counts). No web search. |
+
+Choose the level with the `privacy` body field (`"privacy": "strict"`, on `/chat/completions`,
+`/responses`, `/messages` and `/embeddings`) or the `X-Atlas-Privacy` header. The applied level is the
+highest of the organisation minimum, the key's default, the header and the field: a request can raise
+it, never lower it. Every response carries the applied level in `X-Atlas-Privacy-Applied`. The field
+is removed before anything is sent to a provider.
+
+A level that cannot be honoured is refused before anything is sent, with HTTP **403** and a named code
+(`strict_privacy_unavailable`, `enhanced_privacy_unavailable` or `privacy_feature_refused`; the body
+also names `feature` and `level`). These refusals are permanent: OpenAI-compatible SDKs retry 5xx
+answers automatically, so a policy refusal is never a 5xx. (Until 2026-11-14 strict refusals answered
+503; the code `strict_privacy_unavailable` is unchanged.) A 503 stays reserved for a temporary outage,
+such as a restart.
+
+Enhanced: the local pseudonymiser is not installed yet, so the level never pretends to protect
+anything. Where it is not offered (the default) a request asking for it is refused with 403
+`enhanced_privacy_unavailable`. Where an operator offers it before the pseudonymiser exists, model calls
+use owned servers only (or are refused by the same code), and features whose content cannot be
+pseudonymised are refused with `privacy_feature_refused`: images and scanned pages (`vision`, `ocr`),
+dictation and transcription audio, embeddings, web search and fetch. Connectors stay allowed (the user
+chose that recipient).
+
+### How privacy levels are configured (operator)
+
+Levels have no settings screen. In the chat, each conversation shows its level next to the composer
+and the user picks it there; a conversation that already has messages can be raised, never lowered.
+`ATLAS_PRIVACY_MINIMUM` (`standard`, `enhanced` or `strict`; an unreadable value counts as `strict`) is
+the organisation minimum, applied to every request, conversation, project and key.
+`ATLAS_PRIVACY_ENHANCED=1` offers the Enhanced level (off by default until the pseudonymiser exists).
+
+Which routes accept strict privacy is part of the deployment: targets
 marked `"privacy": "owned"` in `services/model-gateway/api-routing.json`, each pointing to an
 OpenAI-compatible vLLM server that the owner fully controls, whose address is set with
 `ATLAS_OWNED_VLLM_BASE_URL` (and `ATLAS_OWNED_VLLM_API_KEY` when the server needs one). A request opts in

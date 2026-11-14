@@ -51,13 +51,13 @@ def engine_turn_selected(selection: Any, repository: bool = False) -> bool:
     publication (branch, commit, pull request) is an Atlas tool the engine
     is not offered yet, and that flow already works on the loop.
     """
-    from packages.privacy import is_strict
+    from packages.privacy import owned_only
 
-    # The engine reaches models through the shared engine API key: a strict
-    # privacy turn keeps Atlas's own loop, which only uses owned targets.
+    # The engine reaches models through the shared engine API key: a strict (or
+    # enhanced) privacy turn keeps Atlas's own loop, which only uses owned targets.
     return (
         engine_selected()
-        and not is_strict()
+        and not owned_only()
         and not repository
         and selection is not None
         and getattr(selection, "group", None) == "code"

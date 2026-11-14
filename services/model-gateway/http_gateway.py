@@ -188,7 +188,7 @@ def serve(
                         if isinstance(exc, privacy.StrictPrivacyUnavailable):
                             await send(
                                 {
-                                    "error": privacy.CODE,
+                                    "error": exc.code,
                                     "capability": exc.capability,
                                 }
                             )
@@ -358,9 +358,9 @@ def serve(
             except privacy.StrictPrivacyUnavailable as exc:
                 refused = exc.capability
                 status, response = (
-                    privacy.STATUS,
+                    exc.status,
                     {
-                        "code": privacy.CODE,
+                        "code": exc.code,
                         "capability": exc.capability,
                         "message": exc.message,
                     },

@@ -460,8 +460,9 @@ class GatewayModel:
 
     @property
     def strict(self) -> bool:
-        """Strict privacy for this client or for the request it runs in."""
-        return self.privacy == "strict" or privacy.is_strict()
+        """Owned targets only, for this client or for the request it runs in (Strict,
+        or Enhanced while the pseudonymiser is not installed)."""
+        return self.privacy == "strict" or privacy.owned_only()
 
     def available_tools(self, messages: list[Message]) -> list[dict[str, object]]:
         # A search limit closed the research of this turn: the call that

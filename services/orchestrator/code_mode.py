@@ -1025,7 +1025,9 @@ async def process_work(
 
             # The project's level holds for every call of this Work turn.
             elevate(project.get("privacy"))
-            if str(project.get("privacy", "standard")) == "strict":
+            from packages.privacy import allows
+
+            if not allows("web_search"):
                 selection.disable_research()
             else:
                 from services.orchestrator.chat_pipeline import ChatTools
