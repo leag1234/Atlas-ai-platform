@@ -133,9 +133,9 @@ with the rewrite, about 25 s per picture.
 
 | Step | What | Where |
 |---|---|---|
-| 1. Server check | Health and queue: if the two pictures cannot be done within `ATLAS_PICTURE_CPU_SECONDS`, painting by code answers | `pictures/cpu_turn.py` |
+| 1. Server check | Decided up front, before anything is spent: the server reports the time its queued pictures will take (its own measured seconds per picture); if they and this turn's two pictures do not fit `ATLAS_PICTURE_CPU_SECONDS`, painting by code answers at once | `pictures/cpu_turn.py`, `pictures/cpu_server.py` |
 | 2. Rewrite | One JSON call: an English prompt in one fixed flat illustration style (code appends the style line and strips photographic words), whether it is a diagram, the words to place in the user's language, a title; violent, cruel, hateful or sexual requests are refused | `pictures/rewrite.py`, role `picture_rewrite` |
-| 3. Two pictures | Two seeds, drawn one after the other (one queue per server), 512 px, 4 steps, guidance 1, Lanczos to 768 px | server (`infra/pictures-cpu/gate.py`) |
+| 3. Two pictures | One job of two seeds, drawn one after the other; jobs are served first come, first served and admitted only if they fit the turn's remaining wait (else refused at once); a job whose caller has left is dropped; 512 px, 4 steps, guidance 1, Lanczos to 768 px | server (`infra/pictures-cpu/gate.py`) |
 | 4. Filter | Every picture is scored by a CPU image classifier on the server; a score of 0.5 or more, or no score, and it is never shown | server, `cpu_turn.shown` |
 | 5. Diagram labels | The picture is wordless; one call on the gateway's `locate` vision role gives where each part is drawn; code writes the words in side margins with uncrossed leader lines (label16 rule) | `pictures/locate.py`, `pictures/cpu_finish.py` |
 | 6. Show | Two candidates in the contact sheet; choice and changes as in section 1 | `pictures/turn.py`, `pictures/choice.py` |
@@ -150,6 +150,10 @@ fails or cannot be read, no picture drawn in time, or a diagram with no part
 located: the turn is painted by code, with no user-visible error; the log line
 is `picture_cpu_fallback code=...` and `picture_cpu_fallback` is in the
 interaction's errors. Whatever the CPU attempt spent is kept in the turn's cost.
+Painting by code answers a CPU failure only within the first 15 % of the
+turn's time (about 40 s): a job that fails after that ends the turn with the
+drawing failure sentence (`picture_cpu_late`), never a second long wait. A
+server still on the one-picture request form is asked once per picture.
 
 D5 and cost: a budget or quota refusal of the rewrite or locate call ends the
 turn with the measured refusal. The rewrite (about 0.0005 EUR) and the locate

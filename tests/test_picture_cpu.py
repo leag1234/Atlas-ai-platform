@@ -62,7 +62,7 @@ def rewrite_reply(**extra: Any) -> str:
 
 
 class FakeServer:
-    """The CPU server: health, then one picture per render call."""
+    """The CPU server: health, then one job of pictures per render call."""
 
     def __init__(
         self,
@@ -71,34 +71,51 @@ class FakeServer:
         down: bool = False,
         nsfw: list[float | None] | None = None,
         fail: set[int] | None = None,
+        job_error: str = "",
     ) -> None:
         self.queue = queue
         self.down = down
         self.nsfw = nsfw or [0.0003, 0.0004]
         self.fail = fail or set()
+        self.job_error = job_error
         self.renders: list[tuple[str, int]] = []
+        self.jobs: list[tuple[list[int], float]] = []
         self.health_calls = 0
 
     async def health(self, seconds: float = 4.0) -> dict[str, Any]:
         self.health_calls += 1
         if self.down:
             raise cpu_server.CpuServerError("picture_cpu_unreachable")
-        return {"ready": True, "queue": self.queue, "model": "m"}
+        return {
+            "ready": True,
+            "queue": self.queue,
+            "seconds_per_image": 21.5,
+            "busy_seconds": self.queue * 21.5,
+            "model": "m",
+        }
 
-    async def render(
-        self, prompt: str, seed: int, seconds: float
-    ) -> cpu_server.Rendered:
-        index = len(self.renders)
-        self.renders.append((prompt, seed))
-        if index in self.fail:
-            raise cpu_server.CpuServerError("picture_cpu_timeout")
-        return cpu_server.Rendered(
-            image=png((40 * index, 120, 200)),
-            nsfw=self.nsfw[index % len(self.nsfw)],
-            render_seconds=23.0,
-            queue_seconds=0.0,
-            filter_seconds=0.15,
-        )
+    async def render_set(
+        self, prompt: str, seeds: list[int], max_wait: float
+    ) -> list[cpu_server.Rendered | None]:
+        self.jobs.append((list(seeds), max_wait))
+        if self.job_error:
+            raise cpu_server.CpuServerError(self.job_error, 130.0)
+        out: list[cpu_server.Rendered | None] = []
+        for seed in seeds:
+            index = len(self.renders)
+            self.renders.append((prompt, seed))
+            out.append(
+                None
+                if index in self.fail
+                else cpu_server.Rendered(
+                    image=png((40 * index, 120, 200)),
+                    nsfw=self.nsfw[index % len(self.nsfw)],
+                    render_seconds=21.5,
+                    queue_seconds=0.0,
+                    filter_seconds=0.15,
+                )
+            )
+        return out
 
 
 class CpuGateway(FakeGateway):
@@ -313,7 +330,7 @@ class CpuTurnTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(patcher.stop)
 
     def serve(self, server: FakeServer) -> None:
-        for name in ("health", "render"):
+        for name in ("health", "render_set"):
             patcher = patch.object(cpu_server, name, getattr(server, name))
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -400,17 +417,55 @@ class CpuTurnTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.picture_set(item).engine, "code")
 
-    async def test_busy_server_is_not_waited_for(self) -> None:
+    async def test_busy_server_is_decided_up_front(self) -> None:
+        # 3 pictures queued at 21.5 s, 2 more and the rewrite: 112.5 s > 100 s.
         gateway, server = CpuGateway(), FakeServer(queue=3)
         item = await self.run_turn(gateway, server)
-        self.assertEqual(server.renders, [])
+        self.assertEqual(server.jobs, [])
+        self.assertFalse(
+            any(p["messages"][0]["content"] == rewrite.SYSTEM for p in gateway.payloads)
+        )
         self.assertIn("Voici 4 propositions", item.reponse)
+        self.assertIn("picture_cpu_fallback", item.erreurs)
+
+    async def test_a_queue_that_fits_is_one_job_with_the_time_left(self) -> None:
+        # 2 pictures queued: 43 + 43 + 5 = 91 s fits the 100 s budget.
+        gateway, server = CpuGateway(), FakeServer(queue=2)
+        item = await self.run_turn(gateway, server)
+        self.assertIn("Voici 2 propositions.", item.reponse)
+        ((seeds, max_wait),) = server.jobs
+        self.assertEqual(len(seeds), 2)
+        self.assertTrue(90 < max_wait <= 100, max_wait)
+        self.assertIn("picture_cpu_expected", item.latence_ms)
+
+    async def test_budget_follows_the_configured_wait(self) -> None:
+        with patch.dict(os.environ, {"ATLAS_PICTURE_CPU_SECONDS": "150"}):
+            item = await self.run_turn(CpuGateway(), FakeServer(queue=4))
+        self.assertIn("Voici 2 propositions.", item.reponse)
+
+    async def test_server_refusing_the_job_paints_by_code_at_once(self) -> None:
+        gateway, server = CpuGateway(), FakeServer(job_error="picture_cpu_busy")
+        item = await self.run_turn(gateway, server)
+        self.assertIn("Voici 4 propositions", item.reponse)
+        self.assertIn("picture_cpu_busy", item.erreurs)
+        self.assertIn("picture_cpu_fallback", item.erreurs)
+
+    async def test_late_failure_is_said_not_painted(self) -> None:
+        gateway, server = CpuGateway(), FakeServer(job_error="picture_cpu_timeout")
+        with patch.object(cpu_turn, "LATE_SHARE", 0.0):
+            item = await self.run_turn(gateway, server)
+        self.assertNotIn("propositions", item.reponse)
+        self.assertIn("picture_cpu_late", item.erreurs)
+        self.assertNotIn("picture_cpu_fallback", item.erreurs)
+        # Only the rewrite was paid: no painter call after the late failure.
+        self.assertEqual(len(gateway.payloads), 1)
+        self.assertAlmostEqual(item.cout_eur, 0.0005, places=6)
+        self.assertTrue(item.reponse)
 
     async def test_both_renders_failing_paint_by_code_and_keep_the_cost(self) -> None:
         gateway, server = CpuGateway(), FakeServer(fail={0, 1})
         item = await self.run_turn(gateway, server)
         self.assertIn("Voici 4 propositions", item.reponse)
-        self.assertIn("picture_cpu_timeout", item.erreurs)
         # The rewrite is kept in the cost of the turn painted by code.
         self.assertGreater(item.cout_eur, 0.0005 + 0.0008 + 4 * 0.0113 - 1e-9)
 
@@ -534,19 +589,36 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
 
         async def health(request: web.Request) -> web.Response:
             self.seen["auth"] = request.headers.get("Authorization")
-            return web.json_response({"ready": True, "queue": 1})
+            return web.json_response(
+                {
+                    "ready": True,
+                    "queue": 1,
+                    "seconds_per_image": 20.0,
+                    "busy_seconds": 12.0,
+                }
+            )
 
         async def render(request: web.Request) -> web.Response:
             if self.busy:
-                return web.json_response({"code": "busy"}, status=503)
-            self.seen["body"] = await request.json()
-            return web.json_response(
+                return web.json_response(
+                    {"code": "busy", "expected_seconds": 131.0}, status=503
+                )
+            body = await request.json()
+            self.seen["body"] = body
+            images = [
                 {
+                    "seed": seed,
                     "image": png(),
                     "nsfw": 0.0007,
                     "render_seconds": 20.5,
-                    "queue_seconds": 0.0,
                     "filter_seconds": 0.2,
+                }
+                for seed in body["seeds"][:1]  # the second one failed
+            ]
+            return web.json_response(
+                {
+                    "images": images,
+                    "queue_seconds": 4.0,
                     # A reply far larger than one network chunk.
                     "padding": "x" * 400_000,
                 }
@@ -580,14 +652,67 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         status = await cpu_server.health()
         self.assertEqual(status["queue"], 1)
         self.assertEqual(self.seen["auth"], "Bearer fictional-token")
-        rendered = await cpu_server.render("A fox.", 42, 10.0)
-        self.assertEqual(self.seen["body"], {"prompt": "A fox.", "seed": 42})
-        self.assertEqual(rendered.image, png())
-        self.assertEqual((rendered.nsfw, rendered.render_seconds), (0.0007, 20.5))
+        self.assertEqual(cpu_server.expected_wait(status, 2), 12.0 + 2 * 20.0)
+        first, second = await cpu_server.render_set("A fox.", [42, 43], 60.0)
+        self.assertEqual(
+            self.seen["body"],
+            {"prompt": "A fox.", "seeds": [42, 43], "max_wait_seconds": 60.0},
+        )
+        assert first is not None
+        self.assertIsNone(second)
+        self.assertEqual(first.image, png())
+        self.assertEqual(
+            (first.nsfw, first.render_seconds, first.queue_seconds), (0.0007, 20.5, 4.0)
+        )
         self.busy = True
         with self.assertRaises(cpu_server.CpuServerError) as raised:
-            await cpu_server.render("A fox.", 42, 10.0)
+            await cpu_server.render_set("A fox.", [42], 10.0)
         self.assertEqual(raised.exception.code, "picture_cpu_busy")
+        self.assertEqual(raised.exception.expected, 131.0)
+
+    async def test_a_server_on_the_one_picture_form_is_asked_per_picture(
+        self,
+    ) -> None:
+        from aiohttp import web
+
+        calls: list[dict[str, Any]] = []
+
+        async def legacy(request: web.Request) -> web.Response:
+            body = await request.json()
+            calls.append(body)
+            if "seed" not in body:
+                return web.json_response({"code": "invalid_input"}, status=400)
+            return web.json_response(
+                {
+                    "image": png(),
+                    "nsfw": 0.001,
+                    "render_seconds": 20.0,
+                    "queue_seconds": 1.0,
+                }
+            )
+
+        app = web.Application()
+        app.router.add_post("/v1/render", legacy)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.addAsyncCleanup(runner.cleanup)
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = runner.addresses[0][1]
+        with patch.dict(
+            os.environ, {"ATLAS_PICTURE_CPU_URL": f"http://127.0.0.1:{port}"}
+        ):
+            pictures = await cpu_server.render_set("A fox.", [5, 6], 30.0)
+        self.assertEqual([c.get("seed") for c in calls], [None, 5, 6])
+        self.assertTrue(all(p is not None for p in pictures))
+
+    def test_expected_wait_without_server_measures(self) -> None:
+        self.assertEqual(
+            cpu_server.expected_wait({"queue": 3}, 2), 5 * cpu_server.PICTURE_SECONDS
+        )
+        self.assertEqual(
+            cpu_server.expected_wait({"queue": 3, "seconds_per_image": 10}, 1), 40.0
+        )
 
     async def test_unreachable_server(self) -> None:
         with patch.dict(os.environ, {"ATLAS_PICTURE_CPU_URL": "http://127.0.0.1:9"}):
