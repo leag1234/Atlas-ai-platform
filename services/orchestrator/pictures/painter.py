@@ -187,6 +187,16 @@ LABELS = (
     "left and right margins with leader lines to the parts: keep the subject "
     "in the middle three fifths of the picture."
 )
+# The short plan (2026-11-14, 10 corpus requests, 50 drafts against 40 without
+# it): median reasoning 960 tokens instead of 1310, 90th percentile 1920
+# instead of 4250, cut drafts 1 in 50 instead of 3 in 40, the same share of
+# requests with a good picture. A size target added to it cut the SVG by a
+# third but lost the people's poses on two requests out of ten: not kept.
+BRIEF = (
+    "\nTime matters: settle the composition in a short plan (a few lines), then "
+    "write the SVG directly; do not rehearse the SVG, its coordinates or the JSON "
+    "in your reasoning."
+)
 _LABEL_LINE = '- every label is a <text> element inside <g id="{id}">'
 _LABEL_BY_CODE = (
     "- {words}: no <text>; each named part in its own group with data-label "
@@ -223,7 +233,7 @@ def ids_text(ck: dict[str, Any]) -> str:
 
 
 def messages(
-    request: str, ck: dict[str, Any], *, animal_kit: bool
+    request: str, ck: dict[str, Any], *, animal_kit: bool, brief: bool = False
 ) -> list[dict[str, str]]:
     """System and user messages of one draft."""
     user = FREE_USER.format(subject=request) + NAMED.format(ids=ids_text(ck))
@@ -232,6 +242,8 @@ def messages(
         user += ANIMAL2
     if has_labels(ck):
         user += LABELS
+    if brief:
+        user += BRIEF
     return [
         {"role": "system", "content": FREE_SYSTEM},
         {"role": "user", "content": user},

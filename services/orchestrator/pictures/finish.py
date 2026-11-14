@@ -36,6 +36,29 @@ ET.register_namespace("", NS)
 RADIUS = {"thin": 2.0, "medium": 3.5, "thick": 6.0}
 
 Measure = dict[str, Any]
+# Room around an outlined group's extent for its contour filter, beyond the
+# contour width (the blur of the line and the 400 px measuring grid).
+CONTOUR_MARGIN = 8.0
+
+
+def _extent(g: Geometry, alpha: Any) -> list[float] | None:
+    """Where the group draws anything, in viewBox units (x0, y0, x1, y1); None
+    when its render touches the edge of the padded canvas (it may reach
+    further) or is empty."""
+    ys, xs = np.nonzero(alpha > 0)
+    if not len(xs):
+        return None
+    height, width = alpha.shape
+    if xs.min() == 0 or ys.min() == 0 or xs.max() >= width - 1:
+        return None
+    if ys.max() >= height - 1:
+        return None
+    return [
+        round(float((xs.min() - g.ox) * g.unit + g.vb[0]), 1),
+        round(float((ys.min() - g.oy) * g.unit + g.vb[1]), 1),
+        round(float((xs.max() + 1 - g.ox) * g.unit + g.vb[0]), 1),
+        round(float((ys.max() + 1 - g.oy) * g.unit + g.vb[1]), 1),
+    ]
 
 
 def measures(svg: str, ck: dict[str, Any]) -> list[Measure]:
@@ -61,6 +84,7 @@ def measures(svg: str, ck: dict[str, Any]) -> list[Measure]:
                 continue
             rgba = np.asarray(g.render(keep=shapes, filters=True)).astype(float)
             a = rgba[..., 3]
+            extent = _extent(g, a)
             seen = np.asarray(a >= 26)
             solid = np.asarray(a >= 230)
             # Away from the antialiased edge.
@@ -110,6 +134,7 @@ def measures(svg: str, ck: dict[str, Any]) -> list[Measure]:
                     "thin": round(thin, 3),
                     "sides": sides,
                     "box": box,
+                    "extent": extent,
                     "width_share": round((box[2] - box[0]) / g.vb[2], 3),
                     "dark": [int(v) for v in dark],
                     "body_lum": round(body, 1),
@@ -292,3 +317,37 @@ def apply(
             wrap.append(node)
             done["contour"].append(m["id"])
     return ET.tostring(root, encoding="unicode"), done
+
+
+def bound_contours(svg: str, ms: list[Measure]) -> str:
+    """The contour filters of apply() limited to their group's own extent.
+
+    apply() keeps the spike's filter region (the whole canvas and a margin) for
+    every outlined group, so each one filters a full-canvas buffer: 13 s of a
+    20 s draft job with twelve outlined groups (2026-11-14). Bounded to the
+    group's extent plus the contour width, the render is the same to a few
+    antialiased edge pixels and 3 to 25 times faster. A group without a known
+    extent, or under a transformed parent (its filter units are not the
+    viewBox's), keeps the canvas region.
+    """
+    root = ET.fromstring(svg)
+    filters = {f.get("id"): f for f in root.iter(Q + "filter")}
+    changed = False
+    for k, m in enumerate(ms):
+        f = filters.get(f"f13-contour-{k}")
+        extent = m.get("extent")
+        if f is None or not extent or m.get("moved_parent"):
+            continue
+        dilate = f.find(Q + "feMorphology")
+        try:
+            width = float(dilate.get("radius", "")) if dilate is not None else 0.0
+        except ValueError:
+            continue
+        pad = width + CONTOUR_MARGIN
+        x0, y0, x1, y1 = (float(v) for v in extent)
+        f.set("x", f"{x0 - pad:.0f}")
+        f.set("y", f"{y0 - pad:.0f}")
+        f.set("width", f"{x1 - x0 + 2 * pad:.0f}")
+        f.set("height", f"{y1 - y0 + 2 * pad:.0f}")
+        changed = True
+    return ET.tostring(root, encoding="unicode") if changed else svg

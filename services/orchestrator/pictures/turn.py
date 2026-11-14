@@ -2,7 +2,9 @@
 
 1. Checklist of the request (fast public profile, JSON, a few seconds).
 2. Four drafts in parallel by the painter role (sampling 0.7), with the
-   living map of the characters asked at the same time.
+   living map of the characters asked at the same time. With spare drafts
+   configured, one or two more start with them and the first four painted
+   are kept: the others are stopped.
 3. Each finished draft goes through the code steps in the picture worker
    (chain.py) as soon as it arrives.
 4. The finished candidates are ordered (fewest failed checks first) and shown
@@ -35,10 +37,13 @@ from packages.profiles import picture_profile
 from packages.user_errors import app_failure, app_quota
 from services.orchestrator.pictures import (
     animal_kit_enabled,
+    bounded_contours_enabled,
+    brief_plan_enabled,
     checklist,
     enabled,
     ordering,
     painter,
+    spare_drafts,
     store,
 )
 from services.orchestrator.pictures.routes import choice_url
@@ -53,6 +58,12 @@ CHECKLIST_BUDGET = Decimal("0.01")
 LIVING_BUDGET = Decimal("0.005")
 # Below this a draft cannot be written (spike: 0.0094 to 0.0105 EUR each).
 MINIMUM_DRAFT_BUDGET = Decimal("0.008")
+# A spare draft is started only while every draft keeps at least this share,
+# what the gateway reserves for a draft's whole output room (MAX_TOKENS and
+# the prompt): with less, the gateway lowers the draft's output limit and cuts
+# long drafts (2026-11-14: a 0.0229 EUR share became a 9000-token limit). A
+# draft actually costs 0.009 to 0.021 EUR, median 0.0135 with the short plan.
+SPARE_DRAFT_SHARE = Decimal("0.028")
 CHECKLIST_SECONDS = 25.0
 LIVING_SECONDS = 15.0
 # The painter keeps going until this many seconds after the drafts started;
@@ -164,12 +175,25 @@ class Spend:
         return max(Decimal(0), self.ceiling - self.total)
 
 
+def affordable_spares(left: Decimal) -> int:
+    """Spare drafts the allowance left can pay without shrinking any draft's
+    share below SPARE_DRAFT_SHARE (fewer than configured, possibly none)."""
+    spares = spare_drafts()
+    while spares and (left - LIVING_BUDGET) / (painter.DRAFTS + spares) < (
+        SPARE_DRAFT_SHARE
+    ):
+        spares -= 1
+    return spares
+
+
 @dataclass
 class Draft:
     index: int
     painting: bool = True
     result: dict[str, Any] | None = None
     error: str = ""
+    # A spare draft stopped because four others were painted: not a failure.
+    spare_stopped: bool = False
 
 
 class Refused(Exception):
@@ -329,11 +353,30 @@ async def draw(
                 f"microEUR; request ceiling {ceiling} EUR",
             )
         )
-    messages = painter.messages(request_text, ck, animal_kit=animal_kit_enabled())
-    drafts = [Draft(index) for index in range(painter.DRAFTS)]
+    # Spare drafts: the slowest drafts (a long reasoning, a failed stream) no
+    # longer set the wait; the first four painted are kept.
+    spares = affordable_spares(spend.remaining())
+    if spares:
+        per_draft = (spend.remaining() - LIVING_BUDGET) / (painter.DRAFTS + spares)
+    messages = painter.messages(
+        request_text,
+        ck,
+        animal_kit=animal_kit_enabled(),
+        brief=brief_plan_enabled(),
+    )
+    drafts = [Draft(index) for index in range(painter.DRAFTS + spares)]
     living: dict[str, bool] | None = None
     living_lock = asyncio.Lock()
     finished = 0
+    painted = 0
+    tasks: dict[asyncio.Task[None], Draft] = {}
+
+    def stop_spares() -> None:
+        """Four drafts painted: stop the ones still painting."""
+        for task, other in tasks.items():
+            if other.painting and not task.done():
+                other.spare_stopped = True
+                task.cancel()
 
     async def living_map() -> dict[str, bool]:
         nonlocal living
@@ -343,7 +386,7 @@ async def draw(
             return living
 
     async def one(draft: Draft) -> None:
-        nonlocal finished
+        nonlocal finished, painted
         seconds = max(30.0, min(DRAFT_SECONDS, end - time.monotonic() - 10))
         payload = {
             "messages": messages,
@@ -370,6 +413,9 @@ async def draw(
         if svg is None:
             draft.error = "picture_draft_" + how.split(" ")[0]
             return
+        painted += 1
+        if spares and painted == painter.DRAFTS:
+            stop_spares()
         result = await run_job(
             "draft",
             {
@@ -377,6 +423,7 @@ async def draw(
                 "checklist": ck,
                 "living": await living_map(),
                 "animal_kit": animal_kit_enabled(),
+                "bounded_contours": bounded_contours_enabled(),
                 "labels_group": painter.labels_group(ck),
             },
         )
@@ -388,7 +435,7 @@ async def draw(
         await _status("drawing_done", language, done=finished)
 
     painting_started = time.monotonic()
-    tasks = {asyncio.create_task(one(draft)): draft for draft in drafts}
+    tasks.update({asyncio.create_task(one(draft)): draft for draft in drafts})
     refusal: BaseException | None = None
     pending = set(tasks)
     try:
@@ -410,7 +457,8 @@ async def draw(
             for task in done:
                 draft = tasks[task]
                 if task.cancelled():
-                    draft.error = draft.error or "picture_draft_cancelled"
+                    if not draft.spare_stopped:
+                        draft.error = draft.error or "picture_draft_cancelled"
                     continue
                 failure = task.exception()
                 if failure is None:
@@ -437,12 +485,12 @@ async def draw(
     for draft in drafts:
         if draft.result is None and draft.error:
             errors.append(draft.error)
-        elif draft.result is None:
+        elif draft.result is None and not draft.spare_stopped:
             errors.append("picture_draft_timeout")
     results = [d.result for d in drafts if d.result is not None]
     order = ordering.rank([result["measure"] for result in results])
     timings["total"] = (time.monotonic() - started) * 1000
-    return [results[i] for i in order], spend, ck, timings
+    return [results[i] for i in order[: painter.DRAFTS]], spend, ck, timings
 
 
 async def _store_image(image: dict[str, Any]) -> str:

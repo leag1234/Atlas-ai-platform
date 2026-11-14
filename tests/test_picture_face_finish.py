@@ -145,6 +145,83 @@ class ContourRuleTests(unittest.TestCase):
         ET.fromstring(out)
 
 
+def regions(svg: str) -> dict[str, tuple[float, float, float, float]]:
+    out: dict[str, tuple[float, float, float, float]] = {}
+    for f in ET.fromstring(svg).iter(f"{{{SVG_NS}}}filter"):
+        if str(f.get("id", "")).startswith("f13-contour-"):
+            x, y, w, h = (float(f.get(k, "0")) for k in ("x", "y", "width", "height"))
+            out[str(f.get("id"))] = (x, y, w, h)
+    return out
+
+
+class BoundContourTests(unittest.TestCase):
+    """Contour filters bounded to their group: the same picture, a smaller region."""
+
+    def test_spike_drafts_render_the_same(self) -> None:
+        import numpy as np
+
+        from services.orchestrator.pictures import render
+
+        expected = json.loads((FIXTURES / "expected.json").read_text())
+        for name in expected:
+            with self.subTest(draft=name):
+                draft = (FIXTURES / f"{name}.svg").read_text()
+                ck = json.loads((FIXTURES / f"{name}.checklist.json").read_text())[
+                    "checklist"
+                ]
+                faced, _ = face_kit.apply(draft, ck)
+                ms = finish.measures(faced, ck)
+                wide, done = finish.apply(faced, ms, "auto", True)
+                bound = finish.bound_contours(wide, ms)
+                before, after = regions(wide), regions(bound)
+                self.assertEqual(set(before), set(after))
+                self.assertTrue(done["contour"])
+                for key, (x, y, w, h) in after.items():
+                    self.assertEqual(before[key], (-205.0, -205.0, 1434.0, 1434.0))
+                    self.assertLess(w * h, 1434.0 * 1434.0)
+                    self.assertGreater(w, 0)
+                    self.assertGreater(h, 0)
+                a = np.asarray(
+                    render.image(wide, 512, background="#ffffff", mode="RGB")
+                )
+                b = np.asarray(
+                    render.image(bound, 512, background="#ffffff", mode="RGB")
+                )
+                gap = np.abs(a.astype(int) - b.astype(int)).max(axis=2)
+                # A few antialiased edge pixels at most, nothing clipped.
+                self.assertLess(int((gap > 8).sum()), 0.001 * gap.size)
+
+    def test_unknown_extent_or_moved_group_keeps_the_canvas_region(self) -> None:
+        svg = (
+            f'<svg {NS} viewBox="0 0 1024 1024">'
+            '<rect width="1024" height="1024" fill="#d8eefa"/>'
+            '<g transform="translate(40 0)"><g id="fox"><ellipse cx="200" cy="300"'
+            ' rx="110" ry="80" fill="#d9772b"/></g></g>'
+            '<g id="cat"><ellipse cx="700" cy="600" rx="90" ry="70" fill="#7a5230"/>'
+            "</g></svg>"
+        )
+        ck = checklist(("fox", "character"), ("cat", "character"))
+        ms = finish.measures(svg, ck)
+        by_id = {m["id"]: m for m in ms}
+        self.assertTrue(by_id["fox"]["moved_parent"])
+        self.assertIsNotNone(by_id["cat"]["extent"])
+        wide, done = finish.apply(svg, ms, "auto", False)
+        self.assertEqual(set(done["contour"]), {"fox", "cat"})
+        bound = regions(finish.bound_contours(wide, ms))
+        index = {m["id"]: k for k, m in enumerate(ms)}
+        self.assertEqual(
+            bound[f"f13-contour-{index['fox']}"], (-205.0, -205.0, 1434.0, 1434.0)
+        )
+        x, y, w, h = bound[f"f13-contour-{index['cat']}"]
+        self.assertLessEqual(x, 610)
+        self.assertGreaterEqual(x + w, 790)
+        self.assertLessEqual(y, 530)
+        self.assertGreaterEqual(y + h, 670)
+        self.assertLess(w, 300)
+        no_extent = [dict(m, extent=None) for m in ms]
+        self.assertEqual(finish.bound_contours(wide, no_extent), wide)
+
+
 def diagram(parts: list[tuple[str, str, float, float, float]], view: str) -> str:
     groups = "".join(
         f'<g id="{i}" data-label={quoteattr(text)}><circle cx="{x}" cy="{y}" r="{r}"'

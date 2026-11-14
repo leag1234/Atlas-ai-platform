@@ -87,7 +87,7 @@ def process_draft(payload: dict[str, Any]) -> dict[str, Any]:
     """One painter draft through the code steps.
 
     Input: svg (recovered text), checklist, living (id -> bool), animal_kit,
-    labels_group. Output: the final SVG, its 1024 px render, a 512 px render
+    bounded_contours (finish.bound_contours), labels_group. Output: the final SVG, its 1024 px render, a 512 px render
     for the contact sheet, the ordering measure and a short report.
     """
     from services.orchestrator.pictures import (
@@ -120,12 +120,14 @@ def process_draft(payload: dict[str, Any]) -> dict[str, Any]:
     measure = ordering.measure(svg, ck, living)
     report["measure_seconds"] = round(time.monotonic() - measured, 2)
     svg = _step(report, "face", svg, lambda s: face_kit.apply(s, ck))
-    svg = _step(
-        report,
-        "finish",
-        svg,
-        lambda s: finish.apply(s, finish.measures(s, ck), "auto", True),
-    )
+    bounded = bool(payload.get("bounded_contours"))
+
+    def finished(s: str) -> tuple[str, Any]:
+        ms = finish.measures(s, ck)
+        out, done = finish.apply(s, ms, "auto", True)
+        return (finish.bound_contours(out, ms) if bounded else out), done
+
+    svg = _step(report, "finish", svg, finished)
     final = sanitise(svg)
     picture = render.image(final, PICTURE_PX, background="#ffffff", mode="RGB")
     mime, data = _encode(picture)
