@@ -21,7 +21,37 @@ from services.orchestrator.code_ui import legacy_project_route, project_mode
 from services.retrieval.project_identity import ProjectError
 
 NETWORK = "atlas-files"
-IMAGE = "ghcr.io/open-webui/open-terminal@sha256:3d52176700f2442e20556ef129ae980613389be773e269cf7fa0118f3b55669d"
+UPSTREAM_IMAGE = "ghcr.io/open-webui/open-terminal@sha256:3d52176700f2442e20556ef129ae980613389be773e269cf7fa0118f3b55669d"
+
+
+def work_image(value: str | None = None) -> str:
+    """The execution image for Work commands, the files terminal and code execution.
+
+    ATLAS_WORK_IMAGE names an image built from infra/docker/Dockerfile.work (the
+    upstream image plus the Go toolchain), pinned either by repository digest
+    (name@sha256:...) or, for a locally built image, by image ID (sha256:...).
+    Unset, the pinned upstream image is used: Python, Node.js and gcc, without Go.
+    """
+    image = (os.environ.get("ATLAS_WORK_IMAGE", "") if value is None else value).strip()
+    if not image:
+        return UPSTREAM_IMAGE
+    if re.fullmatch(r"(?:[^@\s]+@)?sha256:[0-9a-f]{64}", image) is None:
+        raise RuntimeError(
+            "invalid_configuration: ATLAS_WORK_IMAGE must be name@sha256:<64 hex> "
+            "or an image ID sha256:<64 hex>"
+        )
+    return image
+
+
+def toolchains(image: str) -> str:
+    """Languages Work commands can build and run offline in ``image``."""
+    return "Python 3, Node.js with npm, gcc/g++" + (
+        "" if image == UPSTREAM_IMAGE else " and Go"
+    )
+
+
+IMAGE = work_image()
+TOOLCHAINS = toolchains(IMAGE)
 
 
 def disable_webui_file_processing(header: bytes) -> bytes:

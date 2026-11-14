@@ -113,7 +113,8 @@ def docker_arguments(
         "--user",
         "1000:1000",
         "--tmpfs",
-        "/tmp:rw,nosuid,nodev,size=256m,uid=1000,gid=1000",
+        # exec: go test and go run build and run binaries in /tmp (tmpfs is noexec by default).
+        "/tmp:rw,exec,nosuid,nodev,size=256m,uid=1000,gid=1000",
         "--tmpfs",
         "/home/atlas:rw,nosuid,nodev,size=256m,uid=1000,gid=1000",
         *(["--label", "atlas.work=" + workspace.scope_key] if workspace.scoped else []),

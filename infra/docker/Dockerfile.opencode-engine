@@ -1,11 +1,17 @@
 # Per-turn opencode engine container for the Work engine (step 1c).
-# Built on the same Work image as the terminal workers; adds only Node and
-# the pinned opencode CLI. The opencode-ai npm package ships its binary
+# Built on the same Work image as the terminal workers (Dockerfile.work): the
+# same base and the same pinned Go toolchain, plus the pinned opencode CLI.
+# Build from the repository root:
+#   docker build -f infra/docker/Dockerfile.opencode-engine -t atlas-opencode-engine:local .
+# The opencode CLI. The opencode-ai npm package ships its binary
 # through platform-specific optional dependencies; its postinstall script
 # links the binary for this platform, so install scripts must run.
 FROM ghcr.io/open-webui/open-terminal@sha256:3d52176700f2442e20556ef129ae980613389be773e269cf7fa0118f3b55669d
 
 USER root
+
+COPY infra/docker/install-go.sh /usr/local/share/atlas/install-go.sh
+RUN sh /usr/local/share/atlas/install-go.sh
 
 RUN if ! command -v node >/dev/null 2>&1; then \
         apt-get update \

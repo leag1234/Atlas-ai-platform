@@ -21,6 +21,7 @@ from services.orchestrator.code_verification import Verification
 from services.orchestrator.code_workspace import Audit, Workspace, redact
 from services.orchestrator.loop import Call, Message, Reservation
 from services.orchestrator.stream_client import Sink
+from services.orchestrator.terminal_stack import TOOLCHAINS
 from decimal import Decimal
 
 
@@ -91,7 +92,9 @@ class Write(Arguments):
 class Command(Arguments):
     command: str = Field(min_length=1, max_length=15000)
     timeout_seconds: float = Field(default=30, gt=0, le=120)
-    memory_mb: int = Field(default=256, ge=32, le=512)
+    # Compiling a standard library from source (go test on a cold cache) needs about
+    # 320 MiB of data; the container memory limit stays the hard ceiling.
+    memory_mb: int = Field(default=512, ge=32, le=512)
 
 
 class PlanItem(Arguments):
@@ -123,7 +126,9 @@ DESCRIPTIONS = {
     "search": "Search literal text recursively, returning bounded file:line matches.",
     "edit_file": "Replace old_text exactly once; fails if absent or ambiguous; an empty old_text creates a missing or empty file; returns unified diff.",
     "write_file": "Write a UTF-8 workspace file, at most 256 KiB; returns unified diff.",
-    "run_command": "Run a shell command in the workspace. Network access is disabled unless the owner enables filtered registry egress. Return exit code and bounded output. Run tests to verify your changes.",
+    "run_command": "Run a shell command in the workspace. Network access is disabled unless the owner enables filtered registry egress. Return exit code and bounded output. Run tests to verify your changes. Installed toolchains: "
+    + TOOLCHAINS
+    + "; standard-library programs and their tests build and run offline (for example go test ./..., node --test, npm test, python3 -m unittest). The first Go build of a session compiles the standard library: give it timeout_seconds 120.",
     "update_plan": "Replace the pinned task list with pending, in_progress, or completed items.",
     "request_approval": "Pause until the owner allows or denies the named action, or the approval expires. Approval does not grant network access.",
 }
