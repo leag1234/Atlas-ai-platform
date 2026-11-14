@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 
+from packages.privacy import require_shared
 from services.orchestrator.web import USER_AGENT, http_timeout
 
 FEED_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml"
@@ -125,6 +126,9 @@ class RateBook:
         return fetched.time() >= PUBLICATION or local.time() < PUBLICATION
 
     async def rates(self, timeout: float) -> Rates:
+        # Strict privacy keeps every third-party egress closed, this public
+        # feed included (packages.privacy).
+        require_shared("currency_rates")
         async with self.lock:
             now = self.clock()
             if self.current is not None and self.fresh(now):

@@ -41,6 +41,7 @@ STRICT_EXCLUDED_TOOLS = frozenset(
         "web_search",
         "web_fetch",
         "web_images",
+        "currency_convert",
         "mcp_call",
         "switch_connector_group",
     }

@@ -16,6 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from packages.privacy import StrictPrivacyUnavailable
 from packages.validation import describe_validation
 from services.orchestrator import datecalc, fx_rates, units
 from services.orchestrator.loop import Message
@@ -155,6 +156,8 @@ async def execute(
         }
     except (datecalc.DateError, units.UnitError, fx_rates.RatesError) as exc:
         return {"error": exc.code, "message": str(exc)}
+    except StrictPrivacyUnavailable as exc:
+        return {"error": exc.code, "message": exc.message}
     return {"data": data}
 
 

@@ -41,8 +41,10 @@ malformed or unexpected feed is an `exchange_rates_unavailable` or
 `exchange_rates_invalid` error; no rate is ever estimated. When the person gives
 their own rate, the tool description sends the model to `calculator`.
 
-The rate download sends no request content (fixed URL, no query), so it stays
-available in strict privacy mode, where web search is not.
+Strict privacy mode closes every third-party egress, so the rate download is
+refused there with `strict_privacy_unavailable` and `currency_convert` is not
+offered on strict turns (`packages.privacy.STRICT_EXCLUDED_TOOLS`); dates and
+units are pure code and stay available.
 
 ## Survey of existing libraries (2026-11-14)
 

@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import aiohttp
 
+from packages import privacy
 from services.orchestrator import datecalc, exact_tools, fx_rates, units
 from services.orchestrator.chat_pipeline import ChatTools
 from services.orchestrator.interactions import Interaction
@@ -302,6 +303,16 @@ class CurrencyTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(result["error"], "exchange_rates_unavailable")
         self.assertNotIn("data", result)
+        token = privacy.elevate(privacy.STRICT)
+        try:
+            refused = await exact_tools.execute(
+                "currency_convert",
+                '{"amount": 10, "from_currency": "EUR", "to_currency": "USD"}',
+                5,
+            )
+        finally:
+            privacy.reset(token)
+        self.assertEqual(refused["error"], "strict_privacy_unavailable")
 
     async def test_chat_records_the_rate_feed_as_a_retrieved_source(self) -> None:
         book, _, _ = self.book(FEED)
