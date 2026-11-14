@@ -206,3 +206,54 @@ class FolderHeaderTests(unittest.TestCase):
             "let row = control.parentElement; while (row?.parentElement && row.children.length === 1) row = row.parentElement;",
             js,
         )
+
+
+class SidebarReloadTests(unittest.TestCase):
+    """The project list stays in the sidebar after a reload (owner-visible defect, 2026-11-14)."""
+
+    def test_the_sidebar_organization_outlives_the_project_view(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn("let homeOrg = '', projectsOrg = '';", js)
+        self.assertIn("const hostOrg = () => scope?.org || homeOrg;", js)
+        body = js[js.index("function installNavigation()") :][:4000]
+        self.assertIn(
+            "const org = hostOrg(), shown = Boolean(org && projectsOrg === org && projects.length);",
+            body,
+        )
+        self.assertNotIn("scope?.org && projects.length", body)
+        self.assertNotIn("scope.org", body)
+
+    def test_an_ordinary_page_load_reads_the_project_list(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn("await mount(); else loadSidebarProjects();", js)
+        body = js[js.index("async function loadSidebarProjects()") :][:1500]
+        # Outside the view's request generation, retried on a network error or a 5xx only.
+        self.assertNotIn("list(", body)
+        self.assertIn("if (error.status && error.status < 500) return;", body)
+        self.assertIn("projects = items; projectsOrg = org; installNavigation();", body)
+
+    def test_sidebar_rows_open_the_view_from_a_chat_page(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn(
+            "const openView = value => root?.isConnected ? choose(value) : mount(value);",
+            js,
+        )
+        self.assertIn("const value = initial || {org:q.get('org')", js)
+        body = js[js.index("function installNavigation()") :][:4000]
+        self.assertIn("openView({org,project:value.id})", body)
+        self.assertIn(
+            "openView({org,project:value.id,conversation:conversation.id})", body
+        )
+
+    def test_move_menu_and_sidebar_actions_use_the_sidebar_organization(self) -> None:
+        js = read("project_mode.js")
+        self.assertIn("if (owned || !identity || !hostOrg()) return;", js)
+        self.assertIn(
+            "const projectPath = project => `/api/atlas/orgs/${hostOrg()}/projects/${project.id}`;",
+            js,
+        )
+        for name in ("async function importNativeChat", "async function moveMenu"):
+            start = js.index(name)
+            body = js[start : js.index("\n  }\n", start)]
+            self.assertIn("hostOrg()", body)
+            self.assertNotIn("scope.org", body)
