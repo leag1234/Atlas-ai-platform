@@ -1093,11 +1093,12 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
     )
     model.tools = []
     model.observing = True
-    # Same reason as the limits below: the gateway allows a deadline above 120 s only
-    # to a call that writes a file (staging -42, en-draw-10: timeout_budget refused).
-    model.produces_files = True
     model.sink = None
-    model.configure_quality(request.model, request.max_tokens)
+    # The drawing is one whole SVG written in one call: the gateway and the loop
+    # allow it the turn's longer deadline only with the file flag. configure_quality
+    # sets the flag, so it is given here (setting it before was silently reset:
+    # staging -44, en-draw-10, the repair call refused as invalid_limits).
+    model.configure_quality(request.model, request.max_tokens, produces_files=True)
     model.local_enabled = os.environ.get("GPU_LOCAL", "0") == "1"
     tools = ChatTools(item, request.user_text, allow_image=False)
     result = await run(
