@@ -96,13 +96,13 @@ def targets(
     name: str, effort: str, *, strict: bool = False, pinned: bool = False
 ) -> tuple[str, tuple[Target, ...]]:
     usage = public_model(name)
-    strict = strict or privacy.is_strict()
+    strict = strict or privacy.owned_only()
     if pinned:
         target = pinned_target(name)
         if target is None:
             raise ValueError("invalid_model")
         if strict and target.privacy != "owned":
-            raise privacy.StrictPrivacyUnavailable("inference")
+            raise privacy.refusal("inference")
         return usage, (target,)
     entries = config().get("usages", {}).get(usage, {}).get(effort)
     if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
@@ -120,7 +120,7 @@ def targets(
     if strict:
         selected = tuple(target for target in selected if target.privacy == "owned")
         if not selected:
-            raise privacy.StrictPrivacyUnavailable("inference")
+            raise privacy.refusal("inference")
     if not selected or effort not in EFFORTS:
         raise ValueError("invalid_model")
     return usage, selected

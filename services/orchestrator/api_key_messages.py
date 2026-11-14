@@ -81,6 +81,10 @@ async def messages(request: Request) -> Response:
         raw = json.loads(body)
         if not isinstance(raw, dict) or not isinstance(raw.get("model"), str):
             return error(400, "invalid_request")
+        from services.orchestrator.api_key_edge import body_privacy
+
+        if (refused := body_privacy(request, raw)) is not None:
+            return refused
         if (
             any(
                 raw.get(field)

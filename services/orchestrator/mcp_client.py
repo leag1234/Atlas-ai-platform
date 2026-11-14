@@ -121,11 +121,12 @@ def audit(call: MCPCall, state: str, started: float) -> None:
 
 
 async def execute(raw: str, timeout: float) -> dict[str, object]:
-    from packages.privacy import CODE, describe, is_strict
+    from packages.privacy import allows, refusal
 
-    if is_strict():
+    if not allows("connectors"):
         # Connector servers are third parties: not in strict privacy.
-        return {"error": CODE, "message": describe("connectors")}
+        refused = refusal("connectors")
+        return {"error": refused.code, "message": refused.message}
     call, started, state = None, time.monotonic(), "error"
     try:
         if len(raw.encode()) > 16384:

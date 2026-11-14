@@ -63,6 +63,7 @@ from services.orchestrator.artifact_routes import ArtifactHeadersMiddleware
 
 from services.orchestrator.app import app as harness_app
 from services.orchestrator.user_memory_ui import router as user_memory_router
+from services.orchestrator.conversation_privacy import router as privacy_router
 from services.orchestrator.voice_ui import router as voice_router
 from services.orchestrator.dictation import router as dictation_router
 from services.orchestrator.machine_connect import router as machine_connect_router
@@ -131,6 +132,7 @@ async def remove_nearby_location(token: UUID, request: Request) -> Response:
 
 app.include_router(key_ui_router)
 app.include_router(user_memory_router)
+app.include_router(privacy_router)
 app.include_router(voice_router)
 app.include_router(dictation_router)
 app.mount("/api/atlas/v1", key_app)
@@ -419,6 +421,21 @@ async def chat(request: Request) -> Response:
             native_chat = request.headers.get("x-openwebui-chat-id", "")
             if re.fullmatch(r"[A-Za-z0-9:_-]{1,120}", native_chat):
                 payload.__dict__["native_chat_id"] = native_chat
+            interface_user = request.headers.get("x-openwebui-user-id", "")
+            if authenticated_key is None and interface_user:
+                from packages.privacy import elevate
+                from services.orchestrator.conversation_privacy import bind
+
+                # The conversation's own level (chosen next to the composer) holds for
+                # every call of this request; the organisation minimum is always in
+                # force (packages.privacy). Never lowered.
+                elevate(
+                    await asyncio.to_thread(
+                        bind,
+                        interface_user,
+                        str(payload.__dict__.get("native_chat_id", "")),
+                    )
+                )
             item.question = payload.user_text
             if payload.stream:
                 streaming = True

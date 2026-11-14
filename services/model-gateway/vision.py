@@ -31,15 +31,16 @@ from packages.context_limit import ContextExceeded
 
 
 def owned_vision_model() -> str | None:
-    """Strict privacy: the owned endpoint's vision model, else a named refusal.
+    """Strict or Enhanced privacy: the owned endpoint's vision model, else a named
+    refusal (an image cannot be pseudonymised: owner decision 2026-11-14).
 
-    Outside strict privacy: None (the configured shared vision provider is used).
+    At the Standard level: None (the configured shared vision provider is used).
     """
-    if not privacy.is_strict():
+    if privacy.allows("vision"):
         return None
     model = provider_settings.preset_value("owned-vllm", "vision_model")
     if not model:
-        raise privacy.StrictPrivacyUnavailable("vision")
+        raise privacy.refusal("vision")
     provider_settings.owned_endpoint()
     return str(model)
 

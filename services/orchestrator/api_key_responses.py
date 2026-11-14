@@ -31,6 +31,10 @@ async def respond(request: Request) -> Response:
             return error(400, "invalid_request")
     except (ValueError, TimeoutError, RecursionError):
         return error(400, "invalid_request")
+    from services.orchestrator.api_key_edge import body_privacy
+
+    if (refused := body_privacy(request, raw)) is not None:
+        return refused
 
     from packages.api_content import assistant_name
 

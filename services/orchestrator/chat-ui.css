@@ -598,3 +598,37 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 /* Open WebUI's chat controls panel (system prompt and Ollama parameters) is not part of Atlas: hide its button and panel.
    Open WebUI 0.13 reuses #controls-container for the workspace tab bar (chat title and chat menu): that one stays. */
 :is(button[data-atlas-controls],button[aria-label="Controls"],#controls-container:not(:has([data-panel-tab-bar])),#controls-resizer) { display:none!important; }
+/* Privacy level pill (chat-ui.js): laid over the page above the composer's top-left corner, in document.body, below menus (z 50) and dialogs. */
+.atlas-privacy-pill { position:fixed; z-index:44; box-sizing:border-box; display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 11px 0 9px; border:1px solid var(--atlas-border); border-radius:14px; background:var(--atlas-bg); color:var(--atlas-muted); font-family:var(--atlas-font); font-size:12.5px; line-height:1; cursor:pointer; }
+.atlas-privacy-pill[hidden], .atlas-privacy-menu[hidden] { display:none; }
+/* Its shield icon. */
+.atlas-privacy-pill svg { width:15px; height:15px; flex:none; }
+/* Hover and keyboard focus. */
+.atlas-privacy-pill:hover { color:var(--atlas-text); } .atlas-privacy-pill:focus-visible { outline:2px solid var(--atlas-accent); outline-offset:2px; }
+/* Enhanced and Strict stand out in the accent colour: the user sees at a glance that the conversation is protected. */
+.atlas-privacy-pill:is([data-level="enhanced"],[data-level="strict"]) { border-color:var(--atlas-accent); color:var(--atlas-accent); font-weight:600; }
+/* Dark mode: the pill sits on the black page with a lighter border. */
+html.dark .atlas-privacy-pill { background:var(--atlas-surface); }
+/* The level selector: one line per level saying what leaves Atlas. */
+.atlas-privacy-menu { position:fixed; z-index:46; box-sizing:border-box; display:flex; flex-direction:column; gap:4px; padding:10px; border:1px solid var(--atlas-border); border-radius:16px; background:var(--atlas-bg); color:var(--atlas-text); font-family:var(--atlas-font); font-size:var(--atlas-ui-size); box-shadow:0 6px 24px rgba(0,0,0,.12); }
+/* Dark mode: a deeper shadow and the raised surface. */
+html.dark .atlas-privacy-menu { background:var(--atlas-surface); box-shadow:0 6px 24px rgba(0,0,0,.6); }
+/* Selector title. */
+.atlas-privacy-title { margin:2px 6px 6px; color:var(--atlas-muted); font-size:12.5px; }
+/* One choice: name on the first line, what leaves Atlas below, the reason when it cannot be chosen. */
+.atlas-privacy-choice { display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; padding:8px 10px; border:1px solid transparent; border-radius:12px; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.atlas-privacy-choice:hover:not(:disabled) { background:var(--atlas-surface); }
+/* Dark mode: the hover uses the page background on the raised menu. */
+html.dark .atlas-privacy-choice:hover:not(:disabled) { background:var(--atlas-bg); }
+/* The current level: accent border and name. */
+.atlas-privacy-choice[aria-checked="true"] { border-color:var(--atlas-accent); }
+.atlas-privacy-choice[aria-checked="true"] .atlas-privacy-name { color:var(--atlas-accent); }
+.atlas-privacy-name { font-weight:600; }
+.atlas-privacy-text, .atlas-privacy-reason { color:var(--atlas-muted); font-size:12.5px; line-height:1.35; }
+/* A level that cannot be chosen here stays visible, dimmed, with its reason. */
+.atlas-privacy-choice:disabled { cursor:default; opacity:.6; }
+.atlas-privacy-reason { font-style:italic; }
+/* Failure to change the level, in a readable sentence. */
+.atlas-privacy-error { margin:4px 6px 0; color:#b42318; font-size:12.5px; }
+/* Dark mode: the error colour keeps its contrast. */
+html.dark .atlas-privacy-error { color:#ff8a80; }

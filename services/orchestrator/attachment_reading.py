@@ -59,7 +59,7 @@ async def _scaleway_ocr(page: bytes, timeout: float) -> str:
 
     from packages.privacy import require_shared
 
-    # The OCR model runs at the shared provider: never in strict privacy.
+    # The OCR model runs at the shared provider: never in strict or enhanced privacy.
     require_shared("ocr")
     model = os.environ.get("ATLAS_OCR_MODEL", "")
     if not model:
@@ -139,11 +139,12 @@ async def extract_attachment_with_ocr(
         from services.orchestrator.documents import extract_document
 
         return extract_document(attachment), Decimal(0), []
-    from packages.privacy import is_strict
+    from packages.privacy import allows, refusal
 
-    if ocr_client is _scaleway_ocr and is_strict() and missing:
-        # Strict privacy: no owned OCR engine, so scanned pages stay unread and
-        # the answer names why; the text layer is still read locally.
+    if ocr_client is _scaleway_ocr and not allows("ocr") and missing:
+        # Strict or Enhanced privacy: no owned OCR engine, so scanned pages stay
+        # unread and the answer names why; the text layer is still read locally.
+        refused = refusal("ocr")
         text, pages, errors = extract_bytes(raw, ".pdf")
         errors = [
             error
@@ -151,7 +152,7 @@ async def extract_attachment_with_ocr(
             if not any(f"PDF page {page}/" in error for page in missing)
         ] + [
             f"PDF page {page}/{len(reader.pages)} has no text layer; OCR refused "
-            "(strict_privacy_unavailable: no owned OCR server)"
+            f"({refused.code}: no owned OCR server)"
             for page in missing
         ]
         return (

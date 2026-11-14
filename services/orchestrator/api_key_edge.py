@@ -14,6 +14,7 @@ import aiohttp
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
+from packages import privacy
 from packages.profiles import accepted_profile, default_profile, PROFILES
 from services.orchestrator.api_key_messages import install as install_messages
 from services.orchestrator.api_keys import (
@@ -44,6 +45,46 @@ def error(status: int, code: str, **values: object) -> JSONResponse:
             **({"WWW-Authenticate": "Bearer"} if status == 401 else {}),
         },
     )
+
+
+def privacy_refusal(exc: privacy.PrivacyRefusal) -> JSONResponse:
+    """A permanent privacy refusal: 403 with its code, feature and level (no retry)."""
+    body = exc.body()
+    return error(
+        exc.status,
+        exc.code,
+        message=body["message"],
+        feature=body["feature"],
+        level=body["level"],
+    )
+
+
+def apply_privacy(request: Request, asked: object) -> JSONResponse | None:
+    """Raise the request's privacy level to ``asked`` (header or body ``privacy``).
+
+    The applied level is the highest of the organisation minimum, the key's default and
+    every value the request gives; it is never lowered. Unknown values are refused (400);
+    Enhanced is refused where the operator has not enabled it (403).
+    """
+    try:
+        level = privacy.parse(asked)
+    except privacy.InvalidPrivacyLevel as exc:
+        return error(400, exc.code, message=exc.message)
+    if level is not None and not privacy.offered(level):
+        return privacy_refusal(privacy.PrivacyRefusal("pseudonymisation", level))
+    request.state.privacy = privacy.highest(
+        getattr(request.state, "privacy", None), level, privacy.minimum()
+    )
+    # Every provider call made for this request checks this level (packages.privacy).
+    privacy.elevate(request.state.privacy)
+    return None
+
+
+def body_privacy(request: Request, raw: object) -> JSONResponse | None:
+    """The body's own ``privacy`` field; removed so it never reaches a provider."""
+    if not isinstance(raw, dict) or "privacy" not in raw:
+        return None
+    return apply_privacy(request, raw.pop("privacy"))
 
 
 def project_organization(org_id: str) -> bool:
@@ -128,16 +169,10 @@ async def authenticate(
         request.state.context_trim = (
             request.headers.get("x-atlas-context-trim", "").lower() == "on"
         )
-        request.state.privacy = (
-            "strict"
-            if request.headers.get("x-atlas-privacy", "").lower() == "strict"
-            or principal.privacy == "strict"
-            else "standard"
-        )
-        # Every provider call made for this request checks this level (packages.privacy).
-        from packages.privacy import elevate
-
-        elevate(request.state.privacy)
+        request.state.privacy = privacy.highest(principal.privacy)
+        refused = apply_privacy(request, request.headers.get("x-atlas-privacy"))
+        if refused is not None:
+            return refused
         # Discard every client identity assertion, including the user budget selector.
         request.scope["headers"] = [
             (name, value)
@@ -150,6 +185,8 @@ async def authenticate(
             del request._headers
         response = await next_call(request)
         response.headers["Cache-Control"] = "no-store"
+        # The level this request was served at (raised by the body field if any).
+        response.headers[privacy.APPLIED_HEADER] = request.state.privacy
         return response
     except PermissionError:
         if store is not None and principal is not None:
@@ -295,6 +332,8 @@ async def chat(request: Request) -> Response:
         return error(400, "invalid_request")
     if not isinstance(raw, dict):
         return error(400, "invalid_request")
+    if (refused := body_privacy(request, raw)) is not None:
+        return refused
     if (
         any(
             raw.get(name)
@@ -422,6 +461,8 @@ async def embeddings(request: Request) -> Response:
         return error(400, "invalid_request")
     if not isinstance(raw, dict):
         return error(400, "invalid_request")
+    if (refused := body_privacy(request, raw)) is not None:
+        return refused
     unknown = set(raw) - {"model", "input", "encoding_format", "dimensions", "user"}
     if unknown:
         return error(
@@ -480,12 +521,8 @@ async def embeddings(request: Request) -> Response:
             "invalid_request",
             message="encoding_format: float or base64; dimensions: 32 to 4096",
         )
-    if request.state.privacy == "strict":
-        return error(
-            503,
-            "strict_privacy_unavailable",
-            message="No owned embedding server is available for strict privacy mode.",
-        )
+    if not privacy.allows("embeddings"):
+        return privacy_refusal(privacy.refusal("embeddings"))
     store = ModelAccounting(request.state.key_store, request.state.api_key)
     developer = request.state.api_key.id
     try:
@@ -840,13 +877,8 @@ async def transcriptions(request: Request) -> Response:
             message="timestamp_granularities: segment, with response_format "
             "verbose_json",
         )
-    if request.state.privacy == "strict":
-        return error(
-            503,
-            "strict_privacy_unavailable",
-            message="No owned transcription server is available for strict privacy "
-            "mode.",
-        )
+    if not privacy.allows("transcription"):
+        return privacy_refusal(privacy.refusal("transcription"))
     if not gateway_transcription.configured():
         return error(503, "transcription_unavailable")
     store = ModelAccounting(request.state.key_store, request.state.api_key)

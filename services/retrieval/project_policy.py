@@ -12,6 +12,16 @@ from services.retrieval.project_identity import ProjectError
 Positive = Annotated[int, Field(ge=1)]
 Nonnegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Name = Annotated[str, Field(min_length=1, max_length=120, pattern=r"\S")]
+PrivacyLevel = Literal["standard", "enhanced", "strict"]
+
+
+def offered_privacy(value: str | None) -> str | None:
+    """Enhanced is chosen only where the operator enables it (packages.privacy)."""
+    from packages.privacy import offered
+
+    if value is not None and not offered(value):
+        raise ValueError("enhanced privacy is not offered on this server")
+    return value
 
 
 class Closed(BaseModel):
@@ -112,8 +122,13 @@ class ProjectCreate(Closed):
     name: Name
     instructions: str = Field(default="", max_length=4000)
     default_action: Literal["chat", "work"] = "chat"
-    privacy: Literal["standard", "strict"] = "standard"
+    privacy: PrivacyLevel = "standard"
     hidden: bool = False
+
+    @field_validator("privacy")
+    @classmethod
+    def offered_level(cls, value: str | None) -> str | None:
+        return offered_privacy(value)
 
 
 class ProjectPatch(Closed):
@@ -121,7 +136,12 @@ class ProjectPatch(Closed):
     name: Name | None = None
     default_action: Literal["chat", "work"] | None = None
     state: Literal["active", "archived"] | None = None
-    privacy: Literal["standard", "strict"] | None = None
+    privacy: PrivacyLevel | None = None
+
+    @field_validator("privacy")
+    @classmethod
+    def offered_level(cls, value: str | None) -> str | None:
+        return offered_privacy(value)
 
 
 class ImportedPart(Closed):

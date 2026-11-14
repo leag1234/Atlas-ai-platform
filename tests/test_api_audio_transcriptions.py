@@ -217,9 +217,9 @@ class TranscriptionTests(unittest.TestCase):
         self.assertEqual(reply.json()["error"]["limit"], 1000 + 64 * 1024)
         self.assertEqual(self.calls, [])
 
-    def test_strict_privacy_and_unconfigured_are_named_503(self) -> None:
+    def test_strict_privacy_403_and_unconfigured_named_503(self) -> None:
         reply = self.post(headers=self.headers | {"X-Atlas-Privacy": "strict"})
-        self.assertEqual(reply.status_code, 503, reply.text)
+        self.assertEqual(reply.status_code, 403, reply.text)
         self.assertEqual(reply.json()["error"]["code"], "strict_privacy_unavailable")
         with patch("transcription.configured", return_value=False):
             reply = self.post()

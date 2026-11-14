@@ -123,13 +123,13 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
     )
     # The project's level holds for every call of this turn, attachments and images
     # included (vision, OCR, search and connectors check it at egress).
-    from packages.privacy import elevate
+    from packages.privacy import allows, elevate, owned_only
 
     elevate(context.privacy)
     from services.orchestrator.location import location_dependent
 
     # Place search sends the request to a public map service: not in strict privacy.
-    if context.privacy != "strict" and location_dependent(request.user_text):
+    if allows("places_search") and location_dependent(request.user_text):
         from services.orchestrator.nearby_chat import process_nearby
 
         await process_nearby(request, item)
@@ -182,7 +182,7 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
         local_enabled=False,
     )
     model.privacy = context.privacy
-    if context.privacy == "strict":
+    if owned_only():
         from api_routing import select_public_model, targets
 
         targets(
@@ -208,7 +208,7 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
         and isinstance(function := t.get("function"), dict)
         and function.get("name") == "rag_search"
     ]
-    if context.privacy == "strict":
+    if not allows("web_search"):
         model.tools = [
             tool
             for tool in model.tools

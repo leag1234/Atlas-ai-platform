@@ -2,6 +2,7 @@
 
 from packages.limits import LimitError
 from packages.validation import describe_validation
+from packages.privacy import PrivacyRefusal
 
 import asyncio
 import os
@@ -654,7 +655,17 @@ async def chat(
                         status_code=409,
                     )
                 parsed = parsed.model_copy(update={"messages": nudged})
-        strict = getattr(request.state, "privacy", "standard") == "strict"
+        level = getattr(request.state, "privacy", "standard")
+        strict = level == "strict"
+        if hosted and level == "enhanced":
+            # Enhanced privacy: a search query or fetched URL leaves Atlas in clear
+            # until the local detector exists; code execution stays on Atlas machines.
+            for feature in ("web_search", "web_fetch"):
+                if feature in hosted:
+                    refused = PrivacyRefusal(feature, "enhanced")
+                    return JSONResponse(
+                        {"error": refused.body()}, status_code=refused.status
+                    )
         if hosted and strict:
             # Strict privacy: no request leaves the owned infrastructure. Code
             # execution stays on Atlas machines, but web tools leave it.
@@ -743,17 +754,10 @@ async def chat(
         return error("quota_exceeded", 429)
     except PermissionError:
         return error("unauthorized", 401)
+    except PrivacyRefusal as exc:
+        # A permanent policy answer (403), never an outage: clients do not retry it.
+        return JSONResponse({"error": exc.body()}, status_code=exc.status)
     except ValueError as exc:
-        if str(exc) == "strict_privacy_unavailable":
-            return JSONResponse(
-                {
-                    "error": {
-                        "type": "strict_privacy_unavailable",
-                        "message": "No owned inference server is available for strict privacy mode.",
-                    }
-                },
-                status_code=503,
-            )
         code = (
             str(exc)
             if str(exc) in {"cost_budget", "context_exceeded", "invalid_reservation"}

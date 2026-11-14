@@ -62,7 +62,7 @@ async def receive(
                     event = json.loads(line[5:])
                     if not isinstance(event, dict):
                         raise ValueError("invalid_stream")
-                    if event.get("error") == privacy.CODE:
+                    if event.get("error") in privacy.CODES:
                         from services.orchestrator.loop import StrictPrivacyRefusal
 
                         raise StrictPrivacyRefusal(

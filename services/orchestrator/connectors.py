@@ -332,10 +332,10 @@ class Selection:
 
 
 async def prepare(request: ChatRequest) -> Selection | None:
-    from packages.privacy import is_strict
+    from packages.privacy import allows
 
     # Connectors reach third-party servers: none in a strict privacy turn.
-    if request._api_key_request or is_strict():
+    if request._api_key_request or not allows("connectors"):
         return None
     if not request._connector_scope:
         return None
