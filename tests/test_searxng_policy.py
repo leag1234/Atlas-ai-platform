@@ -519,28 +519,65 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             "The search engines returned no matching results. This does not establish that no information exists.",
         )
 
-    async def test_pipeline_keeps_quota_refusal_terminal_with_earlier_sources(
+    async def test_pipeline_keeps_earlier_sources_after_a_quota_refusal(
         self,
     ) -> None:
-        item = Interaction(retrieved_urls=["https://example.test/earlier"])
+        # Staging 2026-11-14: a first search was served with five pages, a
+        # second one reached an exhausted provider, and the whole sourced
+        # answer was refused with 503. The refusal now closes the research and
+        # the answer is written from the pages already retrieved.
+        for code, status in (("quota_exceeded", 432), ("search_rate_limited", 429)):
+            with self.subTest(code=code):
+                refusal = {
+                    "error": code,
+                    "provider_status": status,
+                    "attempts": [
+                        {"provider": "searxng", "outcome": "empty_results"},
+                        {"provider": "tavily", "outcome": code},
+                    ],
+                }
+                item = Interaction(retrieved_urls=["https://example.test/earlier"])
+                with patch.object(Runtime, "execute", AsyncMock(return_value=refusal)):
+                    output = await ChatTools(item).execute(
+                        Call(
+                            "s",
+                            "web_search",
+                            json.dumps({"query": "CERN", "lang": "en"}),
+                        ),
+                        2,
+                    )
+                self.assertEqual(output, refusal)
+                self.assertIn(code, item.erreurs)
+                self.assertEqual(item.retrieved_urls, ["https://example.test/earlier"])
+
+    async def test_pipeline_refuses_honestly_when_no_provider_served(self) -> None:
+        item = Interaction()
         with patch.object(
             Runtime,
             "execute",
             AsyncMock(
                 return_value={
                     "error": "quota_exceeded",
-                    "provider_status": 429,
-                    "attempts": [{"provider": "tavily", "outcome": "quota_exceeded"}],
+                    "provider_status": 432,
+                    "attempts": [
+                        {"provider": "searxng", "outcome": "empty_results"},
+                        {"provider": "tavily", "outcome": "quota_exceeded"},
+                        {"provider": "serpapi", "outcome": "global_monthly_search"},
+                    ],
                 }
             ),
         ):
-            with self.assertRaisesRegex(GatewayError, "quota_exceeded"):
+            with self.assertRaises(GatewayError) as raised:
                 await ChatTools(item).execute(
                     Call(
                         "s", "web_search", json.dumps({"query": "CERN", "lang": "en"})
                     ),
                     2,
                 )
+        self.assertEqual(raised.exception.code, "quota_exceeded")
+        self.assertEqual(raised.exception.status, 503)
+        self.assertIn("quota exhausted. Provider HTTP 432.", raised.exception.detail)
+        self.assertNotIn("provider failed", raised.exception.detail)
 
 
 class SearxngStateTests(unittest.IsolatedAsyncioTestCase):

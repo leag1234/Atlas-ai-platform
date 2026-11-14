@@ -189,3 +189,20 @@ class ProjectBootTests(unittest.TestCase):
         self.assertIn("read.status >= 500", body)
         self.assertIn("error instanceof TypeError || error.transient", body)
         self.assertIn("attempt >= 2", body)
+
+
+class FolderHeaderTests(unittest.TestCase):
+    def test_project_mode_hides_the_whole_folders_header_row_on_both_structures(
+        self,
+    ) -> None:
+        # 0.11: toggle directly in the header row; 0.13: toggle inside a heading in that row.
+        css = read("project_mode.css")
+        self.assertIn(
+            'body.atlas-project-enabled :is(div:has(> [aria-controls="sidebar-folders-content"]),div:has(> * > [aria-controls="sidebar-folders-content"])) {display:none!important;}',
+            css,
+        )
+        js = read("project_mode.js")
+        self.assertIn(
+            "let row = control.parentElement; while (row?.parentElement && row.children.length === 1) row = row.parentElement;",
+            js,
+        )
