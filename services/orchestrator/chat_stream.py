@@ -435,6 +435,8 @@ def response(
                         # The Work step label belongs to the step before this tool.
                         activity_description = ""
                     activity = str(event.get("tool", "answering"))
+                    if activity in {"date_time", "unit_convert", "currency_convert"}:
+                        activity = "calculator"
                     activity_urls = (
                         [str(url) for url in raw_urls]
                         if isinstance(raw_urls, list)
