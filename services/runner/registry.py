@@ -224,8 +224,11 @@ class Registry:
             # and verifying the machine is the member's consent to send code
             # there (no approval card exists in the chat). Anywhere else the
             # first use still asks: the code of a project may belong to others.
+            # A connected computer works in its owner's own folder: no project
+            # file is sent there (remote_write_file sends what the agent wrote,
+            # bound to its command), so there is no code egress to approve.
             code_egress_approved_at=timestamp()
-            if self.private_chat_workspace()
+            if self.private_chat_workspace() or target.get("transport") == "relay"
             else None,
             allow_rules=[],
         )
@@ -287,6 +290,12 @@ class Registry:
                 value.update(profiles=[], devices=[])
                 if personal:
                     value["personal"] = True
+                    if row["data"].get("transport") == "relay":
+                        # The user's own computer: commands run in his folder.
+                        value.update(
+                            connected=bool(row["data"].get("relay_user")),
+                            folder=row["data"].get("work_root"),
+                        )
             values.append(value)
         return values
 

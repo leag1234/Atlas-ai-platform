@@ -139,3 +139,76 @@ class MachinePatch(Input):
 
 class MachineVerify(Input):
     reset_host_key: bool = False
+
+
+# A connected computer (services/runner/relay.py): the member's own laptop or
+# a machine of his local network, reached through the Atlas relay.
+ARCH = re.compile(r"[A-Za-z0-9_.-]{1,40}")
+NONCE = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
+def valid_project_dir(value: str) -> str:
+    """The folder a member connected from: any absolute path he can have.
+
+    It reaches the computer only inside JSON and Python, never through a shell
+    line, so spaces and accents are allowed; control characters, `..` and the
+    filesystem root are not.
+    """
+    if (
+        not value.startswith("/")
+        or len(value) > 500
+        or value.rstrip("/") == ""
+        or any(ord(c) < 32 or ord(c) == 127 for c in value)
+        or any(part in {".", ".."} for part in value.split("/"))
+    ):
+        raise ValueError("invalid_work_root")
+    return value.rstrip("/")
+
+
+class Connection(Input):
+    name: str = Field(min_length=1, max_length=120)
+    transport: Literal["relay"]
+    permission_mode: Literal["ask", "rules", "auto"] = "auto"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value: str) -> str:
+        return valid_name(value)
+
+
+class Enrolment(Input):
+    nonce: str = Field(min_length=43, max_length=43)
+    host_key: str = Field(min_length=20, max_length=200)
+    user: str = Field(min_length=1, max_length=64)
+    os: Literal["linux", "macos"]
+    arch: str = Field(min_length=1, max_length=40)
+    work_root: str = Field(min_length=2, max_length=500)
+
+    @field_validator("nonce")
+    @classmethod
+    def _nonce(cls, value: str) -> str:
+        if not NONCE.fullmatch(value):
+            raise ValueError("invalid_nonce")
+        return value
+
+    @field_validator("user")
+    @classmethod
+    def _user(cls, value: str) -> str:
+        return valid_user(value)
+
+    @field_validator("arch")
+    @classmethod
+    def _arch(cls, value: str) -> str:
+        if not ARCH.fullmatch(value):
+            raise ValueError("invalid_arch")
+        return value
+
+    @field_validator("work_root")
+    @classmethod
+    def _root(cls, value: str) -> str:
+        return valid_project_dir(value)
+
+
+class Announcement(Input):
+    message: str = Field(min_length=1, max_length=1024)
+    signature: str = Field(min_length=1, max_length=4096)

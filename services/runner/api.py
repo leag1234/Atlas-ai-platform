@@ -50,6 +50,21 @@ def execute(operation: str, data: dict[str, Any]) -> dict[str, Any]:
         return service.scan(auth)
     if operation == "forget" and personal:
         return service.forget(auth)
+    if operation in {"relay-admit", "relay-verify"} and personal:
+        from services.runner import relay
+
+        target = auth["target"]
+        if target.get("transport") != "relay":
+            raise RunnerError("runner_unauthorized")
+        if operation == "relay-admit":
+            relay.admit(target["id"], data["host_key"])
+            return dict(relay_host_key=relay.relay_key())
+        found = relay.verify(
+            target["relay_host_key"], data["message"], data["signature"]
+        )
+        if found["target_id"] != target["id"]:
+            raise RunnerError("invalid_announcement")
+        return found
     if operation == "run":
         return service.run(auth, base64.b64decode(data["content"], validate=True))
     if operation in {"status", "cancel", "log"}:

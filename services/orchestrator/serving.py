@@ -524,7 +524,8 @@ def project_runner() -> Iterator[None]:
     ports = atlas_ports()
     name = ports.name("atlas-project-runner")
     require_docker_image(RUNNER_IMAGE)
-    options = [
+    options = relay_options()
+    options += [
         "-p",
         f"127.0.0.1:{ports.port('runner')}:13712",
         "-e",
@@ -560,6 +561,92 @@ def project_runner() -> Iterator[None]:
     try:
         # The probe route is POST-only and authenticated: any HTTP answer means it is up.
         wait_http(ports.url("runner") + "/internal/runner/probe", 60, any_status=True)
+        yield
+    finally:
+        docker("stop", name)
+
+
+RELAY_IMAGE = "atlas-relay:local"
+
+
+def relay_options() -> list[str]:
+    """What the runner needs to reach connected computers through the relay."""
+    if not os.environ.get("ATLAS_RELAY_PUBLIC_URL"):
+        return []
+    ports = atlas_ports()
+    return [
+        "--network",
+        ports.name("atlas-relay-net"),
+        "-v",
+        ports.name("atlas-relay-gate") + ":/relay",
+        "-e",
+        "ATLAS_RELAY_GATE=/relay/hosts",
+        "-e",
+        "ATLAS_RELAY_SSH",
+        "-e",
+        "ATLAS_RELAY_HOST_KEY",
+    ]
+
+
+@contextmanager
+def relay() -> Iterator[None]:
+    """The Atlas relay (uptermd) for the users' own computers, when configured.
+
+    Computers dial its WebSocket listener through the instance's HTTPS edge
+    (ATLAS_RELAY_PUBLIC_URL, a location of the front door proxied to the
+    loopback port below). Its SSH listener is reachable only by the runner, on
+    a network of their own. Its host key is made once, in its own volume.
+    """
+    if not project_mode() or not os.environ.get("ATLAS_RELAY_PUBLIC_URL"):
+        yield
+        return
+    ports = atlas_ports()
+    name = ports.name("atlas-relay")
+    network = ports.name("atlas-relay-net")
+    require_docker_image(RELAY_IMAGE)
+    if not docker("network", "ls", "-q", "--filter", "name=^" + network + "$").strip():
+        docker("network", "create", network)
+    docker_run(
+        name,
+        RELAY_IMAGE,
+        [
+            "--network",
+            network,
+            "--network-alias",
+            "atlas-relay",
+            "-p",
+            f"127.0.0.1:{ports.port('relay')}:8080",
+            "-v",
+            ports.name("atlas-relay-gate") + ":/gate:ro",
+            "-v",
+            ports.name("atlas-relay-keys") + ":/keys",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
+            "--read-only",
+            "--tmpfs",
+            "/tmp",
+            "--memory",
+            "256m",
+            "--pids-limit",
+            "64",
+        ],
+    )
+    try:
+        key = ""
+        for _ in range(30):
+            try:
+                key = docker("exec", name, "cat", "/keys/relay_ed25519.pub").strip()
+            except RuntimeError:
+                key = ""
+            if key:
+                break
+            time.sleep(1)
+        if not key:
+            raise RuntimeError("relay_host_key_unavailable")
+        os.environ["ATLAS_RELAY_HOST_KEY"] = " ".join(key.split()[:2])
+        os.environ["ATLAS_RELAY_SSH"] = "atlas-relay:2222"
         yield
     finally:
         docker("stop", name)
@@ -694,9 +781,11 @@ def run() -> None:
         else "127.0.0.1:" + str(ports.port("terminal"))
     )
     project_stack = project_runner() if project_mode() else nullcontext()
+    relay_stack = relay() if project_mode() else nullcontext()
     searxng_stack = searxng() if "searxng" in providers else nullcontext()
     try:
         with (
+            relay_stack,
             project_stack,
             searxng_stack,
             terminal("atlas-open-terminal", binding),

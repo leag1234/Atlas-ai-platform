@@ -30,6 +30,7 @@ NAMES = (
     "machine_list",
     "machine_change",
     "machine_forget",
+    "machine_connect",
 )
 Mode = Literal["ask", "rules", "auto"]
 
@@ -67,12 +68,17 @@ class Forget(Arguments):
     confirmed: bool = False
 
 
+class Connect(Arguments):
+    name: str = Field(min_length=1, max_length=120)
+
+
 SCHEMAS: dict[str, type[Arguments]] = {
     "machine_add": Add,
     "machine_verify": Verify,
     "machine_list": Listing,
     "machine_change": Change,
     "machine_forget": Forget,
+    "machine_connect": Connect,
 }
 
 DESCRIPTIONS = {
@@ -81,7 +87,15 @@ DESCRIPTIONS = {
     "machine_list": "List the user's own machines: name, address, status (verified or not), permission mode. No credentials.",
     "machine_change": "Rename a machine or change its permission mode (auto: commands run without asking; rules or ask: commands wait for the user's approval).",
     "machine_forget": "Remove a machine from Atlas and destroy its Atlas key. Refused unless confirmed=true, which you set only after the user said yes to removing that machine.",
+    "machine_connect": "Connect the user's own computer (a laptop or desktop, or any machine without a public address, behind a home or office router) with no address or account to give: returns connect_command, one line the user pastes in a terminal on that computer, from the folder of the project to work on. Then remote_run runs commands in that folder as the user (their tools, Git credentials, and ssh to the machines of their local network by the names they use), and remote_write_file writes files there. Show connect_command verbatim in a ```bash block with message, then end your turn. Name it after the computer (my-mac, laptop) when the user gave no name.",
 }
+
+
+def relay_enabled() -> bool:
+    """Whether this instance offers connecting the user's own computer."""
+    from services.orchestrator.machine_connect import enabled
+
+    return enabled()
 
 
 def declarations() -> list[dict[str, object]]:
@@ -95,6 +109,7 @@ def declarations() -> list[dict[str, object]]:
             ),
         )
         for name, schema in SCHEMAS.items()
+        if name != "machine_connect" or relay_enabled()
     ]
 
 
@@ -228,6 +243,26 @@ MESSAGES: dict[str, dict[str, str]] = {
     "disabled": {
         "en": "Remote machines are not enabled on this Atlas instance.",
         "fr": "Les machines distantes ne sont pas activées sur cette instance d'Atlas.",
+    },
+    "connect_ready": {
+        "en": "To connect {name}: open a terminal on that computer, go to the folder of your project (cd ~/code/your-project), and paste this command. It installs nothing outside ~/.atlas and opens no port: your computer dials out to Atlas. Leave the window open while I work; Ctrl-C ends my access. The command is valid for 15 minutes and works once. Tell me when it says it is connected.",
+        "fr": "Pour connecter {name} : ouvrez un terminal sur cet ordinateur, placez-vous dans le dossier de votre projet (cd ~/code/votre-projet) et collez cette commande. Elle n'installe rien en dehors de ~/.atlas et n'ouvre aucun port : c'est votre ordinateur qui appelle Atlas. Laissez la fenêtre ouverte pendant que je travaille ; Ctrl-C met fin à mon accès. La commande est valable 15 minutes et ne sert qu'une fois. Dites-moi quand elle indique que c'est connecté.",
+    },
+    "connected": {
+        "en": "{name} is connected: Atlas works in {folder} on that computer, as {user}. Commands that delete files, push, publish, use sudo or write outside that folder wait for your yes in this conversation.",
+        "fr": "{name} est connecté : Atlas travaille dans {folder} sur cet ordinateur, en tant que {user}. Les commandes qui suppriment des fichiers, poussent, publient, utilisent sudo ou écrivent hors de ce dossier attendent votre accord dans cette conversation.",
+    },
+    "not_connected": {
+        "en": "{name} is not connected right now. In a terminal on that computer, run: sh ~/.atlas/connect.sh (or the command I gave, if it was never run), keep the window open, then tell me.",
+        "fr": "{name} n'est pas connecté pour le moment. Dans un terminal sur cet ordinateur, lancez : sh ~/.atlas/connect.sh (ou la commande que je vous ai donnée, si elle n'a jamais été lancée), gardez la fenêtre ouverte, puis dites-le-moi.",
+    },
+    "local_network_connect": {
+        "en": "{host} is on your local network, which Atlas, running on a server, cannot reach directly. Atlas can reach it through your own computer: connect your computer once, then Atlas runs ssh {host} from it, with your own keys and settings.",
+        "fr": "{host} est sur votre réseau local, qu'Atlas, qui tourne sur un serveur, ne peut pas atteindre directement. Atlas peut l'atteindre par votre propre ordinateur : connectez-le une fois, et Atlas lance ssh {host} depuis celui-ci, avec vos propres clés et réglages.",
+    },
+    "forgotten_connected": {
+        "en": "{name} is removed from Atlas: the relay no longer accepts it and its Atlas key is destroyed. On that computer you can also delete the ~/.atlas folder.",
+        "fr": "{name} est retiré d'Atlas : le relais ne l'accepte plus et sa clé Atlas est détruite. Sur cet ordinateur, vous pouvez aussi supprimer le dossier ~/.atlas.",
     },
 }
 # Probe errors with the same meaning for the person.
@@ -367,6 +402,17 @@ def failure(key: str, lang: str, error: str, **values: object) -> Json:
 def public(machine: Json) -> Json:
     """What the model sees of a machine: no credential reference, no key material."""
     fingerprints = machine.get("host_key_fingerprints") or []
+    if machine.get("transport") == "relay":
+        return dict(
+            name=machine.get("name"),
+            kind="connected computer",
+            user=machine.get("user"),
+            folder=machine.get("work_root"),
+            os=machine.get("os"),
+            connected=bool(machine.get("connected")),
+            verified=bool(machine.get("verified_at")),
+            permission_mode=machine.get("permission_mode"),
+        )
     return dict(
         name=machine.get("name"),
         host=machine.get("host"),
@@ -474,6 +520,17 @@ def awaiting(tools: Any, machine: Json, key: str) -> Json:
 
 async def add(tools: Any, args: Add) -> Json:
     lang = lang_of(tools)
+    if local_network(args.host) and relay_enabled():
+        # Reachable through the person's own computer, with his own ssh.
+        return dict(
+            error="machine_local_network",
+            message=say("local_network_connect", lang, host=args.host),
+            next_step=RELAY
+            + " If the user's computer is already connected (machine_list), run "
+            + f"ssh {args.host} <command> there with remote_run. Otherwise call "
+            + "machine_connect for the user's computer, show its connect_command, "
+            + "and end your turn.",
+        )
     if local_network(args.host):
         # Declaring it would make the person install a key for nothing: the
         # verification can only fail (staging 2026-11-13).
@@ -538,6 +595,8 @@ async def verify(tools: Any, args: Verify) -> Json:
         return found
     machine = found["machine"]
     name = str(machine["name"])
+    if machine.get("transport") == "relay":
+        return await verify_connected(tools, machine)
     if name in tools.machines_declared and not machine.get("verified_at"):
         # A key made a moment ago cannot be installed yet: no connection attempt,
         # no loop. The turn ends with the command; the next turn verifies.
@@ -627,6 +686,91 @@ async def verify(tools: Any, args: Verify) -> Json:
     return result
 
 
+async def verify_connected(tools: Any, machine: Json) -> Json:
+    """A connected computer: checked through the relay once its owner ran the script."""
+    lang, name = lang_of(tools), str(machine["name"])
+    status, checked = await tools.execution.broker.member(
+        "POST", f"machines/{machine['id']}/verify", {}, timeout=90
+    )
+    if status != 200 or not isinstance(checked.get("status"), str):
+        return failure("unavailable", lang, "dependency_unavailable")
+    if checked["status"] == "available":
+        tools.machine_commands.pop(name, None)
+        selection = getattr(tools, "selection", None)
+        if selection is not None:
+            selection.enable_remote()
+        return dict(
+            machine=public(checked),
+            message=say(
+                "connected",
+                lang,
+                name=name,
+                folder=checked.get("work_root"),
+                user=checked.get("user"),
+            ),
+            next_step=(
+                f'Continue the user\'s original request now: remote_run with target "{name}" '
+                "(commands start in that folder). Do not ask the user to repeat the request."
+            ),
+        )
+    return dict(
+        failure("not_connected", lang, "machine_not_connected", name=name),
+        machine=public(checked),
+    )
+
+
+async def connect(tools: Any, args: Connect) -> Json:
+    """Declare (or connect again) the person's own computer; the one-line command."""
+    from services.orchestrator.machine_connect import connect_command, enrolment_token
+
+    lang = lang_of(tools)
+    if not relay_enabled():
+        return failure("disabled", lang, "relay_disabled")
+    status, created = await tools.execution.broker.member(
+        "POST",
+        "machines",
+        dict(name=args.name, transport="relay", permission_mode="auto"),
+        timeout=30,
+    )
+    if status == 409 and created.get("error") == "runner_name_conflict":
+        found = await listing(tools)
+        machine = None if isinstance(found, dict) else find(found, args.name)
+        return failure(
+            "name_taken",
+            lang,
+            "runner_name_conflict",
+            name=args.name,
+            target=target(machine) if machine else "?",
+        )
+    if status == 409 and created.get("error") == "runner_machine_limit":
+        return failure("limit", lang, "runner_machine_limit")
+    if status == 422:
+        return failure("invalid_input", lang, "invalid_machine")
+    if status != 201 or not created.get("enrol_nonce"):
+        return failure("unavailable", lang, "dependency_unavailable")
+    broker = tools.execution.broker
+    token = enrolment_token(
+        str(broker.subject),
+        str(broker.org),
+        str(created["id"]),
+        str(created["enrol_nonce"]),
+    )
+    command = connect_command(token)
+    name = str(created["name"])
+    tools.machine_commands[name] = command
+    tools.machines_declared.add(name)
+    return dict(
+        machine=public(created),
+        connect_command=command,
+        message=say("connect_ready", lang, name=name),
+        next_step=(
+            "Show connect_command verbatim in a ```bash block with message in the "
+            "user's language, then end your turn. Call machine_verify only after the "
+            "user says it is connected."
+        ),
+    )
+
+
 async def change(tools: Any, args: Change) -> Json:
     lang = lang_of(tools)
     if args.new_name is None and args.permission_mode is None:
@@ -679,7 +823,12 @@ async def forget(tools: Any, args: Forget) -> Json:
     )
     if status == 200 and deleted.get("deleted"):
         tools.machine_commands.pop(name, None)
-        return dict(name=name, removed=True, message=say("forgotten", lang, name=name))
+        said = (
+            "forgotten_connected"
+            if machine.get("transport") == "relay"
+            else "forgotten"
+        )
+        return dict(name=name, removed=True, message=say(said, lang, name=name))
     error = str(deleted.get("error", ""))
     if status == 409 and error == "runner_commands_active":
         return failure("commands_active", lang, error, name=name)
@@ -728,6 +877,8 @@ async def execute(tools: Any, name: str, arguments: str) -> Json:
             return await change(tools, args)
         if isinstance(args, Forget):
             return await forget(tools, args)
+        if isinstance(args, Connect):
+            return await connect(tools, args)
         found = await listing(tools)
         if isinstance(found, dict):
             return found
@@ -759,13 +910,17 @@ def machine_turn(request: Any, routed: Any, repository: bool) -> bool:
 
 _INSTALL = re.compile(
     r'echo "ssh-ed25519 [A-Za-z0-9+/]{40,1024}={0,2} atlas" >> ~/\.ssh/authorized_keys'
+    r"|sh ~/\.atlas/connect\.sh https?://[^\s]+ [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
 )
 
 
 def install_shown(text: str) -> bool:
-    """Whether a text carries an Atlas key installation command."""
+    """Whether a text carries an Atlas key installation or connection command."""
     return _INSTALL.search(text) is not None
 
+
+# A connection command as a model may write it (token retyped or cut).
+_CONNECT_LINE = re.compile(r"^[^\n`]*sh ~/\.atlas/connect\.sh https?://[^\n`]*$", re.M)
 
 LEAD = {
     "en": "Run this command in a terminal on your own computer, then tell me when it is done:",
@@ -781,7 +936,12 @@ def complete_answer(answer: str, commands: dict[str, str], lang: str) -> str:
 
     The model is told to show it; this guarantees it: a missing or retyped key
     would make the next verification fail with no way for the person to see why.
+    A connection command carries a long one-time token that models miscopy
+    (live run 2026-11-14): a retyped one is replaced by the exact command.
     """
+    for command in commands.values():
+        if "~/.atlas/connect.sh http" in command:
+            answer = _CONNECT_LINE.sub(lambda _: command, answer)
     missing = [
         (name, command)
         for name, command in commands.items()
@@ -818,5 +978,104 @@ PROJECT_MODE = """
 - New machines use the default permission mode: commands outside the allowed rules wait for the user's approval."""
 
 
+RELAY_RULES = """
+- The user's own computer (laptop, desktop) and the machines of their local network (192.168.x.x, 10.x.x.x, .local or bare names) are reached by connecting that computer: call machine_connect once, show connect_command and end your turn; when the user says it is connected, call machine_verify, then continue the original request. Never ask for an address, an account or a password for it.
+- On a connected computer, remote_run starts in the folder the user connected from, in their own environment: build, test and commit there as they would. Reach a machine of their local network with remote_run on the connected computer: ssh <name> <command>, using the names and keys the user already has. Write files with remote_write_file (paths relative to that folder); read them with remote_run (cat, head) or remote_fetch.
+- Commands that delete, push, publish, use sudo, run inline code, act on another host or write outside that folder wait for the user's yes: when remote_run returns approval_question, show it as returned and end your turn. Never ask the user to run such a command themselves instead."""
+
+
 def instructions(unattended_turn: bool) -> str:
-    return INSTRUCTIONS + (CHAT_MODE if unattended_turn else PROJECT_MODE)
+    text = INSTRUCTIONS + (CHAT_MODE if unattended_turn else PROJECT_MODE)
+    if not relay_enabled():
+        return text
+    lines = [
+        line
+        for line in text.split("\n")
+        if not line.startswith(
+            "- A machine Atlas cannot reach (an address of the user's local network"
+        )
+    ]
+    return "\n".join(lines) + RELAY_RULES
+
+
+# Approvals asked in the conversation (a connected computer, behind the chat).
+# The block is written by code and parsed back by code: the person's next
+# message answers it, and only a yes to that exact command on that machine
+# approves it, through the same decision endpoint as a click.
+APPROVAL_LEAD = {
+    "en": "Atlas asks your permission to run this command on",
+    "fr": "Atlas vous demande l'autorisation de lancer cette commande sur",
+    "de": "Atlas bittet um Ihre Erlaubnis, diesen Befehl auszuführen auf",
+    "es": "Atlas te pide permiso para ejecutar este comando en",
+    "it": "Atlas chiede il permesso di eseguire questo comando su",
+}
+APPROVAL_REPLY = {
+    "en": "Reply yes to allow it, or no.",
+    "fr": "Répondez oui pour l'autoriser, ou non.",
+    "de": "Antworten Sie ja, um es zu erlauben, oder nein.",
+    "es": "Responde sí para permitirlo, o no.",
+    "it": "Rispondi sì per consentirlo, oppure no.",
+}
+_APPROVAL = re.compile(
+    "(?:"
+    + "|".join(re.escape(lead) for lead in APPROVAL_LEAD.values())
+    + r") \*\*(?P<machine>[^*\n]{1,120})\*\*(?: \(`(?P<cwd>[^`\n]{1,1000})`\))?:\n\n```bash\n(?P<command>[^\n]{1,15000})\n```"
+)
+
+
+def approval_block(machine: str, command: str, cwd: str, lang: str) -> str:
+    where = f" (`{cwd}`)" if cwd not in {"", "."} else ""
+    return (
+        f"{APPROVAL_LEAD.get(lang, APPROVAL_LEAD['en'])} **{machine}**{where}:\n\n"
+        f"```bash\n{command}\n```\n\n{APPROVAL_REPLY.get(lang, APPROVAL_REPLY['en'])}"
+    )
+
+
+def approval_shown(text: str) -> Json | None:
+    """The command an answer asked the person to approve, if it asked one."""
+    found = list(_APPROVAL.finditer(text))
+    if len(found) != 1:
+        return None
+    match = found[0]
+    return dict(
+        machine=match["machine"], command=match["command"], cwd=match["cwd"] or "."
+    )
+
+
+_YES = re.compile(
+    r"(?:yes|y|yep|yeah|ok|okay|sure|go|go ahead|do it|allow(?:ed)?|approved?|"
+    r"oui|ouais|ok vas-y|vas-y|vas y|d'accord|daccord|c'est bon|autorisé|autorise|"
+    r"ja|sí|si|vale|va bene|certo)"
+)
+_NO = re.compile(
+    r"(?:no|nope|non|don't|do not|stop|cancel|refuse|nein|nicht|annule|pas)\b"
+)
+
+
+def consent(text: str) -> bool | None:
+    """The person's answer to an approval question: yes, no, or not an answer.
+
+    Decided by code, never by the model: a short message that is a plain yes
+    (in one of the conversation languages), or a plain no.
+    """
+    value = re.sub(r"[\s!.,;:)(👍]+", " ", text.casefold()).strip()
+    if not value or len(value) > 40:
+        return None
+    if _NO.search(value):
+        return False
+    words = value.replace("’", "'")
+    if _YES.fullmatch(words) or any(
+        _YES.fullmatch(part.strip())
+        for part in re.split(r"\b(?:merci|thanks|thank you|please|stp|svp)\b", words)
+        if part.strip()
+    ):
+        return True
+    return None
+
+
+def complete_approvals(answer: str, blocks: dict[str, str]) -> str:
+    """Every approval question of this turn reaches the person, exactly as written."""
+    missing = [block for block in blocks.values() if block not in answer]
+    if not missing:
+        return answer
+    return (answer.rstrip() + "\n\n" if answer.strip() else "") + "\n\n".join(missing)

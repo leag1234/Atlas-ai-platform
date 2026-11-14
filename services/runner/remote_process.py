@@ -60,9 +60,107 @@ def inside(root: Path, value: str) -> Path:
     return candidate
 
 
+def login_environment() -> dict[str, str]:
+    """The person's own environment, as a terminal on his computer has it.
+
+    A connected computer runs commands as its user in his project, like a
+    command typed in his terminal: his PATH (Homebrew, toolchains), HOME, Git
+    identity and credential helpers, ssh-agent and ~/.ssh/config for his own
+    servers. The login shell prints it once; without one, the session's own.
+    """
+    import pwd
+
+    shell = pwd.getpwuid(os.getuid()).pw_shell or "/bin/sh"
+    env = dict(os.environ)
+    try:
+        reply = subprocess.run(
+            [shell, "-lc", "env -0"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=15,
+            cwd=os.path.expanduser("~"),
+        )
+        if reply.returncode == 0:
+            found = {}
+            for item in reply.stdout.split(b"\0"):
+                key, _, value = item.decode("utf-8", errors="replace").partition("=")
+                if key.isidentifier():
+                    found[key] = value
+            if found.get("PATH"):
+                env = found
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    env.setdefault("LANG", "C.UTF-8")
+    # Nobody can answer a prompt: Git and pagers must not wait for one.
+    env.update(GIT_TERMINAL_PROMPT="0", GIT_EDITOR="true", GIT_PAGER="cat", PAGER="cat")
+    env.pop("SHLVL", None)
+    return env
+
+
+def write(root: Path, data: dict[str, Any]) -> dict[str, Any]:
+    """Write one file of the project, as an editor would; never inside .git."""
+    target = inside(root, data["path"])
+    relative = target.relative_to(root)
+    if ".git" in relative.parts or not relative.parts:
+        raise ValueError("unsafe_remote_path")
+    content = base64.b64decode(data["content"], validate=True)
+    if len(content) > MAX_FETCH:
+        raise ValueError("remote_write_limit")
+    created = not target.exists()
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        raise ValueError("unsafe_remote_path")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    inside(root, str(target.relative_to(root)))
+    temporary = target.with_name("." + target.name + ".atlas-tmp")
+    temporary.write_bytes(content)
+    if not created:
+        temporary.chmod(target.stat().st_mode & 0o7777)
+    temporary.replace(target)
+    return dict(
+        path=str(relative),
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        created=created,
+    )
+
+
 def supervise(root: Path, state_dir: Path, data: dict[str, Any]) -> None:
     record = state_dir / "state.json"
-    env = {"PATH": "/usr/local/bin:" + os.defpath, "HOME": str(root), "LANG": "C.UTF-8"}
+    if data.get("in_place"):
+        env = login_environment()
+    else:
+        env = {
+            "PATH": "/usr/local/bin:" + os.defpath,
+            "HOME": str(root),
+            "LANG": "C.UTF-8",
+        }
+    if data.get("write"):
+        started = time.time()
+        try:
+            written = write(root, data["write"])
+        except (OSError, ValueError) as exc:
+            save(
+                record,
+                dict(
+                    state="failed",
+                    exit_code=1,
+                    error="remote_write_failed",
+                    started_at=started,
+                    ended_at=time.time(),
+                ),
+            )
+            (state_dir / "output.log").write_text("write refused: " + str(exc) + "\n")
+            return
+        (state_dir / "output.log").write_text(
+            "wrote {path} ({size_bytes} bytes, sha256 {sha256})\n".format(**written)
+        )
+        save(
+            record,
+            dict(
+                state="succeeded", exit_code=0, started_at=started, ended_at=time.time()
+            ),
+        )
+        return
     dot = inside(root, ".atlas/remote.env")
     if dot.is_file():
         if dot.stat().st_size > 65536:
@@ -122,7 +220,7 @@ def supervise(root: Path, state_dir: Path, data: dict[str, Any]) -> None:
                     reason = "cancelled"
                 elif time.time() - started >= data["timeout_s"]:
                     reason = "timed_out"
-                if time.time() - last_disk >= 1:
+                if not data.get("in_place") and time.time() - last_disk >= 1:
                     last_disk = time.time()
                     size = 0
                     for index, path in enumerate(root.rglob("*")):
@@ -155,9 +253,15 @@ def supervise(root: Path, state_dir: Path, data: dict[str, Any]) -> None:
 
 
 def main(data: dict[str, Any]) -> dict[str, Any]:
-    root = Path(data["root"])
+    root = Path(os.path.expanduser(data["root"]))
     operation = data["operation"]
-    control = root.parent / "control"
+    # A connected computer keeps Atlas's command records in ~/.atlas, never in
+    # the person's project or next to it.
+    control = (
+        Path(os.path.expanduser(data["control"]))
+        if data.get("control")
+        else root.parent / "control"
+    )
     if operation == "reports":
         reports: list[dict[str, str]] = []
         size = 0
@@ -211,7 +315,7 @@ def main(data: dict[str, Any]) -> dict[str, Any]:
     if operation == "launch":
         # mkdir is the remote idempotency boundary. Existing intent is reconciled,
         # never launched a second time even after an ambiguous SSH disconnect.
-        control.mkdir(exist_ok=True, mode=0o700)
+        control.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
             state_dir.mkdir(mode=0o700)
         except FileExistsError:

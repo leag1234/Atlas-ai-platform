@@ -835,6 +835,8 @@ async def process_work(
     tools.numbered_copies = bool(request.__dict__.get("numbered_copies"))
     tools.earlier_answers = list(request.__dict__.get("earlier_answers") or [])
     tools.lang = request.lang
+    # The person's answer to an approval asked in the conversation (chat_work.py).
+    tools.machine_approval = request.__dict__.get("machine_approval")
     from packages.work_intent import named_office_format
     from services.orchestrator.request_router import decision as routed_decision
 
@@ -1294,6 +1296,9 @@ async def process_work(
             item.reponse = complete_answer(
                 item.reponse, tools.machine_commands, request.lang
             )
+            from services.orchestrator.work_machine_tools import complete_approvals
+
+            item.reponse = complete_approvals(item.reponse, tools.machine_approvals)
             item.tool_urls.extend(getattr(result, "tool_urls", set()))
             item.verification = result.verification.model_dump()
             if tools.nearby is not None and tools.nearby.result:
