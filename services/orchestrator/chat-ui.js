@@ -1789,9 +1789,12 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     queued = false;
     if (!pill) return;
     const composer = document.getElementById("message-input-container");
+    // The pill gets its own room above the composer, outside the message list, so it never covers the last message line.
+    const room = Boolean(state && composer && !inProject());
+    if (document.documentElement.classList.contains("atlas-privacy-room") !== room) document.documentElement.classList.toggle("atlas-privacy-room", room);
     const rect = composer ? composer.getBoundingClientRect() : null;
     const dictating = document.querySelector(".atlas-dictation-panel:not([hidden])");
-    const show = Boolean(state && rect && rect.width > 0 && rect.height > 0 && rect.top > 40 && rect.bottom <= innerHeight + 1 && !inProject() && !dictating);
+    const show = Boolean(room && rect && rect.width > 0 && rect.height > 0 && rect.top > 40 && rect.bottom <= innerHeight + 1 && !dictating);
     if (pill.hidden === show) pill.hidden = !show;
     if (!show) { close(); return; }
     const height = pill.offsetHeight || 28;

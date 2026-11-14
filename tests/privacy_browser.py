@@ -253,6 +253,19 @@ def pill_clear_of_composer(page: Page) -> None:
     assert box["y"] + box["height"] <= composer["y"], (box, composer)
 
 
+def pill_clear_of_messages(page: Page) -> None:
+    """The pill has its own room below the message list: it never covers a message line."""
+    gap = page.evaluate(
+        """() => {
+      const list = document.getElementById('messages-container');
+      const pill = document.querySelector('.atlas-privacy-pill');
+      if (!list || !pill) return null;
+      return pill.getBoundingClientRect().top - list.getBoundingClientRect().bottom;
+    }"""
+    )
+    assert gap is not None and gap >= 0, gap
+
+
 def main() -> None:
     with (
         tempfile.TemporaryDirectory() as root,
@@ -344,6 +357,9 @@ def main() -> None:
             page.wait_for_url("**/c/**", timeout=30000)
             assert bound[before] == "strict", bound
             expect(pill).to_have_text("Stricte", timeout=20000)
+            pill_clear_of_composer(page)
+            pill_clear_of_messages(page)
+            capture(page, mode + "-answer")
             pill.click()
             standard = menu.locator('[data-level="standard"]')
             expect(standard).to_be_disabled()
