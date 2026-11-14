@@ -42,6 +42,14 @@ class WebUIBrandingTests(unittest.TestCase):
         self.assertIn("ENABLE_EVALUATION_ARENA_MODELS=False", settings)
         self.assertIn("ATLAS_REMOVE_OPEN_WEBUI_SUFFIX=0", settings)
 
+    def test_open_webui_013_native_extras_are_off(self) -> None:
+        # Owner decision 2026-11-14: no notifications bell, no native code preview.
+        settings = Path("infra/chat-ui.env").read_text()
+        self.assertIn(
+            'UI_VISIBILITY={"chat.artifacts":false,"chat.code_preview":false}', settings
+        )
+        self.assertIn("ENABLE_NOTIFICATIONS=False", settings)
+
     def test_managed_stack_passes_atlas_name_and_disables_update_checks(self) -> None:
         environment = {
             "ATLAS_PORT_BASE": "16300",

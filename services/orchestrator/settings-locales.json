@@ -190,7 +190,8 @@
     "Reasoning Effort": "Effort de raisonnement",
     "Detect Artifacts Automatically": "Détection automatique des documents générés",
     "iframe Sandbox Allow Same Origin": "Autoriser la même origine dans les cadres isolés",
-    "iframe Sandbox Allow Forms": "Autoriser les formulaires dans les cadres isolés"
+    "iframe Sandbox Allow Forms": "Autoriser les formulaires dans les cadres isolés",
+    "Split screen": "Écran partagé"
   },
   "de-DE": {
     "Basics": "Grundlagen",
@@ -210,7 +211,8 @@
     "Reasoning Effort": "Denkaufwand",
     "Detect Artifacts Automatically": "Erzeugte Dokumente automatisch erkennen",
     "iframe Sandbox Allow Same Origin": "Gleichen Ursprung in isolierten Frames erlauben",
-    "iframe Sandbox Allow Forms": "Formulare in isolierten Frames erlauben"
+    "iframe Sandbox Allow Forms": "Formulare in isolierten Frames erlauben",
+    "Split screen": "Geteilter Bildschirm"
   },
   "es-ES": {
     "Basics": "Básicos",
@@ -409,7 +411,8 @@
     "Reasoning Effort": "Esfuerzo de razonamiento",
     "Detect Artifacts Automatically": "Detectar documentos generados automáticamente",
     "iframe Sandbox Allow Same Origin": "Permitir el mismo origen en marcos aislados",
-    "iframe Sandbox Allow Forms": "Permitir formularios en marcos aislados"
+    "iframe Sandbox Allow Forms": "Permitir formularios en marcos aislados",
+    "Split screen": "Pantalla dividida"
   },
   "it-IT": {
     "Basics": "Generali",
@@ -719,6 +722,7 @@
     "Reasoning Effort": "Impegno di ragionamento",
     "Detect Artifacts Automatically": "Rileva automaticamente i documenti generati",
     "iframe Sandbox Allow Same Origin": "Consenti stessa origine nei riquadri isolati",
-    "iframe Sandbox Allow Forms": "Consenti moduli nei riquadri isolati"
+    "iframe Sandbox Allow Forms": "Consenti moduli nei riquadri isolati",
+    "Split screen": "Schermo diviso"
   }
 }

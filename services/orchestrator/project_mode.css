@@ -164,7 +164,8 @@ html.dark .atlas-project {--project-bg:#242422;--project-card:#2c2c29;--project-
 }
 body.atlas-project-open [data-atlas-project-host-main] {visibility:hidden;overflow:hidden;}
 body.atlas-project-enabled a[href^="/notes"],body.atlas-project-enabled a[href^="/workspace"],body.atlas-project-enabled #sidebar-folders-content {display:none!important;}
-body.atlas-project-enabled [aria-controls="sidebar-folders-content"] {display:none!important;}
+/* Projects replace Open WebUI folders: the whole folders header row goes, its "+" included. The toggle sits in the row (Open WebUI 0.11) or in a heading inside it (0.13). */
+body.atlas-project-enabled :is(div:has(> [aria-controls="sidebar-folders-content"]),div:has(> * > [aria-controls="sidebar-folders-content"])) {display:none!important;}
 #sidebar [data-project-rail] {margin:6px auto;border:0;background:transparent;font-size:20px;cursor:pointer;}
 body.atlas-project-enabled #chat-container div:has(> div > [role=list] > button.waterfall) {display:none!important;}
 .atlas-project-admin {position:fixed;bottom:24px;right:24px;z-index:45;--project-bg:var(--atlas-bg,#faf9f6);--project-ink:var(--atlas-text,#1a1a18);--project-line:var(--atlas-border,#e3e1db);}

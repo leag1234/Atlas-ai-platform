@@ -143,7 +143,8 @@ def shell() -> Iterator[None]:
         "ENABLE_MEMORIES": "False",
         "ENABLE_NOTES": "False",
         "ENABLE_PERSISTENT_CONFIG": "False",
-        "UI_VISIBILITY": '{"chat.artifacts":false}',
+        "UI_VISIBILITY": '{"chat.artifacts":false,"chat.code_preview":false}',
+        "ENABLE_NOTIFICATIONS": "False",
         "PYTHONPATH": "/app/backend",
     }
     options = [

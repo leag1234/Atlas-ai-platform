@@ -66,6 +66,15 @@ class GuestLocaleTests(unittest.TestCase):
                 self.assertNotEqual(data[locale][key], key)
         self.assertEqual(data["fr-FR"]["WebUI Settings"], "Réglages d’Atlas")
 
+    def test_open_webui_013_split_screen_label_is_translated(self) -> None:
+        # Open WebUI 0.13.3 ships this label untranslated in these locales.
+        data = json.loads(
+            (ROOT / "services/orchestrator/settings-locales.json").read_text()
+        )
+        self.assertEqual(data["fr-FR"]["Split screen"], "Écran partagé")
+        for locale in ("de-DE", "es-ES", "it-IT"):
+            self.assertNotEqual(data[locale]["Split screen"], "Split screen")
+
     def test_stable_disables_unused_native_features_and_notes_not_atlas_memory(
         self,
     ) -> None:
