@@ -346,6 +346,14 @@ def response(
                 # status only, never persisted or shown as a step.
                 if relay_work and "phase" in announced:
                     await show_work(work_progress.phase(str(announced["phase"])))
+                elif relay_work and isinstance(announced.get("writing"), dict):
+                    writing = announced["writing"]
+                    assert isinstance(writing, dict)
+                    await show_work(
+                        work_progress.writing(
+                            writing.get("sections"), writing.get("words")
+                        )
+                    )
                 elif relay_work:
                     await work_status(
                         {

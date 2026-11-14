@@ -526,6 +526,8 @@ class WorkTools(CodeTools):
         self.instructions = ""
         # Set by the Work turn when the request asks for code to be run.
         self.run_guard: ExecutionGuard | None = None
+        # Pages retrieved by this turn's web tools (D7 for a streamed document).
+        self.retrieved_urls: set[str] = set()
 
     async def emit(self, kind: str, **data: Any) -> None:
         output = redact(data.get("output", {}))
@@ -625,6 +627,9 @@ class WorkTools(CodeTools):
                         with_search_language(call, self.web_lang), timeout
                     )
                 )
+                from services.orchestrator.document_stream import retrieved_urls
+
+                self.retrieved_urls |= retrieved_urls(result)
             await self.emit(
                 "tool",
                 tool=call.name,

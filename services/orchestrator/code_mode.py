@@ -19,6 +19,7 @@ from packages.ports import atlas_ports
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.code_tools import CodeTools, WorkTools, declarations
 from services.orchestrator.code_verification import annotate, explicit_tests
+from services.orchestrator.document_stream import DocumentWriter
 from services.orchestrator.code_workspace import (
     Audit,
     Workspace,
@@ -75,6 +76,8 @@ class CodeModel(GatewayModel):
     work_unknown: bool = False
     work_unknown_eur: Decimal = Decimal(0)
     work_check: Callable[[], Awaitable[None]] | None = None
+    # Set when ATLAS_WORK_STREAMED_DOCUMENTS is on (document_stream.py).
+    document_writer: DocumentWriter | None = None
 
     @property
     def allowance(self) -> Decimal:
@@ -96,6 +99,20 @@ class CodeModel(GatewayModel):
         reserved = self.allowance
         before = self.spent
         try:
+            writer = self.document_writer
+            if writer is not None:
+                messages = writer.annotate(messages)
+                if writer.due(messages, self.available_tools(messages)):
+                    written = await writer.write(
+                        self, messages, timeout, partial(GatewayModel.complete, self)
+                    )
+                    if written is not None:
+                        if writer.cut:
+                            # The cut call's provider usage is unknown.
+                            self.spent = max(self.spent, before + reserved)
+                            self.work_unknown = True
+                            self.work_unknown_eur += reserved
+                        return written
             return await super().complete(messages, timeout)
         except BaseException:
             # Failed/canceled provider usage is unknown: retain the reservation.
@@ -1212,6 +1229,28 @@ async def process_work(
                 )
             model.work_tools = tools.selection.declarations
             model.sink = None
+            from services.orchestrator import document_stream
+
+            # A researched Word or PDF report is written as streamed text, then
+            # published by code (document_stream.py); off by default.
+            if (
+                document_stream.enabled()
+                and file_requested
+                and tools.requested_suffix in document_stream.SUFFIXES
+                and not selected_files
+                and selection.research_enabled
+            ):
+                model.document_writer = DocumentWriter(
+                    suffix=tools.requested_suffix,
+                    question=redact(request.user_text),
+                    pending=lambda: bool(
+                        selection.deliverable_pending is not None
+                        and selection.deliverable_pending()
+                    ),
+                    group=lambda: selection.group,
+                    retrieved=lambda: tools.retrieved_urls,
+                    report=tools.sink,
+                )
             result = await execute_turn(
                 request,
                 model,
