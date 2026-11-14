@@ -12,12 +12,12 @@ from services.orchestrator.appearance import (
     is_simple_drawing_request,
     simple_drawing_language,
 )
-from services.orchestrator.chat_pipeline import process
+from services.orchestrator.chat_pipeline import DRAWING_COST, process
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.image_tool import finish_simple_drawing
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Limits, Result
-from services.orchestrator.model import Observation
+from services.orchestrator.model import Configuration, GatewayModel, Observation
 
 
 SVG = (
@@ -164,6 +164,21 @@ class DrawingRequestTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(
             model.configure_quality.call_args.kwargs.get("produces_files"), True
         )
+        # The file flag must not lift the turn's cost ceiling (a reservation above the
+        # 0.10 EUR limit stopped the turn at once as a budget refusal, staging -45).
+        self.assertEqual(model.cost_ceiling, DRAWING_COST)
+        real = GatewayModel(
+            "http://127.0.0.1:1",
+            Configuration(
+                input_eur_per_mtok=Decimal("0.6"),
+                output_eur_per_mtok=Decimal("3.6"),
+                max_tokens=2048,
+            ),
+        )
+        real.configure_quality("atlas-qwen", 2048, produces_files=True)
+        real.cost_ceiling = DRAWING_COST
+        reserved = real.estimate([{"role": "user", "content": "draw a sheep"}])
+        self.assertLessEqual(reserved.cost, captured[0].cost)
         self.assertIn("/images/svg/", item.reponse)
 
     async def test_image_request_keeps_localized_refusal(self) -> None:
