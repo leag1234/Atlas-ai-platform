@@ -16,8 +16,7 @@ from fastapi.responses import Response, JSONResponse
 from packages.images import image_info
 from packages.image_upload import normalize_uploads, UploadError
 from typing import Any
-from packages.turn_attachments import is_document_upload, select_documents
-from services.orchestrator.documents import Attachment
+from services.orchestrator.documents import file_parts_to_documents
 from services.orchestrator.daily_budget import user_from_headers
 
 router = APIRouter()
@@ -230,28 +229,7 @@ def prepare_uploads(
     messages = value["messages"]
     if not 1 <= len(messages) <= 100:
         return value, [], []
-    document_turns = []
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        content = message.get("content")
-        documents = (
-            [
-                Attachment.model_validate(p.get("file")).model_dump()
-                for p in content
-                if isinstance(p, dict)
-                and p.get("type") == "file"
-                and is_document_upload(dict(p.get("file") or {}))
-            ]
-            if isinstance(content, list) and message.get("role") == "user"
-            else []
-        )
-        document_turns.append({**message, "files": documents})
-    value["documents"] = select_documents(document_turns)
-    # A reused file delivered on the current turn by the verified inlet retains its status.
-    current = document_turns[-1].get("files", []) if document_turns else []
-    if current:
-        value["documents"] = current
+    file_parts_to_documents(value)
     changes: list[dict[str, int]] = []
     current_refs: list[str] = []
     for index, message in enumerate(messages):
@@ -270,13 +248,6 @@ def prepare_uploads(
         _, normalized = normalize_uploads({"messages": [message]})
         changes.extend(normalized)
         for part in message["content"]:
-            if isinstance(part, dict) and part.get("type") == "file":
-                attachment = Attachment.model_validate(part.get("file"))
-                part.clear()
-                part.update(
-                    type="text", text="[Attachment: " + attachment.filename + "]"
-                )
-                continue
             if not isinstance(part, dict) or part.get("type") != "image_url":
                 continue
             data = part.get("image_url")

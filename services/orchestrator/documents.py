@@ -151,3 +151,52 @@ def extract_document(attachment: Attachment) -> Extracted:
         tuple(errors),
         computed_tables(raw, extension),
     )
+
+
+def file_parts_to_documents(value: dict[str, Any]) -> None:
+    """Turn the OpenAI file parts of the user turns into the request documents, in place.
+
+    Open WebUI (0.11 and 0.13 alike, through the Atlas image filter) sends each attached
+    document as a {"type": "file"} part. The current turn's documents, or the earlier
+    ones it refers to, become ``documents``; each part becomes a short text marker.
+    Only file parts create document inputs: any client ``documents`` field is replaced.
+    """
+    from packages.turn_attachments import is_document_upload, select_documents
+
+    messages = value["messages"]
+    document_turns = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        documents = (
+            [
+                Attachment.model_validate(p.get("file")).model_dump()
+                for p in content
+                if isinstance(p, dict)
+                and p.get("type") == "file"
+                and is_document_upload(dict(p.get("file") or {}))
+            ]
+            if isinstance(content, list) and message.get("role") == "user"
+            else []
+        )
+        document_turns.append({**message, "files": documents})
+    value["documents"] = select_documents(document_turns)
+    # A reused file delivered on the current turn by the verified inlet retains its status.
+    current = document_turns[-1].get("files", []) if document_turns else []
+    if current:
+        value["documents"] = current
+    for message in messages:
+        if (
+            not isinstance(message, dict)
+            or message.get("role") != "user"
+            or not isinstance(message.get("content"), list)
+        ):
+            continue
+        for part in message["content"]:
+            if isinstance(part, dict) and part.get("type") == "file":
+                attachment = Attachment.model_validate(part.get("file"))
+                part.clear()
+                part.update(
+                    type="text", text="[Attachment: " + attachment.filename + "]"
+                )

@@ -150,7 +150,8 @@
       if (stop() && !turn.stopping) { turn.stopping = true; stop().click(); }
     });
   }
-  const actionMatchers = [/^edit$|^modifier$|bearbeiten|^editar$|^modifica$/i, /^copy$|^copier$|kopieren|^copiar$|^copia$/i, /read aloud|lire.*voix|vorlesen|leer en voz|leggi/i, /good response|bonne réponse|gute antwort|buena respuesta|buona risposta/i, /bad response|mauvaise réponse|schlechte antwort|mala respuesta|cattiva risposta/i, /continue|continuer|fortsetzen|continuar|continua/i, /regenerate|r[ée]g[ée]n[ée]rer|regenerieren|neu generieren|regenerar|rigenera/i, /fork chat|créer une branche|verzweigen|crear una rama|diramazione/i];
+  // Open WebUI 0.13 renamed the fork action in some languages (French "Dupliquer la conversation", Spanish "Bifurcar chat", Italian "Fork della chat").
+  const actionMatchers = [/^edit$|^modifier$|bearbeiten|^editar$|^modifica$/i, /^copy$|^copier$|kopieren|^copiar$|^copia$/i, /read aloud|lire.*voix|vorlesen|leer en voz|leggi/i, /good response|bonne réponse|gute antwort|buena respuesta|buona risposta/i, /bad response|mauvaise réponse|schlechte antwort|mala respuesta|cattiva risposta/i, /continue|continuer|fortsetzen|continuar|continua/i, /regenerate|r[ée]g[ée]n[ée]rer|regenerieren|neu generieren|regenerar|rigenera/i, /fork chat|créer une branche|verzweigen|crear una rama|diramazione|fork della chat|dupliquer la conversation|dériver la conversation|bifurcar/i];
   document.addEventListener('keydown', event => {
     const menu = document.querySelector('.atlas-action-menu[open]');
     if (menu && event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); menu.close(); }
@@ -196,15 +197,19 @@
       document.documentElement.style.setProperty('--atlas-composer-placeholder', JSON.stringify(words()[0]));
       if (input.hasAttribute('data-placeholder')) attr(input, 'data-placeholder', words()[0]);
     }
-    const voice = document.querySelector('#message-input-container [aria-label="Voice Input"],#message-input-container [data-atlas-voice]');
+    const voice = document.querySelector('#message-input-container :is(#voice-input-button,[aria-label="Voice Input"],[data-atlas-voice])');
     if (voice) { voice.dataset.atlasVoice = 'true'; const label = ({fr:'Saisie vocale', de:'Spracheingabe', es:'Entrada de voz', it:'Input vocale'})[language()] || 'Voice Input'; attr(voice, 'aria-label', label); attr(voice, 'title', label); }
     if (stop()) { attr(stop(), 'aria-label', words()[12]); attr(stop(), 'title', words()[12]); }
     document.querySelectorAll('.atlas-stop-mark').forEach(node => setText(node, words()[13]));
-    document.querySelectorAll('#message-input-container button').forEach(chip => {
-      const name = chip.querySelector('.truncate.flex-1');
+    document.querySelectorAll('#message-input-container button').forEach(face => {
+      const name = face.querySelector('.truncate.flex-1');
       const size = name?.nextElementSibling;
       if (!name || !size || !/\d/.test(size.textContent)) return;
-      chip.classList.add('atlas-file-chip'); name.classList.add('atlas-file-name'); size.classList.add('atlas-file-size');
+      // The chip is the hover group that holds the file button and its remove control:
+      // the button itself in Open WebUI 0.11, a wrapper around it (remove control beside it) in 0.13.
+      const chip = !face.classList.contains('group') && face.parentElement?.classList.contains('group') ? face.parentElement : face;
+      if (chip !== face) face.classList.remove('atlas-file-chip');
+      chip.classList.add('atlas-file-chip'); face.classList.add('atlas-file-face'); name.classList.add('atlas-file-name'); size.classList.add('atlas-file-size');
       attr(name, 'title', name.textContent.trim());
       if (!size.dataset.atlasOriginal) size.dataset.atlasOriginal = size.textContent.trim();
       const match = size.dataset.atlasOriginal.match(/([\d.,]+)\s*([KMGT]?)(?:i?B|o|bytes?)/i);
@@ -233,13 +238,30 @@
     const skip = document.querySelector('a[href="#main-content"]');
     if (skip) setText(skip, ({fr:'Aller au contenu principal', de:'Zum Hauptinhalt', es:'Ir al contenido principal', it:'Vai al contenuto principale'})[language()] || 'Skip to main content');
     const title = document.getElementById('chat-context-menu-button')?.parentElement?.previousElementSibling;
-    // The menu trigger is nested in a tooltip; resolve its title sibling by shape.
-    const candidate = title?.matches('.truncate') ? title : document.querySelector('nav .truncate.text-left');
-    if (candidate && candidate.clientWidth) {
+    // The menu trigger is nested in a tooltip; resolve its title sibling by shape. Open WebUI 0.13 shows the
+    // title as the selected workspace tab before that trigger on large screens: its text is the tab's last span.
+    const tab = title?.matches('[role="tab"]') ? [...title.children].filter(child => child.tagName === 'SPAN').pop() : null;
+    const candidate = tab || (title?.matches('.truncate') ? title : document.querySelector('nav .truncate.text-left'));
+    const tabText = tab ? [...tab.childNodes].filter(node => node.nodeType === Node.TEXT_NODE) : [];
+    if (candidate && candidate === tab && tabText.length === 1 && candidate.clientWidth) {
+      // The tab lives across chats: change its own text node, so the next native title update still reaches it,
+      // and fit the words in the tab itself (its computed font does not always serialise for a canvas).
+      const state = titles.get(candidate);
+      if (!state || candidate.textContent !== state.shown) {
+        const raw = candidate.textContent.trim();
+        const full = raw.charAt(0).toLocaleUpperCase(language()) + raw.slice(1);
+        const parts = full.split(/\s+/);
+        tabText[0].data = full;
+        while (parts.length > 1 && candidate.scrollWidth > candidate.clientWidth) { parts.pop(); tabText[0].data = parts.join(' ') + '…'; }
+        titles.set(candidate, { full: raw, shown: tabText[0].data }); attr(candidate, 'title', full);
+      }
+    } else if (candidate && candidate.clientWidth) {
       let state = titles.get(candidate);
       if (!state || candidate.textContent !== state.shown) state = { full: candidate.textContent.trim(), shown: '' };
       const full = state.full.charAt(0).toLocaleUpperCase(language()) + state.full.slice(1);
-      const canvas = document.createElement('canvas'), context = canvas.getContext('2d'); context.font = getComputedStyle(candidate).font;
+      const canvas = document.createElement('canvas'), context = canvas.getContext('2d'), style = getComputedStyle(candidate);
+      // Open WebUI 0.13 sets font longhands the shorthand cannot serialise (empty string): rebuild it.
+      context.font = style.font || [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ');
       let text = full;
       const maximum = candidate.clientWidth;
       if (context.measureText(text).width > maximum) {

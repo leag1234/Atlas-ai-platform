@@ -63,3 +63,42 @@ class ChatSchemaTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "6001.*6000"):
                 ChatRequest.model_validate({**payload, "max_tokens": 6001})
+
+    def test_file_parts_become_documents_on_both_paths(self) -> None:
+        """Open WebUI 0.11 and 0.13 send attached documents as OpenAI file parts."""
+        import base64
+        import copy
+        import json
+
+        from services.orchestrator.image_store import prepare_uploads
+
+        data = base64.b64encode(b"day,value\n1,4\n").decode()
+        body = {
+            "model": "atlas-qwen",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "<attached_files>\n</attached_files>"},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": "values.csv",
+                                "file_data": data,
+                                "file_id": "8e9303e8-9d49-4d8c-901b-a7b7e9e9fa05",
+                            },
+                        },
+                        {"type": "text", "text": "Summarize this file."},
+                    ],
+                }
+            ],
+        }
+        original = json.dumps(body)
+        direct = ChatRequest.model_validate(body)
+        self.assertEqual(json.dumps(body), original)
+        self.assertEqual([d.filename for d in direct.documents], ["values.csv"])
+        self.assertIn("[Attachment: values.csv]", direct.user_text)
+        adapted, _, _ = prepare_uploads(copy.deepcopy(body))
+        through_adapter = ChatRequest.model_validate(adapted)
+        self.assertEqual(through_adapter.documents, direct.documents)
+        self.assertEqual(through_adapter.messages, direct.messages)
