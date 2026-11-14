@@ -22,7 +22,12 @@ import time
 from decimal import Decimal
 from typing import Any
 
-from services.orchestrator.pictures import animal_kit_enabled, painter, store
+from services.orchestrator.pictures import (
+    animal_kit_enabled,
+    bounded_contours_enabled,
+    painter,
+    store,
+)
 from services.orchestrator.pictures.svg_text import extract_svg, salvage
 from services.orchestrator.pictures.texts import text
 from services.orchestrator.pictures.turn import (
@@ -167,6 +172,7 @@ async def process_picture_followup(
                 "checklist": picture_set.checklist,
                 "living": picture_set.living,
                 "animal_kit": animal_kit_enabled(),
+                "bounded_contours": bounded_contours_enabled(),
                 "labels_group": painter.labels_group(picture_set.checklist),
             },
         )

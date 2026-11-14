@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import GatewayError
+from services.orchestrator import pictures
 from services.orchestrator.pictures import choice, painter, store, turn
 from services.orchestrator.pictures.choice import choice_number, latest_set_id
 
@@ -119,6 +120,16 @@ class PainterTests(unittest.TestCase):
         without = painter.messages(data["request"], data["checklist"], animal_kit=False)
         self.assertIn("Animals, for the program", with_kit[1]["content"])
         self.assertNotIn("Animals, for the program", without[1]["content"])
+
+    def test_short_plan_follows_its_flag(self) -> None:
+        data = fixture("banc")
+        plain = painter.messages(data["request"], data["checklist"], animal_kit=True)
+        brief = painter.messages(
+            data["request"], data["checklist"], animal_kit=True, brief=True
+        )
+        self.assertEqual(brief[0], plain[0])
+        self.assertEqual(brief[1]["content"], plain[1]["content"] + painter.BRIEF)
+        self.assertIn("short plan", painter.BRIEF)
 
     def test_labels_are_left_to_the_program(self) -> None:
         ck = {
@@ -350,6 +361,65 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(count, 1)
         self.assertLess(count, 4)
         self.assertIn("picture_draft_cancelled", item.erreurs)
+
+    async def test_spare_draft_is_stopped_once_four_are_painted(self) -> None:
+        gateway = FakeGateway("banc", delay=0.2)
+        with patch.dict(
+            os.environ,
+            {"ATLAS_PICTURE_SPARE_DRAFTS": "2", "ATLAS_PICTURE_TURN_EUR": "0.15"},
+        ):
+            item = await self.run_turn(gateway)
+        painted = [p for p in gateway.payloads if p.get("produces_files")]
+        # 0.15 EUR pays one spare with a whole share for each draft, not two.
+        self.assertEqual(len(painted), 5)
+        self.assertGreaterEqual(
+            min(Decimal(p["budget_eur"]) for p in painted), turn.SPARE_DRAFT_SHARE
+        )
+        self.assertEqual(item.reponse.count("/images/picture/"), 4)
+        self.assertNotIn("picture_draft_cancelled", item.erreurs)
+        self.assertNotIn("picture_draft_timeout", item.erreurs)
+        # The stopped draft may still be billed: its whole share is counted.
+        self.assertGreater(item.cout_eur, 0.0008 + 0.0002 + 4 * 0.0113 + 0.028)
+
+    async def test_a_spare_draft_takes_the_place_of_a_failed_one(self) -> None:
+        failures: dict[int, Exception] = {0: GatewayError("provider_error", 502)}
+        with patch.dict(
+            os.environ,
+            {"ATLAS_PICTURE_SPARE_DRAFTS": "1", "ATLAS_PICTURE_TURN_EUR": "0.15"},
+        ):
+            item = await self.run_turn(FakeGateway("banc", failures))
+        self.assertEqual(item.reponse.count("/images/picture/"), 4)
+        self.assertIn("Voici 4 propositions", item.reponse)
+        self.assertIn("picture_draft_provider_error", item.erreurs)
+
+    async def test_short_plan_reaches_the_painter_only_with_its_flag(self) -> None:
+        for flag, expected in (("", False), ("1", True)):
+            gateway = FakeGateway("banc")
+            with patch.dict(os.environ, {"ATLAS_PICTURE_BRIEF_PLAN": flag}):
+                await self.run_turn(gateway)
+            painted = [p for p in gateway.payloads if p.get("produces_files")]
+            self.assertEqual(len(painted), 4)
+            for payload in painted:
+                user = str(payload["messages"][1]["content"])
+                self.assertEqual(user.endswith(painter.BRIEF), expected, flag)
+
+    async def test_no_spare_draft_without_room_in_the_ceiling(self) -> None:
+        gateway = FakeGateway("banc")
+        with patch.dict(
+            os.environ,
+            {"ATLAS_PICTURE_SPARE_DRAFTS": "1", "ATLAS_PICTURE_TURN_EUR": "0.12"},
+        ):
+            await self.run_turn(gateway)
+        painted = [p for p in gateway.payloads if p.get("produces_files")]
+        # 0.12 EUR shared by five drafts leaves less than a whole share each:
+        # the four drafts keep theirs, as without spares.
+        self.assertEqual(len(painted), 4)
+        self.assertGreater(
+            min(Decimal(p["budget_eur"]) for p in painted), Decimal("0.028")
+        )
+        for raw, expected in (("", 0), ("x", 0), ("-3", 0), ("1", 1), ("7", 2)):
+            with patch.dict(os.environ, {"ATLAS_PICTURE_SPARE_DRAFTS": raw}):
+                self.assertEqual(pictures.spare_drafts(), expected)
 
     async def test_photo_request_says_so(self) -> None:
         item = await self.run_turn(

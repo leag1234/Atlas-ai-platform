@@ -54,6 +54,9 @@ Labels by code on SVG drafts are not measured yet.
 | `ATLAS_PICTURE_ANIMAL_KIT` | off | `1` adds the provisional animal kit (its own switch) |
 | `ATLAS_HIDDEN_PROFILES` | empty | must include the painter's hidden profile (see `picture_roles`) |
 | `ATLAS_PICTURE_SOFT_SECONDS` | 120 | painting time after which the drafts already painted are kept (30 to 240) |
+| `ATLAS_PICTURE_BRIEF_PLAN` | off | `1` asks the painter for a short plan before its SVG (shorter reasoning, see section 4) |
+| `ATLAS_PICTURE_SPARE_DRAFTS` | 0 | drafts started beyond the four (0 to 2); the first four painted are kept, the others stopped; started only while each draft keeps a whole share of the turn's ceiling (0.028 EUR, its full output room): one spare needs `ATLAS_PICTURE_TURN_EUR` of 0.15 |
+| `ATLAS_PICTURE_BOUNDED_CONTOURS` | on | `0` keeps the contour filters canvas-wide, as in the spike (see section 4) |
 | `ATLAS_PICTURE_JOB_SECONDS` | 90 | wall-clock limit of one draft job |
 | `ATLAS_PICTURE_JOB_MEMORY_MB` | 2048 | address-space limit of one job |
 | `ATLAS_PICTURE_FONT_DIR` | Liberation paths | directory of the Liberation fonts |
@@ -81,6 +84,36 @@ image; the host needs `/usr/share/fonts/truetype/liberation`).
   on one, two on two, one on one (the others were still painting at 120 s);
   0.039 to 0.041 EUR for the requests that kept four drafts, up to 0.084 EUR
   counted when drafts were stopped (reservations included).
+- Where the time goes (2026-11-14, 10 corpus requests, 40 drafts streamed from
+  the painter with the turn's own request body): a draft writes 85 to 100
+  tokens a second; the SVG itself is a median 5300 tokens (about 60 s), the
+  reasoning a median 1300 tokens but 4200 at the 90th percentile and up to
+  11300, which is what cuts a draft at its output limit. A draft cut there
+  lacks the things the request names (they are drawn last), so it is lost,
+  not mended. The slowest of the four drafts sets the wait.
+- The short plan (`ATLAS_PICTURE_BRIEF_PLAN=1`): reasoning median 960 and
+  90th percentile 1900 tokens, draft median 71 s instead of 88 s, cost per
+  draft -10 %, the same share of requests with a good picture (10 of 10, blind
+  contact sheets). A size target for the SVG cut it by a third but lost the
+  people's poses on two requests of ten: not kept. Starting the drafts 8 s
+  apart changes nothing (the provider's rate per draft does not depend on how
+  many run).
+- One spare draft (`ATLAS_PICTURE_SPARE_DRAFTS=1` with a ceiling of 0.15 EUR)
+  drops the slowest draft from the wait: with the short plan, replayed on the
+  measured drafts, four candidates on 10 requests of 10, wait median 107 s and
+  at most 122 s, about +20 % cost (the stopped draft is billed to the end: the
+  gateway does not stop a call its caller left). With a 0.12 EUR ceiling the
+  fifth share would lower every draft's output limit to about 9000 tokens and
+  cut long drafts, so no spare is started.
+- The code steps of a draft ran 5 to 25 s, most of it in the final render: the
+  contour finish filtered a canvas-wide region for each outlined group.
+  Bounded to the group (`finish.bound_contours`), the render takes 0.3 to 1.6 s
+  instead of 0.7 to 13 s, with the same picture to a few antialiased edge
+  pixels; a whole draft job, median 6.3 s instead of 9.5 s, 90th percentile
+  9 s instead of 16 s (50 drafts). Two jobs run at once per process, so with
+  several requests at a time the drafts queue behind each other's jobs: in a
+  run of three requests at a time, painting was over by 56 to 107 s but two
+  requests waited 137 and 155 s.
 - D5: a budget or quota refusal from any call ends the turn with the measured
   refusal. A provider failure drops only its draft: fewer than four pictures are
   shown, with one sentence saying so. With no draft left, the drawing failure

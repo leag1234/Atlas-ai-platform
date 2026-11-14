@@ -13,7 +13,10 @@ package is split by step:
 - painter, turn, choice: the chat turn, the four candidates and the choice.
 
 Everything stays off unless ATLAS_PICTURES_BY_CODE=1; the provisional animal
-kit has its own switch, ATLAS_PICTURE_ANIMAL_KIT=1.
+kit has its own switch, ATLAS_PICTURE_ANIMAL_KIT=1. The short plan asked of
+the painter (ATLAS_PICTURE_BRIEF_PLAN=1) and the spare drafts
+(ATLAS_PICTURE_SPARE_DRAFTS) are off by default; the contour filters bounded
+to their group are on (ATLAS_PICTURE_BOUNDED_CONTOURS=0 turns them off).
 """
 
 from __future__ import annotations
@@ -29,3 +32,27 @@ def enabled() -> bool:
 def animal_kit_enabled() -> bool:
     """The provisional animal kit (round 23), switchable on its own."""
     return os.environ.get("ATLAS_PICTURE_ANIMAL_KIT", "").strip() == "1"
+
+
+def brief_plan_enabled() -> bool:
+    """The painter is asked for a short plan before its SVG (off by default)."""
+    return os.environ.get("ATLAS_PICTURE_BRIEF_PLAN", "").strip() == "1"
+
+
+def bounded_contours_enabled() -> bool:
+    """Contour filters bounded to their group (finish.bound_contours); on by
+    default, ATLAS_PICTURE_BOUNDED_CONTOURS=0 keeps the canvas-wide regions."""
+    return os.environ.get("ATLAS_PICTURE_BOUNDED_CONTOURS", "").strip() != "0"
+
+
+SPARE_DRAFTS_LIMIT = 2
+
+
+def spare_drafts() -> int:
+    """Drafts started beyond the four shown (ATLAS_PICTURE_SPARE_DRAFTS, 0 to 2,
+    default 0): the first four painted are kept, the others are stopped."""
+    try:
+        value = int(os.environ.get("ATLAS_PICTURE_SPARE_DRAFTS", "").strip() or 0)
+    except ValueError:
+        return 0
+    return min(max(value, 0), SPARE_DRAFTS_LIMIT)
