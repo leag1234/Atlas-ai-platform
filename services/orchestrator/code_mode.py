@@ -395,12 +395,20 @@ async def execute_turn(
         # an answer streaming for 120 s was cut and the turn failed, twice).
         model.progress_deadline = time.monotonic() + limits.wall_clock
     result = await run(
-        Query(question=redact(request.user_text), lang=request.lang),
+        Query(
+            question=redact(request.user_text),
+            lang=request.lang,
+            prose_lang=request.prose_lang,
+        ),
         model,
         tools,
         Path("prompts/chat.txt").read_text()
         + Path("prompts/chat-agent.txt").read_text()
-        + (language_instruction(request.lang) if isinstance(tools, WorkTools) else "")
+        + (
+            language_instruction(request.prose_lang)
+            if isinstance(tools, WorkTools)
+            else ""
+        )
         + (tools.instructions if isinstance(tools, WorkTools) else ""),
         limits,
         history=history,

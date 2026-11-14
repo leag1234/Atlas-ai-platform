@@ -38,6 +38,16 @@ def user_prose(text: str) -> str:
 
 
 def detected_language(text: str) -> str | None:
+    """The language of the text among the five tuned conversation languages."""
+    language = identified_language(text)
+    return language if language in LANGUAGES else None
+
+
+def identified_language(text: str) -> str | None:
+    """The language of the user's prose: any language the detector identifies.
+
+    Codes are the detector's (ISO 639-1, plus zh-cn and zh-tw).
+    """
     text = user_prose(text)
     normalized = "".join(
         c
@@ -73,8 +83,7 @@ def detected_language(text: str) -> str | None:
         scores = detector.detect_langs(text.lower() if text.isupper() else text)
     except detector.lang_detect_exception.LangDetectException:
         return None
-    language = str(scores[0].lang)
-    return language if scores[0].prob >= 0.8 and language in LANGUAGES else None
+    return str(scores[0].lang) if scores[0].prob >= 0.8 else None
 
 
 def question_language(text: str, fallback: str) -> str:
@@ -196,8 +205,65 @@ def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> s
     return question_language(current, history or locale)
 
 
+def language_name(language: str) -> str | None:
+    """The English name of a language code as the detector reports it."""
+    tag = {"zh-cn": "zh_Hans", "zh-tw": "zh_Hant"}.get(language, language)
+    if not re.fullmatch(r"[a-z]{2,3}(?:_Han[st])?", tag):
+        return None
+    from babel import Locale
+
+    # CLDR names (Babel, already a dependency) cover every code the detector reports.
+    name = Locale("en").languages.get(tag)
+    return str(name) if name else None
+
+
+def prose_language(messages: Sequence[LanguageMessage], language: str) -> str:
+    """The language of the answer's prose.
+
+    `language` is the conversation language among the five tuned ones, which also
+    drives interface and status texts. A conversation written in another language
+    the detector identifies is answered in that language: a Portuguese question
+    was answered in English (corpus 2026-11-11). A message of a few words carries
+    too little prose for the detector (a three-word English question came back
+    Slovak at 1.0): it keeps the language of the conversation so far.
+    """
+    if not messages:
+        return language
+    current = user_prose(messages[-1].text)
+    if requested_language(current) is not None:
+        return language
+    history: str | None = None
+    for message in messages[:-1]:
+        if message.role == "user":
+            history = identified_language(message.text) or history
+    if history is None:
+        for message in messages[:-1]:
+            if message.role == "assistant":
+                history = identified_language(message.text) or history
+    found = history
+    if len(re.findall(r"\b[\w'-]+\b", current)) >= 5:
+        found = identified_language(current) or history
+    if found is None or found in LANGUAGES or language_name(found) is None:
+        return language
+    return found
+
+
 def language_instruction(language: str) -> str:
-    if language not in LANGUAGES:
-        raise ValueError("unsupported_language")
+    """The prose language instruction: tuned for the five, generic for the others."""
     instructions = json.loads(Path("prompts/language.json").read_text())
-    return str(instructions[language])
+    if language in LANGUAGES:
+        return str(instructions[language])
+    name = language_name(language)
+    template = str(instructions["en"])
+    stated = "Answer in English."
+    if name is None or stated not in template:
+        raise ValueError("unsupported_language")
+    # The other languages share the English instruction, code rules included; the
+    # detector can confuse close languages (Portuguese without accents came back
+    # Catalan), so the user's own message decides when it plainly differs.
+    return template.replace(
+        stated,
+        f"Answer in {name}, the language the user writes in; if the user's message "
+        "is plainly in another language, answer in that language.",
+        1,
+    )

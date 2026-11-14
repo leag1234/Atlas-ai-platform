@@ -4,7 +4,12 @@ from packages.profiles import accepted_profile, context_window, PROFILES
 from packages.file_intent import produces_file
 from packages.work_intent import continues_work
 from packages.evidence import estimated_tokens
-from packages.language import LANGUAGES, conversation_language, status_language
+from packages.language import (
+    LANGUAGES,
+    conversation_language,
+    prose_language,
+    status_language,
+)
 from pydantic_core import PydanticCustomError
 
 import os
@@ -186,6 +191,12 @@ class ChatRequest(VisionInput):
             return conversation_language(self.conversation_messages, self.ui_locale)
         except (IndexError, ValueError):
             return self.lang
+
+    @property
+    def prose_lang(self) -> str:
+        """The language the model writes its prose in: lang, or any other language
+        the user writes in (lang stays one of the five interface languages)."""
+        return prose_language(self.conversation_messages, self.lang)
 
     @property
     def status_language(self) -> str:

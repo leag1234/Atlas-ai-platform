@@ -9,6 +9,7 @@ from decimal import Decimal
 from html import escape
 from typing import TYPE_CHECKING
 
+from packages.language import language_name
 from packages.ports import atlas_ports
 from services.orchestrator.loop import Call, Limits, Query, run
 from services.orchestrator.model import GatewayError, GatewayModel
@@ -31,14 +32,6 @@ class Evidence:
     directory: bool
     attributes: tuple[str, ...]
 
-
-_LANGUAGE_NAMES = {
-    "en": "English",
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "it": "Italian",
-}
 
 _SYNTHESIS_INSTRUCTION = (
     "Answer briefly using only the exact-name evidence below and cite its URLs. "
@@ -167,10 +160,11 @@ def _separate_identity_fallback(evidence: list[Evidence]) -> str:
 
 
 def synthesis_instruction(language: str) -> str:
-    """Keep person answers in the UI/question language, as on the normal chat path."""
+    """Keep person answers in the question's language, as on the normal chat path."""
+    name = language_name(language) or "English"
     return (
-        f"The user's question language is {_LANGUAGE_NAMES[language]} ({language}). "
-        f"Reply in {_LANGUAGE_NAMES[language]}. " + _SYNTHESIS_INSTRUCTION
+        f"The user's question language is {name} ({language}). "
+        f"Reply in {name}. " + _SYNTHESIS_INSTRUCTION
     )
 
 
@@ -225,10 +219,14 @@ async def _answer_from_evidence(
             wall_clock=max(0, request.timeout_seconds - (time.monotonic() - started)),
         )
         result = await run(
-            Query(question=request.user_text, lang=request.lang),
+            Query(
+                question=request.user_text,
+                lang=request.lang,
+                prose_lang=request.prose_lang,
+            ),
             model,
             tools,
-            synthesis_instruction(request.lang),
+            synthesis_instruction(request.prose_lang),
             limits,
             history=history,
             retry_web=False,
@@ -245,10 +243,14 @@ async def _answer_from_evidence(
                 },
             ]
             repaired = await run(
-                Query(question=request.user_text, lang=request.lang),
+                Query(
+                    question=request.user_text,
+                    lang=request.lang,
+                    prose_lang=request.prose_lang,
+                ),
                 model,
                 tools,
-                synthesis_instruction(request.lang),
+                synthesis_instruction(request.prose_lang),
                 Limits(
                     profile=request.model,
                     tool_calls=0,
