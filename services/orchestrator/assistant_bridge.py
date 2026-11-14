@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from packages.profiles import PROFILES
+from packages.profiles import default_profile
 from services.orchestrator.dev_chat import Output, RawChatInput
 
 CLIENT_TOOLS_MESSAGE = (
@@ -40,7 +40,7 @@ def assistant_body(raw: dict[str, Any], protocol: str) -> dict[str, Any]:
     normalize_chat(converted)
     name = str(raw["model"])
     return {
-        "model": PROFILES[0] if name == "atlas" else name,
+        "model": default_profile() if name == "atlas" else name,
         "messages": converted["messages"],
         "stream": True,
         "max_tokens": min(int(converted.get("max_tokens") or 6000), 16000),

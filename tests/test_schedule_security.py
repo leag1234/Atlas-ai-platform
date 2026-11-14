@@ -44,10 +44,11 @@ class ScheduleSecurityTests(unittest.TestCase):
         from uuid import uuid4
         from starlette.requests import Request
         from services.orchestrator.project_transcript import authenticate_chat
+        from packages.profiles import default_profile
         from services.orchestrator.chat_schema import ChatRequest
 
         body = dict(
-            model=ChatRequest.model_fields["model"].default,
+            model=default_profile(),
             org_id=str(uuid4()),
             project_id=str(uuid4()),
             conversation_id=str(uuid4()),

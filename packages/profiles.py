@@ -133,6 +133,48 @@ def accepted_profile(name: str) -> bool:
     return name in PROFILES or name in enabled_hidden_profiles()
 
 
+def default_profile() -> str:
+    """The profile of a new chat conversation or of an API call without a model.
+
+    ATLAS_DEFAULT_PROFILE names it; unset keeps the first public profile. A hidden
+    profile is accepted only when ATLAS_HIDDEN_PROFILES enables it on this instance.
+    """
+    name = os.environ.get("ATLAS_DEFAULT_PROFILE", "").strip()
+    if not name:
+        return PROFILES[0]
+    if accepted_profile(name):
+        return name
+    raise ValueError(
+        "invalid_configuration: ATLAS_DEFAULT_PROFILE="
+        + name
+        + " is neither a public profile nor a hidden profile enabled by"
+        " ATLAS_HIDDEN_PROFILES (accepted here: "
+        + ", ".join((*PROFILES, *enabled_hidden_profiles()))
+        + ")"
+    )
+
+
+def chat_ui_profiles() -> tuple[str, ...]:
+    """The profiles the chat UI lists: the public ones, plus a hidden default."""
+    default = default_profile()
+    return PROFILES if default in PROFILES else (*PROFILES, default)
+
+
+def chat_ui_access(profile: str) -> str:
+    """How the chat UI offers a profile.
+
+    "default": the one model every user sees, named Atlas. "previous": the first
+    public profile when another default replaces it; every user may still read
+    it, so older conversations go on, but the selector leaves it out and new
+    conversations start on the default. "admin": administrators only.
+    """
+    if profile == default_profile():
+        return "default"
+    if profile == PROFILES[0]:
+        return "previous"
+    return "admin"
+
+
 def context_window(profile: str, *, vision: bool = False) -> int:
     """Resolve the active gateway model's declared capacity, including overrides."""
     import os

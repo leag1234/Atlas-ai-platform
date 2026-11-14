@@ -1,6 +1,6 @@
 """OpenAI-compatible text/image chat; clients cannot alter tool budgets."""
 
-from packages.profiles import accepted_profile, context_window, PROFILES
+from packages.profiles import accepted_profile, context_window, default_profile
 from packages.file_intent import produces_file
 from packages.work_intent import continues_work
 from packages.evidence import estimated_tokens
@@ -52,7 +52,7 @@ def continuation_instruction(answer: str, language: str) -> str:
 class ChatRequest(VisionInput):
     model_config = ConfigDict(extra="ignore", strict=True)
     location: Location | None = Field(default=None, exclude=True, repr=False)
-    model: str = PROFILES[0]
+    model: str = Field(default_factory=default_profile)
     documents: list[Attachment] = Field(default_factory=list, max_length=8)
     org_id: str | None = None
     connector_org_id: str | None = None
