@@ -197,6 +197,7 @@ class Runtime:
             raise ValueError("search_unavailable")
         last_quota: SearchQuotaError | None = None
         last_budget: BudgetRefusal | None = None
+        last_limit: LimitError | None = None
         attempts: list[Message] = []
         last_searxng_result: Message | None = None
         deadline = asyncio.get_running_loop().time() + timeout
@@ -247,6 +248,9 @@ class Runtime:
                 # success keeps the model-visible tool output unchanged.
                 return {**result, "attempts": attempts} if len(attempts) > 1 else result
             except SearchQuotaError as exc:
+                # A quota or rate refusal of one provider leaves the next
+                # provider of the chain to answer; it is reported only when no
+                # provider served (D5: never as an outage).
                 last_quota = exc
                 attempts.append({"provider": provider, "outcome": str(exc)})
             except BudgetRefusal as exc:
@@ -257,10 +261,14 @@ class Runtime:
                 last_budget = exc
                 attempts.append({"provider": provider, "outcome": exc.category})
             except (TimeoutError, aiohttp.ClientError):
-                last_quota = None
                 attempts.append({"provider": provider, "outcome": "upstream_timeout"})
             except LimitError as exc:
                 attempts.append({"provider": provider, "outcome": exc.code})
+                if exc.code == "quota_exceeded":
+                    # The local monthly reservation of this provider is full:
+                    # like its own quota, the next provider may still answer.
+                    last_limit = exc
+                    continue
                 self._last_search_attempts = attempts
                 raise
             except ValueError as exc:
@@ -268,7 +276,6 @@ class Runtime:
                     attempts.append({"provider": provider, "outcome": str(exc)})
                     self._last_search_attempts = attempts
                     raise
-                last_quota = None
                 attempts.append({"provider": provider, "outcome": "search_unavailable"})
         if last_searxng_result is not None and all(
             str(attempt.get("provider")) == "searxng" for attempt in attempts
@@ -282,6 +289,9 @@ class Runtime:
         if last_budget is not None:
             self._last_search_attempts = attempts
             raise last_budget
+        if last_limit is not None:
+            self._last_search_attempts = attempts
+            raise last_limit
         self._last_search_attempts = attempts
         raise ValueError("search_unavailable")
 
