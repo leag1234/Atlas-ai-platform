@@ -5,7 +5,8 @@
 #   2. fetch and check the weights (fetch_weights.sh);
 #   3. create the shared token and a self-signed TLS certificate for this
 #      host's public address, once (kept across updates);
-#   4. block new outbound connections from containers (systemd unit);
+#   4. block new outbound connections from containers (systemd unit; lifted
+#      only while the image is built);
 #   5. (re)start the container, restarted on boot, port 8790 published.
 # Usage: install.sh PUBLIC_IP [klein|zimage]
 # Afterwards, copy /opt/pictures-cpu/secret/cert.pem and .../token to the
@@ -16,7 +17,13 @@ address="${1:?public address of this host}"
 model="${2:-klein}"
 root=/opt/pictures-cpu
 image=atlas-pictures-cpu:local
+rule=(DOCKER-USER -i docker0 ! -o docker0 -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP)
 mkdir -p "$root/secret" "$root/weights"
+# The egress rule also blocks image builds (their steps run on docker0): lift
+# it while building, put it back on exit, whatever happens.
+systemctl stop atlas-pictures-egress.service 2>/dev/null || true
+while iptables -D "${rule[@]}" 2>/dev/null; do :; done
+trap 'iptables -C "${rule[@]}" 2>/dev/null || iptables -I "${rule[@]}"' EXIT
 docker build -q -t "$image" "$here" >/dev/null
 docker image inspect "$image" --format 'image {{.Id}}'
 PICTURES_CPU_IMAGE="$image" bash "$here/fetch_weights.sh" "$root/weights"
@@ -40,6 +47,7 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/bin/sh -c 'iptables -C DOCKER-USER -i docker0 ! -o docker0 -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP 2>/dev/null || iptables -I DOCKER-USER -i docker0 ! -o docker0 -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP'
+ExecStop=/bin/sh -c 'while iptables -D DOCKER-USER -i docker0 ! -o docker0 -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP 2>/dev/null; do :; done'
 
 [Install]
 WantedBy=multi-user.target
