@@ -222,7 +222,7 @@ class RemoteToolTests(unittest.TestCase):
         self.assertEqual(
             set(selection.names)
             - {"update_plan", "request_approval", "switch_tool_group"},
-            set(SCHEMAS) | set(MACHINE_TOOLS),
+            set(SCHEMAS) | (set(MACHINE_TOOLS) - {"machine_connect"}),
         )
         selection.reopen_enabled = True
         selection.memory_enabled = True

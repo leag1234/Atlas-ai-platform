@@ -65,6 +65,7 @@ from services.orchestrator.app import app as harness_app
 from services.orchestrator.user_memory_ui import router as user_memory_router
 from services.orchestrator.voice_ui import router as voice_router
 from services.orchestrator.dictation import router as dictation_router
+from services.orchestrator.machine_connect import router as machine_connect_router
 
 from services.orchestrator.api_key_edge import (
     app as key_app,
@@ -90,6 +91,8 @@ app.include_router(mcp_router)
 app.include_router(connector_router)
 
 app.include_router(code_router)
+# Before the project proxy, which owns every other /api/atlas route.
+app.include_router(machine_connect_router)
 
 
 @app.post("/api/atlas/nearby-location")

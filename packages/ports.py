@@ -15,6 +15,8 @@ DEFAULT_PORTS = {
     "postgres": 5432,
     "searxng": 8888,
     "runner": 13712,
+    # The Atlas relay's WebSocket listener, behind the instance's HTTPS edge.
+    "relay": 13740,
 }
 
 

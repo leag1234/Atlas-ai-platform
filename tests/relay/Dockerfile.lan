@@ -1,0 +1,7 @@
+# A server of the user's local network, reachable only from the user's computer.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server git \
+    && rm -rf /var/lib/apt/lists/* && useradd --create-home --uid 1001 ada && passwd -d ada \
+    && mkdir -p /run/sshd /home/ada/.ssh && chown -R ada:ada /home/ada && ssh-keygen -A \
+    && printf '%s\n' 'PasswordAuthentication no' 'PermitRootLogin no' 'AllowUsers ada' > /etc/ssh/sshd_config.d/atlas-test.conf
+CMD ["/usr/sbin/sshd", "-D", "-e"]

@@ -20,7 +20,7 @@ from services.retrieval.project_work import Work
 from services.runner.registry import Registry
 from services.runner.channel import call as call
 from services.runner.contract import RemoteRun, RemoteFetch, RemoteStatus, ListTargets
-from services.runner.policy import decision, prefix_rule
+from services.runner.policy import decision, guard_root, prefix_rule
 
 Json = dict[str, Any]
 ACTIVE = {"running", "unknown"}
@@ -267,6 +267,8 @@ class RemoteWork:
                     "runner_unavailable",
                     str(current_probe.get("error", "Probe failed")),
                 )
+        if target.get("transport") == "relay" and not target.get("relay_user"):
+            raise ProjectError(409, "machine_not_connected")
         if target["status"] != "available":
             raise ProjectError(409, "runner_unavailable", "Target probe is unavailable")
         # Current folder locality is checked at the storage boundary; snapshot
@@ -285,6 +287,7 @@ class RemoteWork:
             target["deny_rules"],
             target["sensitive_rules"],
             grant["allow_rules"],
+            guard_root(target),
         )
         session = self.session(target, work_session)
         command_digest = hashlib.sha256(args["command"].encode()).hexdigest()
@@ -299,6 +302,18 @@ class RemoteWork:
                 args["cwd"],
             ),
         ).fetchall()
+        if pending and pending[0]["data"].get("approval_id"):
+            # A question left unanswered past its approval's life is closed, so
+            # the same command asked again gets a fresh approval to answer.
+            approval = self.work.approval(pending[0]["data"]["approval_id"])["data"]
+            if approval["decision"] == "pending" and datetime.fromisoformat(
+                approval["expires_at"]
+            ) <= datetime.now(timezone.utc):
+                expired = dict(
+                    pending[0]["data"], state="denied", error="approval_expired"
+                )
+                self.registry.save("commands", expired)
+                pending = []
         if pending:
             command = dict(pending[0]["data"])
             if command["code_digest"] == digest:

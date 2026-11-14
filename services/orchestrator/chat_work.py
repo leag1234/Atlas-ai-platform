@@ -322,6 +322,33 @@ def machine_setup_pending(request: ChatRequest) -> bool:
     return False
 
 
+def machine_approval_pending(request: ChatRequest) -> dict[str, Any] | None:
+    """The command the last answer asked the person to approve, if any."""
+    from services.orchestrator.work_machine_tools import approval_shown
+
+    for message in reversed(request.conversation_messages[:-1]):
+        if message.role == "assistant":
+            return approval_shown(message.text)
+    return None
+
+
+def machine_approval_hint(answer: dict[str, Any]) -> str:
+    where = f" (cwd {answer['cwd']})" if answer["cwd"] != "." else ""
+    if answer["allowed"]:
+        return (
+            "\n\n(Context for this turn: the user answered yes to running this "
+            f"command on {answer['machine']}{where}: {answer['command']} . Call "
+            "remote_run now with exactly that target, command and cwd, then continue "
+            "the user's original request of this conversation.)"
+        )
+    return (
+        "\n\n(Context for this turn: the user refused to run this command on "
+        f"{answer['machine']}: {answer['command']} . Do not run it or anything doing "
+        "the same. Continue the original request without it if you can, otherwise "
+        "say what is left to do and end your turn.)"
+    )
+
+
 MACHINE_SETUP_HINT = (
     "\n\n(Context for this turn: the previous answer asked the user to install the "
     "Atlas key on one or more machines. If this message says it is done, call "
@@ -387,6 +414,16 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         else len(request.user_text.strip()) <= _SETUP_REPLY_CHARACTERS
     )
     if setup and reason is None:
+        follow_up = True
+    # A yes or no to a command the last answer asked about goes back to the
+    # Work session that asked; the code reads the answer, never the model.
+    approval = machine_approval_pending(request)
+    if approval is not None:
+        from services.orchestrator.work_machine_tools import consent
+
+        allowed = consent(request.user_text)
+        approval = None if allowed is None else dict(approval, allowed=allowed)
+    if approval is not None and reason is None:
         follow_up = True
     if reason is None and not (follow_up and chat_conversation_id):
         return False
@@ -491,8 +528,13 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
                 ChatMessage(
                     role="user",
                     content=request.user_text
-                    + (delivered_file_hint(request) if hint and not setup else "")
-                    + (MACHINE_SETUP_HINT if setup else ""),
+                    + (
+                        delivered_file_hint(request)
+                        if hint and not setup and approval is None
+                        else ""
+                    )
+                    + (MACHINE_SETUP_HINT if setup else "")
+                    + (machine_approval_hint(approval) if approval else ""),
                 ),
             ],
         }
@@ -510,6 +552,10 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         if message.role == "assistant" and message.text.strip()
     ]
     if setup:
+        scoped.__dict__["machine_setup_pending"] = True
+    if approval is not None:
+        scoped.__dict__["machine_approval"] = approval
+        # The Work turn starts with the machine tools, as a pending setup does.
         scoped.__dict__["machine_setup_pending"] = True
     before = (item.state, list(item.erreurs), item.reponse)
     failure = ""
