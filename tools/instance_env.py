@@ -129,7 +129,7 @@ UUID_RE = re.compile(
 )
 TOKEN_SPLIT_RE = re.compile(r"[^A-Za-z0-9+_\-]+")
 PROVIDER_PREFIX_RE = re.compile(
-    r"(sk-|sk_|pk_|rk_|ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|xox[abpors]-|AKIA|ASIA|"
+    r"(sk-|sk_|pk_|rk_|gh[opsu]_|github_pat_|glpat-|xox[abpors]-|A[KS]IA|"
     r"scw-|SG\.|hf_|AIza|eyJ)"
 )
 EMAIL_RE = re.compile(r"[^@\s,;:/]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
