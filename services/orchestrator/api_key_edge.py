@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 
 from packages import privacy
-from packages.profiles import accepted_profile, PROFILES
+from packages.profiles import accepted_profile, default_profile, PROFILES
 from services.orchestrator.api_key_messages import install as install_messages
 from services.orchestrator.api_keys import (
     Principal,
@@ -386,7 +386,7 @@ async def chat(request: Request) -> Response:
                 + "; use atlas-chat, atlas-code or atlas-dev",
             )
         if name == "atlas":
-            raw["model"] = PROFILES[0]
+            raw["model"] = default_profile()
         raw["atlas_ui"] = False
         request._body = json.dumps(raw).encode()
         from services.orchestrator.chat_api import chat as assistant_chat

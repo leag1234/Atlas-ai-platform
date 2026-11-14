@@ -1,0 +1,5 @@
+# A user's computer for the relay proof: no inbound port (iptables), a project,
+# Git, make and the user's own SSH key for a server of the local network.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client make iptables ca-certificates curl procps \
+    && rm -rf /var/lib/apt/lists/* && useradd --create-home --uid 1001 ada

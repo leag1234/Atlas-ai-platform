@@ -2,7 +2,7 @@
 
 from packages.limits import LimitError
 from packages.ports import atlas_ports
-from packages.profiles import PROFILES
+from packages.profiles import default_profile
 from services.retrieval.project_identity import ProjectError
 
 import asyncio
@@ -64,7 +64,7 @@ def project_asset(asset: str) -> Response:
         from services.orchestrator.code_mode import code_profile
 
         content = (
-            "window.atlasProjectProfile = " + json.dumps(PROFILES[0]) + ";\n"
+            "window.atlasProjectProfile = " + json.dumps(default_profile()) + ";\n"
             "window.atlasProjectWorkProfile = "
             + json.dumps(code_profile())
             + ";\n"

@@ -37,6 +37,53 @@ The broker connects to such a host only at a public address, or inside a
 network the operator lists in `ATLAS_RUNNER_PERSONAL_NETWORKS` (comma-separated
 CIDR). Deleting a machine removes its key under `/keys` and its state.
 
+Connected computers (owner requirement of 2026-11-14): a member's own laptop
+or desktop, and through it the machines of his local network, without an
+address, an inbound port or an administrator. In the conversation Atlas calls
+`machine_connect` and shows one line to paste in a terminal, from the project
+folder. It downloads the readable script `/api/atlas/connect.sh`
+(`services/runner/connect.sh`), which generates a host key in `~/.atlas`,
+enrols it once with a one-time token (15 minutes, HMAC-bound to member,
+organization and machine; only its digest is stored), installs a pinned and
+checksummed upterm release (Apache-2.0) and starts it with `--allow-exec
+--allow-sftp --no-forwarding`, accepting only the machine's Atlas key. upterm
+dials the instance's relay (uptermd, `infra/relay`) over WebSocket through the
+HTTPS edge; the script then announces the session, signed with its host key
+(`ssh-keygen -Y sign`, namespace `atlas-connect`, 5-minute window, replay
+refused). Foreground by default: Ctrl-C stops the session and announces it.
+`--persistent` writes a user LaunchAgent or a `systemd --user` unit,
+`--stop` removes it. "Forget my computer" (`machine_forget`) removes it from the
+relay gate and destroys its Atlas key.
+
+The broker reaches such a machine as `<session>@relay` with its key; nothing is
+synchronized. Commands run in the connected folder, in the person's login
+environment (his PATH, Git identity and credentials, ssh-agent and
+`~/.ssh/config`), so `ssh buildbox make test` reaches his local servers with
+his own keys, as a coding agent running on his machine would. Command records
+live in `~/.atlas/runs`. `remote_write_file` writes one file inside the folder
+(`atlas-write`, the file is the command's snapshot). The policy guard
+(`policy.asks`) sends to approval what leaves the folder or cannot be undone:
+deletions, sudo, pushes and publications, system changes, inline interpreter
+code, commands on another host that write, kill or delete, and writes outside
+the folder. Behind the chat the approval is asked in the conversation: code
+writes the question with the exact command, and only the person's next message,
+read by code as a plain yes, approves that command once, through the decision
+endpoint. Project mode keeps its approval cards.
+
+Threat model. No inbound port on the computer; the relay registers only
+enrolled host keys and the upterm host lets in only the computer's Atlas key,
+so a relay alone cannot open a session and a stolen token works once within 15
+minutes. The relay terminates both SSH legs (the broker pins the relay's own
+key), so it sees session content: it is Atlas infrastructure, logs metadata
+only, and runs read-only without capabilities; relay plus broker keys equal
+access to every connected computer, as broker keys do for SSH machines today.
+A session announcement must be signed by the enrolled host key, so nobody can
+redirect Atlas to another session. Prompt injection is bounded by the guard and
+the conversation approvals; commands still run as the person, so the folder
+limit is a consent boundary, not a sandbox. The person ends access with Ctrl-C,
+`--stop`, or by forgetting the computer. Command output is logged exactly as
+for other remote targets (project log files), never in the relay.
+
 Linux/macOS prerequisites: Python 3, Git, OpenSSH/SFTP, POSIX shell and process groups.
 The target work root must exist and be writable. The broker connects only to
 registered endpoints. Its container firewall permits established responses, the

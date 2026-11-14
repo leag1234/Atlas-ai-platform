@@ -456,7 +456,9 @@ async def process_app_turn(
         messages: list[Message] = [
             {
                 "role": "system",
-                "content": instructions(kind) + "\n" + language_instruction(language),
+                "content": instructions(kind)
+                + "\n"
+                + language_instruction(request.prose_lang),
             },
             *_history(request),
         ]

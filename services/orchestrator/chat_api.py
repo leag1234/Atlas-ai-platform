@@ -1,6 +1,6 @@
 """Loopback OpenAI-compatible adapter with one journal row on every outcome."""
 
-from packages.profiles import PROFILES
+from packages.profiles import chat_ui_profiles
 from packages.limits import LimitError
 from packages.configuration import (
     configuration_names,
@@ -66,6 +66,7 @@ from services.orchestrator.user_memory_ui import router as user_memory_router
 from services.orchestrator.conversation_privacy import router as privacy_router
 from services.orchestrator.voice_ui import router as voice_router
 from services.orchestrator.dictation import router as dictation_router
+from services.orchestrator.machine_connect import router as machine_connect_router
 
 from services.orchestrator.api_key_edge import (
     app as key_app,
@@ -91,6 +92,8 @@ app.include_router(mcp_router)
 app.include_router(connector_router)
 
 app.include_router(code_router)
+# Before the project proxy, which owns every other /api/atlas route.
+app.include_router(machine_connect_router)
 
 
 @app.post("/api/atlas/nearby-location")
@@ -169,7 +172,7 @@ def models() -> dict[str, object]:
         "object": "list",
         "data": [
             {"id": name, "object": "model", "created": 0, "owned_by": "atlas"}
-            for name in PROFILES
+            for name in chat_ui_profiles()
         ],
     }
 

@@ -35,14 +35,24 @@ async def main() -> None:
         raise RuntimeError("attachment_inlet_activation_failed")
 
     from open_webui.models.models import ModelForm, ModelMeta, ModelParams, Models  # type: ignore[import-not-found]  # runs inside the Open WebUI image
-    from packages.profiles import MODEL_PROFILE_IMAGE_URL, PROFILES
+    from packages.profiles import (
+        MODEL_PROFILE_IMAGE_URL,
+        chat_ui_access,
+        chat_ui_profiles,
+    )
 
-    for profile in PROFILES:
-        public = profile == PROFILES[0]
+    for profile in chat_ui_profiles():
+        access = chat_ui_access(profile)
+        public = access != "admin"
         form = ModelForm(
             id=profile,
             name="Atlas" if public else profile,
-            meta=ModelMeta(description="", profile_image_url=MODEL_PROFILE_IMAGE_URL),
+            meta=ModelMeta(
+                description="",
+                profile_image_url=MODEL_PROFILE_IMAGE_URL,
+                # Out of the selector; conversations already on it keep working.
+                **({"hidden": True} if access == "previous" else {}),
+            ),
             params=ModelParams(),
             access_grants=(
                 [

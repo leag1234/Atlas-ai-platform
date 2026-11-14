@@ -527,6 +527,11 @@ class WorkTools(CodeTools):
         # Machines found out of reach in this turn (name or host -> outcome):
         # later calls for them answer at once instead of connecting again.
         self.machines_unreachable: dict[str, dict[str, Any]] = {}
+        # A connected computer behind the chat: the questions this turn asked,
+        # and the person's yes to the previous one (work_remote_tools.py).
+        self.machine_approvals: dict[str, str] = {}
+        self.machine_approval: dict[str, Any] | None = None
+        self.remote_in_place: set[str] | None = None
         # Turn-specific system text (the machine rules on a remote turn).
         self.instructions = ""
         # Set by the Work turn when the request asks for code to be run.
@@ -752,7 +757,13 @@ class WorkTools(CodeTools):
                     ),
                 )
                 return result
-        if call.name in {"list_targets", "remote_run", "remote_status", "remote_fetch"}:
+        if call.name in {
+            "list_targets",
+            "remote_run",
+            "remote_status",
+            "remote_fetch",
+            "remote_write_file",
+        }:
             from services.orchestrator import work_machine_tools, work_remote_tools
             from services.retrieval.project_identity import ProjectError
 

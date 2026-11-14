@@ -108,6 +108,38 @@ class AssistantBridgeTests(unittest.TestCase):
         )
         return {"Authorization": "Bearer " + secret}
 
+    def test_default_profile_answers_for_atlas_and_model_less_calls(self) -> None:
+        hidden = "atlas-mistral"
+        environment = {"ATLAS_HIDDEN_PROFILES": hidden, "ATLAS_DEFAULT_PROFILE": hidden}
+        with patch.dict(os.environ, environment):
+            for body in (
+                {"messages": [{"role": "user", "content": "Hi"}]},
+                {"model": "atlas", "messages": [{"role": "user", "content": "Hi"}]},
+            ):
+                reply = self.client.post(
+                    "/api/atlas/v1/chat/completions", headers=self.openai, json=body
+                )
+                self.assertEqual(reply.status_code, 200, reply.text)
+                self.assertEqual(self.sent[-1]["model"], hidden)
+            reply = self.client.post(
+                "/api/atlas/v1/responses",
+                headers=self.openai,
+                json={"model": "atlas", "input": "Hi"},
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+            self.assertEqual(self.sent[-1]["model"], hidden)
+            # The previous default stays selectable by name.
+            reply = self.client.post(
+                "/api/atlas/v1/chat/completions",
+                headers=self.openai,
+                json={
+                    "model": "atlas-qwen",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+            self.assertEqual(self.sent[-1]["model"], "atlas-qwen")
+
     def test_responses(self) -> None:
         reply = self.client.post(
             "/api/atlas/v1/responses",

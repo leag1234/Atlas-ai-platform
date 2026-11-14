@@ -131,10 +131,39 @@ class SSH:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.jump = SSH(keys, root, org, jump) if jump else None
 
+    def relayed(self) -> bool:
+        """A connected computer, reached through the Atlas relay."""
+        return self.target.get("transport") == "relay"
+
+    def login(self) -> str:
+        """The SSH user: the account, or the session a connected computer announced."""
+        if not self.relayed():
+            return str(self.target["user"])
+        from services.runner.relay import SESSION_USER
+
+        user = str(self.target.get("relay_user") or "")
+        if not SESSION_USER.fullmatch(user):
+            raise RunnerError("machine_not_connected")
+        return user
+
+    def port(self) -> int:
+        if self.relayed():
+            from services.runner.relay import endpoint
+
+            return endpoint()[1]
+        return int(self.target["port"])
+
     def host(self) -> str:
         """Where to connect. A personal machine is reached by a vetted address."""
         if self.address is None:
-            if self.target.get("owner_member_id"):
+            if self.relayed():
+                # The operator's relay, never an address the member chose.
+                from services.runner.relay import endpoint
+
+                if self.jump is not None:
+                    raise RunnerError("runner_unauthorized")
+                self.address = endpoint()[0]
+            elif self.target.get("owner_member_id"):
                 from services.runner.network import vetted
 
                 if self.jump is not None:
@@ -148,7 +177,7 @@ class SSH:
         """Host key fingerprints offered now, for the owner's first verification."""
         from services.runner.network import allow
 
-        if self.jump is not None:
+        if self.jump is not None or self.relayed():
             raise RunnerError("runner_unauthorized")
         allow(self.host(), self.target["port"])
         raw = process(
@@ -191,11 +220,20 @@ class SSH:
         return root
 
     def pin(self) -> Path:
-        target = dict(self.target, host=self.host())
+        target = dict(self.target, host=self.host(), port=self.port())
         from services.runner.network import allow
 
         if self.jump is None:
             allow(target["host"], target["port"])
+        if self.relayed():
+            # The relay's own key, set by the operator: nothing to scan or trust.
+            from services.runner.relay import relay_key
+
+            path = self.root / "known_hosts"
+            host = "[" + target["host"] + "]:" + str(target["port"])
+            path.write_text(host + " " + relay_key() + "\n")
+            path.chmod(0o600)
+            return path
         host = (
             target["host"]
             if target["port"] == 22
@@ -288,6 +326,8 @@ class SSH:
             "LogLevel=ERROR",
             "-o",
             "AddressFamily=inet",
+            "-o",
+            "User=" + self.login(),
         ]
         if self.jump:
             transport = [
@@ -305,18 +345,25 @@ class SSH:
     def run(
         self, command: str, content: bytes | None = None, timeout: float = 30
     ) -> bytes:
-        return process(
-            [
-                "ssh",
-                *self.options(),
-                "-p",
-                str(self.target["port"]),
-                self.target["user"] + "@" + self.host(),
-                command,
-            ],
-            content=content,
-            timeout=timeout,
-        )
+        try:
+            return process(
+                [
+                    "ssh",
+                    *self.options(),
+                    "-p",
+                    str(self.port()),
+                    self.host(),
+                    command,
+                ],
+                content=content,
+                timeout=timeout,
+            )
+        except RunnerError as exc:
+            # The relay refuses a session that ended (the member stopped the
+            # script or the computer slept) exactly as it refuses a wrong key.
+            if self.relayed() and str(exc) == "credential_unavailable":
+                raise RunnerError("machine_not_connected") from None
+            raise
 
     def copy(self, local: Path, remote: str) -> None:
         if not re.fullmatch(r"/[A-Za-z0-9_./-]+", remote):
@@ -326,9 +373,9 @@ class SSH:
                 "scp",
                 *self.options(),
                 "-P",
-                str(self.target["port"]),
+                str(self.port()),
                 str(local),
-                self.target["user"] + "@" + self.host() + ":" + remote,
+                self.host() + ":" + remote,
             ]
         )
 

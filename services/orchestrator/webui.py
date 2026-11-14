@@ -6,7 +6,7 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from urllib.parse import quote
-from packages.profiles import MODEL_PROFILE_IMAGE_URL, PROFILES
+from packages.profiles import MODEL_PROFILE_IMAGE_URL, chat_ui_access, chat_ui_profiles
 from packages.ports import atlas_ports
 
 
@@ -17,17 +17,22 @@ class NoRedirect(HTTPRedirectHandler):
 
 def managed_model(profile: str) -> dict[str, Any]:
     """Return the Open WebUI override without changing the gateway profile id."""
-    public = profile == PROFILES[0]
+    access = chat_ui_access(profile)
+    public = access != "admin"
+    meta: dict[str, Any] = {
+        "description": "",
+        "profile_image_url": MODEL_PROFILE_IMAGE_URL,
+        "suggestion_prompts": [],
+    }
+    if access == "previous":
+        # Out of the selector; conversations already on it keep working.
+        meta["hidden"] = True
     return {
         "id": profile,
         "name": "Atlas" if public else profile,
         "base_model_id": None,
         "params": {},
-        "meta": {
-            "description": "",
-            "profile_image_url": MODEL_PROFILE_IMAGE_URL,
-            "suggestion_prompts": [],
-        },
+        "meta": meta,
         "access_grants": (
             [
                 {
@@ -104,7 +109,7 @@ def configure(
         call("/functions/id/" + identifier + "/toggle/global", {})
 
     if trusted_headers:
-        for profile in PROFILES:
+        for profile in chat_ui_profiles():
             current = call("/models/model?id=" + quote(profile))
             call(
                 "/models/model/update" if current is not None else "/models/create",

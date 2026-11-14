@@ -15,7 +15,11 @@ from decimal import Decimal
 from pathlib import Path
 from time import monotonic
 from typing import Literal, Self
-from packages.language import conversation_language, language_instruction
+from packages.language import (
+    conversation_language,
+    language_instruction,
+    prose_language,
+)
 
 import aiohttp
 import yaml
@@ -140,7 +144,9 @@ class VisionProvider:
                 .format(measurements=json.dumps(pixels))
             )
         prompt += language_instruction(
-            conversation_language(request.messages, request.lang)
+            prose_language(
+                request.messages, conversation_language(request.messages, request.lang)
+            )
         )
         # Count the versioned system instruction before transport as well.
         incoming += len(prompt.encode()) + 64

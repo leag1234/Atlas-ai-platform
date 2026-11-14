@@ -204,6 +204,15 @@ class WorkToolSelection:
         if group not in GROUPS:
             raise ValueError("Unknown Work tool group")
         self.groups = dict(GROUPS)
+        from services.orchestrator.work_machine_tools import relay_enabled
+
+        if relay_enabled():
+            # The user's own computer, connected through the Atlas relay.
+            self.groups["remote"] = (
+                *GROUPS["remote"],
+                "machine_connect",
+                "remote_write_file",
+            )
         self.remote_enabled = group == "remote"
         # Web tools join only when the Work turn has web access (never in strict privacy).
         self.research_enabled = group == "research"
@@ -352,6 +361,10 @@ class WorkToolSelection:
         selected_group = (
             group if self.group in {"code", "remote"} else group[: 5 - len(extra)]
         )
+        # The remote group with a connected computer has eleven tools: the
+        # extras that do not fit leave first (reopen_result stays longest).
+        while len(CORE) + len(extra) + len(selected_group) > 16 and extra:
+            extra = extra[:-1]
         names = (*CORE, *extra, *selected_group)
         if len(names) > 16:
             raise ValueError("Work tool selection exceeds the gateway capacity")

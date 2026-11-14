@@ -601,10 +601,31 @@ class SelectionTests(unittest.TestCase):
             selection.catalog[extra] = dict(type="function", function=dict(name=extra))
         names = selection.names
         self.assertLessEqual(len(names), 16)
-        for name in (*machines.NAMES, "list_targets", "remote_run", "remote_status"):
+        # Connecting the user's own computer is offered only with a relay.
+        offered = [n for n in machines.NAMES if n != "machine_connect"]
+        for name in (*offered, "list_targets", "remote_run", "remote_status"):
             self.assertIn(name, names)
+        self.assertNotIn("machine_connect", names)
         declared = {d["function"]["name"] for d in selection.declarations()}  # type: ignore[index]
-        self.assertTrue(set(machines.NAMES) <= declared)
+        self.assertTrue(set(offered) <= declared)
+        relay = {
+            "ATLAS_RELAY_PUBLIC_URL": "wss://atlas.example.org/relay/",
+            "ATLAS_REMOTE_RUNNERS": "1",
+        }
+        with patch.dict(os.environ, relay):
+            selection = WorkToolSelection("remote")
+            selection.reopen_enabled = selection.memory_enabled = True
+            selection.skills_enabled = selection.schedules_enabled = True
+            for extra in ("load_skill", "propose_scheduled_task"):
+                selection.catalog[extra] = dict(
+                    type="function", function=dict(name=extra)
+                )
+            names = selection.names
+            self.assertEqual(len(names), 16)
+            for name in ("machine_connect", "remote_write_file", "reopen_result"):
+                self.assertIn(name, names)
+            declared = {d["function"]["name"] for d in selection.declarations()}  # type: ignore[index]
+            self.assertIn("remote_write_file", declared)
         for schema in machines.SCHEMAS.values():
             text = json.dumps(schema.model_json_schema())
             self.assertNotIn("private_key", text)

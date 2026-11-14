@@ -16,7 +16,7 @@ from uuid import UUID
 from services.orchestrator.project_forge import snapshot_files
 from services.orchestrator.code_workspace import redact
 from services.runner import remote_process
-from services.runner.policy import RunnerError, decision
+from services.runner.policy import RunnerError, commands, decision, guard_root
 from services.runner.ssh import Keys, SSH, process
 
 Json = dict[str, Any]
@@ -39,7 +39,8 @@ class Broker:
             if previous["auth"]["target"] == auth["target"]:
                 return dict(previous["result"])
         try:
-            root = ssh.home_root() if personal else None
+            # A connected computer works in the folder its owner connected from.
+            root = ssh.home_root() if personal and not ssh.relayed() else None
             result = ssh.probe()
             if root:
                 result["work_root"] = root
@@ -79,6 +80,11 @@ class Broker:
             hosts = self.root / "hosts" / org / identifier
             if hosts.exists():
                 shutil.rmtree(hosts)
+            if target.get("transport") == "relay":
+                from services.runner.relay import revoke
+
+                # The relay stops registering this computer's host key.
+                revoke(identifier)
             self.keys.forget(org, target["credential_ref"])
             return dict(state="forgotten", remote_cleanup=reachable)
 
@@ -111,6 +117,11 @@ class Broker:
             try:
                 self.close(auth)
             except RunnerError:
+                if auth.get("target", {}).get("transport") == "relay":
+                    # A computer its owner disconnected: Atlas's records there
+                    # are a few small files in ~/.atlas; nothing else to undo.
+                    shutil.rmtree(path.parent)
+                    continue
                 # Keep the exact directory and command identities for the next
                 # sweep; never announce successful cleanup after a lost link.
                 import logging
@@ -124,8 +135,18 @@ class Broker:
         identifiers = [str(UUID(auth[k])) for k in ("org_id", "project_id")]
         identifiers += [str(UUID(session["id"]))]
         local = self.root.joinpath(*identifiers)
+        if auth["target"].get("transport") == "relay":
+            # A connected computer: commands run in the person's own project.
+            return local, auth["target"]["work_root"]
         remote = auth["target"]["work_root"] + "/atlas-" + "-".join(identifiers)
         return local, remote
+
+    @staticmethod
+    def control(auth: Json) -> str:
+        """Where a connected computer keeps Atlas's records of this session."""
+        identifiers = [str(UUID(auth[k])) for k in ("org_id", "project_id")]
+        identifiers += [str(UUID(auth["session"]["id"]))]
+        return "~/.atlas/runs/" + "-".join(identifiers)
 
     def transport(self, auth: Json) -> SSH:
         return SSH(
@@ -136,13 +157,18 @@ class Broker:
             auth.get("jump"),
         )
 
-    def helper(self, ssh: SSH, remote: str, data: Json) -> Json:
+    def helper(
+        self, ssh: SSH, remote: str, data: Json, auth: Json | None = None
+    ) -> Json:
         source = Path(remote_process.__file__).read_text()
+        if ssh.relayed():
+            if auth is None:
+                raise RunnerError("runner_unauthorized")
+            data = dict(root=remote, control=self.control(auth), in_place=True, **data)
+        else:
+            data = dict(root=remote + "/workspace", **data)
         result: Json = json.loads(
-            ssh.run(
-                "python3 -c " + shlex.quote(source),
-                json.dumps(dict(root=remote + "/workspace", **data)).encode(),
-            )
+            ssh.run("python3 -c " + shlex.quote(source), json.dumps(data).encode())
         )
         if result.get("error") and result.get("state") not in {
             "failed",
@@ -238,6 +264,25 @@ class Broker:
         bundle.unlink()
         return size
 
+    @staticmethod
+    def written(auth: Json, content: bytes) -> Json | None:
+        """The one file an `atlas-write PATH` command writes, from its snapshot.
+
+        Only a connected computer has files of its own to write; the snapshot
+        holds exactly that file, already bound to the command by its digest.
+        """
+        argv = commands(auth["command"]["command"])
+        if argv[0][0] != "atlas-write":
+            return None
+        if auth["target"].get("transport") != "relay" or len(argv) != 1:
+            raise RunnerError("unsupported_target")
+        if len(argv[0]) != 2:
+            raise RunnerError("invalid_command")
+        entries = snapshot_files(content, auth["command"]["code_digest"])
+        if len(entries) != 1 or entries[0]["path"] != argv[0][1]:
+            raise RunnerError("invalid_command")
+        return dict(path=entries[0]["path"], content=entries[0]["content"])
+
     def authorize(self, auth: Json) -> None:
         from datetime import datetime, timezone
         from services.runner.contract import RemoteRun
@@ -296,6 +341,7 @@ class Broker:
                 target["deny_rules"],
                 target["sensitive_rules"],
                 auth["grant"]["allow_rules"],
+                guard_root(target),
             )
             if outcome == "denied" or not auth["grant"]["code_egress_approved_at"]:
                 raise RunnerError("runner_policy_denied")
@@ -305,23 +351,31 @@ class Broker:
             checkpoint = local / (command["id"] + ".json")
             if checkpoint.exists():
                 return self.status(auth)
+            written = self.written(auth, content)
             self.remember(auth)
-            sent = self.sync(auth, content)
+            # A connected computer works in its owner's project: nothing to sync.
+            relayed = target.get("transport") == "relay"
+            sent = (
+                len(content)
+                if written is not None
+                else 0
+                if relayed
+                else self.sync(auth, content)
+            )
             self.authorize(auth)
             # Intent is durable before launch. A network failure never resubmits.
             checkpoint.write_text(json.dumps(dict(state="unknown", bytes_sent=sent)))
-            value = self.helper(
-                self.transport(auth),
-                remote,
-                dict(
-                    operation="launch",
-                    command_id=command["id"],
-                    command=command["command"],
-                    cwd=command["cwd"],
-                    timeout_s=command["timeout_s"],
-                    disk_quota_bytes=target["disk_quota_bytes"],
-                ),
+            launch = dict(
+                operation="launch",
+                command_id=command["id"],
+                command=command["command"],
+                cwd=command["cwd"],
+                timeout_s=command["timeout_s"],
+                disk_quota_bytes=target["disk_quota_bytes"],
             )
+            if written is not None:
+                launch["write"] = written
+            value = self.helper(self.transport(auth), remote, launch, auth)
             return dict(
                 value,
                 bytes_sent=sent,
@@ -337,6 +391,7 @@ class Broker:
                 operation="cancel" if cancel else "log" if log else "status",
                 command_id=auth["command"]["id"],
             ),
+            auth,
         )
         checkpoint = local / (auth["command"]["id"] + ".json")
         value["bytes_sent"] = (
@@ -355,7 +410,7 @@ class Broker:
             from services.runner.results import report
 
             reports = self.helper(
-                self.transport(auth), remote, dict(operation="reports")
+                self.transport(auth), remote, dict(operation="reports"), auth
             )
             value["reports"] = [
                 dict(
@@ -374,7 +429,10 @@ class Broker:
     def fetch(self, auth: Json, pattern: str) -> Json:
         _, remote = self.paths(auth)
         return self.helper(
-            self.transport(auth), remote, dict(operation="fetch", path_or_glob=pattern)
+            self.transport(auth),
+            remote,
+            dict(operation="fetch", path_or_glob=pattern),
+            auth,
         )
 
     def close(self, auth: Json) -> Json:
@@ -391,7 +449,13 @@ class Broker:
                         time.sleep(0.1)
                     else:
                         raise RunnerError("runner_cleanup_unknown")
-            self.transport(auth).run("rm -rf -- " + shlex.quote(remote))
+            if auth["target"].get("transport") == "relay":
+                # Only Atlas's own records: the project is the person's.
+                self.transport(auth).run(
+                    'rm -rf -- "$HOME"/' + shlex.quote(self.control(auth)[2:])
+                )
+            else:
+                self.transport(auth).run("rm -rf -- " + shlex.quote(remote))
             if local.exists():
                 shutil.rmtree(local)
             return dict(state="closed")
