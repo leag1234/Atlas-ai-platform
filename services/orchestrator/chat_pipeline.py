@@ -1093,6 +1093,9 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
     )
     model.tools = []
     model.observing = True
+    # Same reason as the limits below: the gateway allows a deadline above 120 s only
+    # to a call that writes a file (staging -42, en-draw-10: timeout_budget refused).
+    model.produces_files = True
     model.sink = None
     model.configure_quality(request.model, request.max_tokens)
     model.local_enabled = os.environ.get("GPU_LOCAL", "0") == "1"
