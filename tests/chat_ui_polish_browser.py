@@ -164,6 +164,7 @@ def guest_shell() -> Iterator[None]:
         "ENABLE_EASTER_EGGS": "False",
         "ENABLE_CALENDAR": "False",
         "ENABLE_PERSISTENT_CONFIG": "False",
+        "UI_VISIBILITY": '{"chat.artifacts":false}',
         "PYTHONPATH": "/app/backend",
     }
     for key, value in environment.items():
@@ -392,7 +393,15 @@ def main() -> None:
             expect(page.locator(".atlas-action-menu")).to_be_visible()
             page.keyboard.press("Escape")
             expect(page.locator(".atlas-action-menu")).to_have_count(0)
-            title = page.locator("nav .truncate.text-left").first
+            # Open WebUI 0.11 shows the chat title in the header; 0.13 on large screens
+            # shows it as the selected workspace tab and hides the header row.
+            title = (
+                page.locator(
+                    "[data-panel-tab-bar] [role=tab][aria-selected=true] > span, nav .truncate.text-left"
+                )
+                .filter(visible=True)
+                .first
+            )
             shown, full = title.inner_text(), title.get_attribute("title")
             assert shown[0].isupper(), shown
             assert full is not None

@@ -41,7 +41,7 @@ class SidebarRowTests(unittest.TestCase):
         chat = read("chat-ui.css")
         project = read("project_mode.css")
         self.assertIn(
-            "#sidebar a.selected { background:var(--atlas-row-selected-bg)!important; color:var(--atlas-row-selected-fg)!important; }",
+            "#sidebar :is(a.selected,.selected:has(> a)) { background:var(--atlas-row-selected-bg)!important; color:var(--atlas-row-selected-fg)!important; }",
             chat,
         )
         self.assertIn(

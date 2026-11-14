@@ -15,7 +15,7 @@ from uuid import UUID
 from pydantic import ConfigDict, Field, PrivateAttr, model_validator, field_validator
 from packages.images import VisionInput, VisionMessage
 
-from services.orchestrator.documents import Attachment
+from services.orchestrator.documents import Attachment, file_parts_to_documents
 from services.orchestrator.location import Location
 
 ChatMessage = VisionMessage
@@ -312,6 +312,48 @@ class ChatRequest(VisionInput):
             # An app, or a drawing made as SVG in the panel (images off or SVG asked).
             return app_route(self, routed, has_artifact=False) is not None
         return app_intent(self.user_text, history) in ("create", "modify")
+
+    @model_validator(mode="before")
+    @classmethod
+    def documents_from_file_parts(cls, value: Any) -> Any:
+        """Map OpenAI file parts to documents when the adapter has not done it yet.
+
+        The chat adapter (prepare_uploads) maps them before validation. Any other
+        validation of an Open WebUI request (0.11 and 0.13 both send file parts)
+        gets the same mapping instead of a part-type error. Defined after the other
+        "before" validators so that it runs first.
+        """
+        if not isinstance(value, dict) or not isinstance(value.get("messages"), list):
+            return value
+        if not any(
+            isinstance(message, dict)
+            and message.get("role") == "user"
+            and isinstance(message.get("content"), list)
+            and any(
+                isinstance(part, dict) and part.get("type") == "file"
+                for part in message["content"]
+            )
+            for message in value["messages"]
+        ):
+            return value
+        copied = {
+            **value,
+            "messages": [
+                {
+                    **message,
+                    "content": [
+                        dict(part) if isinstance(part, dict) else part
+                        for part in message["content"]
+                    ],
+                }
+                if isinstance(message, dict)
+                and isinstance(message.get("content"), list)
+                else message
+                for message in value["messages"]
+            ],
+        }
+        file_parts_to_documents(copied)
+        return copied
 
     @model_validator(mode="after")
     def valid_project(self) -> Self:

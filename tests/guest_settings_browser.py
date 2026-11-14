@@ -98,9 +98,10 @@ class GuestNavigationTests(unittest.TestCase):
             try:
                 page = browser.new_page()
                 source = (ROOT / "services/orchestrator/settings-ui.js").read_text()
-                # Use the real native-store interface with a test-only store.
-                native = """const instance={isInitialized:true,on(){},hasResourceBundle(){return true;},addResourceBundle(){}};
-                export const i={subscribe(fn){fn(instance);},set(){}};"""
+                # A test-only store with the native interface, in a chunk the app entry
+                # imports: settings-ui.js finds it by shape, whatever the chunk name.
+                native = """const instance={isInitialized:true,on(){},t(key){return key;},hasResourceBundle(){return true;},addResourceBundle(){}};
+                export const i={subscribe(fn){fn(instance);},set(){window.atlasLocaleSet=(window.atlasLocaleSet||0)+1;}};"""
 
                 def respond(route: Route) -> None:
                     url = route.request.url
@@ -108,6 +109,11 @@ class GuestNavigationTests(unittest.TestCase):
                         route.fulfill(body=source, content_type="text/javascript")
                     elif url.endswith("DKxluP3e.js"):
                         route.fulfill(body=native, content_type="text/javascript")
+                    elif url.endswith("/entry/app.test.js"):
+                        route.fulfill(
+                            body='import "../chunks/DKxluP3e.js";',
+                            content_type="text/javascript",
+                        )
                     elif url.endswith("settings-locales.json"):
                         route.fulfill(
                             body=json.dumps({}), content_type="application/json"
@@ -118,6 +124,7 @@ class GuestNavigationTests(unittest.TestCase):
                         route.fulfill(
                             content_type="text/html",
                             body="""<html><head><meta charset="utf-8"><script src="/static/atlas/stable-auth.js"></script>
+                            <script>import("/_app/immutable/entry/app.test.js")</script>
                             <script type="module" src="/static/atlas/settings-ui.js"></script></head><body>
                             <div class="app-dropdown-menu"><div class="user-menu-status"><button>Status</button></div>
                             <div><a href="/calendar">Calendar</a></div><div><a href="/automations">Automations</a></div>
@@ -128,6 +135,8 @@ class GuestNavigationTests(unittest.TestCase):
                 page.route("**/*", respond)
                 page.goto("http://guest.test/")
                 expect(page.locator("#atlas-stable-menu-style")).to_have_count(1)
+                # The overrides reach the native store found among the loaded chunks.
+                page.wait_for_function("window.atlasLocaleSet > 0", timeout=10000)
                 for name in ("Status", "Calendar", "Automations"):
                     expect(page.get_by_text(name, exact=True)).to_be_hidden()
                 for name in ("Notes", "Réglages", "Clés API", "Déconnexion"):
