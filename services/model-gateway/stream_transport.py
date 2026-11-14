@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
+import upstream
 from provider_refusal import classify_refusal, error_envelope
 from provider_retry import (
     ModelUnavailableError,
@@ -338,6 +339,11 @@ async def attempt(
                 "seed"
             )
     started = monotonic()
+    # When the last provider bytes arrived, and whether the HTTP body then ended
+    # normally: a stream that ends without its final frame is told apart from a
+    # cut connection (which raises a transport error instead).
+    last_bytes = started
+    body_ended = False
 
     def diagnostic(category: str, **details: object) -> None:
         # Only the bounded, filtered error message may accompany HTTP metadata.
@@ -349,6 +355,9 @@ async def attempt(
                     "category": category,
                     "elapsed_seconds": round(monotonic() - started, 3),
                     "received_bytes": decoder.total,
+                    "frames": decoder.frames,
+                    "seconds_since_bytes": round(monotonic() - last_bytes, 3),
+                    "body_ended": body_ended,
                     "content_chars": len(decoder.text),
                     "reasoning_chars": len(decoder.reasoning),
                     "tool_calls": len(decoder.calls),
@@ -441,9 +450,12 @@ async def attempt(
                     ):
                         raise ModelUnavailableError("model_unavailable")
                     raise ProviderResponseError(response.status, refusal)
-                async for piece in response.content.iter_chunked(16384):
-                    for event in decoder.feed(piece):
-                        yield event
+                with upstream.abort_if_abandoned(response):
+                    async for piece in response.content.iter_chunked(16384):
+                        last_bytes = monotonic()
+                        for event in decoder.feed(piece):
+                            yield event
+                body_ended = True
         decoder.finish()
         assert decoder.result is not None
         result = decoder.result

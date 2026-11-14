@@ -21,6 +21,7 @@ from api_routing import Target, targets
 from provider_refusal import Refusal, classify_refusal, error_envelope
 from provider_retry import TransientProviderError
 from streaming import Delta
+import upstream
 from stream_usage import validate_usage
 
 
@@ -481,9 +482,10 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                             refusal=refusal,
                         )
                     raise RuntimeError("provider_error")
-                async for piece in response.content.iter_chunked(16384):
-                    started = True
-                    yield piece
+                with upstream.abort_if_abandoned(response):
+                    async for piece in response.content.iter_chunked(16384):
+                        started = True
+                        yield piece
     except (aiohttp.ClientError, TimeoutError) as exc:
         if isinstance(exc, TimeoutError):
             raise TransientProviderError(
