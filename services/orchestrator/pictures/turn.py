@@ -591,6 +591,11 @@ async def _cpu_first(
             complete=complete or _gateway,
             errors=errors,
         )
+    except cpu_turn.CpuLate as late:
+        # Too late for painting by code to fit the turn: said, not waited for.
+        LOGGER.warning("picture_cpu_late code=%s spent_eur=%s", late.code, spend.total)
+        errors.append("picture_cpu_late")
+        return cpu_turn.CpuDrawing(late=True), spend
     except cpu_turn.CpuUnavailable as unavailable:
         LOGGER.warning(
             "picture_cpu_fallback code=%s spent_eur=%s", unavailable.code, spend.total
@@ -666,6 +671,10 @@ async def process_picture_turn(
     if spend.models:
         item.provider_model = spend.models[-1]
     item.latence_ms.update({f"picture_{k}": v for k, v in timings.items()})
+    if cpu is not None and cpu.late:
+        item.reponse = app_failure("drawing", language, timeout=True)
+        item.state = "done"
+        return
     if cpu is not None and (cpu.refused or not candidates):
         # Refused by the rewrite (violence, hate, sexual content) or every
         # picture removed by the content classifier: said, nothing shown.

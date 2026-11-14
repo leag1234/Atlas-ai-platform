@@ -4,16 +4,25 @@ Runs inside the container built by infra/pictures-cpu/Dockerfile. It starts
 the image engine (sd-server, listening on the container's loopback only),
 loads the content classifier once, and serves two authenticated endpoints:
 
-  GET  /v1/health  -> {"ready", "queue", "model"}
-  POST /v1/render  {"prompt", "seed"} -> {"image" (base64 PNG, 768 px),
-                    "nsfw" (0..1), "render_seconds", "filter_seconds",
-                    "queue_seconds", "model"}
+  GET  /v1/health  -> {"ready", "queue" (pictures still to draw), "jobs",
+                        "seconds_per_image", "busy_seconds", "model"}
+  POST /v1/render  {"prompt", "seeds": [1 to 4 seeds], "max_wait_seconds"}
+                   -> {"images": [{"seed", "image" (base64 PNG, 768 px),
+                       "nsfw" (0..1), "render_seconds", "filter_seconds"}],
+                       "queue_seconds", "expected_seconds", "model"}
+                   (the older {"prompt", "seed"} form answers one picture)
 
-One picture is drawn at a time (the engine uses every core); at most
-GATE_MAX_QUEUE requests wait, the next ones get 503 {"code": "busy"} at once
-so that the caller can fall back. Sizes, steps and guidance are fixed here,
-never taken from the request. The engine and the classifier run offline:
-the container has no outbound network (install.sh).
+One picture is drawn at a time (the engine uses every core). Requests are
+jobs served first come, first served; the pictures of one job are drawn one
+after the other (the engine keeps the prompt's encoding: the second picture
+is about 3.5 s faster). A job is admitted only when the wait it would have
+(the pictures queued before it, the time per picture measured on this
+server, its own pictures) fits its max_wait_seconds; otherwise it gets 503
+{"code": "busy", "expected_seconds"} at once, so that the caller falls back
+without waiting. A job whose caller has given up (past its wait and a grace)
+is dropped instead of drawn. Sizes, steps and guidance are fixed here, never
+taken from the request. The engine and the classifier run offline: the
+container has no outbound network (install.sh).
 """
 
 from __future__ import annotations
@@ -30,6 +39,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections import deque
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
@@ -39,7 +50,14 @@ SECRET_DIR = os.environ.get("GATE_SECRET_DIR", "/run/pictures-secret")
 WEIGHTS = os.environ.get("GATE_WEIGHTS", "/w")
 MODEL = os.environ.get("GATE_MODEL", "klein")
 THREADS = int(os.environ.get("GATE_THREADS", str(os.cpu_count() or 4)))
-MAX_QUEUE = int(os.environ.get("GATE_MAX_QUEUE", "6"))
+# Pictures (not requests) that may be queued, the one being drawn included.
+MAX_QUEUE = int(os.environ.get("GATE_MAX_QUEUE", "8"))
+MAX_SEEDS = 4
+# Seconds per picture before any is measured (COMPUTE3-X16C-32G, 4 steps:
+# 23.3 s for a new prompt, 19.7 s for the next picture of the same prompt).
+FIRST_ESTIMATE = 22.0
+# A caller gives up at its wait plus this; a job still queued then is dropped.
+GRACE_SECONDS = 20.0
 MAX_PROMPT_CHARS = 1500
 MAX_BODY_BYTES = 16_384
 DRAW_PX = 512
@@ -62,9 +80,92 @@ MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-_render_lock = threading.Lock()
-_state_lock = threading.Lock()
-_waiting = 0
+
+@dataclass(eq=False)
+class Job:
+    count: int
+    deadline: float | None
+    done: int = 0
+
+
+class Queue:
+    """First come, first served jobs, admitted only when they fit their wait."""
+
+    def __init__(
+        self,
+        per_image: float = FIRST_ESTIMATE,
+        max_images: int = MAX_QUEUE,
+        clock: Any = time.monotonic,
+    ) -> None:
+        self.condition = threading.Condition()
+        self.jobs: deque[Job] = deque()
+        self.per_image = per_image
+        self.max_images = max_images
+        self.clock = clock
+        self.drawing_since: float | None = None
+
+    def images(self) -> int:
+        return sum(job.count - job.done for job in self.jobs)
+
+    def busy_seconds(self) -> float:
+        """Expected time until every queued picture is drawn."""
+        total = self.images() * self.per_image
+        if self.drawing_since is not None:
+            total -= min(self.per_image, self.clock() - self.drawing_since)
+        return max(0.0, total)
+
+    def admit(self, count: int, max_wait: float | None) -> tuple[Job | None, float]:
+        """(the job, or None when it would not fit, and its expected wait)."""
+        with self.condition:
+            expected = self.busy_seconds() + count * self.per_image
+            if self.images() + count > self.max_images or (
+                max_wait is not None and expected > max_wait
+            ):
+                return None, expected
+            deadline = (
+                None if max_wait is None else self.clock() + max_wait + GRACE_SECONDS
+            )
+            job = Job(count, deadline)
+            self.jobs.append(job)
+            return job, expected
+
+    def expired(self, job: Job) -> bool:
+        return job.deadline is not None and self.clock() > job.deadline
+
+    def wait_turn(self, job: Job) -> bool:
+        """Block until the job is first; False when its caller has given up."""
+        with self.condition:
+            while job in self.jobs and self.jobs[0] is not job:
+                self.condition.wait(timeout=1.0)
+            if job not in self.jobs:
+                return False
+            if self.expired(job):
+                self._remove(job)
+                return False
+            return True
+
+    def start_image(self) -> None:
+        with self.condition:
+            self.drawing_since = self.clock()
+
+    def image_done(self, job: Job, seconds: float) -> None:
+        with self.condition:
+            job.done += 1
+            self.drawing_since = None
+            self.per_image = round(0.8 * self.per_image + 0.2 * seconds, 2)
+
+    def _remove(self, job: Job) -> None:
+        if job in self.jobs:
+            self.jobs.remove(job)
+        self.drawing_since = None
+        self.condition.notify_all()
+
+    def finish(self, job: Job) -> None:
+        with self.condition:
+            self._remove(job)
+
+
+_queue = Queue()
 _ready = False
 _classifier: Any = None
 
@@ -222,10 +323,18 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/v1/health":
             self._send(404, {"code": "not_found"})
             return
-        self._send(200, {"ready": _ready, "queue": _waiting, "model": MODEL})
+        with _queue.condition:
+            status = {
+                "ready": _ready,
+                "queue": _queue.images(),
+                "jobs": len(_queue.jobs),
+                "seconds_per_image": _queue.per_image,
+                "busy_seconds": round(_queue.busy_seconds(), 1),
+                "model": MODEL,
+            }
+        self._send(200, status)
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
-        global _waiting
         if not self._authorised():
             return
         if self.path != "/v1/render":
@@ -238,40 +347,79 @@ class Handler(BaseHTTPRequestHandler):
         try:
             request = json.loads(self.rfile.read(length))
             prompt = str(request["prompt"]).strip()
-            seed = int(request["seed"])
+            single = "seeds" not in request
+            seeds = (
+                [int(request["seed"])] if single else [int(s) for s in request["seeds"]]
+            )
+            wait = request.get("max_wait_seconds")
+            max_wait = None if wait is None else float(wait)
         except (ValueError, KeyError, TypeError):
             self._send(400, {"code": "invalid_input"})
             return
-        if not prompt or len(prompt) > MAX_PROMPT_CHARS or not 0 <= seed < 2**31:
+        if (
+            not prompt
+            or len(prompt) > MAX_PROMPT_CHARS
+            or not 1 <= len(seeds) <= MAX_SEEDS
+            or not all(0 <= seed < 2**31 for seed in seeds)
+            or (max_wait is not None and not 1 <= max_wait <= 900)
+        ):
             self._send(400, {"code": "invalid_input"})
             return
         if not _ready:
             self._send(503, {"code": "not_ready"})
             return
-        with _state_lock:
-            if _waiting >= MAX_QUEUE:
-                self._send(503, {"code": "busy", "queue": _waiting})
-                return
-            _waiting += 1
+        job, expected = _queue.admit(len(seeds), max_wait)
+        if job is None:
+            print(f"busy expected_s={expected:.0f} queue={_queue.images()}", flush=True)
+            self._send(
+                503,
+                {
+                    "code": "busy",
+                    "expected_seconds": round(expected, 1),
+                    "queue": _queue.images(),
+                },
+            )
+            return
         queued = time.monotonic()
+        images: list[dict[str, Any]] = []
         try:
-            with _render_lock:
-                waited = time.monotonic() - queued
+            if not _queue.wait_turn(job):
+                print("job_dropped caller_gone", flush=True)
+                self._send(504, {"code": "expired"})
+                return
+            waited = time.monotonic() - queued
+            for seed in seeds:
+                if images and _queue.expired(job):
+                    break  # the caller is gone: do not draw the rest
+                _queue.start_image()
+                started = time.monotonic()
                 result = render(prompt, seed)
+                _queue.image_done(job, time.monotonic() - started)
+                result["seed"] = seed
+                images.append(result)
+                print(
+                    f"render seed={seed} render_s={result['render_seconds']} "
+                    f"queue_s={waited:.2f} expected_s={expected:.0f} "
+                    f"per_image_s={_queue.per_image} nsfw={result['nsfw']}",
+                    flush=True,
+                )
         except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
             print("render_failed", type(error).__name__, flush=True)
-            self._send(502, {"code": "render_failed"})
-            return
+            if not images:
+                self._send(502, {"code": "render_failed"})
+                return
         finally:
-            with _state_lock:
-                _waiting -= 1
-        result["queue_seconds"] = round(waited, 2)
-        print(
-            f"render seed={seed} render_s={result['render_seconds']} "
-            f"queue_s={result['queue_seconds']} nsfw={result['nsfw']}",
-            flush=True,
-        )
-        self._send(200, result)
+            _queue.finish(job)
+        if single:
+            reply = dict(images[0], queue_seconds=round(waited, 2))
+        else:
+            reply = {
+                "images": images,
+                "queue_seconds": round(waited, 2),
+                "expected_seconds": round(expected, 1),
+                "model": MODEL,
+            }
+        self._send(200, reply)
 
 
 def main() -> int:

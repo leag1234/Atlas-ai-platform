@@ -28,6 +28,10 @@ from pathlib import Path
 from typing import Any
 
 NAME, TAG = "atlas-pictures-cpu", "pictures-cpu"
+# A second server (a test bench) may be named atlas-pictures-cpu-<suffix>.
+SERVER_NAME = os.environ.get("PICTURES_CPU_NAME", NAME)
+if not SERVER_NAME.startswith(NAME):
+    raise SystemExit("PICTURES_CPU_NAME must start with " + NAME)
 API = "https://api.scaleway.com"
 ZONES = ("fr-par-1", "fr-par-2", "fr-par-3")
 PORT = 8790
@@ -77,7 +81,7 @@ def create(zone: str, ctype: str, disk_gb: str, client_ip: str, key_file: str) -
         "POST",
         rules_base,
         {
-            "name": NAME,
+            "name": SERVER_NAME,
             "project": project,
             "tags": [TAG],
             "stateful": True,
@@ -112,7 +116,7 @@ def create(zone: str, ctype: str, disk_gb: str, client_ip: str, key_file: str) -
         sys.exit(f"ip: {code}")
     ip = ip["ip"]
     body = {
-        "name": NAME,
+        "name": SERVER_NAME,
         "commercial_type": ctype,
         "image": IMAGES[zone],
         "project": project,

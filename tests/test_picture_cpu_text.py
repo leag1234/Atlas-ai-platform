@@ -294,7 +294,7 @@ class CpuTurnDetailTests(unittest.IsolatedAsyncioTestCase):
     async def run_turn(
         self, gateway: CpuGateway, server: FakeServer, text: str
     ) -> Interaction:
-        for name in ("health", "render"):
+        for name in ("health", "render_set"):
             patcher = patch.object(cpu_server, name, getattr(server, name))
             patcher.start()
             self.addCleanup(patcher.stop)

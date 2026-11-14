@@ -1,14 +1,21 @@
 """Pictures drawn by an open image model on the CPU server (ATLAS_PICTURES_CPU=1).
 
-1. The server answers its health check, with room in its queue for the two
-   pictures within ATLAS_PICTURE_CPU_SECONDS; otherwise painting by code
-   answers the turn (CpuUnavailable, logged, never shown to the user).
+1. Decided up front: the server's health says how long the pictures already
+   queued will take (its own measured seconds per picture); if they and this
+   turn's two pictures do not fit the CPU budget (ATLAS_PICTURE_CPU_SECONDS,
+   within the turn's deadline), painting by code answers at once
+   (CpuUnavailable, logged, never shown to the user). The server checks the
+   same thing again when the job arrives and refuses it at once when it no
+   longer fits.
 2. One rewrite call (JSON) turns the request into the fixed illustration
    prompt, says whether it is a diagram, gives the words to place and a
    title, or refuses a violent, cruel, hateful or sexual request.
-3. Two pictures, two seeds, drawn one after the other by the server (one
-   queue per server); each comes back with the content classifier's score
-   and is dropped at 0.5 or above, or without a score.
+3. Two pictures, two seeds, sent as one job: the server draws them one
+   after the other (first come, first served across turns); each comes back
+   with the content classifier's score and is dropped at 0.5 or above, or
+   without a score. Once the job is admitted the turn does not fall back
+   after more than LATE_SHARE of its time: a failure then is the drawing
+   failure sentence (CpuLate), never a second long wait for painting.
 4. A diagram: the picture is wordless; one locate call per picture gives
    where each part is drawn, and code places the words (cpu_finish). Words
    to show (a name on a logo) are set by code in the band the picture left
@@ -38,9 +45,11 @@ from services.orchestrator.pictures.worker import PictureJobError, run_job
 
 LOGGER = logging.getLogger(__name__)
 CANDIDATES = 2
-# One picture on the recommended server (spike round 25: about 23 s drawn,
-# 25 s with the classifier and transfer); used to judge the queue.
-PICTURE_SECONDS = 25.0
+# Time kept for the rewrite call when judging the queue up front.
+REWRITE_ALLOWANCE = 5.0
+# Painting by code still answers a CPU failure only within this share of the
+# turn's time (about 40 s of a 280 s turn); later, the failure is said.
+LATE_SHARE = 0.15
 REWRITE_SECONDS = 25.0
 REWRITE_BUDGET = Decimal("0.01")
 LOCATE_SECONDS = 40.0
@@ -58,12 +67,42 @@ class CpuUnavailable(Exception):
         self.spent = spent
 
 
+class CpuLate(CpuUnavailable):
+    """The CPU attempt failed too late for painting by code to fit the turn:
+    the turn ends with the drawing failure sentence."""
+
+
+@dataclass
+class Clock:
+    """The turn's time: when it started, its deadline and its CPU budget."""
+
+    started: float
+    deadline: float
+
+    @property
+    def budget_end(self) -> float:
+        """When the CPU pictures must be done."""
+        return min(self.started + cpu_server.wait_seconds(), self.deadline - 10.0)
+
+    def left(self) -> float:
+        return self.budget_end - time.monotonic()
+
+    def unavailable(self, code: str, spent: Decimal) -> CpuUnavailable:
+        """Painting by code while it still fits the turn, else CpuLate."""
+        late = time.monotonic() - self.started > LATE_SHARE * (
+            self.deadline - self.started
+        )
+        return (CpuLate if late else CpuUnavailable)(code, spent)
+
+
 @dataclass
 class CpuDrawing:
     candidates: list[dict[str, Any]] = field(default_factory=list)
     rewrite: rewrite.Rewrite | None = None
     refused: bool = False
     filtered: int = 0
+    # The attempt failed after LATE_SHARE of the turn: the failure is said.
+    late: bool = False
     timings: dict[str, float] = field(default_factory=dict)
 
 
@@ -76,18 +115,25 @@ def _image_url(image: dict[str, str]) -> str:
     return "data:" + image["mime"] + ";base64," + image["data"]
 
 
-async def _ready(pictures: int) -> None:
-    """Health and queue check before anything is spent."""
+async def _ready(pictures: int, clock: Clock) -> float:
+    """Health and queue check before anything is spent: the expected wait,
+    or CpuUnavailable when it does not fit what is left of the budget."""
     if not cpu_server.configured():
         raise CpuUnavailable("picture_cpu_unconfigured")
     try:
         status = await cpu_server.health()
     except cpu_server.CpuServerError as error:
         raise CpuUnavailable(error.code) from None
-    queue = status.get("queue")
-    waiting = int(queue) if isinstance(queue, int) else 0
-    if (waiting + pictures) * PICTURE_SECONDS > cpu_server.wait_seconds():
+    expected = cpu_server.expected_wait(status, pictures) + REWRITE_ALLOWANCE
+    if expected > clock.left():
+        LOGGER.info(
+            "picture_cpu_busy expected_seconds=%.0f budget_seconds=%.0f queue=%s",
+            expected,
+            clock.left(),
+            status.get("queue"),
+        )
         raise CpuUnavailable("picture_cpu_busy")
+    return expected
 
 
 async def _rewrite(
@@ -176,43 +222,38 @@ async def _locate(
     return locate.parse_points(str(reply.get("text") or ""), labels)
 
 
-async def _render(
-    prompt: str, seed: int, seconds: float, errors: list[str]
-) -> cpu_server.Rendered | None:
-    try:
-        return await cpu_server.render(prompt, seed, seconds)
-    except cpu_server.CpuServerError as error:
-        errors.append(error.code)
-        LOGGER.warning("picture_cpu_render_failed code=%s", error.code)
-        return None
-
-
 async def pictures(
     plan: rewrite.Rewrite,
     seeds: list[int],
     *,
-    end: float,
+    clock: Clock,
     profile: str,
     spend: Any,
     call: Any,
     errors: list[str],
     progress: Any = None,
 ) -> tuple[list[dict[str, Any]], int, dict[str, float]]:
-    """(finished pictures, how many the filter removed, timings) of one plan."""
+    """(finished pictures, how many the filter removed, timings) of one plan.
+
+    One job for every seed. Busy (the server's own check) or a failure is
+    CpuUnavailable while painting by code still fits, CpuLate after."""
     timings: dict[str, float] = {}
     started = time.monotonic()
-    seconds = max(5.0, end - started)
-    done = 0
-
-    async def one(seed: int) -> cpu_server.Rendered | None:
-        nonlocal done
-        rendered = await _render(plan.prompt, seed, seconds, errors)
-        if rendered is not None and progress is not None:
-            done += 1
-            await progress(done)
-        return rendered
-
-    rendered = await asyncio.gather(*(one(seed) for seed in seeds))
+    try:
+        rendered = await cpu_server.render_set(
+            plan.prompt, seeds, max(5.0, clock.left())
+        )
+    except cpu_server.CpuServerError as error:
+        errors.append(error.code)
+        LOGGER.warning(
+            "picture_cpu_render_failed code=%s expected_seconds=%s waited=%.0f",
+            error.code,
+            error.expected,
+            time.monotonic() - started,
+        )
+        raise clock.unavailable(error.code, spend.total) from None
+    if progress is not None and any(rendered):
+        await progress(sum(1 for r in rendered if r))
     timings["cpu_render_wall"] = (time.monotonic() - started) * 1000
     timings["cpu_render_seconds"] = sum(r.render_seconds for r in rendered if r) * 1000
     timings["cpu_queue_seconds"] = sum(r.queue_seconds for r in rendered if r) * 1000
@@ -306,7 +347,8 @@ async def draw(
     if profile is None:
         raise CpuUnavailable("picture_cpu_profile")
     started = time.monotonic()
-    await _ready(CANDIDATES)
+    clock = Clock(started, deadline)
+    expected = await _ready(CANDIDATES, clock)
     await _status("reading", language)
     plan = await _rewrite(
         rewrite.messages(request_text, language=language), profile, spend, complete
@@ -321,12 +363,12 @@ async def draw(
     async def progress(done: int) -> None:
         await _status("cpu_drawing_done", language, done=done)
 
-    end = min(started + cpu_server.wait_seconds(), deadline)
     seeds = [secrets.randbelow(2**31) for _ in range(CANDIDATES)]
+    drawing.timings["cpu_expected"] = expected * 1000
     finished, filtered, timings = await pictures(
         plan,
         seeds,
-        end=end,
+        clock=clock,
         profile=profile,
         spend=spend,
         call=complete,
@@ -336,9 +378,10 @@ async def draw(
     drawing.timings.update(timings)
     drawing.filtered = filtered
     if not finished and not filtered:
-        # Nothing drawn in time (or no part located): painting by code answers.
+        # Nothing usable (no part located on a diagram): painting by code
+        # answers while it still fits the turn.
         code = next((e for e in reversed(errors) if e.startswith("picture_cpu")), "")
-        raise CpuUnavailable(code or "picture_cpu_failed", spend.total)
+        raise clock.unavailable(code or "picture_cpu_failed", spend.total)
     drawing.candidates = finished
     return drawing
 
@@ -389,7 +432,8 @@ async def change(
     try:
         if not cpu_enabled() or profile is None:
             raise CpuUnavailable("picture_cpu_off")
-        await _ready(1)
+        clock = Clock(started, started + max(60.0, limit - 20.0))
+        await _ready(1, clock)
         await _status("changing", language)
         plan = await _rewrite(
             rewrite.messages(
@@ -406,11 +450,10 @@ async def change(
             item.reponse, item.state = text(language, "cpu_refused"), "done"
             item.cout_eur = float(spend.total)
             return True
-        end = started + min(cpu_server.wait_seconds(), max(30.0, limit - 30.0))
         finished, filtered, timings = await pictures(
             plan,
             [picture_set.seed or secrets.randbelow(2**31)],
-            end=end,
+            clock=clock,
             profile=profile,
             spend=spend,
             call=complete or _gateway,
