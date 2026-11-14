@@ -260,5 +260,40 @@ class ChatWorkSaveTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("targets", report)
 
 
+class Listed:
+    """A broker that records each project route it is asked for."""
+
+    def __init__(self, files: list[dict[str, Any]]) -> None:
+        self.files = files
+        self.paths: list[str] = []
+
+    async def public(self, method: str, path: str) -> tuple[int, dict[str, Any]]:
+        self.paths.append(path)
+        if path == "files" or path.startswith("files?folder_id="):
+            folder = path.partition("folder_id=")[2]
+            items = [f for f in self.files if not folder or f["folder_id"] == folder]
+            return 200, {"items": items, "next_cursor": None}
+        raise AssertionError(path)
+
+
+class FileListingTests(unittest.IsolatedAsyncioTestCase):
+    """A chat publication lists the names of its folder, not every project file.
+
+    The hidden chat project keeps every chat file of a person; a listing of all
+    of them on each step made document turns ten times slower as it grew
+    (staging 2026-11-14).
+    """
+
+    async def test_names_of_one_folder_list_that_folder_only(self) -> None:
+        files = [
+            {"id": "a", "folder_id": "chats", "relative_path": "a.csv"},
+            {"id": "b", "folder_id": "other", "relative_path": "b.csv"},
+        ]
+        execution = mock.Mock(broker=Listed(files))
+        paths = await work_save.project_file_paths(execution, "chats")
+        self.assertEqual(list(paths), ["chats/a.csv"])
+        self.assertEqual(execution.broker.paths, ["files?folder_id=chats"])
+
+
 if __name__ == "__main__":
     unittest.main()

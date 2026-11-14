@@ -93,6 +93,95 @@ class ProjectFilesTests(ProjectIsolationTests):
         ) as scope:
             self.assertEqual(ScopedProjectDocuments(ProjectFiles(scope)).sources(), [])
 
+    def test_file_listing_reads_rows_once_and_each_folder_once(self) -> None:
+        """A listing costs a fixed number of queries, whatever the number of files.
+
+        It read every file again by id, then its folder and the folder's parents:
+        a chat project with 980 files took about 2,000 queries per listing, and
+        document turns went from 15 s to 150 s (staging 2026-11-14).
+        """
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            settings = dict(locality="server", model_use="allow")
+            top = files.folder(dict(settings, name="Chat files"))
+            nested = files.folder(dict(settings, name="Nested", parent_id=top["id"]))
+            removed = files.folder(dict(settings, name="Removed"))
+            created: dict[str, str] = {}
+            for index in range(30):
+                folder = (top, nested, removed)[index % 3]
+                file, version = files.new(), files.new()
+                metadata = dict(
+                    mime="text/plain",
+                    size_bytes=1,
+                    sha256=None,
+                    origin="upload",
+                    availability="retained",
+                    source_locator=None,
+                    index_status="ready",
+                )
+                file.update(
+                    metadata,
+                    folder_id=folder["id"],
+                    relative_path=f"note-{index}.txt",
+                    version_id=version["id"],
+                    classification="internal",
+                    locality="server",
+                )
+                files.put("file", file, folder["id"])
+                created[file["id"]] = folder["id"]
+            removed["deleted_at"] = timestamp()
+            files.save(removed)
+            # The listing as it was: each row read by id, deleted folders excluded.
+            expected = []
+            for identifier in created:
+                try:
+                    expected.append(files.get("file", identifier))
+                except ProjectError as exc:
+                    self.assertEqual(exc.status, 404)
+            self.assertEqual(len(expected), 20)
+
+            database = files.db
+            queries: list[str] = []
+
+            class Counting:
+                def execute(self, query: Any, *args: Any, **kwargs: Any) -> Any:
+                    queries.append(str(query))
+                    return database.execute(query, *args, **kwargs)
+
+            files.db = Counting()  # type: ignore[assignment]
+            try:
+                listed = files.listing("file")
+            finally:
+                files.db = database
+            # The project may already hold files of its fixture.
+            listed = [f for f in listed if f["id"] in created]
+            self.assertEqual(
+                {f["id"]: f for f in listed}, {f["id"]: f for f in expected}
+            )
+            # The rows, then each folder at most once (a nested folder's parent
+            # is already known): 5 queries here, where the listing took 73.
+            counted = database.execute(
+                "SELECT count(*) AS n FROM atlas_projects.resources "
+                "WHERE org_id=%s AND project_id=%s AND kind='folder'",
+                (files.org, files.project),
+            ).fetchone()
+            assert counted is not None
+            folders = counted["n"]
+            self.assertLessEqual(len(queries), 1 + folders)
+            self.assertLess(len(queries), 10)
+            self.assertIsNone(files.folders)
+            listed_queries = list(queries)
+            # A folder read outside a listing is read again, never from memory.
+            files.db = Counting()  # type: ignore[assignment]
+            try:
+                files.get("folder", top["id"])
+                files.get("folder", top["id"])
+            finally:
+                files.db = database
+            self.assertEqual(len(queries), len(listed_queries) + 2)
+
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory(dir=ROOT / "BRAIN")
         self.addCleanup(directory.cleanup)

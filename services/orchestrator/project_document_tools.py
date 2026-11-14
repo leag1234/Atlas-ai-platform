@@ -573,7 +573,7 @@ async def publish(
                 remaining(),
             ),
             str(path),
-            folder_names(await project_file_paths(execution), folder_id),
+            folder_names(await project_file_paths(execution, folder_id), folder_id),
             lambda: folder_revision(execution, folder_id),
         )
         # The link names the file actually saved.
