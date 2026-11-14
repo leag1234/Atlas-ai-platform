@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from services.orchestrator import searxng as sx
 from services.orchestrator.cache import Cache
 from services.orchestrator.loop import Call
 from services.orchestrator.tools import Runtime, Search
@@ -55,6 +56,9 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
         calls = client.__aenter__.return_value.get.call_args_list
         params = calls[0].kwargs["params"]
         self.assertEqual(params["language"], "fr-FR")
+        # The recorded page has fewer rows than requested: both primaries and
+        # the first fallback that returns rows are asked.
+        tried = list(sx.ENGINES[:3])
         self.assertEqual(
             [
                 (
@@ -63,9 +67,14 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 )
                 for call in calls
             ],
-            [("fr-FR", "general")] * 4,
+            [("fr-FR", None)] * (len(tried) + 1),
         )
-        self.assertEqual(params["time_range"], "month")
+        for call in calls:
+            engine = call.kwargs["params"]["engines"]
+            self.assertEqual(
+                call.kwargs["params"].get("time_range"),
+                "month" if engine in sx.TIME_RANGE_ENGINES else None,
+            )
         engines = [call.kwargs["params"]["engines"] for call in calls]
         self.assertEqual(
             (
@@ -73,7 +82,7 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 engines.count("wikipedia"),
                 client.__aenter__.return_value.get.call_count,
             ),
-            (["duckduckgo", "brave", "qwant"], 1, 4),
+            (tried, 1, len(tried) + 1),
         )
 
     async def test_empty_or_error_retries_once_then_is_not_disguised(self) -> None:
@@ -122,7 +131,7 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 engines.count("wikipedia"),
                 empty.__aenter__.return_value.get.call_count,
             ),
-            (["duckduckgo", "brave", "qwant", "startpage", "bing", "google"], 1, 7),
+            (list(sx.ENGINES), 1, len(sx.ENGINES) + 1),
         )
         calls = empty.__aenter__.return_value.get.call_args_list
         self.assertNotEqual(
