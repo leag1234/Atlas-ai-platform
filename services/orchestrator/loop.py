@@ -42,6 +42,8 @@ class Query(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     question: str = Field(min_length=1, pattern=r"\S")
     lang: Literal["fr", "de", "es", "it", "en"]
+    # The prose language when the user writes in a language outside the five.
+    prose_lang: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(?:-[a-z]{2})?$")
 
     _safe_question = field_validator("question")(validate_input)
 
@@ -241,7 +243,10 @@ async def run(
                         if limits.profile
                         else {}
                     ),
-                    **query.model_dump(),
+                    **query.model_dump(exclude={"prose_lang"}),
+                    # The lang field sets the prose language (prompts/current-question.txt):
+                    # it names the user's own language, also outside the five.
+                    "lang": query.prose_lang or query.lang,
                 },
                 ensure_ascii=False,
             ),
@@ -371,7 +376,8 @@ async def run(
                         {
                             "role": "user",
                             "content": closing_instruction(
-                                str(limit_refusal["error"]), query.lang
+                                str(limit_refusal["error"]),
+                                query.prose_lang or query.lang,
                             ),
                         }
                     )
@@ -399,7 +405,9 @@ async def run(
                     messages.append(
                         {
                             "role": "user",
-                            "content": time_closing_instruction(query.lang),
+                            "content": time_closing_instruction(
+                                query.prose_lang or query.lang
+                            ),
                         }
                     )
                     logging.getLogger(__name__).warning(

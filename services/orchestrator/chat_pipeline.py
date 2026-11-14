@@ -1117,13 +1117,17 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
     model.local_enabled = os.environ.get("GPU_LOCAL", "0") == "1"
     tools = ChatTools(item, request.user_text, allow_image=False)
     result = await run(
-        Query(question=request.messages[-1].text, lang=request.lang),
+        Query(
+            question=request.messages[-1].text,
+            lang=request.lang,
+            prose_lang=request.prose_lang,
+        ),
         model,
         tools,
         Path("prompts/chat.txt").read_text()
         + Path("prompts/chat-agent.txt").read_text()
         + Path("prompts/web-chat.txt").read_text()
-        + language_instruction(request.lang)
+        + language_instruction(request.prose_lang)
         + guest_capability_instruction()
         + (
             spatial_drawing_instruction()
@@ -1827,7 +1831,11 @@ async def _process(
         if attachment_sources and model.sink:
             await model.sink({"phase": "synthesizing_document"})
         result = await run(
-            Query(question=iteration or request.messages[-1].text, lang=request.lang),
+            Query(
+                question=iteration or request.messages[-1].text,
+                lang=request.lang,
+                prose_lang=request.prose_lang,
+            ),
             model,
             tools,
             Path("prompts/chat.txt").read_text()
@@ -1839,7 +1847,7 @@ async def _process(
                 else ""
             )
             + (Path("prompts/followup.txt").read_text() if followup else "")
-            + language_instruction(request.lang)
+            + language_instruction(request.prose_lang)
             + (instruction() if links else "")
             + (policy_instruction() if image_discussion else "")
             + extended_instruction()
@@ -2013,12 +2021,13 @@ async def _process(
                         Query(
                             question=iteration or request.messages[-1].text,
                             lang=request.lang,
+                            prose_lang=request.prose_lang,
                         ),
                         model,
                         tools,
                         Path("prompts/chat.txt").read_text()
                         + Path("prompts/chat-agent.txt").read_text()
-                        + language_instruction(request.lang)
+                        + language_instruction(request.prose_lang)
                         + (instruction() if links else "")
                         + file_context
                         + "\n\nFile-delivery recovery: the prior answer produced no file. "

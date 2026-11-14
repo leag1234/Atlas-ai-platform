@@ -230,7 +230,7 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
         )
     system = (
         Path("prompts/project.txt").read_text()
-        + language_instruction(scoped.lang)
+        + language_instruction(scoped.prose_lang)
         + "\n"
         + json.dumps(
             {
@@ -242,7 +242,11 @@ async def process_project(request: ChatRequest, item: Interaction) -> None:
     )
     try:
         result = await run(
-            Query(question=iteration or question, lang=scoped.lang),
+            Query(
+                question=iteration or question,
+                lang=scoped.lang,
+                prose_lang=scoped.prose_lang,
+            ),
             model,
             tools,
             system,
