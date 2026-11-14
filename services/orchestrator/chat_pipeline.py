@@ -1084,6 +1084,10 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             item.reponse += source_footer(sources, request.lang)
 
 
+# The ceiling of a simple drawing turn (the ordinary chat ceiling).
+DRAWING_COST = Decimal("0.10")
+
+
 async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> None:
     """Use one text-model pass for a guest SVG, with no search or offered tools."""
     started = time.monotonic()
@@ -1099,6 +1103,10 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
     # sets the flag, so it is given here (setting it before was silently reset:
     # staging -44, en-draw-10, the repair call refused as invalid_limits).
     model.configure_quality(request.model, request.max_tokens, produces_files=True)
+    # The file flag also raises the model's allowance to the file ceiling (0.30 EUR),
+    # above this turn's 0.10 EUR limit: the first reservation stopped the turn at
+    # once as a budget refusal (staging -45). The drawing keeps its own ceiling.
+    model.cost_ceiling = DRAWING_COST
     model.local_enabled = os.environ.get("GPU_LOCAL", "0") == "1"
     tools = ChatTools(item, request.user_text, allow_image=False)
     result = await run(
@@ -1119,7 +1127,7 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
             profile=request.model,
             tool_calls=0,
             tokens=None,
-            cost=Decimal("0.10"),
+            cost=DRAWING_COST,
             wall_clock=max(0, request.timeout_seconds - (time.monotonic() - started)),
             # The drawing is one whole SVG written in one call, like an app or a
             # picture turn, whose 300 s deadline this turn may carry: without the
@@ -1141,7 +1149,7 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
             model,
             tools,
             started,
-            Decimal("0.10"),
+            DRAWING_COST,
             request.timeout_seconds,
             require_legend=False,
         )
