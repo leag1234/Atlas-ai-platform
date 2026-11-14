@@ -18,6 +18,10 @@
   let projectTab = 'mine', projectSearch = '', projectSort = 'recent';
   let archivedConversations = [], showArchived = false, conversationSearch = '', searchResults = null, searchTimer, searchSequence = 0;
   let booting = false;
+  // The organization of the chat sidebar (project list, "Move to project"). Unlike `scope`, the project view's
+  // selection, it survives closing the view; `projectsOrg` names the organization `projects` was read for.
+  let homeOrg = '', projectsOrg = '';
+  const hostOrg = () => scope?.org || homeOrg;
   let replayAfter = 0, configuring = false, uploading = false;
   const liveRequests = new Set();
   const selections = () => new URLSearchParams(location.search);
@@ -390,11 +394,12 @@
     for (const key of ['org', 'project', 'conversation', 'session']) if (value[key] && !uuid(value[key])) throw new Error(t('selectionError'));
     if (value.tasks && value.project) throw new Error(t('selectionError'));
     if (value.org && !memberships.some(m => m.org_id === value.org)) throw new Error(t('selectionError'));
+    if (value.org) homeOrg = value.org;
     // Everything the page needs is requested at once: these reads do not depend on each other, and in
     // sequence each round trip added its full latency before the first message showed (14 s measured
     // on staging under load). The selection is still checked against the project list before use.
     const early = value.org && value.project ? prefetch(value) : null;
-    if (value.org) projects = await list(`/api/atlas/orgs/${value.org}/projects`);
+    if (value.org) { projects = await list(`/api/atlas/orgs/${value.org}/projects`); projectsOrg = value.org; }
     if (current !== generation) return;
     if (value.project) {
       if (!projects.some(p => p.id === value.project)) throw new Error(t('selectionError'));
@@ -1149,7 +1154,7 @@
     if (!branch.length || branch.length > 500) throw new Error('native_chat_shape');
     const allFiles = [...new Set(branch.flatMap(message => nativeFiles(message, chat)))];
     if (allFiles.length && !await confirmDialog(moveText('confirm'), null, 'accept')) return;
-    const projectBase = `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
+    const org = hostOrg(), projectBase = `/api/atlas/orgs/${org}/projects/${project.id}`;
     let folders = await list(projectBase + '/folders');
     let folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id);
     if (!folder) { await api(projectBase + '/folders','POST',{name:t('files'),locality:'server',model_use:'allow'}); folders = await list(projectBase + '/folders'); folder = folders.find(value => value.locality === 'server' && value.model_use === 'allow' && value.id !== project.deliverables_folder_id); }
@@ -1176,23 +1181,24 @@
     const imported = await api(projectBase + '/conversations/import','POST',{title:(chat.title || branch[0].content).trim().slice(0,120),messages});
     const deleted = await fetch('/api/v1/chats/' + encodeURIComponent(chatId),{method:'DELETE',credentials:'same-origin'});
     if (!deleted.ok) throw Object.assign(new Error('native_delete'), {status:deleted.status});
-    location.assign(`/?atlas_projects=1&org=${encodeURIComponent(scope.org)}&project=${encodeURIComponent(project.id)}&conversation=${encodeURIComponent(imported.id)}`);
+    location.assign(`/?atlas_projects=1&org=${encodeURIComponent(org)}&project=${encodeURIComponent(project.id)}&conversation=${encodeURIComponent(imported.id)}`);
   }
   async function moveMenu(chatId) {
     if (!chatId) return;
-    projects = await list(`/api/atlas/orgs/${scope.org}/projects`);
+    const org = hostOrg();
+    projects = await list(`/api/atlas/orgs/${org}/projects`); projectsOrg = org;
     const editable = projects.filter(project => !project.hidden && (!project.shared_with_me || project.role === 'owner' || project.role === 'editor'));
     const recent = editable.sort((a,b)=>(Date.parse(b.updated_at)||0)-(Date.parse(a.updated_at)||0));
     const chooseProject = project => importNativeChat(project, chatId);
     const createAndMove = async () => {
       return nameDialog('newProject', async name => {
       try {
-        const project = await api(`/api/atlas/orgs/${scope.org}/projects`, 'POST', {name, instructions:'', default_action:'chat'});
+        const project = await api(`/api/atlas/orgs/${org}/projects`, 'POST', {name, instructions:'', default_action:'chat'});
         await importNativeChat(project, chatId);
       } catch (error) {
         if (error.status !== 429) throw error;
         const advice = node('p', t('quotaProjectAdvice'));
-        root.append(advice, button('viewProjects', () => choose({org:scope.org})));
+        root.append(advice, button('viewProjects', () => choose({org})));
       }
       });
     };
@@ -1252,7 +1258,7 @@
   }
   function installMoveMenuItems() {
     translateNativeMenus();
-    if (owned || !identity || !scope?.org) return;
+    if (owned || !identity || !hostOrg()) return;
     if (!pendingMoveMenu || Date.now() - pendingMoveMenu.at >= 1500) return;
     for (const menu of document.querySelectorAll('.app-dropdown-menu')) {
       if (menu.querySelector('[data-atlas-move-project]')) continue;
@@ -1275,7 +1281,7 @@
   }
   // Project actions from the chat sidebar: the same requests as the project page and cards, usable while a chat is open
   // (no project view mounted), so they refresh the sidebar and only re-route a project view that shows the changed project.
-  const projectPath = project => `/api/atlas/orgs/${scope.org}/projects/${project.id}`;
+  const projectPath = project => `/api/atlas/orgs/${hostOrg()}/projects/${project.id}`;
   function sidebarProjectActions(project) {
     const actions = [];
     if (project.role !== 'viewer') actions.push(['rename', () => renameSidebarProject(project)]);
@@ -1350,8 +1356,8 @@
     if (!sidebar) return;
     if (!document.getElementById('atlas-project-entry')) {
       const row = node('div',null,'atlas-project-nav-row'); row.id = 'atlas-project-navigation';
-      const entry = button('projects',async () => {await mount(); await choose({org:scope?.org || memberships[0]?.org_id});}); entry.id = 'atlas-project-entry';
-      row.append(entry,iconButton('newProject','+',createProject),button('taskHeading',async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id,tasks:true});}));
+      const entry = button('projects',() => openView({org:hostOrg() || memberships[0]?.org_id})); entry.id = 'atlas-project-entry';
+      row.append(entry,iconButton('newProject','+',createProject),button('taskHeading',() => openView({org:hostOrg() || memberships[0]?.org_id,tasks:true})));
       const anchor = sidebar.id === 'pinned-menu-items-list' ? null : sidebar.querySelector('a[href="/notes"],a[href="/workspace"],a[href="/"]');
       if (anchor) (anchor.parentElement === sidebar ? anchor : anchor.parentElement).insertAdjacentElement('afterend',row); else sidebar.prepend(row);
     }
@@ -1359,15 +1365,18 @@
     const listedProjects = projects.filter(value => !value.hidden && value.state !== 'archived').sort((a,b) => (Date.parse(b.updated_at) || 0) - (Date.parse(a.updated_at) || 0)).slice(0,8);
     const openProject = projects.find(value => value.id === scope?.project);
     if (openProject && !listedProjects.includes(openProject)) listedProjects.push(openProject);
+    // Shown on every page once the organization's projects are read, the project view open or not: a reload of an
+    // ordinary chat used to leave it out until the projects page was visited (the list was only read there).
+    const org = hostOrg(), shown = Boolean(org && projectsOrg === org && projects.length);
     const signature = JSON.stringify({
-      org: scope?.org,
+      org,
       projects: listedProjects.map(value => [value.id, value.name, value.revision, value.role]),
       project: scope?.project,
       conversations: conversations.map(value => [value.id, shortTitle(value.title)]),
       conversation: scope?.conversation
     });
     const previous = document.getElementById('atlas-project-sidebar-list');
-    if (scope?.org && projects.length && (!previous || previous.dataset.signature !== signature)) {
+    if (shown && (!previous || previous.dataset.signature !== signature)) {
       previous?.remove();
       const list = node('section', null, 'atlas-project-host-projects'); list.id = 'atlas-project-sidebar-list';
       list.dataset.signature = signature;
@@ -1377,26 +1386,26 @@
         const item = node('div', null, 'atlas-project-sidebar-item');
         const row = node('button', value.name, 'atlas-project-sidebar-row'); row.type = 'button'; row.dataset.sidebarProject = value.id;
         // With one of its conversations open, the project is the current location, not the current page.
-        if (value.id === scope.project) row.setAttribute('aria-current', scope.conversation ? 'true' : 'page');
-        row.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id}))); item.append(row);
+        if (value.id === scope?.project) row.setAttribute('aria-current', scope.conversation ? 'true' : 'page');
+        row.addEventListener('click', guarded(() => openView({org,project:value.id}))); item.append(row);
         const actions = sidebarProjectActions(value);
         if (actions.length) item.append(rowMenuButton(value.name, actions));
         list.append(item);
-        if (value.id === scope.project) for (const conversation of conversations) {
+        if (value.id === scope?.project) for (const conversation of conversations) {
           const chat = node('button', shortTitle(conversation.title), 'atlas-project-sidebar-row atlas-project-host-conversation'); chat.type = 'button';
           if (conversation.id === scope.conversation) chat.setAttribute('aria-current','page');
-          chat.addEventListener('click', guarded(() => choose({org:scope.org,project:value.id,conversation:conversation.id}))); list.append(chat);
+          chat.addEventListener('click', guarded(() => openView({org,project:value.id,conversation:conversation.id}))); list.append(chat);
         }
       }
-      list.append(button('allProjects', () => choose({org:scope.org}), 'atlas-project-sidebar-all'));
+      list.append(button('allProjects', () => openView({org}), 'atlas-project-sidebar-all'));
       document.getElementById('atlas-project-navigation')?.insertAdjacentElement('afterend', list);
-    } else if (previous && !(scope?.org && projects.length)) {
+    } else if (previous && !shown) {
       previous.remove();
     }
     if (!document.body.classList.contains('atlas-project-enabled')) document.body.classList.add('atlas-project-enabled');
     const rail = document.querySelector('#sidebar');
     if (sidebar.id === 'pinned-menu-items-list' && rail && !rail.querySelector('[data-project-rail]')) {
-      const entry = iconButton('projects','', async () => {await mount();await choose({org:scope?.org || memberships[0]?.org_id});}); entry.dataset.projectRail = ''; entry.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"/></svg>'; /* Same place as in the open sidebar: under search, not at the bottom (owner report 2026-11-09). */ const newChat = rail.querySelector('a[aria-label]'); const search = newChat && [...rail.querySelectorAll('button[aria-label]')].find(button => newChat.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING); if (search) { let item = search; while (item.parentElement && item.parentElement !== rail) { const style = getComputedStyle(item.parentElement); if (style.display === 'block' || (style.display.includes('flex') && style.flexDirection.startsWith('column'))) break; item = item.parentElement; } item.insertAdjacentElement('afterend', entry); } else rail.append(entry);
+      const entry = iconButton('projects','', () => openView({org:hostOrg() || memberships[0]?.org_id})); entry.dataset.projectRail = ''; entry.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"/></svg>'; /* Same place as in the open sidebar: under search, not at the bottom (owner report 2026-11-09). */ const newChat = rail.querySelector('a[aria-label]'); const search = newChat && [...rail.querySelectorAll('button[aria-label]')].find(button => newChat.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING); if (search) { let item = search; while (item.parentElement && item.parentElement !== rail) { const style = getComputedStyle(item.parentElement); if (style.display === 'block' || (style.display.includes('flex') && style.flexDirection.startsWith('column'))) break; item = item.parentElement; } item.insertAdjacentElement('afterend', entry); } else rail.append(entry);
       new ResizeObserver(entries => {entry.hidden = entries[0].contentRect.width > 100;}).observe(rail);
     }
     // The folders header row, not only the toggle's parent: Open WebUI 0.13 wraps the toggle in a heading, which left the "+" alone in the row.
@@ -1528,13 +1537,36 @@
       if (!me.ok) {if (projectRoute()) throw Object.assign(new Error(`${t('failure')} (${me.status})`), {status:me.status}); pendingState(false); return;}
       memberships = (await me.json()).memberships;
       if (!scope && memberships[0]?.org_id) scope = {org: memberships[0].org_id};
+      if (!memberships.some(m => m.org_id === homeOrg)) homeOrg = memberships.some(m => m.org_id === scope?.org) ? scope.org : memberships[0]?.org_id || '';
       if (!host.ok) {if (!owned && !selections().has('project')) { pendingState(false); return; } throw new Error(t('signIn'));}
       identity = (await host.json()).id; if (!identity) throw new Error(t('signIn'));
       document.getElementById('atlas-project-failure')?.remove();
       for (let i = sessionStorage.length - 1; i >= 0; i--) { const key = sessionStorage.key(i); if (key.startsWith('atlas-project:') && key !== storageKey()) sessionStorage.removeItem(key); }
       installNavigation();
-      if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) await mount();
+      if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) await mount(); else loadSidebarProjects();
     } catch(error) {showFailure(error);} finally {booting = false;}
+  }
+  // The sidebar's project list on an ordinary chat page: read once per page load, outside the project view's
+  // request generation (a route change during the read would otherwise drop it). A network error or a 5xx
+  // is retried twice; the project view, when it opens, reads the same list and makes this one moot.
+  async function loadSidebarProjects() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const org = hostOrg();
+      if (!uuid(org) || projectsOrg === org) return;
+      try {
+        const items = []; let cursor = null;
+        do {
+          const response = await fetch(`/api/atlas/orgs/${org}/projects` + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''), {credentials:'same-origin', signal:AbortSignal.timeout(30000)});
+          if (!response.ok) throw Object.assign(new Error(String(response.status)), {status:response.status});
+          const page = await response.json(); items.push(...page.items); cursor = page.next_cursor;
+        } while (cursor);
+        if (projectsOrg !== org && hostOrg() === org) { projects = items; projectsOrg = org; installNavigation(); }
+        return;
+      } catch (error) {
+        if (error.status && error.status < 500) return;
+        await new Promise(resolve => setTimeout(resolve, 1500 * (attempt + 1)));
+      }
+    }
   }
   // A project page opened while the service is briefly unreachable (a network error or a 5xx on these two
   // reads, seen once right after a move) retries twice before reporting; the reads change nothing.
@@ -1564,7 +1596,9 @@
     const warning = node('aside','','atlas-project-failure'); errorNotice(warning,error,'shellFailure'); warning.id = 'atlas-project-failure'; warning.setAttribute('role','alert');
     warning.append(button('close',() => warning.remove())); document.body.append(warning);
   }
-  async function mount() {
+  // Opens the project view on a selection: from a chat page (view not mounted) the view starts on it directly.
+  const openView = value => root?.isConnected ? choose(value) : mount(value);
+  async function mount(initial = null) {
     if (root?.isConnected) return;
     root = node('section',null,'atlas-project'); root.id = 'atlas-project'; root.lang = window.atlasProjectLocale.language(); root.setAttribute('aria-label',t('projects')); root.dataset.owned = String(owned);
     left = node('nav',null,'atlas-project-left'); left.setAttribute('aria-label',t('projects'));
@@ -1585,7 +1619,7 @@
     root.append(mobile,left,center,right,notice); document.body.append(root); pendingState(false);
     const side = document.getElementById('atlas-side-view');
     if (side) {sideResize = new ResizeObserver(() => root.style.setProperty('--atlas-side-width',side.getBoundingClientRect().width+'px')); sideResize.observe(side);}
-    const q = selections(); const value = {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session'),tasks:q.get('tasks') === 'true'};
+    const q = selections(); const value = initial || {org:q.get('org') || memberships[0]?.org_id,project:q.get('project'),conversation:q.get('conversation'),session:q.get('session'),tasks:q.get('tasks') === 'true'};
     try {await choose(value); installNavigation();} catch(error) {if (error.name !== 'AbortError') showFailure(error);}
   }
   let route = location.pathname;
@@ -1597,7 +1631,8 @@
       const prior = route; route = location.pathname; cleanup(); root?.remove();
       if (route.startsWith('/admin/settings')) guarded(adminEntry)();
       if (/^\/(auth|admin)/.test(prior) && !/^\/(auth|admin)/.test(route)) boot();
-      if (/^\/(auth|admin)/.test(route)) { pendingState(false); if (identity) sessionStorage.removeItem(storageKey()); document.getElementById('atlas-project-navigation')?.remove(); }
+      // Signing out may hand the page to another account: its projects are read again after the next sign-in.
+      if (/^\/(auth|admin)/.test(route)) { pendingState(false); if (identity) sessionStorage.removeItem(storageKey()); homeOrg = projectsOrg = ''; projects = []; document.getElementById('atlas-project-navigation')?.remove(); document.getElementById('atlas-project-sidebar-list')?.remove(); }
     }
   });
   window.addEventListener('popstate', () => { cleanup(); root?.remove(); if (owned || selections().has('project') || selections().has('tasks') || selections().has('atlas_projects')) guarded(mount)(); });
