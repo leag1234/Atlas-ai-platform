@@ -221,3 +221,10 @@ test-project-browser: ## keyless project UI contracts; requires Playwright Chrom
 .PHONY: test-artifact-security
 test-artifact-security: ## artifact preview browser security suite; supervisor supplies the stack
 	@PYTHONPATH=.:tests:services/model-gateway python3 tests/artifact_security_browser.py
+
+.PHONY: prepush fix-css-digest
+prepush: ## fast local copy of the CI checks that fail most often (FULL=1 complete unit suite; BASE, TESTS_BUDGET, JOBS)
+	@python3 tools/prepush.py $(if $(FULL),--full) $(if $(BASE),--base $(BASE)) \
+	  $(if $(TESTS_BUDGET),--tests-budget $(TESTS_BUDGET)) $(if $(JOBS),--jobs $(JOBS))
+fix-css-digest: ## record sha256 of chat-ui.css in reports/m24-rendering.json after a stylesheet change
+	@python3 tools/prepush.py --fix-css-digest

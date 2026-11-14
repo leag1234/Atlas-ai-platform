@@ -51,7 +51,7 @@ I destroy any experimental resource at the end of a session. The GPU is turned o
 `infra/gpu-down.sh` when I am not using it.
 
 ## Work loop
-Read → plan (files, contracts, tests, risks) → ask blocking questions now → implement in small tested increments → PR → green CI → update BRAIN/ → stop (I do not chain to the next milestone without a mandate).
+Read → plan (files, contracts, tests, risks) → ask blocking questions now → implement in small tested increments → `make prepush` green before every push (docs/11 §7) → PR → green CI → update BRAIN/ → stop (I do not chain to the next milestone without a mandate).
 
 ## GPU budget risk (permanent rule, PoC)
 GPU risk is capped (2 €/h, 30 €/milestone, active alerts) and ASSUMED by the human.
