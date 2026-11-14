@@ -260,5 +260,76 @@ class ChatWorkSaveTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("targets", report)
 
 
+class Listed:
+    """A broker that records each project route it is asked for."""
+
+    def __init__(self, files: list[dict[str, Any]], content: bytes = b"") -> None:
+        self.files = files
+        self.content_bytes = content
+        self.paths: list[str] = []
+
+    async def public(self, method: str, path: str) -> tuple[int, dict[str, Any]]:
+        self.paths.append(path)
+        if path == "files" or path.startswith("files?folder_id="):
+            folder = path.partition("folder_id=")[2]
+            items = [f for f in self.files if not folder or f["folder_id"] == folder]
+            return 200, {"items": items, "next_cursor": None}
+        if path.startswith("files/"):
+            found = [f for f in self.files if f["id"] == path[len("files/") :]]
+            return (200, found[0]) if found else (404, {"error": "not_found"})
+        raise AssertionError(path)
+
+    async def content(self, file_id: str, version: str, limit: int) -> bytes:
+        return self.content_bytes
+
+
+class FileListingTests(unittest.IsolatedAsyncioTestCase):
+    """A step reads the files it needs, not every file of the project.
+
+    The hidden chat project keeps every chat file of a person; a listing of all
+    of them on each step made document turns ten times slower as it grew
+    (staging 2026-11-14).
+    """
+
+    async def test_names_of_one_folder_list_that_folder_only(self) -> None:
+        files = [
+            {"id": "a", "folder_id": "chats", "relative_path": "a.csv"},
+            {"id": "b", "folder_id": "other", "relative_path": "b.csv"},
+        ]
+        execution = mock.Mock(broker=Listed(files))
+        paths = await work_save.project_file_paths(execution, "chats")
+        self.assertEqual(list(paths), ["chats/a.csv"])
+        self.assertEqual(execution.broker.paths, ["files?folder_id=chats"])
+
+    async def test_a_file_this_turn_published_is_read_alone(self) -> None:
+        from services.orchestrator.project_document_tools import resolve
+
+        raw = b"day,km\n"
+        file_id = "123e4567-e89b-12d3-a456-426614174010"
+        version = "123e4567-e89b-12d3-a456-426614174011"
+        stored = {
+            "id": file_id,
+            "folder_id": "chats",
+            "relative_path": "report.csv",
+            "version_id": version,
+            "size_bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+        broker = Listed([stored], raw)
+        execution = mock.Mock(broker=broker, request_id="turn-1")
+        execution.session = {"base_file_versions": []}
+        execution.check = mock.AsyncMock()
+        receipt = {"id": file_id, "file_version_id": version, "turn_id": "turn-1"}
+        value = {"file_id": file_id, "version": version}
+        resolved = await resolve(execution, value, [receipt])
+        self.assertEqual(resolved["file_id"], file_id)
+        self.assertEqual(broker.paths, ["files/" + file_id])
+        # A newer version of that file: the published one is not found.
+        stored["version_id"] = "123e4567-e89b-12d3-a456-426614174012"
+        with self.assertRaises(ProjectError) as stale:
+            await resolve(execution, value, [receipt])
+        self.assertEqual(stale.exception.status, 404)
+
+
 if __name__ == "__main__":
     unittest.main()

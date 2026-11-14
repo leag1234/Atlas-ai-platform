@@ -146,13 +146,21 @@ def base_workspace_paths(base: Any) -> set[str]:
     return paths
 
 
-async def project_file_paths(execution: Any) -> dict[str, dict[str, Any]]:
-    """Project files keyed by workspace path (<folder_id>/<relative_path>)."""
+async def project_file_paths(
+    execution: Any, folder_id: str | None = None
+) -> dict[str, dict[str, Any]]:
+    """Project files keyed by workspace path (<folder_id>/<relative_path>).
+
+    With folder_id, the files of that folder only (its direct children).
+    """
     paths: dict[str, dict[str, Any]] = {}
     cursor: str | None = None
     for _ in range(20):
+        query = [("folder_id=" + folder_id)] if folder_id else []
+        if cursor:
+            query.append("cursor=" + cursor)
         status, page = await execution.broker.public(
-            "GET", "files" + ("?cursor=" + cursor if cursor else "")
+            "GET", "files" + ("?" + "&".join(query) if query else "")
         )
         if status != 200:
             break

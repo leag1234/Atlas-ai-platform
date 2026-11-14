@@ -290,17 +290,15 @@ async def resolve(
         ),
         None,
     )
+    status, file = await execution.broker.public("GET", "files/" + file_id)
     if own_receipt is not None:
-        status, listing = await execution.broker.public("GET", "files")
+        # A file this turn published: the receipt names it, so it is read alone
+        # (it was found by listing every file of the project, which grows with
+        # each chat file of the person). Not current any more is not found.
+        if status == 404 or (status == 200 and file["version_id"] != version):
+            raise ProjectError(404, "not_found")
         if status != 200:
             raise ProjectError(status, "dependency_unavailable")
-        published = next(
-            (item for item in listing["items"] if item["version_id"] == version), None
-        )
-        if published is None:
-            raise ProjectError(404, "not_found")
-        file_id = published["id"]
-    status, file = await execution.broker.public("GET", "files/" + file_id)
     if status != 200:
         raise ProjectError(status, str(file.get("error", "not_found")))
     if file["version_id"] != version:
@@ -573,7 +571,7 @@ async def publish(
                 remaining(),
             ),
             str(path),
-            folder_names(await project_file_paths(execution), folder_id),
+            folder_names(await project_file_paths(execution, folder_id), folder_id),
             lambda: folder_revision(execution, folder_id),
         )
         # The link names the file actually saved.

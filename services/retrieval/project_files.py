@@ -153,6 +153,8 @@ class ProjectFiles:
         self.db = scope.db
         self.root = Path(os.environ.get("ATLAS_DATA_ROOT", "BRAIN/project-data"))
         self.publication_context: dict[str, str] = {}
+        # Folders already read by the listing in progress (see listing).
+        self.folders: dict[str, dict[str, Any] | ProjectError] | None = None
 
     def new(self, identifier: str | None = None) -> dict[str, Any]:
         return dict(
@@ -235,7 +237,21 @@ class ProjectFiles:
         return row
 
     def get(self, kind: str, identifier: str) -> dict[str, Any]:
-        row = self.row(kind, identifier)
+        if kind == "folder" and self.folders is not None:
+            known = self.folders.get(identifier)
+            if known is None:
+                try:
+                    known = self.checked(kind, self.row(kind, identifier))
+                except ProjectError as exc:
+                    known = exc
+                self.folders[identifier] = known
+            if isinstance(known, ProjectError):
+                raise known
+            return known
+        return self.checked(kind, self.row(kind, identifier))
+
+    def checked(self, kind: str, row: dict[str, Any]) -> dict[str, Any]:
+        """The value of a resource row, or 404 when deleted, expired or past retention."""
         value: dict[str, Any] = row["data"]
         if value.get("deleted_at") or (
             row["expires_at"] and row["expires_at"] <= datetime.now(timezone.utc)
@@ -276,24 +292,34 @@ class ProjectFiles:
         return value
 
     def listing(self, kind: str, parent: str | None = None) -> list[dict[str, Any]]:
+        # One query for the rows, and each folder read once: the listing read
+        # every row again by id, then its folder and the folder's parents, so a
+        # chat project with 980 files took about 2,000 queries per listing, on
+        # the one connection every project call of the instance waits for
+        # (staging 2026-11-14: document turns from 15 s to 150 s as the test
+        # account's chat files grew).
         rows = self.db.execute(
-            "SELECT id FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind=%s AND (%s::uuid IS NULL OR parent_id=%s) ORDER BY data->>'created_at',id",
+            "SELECT * FROM atlas_projects.resources WHERE org_id=%s AND project_id=%s AND kind=%s AND (%s::uuid IS NULL OR parent_id=%s) ORDER BY data->>'created_at',id",
             (self.org, self.project, kind, parent, parent),
         ).fetchall()
         result = []
-        for row in rows:
-            try:
-                value = self.get(kind, str(row["id"]))
-                if kind == "memory":
-                    self.check_sources(value["source_file_version_ids"])
-                if kind == "version":
-                    self.version(value["file_id"], value["id"])
-                if kind == "deliverable":
-                    self.deliverable(value["id"])
-                result.append(value)
-            except ProjectError as exc:
-                if exc.status not in (403, 404, 409):
-                    raise
+        outer, self.folders = self.folders, {} if self.folders is None else self.folders
+        try:
+            for row in rows:
+                try:
+                    value = self.checked(kind, row)
+                    if kind == "memory":
+                        self.check_sources(value["source_file_version_ids"])
+                    if kind == "version":
+                        self.version(value["file_id"], value["id"])
+                    if kind == "deliverable":
+                        self.deliverable(value["id"])
+                    result.append(value)
+                except ProjectError as exc:
+                    if exc.status not in (403, 404, 409):
+                        raise
+        finally:
+            self.folders = outer
         return result
 
     def emit(
