@@ -40,6 +40,16 @@ serverless:
     fallback: vision
     capabilities:
       pixtral-12b-2409: {context: 131072, tools: true, vision: true, reasoning: false}
+  # Where named parts are drawn in a picture (labels of a CPU diagram, services/orchestrator/
+  # pictures): a call with an image and vision_role "locate". Spike round 25, 2026-11-13: this
+  # model placed every part of the test diagrams; the Mistral models returned guessed centres.
+  # Source: Scaleway supported models (Text, Code, Vision; 256k), read 2026-11-14.
+  locate:
+    env: LOCATE_MODEL
+    model: qwen3.6-35b-a3b
+    fallback: vision
+    capabilities:
+      qwen3.6-35b-a3b: {context: 262144, tools: false, vision: true, reasoning: false}
   fast:
     env: FAST_MODEL
     model: deepseek-v4-flash-0731
@@ -80,3 +90,6 @@ hidden_profiles:
 picture_roles:
   picture_painter: atlas-mistral
   picture_checklist: atlas-deepseek
+  # Pictures on CPU (ATLAS_PICTURES_CPU=1): one JSON call turns the request into the fixed
+  # illustration prompt; the label anchors of a diagram use this profile with vision_role "locate".
+  picture_rewrite: atlas-deepseek

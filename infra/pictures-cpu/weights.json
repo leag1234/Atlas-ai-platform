@@ -1,0 +1,17 @@
+{
+  "_doc": "Weights of the CPU picture server, pinned by revision and sha256 (read on the sources 2026-11-13, spike round 25). fetch_weights.sh downloads each file, checks its size and sha256, and converts the 4B model to 4 bits with the engine's own converter (the result is checked too). Licences: FLUX.2 klein 4B Apache-2.0, Qwen3-4B GGUF Apache-2.0, Z-Image-Turbo Apache-2.0, nsfw_image_detection Apache-2.0.",
+  "files": [
+    {"name": "klein-bf16.safetensors", "repo": "black-forest-labs/FLUX.2-klein-4B", "rev": "e7b7dc27f91deacad38e78976d1f2b499d76a294", "file": "flux-2-klein-4b.safetensors", "bytes": 7751105712, "sha256": "ec3d4e733a771f61c052fb4856c48b336c55eaf2c65487c2a1faeb9bbda7a343", "transient": true},
+    {"name": "klein-vae.safetensors", "repo": "black-forest-labs/FLUX.2-klein-4B", "rev": "e7b7dc27f91deacad38e78976d1f2b499d76a294", "file": "vae/diffusion_pytorch_model.safetensors", "bytes": 168120878, "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"},
+    {"name": "qwen3-4b-Q8_0.gguf", "repo": "unsloth/Qwen3-4B-GGUF", "rev": "22c9fc8a8c7700b76a1789366280a6a5a1ad1120", "file": "Qwen3-4B-Q8_0.gguf", "bytes": 4280405792, "sha256": "eed555233267a33c7e8ee31682762cc7751b3f6d224039086e0e846f05fffa5d"},
+    {"name": "zimage-Q4_K.gguf", "repo": "leejet/Z-Image-Turbo-GGUF", "rev": "c61c0e422dc8b541b7548cf33a4ef8302b0f8085", "file": "z_image_turbo-Q4_K.gguf", "bytes": 3864250304, "sha256": "14b375ab4f226bc5378f68f37e899ef3c2242b8541e61e2bc1aff40976086fbd", "fallback": true},
+    {"name": "qwen3-4b-instruct2507-Q8_0.gguf", "repo": "unsloth/Qwen3-4B-Instruct-2507-GGUF", "rev": "a06e946bb6b655725eafa393f4a9745d460374c9", "file": "Qwen3-4B-Instruct-2507-Q8_0.gguf", "bytes": 4280405600, "sha256": "391c1e410fd9f4cf2de2b510273b56a84c19ce18f4fa3bfb3774031dac4ef068", "fallback": true},
+    {"name": "zimage-vae.safetensors", "repo": "Tongyi-MAI/Z-Image-Turbo", "rev": "f332072aa78be7aecdf3ee76d5c247082da564a6", "file": "vae/diffusion_pytorch_model.safetensors", "bytes": 167666902, "sha256": "f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3", "fallback": true},
+    {"name": "filter/model.safetensors", "repo": "Falconsai/nsfw_image_detection", "rev": "96cb0d0342c7afb80cab76ecc58b265fa44da256", "file": "model.safetensors", "bytes": 343223968, "sha256": "97b2ce64ec146884b37f98ee7944ca4891aa72f6827dc0cb10684a1cbecd5830"},
+    {"name": "filter/config.json", "repo": "Falconsai/nsfw_image_detection", "rev": "96cb0d0342c7afb80cab76ecc58b265fa44da256", "file": "config.json", "bytes": 724, "sha256": "cd8c0a19566f199b5c64da402f1d6a9daf80d094fe6536befb060a2cc59449c2"},
+    {"name": "filter/preprocessor_config.json", "repo": "Falconsai/nsfw_image_detection", "rev": "96cb0d0342c7afb80cab76ecc58b265fa44da256", "file": "preprocessor_config.json", "bytes": 325, "sha256": "a34861a24e781942424ad790b82bc99348404a2e64ea882de88c40905851698d"}
+  ],
+  "converted": [
+    {"name": "klein-Q4_K.gguf", "from": "klein-bf16.safetensors", "type": "q4_K", "bytes": 2256889280, "sha256": "a2a4caf46232605a945bfb211416199c131f92fc59aa5d7b9653a09959397d34"}
+  ]
+}

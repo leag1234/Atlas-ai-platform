@@ -40,6 +40,7 @@ from services.orchestrator.pictures import (
     bounded_contours_enabled,
     brief_plan_enabled,
     checklist,
+    cpu_enabled,
     enabled,
     ordering,
     painter,
@@ -526,19 +527,22 @@ def _answer(
 ) -> str:
     count = len(picture_set.candidates)
     base = _base(urls)
+    cpu = picture_set.engine == "cpu"
     parts: list[str] = []
     if count == 1:
         parts.append(text(language, "single"))
     else:
-        parts.append(text(language, "intro", n=count))
-    if count < painter.DRAFTS:
+        parts.append(text(language, "cpu_intro" if cpu else "intro", n=count))
+    if cpu and count < cpu_pictures():
+        parts.append(text(language, "cpu_partial_one"))
+    elif not cpu and count < painter.DRAFTS:
         parts.append(
             text(language, "partial_one")
             if count == 1
             else text(language, "partial", n=count)
         )
     if photo_requested(request_text):
-        parts.append(text(language, "photo"))
+        parts.append(text(language, "cpu_photo" if cpu else "photo"))
     lines = [" ".join(parts)]
     alt = text(language, "sheet", n=count) if count > 1 else picture_set.title
     lines.append(f"![{alt}]({sheet_url})")
@@ -552,6 +556,45 @@ def _answer(
     if footer:
         lines.append(footer)
     return "\n\n".join(lines)
+
+
+def cpu_pictures() -> int:
+    from services.orchestrator.pictures.cpu_turn import CANDIDATES
+
+    return CANDIDATES
+
+
+async def _cpu_first(
+    request_text: str,
+    language: str,
+    ceiling: Decimal,
+    deadline: float,
+    complete: Complete | None,
+    errors: list[str],
+) -> tuple[Any, Spend]:
+    """(the CPU server's drawing or None, its spend). None: paint by code
+    (flag off, or the server cannot answer this turn: logged, not shown)."""
+    spend = Spend(ceiling)
+    if not cpu_enabled():
+        return None, spend
+    from services.orchestrator.pictures import cpu_turn
+
+    try:
+        drawing = await cpu_turn.draw(
+            request_text,
+            language,
+            spend,
+            deadline=deadline,
+            complete=complete or _gateway,
+            errors=errors,
+        )
+    except cpu_turn.CpuUnavailable as unavailable:
+        LOGGER.warning(
+            "picture_cpu_fallback code=%s spent_eur=%s", unavailable.code, spend.total
+        )
+        errors.append("picture_cpu_fallback")
+        return None, spend
+    return drawing, spend
 
 
 async def process_picture_turn(
@@ -579,15 +622,25 @@ async def process_picture_turn(
     limit = request.timeout_seconds if wall_clock_limit is None else wall_clock_limit
     deadline = started + max(60.0, limit - DEADLINE_MARGIN)
     errors: list[str] = []
+    cpu: Any = None
     try:
-        candidates, spend, ck, timings = await draw(
-            request_text,
-            language,
-            ceiling=ceiling,
-            deadline=deadline,
-            complete=complete,
-            errors=errors,
+        cpu, spend = await _cpu_first(
+            request_text, language, ceiling, deadline, complete, errors
         )
+        if cpu is not None:
+            candidates, ck, timings = cpu.candidates, None, dict(cpu.timings)
+        else:
+            spent_first = spend.total
+            candidates, spend, ck, timings = await draw(
+                request_text,
+                language,
+                ceiling=ceiling - spent_first,
+                deadline=deadline,
+                complete=complete,
+                errors=errors,
+            )
+            # What a CPU attempt spent before painting by code took over.
+            spend.spent += spent_first
     except Refused as refused:
         item.erreurs.extend(errors)
         cause = refused.error
@@ -610,6 +663,18 @@ async def process_picture_turn(
     if spend.models:
         item.provider_model = spend.models[-1]
     item.latence_ms.update({f"picture_{k}": v for k, v in timings.items()})
+    if cpu is not None and (cpu.refused or not candidates):
+        # Refused by the rewrite (violence, hate, sexual content) or every
+        # picture removed by the content classifier: said, nothing shown.
+        item.reponse = text(language, "cpu_refused" if cpu.refused else "cpu_filtered")
+        item.state = "done"
+        LOGGER.info(
+            "picture_cpu_turn refused=%s filtered=%d cost_eur=%s",
+            cpu.refused,
+            cpu.filtered,
+            spend.total,
+        )
+        return
     if not candidates:
         timed_out = "picture_draft_timeout" in errors
         item.reponse = app_failure("drawing", language, timeout=timed_out)
@@ -628,8 +693,10 @@ async def process_picture_turn(
             sheet_url = urls[0]
     else:
         sheet_url = urls[0]
-    title = title_of(candidates[0]["svg"]) or DEFAULT_TITLES["drawing"].get(
-        language, DEFAULT_TITLES["drawing"]["en"]
+    title = (
+        (cpu.rewrite.title if cpu is not None and cpu.rewrite is not None else "")
+        or title_of(candidates[0]["svg"])
+        or DEFAULT_TITLES["drawing"].get(language, DEFAULT_TITLES["drawing"]["en"])
     )
     owner = str(getattr(request, "artifact_owner", "") or "")
     picture_set = await asyncio.to_thread(
@@ -643,10 +710,20 @@ async def process_picture_turn(
                 svg=candidate["svg"],
                 measure=candidate.get("measure") or {},
                 source=str(candidate.get("source") or ""),
+                seed=int(candidate.get("seed") or 0),
+                prompt=str(candidate.get("prompt") or ""),
             )
             for url, candidate in zip(urls, candidates)
         ],
     )
+    if cpu is not None and cpu.rewrite is not None:
+        picture_set.engine = "cpu"
+        picture_set.prompt = cpu.rewrite.prompt
+        picture_set.seed = picture_set.candidates[0].seed
+        picture_set.labels = list(cpu.rewrite.labels)
+        picture_set.diagram = cpu.rewrite.diagram
+        picture_set.request = request_text
+        await asyncio.to_thread(store.update, picture_set)
     footer = ""
     if store_artifact and owner:
         prepared = prepare(Block("svg", candidates[0]["svg"], True), title, language)
@@ -696,8 +773,11 @@ async def process_picture_turn(
     item.state = "done"
     item.latence_ms["picture_ready"] = (time.monotonic() - started) * 1000
     LOGGER.info(
-        "picture_turn candidates=%d cost_eur=%s seconds=%.1f",
+        "picture_turn engine=%s candidates=%d cost_eur=%s seconds=%.1f"
+        " render_seconds=%s",
+        picture_set.engine,
         len(candidates),
         spend.total,
         time.monotonic() - started,
+        [c.get("render_seconds") for c in candidates] if cpu is not None else "",
     )

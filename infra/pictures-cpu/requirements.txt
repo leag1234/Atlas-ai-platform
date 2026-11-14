@@ -1,0 +1,27 @@
+# Wheels of the gate's content classifier, pinned as resolved on 2026-11-14 for
+# transformers 4.46.3, safetensors 0.4.5, pillow 11.0.0 and torch 2.5.1+cpu
+# (torch itself is installed from the PyTorch CPU index in the Dockerfile).
+certifi==2026.10.23
+charset-normalizer==3.5.2
+filelock==4.2.4
+fsspec==2026.9.0
+hf-xet==1.8.0
+huggingface_hub==0.36.2
+idna==3.20
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+mpmath==1.3.0
+networkx==3.7
+numpy==2.5.4
+packaging==26.3
+pillow==11.0.0
+PyYAML==6.0.3
+regex==2026.11.9
+requests==2.34.2
+safetensors==0.4.5
+sympy==1.13.1
+tokenizers==0.20.3
+tqdm==4.70.1
+transformers==4.46.3
+typing_extensions==4.16.0
+urllib3==2.8.0

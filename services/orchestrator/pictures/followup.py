@@ -118,6 +118,17 @@ async def process_picture_followup(
     ):
         # Not a picture by code, or changed since by another path.
         return False
+    if picture_set.engine == "cpu":
+        from services.orchestrator.pictures import cpu_turn
+
+        return await cpu_turn.change(
+            request,
+            item,
+            picture_set,
+            cost_limit=cost_limit,
+            wall_clock_limit=wall_clock_limit,
+            complete=complete,
+        )
     chosen = profiles()
     if chosen is None:
         return False

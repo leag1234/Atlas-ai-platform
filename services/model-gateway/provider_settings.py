@@ -248,6 +248,11 @@ def warn_unpriced(provider: str, model: str) -> None:
     )
 
 
+# Roles that read images. Under a provider preset they all run on its vision
+# model; "locate" (where named parts are drawn) falls back to "vision".
+VISION_ROLES = ("vision", "visionprevious", "locate")
+
+
 def configure(
     config: dict[str, Any], prices: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -269,12 +274,10 @@ def configure(
     roles: dict[str, Any] = {}
     rates: dict[str, Any] = {}
     for role in config:
-        model = vision if role in ("vision", "visionprevious") and vision else text
+        model = vision if role in VISION_ROLES and vision else text
         context = preset["context"]
         if isinstance(context, dict):
-            context = context[
-                "vision" if role in ("vision", "visionprevious") and vision else "text"
-            ]
+            context = context["vision" if role in VISION_ROLES and vision else "text"]
         price = (
             preset.get("vision_price", preset.get("price"))
             if model == vision
@@ -303,12 +306,10 @@ def configure(
             "unpriced": price is None,
         }
         roles[role] = {
-            "env": "ATLAS_VISION_MODEL"
-            if role in ("vision", "visionprevious")
-            else "ATLAS_TEXT_MODEL",
+            "env": "ATLAS_VISION_MODEL" if role in VISION_ROLES else "ATLAS_TEXT_MODEL",
             "model": model,
             "fallback": "vision"
-            if role == "visionprevious"
+            if role in ("visionprevious", "locate")
             else "visionprevious"
             if role == "vision"
             else "text",

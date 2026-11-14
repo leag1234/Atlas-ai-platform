@@ -135,6 +135,12 @@ class AgentRequest(BaseModel):
     # role. A caller that runs several drafts (pictures by code) drops a failed
     # one instead of paying a recovery, never a silent costlier fallback.
     single_attempt: bool = Field(default=False, exclude_if=lambda value: value is False)
+    # Role of a profile call that carries an image: "locate" runs on the model
+    # declared for finding where named parts are drawn (labelled pictures);
+    # unset, the vision role answers as before.
+    vision_role: Literal["vision", "locate"] = Field(
+        default="vision", exclude_if=lambda value: value == "vision"
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -193,6 +199,7 @@ class AgentRequest(BaseModel):
                 or self.reasoning_ceiling is not None
                 or self.sampling_temperature is not None
                 or self.single_attempt
+                or self.vision_role != "vision"
             ):
                 raise ValueError("invalid_legacy_profile")
             self.reasoning_effort = "none"
