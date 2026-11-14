@@ -111,6 +111,9 @@ class GatewayModel:
         self.url, self.configuration = url.rstrip("/"), configuration
         self.tools = declarations()
         self.required_file_tool: str | None = None
+        # The call may use no tool: the gateway answers with the Work tools'
+        # context but sends the provider none (a streamed document, Work only).
+        self.answer_only = False
         self.required_file_formats: tuple[str, ...] = ()
         self.prefix: list[Message] = []
         self.prompt_tokens = 0
@@ -537,7 +540,9 @@ class GatewayModel:
             "tools": self.available_tools(messages),
             "timeout": timeout,
         }
-        if self.required_file_tool and payload["tools"]:
+        if self.answer_only and payload["tools"]:
+            payload["tool_choice"] = "none"
+        elif self.required_file_tool and payload["tools"]:
             payload["tool_choice"] = {
                 "type": "function",
                 "function": {"name": self.required_file_tool},

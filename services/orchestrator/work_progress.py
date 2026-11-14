@@ -29,6 +29,7 @@ LABELS: dict[str, dict[str, str]] = {
         "preparing_document": "Préparation du document…",
         "machine": "Travail sur la machine…",
         "working": "Travail en cours…",
+        "writing_document": "Rédaction du document… {sections} sections, {words} mots",
     },
     "en": {
         "preparing_workspace": "Preparing the workspace…",
@@ -41,6 +42,7 @@ LABELS: dict[str, dict[str, str]] = {
         "preparing_document": "Preparing the document…",
         "machine": "Working on the machine…",
         "working": "Working…",
+        "writing_document": "Writing the document… {sections} sections, {words} words",
     },
     "de": {
         "preparing_workspace": "Arbeitsbereich vorbereiten…",
@@ -53,6 +55,7 @@ LABELS: dict[str, dict[str, str]] = {
         "preparing_document": "Dokument vorbereiten…",
         "machine": "Arbeit auf dem Rechner…",
         "working": "In Arbeit…",
+        "writing_document": "Dokument wird geschrieben… {sections} Abschnitte, {words} Wörter",
     },
     "es": {
         "preparing_workspace": "Preparando el espacio de trabajo…",
@@ -65,6 +68,7 @@ LABELS: dict[str, dict[str, str]] = {
         "preparing_document": "Preparando el documento…",
         "machine": "Trabajando en la máquina…",
         "working": "Trabajando…",
+        "writing_document": "Redactando el documento… {sections} secciones, {words} palabras",
     },
     "it": {
         "preparing_workspace": "Preparazione dell’area di lavoro…",
@@ -77,6 +81,7 @@ LABELS: dict[str, dict[str, str]] = {
         "preparing_document": "Preparazione del documento…",
         "machine": "Lavoro sulla macchina…",
         "working": "Lavoro in corso…",
+        "writing_document": "Stesura del documento… {sections} sezioni, {words} parole",
     },
 }
 
@@ -223,6 +228,21 @@ class WorkProgress:
         if status not in {"completed", "failed"}:
             return None
         return self._waiting()
+
+    def writing(self, sections: object, words: object) -> tuple[str, str] | None:
+        """The status while Work writes a document as streamed text (document_stream.py).
+
+        Sizes only, never the text: the counts of headings and words so far.
+        """
+        if type(sections) is not int or type(words) is not int:
+            return None
+        if sections < 0 or words < 0:
+            return None
+        self.preparing = False
+        table = LABELS[self.language]
+        return "work_step", table["writing_document"].format(
+            sections=sections, words=words
+        )
 
     def due(self, now: float) -> bool:
         """Whether a status may be sent now (throttled to one per interval)."""
