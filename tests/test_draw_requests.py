@@ -159,8 +159,11 @@ class DrawingRequestTests(unittest.IsolatedAsyncioTestCase):
             await process(drawing_request("draw a sheep"), item)
         self.assertEqual(len(captured), 1)
         self.assertGreater(captured[0].wall_clock, 120)
-        # The gateway checks the same: the call must say it writes a file.
-        self.assertIs(model.produces_files, True)
+        # The gateway checks the same: the call must say it writes a file, through
+        # configure_quality, which resets the flag (a flag set before it was lost).
+        self.assertIs(
+            model.configure_quality.call_args.kwargs.get("produces_files"), True
+        )
         self.assertIn("/images/svg/", item.reponse)
 
     async def test_image_request_keeps_localized_refusal(self) -> None:
