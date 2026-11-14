@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 from services.orchestrator.appearance import (
     extract_svg,
@@ -16,7 +16,7 @@ from services.orchestrator.chat_pipeline import process
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.image_tool import finish_simple_drawing
 from services.orchestrator.interactions import Interaction
-from services.orchestrator.loop import Result
+from services.orchestrator.loop import Limits, Result
 from services.orchestrator.model import Observation
 
 
@@ -114,6 +114,52 @@ class DrawingRequestTests(unittest.IsolatedAsyncioTestCase):
             item.reponse.index("simplified illustration"),
         )
         self.assertIn('viewBox="0 0 400 300"', rendered_svg)
+
+    async def test_a_picture_turn_deadline_gives_valid_drawing_limits(self) -> None:
+        # A turn may carry the 300 s deadline of a picture turn and still be answered
+        # by the simple drawing route: its limits were refused as invalid
+        # (ValueError: invalid_limits, staging 2026-11-14).
+        model = Mock(generation_ms=1.0, provider_retries=0, tools=[])
+        model.input_tokens, model.output_tokens = 3, 4
+        model.observations = [Observation(provider="local", route="simple")]
+        result = Result(
+            text="Here is a sheep.\n" + SVG, state="done", cost=Decimal("0.01")
+        )
+        captured: list[Limits] = []
+
+        async def fake_run(*args: object, **kwargs: object) -> Result:
+            limits = args[4]
+            assert isinstance(limits, Limits)
+            # Building the limits is what failed: re-validate them here.
+            type(limits)(**limits.__dict__)
+            captured.append(limits)
+            return result
+
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_STABLE": "1",
+                    "ATLAS_STABLE_IMAGES": "0",
+                    "ATLAS_IMAGE_DIR": root,
+                },
+            ),
+            patch.object(
+                ChatRequest, "timeout_seconds", new=PropertyMock(return_value=300.0)
+            ),
+            patch(
+                "services.orchestrator.chat_pipeline.GatewayModel.connect",
+                new=AsyncMock(return_value=model),
+            ),
+            patch("services.orchestrator.chat_pipeline.run", new=fake_run),
+            patch("services.orchestrator.chat_pipeline.required_research"),
+        ):
+            item = Interaction()
+            await process(drawing_request("draw a sheep"), item)
+        self.assertEqual(len(captured), 1)
+        self.assertGreater(captured[0].wall_clock, 120)
+        self.assertIn("/images/svg/", item.reponse)
 
     async def test_image_request_keeps_localized_refusal(self) -> None:
         item = Interaction()

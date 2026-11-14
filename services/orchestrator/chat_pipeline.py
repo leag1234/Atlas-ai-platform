@@ -1117,6 +1117,10 @@ async def _process_simple_drawing(request: ChatRequest, item: Interaction) -> No
             tokens=None,
             cost=Decimal("0.10"),
             wall_clock=max(0, request.timeout_seconds - (time.monotonic() - started)),
+            # The drawing is one whole SVG written in one call, like an app or a
+            # picture turn, whose 300 s deadline this turn may carry: without the
+            # flag the limits refused it as invalid (staging 2026-11-14).
+            produces_files=True,
         ),
         history=[
             {"role": message.role, "content": message.text}
@@ -1205,7 +1209,7 @@ async def _process(
             handle_choice,
         )
 
-        # "La deuxième" right after four candidates chooses one of them.
+        # "The second" (in any interface language) right after four candidates chooses one.
         if await handle_choice(request, item):
             return
         if artifact_eligible:
