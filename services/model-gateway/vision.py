@@ -1,6 +1,7 @@
 """M12 sovereign vision with a conservative reservation before any paid call."""
 
 import provider_settings
+import upstream
 
 from packages.limits import LimitError, ProviderLimitError
 from packages import privacy
@@ -248,12 +249,16 @@ class VisionProvider:
                     if response.status != 200:
                         raise RuntimeError("provider_error")
                     data = bytearray()
-                    async for piece in response.content.iter_chunked(16384):
-                        data.extend(piece)
-                        if len(data) > 800000:
-                            raise ProviderLimitError(
-                                "provider_response_limit", len(data), 800000, "bytes"
-                            )
+                    with upstream.abort_if_abandoned(response):
+                        async for piece in response.content.iter_chunked(16384):
+                            data.extend(piece)
+                            if len(data) > 800000:
+                                raise ProviderLimitError(
+                                    "provider_response_limit",
+                                    len(data),
+                                    800000,
+                                    "bytes",
+                                )
             return json.loads(data)
         except LimitError:
             raise

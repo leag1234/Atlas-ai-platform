@@ -638,10 +638,13 @@ async def stream_quality(
         # with the rest gave nothing, while one attempt with the whole budget
         # usually answers (staging 2026-11-13: first token between 0.4 and 6.6 s,
         # first attempts cut at 1.2 to 4 s).
+        # A single_attempt call has no recovery to reserve time for: it gets the
+        # whole deadline (a painter draft reasoning for 40 s or more was cut at
+        # half of it, then dropped without any retry; 2026-11-14).
         short = current.max_tokens <= SHORT_CALL_TOKENS
         allotted = (
             remaining * (0.5 if complete_response else 0.8)
-            if index == 0 and not short
+            if index == 0 and not short and not request.single_attempt
             else remaining
         )
         full_deadline = asyncio.get_running_loop().time() + remaining

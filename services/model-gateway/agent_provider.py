@@ -1,6 +1,7 @@
 """Validated tool-calling transport and human-confirmed pricing, POC-P6."""
 
 import provider_settings
+import upstream
 
 from packages.limits import LimitError, ProviderLimitError, MalformedToolCall
 from packages import privacy
@@ -509,12 +510,16 @@ class AgentProvider:
                     if response.status != 200:
                         raise RuntimeError("provider_error")
                     data = bytearray()
-                    async for piece in response.content.iter_chunked(16384):
-                        data.extend(piece)
-                        if len(data) > 800000:
-                            raise ProviderLimitError(
-                                "provider_response_limit", len(data), 800000, "bytes"
-                            )
+                    with upstream.abort_if_abandoned(response):
+                        async for piece in response.content.iter_chunked(16384):
+                            data.extend(piece)
+                            if len(data) > 800000:
+                                raise ProviderLimitError(
+                                    "provider_response_limit",
+                                    len(data),
+                                    800000,
+                                    "bytes",
+                                )
             completion = Completion.model_validate(json.loads(data))
             if completion.usage.completion_tokens > 2048:
                 raise ProviderLimitError(

@@ -5,7 +5,13 @@ from packages.limits import LimitError, MalformedToolCall
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from agent_provider import Completion, Usage
 from packages.validation import malformed_tool_name
@@ -39,10 +45,33 @@ class Delta(BaseModel):
         for part in value:
             if isinstance(part, dict) and part.get("type") == "thinking":
                 inner = part.get("thinking")
+                if isinstance(inner, str):
+                    text.append(inner)
                 for piece in inner if isinstance(inner, list) else []:
                     if isinstance(piece, dict) and isinstance(piece.get("text"), str):
                         text.append(piece["text"])
         return "".join(text)
+
+    @model_validator(mode="before")
+    @classmethod
+    def typed_reasoning(cls, data: object) -> object:
+        """Reasoning sent as typed thinking parts of the content is reasoning.
+
+        Providers stream reasoning in three shapes: a ``reasoning_content``
+        field, a ``reasoning`` field (vLLM servers) and typed content parts of
+        type "thinking" (checked live on 2026-11-14: the reasoning model of the
+        picture painter streams every reasoning token that way). Dropping the
+        third shape made a reasoning model look silent: no reasoning was
+        counted or logged, and the quality controller cut a call that reasoned
+        for 40 s as stalled.
+        """
+        if not isinstance(data, dict):
+            return data
+        thinking = cls.thinking_text(data.get("content"))
+        current = data.get("reasoning_content")
+        if not thinking or not (current is None or isinstance(current, str)):
+            return data
+        return {**data, "reasoning_content": (current or "") + thinking}
 
     @field_validator("content", mode="before")
     @classmethod
@@ -128,6 +157,8 @@ class StreamDecoder:
         self.reasoning = ""
         self.buffer = bytearray()
         self.total = 0
+        # Data frames decoded, for a cut stream's log line (never their text).
+        self.frames = 0
         self.text = ""
         self.calls: dict[int, dict[str, str]] = {}
         self.tool_progress_sent = False
@@ -167,6 +198,7 @@ class StreamDecoder:
                 self._done()
                 continue
             payload = json.loads(data)
+            self.frames += 1
             if self.ignore_calls and isinstance(payload, dict):
                 choices = payload.get("choices", [])
                 if isinstance(choices, list):
@@ -199,9 +231,11 @@ class StreamDecoder:
                 if self.reason is not None:
                     raise ValueError("delta_after_finish")
                 delta = choice.delta
+                # A frame can close the reasoning and open the answer: the
+                # reasoning comes first, as the provider wrote it.
                 for key, value in (
-                    ("content", delta.content),
                     ("reasoning_content", delta.reasoning_content or delta.reasoning),
+                    ("content", delta.content),
                 ):
                     if value:
                         events.append({"delta": {key: value}})

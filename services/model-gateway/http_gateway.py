@@ -1,6 +1,7 @@
 """Local HTTP boundary for the CPU retrieval models (contracts/m2-gateway)."""
 
 import asyncio
+from collections.abc import Coroutine
 import contextvars
 import json
 import logging
@@ -8,6 +9,7 @@ import select
 import socket
 from time import monotonic
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from typing import Any, TypeVar
 
 from gateway_cpu import CPUModels, EMBEDDING_REVISION
 from generation import Generator
@@ -28,6 +30,76 @@ import imagegen
 import image_lifecycle
 
 
+T = TypeVar("T")
+
+
+class ClientGone(Exception):
+    """The caller closed its connection before the answer was written."""
+
+
+# How often a call in progress checks that its caller is still connected.
+CLIENT_CHECK_SECONDS = 0.05
+
+
+def client_gone(connection: socket.socket) -> bool:
+    """True once the caller closed (or reset) its side of the connection.
+
+    A caller sends its whole request before reading the answer, so a readable
+    socket with nothing to read is the end of the connection. poll, unlike
+    select, has no limit on descriptor numbers.
+    """
+    try:
+        watch = select.poll()
+        watch.register(connection, select.POLLIN | select.POLLHUP | select.POLLERR)
+        events = watch.poll(0)
+        if not events:
+            return False
+        if any(mask & (select.POLLHUP | select.POLLERR) for _, mask in events):
+            return True
+        return not connection.recv(1, socket.MSG_PEEK)
+    except (BlockingIOError, InterruptedError):
+        return False
+    except OSError:
+        return True
+
+
+def client_left(path: str, started: float) -> None:
+    logging.getLogger(__name__).warning(
+        json.dumps(
+            {
+                "event": "gateway_client_gone",
+                "path": path,
+                "elapsed_seconds": round(monotonic() - started, 3),
+            }
+        )
+    )
+
+
+async def while_connected(
+    connection: socket.socket, work: Coroutine[Any, Any, T], path: str
+) -> T:
+    """Run work while the caller is connected; cancel it as soon as it leaves.
+
+    Cancelling closes every upstream provider stream opened by the work (each
+    is an ``async with`` request), so an abandoned call stops generating and
+    being billed instead of running to its end for nobody (2026-11-14: painter
+    drafts abandoned by the orchestrator kept streaming from the provider).
+    """
+    started = monotonic()
+    task = asyncio.ensure_future(work)
+    try:
+        while not task.done():
+            await asyncio.wait({task}, timeout=CLIENT_CHECK_SECONDS)
+            if not task.done() and client_gone(connection):
+                client_left(path, started)
+                raise ClientGone
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 def serve(
     backend: CPUModels, port: int | None = None, host: str = "127.0.0.1"
 ) -> HTTPServer:
@@ -36,6 +108,10 @@ def serve(
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: object) -> None:
             pass  # Request bodies and URLs must not enter infrastructure logs.
+
+        def until_gone(self, work: Coroutine[Any, Any, T]) -> T:
+            """Run a provider call; a caller that leaves cancels it (ClientGone)."""
+            return asyncio.run(while_connected(self.connection, work, self.path))
 
         def stream_response(self, request: object) -> None:
             from stream_transport import StreamRequest
@@ -64,18 +140,15 @@ def serve(
                         async for event in events:
                             await send(event)
 
-                task = asyncio.create_task(produce())
+                started = monotonic()
                 try:
-                    while not task.done():
-                        await asyncio.wait({task}, timeout=0.05)
-                        readable, _, _ = select.select([self.connection], [], [], 0)
-                        if readable and not self.connection.recv(1, socket.MSG_PEEK):
-                            return
-                    await task
-                finally:
-                    if not task.done():
-                        task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
+                    await while_connected(self.connection, produce(), self.path)
+                except ClientGone:
+                    return
+                except (BrokenPipeError, ConnectionResetError):
+                    # Writing an event found the caller gone first.
+                    client_left(self.path, started)
+                    return
 
             async def bounded_relay() -> None:
                 try:
@@ -271,14 +344,17 @@ def serve(
                 elif self.path == "/images/generate":
                     response = asyncio.run(imagegen.complete(request))
                 elif self.path == "/vision/complete":
-                    response = asyncio.run(VisionProvider().complete(request))
+                    response = self.until_gone(VisionProvider().complete(request))
                 elif self.path == "/agent/complete":
-                    response = asyncio.run(AgentProvider().complete(request))
+                    response = self.until_gone(AgentProvider().complete(request))
                 elif self.path == "/answer":
                     response = Generator()(request)
                 else:
                     raise ValueError("invalid_input")
                 status = 200
+            except ClientGone:
+                # Nobody is left to answer; the provider call was cancelled.
+                return
             except privacy.StrictPrivacyUnavailable as exc:
                 refused = exc.capability
                 status, response = (
