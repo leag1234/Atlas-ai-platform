@@ -243,7 +243,10 @@ async def run(
                         if limits.profile
                         else {}
                     ),
-                    **query.model_dump(),
+                    **query.model_dump(exclude={"prose_lang"}),
+                    # The lang field sets the prose language (prompts/current-question.txt):
+                    # it names the user's own language, also outside the five.
+                    "lang": query.prose_lang or query.lang,
                 },
                 ensure_ascii=False,
             ),
