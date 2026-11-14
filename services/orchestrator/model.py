@@ -102,6 +102,10 @@ class WireTurn(BaseModel):
 FREE_PATHS = ("/agent/config", "/images/ready")
 
 
+# The longest single call the gateway accepts without a file or attachments.
+CHAT_CALL_SECONDS = 120.0
+
+
 class GatewayModel:
     def __init__(self, url: str, configuration: Configuration) -> None:
         self.url, self.configuration = url.rstrip("/"), configuration
@@ -557,6 +561,13 @@ class GatewayModel:
             payload["produces_files"] = True
         if self.has_attachments:
             payload["has_attachments"] = True
+        if not (self.profile and (self.produces_files or self.has_attachments)):
+            # The gateway refuses a call above 120 s unless it writes a file or reads
+            # attachments (AgentRequest). A turn can carry a longer deadline than the
+            # route that answers it (a picture turn answered as text, staging -43:
+            # timeout_budget 299949 ms; limit 120000 ms, the turn failed in 1 s); such
+            # a call keeps the chat call limit instead of being refused.
+            payload["timeout"] = min(timeout, CHAT_CALL_SECONDS)
         # The transport waits as long as the gateway may keep a call that is
         # still receiving output (strict privacy has no stall watch: unchanged).
         transport = timeout
