@@ -52,7 +52,20 @@ if re.fullmatch(r".+@sha256:[0-9a-f]{64}", WEBUI_IMAGE) is None:
         "invalid_configuration: ATLAS_WEBUI_IMAGE must end with @sha256: followed by 64 hexadecimal characters"
     )
 SEARXNG_IMAGE = "searxng/searxng:2026.10.17-1c10abe2d@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e"
-RUNNER_IMAGE = "atlas-project-runner:local"
+# Each instance may run its own runner build: staging rebuilds its runner image on deploy, and
+# production must keep the image it was promoted with until its own promotion.
+RUNNER_IMAGE = (
+    os.environ.get("ATLAS_RUNNER_IMAGE", "").strip() or "atlas-project-runner:local"
+)
+if (
+    re.fullmatch(
+        r"[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?", RUNNER_IMAGE
+    )
+    is None
+):
+    raise RuntimeError(
+        "invalid_configuration: ATLAS_RUNNER_IMAGE is not a Docker image reference"
+    )
 
 # Open WebUI v0.11.3's shipped shell references these paths. Keep its shell and
 # license notices untouched; these read-only mounts provide Atlas artwork there.
