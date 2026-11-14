@@ -524,6 +524,7 @@ def _answer(
     urls: list[str],
     sheet_url: str,
     footer: str,
+    note: str = "",
 ) -> str:
     count = len(picture_set.candidates)
     base = _base(urls)
@@ -543,6 +544,8 @@ def _answer(
         )
     if photo_requested(request_text):
         parts.append(text(language, "cpu_photo" if cpu else "photo"))
+    if note:
+        parts.append(note)
     lines = [" ".join(parts)]
     alt = text(language, "sheet", n=count) if count > 1 else picture_set.title
     lines.append(f"![{alt}]({sheet_url})")
@@ -763,7 +766,16 @@ async def process_picture_turn(
                 footer = artifact_footer(
                     artifact_id, version, title, filename, language, temporary=False
                 )
-    item.reponse = _answer(language, request_text, picture_set, urls, sheet_url, footer)
+    note = ""
+    if cpu is not None and cpu.rewrite is not None:
+        from services.orchestrator.pictures.cpu_checks import note as checks_note
+
+        note = checks_note(
+            language, cpu.rewrite.checks, [c.get("unmet") for c in candidates]
+        )
+    item.reponse = _answer(
+        language, request_text, picture_set, urls, sheet_url, footer, note
+    )
     # Server-made references: the answer filter keeps only these image and
     # link targets (source_truth.drawing_references).
     item.images = [{"reference": sheet_url, "kind": "picture"}] + [

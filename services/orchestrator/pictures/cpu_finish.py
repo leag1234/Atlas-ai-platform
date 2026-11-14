@@ -1,9 +1,10 @@
 """A picture from the CPU server, made ready to show (run in the picture worker).
 
 Decodes the server's PNG (bounded size), places the labels of a diagram
-when points are given, and returns the image to show, a square thumbnail for
-the contact sheet and the SVG document that holds the picture as the
-conversation's drawing artifact (the picture embedded as a JPEG).
+when points are given or sets the words to show (text_setting), and
+returns the image to show, a square thumbnail for the contact sheet and the
+SVG document that holds the picture as the conversation's drawing artifact
+(the picture embedded as a JPEG, the words as real SVG text).
 
 Labels (rule of the measured label16 layout, ported to raster in spike round
 25): the picture gets white side margins; each word goes into the margin of
@@ -21,7 +22,7 @@ from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFont
 
-from services.orchestrator.pictures import render
+from services.orchestrator.pictures import render, text_setting
 
 PICTURE_PX = 768
 MARGIN_PX = 300
@@ -183,8 +184,11 @@ def _square(picture: Image.Image) -> Image.Image:
     return square.resize((THUMB_PX, THUMB_PX), Image.Resampling.LANCZOS)
 
 
-def document(picture: Image.Image, title: str) -> str:
-    """The SVG document of the artifact: the picture embedded as a JPEG."""
+def document(
+    picture: Image.Image, title: str, words: dict[str, Any] | None = None
+) -> str:
+    """The SVG document of the artifact: the picture embedded as a JPEG, and
+    the words set on it as real SVG text (editable by a later change)."""
     buffer = io.BytesIO()
     picture.convert("RGB").save(buffer, "JPEG", quality=88)
     data = base64.b64encode(buffer.getvalue()).decode("ascii")
@@ -194,12 +198,14 @@ def document(picture: Image.Image, title: str) -> str:
         f'width="{width}" height="{height}">'
         f"<title>{escape(title)}</title>"
         f'<image href="data:image/jpeg;base64,{data}" x="0" y="0" '
-        f'width="{width}" height="{height}"/></svg>'
+        f'width="{width}" height="{height}"/>'
+        f"{text_setting.svg_elements(words or {})}</svg>"
     )
 
 
 def finish_picture(payload: dict[str, Any]) -> dict[str, Any]:
-    """{"image" (base64 PNG), "title", "labels", "points"} -> image, thumb, svg."""
+    """{"image" (base64 PNG), "title", "labels", "points", "text"} -> image,
+    thumb, svg. "text": the lines of words to set (no labels then)."""
     raw = str(payload.get("image") or "")
     if len(raw) > MAX_INPUT_BYTES * 4 // 3 + 4:
         raise ValueError("picture_too_large")
@@ -224,10 +230,16 @@ def finish_picture(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(v, (list, tuple)) and len(v) == 2
         }
         picture, report = place_labels(picture, points, labels)
+    base = picture
+    words = [str(line) for line in payload.get("text") or [] if str(line).strip()]
+    placement: dict[str, Any] = {}
+    if words and not labels:
+        picture, placement = text_setting.set_words(base, words)
+        report = {"text": placement}
     title = str(payload.get("title") or "")
     return {
         "image": _encode(picture),
         "thumb": _encode(_square(picture)),
-        "svg": document(picture, title),
+        "svg": document(base, title, placement),
         "report": report,
     }

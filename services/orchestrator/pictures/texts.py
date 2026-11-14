@@ -37,6 +37,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "cpu_drawing_done": "Drawing two proposals… {done} of 2 finished",
         "cpu_refused": "I can't draw this: the request asks for sexual, violent, cruel or hateful content. I can draw something else.",
         "cpu_filtered": "The pictures drawn for this request did not pass the content check, so none is shown. You can rephrase the request.",
+        "cpu_check_one": "An automatic check found that this picture may not show {items}.",
+        "cpu_check_all": "An automatic check found that these pictures may not show {items}.",
+        "cpu_check_some": "An automatic check found that picture {n} may not show {items}.",
+        "cpu_check_unknown": "The image model does not always follow exact counts and unusual details, and they could not be checked this time: {items}.",
     },
     "fr": {
         "intro": (
@@ -79,6 +83,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "cpu_drawing_done": "Dessin de deux propositions… {done} sur 2 terminées",
         "cpu_refused": "Je ne peux pas dessiner cela : la demande porte sur un contenu sexuel, violent, cruel ou haineux. Je peux dessiner autre chose.",
         "cpu_filtered": "Les images dessinées pour cette demande n'ont pas passé le contrôle de contenu : aucune n'est montrée. Vous pouvez reformuler la demande.",
+        "cpu_check_one": "Vérification automatique : cette image ne montre peut-être pas {items}.",
+        "cpu_check_all": "Vérification automatique : ces images ne montrent peut-être pas {items}.",
+        "cpu_check_some": "Vérification automatique : l'image {n} ne montre peut-être pas {items}.",
+        "cpu_check_unknown": "Le modèle d'images ne respecte pas toujours les nombres exacts et les détails inhabituels, et ils n'ont pas pu être vérifiés cette fois : {items}.",
     },
     "de": {
         "intro": (
@@ -118,6 +126,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "cpu_drawing_done": "Zwei Vorschläge werden gezeichnet… {done} von 2 fertig",
         "cpu_refused": "Das kann ich nicht zeichnen: Die Anfrage verlangt sexuelle, gewalttätige, grausame oder hasserfüllte Inhalte. Ich kann gern etwas anderes zeichnen.",
         "cpu_filtered": "Die für diese Anfrage gezeichneten Bilder haben die Inhaltsprüfung nicht bestanden, daher wird keines gezeigt. Sie können die Anfrage umformulieren.",
+        "cpu_check_one": "Automatische Prüfung: Dieses Bild zeigt möglicherweise nicht {items}.",
+        "cpu_check_all": "Automatische Prüfung: Diese Bilder zeigen möglicherweise nicht {items}.",
+        "cpu_check_some": "Automatische Prüfung: Bild {n} zeigt möglicherweise nicht {items}.",
+        "cpu_check_unknown": "Das Bildmodell hält genaue Anzahlen und ungewöhnliche Details nicht immer ein, und sie konnten diesmal nicht geprüft werden: {items}.",
     },
     "es": {
         "intro": "Aquí tienes {n} propuestas; la primera, enmarcada, es la que sugiero.",
@@ -155,6 +167,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "cpu_drawing_done": "Dibujando dos propuestas… {done} de 2 terminadas",
         "cpu_refused": "No puedo dibujar esto: la petición pide contenido sexual, violento, cruel u odioso. Puedo dibujar otra cosa.",
         "cpu_filtered": "Las imágenes dibujadas para esta petición no pasaron el control de contenido, así que no se muestra ninguna. Puedes reformular la petición.",
+        "cpu_check_one": "Comprobación automática: puede que esta imagen no muestre {items}.",
+        "cpu_check_all": "Comprobación automática: puede que estas imágenes no muestren {items}.",
+        "cpu_check_some": "Comprobación automática: puede que la imagen {n} no muestre {items}.",
+        "cpu_check_unknown": "El modelo de imágenes no siempre respeta los números exactos ni los detalles inusuales, y esta vez no se pudieron comprobar: {items}.",
     },
     "it": {
         "intro": "Ecco {n} proposte; la prima, incorniciata, è quella che suggerisco.",
@@ -192,6 +208,10 @@ TEXTS: dict[str, dict[str, str]] = {
         "cpu_drawing_done": "Disegno di due proposte… {done} su 2 completate",
         "cpu_refused": "Non posso disegnarlo: la richiesta chiede contenuti sessuali, violenti, crudeli o d'odio. Posso disegnare altro.",
         "cpu_filtered": "Le immagini disegnate per questa richiesta non hanno superato il controllo dei contenuti, quindi non ne viene mostrata nessuna. Puoi riformulare la richiesta.",
+        "cpu_check_one": "Controllo automatico: questa immagine potrebbe non mostrare {items}.",
+        "cpu_check_all": "Controllo automatico: queste immagini potrebbero non mostrare {items}.",
+        "cpu_check_some": "Controllo automatico: l'immagine {n} potrebbe non mostrare {items}.",
+        "cpu_check_unknown": "Il modello di immagini non rispetta sempre i numeri esatti e i dettagli insoliti, e questa volta non è stato possibile verificarli: {items}.",
     },
 }
 

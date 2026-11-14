@@ -134,16 +134,21 @@ with the rewrite, about 25 s per picture.
 | Step | What | Where |
 |---|---|---|
 | 1. Server check | Health and queue: if the two pictures cannot be done within `ATLAS_PICTURE_CPU_SECONDS`, painting by code answers | `pictures/cpu_turn.py` |
-| 2. Rewrite | One JSON call: an English prompt in one fixed flat illustration style (code appends the style line and strips photographic words), whether it is a diagram, the words to place in the user's language, a title; violent, cruel, hateful or sexual requests are refused | `pictures/rewrite.py`, role `picture_rewrite` |
+| 2. Rewrite | One JSON call: an English prompt in one fixed flat illustration style (code appends the style line and strips photographic words), whether it is a diagram, the words to place in the user's language, a title, the counts, colours and unusual features to check (`checks`) and the words to show (`text`); violent, cruel, hateful or sexual requests are refused | `pictures/rewrite.py`, role `picture_rewrite` |
 | 3. Two pictures | Two seeds, drawn one after the other (one queue per server), 512 px, 4 steps, guidance 1, Lanczos to 768 px | server (`infra/pictures-cpu/gate.py`) |
 | 4. Filter | Every picture is scored by a CPU image classifier on the server; a score of 0.5 or more, or no score, and it is never shown | server, `cpu_turn.shown` |
 | 5. Diagram labels | The picture is wordless; one call on the gateway's `locate` vision role gives where each part is drawn; code writes the words in side margins with uncrossed leader lines (label16 rule) | `pictures/locate.py`, `pictures/cpu_finish.py` |
+| 5b. Words to show | A name on a logo, a greeting on a card, a title on a cover: the rewrite returns the words as the user wrote them (code takes accents, quotes and apostrophes from the request itself), the prompt asks for a plain empty band and never names the words; code sets them in the emptiest band (largest size that fits, even line breaks, dark or white ink by WCAG contrast, a plate below 4.5:1) in the bold Liberation font (`LiberationSans-Bold.ttf`, SIL OFL), and the SVG artifact keeps them as real `<text>` | `pictures/text_setting.py`, `pictures/cpu_finish.py` |
+| 5c. Detail check | When the request gives counts, colours or unusual features, one call per shown picture on the `locate` vision role says which `checks` the picture does not show; the answer names them ("may not show ..."), or says they could not be checked when the call fails; nothing is refused or promised | `pictures/cpu_checks.py` |
 | 6. Show | Two candidates in the contact sheet; choice and changes as in section 1 | `pictures/turn.py`, `pictures/choice.py` |
 
 A change ("make the cat bigger") rewrites the prompt with the change and draws
 it again with the chosen picture's seed, as the next artifact version. The
 artifact is an SVG document holding the picture (JPEG). When the server cannot
 answer a change, the picture stays as it is (unchanged-version sentence).
+"Change the name to ..." gives new words to the same rewrite, so the next
+version carries them; the size always fits the band (a request for a bigger
+name does not make it bigger than the band allows).
 
 Fallback: server not configured, unreachable, not ready, busy, a rewrite that
 fails or cannot be read, no picture drawn in time, or a diagram with no part
@@ -153,7 +158,8 @@ interaction's errors. Whatever the CPU attempt spent is kept in the turn's cost.
 
 D5 and cost: a budget or quota refusal of the rewrite or locate call ends the
 turn with the measured refusal. The rewrite (about 0.0005 EUR) and the locate
-calls (about 0.0004 EUR each) count in the turn's cost; the server is a fixed
+calls (about 0.0004 EUR each) and the detail checks (about 0.0002 EUR each,
+under 2 s) count in the turn's cost; the server is a fixed
 cost, 0 per picture, and its render seconds are logged
 (`picture_cpu_render_seconds` in the interaction's latencies).
 
