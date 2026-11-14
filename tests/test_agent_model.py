@@ -52,6 +52,33 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await model.complete([], 1)
 
+    async def test_a_call_never_asks_more_time_than_the_gateway_allows(self) -> None:
+        # The gateway accepts more than 120 s only for a profile call that writes a
+        # file or reads attachments; a longer turn deadline used to make it refuse the
+        # call outright (timeout_budget, staging -43).
+        wire = {
+            "text": "ok",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            "calls": [],
+            "cost_eur": "0.000001",
+        }
+        cases: tuple[tuple[dict[str, object], float, float], ...] = (
+            ({}, 300.0, 120.0),
+            ({"profile": "atlas-qwen"}, 300.0, 120.0),
+            ({"profile": "atlas-qwen", "produces_files": True}, 300.0, 300.0),
+            ({"profile": "atlas-qwen", "has_attachments": True}, 280.0, 280.0),
+            ({"produces_files": True}, 300.0, 120.0),
+            ({}, 30.0, 30.0),
+        )
+        for attributes, asked, sent in cases:
+            model = self.model()
+            for name, value in attributes.items():
+                setattr(model, name, value)
+            post = AsyncMock(return_value=wire)
+            with patch.object(model, "post", new=post):
+                await model.complete([], asked)
+            self.assertEqual(post.call_args.args[1]["timeout"], sent, attributes)
+
     def test_extended_output_is_reserved(self) -> None:
         model = self.model()
         before = model.estimate([])
