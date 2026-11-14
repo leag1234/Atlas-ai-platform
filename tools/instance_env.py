@@ -1,0 +1,780 @@
+#!/usr/bin/env python3
+"""Render the environment file of an Atlas instance from versioned and private layers.
+
+Layers, in order (speed plan P5.3):
+
+1. ``infra/instances/common.env``: non-secret settings shared by every instance.
+2. ``infra/instances/<instance>.env``: non-secret overlay (staging or production); it may
+   override a common value. A staging feature reaches production only when its line is
+   written in ``common.env`` or ``production.env``: a staging-only line never travels.
+3. A private file on the host (mode 600, never versioned): secrets, personal data and the
+   few keys that host tools switch at run time. A private key may not appear in layers 1
+   or 2, so there is exactly one source for every key.
+
+The rendered file is what systemd reads (``EnvironmentFile=``) and what host scripts
+source with bash. It is written atomically (temporary file, fsync, rename) after a
+timestamped backup, and carries a hash of its body: a later hand edit is detected and the
+next ``apply`` refuses to overwrite it without ``--force``.
+
+Values from the versioned layers are restricted to characters that bash and systemd read
+the same way, and ``check`` refuses anything that looks like a secret there (secret-like
+names, high-entropy or provider-prefixed tokens, credentials in URLs, e-mail addresses,
+public IP literals). Private values are copied verbatim and are never printed: reports
+name private keys only.
+
+Commands (``--help`` on each):
+  check                    secret and syntax check of infra/instances (CI, pre-push)
+  diff INSTANCE            render and compare with the current file (and the running unit)
+  apply INSTANCE           render, back up and replace the instance file atomically
+  verify INSTANCE          compare render and current file, counts only; exit 0 if equal
+  split INSTANCE           one-time bootstrap: write the private file from the current one
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import hashlib
+import math
+import os
+import re
+import stat
+import subprocess
+import sys
+import tempfile
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LAYER_DIR = Path("infra") / "instances"
+COMMON = "common"
+DEFAULT_BACKUP_DIR = Path("/opt/atlas-src/env-backups")
+DEFAULT_KEEP = 20
+
+
+@dataclass(frozen=True)
+class Instance:
+    name: str
+    target: Path
+    private: Path
+    unit: str
+
+
+INSTANCES: dict[str, Instance] = {
+    "staging": Instance(
+        "staging",
+        Path("/opt/atlas-src/staging.env"),
+        Path("/opt/atlas-src/staging.secrets.env"),
+        "atlas-staging.service",
+    ),
+    "production": Instance(
+        "production",
+        Path("/opt/atlas-src/stable.env"),
+        Path("/opt/atlas-src/stable.secrets.env"),
+        "atlas-stable.service",
+    ),
+}
+LAYER_FILES = frozenset({f"{COMMON}.env", *(f"{name}.env" for name in INSTANCES)})
+
+KEY_RE = re.compile(r"[A-Z][A-Z0-9_]*")
+LINE_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)")
+# Characters that bash and systemd's EnvironmentFile= both read literally.
+PUBLIC_VALUE_RE = re.compile(r"[A-Za-z0-9_./:,@+%=-]*")
+SECRET_NAME_PART = frozenset(
+    {
+        "AUTH",
+        "BEARER",
+        "COOKIE",
+        "CREDENTIAL",
+        "CREDENTIALS",
+        "DSN",
+        "KEY",
+        "KEYS",
+        "PASS",
+        "PASSPHRASE",
+        "PASSWD",
+        "PASSWORD",
+        "PEPPER",
+        "PRIVATE",
+        "PWD",
+        "SALT",
+        "SECRET",
+        "SECRETS",
+        "SIGNING",
+        "TOKEN",
+        "TOKENS",
+    }
+)
+# Names with a secret-like part whose value is not a secret, and the only shape their
+# value may take in a versioned layer (a path, a 0/1 switch or a short lowercase word).
+NON_SECRET_NAMES = frozenset(
+    {
+        "ATLAS_API_KEYS_DB",
+        "ATLAS_API_KEY_ADMIN_SUBJECT",
+        "ATLAS_OPENWEBUI_API_KEYS",
+        "ATLAS_PICTURE_CPU_TOKEN_FILE",
+        "ATLAS_SECRETS_FILE",
+    }
+)
+NON_SECRET_SHAPE = re.compile(r"/[A-Za-z0-9._/-]+|[a-z0-9_-]{1,32}")
+# Keys that host tools switch at run time (GPU image window): private layer only.
+HOST_MANAGED = frozenset(
+    {"ATLAS_STABLE_IMAGES", "ATLAS_IMAGE_GPU_IP", "ATLAS_IMAGE_GPU_EUR_H"}
+)
+DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+TOKEN_SPLIT_RE = re.compile(r"[^A-Za-z0-9+_\-]+")
+PROVIDER_PREFIX_RE = re.compile(
+    r"(sk-|sk_|pk_|rk_|ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|xox[abpors]-|AKIA|ASIA|"
+    r"scw-|SG\.|hf_|AIza|eyJ)"
+)
+EMAIL_RE = re.compile(r"[^@\s,;:/]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+")
+URL_USERINFO_RE = re.compile(r"://[^/\s@]*:[^/\s@]*@")
+IPV4_RE = re.compile(r"(?<![0-9.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![0-9.])")
+HEADER_FIRST = "# GENERATED by tools/instance_env.py: do not edit this file."
+HASH_PREFIX = "# body-sha256: "
+
+
+class EnvError(Exception):
+    """A refusal: bad layer, overlap, drift or unreadable private file."""
+
+
+@dataclass(frozen=True)
+class Entry:
+    key: str
+    raw: str
+    line: int
+    comment: bool  # a comment line directly above
+
+
+@dataclass
+class EnvFile:
+    path: str
+    entries: list[Entry] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, str]:
+        return {entry.key: entry.raw for entry in self.entries}
+
+
+@dataclass(frozen=True)
+class Layers:
+    public: dict[str, str]  # key -> value, common overridden by the overlay
+    origin: dict[str, str]  # key -> "common" or the overlay name
+    private: dict[str, str]  # key -> raw text, verbatim
+    private_path: str
+
+
+@dataclass
+class Diff:
+    added: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    changed: list[str] = field(default_factory=list)
+    same: list[str] = field(default_factory=list)
+
+    @property
+    def identical(self) -> bool:
+        return not (self.added or self.removed or self.changed)
+
+
+def parse_env_text(text: str, path: str = "<text>") -> EnvFile:
+    """Parse KEY=VALUE lines; comments and blank lines are allowed, nothing else."""
+    result = EnvFile(path)
+    seen: set[str] = set()
+    previous_comment = False
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped:
+            previous_comment = False
+            continue
+        if stripped.startswith("#"):
+            previous_comment = True
+            continue
+        match = LINE_RE.fullmatch(line)
+        if match is None:
+            raise EnvError(f"{path}:{number}: not a KEY=VALUE line")
+        key, raw = match.group(1), match.group(2)
+        if raw.endswith("\\"):
+            raise EnvError(
+                f"{path}:{number}: {key}: line continuation is not supported"
+            )
+        if key in seen:
+            raise EnvError(f"{path}:{number}: {key} is defined twice")
+        seen.add(key)
+        result.entries.append(Entry(key, raw, number, previous_comment))
+        previous_comment = False
+    return result
+
+
+def effective_value(raw: str) -> str:
+    """The value a process receives (bash and systemd agree for these forms)."""
+    if len(raw) >= 2 and raw[0] == raw[-1] == "'":
+        return raw[1:-1]
+    if len(raw) >= 2 and raw[0] == raw[-1] == '"':
+        return re.sub(r'\\([\\"$`])', r"\1", raw[1:-1])
+    return raw
+
+
+def _entropy(token: str) -> float:
+    counts = Counter(token)
+    size = len(token)
+    return -sum(n / size * math.log2(n / size) for n in counts.values())
+
+
+def secret_like_name(key: str) -> bool:
+    return any(part in SECRET_NAME_PART for part in key.split("_"))
+
+
+def value_findings(value: str) -> list[str]:
+    """Reasons why a value must not be versioned (empty when it may)."""
+    reasons: list[str] = []
+    if PUBLIC_VALUE_RE.fullmatch(value) is None:
+        reasons.append("characters outside [A-Za-z0-9_./:,@+%=-] (quotes, spaces, $)")
+    if URL_USERINFO_RE.search(value):
+        reasons.append("credentials in a URL")
+    if EMAIL_RE.search(DIGEST_RE.sub("", value)):
+        reasons.append("e-mail address (personal data)")
+    for match in IPV4_RE.finditer(value):
+        octets = [int(group) for group in match.groups()]
+        if octets[0] not in (0, 127) and max(octets) <= 255:
+            reasons.append("IP address literal (infrastructure detail)")
+            break
+    for token in TOKEN_SPLIT_RE.split(DIGEST_RE.sub(" ", value)):
+        if PROVIDER_PREFIX_RE.match(token) and len(token) >= 12:
+            reasons.append("provider token prefix")
+        elif UUID_RE.search(token):
+            reasons.append("UUID (Scaleway keys and connector ids have this form)")
+        elif len(token) >= 32 and re.fullmatch(r"[0-9a-fA-F]+", token):
+            reasons.append("long hexadecimal token")
+        elif len(token) >= 20 and _entropy(token) >= 4.0:
+            reasons.append("high-entropy token")
+        elif (
+            len(token) >= 24
+            and re.search(r"[a-z]", token)
+            and re.search(r"[A-Z]", token)
+            and len(re.findall(r"[0-9]", token)) >= 3
+        ):
+            reasons.append("mixed-case token with digits")
+        else:
+            continue
+        break
+    return reasons
+
+
+def key_findings(key: str, value: str) -> list[str]:
+    """Reasons why KEY=value must stay in the private layer (empty: it may be versioned)."""
+    reasons: list[str] = []
+    if KEY_RE.fullmatch(key) is None:
+        reasons.append("name is not [A-Z][A-Z0-9_]*")
+    if key in HOST_MANAGED:
+        reasons.append("switched at run time by host tools (private layer)")
+    if secret_like_name(key):
+        if key not in NON_SECRET_NAMES:
+            reasons.append("secret-like name")
+        elif NON_SECRET_SHAPE.fullmatch(value) is None:
+            reasons.append(
+                "allow-listed name with a value that is not a path or switch"
+            )
+    reasons.extend(value_findings(value))
+    return reasons
+
+
+def check_layer_dir(directory: Path) -> list[str]:
+    """Secret and syntax check of the versioned layers. Returns findings (empty = ok).
+
+    Findings name the file, line and key, never the value.
+    """
+    findings: list[str] = []
+    if not directory.is_dir():
+        return [f"{directory}: missing"]
+    files: dict[str, EnvFile] = {}
+    for path in sorted(directory.iterdir()):
+        if path.name == "README.md":
+            continue
+        if path.name not in LAYER_FILES:
+            findings.append(f"{path}: unexpected file (allowed: {sorted(LAYER_FILES)})")
+            continue
+        try:
+            files[path.stem] = parse_env_text(
+                path.read_text(encoding="utf-8"), str(path)
+            )
+        except (EnvError, UnicodeDecodeError) as exc:
+            findings.append(str(exc))
+            continue
+        for entry in files[path.stem].entries:
+            for reason in key_findings(entry.key, entry.raw):
+                findings.append(f"{path}:{entry.line}: {entry.key}: {reason}")
+    for name in LAYER_FILES:
+        if Path(name).stem not in files and not (directory / name).exists():
+            findings.append(f"{directory / name}: missing")
+    common = files.get(COMMON, EnvFile("")).as_dict()
+    overlays = {name: files.get(name, EnvFile("")) for name in INSTANCES}
+    for name, overlay in overlays.items():
+        for entry in overlay.entries:
+            if common.get(entry.key) == entry.raw:
+                findings.append(
+                    f"{overlay.path}:{entry.line}: {entry.key}: repeats the common value"
+                )
+    # Every staging line that production does not get must say what it enables.
+    production_keys = set(common) | set(overlays["production"].as_dict())
+    for entry in overlays["staging"].entries:
+        if entry.key not in production_keys and not entry.comment:
+            findings.append(
+                f"{overlays['staging'].path}:{entry.line}: {entry.key}: staging-only line "
+                "without a comment line above it"
+            )
+    return findings
+
+
+def load_public(tree: Path, instance: str) -> tuple[dict[str, str], dict[str, str]]:
+    directory = tree / LAYER_DIR
+    findings = check_layer_dir(directory)
+    if findings:
+        raise EnvError("versioned layers refused:\n  " + "\n  ".join(findings))
+    public: dict[str, str] = {}
+    origin: dict[str, str] = {}
+    for name in (COMMON, instance):
+        path = directory / f"{name}.env"
+        for entry in parse_env_text(
+            path.read_text(encoding="utf-8"), str(path)
+        ).entries:
+            public[entry.key] = entry.raw
+            origin[entry.key] = name
+    return public, origin
+
+
+def read_private(path: Path) -> EnvFile:
+    try:
+        info = path.stat()
+    except FileNotFoundError:
+        raise EnvError(f"{path}: private file missing") from None
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise EnvError(f"{path}: private file must not be readable by group or others")
+    return parse_env_text(path.read_text(encoding="utf-8"), str(path))
+
+
+def build_layers(tree: Path, instance: str, private: EnvFile) -> Layers:
+    public, origin = load_public(tree, instance)
+    overlap = sorted(set(public) & {entry.key for entry in private.entries})
+    if overlap:
+        raise EnvError(
+            f"keys defined both in {LAYER_DIR} and in {private.path}: "
+            + ", ".join(overlap)
+            + " (one source per key)"
+        )
+    return Layers(public, origin, private.as_dict(), private.path)
+
+
+def _body(layers: Layers, instance: str) -> list[str]:
+    lines = [f"# versioned layer {LAYER_DIR}/{COMMON}.env"]
+    lines += [
+        f"{k}={v}" for k, v in layers.public.items() if layers.origin[k] == COMMON
+    ]
+    lines.append(f"# versioned layer {LAYER_DIR}/{instance}.env")
+    lines += [
+        f"{k}={v}" for k, v in layers.public.items() if layers.origin[k] == instance
+    ]
+    lines.append(f"# private layer {layers.private_path}")
+    lines += [f"{k}={v}" for k, v in layers.private.items()]
+    return lines
+
+
+def _hash(lines: Sequence[str]) -> str:
+    return hashlib.sha256(("\n".join(lines) + "\n").encode()).hexdigest()
+
+
+def render(layers: Layers, instance: str, source: str) -> str:
+    body = _body(layers, instance)
+    header = [
+        HEADER_FIRST,
+        f"# Instance {instance}; source {source}. Change {LAYER_DIR}/ (pull request) or the",
+        f"# private file, then run: tools/instance_env.py apply {instance}",
+        HASH_PREFIX + _hash(body),
+    ]
+    return "\n".join(header + body) + "\n"
+
+
+def drift(text: str) -> bool | None:
+    """True when a rendered file was edited after rendering; None for a legacy file."""
+    lines = text.splitlines()
+    if not lines or lines[0] != HEADER_FIRST:
+        return None
+    for index, line in enumerate(lines):
+        if line.startswith(HASH_PREFIX):
+            return line[len(HASH_PREFIX) :] != _hash(lines[index + 1 :])
+    return True
+
+
+def compare(old: Mapping[str, str], new: Mapping[str, str]) -> Diff:
+    diff = Diff()
+    for key in sorted(set(old) | set(new)):
+        if key not in old:
+            diff.added.append(key)
+        elif key not in new:
+            diff.removed.append(key)
+        elif old[key] != new[key]:
+            diff.changed.append(key)
+        else:
+            diff.same.append(key)
+    return diff
+
+
+def _shown(key: str, value: str | None, public: Mapping[str, str]) -> str:
+    if value is None:
+        return "(unset)"
+    if key in public and not key_findings(key, value):
+        return value
+    return "(value hidden)"
+
+
+def describe(
+    diff: Diff,
+    old: Mapping[str, str],
+    new: Mapping[str, str],
+    public: Mapping[str, str],
+) -> list[str]:
+    """Human diff; values only for versioned keys whose value passes the secret check."""
+    lines = [f"+ {k}={_shown(k, new[k], public)}" for k in diff.added]
+    lines += [f"- {k}={_shown(k, old[k], public)}" for k in diff.removed]
+    lines += [
+        f"~ {k}: {_shown(k, old[k], public)} -> {_shown(k, new[k], public)}"
+        for k in diff.changed
+    ]
+    return lines
+
+
+def effective(entries: Mapping[str, str]) -> dict[str, str]:
+    return {key: effective_value(raw) for key, raw in entries.items()}
+
+
+def running_environment(unit: str) -> dict[str, str] | None:
+    """Environment of the unit's main process (root only); None when not running."""
+    try:
+        pid = subprocess.run(
+            ["systemctl", "show", "-p", "MainPID", "--value", unit],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    if not pid.isdigit() or pid == "0":
+        return None
+    try:
+        data = Path(f"/proc/{pid}/environ").read_bytes()
+    except OSError:
+        return None
+    result: dict[str, str] = {}
+    for item in data.split(b"\0"):
+        if b"=" in item:
+            key, _, value = item.partition(b"=")
+            result[key.decode(errors="replace")] = value.decode(errors="replace")
+    return result
+
+
+def source_label(tree: Path) -> str:
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(tree), "rev-parse", "--short", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        commit = "unknown commit"
+    return f"{tree} at {commit}"
+
+
+def atomic_write(
+    target: Path, text: str, backup_dir: Path | None, keep: int
+) -> Path | None:
+    """Back up the current file (0600), then replace it atomically (0600, same owner)."""
+    backup: Path | None = None
+    owner: tuple[int, int] | None = None
+    if target.exists():
+        info = target.stat()
+        owner = (info.st_uid, info.st_gid)
+        if backup_dir is not None:
+            backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            stamp = _dt.datetime.now(_dt.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            backup = backup_dir / f"{target.name}.{stamp}"
+            fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(target.read_bytes())
+                handle.flush()
+                os.fsync(handle.fileno())
+            olds = sorted(backup_dir.glob(f"{target.name}.*"))
+            for old in olds[: max(0, len(olds) - keep)]:
+                old.unlink()
+    fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            if owner is not None and os.geteuid() == 0:
+                os.fchown(handle.fileno(), *owner)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+    directory = os.open(target.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return backup
+
+
+def split_private(
+    current: EnvFile, tree: Path, instance: str, forced: Iterable[str] = ()
+) -> list[Entry]:
+    """Private entries of a legacy instance file, or EnvError listing what blocks the split.
+
+    Versioned keys must already hold the current value; an unknown key goes private only
+    when it cannot be versioned (secret-like, personal data, host managed) or is forced.
+    """
+    public, _origin = load_public(tree, instance)
+    values = current.as_dict()
+    forced_set = set(forced)
+    problems: list[str] = []
+    for key in sorted(set(public) - set(values)):
+        problems.append(f"{key}: in {LAYER_DIR} but not in the current file")
+    private: list[Entry] = []
+    for entry in current.entries:
+        if entry.key in public:
+            if public[entry.key] != entry.raw:
+                problems.append(
+                    f"{entry.key}: current {_shown(entry.key, entry.raw, public)} "
+                    f"!= versioned {public[entry.key]}"
+                )
+        elif key_findings(entry.key, entry.raw) or entry.key in forced_set:
+            private.append(entry)
+        else:
+            problems.append(f"{entry.key}: looks public but is not in {LAYER_DIR}")
+    if problems:
+        raise EnvError("split refused:\n  " + "\n  ".join(problems))
+    return private
+
+
+def _paths(args: argparse.Namespace) -> tuple[Instance, Path, Path, Path]:
+    instance = INSTANCES[args.instance]
+    tree = Path(args.tree).resolve() if args.tree else REPO_ROOT
+    private = Path(args.private) if args.private else instance.private
+    target = Path(args.target) if args.target else instance.target
+    return instance, tree, private, target
+
+
+def _report_running(
+    instance: Instance, target_keys: Iterable[str], rendered: Mapping[str, str]
+) -> None:
+    running = running_environment(instance.unit)
+    if running is None:
+        print(f"running: {instance.unit} not running or not readable (root needed)")
+        return
+    keys = set(target_keys) | set(rendered)
+    wanted = effective(rendered)
+    differ = sorted(k for k in keys if wanted.get(k) != running.get(k))
+    print(
+        f"running {instance.unit}: {len(keys) - len(differ)} keys equal, {len(differ)} differ"
+    )
+    for key in differ:
+        print(f"  differs: {key}")
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    directory = Path(args.dir) if args.dir else REPO_ROOT / LAYER_DIR
+    findings = check_layer_dir(directory)
+    for finding in findings:
+        print(finding)
+    print(
+        f"instance layers: {'REFUSED' if findings else 'ok'} ({len(findings)} findings)"
+    )
+    return 1 if findings else 0
+
+
+def _render_from(args: argparse.Namespace) -> tuple[Instance, Path, Layers, str]:
+    instance, tree, private_path, target = _paths(args)
+    layers = build_layers(tree, instance.name, read_private(private_path))
+    return instance, target, layers, render(layers, instance.name, source_label(tree))
+
+
+def _current(target: Path) -> tuple[str, dict[str, str]]:
+    if not target.exists():
+        return "", {}
+    text = target.read_text(encoding="utf-8")
+    return text, parse_env_text(text, str(target)).as_dict()
+
+
+def cmd_diff(args: argparse.Namespace) -> int:
+    instance, target, layers, text = _render_from(args)
+    new = parse_env_text(text).as_dict()
+    _old_text, old = _current(target)
+    diff = compare(old, new)
+    print(
+        f"{target}: {len(diff.same)} same, {len(diff.added)} added, "
+        f"{len(diff.removed)} removed, {len(diff.changed)} changed"
+    )
+    for line in describe(diff, old, new, layers.public):
+        print("  " + line)
+    if args.running:
+        _report_running(instance, old, new)
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    instance, target, layers, text = _render_from(args)
+    new = parse_env_text(text).as_dict()
+    _old_text, old = _current(target)
+    diff = compare(old, new)
+    eff = compare(effective(old), effective(new))
+    print(
+        f"verify {instance.name}: keys {len(new)} rendered / {len(old)} current; "
+        f"same {len(diff.same)}, added {len(diff.added)}, removed {len(diff.removed)}, "
+        f"changed {len(diff.changed)}; effective values differ {len(eff.changed)}; "
+        f"versioned {len(layers.public)}, private {len(layers.private)}"
+    )
+    for line in describe(diff, old, new, layers.public):
+        print("  " + line)
+    if args.running:
+        _report_running(instance, old, new)
+    return 0 if diff.identical else 1
+
+
+def cmd_apply(args: argparse.Namespace) -> int:
+    instance, target, layers, text = _render_from(args)
+    new = parse_env_text(text).as_dict()
+    old_text, old = _current(target)
+    edited = drift(old_text) if old_text else None
+    if edited and not args.force:
+        raise EnvError(
+            f"{target} was edited after it was rendered: put the change in {LAYER_DIR}/ or the "
+            f"private file (diff below), or pass --force to discard it"
+            + "".join(
+                "\n  " + line
+                for line in describe(compare(old, new), old, new, layers.public)
+            )
+        )
+    diff = compare(old, new)
+    print(
+        f"{instance.name}: {len(new)} keys (versioned {len(layers.public)}, private "
+        f"{len(layers.private)}); {len(diff.added)} added, {len(diff.removed)} removed, "
+        f"{len(diff.changed)} changed{'; hand edit discarded' if edited else ''}"
+    )
+    for line in describe(diff, old, new, layers.public):
+        print("  " + line)
+    if instance.name == "production":
+        tree = Path(args.tree).resolve() if args.tree else REPO_ROOT
+        staging_only = sorted(set(load_public(tree, "staging")[0]) - set(layers.public))
+        print(f"staging-only keys not carried to production: {len(staging_only)}")
+    if args.dry_run:
+        print("dry run: nothing written")
+        return 0
+    if old_text == text:
+        print(f"{target}: unchanged")
+        return 0
+    backup = atomic_write(
+        target, text, None if args.no_backup else Path(args.backup_dir), args.keep
+    )
+    print(f"{target}: written{f' (backup {backup})' if backup else ''}")
+    return 0
+
+
+def cmd_split(args: argparse.Namespace) -> int:
+    instance, tree, private_path, target = _paths(args)
+    source = Path(args.source) if args.source else target
+    current = parse_env_text(source.read_text(encoding="utf-8"), str(source))
+    private = split_private(current, tree, instance.name, args.private_key or ())
+    print(
+        f"split {instance.name}: {len(current.entries) - len(private)} versioned keys match; "
+        f"{len(private)} private keys: {', '.join(entry.key for entry in private)}"
+    )
+    if args.dry_run:
+        print("dry run: nothing written")
+        return 0
+    text = (
+        f"# Private layer of the {instance.name} instance (secrets, personal data, host-managed\n"
+        f"# switches). Never versioned. Rendered into {target} by tools/instance_env.py.\n"
+        + "".join(f"{entry.key}={entry.raw}\n" for entry in private)
+    )
+    try:
+        fd = os.open(private_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise EnvError(f"{private_path} already exists: never overwritten") from None
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    print(f"{private_path}: written (0600)")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    check = sub.add_parser(
+        "check", help="secret and syntax check of the versioned layers"
+    )
+    check.add_argument(
+        "--dir", help=f"layer directory (default {LAYER_DIR} of this tree)"
+    )
+    check.set_defaults(func=cmd_check)
+    for name, func, text in (
+        ("diff", cmd_diff, "render and show the difference with the current file"),
+        (
+            "verify",
+            cmd_verify,
+            "counts only; exit 0 when the render equals the current file",
+        ),
+        ("apply", cmd_apply, "render and replace the instance file atomically"),
+        ("split", cmd_split, "write the private file from a legacy instance file"),
+    ):
+        command = sub.add_parser(name, help=text)
+        command.add_argument("instance", choices=sorted(INSTANCES))
+        command.add_argument(
+            "--tree", help="checkout holding infra/instances (default: this one)"
+        )
+        command.add_argument("--private", help="private file (default per instance)")
+        command.add_argument("--target", help="rendered file (default per instance)")
+        command.set_defaults(func=func)
+        if name in ("diff", "verify"):
+            command.add_argument(
+                "--running",
+                action="store_true",
+                help="also compare with the running unit",
+            )
+        if name in ("apply", "split"):
+            command.add_argument("--dry-run", action="store_true")
+        if name == "apply":
+            command.add_argument(
+                "--force", action="store_true", help="discard a hand edit of the file"
+            )
+            command.add_argument("--backup-dir", default=str(DEFAULT_BACKUP_DIR))
+            command.add_argument("--no-backup", action="store_true")
+            command.add_argument("--keep", type=int, default=DEFAULT_KEEP)
+        if name == "split":
+            command.add_argument(
+                "--from", dest="source", help="legacy file (default: the target)"
+            )
+            command.add_argument(
+                "--private-key",
+                action="append",
+                help="keep this public-looking key private (repeatable)",
+            )
+    args = parser.parse_args(argv)
+    try:
+        result: int = args.func(args)
+    except EnvError as exc:
+        print(f"instance_env: {exc}", file=sys.stderr)
+        return 1
+    return result
+
+
+if __name__ == "__main__":
+    sys.exit(main())
