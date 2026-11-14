@@ -601,6 +601,8 @@ html:root body .atlas-beta { display:inline-flex; align-items:center; flex:none;
 /* Privacy level pill (chat-ui.js): laid over the page above the composer's top-left corner, in document.body, below menus (z 50) and dialogs. */
 .atlas-privacy-pill { position:fixed; z-index:44; box-sizing:border-box; display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 11px 0 9px; border:1px solid var(--atlas-border); border-radius:14px; background:var(--atlas-bg); color:var(--atlas-muted); font-family:var(--atlas-font); font-size:12.5px; line-height:1; cursor:pointer; }
 .atlas-privacy-pill[hidden], .atlas-privacy-menu[hidden] { display:none; }
+/* The pill's room (its 28 px height and 6 px gap) belongs to the composer area, below the message list, never over the last message. */
+html.atlas-privacy-room #message-input-container { margin-top:34px!important; }
 /* Its shield icon. */
 .atlas-privacy-pill svg { width:15px; height:15px; flex:none; }
 /* Hover and keyboard focus. */

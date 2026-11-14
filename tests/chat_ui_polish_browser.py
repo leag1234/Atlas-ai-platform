@@ -164,7 +164,8 @@ def guest_shell() -> Iterator[None]:
         "ENABLE_EASTER_EGGS": "False",
         "ENABLE_CALENDAR": "False",
         "ENABLE_PERSISTENT_CONFIG": "False",
-        "UI_VISIBILITY": '{"chat.artifacts":false}',
+        "UI_VISIBILITY": '{"chat.artifacts":false,"chat.code_preview":false}',
+        "ENABLE_NOTIFICATIONS": "False",
         "PYTHONPATH": "/app/backend",
     }
     for key, value in environment.items():
