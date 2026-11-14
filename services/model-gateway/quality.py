@@ -310,7 +310,7 @@ async def stream_quality(
     policy = ServerlessPolicy()
     task = classify_task(request.messages)
     role = (
-        "vision"
+        request.vision_role
         if task == "vision"
         else policy.profile_roles.get(request.profile or "", task)
     )

@@ -23,6 +23,11 @@ models:
   pixtral-12b-2409:
     input_eur_per_mtok: 0.20
     output_eur_per_mtok: 0.20
+  # Source: Scaleway public product catalog API (price.retail_price, realtime, fr-par), read 2026-11-14:
+  # https://api.scaleway.com/product-catalog/v2alpha1/public-catalog/products?product_types=generative_apis
+  qwen3.6-35b-a3b:
+    input_eur_per_mtok: 0.25
+    output_eur_per_mtok: 1.50
   qwen3-embedding-8b:
     input_eur_per_mtok: 0.10
     output_eur_per_mtok: 0.0

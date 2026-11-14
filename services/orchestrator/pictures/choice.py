@@ -134,6 +134,8 @@ def _write_choice(
     picture_set.artifact_version = int(stored["version"])
     picture_set.artifact_candidate = index
     picture_set.current_source = picture_set.candidates[index].source
+    picture_set.seed = picture_set.candidates[index].seed
+    picture_set.prompt = picture_set.candidates[index].prompt or picture_set.prompt
     return str(stored["id"]), int(stored["version"]), current.filename
 
 

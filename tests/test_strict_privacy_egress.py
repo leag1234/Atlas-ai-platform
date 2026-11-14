@@ -82,6 +82,9 @@ INTERNAL = {
     "services/orchestrator/project_scheduler.py",
     "services/orchestrator/project_transcript.py",
     "services/orchestrator/project_ui.py",
+    # The CPU picture server is an Atlas-operated dedicated server (infra/pictures-cpu,
+    # TLS and token): it receives the rewritten picture prompt only.
+    "services/orchestrator/pictures/cpu_server.py",
     "services/orchestrator/serving.py",
     "services/orchestrator/skill_catalog.py",
     "services/orchestrator/stream_client.py",

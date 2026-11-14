@@ -34,6 +34,9 @@ class Candidate:
     measure: dict[str, Any] = field(default_factory=dict)
     # The painter's own SVG (sanitised, before the kits).
     source: str = ""
+    # A picture of the CPU server: its seed and the prompt it was drawn from.
+    seed: int = 0
+    prompt: str = ""
 
 
 @dataclass
@@ -55,6 +58,13 @@ class PictureSet:
     checklist: dict[str, Any] = field(default_factory=dict)
     living: dict[str, bool] = field(default_factory=dict)
     current_source: str = ""
+    # "code" (painted by code) or "cpu" (the CPU image server). A CPU picture
+    # is changed by drawing the changed prompt again with the same seed.
+    engine: str = "code"
+    prompt: str = ""
+    seed: int = 0
+    labels: list[str] = field(default_factory=list)
+    diagram: bool = False
 
 
 def directory() -> Path:

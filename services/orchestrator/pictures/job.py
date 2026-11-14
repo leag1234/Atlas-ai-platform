@@ -25,6 +25,7 @@ HANDLERS = {
     "render": "services.orchestrator.pictures.job:render_job",
     "draft": "services.orchestrator.pictures.chain:process_draft",
     "sheet": "services.orchestrator.pictures.chain:contact_sheet",
+    "cpu_finish": "services.orchestrator.pictures.cpu_finish:finish_picture",
 }
 TEST_PREFIX = "tests."
 

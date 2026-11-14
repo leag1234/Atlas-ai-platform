@@ -2,6 +2,8 @@
 
 Status: integrated behind feature flags, off by default. Staging first; the
 acceptance corpus of the design note runs there before anything is called ready.
+Pictures drawn on a CPU server by an open image model (section 5) answer first
+when `ATLAS_PICTURES_CPU=1`; painting by code stays their fallback.
 
 ## 1. What the user gets
 
@@ -121,7 +123,77 @@ image; the host needs `/usr/share/fonts/truetype/liberation`).
 - Only the chosen picture is an artifact; the candidates stay as generated
   images and in the picture set for 30 days.
 
-## 5. Limits
+## 5. Pictures on CPU (ATLAS_PICTURES_CPU=1)
+
+With the flag on (and `ATLAS_PICTURES_BY_CODE=1`, which stays the fallback),
+a picture request is first drawn by an open image model on a CPU server.
+Choices come from spike rounds 24 and 25 (2026-11-13): blind grades 4.84 of 5
+against 2.56 for painting by code on scenes, 0 of 116 pictures photographic
+with the rewrite, about 25 s per picture.
+
+| Step | What | Where |
+|---|---|---|
+| 1. Server check | Health and queue: if the two pictures cannot be done within `ATLAS_PICTURE_CPU_SECONDS`, painting by code answers | `pictures/cpu_turn.py` |
+| 2. Rewrite | One JSON call: an English prompt in one fixed flat illustration style (code appends the style line and strips photographic words), whether it is a diagram, the words to place in the user's language, a title; violent, cruel, hateful or sexual requests are refused | `pictures/rewrite.py`, role `picture_rewrite` |
+| 3. Two pictures | Two seeds, drawn one after the other (one queue per server), 512 px, 4 steps, guidance 1, Lanczos to 768 px | server (`infra/pictures-cpu/gate.py`) |
+| 4. Filter | Every picture is scored by a CPU image classifier on the server; a score of 0.5 or more, or no score, and it is never shown | server, `cpu_turn.shown` |
+| 5. Diagram labels | The picture is wordless; one call on the gateway's `locate` vision role gives where each part is drawn; code writes the words in side margins with uncrossed leader lines (label16 rule) | `pictures/locate.py`, `pictures/cpu_finish.py` |
+| 6. Show | Two candidates in the contact sheet; choice and changes as in section 1 | `pictures/turn.py`, `pictures/choice.py` |
+
+A change ("make the cat bigger") rewrites the prompt with the change and draws
+it again with the chosen picture's seed, as the next artifact version. The
+artifact is an SVG document holding the picture (JPEG). When the server cannot
+answer a change, the picture stays as it is (unchanged-version sentence).
+
+Fallback: server not configured, unreachable, not ready, busy, a rewrite that
+fails or cannot be read, no picture drawn in time, or a diagram with no part
+located: the turn is painted by code, with no user-visible error; the log line
+is `picture_cpu_fallback code=...` and `picture_cpu_fallback` is in the
+interaction's errors. Whatever the CPU attempt spent is kept in the turn's cost.
+
+D5 and cost: a budget or quota refusal of the rewrite or locate call ends the
+turn with the measured refusal. The rewrite (about 0.0005 EUR) and the locate
+calls (about 0.0004 EUR each) count in the turn's cost; the server is a fixed
+cost, 0 per picture, and its render seconds are logged
+(`picture_cpu_render_seconds` in the interaction's latencies).
+
+| Variable | Default | Effect |
+|---|---|---|
+| `ATLAS_PICTURES_CPU` | off | `1` draws on the CPU server first |
+| `ATLAS_PICTURE_CPU_URL` | unset | `https://<server address>:8790` |
+| `ATLAS_PICTURE_CPU_TOKEN_FILE` | unset | file holding the server's shared token |
+| `ATLAS_PICTURE_CPU_CA` | unset | the server's self-signed certificate (PEM) |
+| `ATLAS_PICTURE_CPU_SECONDS` | 100 | longest wait for the pictures (30 to 200) before painting by code |
+| `LOCATE_MODEL` | routing.yaml | model of the gateway's `locate` role |
+
+### CPU picture server
+
+`infra/pictures-cpu/`: the engine (stable-diffusion.cpp, MIT, pinned commit,
+built for the host CPU), the gate (`gate.py`: TLS, shared token, one queue,
+fixed sizes and steps, the content classifier), the pinned weights with their
+sha256 (`weights.json`; FLUX.2 klein 4B converted to 4 bits by the engine's
+converter, Qwen3-4B Q8_0 text encoder, klein VAE; Z-Image-Turbo 4 bits as the
+fallback model, `install.sh ADDRESS zimage`; the classifier
+nsfw_image_detection, all Apache-2.0), pinned wheels, and `scw_server.py`
+(the Scaleway Instance: create, list, stop, start, delete).
+
+Deploy (from the Atlas host, Scaleway keys in the environment):
+
+1. `python3 infra/pictures-cpu/scw_server.py create fr-par-2 COMPUTE3-X16C-32G 50 <atlas host IP> <ssh public key>`
+   (security group: SSH and 8790 from the Atlas host only).
+2. Copy `infra/pictures-cpu/` to the server, then as root:
+   `bash install.sh <server IP>` (builds the image, fetches and checks about
+   15 GB of weights, makes the token and certificate once, blocks new outbound
+   connections from containers, starts the container with restart on boot).
+3. Copy `/opt/pictures-cpu/secret/cert.pem` and `token` to the Atlas host
+   (mode 0600) and set the variables above.
+
+Cost: COMPUTE3-X16C-32G with a 50 GB volume and its IP, about 0.48 EUR per hour
+(11.5 EUR per day) kept on. `scw_server.py stop` powers it off (the volume and
+the IP are still billed); `start` powers it on and the container restarts by
+itself; meanwhile the turn paints by code.
+
+## 6. Limits
 
 - Not a photograph, not a realistic portrait, not a likeness of a real person.
 - Hats over the eyes remain the most frequent face defect; people on a boat may
@@ -129,6 +201,7 @@ image; the host needs `/usr/share/fonts/truetype/liberation`).
   provisional animal kit.
 - A chosen picture above 96 kB of SVG is too large to be given back to the model
   for a change.
-- Strict privacy mode is not wired: the painter role runs on a hidden profile.
+- Strict privacy mode is not wired: the painter role runs on a hidden profile;
+  the CPU picture server is a rented server outside the owned inference path.
 - The contact sheet is one image: on a phone the four pictures are small; a tap
   on a number shows one full size.

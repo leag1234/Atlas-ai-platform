@@ -10,13 +10,17 @@ package is split by step:
   draft meets it (ordering only: every finished draft is shown);
 - animal_kit, body_kit, face_kit, finish, labels: what code redraws;
 - worker, job: the child process those steps run in, with limits;
-- painter, turn, choice: the chat turn, the four candidates and the choice.
+- painter, turn, choice: the chat turn, the four candidates and the choice;
+- rewrite, cpu_server, cpu_turn, cpu_finish: pictures drawn by an open image
+  model on a CPU server (two candidates), with painting by code as fallback.
 
 Everything stays off unless ATLAS_PICTURES_BY_CODE=1; the provisional animal
 kit has its own switch, ATLAS_PICTURE_ANIMAL_KIT=1. The short plan asked of
 the painter (ATLAS_PICTURE_BRIEF_PLAN=1) and the spare drafts
 (ATLAS_PICTURE_SPARE_DRAFTS) are off by default; the contour filters bounded
 to their group are on (ATLAS_PICTURE_BOUNDED_CONTOURS=0 turns them off).
+ATLAS_PICTURES_CPU=1 (off by default, needs ATLAS_PICTURES_BY_CODE=1) draws
+on the CPU picture server first and paints by code when it cannot answer.
 """
 
 from __future__ import annotations
@@ -56,3 +60,9 @@ def spare_drafts() -> int:
     except ValueError:
         return 0
     return min(max(value, 0), SPARE_DRAFTS_LIMIT)
+
+
+def cpu_enabled() -> bool:
+    """Pictures from the CPU image server first (off by default); painting by
+    code stays the fallback, so the picture turn itself must be on."""
+    return enabled() and os.environ.get("ATLAS_PICTURES_CPU", "").strip() == "1"
