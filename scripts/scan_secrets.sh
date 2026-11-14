@@ -8,4 +8,6 @@ PATTERN='(AKIA|scw-[a-f0-9-]{36}|sk-ant-|ghp_|SG\.[A-Za-z0-9_-]{16,})'
 if git grep -nIE "$PATTERN" -- . ':!*.example' ':!scripts/scan_secrets.sh' ':!services/orchestrator/static/vendor/*' 2>/dev/null; then
   echo "::error::potential secret detected in code"; exit 1
 fi
+# Versioned instance settings (infra/instances) never hold a secret or personal data.
+python3 tools/instance_env.py check || { echo "::error::infra/instances refused by tools/instance_env.py check"; exit 1; }
 echo "scan-secrets ok"
