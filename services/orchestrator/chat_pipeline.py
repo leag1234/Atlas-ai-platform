@@ -412,6 +412,13 @@ class ChatTools(Runtime):
                                 self.item.images[-1]["payload"] = image["payload"]
                             if isinstance(image.get("credit_url"), str):
                                 self.item.retrieved_urls.append(image["credit_url"])
+            if call.name == "currency_convert" and isinstance(data, dict):
+                source = data.get("source_url")
+                if isinstance(source, str):
+                    # D7: the rate feed was fetched for this turn, so the answer
+                    # may cite it like a fetched page.
+                    self.item.retrieved_urls.append(source)
+                    urls = [source]
             if call.name == "web_search" and isinstance(data, dict):
                 data = self.search_evidence(data)
                 output = {**output, "data": data}
@@ -1574,6 +1581,16 @@ async def _process(
 
     if visual_relevant(request.user_text):
         model.tools.extend(visual_declarations())
+    from services.orchestrator import exact_tools
+
+    # Dates, times, units and currencies are computed by code (T8). Offered on
+    # the turns about them only: other turns keep their recorded requests.
+    earlier = [m.text for m in request.conversation_messages[:-1] if m.role == "user"]
+    exact_subjects = exact_tools.relevant(
+        request.user_text, earlier[-1] if earlier else ""
+    )
+    if exact_subjects:
+        model.tools.extend(exact_tools.declarations(exact_subjects))
     model.observing = True
     # The final image replaces the model prose for this route.  Holding its output
     # prevents an incomplete Mermaid or ASCII diagram reaching an SSE client first.
@@ -1672,6 +1689,8 @@ async def _process(
     tools.daily_ledger = getattr(request, "daily_ledger", None)
     tools.daily_user = getattr(request, "daily_user", "unknown")
     tools.daily_lang = request.lang
+    if request.ui_timezone != "UTC":
+        tools.home_zone = request.ui_timezone
     tools.search_language = search_language(
         request.conversation_messages, request.ui_locale
     )

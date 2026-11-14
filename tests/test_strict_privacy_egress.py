@@ -49,6 +49,7 @@ EGRESS: dict[str, str] = {
     "services/model-gateway/vision.py": "provider",
     "services/orchestrator/attachment_reading.py": "third_party",
     "services/orchestrator/commons.py": "third_party",
+    "services/orchestrator/fx_rates.py": "third_party",
     "services/orchestrator/mcp_http.py": "third_party",
     "services/orchestrator/nearby.py": "third_party",
     "services/orchestrator/searxng.py": "third_party",

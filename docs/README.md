@@ -37,6 +37,7 @@ The default decision is therefore *not to host GPUs unless the load justifies it
 | `18-remote-runners.md` | Remote execution targets for project Work: SSH targets, permission modes, devices | Arch / backend |
 | `20-deployment-architectures-and-costs.md` | On-demand and on-premise (H100) architectures with gross costs and sizing | Arch / management |
 | `21-pictures-by-code.md` | Pictures by code: four SVG drafts finished by code, the choice, flags, cost and limits | Backend / product |
+| `22-dates-units-currencies.md` | Dates, time zones, units and ECB currency rates computed by code: tools, replay-safe offering, library survey | Backend / product |
 
 ## 2. Normative Conventions (RFC 2119)
 

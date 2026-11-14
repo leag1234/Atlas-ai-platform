@@ -26,6 +26,7 @@ from services.orchestrator import mcp_client
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.calculator import calculate
+from services.orchestrator.datecalc import DEFAULT_ZONE
 from services.orchestrator.content import hierarchical_summary
 from packages.evidence import estimated_tokens
 from packages.web_extract import extract
@@ -156,6 +157,8 @@ class Runtime:
         self._last_search_attempts: list[Message] = []
         self.daily_lang = "en"
         self.search_language: str | None = None
+        # The person's own zone: "here" and "today" for the date_time tool.
+        self.home_zone = DEFAULT_ZONE
 
     def estimate(self, call: Call) -> Reservation:
         provider = next(
@@ -554,6 +557,12 @@ class Runtime:
             if os.environ.get("ATLAS_MCP_CONNECTORS") == "1":
                 return {"error": "legacy_connector_disabled"}
             return await mcp_client.execute(call.arguments, timeout)
+        from services.orchestrator import exact_tools
+
+        if call.name in exact_tools.SCHEMAS:
+            return await exact_tools.execute(
+                call.name, call.arguments, timeout, self.home_zone
+            )
         from services.orchestrator.visual_tools import (
             VISUAL_SCHEMAS,
             ImageProviderError,

@@ -38,6 +38,11 @@ playwright==1.62.0
 # OSM syntax, holidays and local timezone evaluation (REQ-NEARBY-01).
 opening-hours-py==2.1.4
 
+# Public holiday calendars for business-day counts (date_time tool, T8): MIT,
+# pure Python, no network; python-dateutil is its only dependency.
+holidays==0.107
+python-dateutil==2.9.0.post0
+
 # Nearby presentation: locale dates and country-aware phone formatting.
 Babel==2.18.0
 phonenumberslite==9.0.41

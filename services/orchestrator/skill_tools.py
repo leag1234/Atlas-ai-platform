@@ -91,6 +91,8 @@ class SkillTools:
         return bool(self.loaded) and name not in {
             "load_skill",
             "calculator",
+            "date_time",
+            "unit_convert",
             "rag_search",
             "reopen_result",
             "read_file",
