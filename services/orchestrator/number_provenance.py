@@ -317,7 +317,9 @@ def observe(output: dict[str, object]) -> dict[str, object]:
 
 def log(report: Report, task_type: str, tool_results: int) -> None:
     """Counts only: answer text and numbers never reach the log."""
-    LOGGER.info(
+    # Warning level: staging and production keep warnings only, and this
+    # measurement line must reach the journal.
+    LOGGER.warning(
         "number_provenance %s",
         json.dumps(
             {**report.fields(), "task_type": task_type, "tool_results": tool_results},
