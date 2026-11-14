@@ -17,6 +17,12 @@ from typing import Any
 
 import aiohttp
 
+
+# Every Atlas profile, public or hidden (contracts/m21-profiles.json): this file runs
+# inside the chat UI image, where the contract is not read at request time.
+ATLAS_PROFILES = frozenset({"atlas-qwen", "atlas-glm", "atlas-deepseek", "atlas-mistral"})
+
+
 def status_language(messages: list[SimpleNamespace], locale: object) -> str:
     """Use ATLAS localization when mounted, with a native Open WebUI fallback."""
     try:
@@ -189,7 +195,7 @@ class Filter:
                 UUID(str(token))
             except ValueError:
                 body.pop("cancel_id", None)
-        if body.get("model") not in {"atlas-qwen", "atlas-glm", "atlas-deepseek"}:
+        if body.get("model") not in ATLAS_PROFILES:
             return body
         messages = []
         for message in body.get("messages", []):

@@ -1,6 +1,6 @@
 """Loopback OpenAI-compatible adapter with one journal row on every outcome."""
 
-from packages.profiles import PROFILES
+from packages.profiles import chat_ui_profiles
 from packages.limits import LimitError
 from packages.configuration import (
     configuration_names,
@@ -167,7 +167,7 @@ def models() -> dict[str, object]:
         "object": "list",
         "data": [
             {"id": name, "object": "model", "created": 0, "owned_by": "atlas"}
-            for name in PROFILES
+            for name in chat_ui_profiles()
         ],
     }
 

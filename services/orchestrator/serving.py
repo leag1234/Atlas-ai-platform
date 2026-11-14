@@ -29,6 +29,7 @@ if os.environ.get("ATLAS_STABLE") == "1":
 
 from packages.configuration import CHAT_REQUIRED_ENV, require_env
 from packages.ports import atlas_ports
+from packages.profiles import default_profile
 from services.orchestrator.code_ui import project_mode
 from services.orchestrator.webui import configure
 from services.orchestrator.tools import search_providers
@@ -668,6 +669,8 @@ def stack(name: str = "atlas-chat", persistent: bool = True) -> Iterator[None]:
 
 def run() -> None:
     require_stable_configuration()
+    # An unknown or not enabled ATLAS_DEFAULT_PROFILE stops the start, not a later chat.
+    default_profile()
     require_env(CHAT_REQUIRED_ENV)
     os.environ.setdefault("ATLAS_SEARCH_PROVIDER", "tavily")
     # Scanned PDF pages are read by LightOn OCR (owner decision 2026-10-15).
