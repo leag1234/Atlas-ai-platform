@@ -50,7 +50,9 @@
     "greedy_top_p": 1,
     "text_model": "mistral-small-2603", "text_fallback_model": "mistral-medium-latest", "vision_model": null,
     "reasoning_control": "reasoning_effort",
-    "reasoning_values": [],
+    # Live provider answer 2026-11-14: "reasoning_effort none is not supported for this
+    # model, supported values: high, low, medium"; without the field it reasons at length.
+    "reasoning_values": ["low", "medium", "high"],
     "reasoning_models": ["mistral-large-4"],
     "transcription_model": "voxtral-mini-latest",
     "realtime_transcription_model": "voxtral-mini-transcribe-realtime-3",

@@ -228,6 +228,49 @@ class ProviderFieldTests(unittest.TestCase):
                 "low",
             )
 
+    def test_model_that_cannot_stop_reasoning_gets_the_lowest_effort(self) -> None:
+        # Measured 2026-11-14: the provider refuses "none" for this model and,
+        # without the field, an app call reasoned 9473 tokens for 148 s first.
+        body = {"model": "mistral-large-4", "reasoning_effort": "none"}
+        with patch.dict(os.environ, {}, clear=True):
+            for ceiling in (None, "none"):
+                with self.subTest(ceiling=ceiling):
+                    self.assertEqual(
+                        request_options(
+                            body,
+                            "mistral",
+                            reasoning_ceiling=ceiling,
+                            model="mistral-large-4",
+                        )["reasoning_effort"],
+                        "low",
+                    )
+            self.assertEqual(
+                request_options(
+                    body,
+                    "mistral",
+                    configured_effort="medium",
+                    model="mistral-large-4",
+                )["reasoning_effort"],
+                "medium",
+            )
+            # A model of the same preset that does not reason gets no field.
+            self.assertNotIn(
+                "reasoning_effort",
+                request_options(
+                    {"model": "mistral-small-2603", "reasoning_effort": "none"},
+                    "mistral",
+                    reasoning_ceiling="none",
+                    model="mistral-small-2603",
+                ),
+            )
+            # Models that accept "none" keep it.
+            self.assertEqual(
+                request_options(
+                    {"model": "m", "reasoning_effort": "none"}, "scaleway", model="m"
+                )["reasoning_effort"],
+                "none",
+            )
+
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_transport_sends_the_attempt_effort(self) -> None:

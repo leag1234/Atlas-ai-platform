@@ -240,6 +240,26 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["reasoning_effort"], "low")
         self.assertIn("prompt_cache_key", body)
 
+    async def test_file_turn_without_reasoning_sends_the_lowest_effort(self) -> None:
+        # An app turn asks for no reasoning; the model cannot turn it off, so the
+        # least is asked instead of the provider default.
+        session = Session([Response()])
+        with patch.dict(os.environ, HIDDEN_ENVIRONMENT):
+            await self.collect(
+                session,
+                self.request(
+                    "atlas-mistral",
+                    messages=[{"role": "user", "content": "make a drum machine"}],
+                    produces_files=True,
+                    max_tokens=16000,
+                    timeout=290.0,
+                    reasoning_ceiling="none",
+                ),
+            )
+        _, _, body = session.calls[0]
+        assert isinstance(body, dict)
+        self.assertEqual(body["reasoning_effort"], "low")
+
     async def test_public_profiles_are_unchanged_when_hidden_enabled(self) -> None:
         for profile in ("atlas-qwen", "atlas-glm", "atlas-deepseek"):
             captures: list[tuple[str, str, str]] = []
