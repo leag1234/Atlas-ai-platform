@@ -216,8 +216,13 @@ def request_options(
                 "enable_thinking": True,
             }
             body.pop("reasoning_effort", None)
-    elif reasoning_ceiling in REASONING_EFFORTS:
+    elif reasoning_ceiling in REASONING_EFFORTS or (
+        reasoning_ceiling is None and name not in ("", "scaleway") and model is not None
+    ):
         if reasoning_default is False:
+            return body
+        if model is not None and reasoning_control(name, model) is None:
+            # A model of the preset that does not reason (reasoning_models).
             return body
         preset = presets().get(name or "scaleway", {})
         values = preset.get("reasoning_values")
@@ -230,6 +235,15 @@ def request_options(
         )
         if not accepted:
             return body
+        if reasoning_ceiling is None:
+            if "none" in accepted:
+                return body
+            # A model that cannot turn reasoning off (no "none" among its values)
+            # reasons at the provider's default when no effort is sent: measured
+            # 2026-11-14, an app call spent 9473 of 15460 tokens and 148 s
+            # thinking before its first visible character. "none" asks for the
+            # least reasoning, so it gets the lowest accepted effort.
+            reasoning_ceiling = "none"
         ceiling = REASONING_EFFORTS.index(reasoning_ceiling)
         allowed = [
             value for value in accepted if REASONING_EFFORTS.index(value) <= ceiling
