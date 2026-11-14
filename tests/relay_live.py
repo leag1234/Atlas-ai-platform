@@ -340,16 +340,47 @@ def main() -> None:
             def metadata(self) -> dict[str, Any]:
                 return dict(baseline={})
 
-        session = fixture.request(
-            "GET",
-            fixture.project_path() + "/work-sessions/" + fixture.session["id"],
-            "editor",
-        ).json()
+        def current_session() -> dict[str, Any]:
+            return dict(
+                fixture.request(
+                    "GET",
+                    fixture.project_path() + "/work-sessions/" + fixture.session["id"],
+                    "editor",
+                ).json()
+            )
+
+        session = current_session()
         history: list[dict[str, Any]] = []
         spent = Decimal(0)
+        turns_started = 0
+
+        def new_turn() -> None:
+            """End the Work turn and start the next one with its own id, as the
+            chat does: the release invalidates the approvals left open."""
+            nonlocal session
+            released = fixture.turn(
+                "release", terminal_state="completed", cleanup_confirmed=True
+            )
+            if released.status_code != 200:
+                raise RuntimeError("release refused: " + released.text[:200])
+            generation = fixture.fence()["generation"] + 1
+            fixture.session = current_session()
+            fixture.turn_id = str(uuid4())
+            fixture.fence = lambda: dict(  # type: ignore[method-assign]
+                session_id=fixture.session["id"],
+                request_id=fixture.turn_id,
+                generation=generation,
+            )
+            acquired = fixture.acquire()
+            if acquired.status_code != 200:
+                raise RuntimeError("acquire refused: " + acquired.text[:200])
+            session = current_session()
 
         async def turn(text: str, approval: dict[str, Any] | None = None) -> str:
-            nonlocal spent
+            nonlocal spent, turns_started
+            if turns_started:
+                new_turn()
+            turns_started += 1
             tools = WorkTools(
                 Scratch(str(uuid4())), WorkExecution(Broker(), session, fixture.turn_id)
             )
@@ -548,6 +579,8 @@ def main() -> None:
                 wait_s=20,
             )
             answer = machines.approval_shown(asked.get("approval_question", "")) or {}
+            # The yes comes in the next turn, after the release of this one.
+            new_turn()
             tool(
                 "remote_run",
                 dict(answer, allowed=True),
@@ -635,11 +668,14 @@ def main() -> None:
         summary["approval_asked"] = machines.approval_shown(fourth)
         if approval is not None:
             loop.run_until_complete(turn("yes", approval))
+        summary["distinct_turn_ids"] = turns_started
         summary["git_log_on_computer"] = shell(
             COMPUTER, "cd ~/orbit && git log --oneline -3 && git status --short | head"
         )
         summary["pushed_on_buildbox"] = shell(
-            LAN, "cd /home/ada/orbit.git && git log --oneline -3 main 2>&1"
+            LAN,
+            "cd /home/ada/orbit.git && git log --oneline -3 main 2>&1",
+            check=False,
         )
         summary["records_in_project"] = shell(COMPUTER, "ls -A ~/orbit")
         summary["cost_eur"] = str(spent)

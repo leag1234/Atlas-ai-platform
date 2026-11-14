@@ -702,6 +702,117 @@ class RunnerRegistryTests(ProjectWorkTests):
         self.assertEqual(revoked.status_code, 200, revoked.text)
         self.assertEqual(self.remote("list", {}).json()["items"], [])
 
+    def test_runner_yes_given_in_the_next_turn_runs_the_command(self) -> None:
+        """The question ends one Work turn; the person's yes starts the next one.
+
+        Every turn releases its lease, which invalidates the approvals it left
+        open. The yes reused that closed question and the command was refused
+        (403 approval_required) in the real chat (staging 2026-11-14).
+        """
+        import asyncio
+        import json
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_workspace import Workspace
+        from services.orchestrator.loop import Call
+        from services.orchestrator.work_machine_tools import approval_shown
+        from services.orchestrator.work_tool_selection import WorkToolSelection
+
+        target = self.register("ask")
+        fixture = self
+
+        class Client:
+            org = fixture.org
+            project = fixture.project
+
+            async def call(
+                self, operation: str, data: dict[str, Any]
+            ) -> dict[str, Any]:
+                response = fixture.broker(operation, data)
+                if response.status_code != 200:
+                    error = ProjectError(
+                        response.status_code, str(response.json().get("error"))
+                    )
+                    error.body = response.json()
+                    raise error
+                return dict(response.json())
+
+            async def public(
+                self, method: str, tail: str, body: bytes = b"", headers: Any = None
+            ) -> tuple[int, dict[str, Any]]:
+                reply = fixture.request(
+                    method,
+                    fixture.project_path() + "/" + tail,
+                    "editor",
+                    json.loads(body) if body else None,
+                )
+                return reply.status_code, reply.json()
+
+        def turn(approval: dict[str, Any] | None) -> tuple[Any, WorkTools]:
+            session = self.request(
+                "GET",
+                self.project_path() + "/work-sessions/" + self.session["id"],
+                "editor",
+            ).json()
+            tools = WorkTools(
+                Workspace(str(uuid4())), WorkExecution(Client(), session, self.turn_id)
+            )
+            tools.selection = WorkToolSelection("remote")
+            tools.approvals_unattended, tools.lang = True, "en"
+            tools.machine_approval = approval
+            # The test machine stands for a connected computer: the question
+            # is asked in the conversation and no workspace is sent there.
+            tools.remote_in_place = {target["id"].casefold(): "/home/runner/work"}
+            arguments = dict(target=target["id"], command="echo pushed", wait_s=10)
+            result = asyncio.run(
+                tools.execute(
+                    Call(str(uuid4()), "remote_run", json.dumps(arguments)), 30
+                )
+            )
+            return result, tools
+
+        def next_turn() -> None:
+            # The end of a Work turn, then the start of the next, as chat_work runs them.
+            released = self.turn(
+                "release", terminal_state="completed", cleanup_confirmed=True
+            )
+            self.assertEqual(released.status_code, 200, released.text)
+            generation = self.fence()["generation"] + 1
+            self.session = self.request(
+                "GET",
+                self.project_path() + "/work-sessions/" + self.session["id"],
+                "editor",
+            ).json()
+            self.turn_id = str(uuid4())
+            self.fence = lambda: dict(  # type: ignore[method-assign]
+                session_id=self.session["id"],
+                request_id=self.turn_id,
+                generation=generation,
+            )
+            self.assertEqual(self.acquire().status_code, 200)
+
+        asked, _ = turn(None)
+        self.assertEqual(asked["state"], "awaiting_approval", asked)
+        question = approval_shown(asked["approval_question"])
+        assert question is not None
+        next_turn()
+        ran, tools = turn(dict(question, allowed=True))
+        self.assertEqual(ran["state"], "succeeded", ran)
+        self.assertIn("pushed", str(ran["output"]))
+        self.assertNotEqual(ran["command_id"], asked["command_id"])
+        self.assertEqual(tools.machine_approval_failures, {})
+        self.assertEqual(tools.validation_failures, {})
+        # The question of the ended turn is closed, never started.
+        old = self.remote("status", dict(command_id=asked["command_id"], wait_s=0))
+        self.assertEqual(old.status_code, 200, old.text)
+        self.assertEqual(old.json()["state"], "denied")
+        self.assertEqual(old.json()["error"], "approval_invalidated")
+        # A yes is used once: the same command in a later turn is asked again.
+        next_turn()
+        again, _ = turn(dict(question, allowed=True, used=True))
+        self.assertEqual(again["state"], "awaiting_approval", again)
+        self.assertEqual(self.remote("close", {}).status_code, 200)
+
 
 def load_tests(
     loader: unittest.TestLoader, tests: unittest.TestSuite, pattern: str | None

@@ -302,17 +302,13 @@ class RemoteWork:
                 args["cwd"],
             ),
         ).fetchall()
-        if pending and pending[0]["data"].get("approval_id"):
-            # A question left unanswered past its approval's life is closed, so
-            # the same command asked again gets a fresh approval to answer.
-            approval = self.work.approval(pending[0]["data"]["approval_id"])["data"]
-            if approval["decision"] == "pending" and datetime.fromisoformat(
-                approval["expires_at"]
-            ) <= datetime.now(timezone.utc):
-                expired = dict(
-                    pending[0]["data"], state="denied", error="approval_expired"
+        if pending:
+            closed = self.unanswerable(pending[0]["data"], data)
+            if closed is not None:
+                # The same command asked again gets a fresh question to answer.
+                self.registry.save(
+                    "commands", dict(pending[0]["data"], state="denied", error=closed)
                 )
-                self.registry.save("commands", expired)
                 pending = []
         if pending:
             command = dict(pending[0]["data"])
@@ -436,6 +432,31 @@ class RemoteWork:
             "denied" if mode == "denied" else "intent",
         )
         return self.result(command)
+
+    def unanswerable(self, command: Json, data: Json) -> str | None:
+        """Why a command waiting for its approval can no longer be approved.
+
+        A decision is fenced to the turn that asked (decide checks that turn's
+        lease), and the end of every Work turn invalidates the approvals it left
+        open. Reused in a later turn, such a command was started without a valid
+        approval and refused (403 approval_required): the person's yes in the
+        chat never ran the command (staging 2026-11-14). Only a question of this
+        same turn, still open or already allowed, can be answered.
+        """
+        if not command.get("approval_id"):
+            return None
+        row = self.work.approval(command["approval_id"])
+        approval = row["data"]
+        if row["consumed_at"] or approval["decision"] not in {"pending", "allowed"}:
+            return "approval_" + str(approval["decision"])
+        if datetime.fromisoformat(approval["expires_at"]) <= datetime.now(timezone.utc):
+            return "approval_expired"
+        if (
+            command.get("request_id") != data["request_id"]
+            or command.get("generation") != data["generation"]
+        ):
+            return "approval_invalidated"
+        return None
 
     def result(self, command: Json) -> Json:
         value = {
