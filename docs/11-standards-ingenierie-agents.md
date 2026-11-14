@@ -125,6 +125,42 @@ lint + format → typecheck → build → unit tests → contract tests
   by CI is not a rule, it is a wish. Any rule in this corpus that can be automated
   **must** be.
 
+### Local pre-push gate
+
+`make prepush` runs, in one to two minutes, the CI checks that most often fail a pull
+request after a 30 to 40 minute CI run. Run it before every push and push only when it
+passes. Each check prints one `PASS`, `WARN` or `FAIL` line; a `FAIL` line says how to
+fix it, and the command then exits non-zero.
+
+| Check | Same rule as CI | Usual fix |
+|---|---|---|
+| no `BRAIN/` file tracked | `tests/test_repository_hygiene.py` | `git rm -r --cached BRAIN` |
+| secret scan | `make scan-secrets` | remove the value |
+| model names, US provider SDK | the two grep steps, read from `ci.yml` and run verbatim | take the name from configuration; `services/model-gateway` is scanned too |
+| English only | `scripts/verify-m16.sh` | translate comments, docstrings and docs |
+| stylesheet rules | `scripts/verify-m23.sh` | one `/* comment */` per new rule block in `chat-ui.css` |
+| m24 rendering digest | `tests/test_voice_ui.py`, `tests/m24_gate.py` | `make fix-css-digest`, then commit `reports/m24-rendering.json` |
+| `MISSION.md` size | `scripts/verify-m20.sh` | move settled decisions to `docs/decisions-log.md` |
+| M25 prompts fingerprint | `tests/m25_gate.py`, `tests/test_prompt_policy.py` | a `prompts/` change needs a live corpus remeasure (owner decision) |
+| ruff check, ruff format | `make lint` | `ruff check --fix`, `ruff format` |
+| mypy --strict | `make typecheck` | fix the errors |
+| unit tests | `make test` | fix the tests |
+
+- Fast mode runs the changed test modules, the strict privacy egress inventory, the
+  repository hygiene test and the voice UI test, plus the other modules that import or
+  name a file changed since the merge base with `origin/main` (committed or not), those
+  named after the changed file first, while their recorded test time fits
+  `TESTS_BUDGET` (default 150 s, spread over `JOBS` parallel processes, default 2).
+  Module times are recorded after each run. A `WARN` line lists the modules left out:
+  CI still runs them.
+- `make prepush FULL=1` runs the complete unit suite (`scripts/test.sh`, about 30
+  minutes) and the recorded evaluation smoke instead. `BASE=<ref>` changes the
+  comparison base.
+- mypy always checks the whole tree. Its cache sits in the git directory and is shared
+  by every worktree of the clone: only the first run on a machine takes two minutes.
+- Not covered, CI only: the milestone journeys (`tests/ci_regressions.py`), browser and
+  live checks. A green `make prepush` does not replace a green CI.
+
 ## 8. ADR
 
 - REQ-ENG-012 (MUST): any structural decision → an ADR (`/adr/NNNN-titre.md`):
