@@ -81,6 +81,68 @@ class ApiRoutingTests(unittest.TestCase):
                     _, owned = targets(usage, effort, strict=True)
                     self.assertEqual([t.provider for t in owned], ["owned-vllm"])
 
+    def test_standard_plan_chain_never_contains_owned_target(self) -> None:
+        # Even an owned target listed first, with its server configured, is never a
+        # primary or a fallback of a standard request.
+        from packages.dev_request import Request
+
+        request = Request.model_validate(
+            {"messages": [{"role": "user", "content": "Hello"}], "max_tokens": 10}
+        )
+        owned = {
+            "provider": "owned-vllm",
+            "model": "owned",
+            "context": 1000,
+            "privacy": "owned",
+        }
+        shared = [
+            {"provider": "mistral", "model": "first", "context": 1000},
+            {"provider": "scaleway", "model": "second", "context": 1000},
+        ]
+        routing = {"usages": {"atlas-code": {"none": [owned, *shared, owned]}}}
+        prices = {
+            name: {"input_eur_per_mtok": 0, "output_eur_per_mtok": 0}
+            for name in ("owned", "first", "second")
+        }
+        with (
+            patch("api_routing.config", return_value=routing),
+            patch("dev_gateway.ServerlessPolicy") as policy,
+            patch.dict(os.environ, {"ATLAS_OWNED_VLLM_BASE_URL": OWNED_URL}),
+        ):
+            policy.return_value.prices = prices
+            plan = dev_gateway.prepare_api(request, "atlas-code", "key-test")
+        chain = [plan, plan.fallback]
+        self.assertEqual([p.model for p in chain], ["first", "second"])
+        self.assertEqual([p.privacy for p in chain], ["shared", "shared"])
+        self.assertIsNone(plan.fallback.fallback)
+
+    def test_routing_unchanged_without_an_owned_server(self) -> None:
+        # Production has no owned server: standard routes are the configured shared
+        # targets in order, the owned id is neither listed nor pinnable, strict is 403.
+        from api_routing import config, pinned_models, pinned_target
+
+        env = {k: v for k, v in os.environ.items() if k != "ATLAS_OWNED_VLLM_BASE_URL"}
+        with patch.dict(os.environ, env, clear=True):
+            for usage in ("atlas-code", "atlas-chat"):
+                for effort, entries in config()["usages"][usage].items():
+                    shared = [
+                        (e["provider"], e["model"])
+                        for e in entries
+                        if e.get("privacy") != "owned"
+                    ]
+                    _, routed = targets(usage, effort)
+                    self.assertEqual([(t.provider, t.model) for t in routed], shared)
+                    with self.assertRaises(ValueError) as raised:
+                        targets(usage, effort, strict=True)
+                    self.assertEqual(
+                        str(raised.exception), "strict_privacy_unavailable"
+                    )
+            self.assertFalse(any(m.startswith("owned-vllm/") for m in pinned_models()))
+            with self.assertRaises(ValueError) as pinned:
+                targets("owned-vllm/owned-vllm-model", "none", pinned=True)
+            self.assertEqual(str(pinned.exception), "invalid_model")
+            self.assertIsNotNone(pinned_target("owned-vllm/owned-vllm-model"))
+
     def test_strict_mode_with_owned_target_but_no_server_is_refused(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "ATLAS_OWNED_VLLM_BASE_URL"}
         with patch.dict(os.environ, env, clear=True):
