@@ -629,6 +629,15 @@ class Runtime:
             return await exact_tools.execute(
                 call.name, call.arguments, timeout, self.home_zone
             )
+        from services.orchestrator import source_tools
+
+        if call.name in source_tools.SCHEMAS:
+            return await source_tools.execute(
+                call.name,
+                call.arguments,
+                timeout,
+                self.search_language or self.daily_lang,
+            )
         from services.orchestrator.visual_tools import (
             VISUAL_SCHEMAS,
             ImageProviderError,

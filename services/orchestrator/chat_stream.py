@@ -467,6 +467,14 @@ def response(
                     activity = str(event.get("tool", "answering"))
                     if activity in {"date_time", "unit_convert", "currency_convert"}:
                         activity = "calculator"
+                    if activity in {
+                        "encyclopedia",
+                        "news_headlines",
+                        "eu_statistics",
+                        "french_commune",
+                    }:
+                        # A specialized source is read like a page.
+                        activity = "web_fetch"
                     activity_urls = (
                         [str(url) for url in raw_urls]
                         if isinstance(raw_urls, list)

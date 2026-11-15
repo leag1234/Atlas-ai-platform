@@ -10,7 +10,8 @@ Levels, from the least to the most protective:
   ``enhanced_privacy_unavailable``; features whose content cannot be pseudonymised (audio,
   images, scanned pages, embeddings, web and place search) are refused with
   ``privacy_feature_refused``. Connectors stay allowed (the user chose that recipient), and
-  so does the currency rate feed (it carries no request content). The level is offered
+  so do downloads that carry no request content (the currency rate feed, the fixed news
+  feeds, whole public datasets searched locally). The level is offered
   only where the operator enables it (``ATLAS_PRIVACY_ENHANCED=1``).
 - ``strict``: content is processed only on owned or controlled machines (an
   Atlas-operated server, rented dedicated servers included, or the customer's own).
@@ -62,9 +63,14 @@ REFUSAL_HEADER = "X-Atlas-Privacy-Refusal"
 STATUS = 403
 
 # Capabilities whose content may leave Atlas at the Enhanced level without
-# pseudonymisation: connectors (a recipient the user chose, shown in the interface) and
-# the currency rate feed (the request carries no content of the conversation).
-ENHANCED_SHARED = frozenset({"connectors", "currency_rates"})
+# pseudonymisation: connectors (a recipient the user chose, shown in the interface), and
+# downloads that carry no content of the conversation: the currency rate feed, the fixed
+# news feeds and whole public datasets (French mayors and communes, searched locally).
+# Encyclopedia lookups and statistics queries carry the subject asked about: refused at
+# Enhanced, like web search.
+ENHANCED_SHARED = frozenset(
+    {"connectors", "currency_rates", "news_feeds", "public_datasets"}
+)
 # Text capabilities the pseudonymiser will cover; until it exists they use owned
 # targets only at the Enhanced level.
 PSEUDONYMISED = frozenset({"inference", "evaluation", "pseudonymisation"})
@@ -77,6 +83,9 @@ STRICT_EXCLUDED_TOOLS = frozenset(
         "web_fetch",
         "web_images",
         "currency_convert",
+        "news_headlines",
+        "eu_statistics",
+        "french_commune",
         "mcp_call",
         "switch_connector_group",
     }
@@ -86,6 +95,10 @@ TOOL_CAPABILITIES = {
     "web_fetch": "web_fetch",
     "web_images": "web_search",
     "currency_convert": "currency_rates",
+    "encyclopedia": "reference_lookup",
+    "news_headlines": "news_feeds",
+    "eu_statistics": "public_statistics",
+    "french_commune": "public_datasets",
     "mcp_call": "connectors",
     "switch_connector_group": "connectors",
 }
@@ -287,9 +300,20 @@ def tool_name(tool: object) -> str:
     return ""
 
 
+def local_encyclopedia() -> bool:
+    """Whether encyclopedia lookups read the Wikipedia mirror Atlas operates (kiwix)."""
+    return os.environ.get(
+        "ATLAS_ENCYCLOPEDIA_BACKEND", ""
+    ).strip().lower() == "local" and bool(os.environ.get("ATLAS_KIWIX_URL", "").strip())
+
+
 def tool_capability(name: str) -> str | None:
     if name.startswith("mcp_"):
         return "connectors"
+    if name == "encyclopedia" and local_encyclopedia():
+        # The local mirror is an Atlas-operated server: the lookup stays inside
+        # Atlas at every level (Wikidata facts are added only where allowed).
+        return None
     return TOOL_CAPABILITIES.get(name)
 
 

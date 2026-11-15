@@ -22,6 +22,8 @@ from pydantic import BaseModel, Field
 
 from services.orchestrator.cache import Cache
 from services.orchestrator.searxng import NOTICES, OUTCOMES, search_language
+from packages import privacy
+from services.orchestrator import news_feeds, source_tools
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call, Limits, Message, Query, run
@@ -190,6 +192,9 @@ class Passage(Source):
 
 class Passages(BaseModel):
     passages: list[Passage] = Field(max_length=8)
+
+
+SOURCE_TOOLS = frozenset(source_tools.SCHEMAS)
 
 
 def without_model_code_tools(tools: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -487,6 +492,15 @@ class ChatTools(Runtime):
                         for r in results
                         if isinstance(r, dict) and isinstance(r.get("link"), str)
                     ]
+            if call.name in SOURCE_TOOLS and isinstance(data, dict):
+                # D7: every URL a specialized source names was fetched for this
+                # turn (the page, the feed, the dataset), so it may be cited.
+                urls = source_tools.cited_urls(data)
+                self.item.retrieved_urls.extend(urls)
+                if (check := grounding.current.get()) is not None:
+                    check.collect(
+                        {"text": json.dumps(data, ensure_ascii=False)[:20_000]}
+                    )
             if call.name in {"web_search", "web_fetch"} and "error" not in output:
                 self.item.retrieved_urls.extend(urls)
                 if (check := grounding.current.get()) is not None:
@@ -1621,6 +1635,36 @@ async def _process(
     )
     if exact_subjects:
         model.tools.extend(exact_tools.declarations(exact_subjects))
+    # Specialized public sources (encyclopedia, news feeds, Eurostat, French
+    # communes) before a general search (T8). Offered on the turns about them
+    # only: other turns keep their recorded requests; web_search stays offered.
+    source_families = source_tools.relevant(
+        request.user_text, earlier[-1] if earlier else ""
+    )
+    if source_families:
+        model.tools.extend(source_tools.declarations(source_families))
+    if (
+        "news" in source_families
+        and [call.id for call in discovery] == ["required-current"]
+        and privacy.allows(news_feeds.CAPABILITY)
+    ):
+        # A required current-events search reads the news feeds first; the
+        # model may still search the web after reading them.
+        discovery = (
+            Call(
+                "required-news",
+                "news_headlines",
+                json.dumps(
+                    {
+                        "topic": request.user_text[:200],
+                        "language": search_language(
+                            request.conversation_messages, request.ui_locale
+                        ),
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
     model.observing = True
     # The final image replaces the model prose for this route.  Holding its output
     # prevents an incomplete Mermaid or ASCII diagram reaching an SSE client first.
