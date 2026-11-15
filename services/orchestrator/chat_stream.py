@@ -17,7 +17,7 @@ from packages.file_intent import produces_file, requests_file_delivery
 from packages.limits import LimitError
 from packages.user_errors import ui_failure
 
-from services.orchestrator.chat_schema import ChatRequest
+from services.orchestrator.chat_schema import ChatRequest, markdown_tail_viable
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
@@ -28,6 +28,7 @@ from services.orchestrator.cancellation import (
     register as register_cancellation,
     unregister as unregister_cancellation,
 )
+from packages import linear_scan
 from packages.configuration import (
     configuration_names,
     guest_configuration_failure,
@@ -43,6 +44,35 @@ from packages.configuration import (
 ANSWER_SILENCE_SECONDS = 15.0
 # Atlas's own link to an attached PDF, sent before the model is called.
 OPENER_PHASE = "attachment_opener"
+
+
+# Unfinished Markdown at the end of the streamed text. A URL tail holds no
+# space, ")", "]" or ">", so it is searched after the last of them only; a
+# failed "[" or "![" reads to its first "]", which every later opening before it
+# reaches too (not retried). The former searches retried every opening to the
+# end of the text: quadratic on each chunk.
+_TRAILING_URL = re.compile(r"(?<!\w)h(?:t(?:t(?:ps?(?::[^\s)\]>]*)?)?)?)?$")
+_LAST_STOP = re.compile(r"[\s)\]>](?=[^\s)\]>]*$)")
+_TRAILING_LINK = linear_scan.Scan(
+    re.compile(r"\[[^\]]*$|\[[^\]]*\](?:\([^)]*)?$"),
+    re.compile(r"\["),
+    linear_scan.attempted,
+    markdown_tail_viable(target=True, bare=True),
+)
+_TRAILING_IMAGE = linear_scan.Scan(
+    re.compile(r"!$|!\[[^\]]*$|!\[[^\]]*\](?:\([^)]*|\[[^\]]*)?$"),
+    re.compile(r"!\[|!$"),
+    linear_scan.attempted,
+    markdown_tail_viable(target=True, bracket=True, bare=True),
+)
+
+
+def _after_last_stop(text: str) -> int:
+    """Where a URL tail can start: after the last stop, a final newline aside
+    ("$" matches before it)."""
+    end = len(text) - 1 if text.endswith("\n") else len(text)
+    stop = _LAST_STOP.search(text, 0, end)
+    return stop.end() if stop else 0
 
 
 def response(
@@ -590,17 +620,13 @@ def response(
                 suffix = re.search(r"(?<!\w)[`\[]?[a-f0-9]{1,64}$|[`\[]$", pending)
                 end = suffix.start() if suffix else len(pending)
                 # A URL may cross provider chunks, including the scheme itself.
-                trailing = re.search(
-                    r"(?<!\w)h(?:t(?:t(?:ps?(?::[^\s)\]>]*)?)?)?)?$", pending
-                )
+                trailing = _TRAILING_URL.search(pending, _after_last_stop(pending))
                 if trailing:
                     end = min(end, trailing.start())
-                link = re.search(r"\[[^\]]*$|\[[^\]]*\](?:\([^)]*)?$", pending)
+                link = _TRAILING_LINK.search(pending)
                 if link:
                     end = min(end, link.start())
-                image_link = re.search(
-                    r"!$|!\[[^\]]*$|!\[[^\]]*\](?:\([^)]*|\[[^\]]*)?$", pending
-                )
+                image_link = _TRAILING_IMAGE.search(pending)
                 if image_link:
                     end = min(end, image_link.start())
                 # Web citations can start without a scheme and continue after a

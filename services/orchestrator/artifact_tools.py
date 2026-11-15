@@ -14,6 +14,7 @@ from urllib.parse import quote, unquote
 from services.orchestrator import artifact_store
 from services.orchestrator.artifact_store import ArtifactError
 from services.orchestrator.loop import Message
+from packages import linear_scan
 
 
 FOOTER_LABELS: dict[str, dict[str, str]] = {
@@ -169,9 +170,18 @@ def current_artifact_message(
     )
 
 
+# Markdown images; openings that share a failed label or target run are not
+# retried ("![a](" repeated before one far ")" was quadratic).
+_IMAGES = linear_scan.Scan(
+    re.compile(r"!\[[^\]]*\]\([^)]*\)"),
+    re.compile(r"!\["),
+    linear_scan.bracket_link_failure(r"\]", r")", empty_label=True),
+)
+
+
 def clean_summary(summary: str) -> str:
-    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", summary)
-    text = re.sub(r"<[^>]*>", "", text)
+    text = _IMAGES.sub("", summary)
+    text = linear_scan.TAGS.sub("", text)
     return text.strip()
 
 

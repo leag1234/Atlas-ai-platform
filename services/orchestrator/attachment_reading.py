@@ -1,5 +1,6 @@
 """Read announced sandbox files before generation using fixed repository code."""
 
+from packages import attached_blocks
 import asyncio
 import base64
 from decimal import Decimal
@@ -249,9 +250,7 @@ def announced_paths(request: ChatRequest) -> list[str]:
     parser = FileTags()
     for message in request.messages:
         if message.role == "user":
-            for block in re.findall(
-                r"<attached_files>(.*?)</attached_files>", message.text, re.S
-            ):
+            for block in attached_blocks.CONTENTS.findall(message.text):
                 parser.feed(block)
     return parser.paths
 

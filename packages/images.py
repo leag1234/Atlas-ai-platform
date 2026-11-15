@@ -2,8 +2,9 @@
 
 import base64
 import io
-import re
 from typing import Annotated, Literal, Self
+
+from packages import linear_scan
 
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -104,9 +105,7 @@ class VisionMessage(BaseModel):
             if isinstance(content, str):
                 value = {
                     **value,
-                    "content": re.sub(
-                        r"data:image/[^,\s]+,[A-Za-z0-9+/=]+", "[IMAGE]", content
-                    ),
+                    "content": linear_scan.DATA_IMAGES.sub("[IMAGE]", content),
                 }
         return value
 

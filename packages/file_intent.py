@@ -3,13 +3,15 @@
 import re
 import unicodedata
 
+from packages import attached_blocks
+
 
 def requests_file_delivery(text: str, *, include_images: bool = True) -> bool:
     """Check requested output separately from the legacy budget eligibility."""
     # Upload normalization appends input filenames to the user text. Their
     # extensions must not turn "write a summary" into a request for a PDF.
     text = re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M)
-    text = re.sub(r"<attached_files>.*?</attached_files>", "", text, flags=re.S)
+    text = attached_blocks.BLOCKS.sub("", text)
     if _requests_inline_chat_answer(text) and not _requests_download(text):
         return False
     return produces_file(text, include_images=include_images)

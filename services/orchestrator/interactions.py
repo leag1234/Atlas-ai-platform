@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from packages import linear_scan
+
 
 @dataclass
 class Interaction:
@@ -77,7 +79,7 @@ def write_interaction(item: Interaction, directory: Path) -> None:
 
     def scrub(value: object) -> object:
         if isinstance(value, str):
-            value = re.sub(r"data:image/[^,\s]+,[A-Za-z0-9+/=]+", "[IMAGE]", value)
+            value = linear_scan.DATA_IMAGES.sub("[IMAGE]", value)
             for secret in secrets:
                 value = value.replace(secret, "[REDACTED]")
             return re.sub(

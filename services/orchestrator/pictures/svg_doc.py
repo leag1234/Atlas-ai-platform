@@ -17,6 +17,8 @@ import numpy.typing as npt
 
 from services.orchestrator.pictures import render
 
+from packages import linear_scan
+
 NS = "http://www.w3.org/2000/svg"
 Q = "{%s}" % NS
 ET.register_namespace("", NS)
@@ -48,14 +50,20 @@ def tag(node: ET.Element) -> str:
 
 
 # ---------------------------------------------------------------- transforms
+# A transform function; without a ")" after an opening none later closes.
+_TRANSFORMS = linear_scan.Scan(
+    re.compile(r"(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)"),
+    re.compile(r"(?:matrix|translate|scale|rotate|skewX|skewY)\s*\("),
+    linear_scan.up_to(r"\)"),
+)
+
+
 def parse_transform(text: str | None) -> Matrix:
     """The 3x3 matrix of an SVG transform attribute (identity when empty)."""
     m = np.eye(3)
     if not text:
         return m
-    for name, args in re.findall(
-        r"(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)", text
-    ):
+    for name, args in (match.groups() for match in _TRANSFORMS.finditer(text)):
         v = [float(x) for x in _NUMBER.findall(args)]
         t = np.eye(3)
         if name == "matrix" and len(v) == 6:

@@ -2,6 +2,10 @@
 
 import re
 
+# The atomic group keeps the first " holds ": when a later one would fit, the
+# first fits as well. Retrying each one was cubic on a repeated phrase.
+HELD_HAND = re.compile(r"(?>(.+?) holds )(.+?)'s (?:own )?hand(?: with his hand)?")
+
 
 def verification_note(verification: object, language: str) -> str:
     if not isinstance(verification, dict):
@@ -60,9 +64,7 @@ def _localized_detail(key: str, detail: str, language: str) -> str:
         # Count constraints retain the source-language wording in the gateway
         # scene, so disclose them verbatim rather than treating them as English.
         return detail.strip()
-    match = re.fullmatch(
-        r"(.+?) holds (.+?)'s (?:own )?hand(?: with his hand)?", detail
-    )
+    match = HELD_HAND.fullmatch(detail)
     if not match:
         # Count details preserve the requester's own wording in the gateway scene.
         # Other scene fields are English, so only expose them as-is for English.

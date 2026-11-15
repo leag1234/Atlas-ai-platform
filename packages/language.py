@@ -9,6 +9,7 @@ import re
 from collections.abc import Sequence
 import unicodedata
 
+
 from typing import Protocol
 
 
@@ -21,6 +22,38 @@ class LanguageMessage(Protocol):
 
 
 LANGUAGES = ("fr", "de", "es", "it", "en")
+
+
+_CLOSER = {"`": "`", '"': '"', "«": "»"}
+_QUOTE_OPENING = re.compile('[`"«]')
+
+
+def without_quoted(text: str) -> str:
+    """The text without `code`, "quoted" and «quoted» spans, like the former
+    re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", text), in one pass: an opening
+    without a closer after it is kept, and so is every later one of its kind
+    (the expression reread the rest of the text from each: quadratic). This
+    module is copied alone into the chat UI image, so it uses no other package.
+    """
+    parts: list[str] = []
+    last = position = 0
+    closed: set[str] = set()
+    while (found := _QUOTE_OPENING.search(text, position)) is not None:
+        position = found.start()
+        char = found[0]
+        closer = _CLOSER[char]
+        if char in closed:
+            position += 1
+            continue
+        end = text.find(closer, position + 1)
+        if end < 0:
+            closed.add(char)
+            position += 1
+            continue
+        parts.append(text[last:position])
+        last = position = end + 1
+    parts.append(text[last:])
+    return "".join(parts)
 
 
 def status_language(messages: Sequence[LanguageMessage], locale: object) -> str:
@@ -97,7 +130,7 @@ def requested_language(text: str) -> str | None:
         for c in unicodedata.normalize("NFKD", user_prose(text).lower())
         if not unicodedata.combining(c)
     )
-    normalized = re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", normalized)
+    normalized = without_quoted(normalized)
     names = {
         "en": "english|anglais|englisch|ingles|inglese",
         "fr": "french|francais|franzosisch|frances|francese",

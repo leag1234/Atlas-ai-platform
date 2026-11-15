@@ -20,6 +20,7 @@ from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Message, Result
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.appearance import (
+    SVG_ELEMENTS,
     drawing_subject,
     extract_svg,
     mechanical_copy,
@@ -314,9 +315,7 @@ async def finish_simple_drawing(
         item.images = [{"reference": reference, "kind": "drawing_svg"}]
         if spatial:
             # Preserve the model's legend outside the validated passive SVG.
-            legend = re.sub(
-                r"<svg\b[^>]*>.*?</svg\s*>", "", result.text, flags=re.I | re.S
-            ).strip()
+            legend = SVG_ELEMENTS.sub("", result.text).strip()
             legend = re.sub(r"```(?:svg|xml)?", "", legend).strip()
             intro = legend
         item.reponse = (

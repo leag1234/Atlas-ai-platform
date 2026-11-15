@@ -58,6 +58,7 @@ CI_STEPS = {
 }
 # Test modules run on every change: repository-wide rules that any diff can break.
 ALWAYS_TESTS = (
+    "test_regex_lint",
     "test_repository_hygiene",
     "test_strict_privacy_egress",
     "test_voice_ui",

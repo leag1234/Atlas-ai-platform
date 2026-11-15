@@ -4,12 +4,33 @@ import re
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlsplit
 
+from packages import linear_scan
 from services.orchestrator.source_truth import urls
 
 MONEY = re.compile(
     r"(?:(?P<before>€|\$|£|EUR\b|USD\b|GBP\b)\s*(?P<left>\d[\d .,\u00a0]*\d|\d)"
     r"|(?P<right>\d[\d .,\u00a0]*\d|\d)\s*(?P<after>€|\$|£|EUR\b|USD\b|GBP\b))",
     re.I,
+)
+# An amount before its currency is read from the first digit of a run of digits,
+# spaces and separators to the run's last digit, whatever digit it starts at: a
+# failed attempt fails from every digit of its run, and retrying each one was
+# quadratic on long digit runs (number tables in fetched pages).
+_NUMBER_RUN = re.compile(r"[\d .,\u00a0]*+")
+
+
+def _money_failure(text: str) -> linear_scan.FailedUntil:
+    def failed_until(found: re.Match[str]) -> int:
+        if not found[0].isdigit():
+            return found.end()
+        run = _NUMBER_RUN.match(text, found.start())
+        return run.end() if run else found.end()
+
+    return failed_until
+
+
+MONEYS = linear_scan.Scan(
+    MONEY, re.compile(r"€|\$|£|EUR\b|USD\b|GBP\b|\d", re.I), _money_failure
 )
 
 
@@ -31,10 +52,10 @@ def verified_prices(
     snippets: dict[str, str] | None = None,
 ) -> str:
     evidence = {
-        url: {amount(m) for m in MONEY.finditer(page)} for url, page in pages.items()
+        url: {amount(m) for m in MONEYS.finditer(page)} for url, page in pages.items()
     }
     snippet_evidence = {
-        url: {amount(m) for m in MONEY.finditer(text)}
+        url: {amount(m) for m in MONEYS.finditer(text)}
         for url, text in (snippets or {}).items()
     }
     labels = {
@@ -75,5 +96,5 @@ def verified_prices(
                 + "]"
             )
 
-        lines.append(MONEY.sub(replace, line))
+        lines.append(MONEYS.sub(replace, line))
     return "\n".join(lines)

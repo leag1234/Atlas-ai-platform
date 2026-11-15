@@ -17,6 +17,7 @@ SVG, never refused.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import json
 import logging
 import os
@@ -31,6 +32,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from packages.artifact_intent import Intent
+from packages import linear_scan
 from packages.model_json import object_content, unique_object
 from packages.work_intent import manages_machine
 
@@ -214,11 +216,58 @@ _HISTORY_TURNS = 4
 _HISTORY_CHARACTERS = 500
 _MESSAGE_CHARACTERS = 2000
 _ARTIFACT = re.compile(r"/api/atlas/artifacts/[0-9a-f]{32}/versions/\d+/open")
-_FILE = re.compile(
+_FILE_PATTERN = re.compile(
     r"/deliverables/|https?://\S+\.(docx|xlsx|pptx|pdf|csv|md)\b|\.(docx|xlsx|pptx|pdf|csv)\)",
     re.I,
 )
-_PICTURE = re.compile(r"<svg\b|!\[[^\]]*\]\(", re.I)
+_FILE_EXTENSION = re.compile(r"\.(?:docx|xlsx|pptx|pdf|csv|md)\b", re.I)
+_SPACE = re.compile(r"\s")
+
+
+def _file_viable(text: str) -> linear_scan.Viable:
+    """A URL needs a file extension later in its run of non-spaces: looked up in
+    one list of extension positions, not reread from every "http" of the run."""
+    extensions = [match.start() for match in _FILE_EXTENSION.finditer(text)]
+    run_end = linear_scan.RunEnd(text, _SPACE)
+
+    def viable(found: re.Match[str]) -> bool:
+        if not found[0].lower().startswith("http"):
+            return True
+        index = bisect.bisect_left(extensions, found.end() + 1)
+        return index < len(extensions) and extensions[index] < run_end(found.end())
+
+    return viable
+
+
+_FILE = linear_scan.Scan(
+    _FILE_PATTERN,
+    re.compile(r"/deliverables/|https?://|\.(?:docx|xlsx|pptx|pdf|csv)\)", re.I),
+    linear_scan.attempted,
+    _file_viable,
+)
+
+
+def _picture_viable(text: str) -> linear_scan.Viable:
+    """An image "![" needs its label's "]" followed by "(": the label end is
+    looked up once per run, not rescanned from every later "![" of the run."""
+    label_end = linear_scan.RunEnd(text, re.compile(r"\]"))
+
+    def viable(found: re.Match[str]) -> bool:
+        if found[0] != "![":
+            return True
+        close = label_end(found.end())
+        return text[close : close + 2] == "]("
+
+    return viable
+
+
+# A drawing or a Markdown image.
+_PICTURE = linear_scan.Scan(
+    re.compile(r"<svg\b|!\[[^\]]*\]\(", re.I),
+    re.compile(r"<svg\b|!\[", re.I),
+    linear_scan.attempted,
+    _picture_viable,
+)
 
 
 def _delivered(text: str) -> str:

@@ -9,6 +9,8 @@ question that merely contains "test", "code" or "application" stays in the chat.
 
 from __future__ import annotations
 
+from packages import attached_blocks
+
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
@@ -16,9 +18,7 @@ from typing import Literal
 
 Reason = Literal["run", "file", "build", "remote", "follow_up"]
 
-_ATTACHMENT_TAG = re.compile(
-    r"\[attachment: [^\n]*\]|<attached_files>.*?</attached_files>", re.S | re.I
-)
+_ATTACHMENT_TAG = attached_blocks.TAGS
 
 # "How do I…", "explain…", "what is…": a question about the subject, not a request to do it.
 _HOW_TO = re.compile(
