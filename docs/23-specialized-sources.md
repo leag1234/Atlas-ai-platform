@@ -90,9 +90,15 @@ The encyclopedia has two backends:
 - a local mirror: a [kiwix-serve](https://github.com/kiwix/kiwix-tools) instance run by
   Atlas (`ATLAS_KIWIX_URL`) with one ZIM book per language (`ATLAS_KIWIX_BOOKS`, for
   example `fr=wikipedia_fr_all_mini_2026-11,en=wikipedia_en_all_mini_2026-09`). The
-  article is found with kiwix-serve's full-text search and its introduction read from
-  the local page; the answer cites the public Wikipedia address and names the local
-  book, whose date (`copy_date`, from the book name) gives the copy's age. Structured
+  article is found with kiwix-serve's title index first (`/suggest`), then its
+  full-text search when no title equals the query: on the `de` mini book, full-text
+  search for "Albert Einstein" ranked schools and prizes named after him and did not
+  return his article in its first ten results. The title as written comes first
+  (`München` before the redirect `Munchen`), disambiguation pages and categories
+  last, and the mirror's redirect entries (`Einstein`, `Goethe`) are followed to the
+  article. Its introduction is read from the local page; the answer cites the public
+  Wikipedia address and names the local book, whose date (`copy_date`, from the book
+  name) gives the copy's age. Structured
   Wikidata facts are added from the Wikidata API when the request's level allows it,
   and left out otherwise.
 

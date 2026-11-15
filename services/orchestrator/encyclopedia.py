@@ -427,15 +427,17 @@ async def _local(
                 f"no article of the local Wikipedia matches {query[:80]!r}",
             )
         hits = kiwix.best(hits, query)
-        page = await kiwix.article(hits[0].path, timeout)
+        path, page = await kiwix.article(hits[0].path, timeout)
     except kiwix.KiwixError as exc:
         raise SourceError(exc.code, exc.detail) from None
+    # A redirect entry (a short name) leads to the article: cite and name that one.
+    title = hits[0].title if path == hits[0].path else kiwix.path_title(path)
     dated = kiwix.book_date(book)
     copy = f"the local copy {book}" + (f", dated {dated}" if dated else "")
     result: dict[str, object] = {
         "source": f"Wikipedia ({edition}), local copy {book}",
-        "title": hits[0].title,
-        "url": kiwix.public_url(edition, hits[0].path),
+        "title": title,
+        "url": kiwix.public_url(edition, path),
         "local_book": book,
         "copy_date": dated or None,
         "summary": kiwix.introduction(page, SUMMARY_CHARS),
@@ -462,7 +464,7 @@ async def _local(
                 result,
                 list(dict.fromkeys([edition, language])),
                 timeout,
-                site_title=(f"{edition}wiki", hits[0].title),
+                site_title=(f"{edition}wiki", title),
             )
         except SourceError as exc:
             # The local summary stands on its own; say why the facts are missing.

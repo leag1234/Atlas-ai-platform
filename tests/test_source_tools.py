@@ -603,11 +603,33 @@ NO_KIWIX_ENV = {
 ENCYCLOPEDIA_TOOL = {"type": "function", "function": {"name": "encyclopedia"}}
 
 
-async def kiwix_ok(path: str, timeout: float) -> bytes:
-    return KIWIX_SEARCH if path.startswith("/search?") else KIWIX_PAGE
+# Title suggestions: the article itself, and a redirect entry (short name).
+KIWIX_SUGGEST = json.dumps(
+    [
+        {
+            "value": "Lucienne Varnier (homonymie)",
+            "label": "x",
+            "kind": "path",
+            "path": "Lucienne_Varnier_(homonymie)",
+        },
+        {
+            "value": "Lucienne Varnier",
+            "label": "x",
+            "kind": "path",
+            "path": "Lucienne_Varnier",
+        },
+        {"value": "containing 'lucienne varnier'...", "kind": "pattern"},
+    ]
+).encode()
 
 
-async def kiwix_unused(path: str, timeout: float) -> bytes:
+async def kiwix_ok(path: str, timeout: float) -> tuple[str, bytes]:
+    if path.startswith("/suggest?"):
+        return path, KIWIX_SUGGEST
+    return path, KIWIX_SEARCH if path.startswith("/search?") else KIWIX_PAGE
+
+
+async def kiwix_unused(path: str, timeout: float) -> tuple[str, bytes]:
     raise AssertionError("the local copy is not read on this path")
 
 
@@ -658,6 +680,113 @@ class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
             # A malformed book name is ignored, never put in a URL.
             self.assertEqual(kiwix.books(), {"fr": "wikipedia_fr_test_mini_2026-10"})
 
+    def test_title_index_and_ranking(self) -> None:
+        from services.orchestrator import kiwix
+
+        book = "wikipedia_fr_test_mini_2026-10"
+        hits = kiwix.parse_suggestions(KIWIX_SUGGEST, book)
+        # Only article paths; a "containing ..." full-text suggestion is not one.
+        self.assertEqual(
+            [hit.path for hit in hits],
+            [
+                f"/content/{book}/Lucienne_Varnier_(homonymie)",
+                f"/content/{book}/Lucienne_Varnier",
+            ],
+        )
+
+        def hit(title: str) -> kiwix.Hit:
+            return kiwix.Hit(title, "/content/b/" + title.replace(" ", "_"), "")
+
+        ranked = kiwix.best(
+            [
+                hit("Lycée Lucienne-Varnier"),
+                hit("Catégorie:Lucienne Varnier"),
+                hit("Lucienne Varnier (homonymie)"),
+                hit("Lucienne-Varnier-Schule"),
+                hit("Lucienne Varnier"),
+                hit("Lucienne Varnier"),
+            ],
+            "Lucienne Varnier",
+        )
+        self.assertEqual(
+            [h.title for h in ranked],
+            [
+                "Lucienne Varnier",
+                "Lucienne-Varnier-Schule",
+                "Lycée Lucienne-Varnier",
+                "Lucienne Varnier (homonymie)",
+                "Catégorie:Lucienne Varnier",
+            ],
+        )
+        # The title as written beats one equal only without its punctuation.
+        self.assertEqual(
+            kiwix.best([hit(".bellerive"), hit("Bellerive")], "bellerive")[0].title,
+            "Bellerive",
+        )
+        self.assertEqual(
+            kiwix.best([hit("Kervalec"), hit("Kervalëc")], "kervalëc")[0].title,
+            "Kervalëc",
+        )
+        self.assertEqual(
+            kiwix.path_title(f"/content/{book}/Lucienne_Varnier"), "Lucienne Varnier"
+        )
+
+    def test_only_the_mirrors_own_redirects_are_followed(self) -> None:
+        from services.orchestrator import kiwix
+
+        base = "http://127.0.0.1:8390"
+        self.assertEqual(
+            kiwix._redirect(base + "/content/b/Lucienne_Varnier", base),
+            "/content/b/Lucienne_Varnier",
+        )
+        self.assertEqual(
+            kiwix._redirect("/content/b/Lucienne_Varnier", base),
+            "/content/b/Lucienne_Varnier",
+        )
+        for location in (
+            "https://fr.wikipedia.org/wiki/Lucienne_Varnier",
+            "http://127.0.0.1:8391/content/b/X",
+            base + "/catalog/v2/entries",
+            base + "/content/b/../../etc",
+            "",
+        ):
+            with self.subTest(location=location):
+                with self.assertRaises(kiwix.KiwixError):
+                    kiwix._redirect(location, base)
+
+    async def test_full_text_search_when_no_title_matches(self) -> None:
+        from services.orchestrator import kiwix
+
+        asked: list[str] = []
+
+        async def mirror(path: str, timeout: float) -> tuple[str, bytes]:
+            asked.append(path.split("?")[0])
+            if path.startswith("/suggest?"):
+                return path, b"[]"
+            if path.startswith("/search?"):
+                return path, KIWIX_SEARCH
+            # The hit is a redirect entry: the page answers on its target's path.
+            assert path.endswith("/Lucienne_Varnier"), path
+            final = "/content/wikipedia_fr_test_mini_2026-10/Lucienne_Varnier_(ing%C3%A9nieure)"
+            return final, KIWIX_PAGE
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", mirror),
+            AtLevel(privacy.STRICT),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier ingenieure"}', 5, "fr"
+            )
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(asked[:2], ["/suggest", "/search"])
+        self.assertEqual(data["title"], "Lucienne Varnier (ingénieure)")
+        self.assertEqual(
+            data["url"],
+            "https://fr.wikipedia.org/wiki/Lucienne_Varnier_(ing%C3%A9nieure)",
+        )
+
     async def test_strict_reads_the_local_copy_only(self) -> None:
         from services.orchestrator import kiwix
 
@@ -665,7 +794,7 @@ class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
         try:
             with (
                 patch.dict("os.environ", KIWIX_ENV),
-                patch.object(kiwix, "_get", kiwix_ok),
+                patch.object(kiwix, "_fetch", kiwix_ok),
                 patch.object(reference_fetch, "get", third_party_unused),
             ):
                 declaration = {"type": "function", "function": {"name": "encyclopedia"}}
@@ -745,7 +874,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", kiwix_ok),
+            patch.object(kiwix, "_fetch", kiwix_ok),
             patch.object(reference_fetch, "get", third_party_unused),
             AtLevel(privacy.ENHANCED),
         ):
@@ -766,7 +895,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(level=level):
                 with (
                     patch.dict("os.environ", NO_KIWIX_ENV),
-                    patch.object(kiwix, "_get", kiwix_unused),
+                    patch.object(kiwix, "_fetch", kiwix_unused),
                     patch.object(reference_fetch, "get", third_party_unused),
                     AtLevel(level),
                 ):
@@ -787,7 +916,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", kiwix_unused),
+            patch.object(kiwix, "_fetch", kiwix_unused),
             patch.object(reference_fetch, "get", fake_get(routes)),
         ):
             result = await source_tools.execute(
@@ -804,7 +933,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", kiwix_ok),
+            patch.object(kiwix, "_fetch", kiwix_ok),
             patch.object(reference_fetch, "get", live_down),
         ):
             result = await source_tools.execute(
@@ -830,7 +959,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", kiwix_ok),
+            patch.object(kiwix, "_fetch", kiwix_ok),
             patch.object(reference_fetch, "get", slow),
             patch.object(encyclopedia, "LOCAL_RESERVE", 3.5),
         ):
@@ -850,7 +979,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
         empty = json.dumps({"query": {"pages": []}}).encode()
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", kiwix_unused),
+            patch.object(kiwix, "_fetch", kiwix_unused),
             patch.object(reference_fetch, "get", fake_get({"query": empty})),
         ):
             result = await source_tools.execute(
@@ -861,12 +990,12 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
     async def test_both_down_keeps_the_live_error(self) -> None:
         from services.orchestrator import kiwix
 
-        async def mirror_down(path: str, timeout: float) -> bytes:
+        async def mirror_down(path: str, timeout: float) -> tuple[str, bytes]:
             raise kiwix.KiwixError("local_mirror_unavailable", "unreachable")
 
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", mirror_down),
+            patch.object(kiwix, "_fetch", mirror_down),
             patch.object(reference_fetch, "get", live_down),
         ):
             result = await source_tools.execute(
@@ -881,7 +1010,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
         forced = {**KIWIX_ENV, "ATLAS_ENCYCLOPEDIA_BACKEND": "local"}
         with (
             patch.dict("os.environ", forced),
-            patch.object(kiwix, "_get", kiwix_ok),
+            patch.object(kiwix, "_fetch", kiwix_ok),
             patch.object(reference_fetch, "get", live_down),
         ):
             result = await source_tools.execute(
@@ -898,7 +1027,7 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch.dict("os.environ", KIWIX_ENV),
-            patch.object(kiwix, "_get", kiwix_ok),
+            patch.object(kiwix, "_fetch", kiwix_ok),
             patch.object(reference_fetch, "get", live_down),
         ):
             item = Interaction()
