@@ -451,22 +451,26 @@ class PrivacyTests(unittest.IsolatedAsyncioTestCase):
 class ChatContractTests(unittest.IsolatedAsyncioTestCase):
     def test_relevance_in_realistic_phrasings(self) -> None:
         cases = {
-            "quand est né jacques chirac ?": {"encyclopedia"},
-            "c koi la date de naissance de Simone Veil": {"encyclopedia"},
-            "when was Airbus founded and who are its founders": {"encyclopedia"},
-            "Wann wurde die Firma Siemens gegründet?": {"encyclopedia"},
-            "en quelle annee a ete fonde le club de foot de Nantes": {"encyclopedia"},
-            "qui est le maire de quimper en ce moment ?": {"commune", "encyclopedia"},
-            "who is the mayor of Lisbon": {"commune", "encyclopedia"},
-            "combien d'habitants a Brest": {"commune", "statistics"},
-            "quel est le taux de chomage en france": {"statistics"},
+            "quand est né jules marchetti ?": {"encyclopedia"},
+            "c koi la date de naissance de Odile Brancourt": {"encyclopedia"},
+            "when was Velmora Industries founded and who are its founders": {
+                "encyclopedia"
+            },
+            "Wann wurde die Firma Kestrel Werke gegründet?": {"encyclopedia"},
+            "en quelle annee a ete fonde le club de foot de Saint-Bellerive": {
+                "encyclopedia"
+            },
+            "qui est le maire de bellerive en ce moment ?": {"commune", "encyclopedia"},
+            "who is the mayor of Port Aldous": {"commune", "encyclopedia"},
+            "combien d'habitants a Kervalec": {"commune", "statistics"},
+            "quel est le taux de chomage en arvenie": {"statistics"},
             "inflation in the euro area last month?": {"statistics"},
-            "Wie hoch ist die Staatsverschuldung von Italien?": {"statistics"},
-            "le smic en espagne c'est combien": {"statistics"},
-            "quoi de neuf en ukraine aujourd'hui ?": {"news"},
+            "Wie hoch ist die Staatsverschuldung von Arvenland?": {"statistics"},
+            "le smic en valdorie c'est combien": {"statistics"},
+            "quoi de neuf en valdorie aujourd'hui ?": {"news"},
             "c'est quoi les dernieres actus sur la reforme des retraites": {"news"},
-            "any news about the strikes in belgium?": {"news"},
-            "¿Qué noticias hay hoy de Valencia?": {"news"},
+            "any news about the strikes in Ostmark?": {"news"},
+            "¿Qué noticias hay hoy de Montserral?": {"news"},
         }
         for question, expected in cases.items():
             with self.subTest(question=question):
@@ -489,7 +493,7 @@ class ChatContractTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(question=question):
                 self.assertEqual(source_tools.relevant(question), frozenset())
         self.assertEqual(
-            source_tools.relevant("et à Lorient ?", "qui est le maire de Quimper"),
+            source_tools.relevant("et à Kervalec ?", "qui est le maire de Bellerive"),
             frozenset({"commune", "encyclopedia"}),
         )
 
