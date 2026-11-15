@@ -149,14 +149,71 @@ class GroundingTests(unittest.TestCase):
         checked = checker.check(answer, "When did Northbridge open?", "pt")
         self.assertIn(WORDING["contradicted"]["en"], checked)
 
-    def test_missing_entity_notice_is_prepended_once(self) -> None:
+    def test_missing_entity_notice_follows_the_claim_once(self) -> None:
         checker = Grounding()
         checker.add("Southbridge opened in 1924.")
-        answer = "Northbridge opened in 1924."
+        answer = "Northbridge opened in 1924. Northbridge has 3 lanes."
         checked = checker.check(answer, "When did Northbridge open?", "en")
-        self.assertTrue(checked.startswith(WORDING["missing"]["en"]))
         self.assertEqual(checked.count(WORDING["missing"]["en"]), 1)
-        self.assertIn(answer, checked)
+        self.assertTrue(checked.startswith("Northbridge opened in 1924."))
+        self.assertLess(checked.index("1924."), checked.index(WORDING["missing"]["en"]))
+        self.assertLess(
+            checked.index(WORDING["missing"]["en"]), checked.index("3 lanes")
+        )
+
+    def test_no_note_without_the_claim_it_qualifies(self) -> None:
+        # Staging 2026-11-15: an English line on top of French answers, attached to
+        # nothing. A missing entity the answer makes no precise claim about, or a
+        # source about another entity, gives no note at all, in any language.
+        cases = (
+            (
+                "fr",
+                "Le château de Valombre est-il ouvert cet après-midi ?",
+                "Depuis votre position, comptez 22 minutes en voiture. Le site est ouvert l’après-midi.",
+                "Le musée de Corvelle ouvre à 14 h le dimanche.",
+            ),
+            (
+                "en",
+                "Is Valombre Castle open this afternoon?",
+                "From your position it takes 22 minutes by car. The site opens in the afternoon.",
+                "The Corvelle museum opens at 2 pm on Sundays.",
+            ),
+        )
+        for language, question, answer, evidence in cases:
+            with self.subTest(language=language):
+                checker = Grounding()
+                checker.add(evidence)
+                checked = checker.check(answer, question, language)
+                self.assertEqual(checked, answer)
+                for table in WORDING.values():
+                    for text in table.values():
+                        self.assertNotIn(text.split("{")[0], checked)
+
+    def test_notes_are_in_the_answer_language_next_to_their_claim(self) -> None:
+        for language, question, answer, source in (
+            (
+                "fr",
+                "Quand le pont de Northbridge a-t-il ouvert ?",
+                "Le pont de Northbridge a ouvert en 1925. Il enjambe la rivière.",
+                "Le pont de Northbridge a ouvert en 1924.",
+            ),
+            (
+                "en",
+                "When did the Northbridge bridge open?",
+                "The Northbridge bridge opened in 1925. It spans the river.",
+                "The Northbridge bridge opened in 1924.",
+            ),
+        ):
+            with self.subTest(language=language):
+                checker = Grounding()
+                checker.add(source)
+                checked = checker.check(answer, question, language)
+                note = checked.index(WORDING["contradicted"][language])
+                self.assertLess(checked.index("1925"), note)
+                self.assertLess(note, checked.index("Il" if language == "fr" else "It"))
+                other = "en" if language == "fr" else "fr"
+                self.assertNotIn(WORDING["contradicted"][other], checked)
+                self.assertNotIn(WORDING["missing"]["en"], checked)
 
     def test_entity_mentioned_by_a_source_gets_no_missing_notice(self) -> None:
         checker = Grounding()
@@ -198,7 +255,9 @@ class GroundingTests(unittest.TestCase):
         checked = checker.check(
             "Orlbrix was founded in 1802.", "Who founded Orlbrix in Valmorel?", "en"
         )
-        self.assertTrue(checked.startswith(WORDING["missing"]["en"]))
+        self.assertEqual(
+            checked, "Orlbrix was founded in 1802.\n\n" + WORDING["missing"]["en"]
+        )
 
     def test_contradiction_note_follows_its_own_claim(self) -> None:
         checker = Grounding()
@@ -312,6 +371,59 @@ class DeliveryTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(item.reponse, "The Valmorel bridge opened in 1931.")
         self.assertIn({"delta": {"content": item.reponse}}, events)
+
+    async def test_a_service_rewrite_of_the_question_changes_no_note(self) -> None:
+        # The location route appends an English position note to a French
+        # question; the check reads the person's own question and language.
+        events: list[dict[str, object]] = []
+
+        async def sink(event: dict[str, object]) -> None:
+            events.append(event)
+
+        answer = (
+            "Depuis votre position, comptez 22 minutes en voiture jusqu’au château."
+        )
+
+        async def generate(request: ChatRequest, item: Interaction) -> None:
+            from services.orchestrator.location_route import (
+                position_note,
+                replace_question,
+            )
+
+            replace_question(
+                request,
+                request.user_text
+                + "\n\n"
+                + position_note("Place de la Gare, 14000 Caen, France", 20, False),
+            )
+            if (check := grounding.current.get()) is not None:
+                check.collect(
+                    {"results": [{"snippet": "Horaires du château, 10 h à 18 h."}]}
+                )
+            item.reponse, item.state = answer, "done"
+
+        request = ChatRequest.model_validate(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Combien de temps pour aller au château de Valombre depuis chez moi ?",
+                    }
+                ],
+                "ui_locale": "fr",
+            }
+        )
+        item = Interaction()
+        token = sink_context.set(sink)
+        try:
+            with patch(
+                "services.orchestrator.chat_pipeline._process_request",
+                side_effect=generate,
+            ):
+                await process(request, item)
+        finally:
+            sink_context.reset(token)
+        self.assertEqual(item.reponse, answer)
 
     async def test_other_turns_keep_streaming(self) -> None:
         item, events = await self.run_turn(

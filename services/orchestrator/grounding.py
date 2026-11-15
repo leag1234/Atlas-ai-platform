@@ -394,18 +394,33 @@ class Grounding:
             + candidates[date]
         )
 
-    def entity_missing(self, question: str) -> bool:
-        """True when some entity named by the question appears in no fetched passage."""
+    def missing_entities(self, question: str) -> list[str]:
+        """Entities named by the question that appear in no fetched passage."""
         passages = [normalized(passage) for passage in self.evidence]
-        return any(
-            not any(
+        return [
+            entity
+            for entity in question_entities(question)
+            if not any(
                 re.search(r"\b" + re.escape(entity) + r"\b", passage)
                 for passage in passages
             )
-            for entity in question_entities(question)
-        )
+        ]
+
+    def entity_missing(self, question: str) -> bool:
+        """True when some entity named by the question appears in no fetched passage."""
+        return bool(self.missing_entities(question))
 
     def check(self, answer: str, question: str, language: str) -> str:
+        """Notes follow the claim they qualify, in ``language``; never a loose line.
+
+        Staging 2026-11-15: "No retrieved source mentions this entity." was put on
+        top of French answers, in English and attached to nothing, because the
+        question it read had been rewritten by the service (a position note). A
+        note now exists only next to a precise claim of the answer that it is
+        about: a contradiction quotes a source sentence naming the claim's own
+        entities, a missing-entity note follows the first claim naming that
+        entity. Without such a claim there is no note.
+        """
         started = time.monotonic()
         if CREATIVE.search(normalized(question)) or (
             small_talk(question) and not self.evidence
@@ -413,40 +428,58 @@ class Grounding:
             return answer
         claims = extract_claims(answer)
         self.claims_checked = len(claims)
-        for claim in reversed(claims):
+        notes: dict[int, list[str]] = {}
+        missing = self.missing_entities(question) if self.evidence else []
+        for index, claim in enumerate(claims):
             source_sentence = self.contradicted(claim)
-            if not source_sentence:
+            if source_sentence:
+                self.claims_changed += 1
+                notes.setdefault(index, []).append(
+                    wording("contradicted", language) + "\n> " + source_sentence
+                )
                 continue
-            self.claims_changed += 1
-            note = (
-                "\n\n"
-                + wording("contradicted", language)
-                + "\n> "
-                + source_sentence
-                + "\n\n"
-            )
-            answer = answer[: claim.end] + note + answer[claim.end :].lstrip()
-        answer = answer.rstrip()
-        if self.evidence and self.entity_missing(question):
-            answer = wording("missing", language) + "\n\n" + answer
+            plain = normalized(claim.text)
+            named = [
+                entity
+                for entity in missing
+                if re.search(r"\b" + re.escape(entity) + r"\b", plain)
+            ]
+            if named:
+                missing = [entity for entity in missing if entity not in named]
+                notes.setdefault(index, []).append(wording("missing", language))
+        correction = ""
         if premise(question):
             self.premises_checked = 1
             correction = self.correction(question, language)
-            if correction:
-                answer = correction + "\n\n" + answer
-            else:
-                assumed = Claim(
-                    0, len(question), question, tuple(YEAR.findall(question))
+            assumed = Claim(0, len(question), question, tuple(YEAR.findall(question)))
+            if not correction and assumed.values and self.contradicted(assumed):
+                # The premise note follows the answer's own claim repeating it.
+                repeating = next(
+                    (
+                        index
+                        for index, claim in enumerate(claims)
+                        if all(
+                            re.search(
+                                r"\b" + re.escape(value) + r"\b",
+                                normalized(claim.text),
+                            )
+                            for value in assumed.values
+                        )
+                    ),
+                    None,
                 )
-                if (
-                    assumed.values
-                    and all(
-                        re.search(r"\b" + re.escape(value) + r"\b", normalized(answer))
-                        for value in assumed.values
+                if repeating is not None:
+                    notes.setdefault(repeating, []).append(
+                        wording("premise_unsupported", language)
                     )
-                    and self.contradicted(assumed)
-                ):
-                    answer = wording("premise_unsupported", language) + "\n\n" + answer
+        for index in sorted(notes, reverse=True):
+            claim = claims[index]
+            note = "\n\n" + "\n\n".join(notes[index]) + "\n\n"
+            answer = answer[: claim.end] + note + answer[claim.end :].lstrip()
+        answer = answer.rstrip()
+        if correction:
+            # Self-contained: it names the source's date and the question's own.
+            answer = correction + "\n\n" + answer
         self.latency_ms += (time.monotonic() - started) * 1000
         return answer
 

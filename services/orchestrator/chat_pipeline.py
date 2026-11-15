@@ -768,6 +768,15 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         else None
     )
     checking = grounding.current.set(check)
+    # The person's own question and language, before any service rewrite of the
+    # last message (location_route adds a position note in English): grounding
+    # notes are checked against what was asked and written in the answer language.
+    asked = request.user_text
+    asked_language = (
+        conversation_language(request.conversation_messages, request.ui_locale)
+        if check is not None
+        else ""
+    )
     # Number provenance stage 0: counts computed numbers without evidence; log only.
     provenance = number_provenance.Provenance() if number_provenance.enabled() else None
     tracking = number_provenance.current.set(provenance)
@@ -815,11 +824,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         and item.state == "done"
         and item.task_type not in {"work", "nearby"}
     ):
-        item.reponse = check.check(
-            item.reponse,
-            request.user_text,
-            conversation_language(request.conversation_messages, request.ui_locale),
-        )
+        item.reponse = check.check(item.reponse, asked, asked_language)
     if provenance is not None and item.state == "done" and item.task_type != "work":
         number_provenance.record(
             provenance,
