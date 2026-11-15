@@ -39,6 +39,7 @@ body.
 """
 
 import os
+import re
 from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
 from typing import Any, Literal
@@ -300,19 +301,26 @@ def tool_name(tool: object) -> str:
     return ""
 
 
+_KIWIX_BOOK = re.compile(r"[a-z]{2,3}=[A-Za-z0-9_.-]{1,120}")
+
+
 def local_encyclopedia() -> bool:
-    """Whether encyclopedia lookups read the Wikipedia mirror Atlas operates (kiwix)."""
-    return os.environ.get(
-        "ATLAS_ENCYCLOPEDIA_BACKEND", ""
-    ).strip().lower() == "local" and bool(os.environ.get("ATLAS_KIWIX_URL", "").strip())
+    """Whether the Wikipedia mirror Atlas operates (kiwix) is configured: a URL and one
+    well-formed book at least (the settings services.orchestrator.kiwix.configured
+    reads). A level that refuses third-party lookups then reads the mirror."""
+    return bool(os.environ.get("ATLAS_KIWIX_URL", "").strip()) and any(
+        _KIWIX_BOOK.fullmatch(part.strip())
+        for part in os.environ.get("ATLAS_KIWIX_BOOKS", "").split(",")
+    )
 
 
 def tool_capability(name: str) -> str | None:
     if name.startswith("mcp_"):
         return "connectors"
     if name == "encyclopedia" and local_encyclopedia():
-        # The local mirror is an Atlas-operated server: the lookup stays inside
-        # Atlas at every level (Wikidata facts are added only where allowed).
+        # The local mirror is an Atlas-operated server: at a level that refuses the
+        # live API the lookup reads it and stays inside Atlas (Wikidata facts are
+        # added only where allowed). Without a mirror, the tool is not offered there.
         return None
     return TOOL_CAPABILITIES.get(name)
 

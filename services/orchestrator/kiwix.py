@@ -15,11 +15,13 @@ result also names the local book, whose date says how fresh the copy is.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import unicodedata
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
+from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import quote, unquote, urlencode, urlsplit
 
@@ -30,6 +32,8 @@ from services.orchestrator.web import USER_AGENT, http_timeout
 TIMEOUT = 6.0
 MAX_BYTES = 3_000_000
 _BOOK = re.compile(r"[A-Za-z0-9_.-]{1,120}")
+# Characters kept as they are in an article path (Wikipedia's own URL style).
+_SAFE = "_(),'-.:"
 
 
 class KiwixError(ValueError):
@@ -46,6 +50,7 @@ class Hit:
 
 
 def configured() -> bool:
+    # packages.privacy.local_encyclopedia reads the same settings (tested together).
     return bool(os.environ.get("ATLAS_KIWIX_URL", "").strip()) and bool(books())
 
 
@@ -58,6 +63,12 @@ def books() -> dict[str, str]:
     return found
 
 
+def book_date(book: str) -> str:
+    """The copy's month from the book name (``wikipedia_fr_all_mini_2026-11``), or ''."""
+    match = re.search(r"_(\d{4}-\d{2})$", book)
+    return match.group(1) if match else ""
+
+
 def _base() -> str:
     base = os.environ.get("ATLAS_KIWIX_URL", "").strip().rstrip("/")
     if urlsplit(base).scheme not in {"http", "https"}:
@@ -67,30 +78,59 @@ def _base() -> str:
     return base
 
 
-async def _get(path: str, timeout: float) -> bytes:
+_REDIRECTS = {301, 302, 303, 307, 308}
+_HOPS = 3
+
+
+def _redirect(location: str, base: str) -> str:
+    """The /content/ path a redirect of the mirror points to (a ZIM redirect entry:
+    ``Einstein`` to ``Albert_Einstein``); anything else is refused."""
+    target, origin = urlsplit(location), urlsplit(base)
+    same = not target.netloc or (
+        target.scheme == origin.scheme and target.netloc == origin.netloc
+    )
+    prefix = origin.path.rstrip("/")
+    path = target.path[len(prefix) :] if target.path.startswith(prefix) else ""
+    if not same or not path.startswith("/content/") or ".." in path:
+        raise KiwixError("local_mirror_unavailable", "unexpected redirect")
+    return path
+
+
+async def _fetch(path: str, timeout: float) -> tuple[str, bytes]:
+    """The final path and body of a GET, following the mirror's own redirects."""
     limit = max(0.5, min(timeout, TIMEOUT))
+    base = _base()
     try:
         async with aiohttp.ClientSession(
             trust_env=False,
             headers={"User-Agent": USER_AGENT},
             timeout=http_timeout(limit, TIMEOUT),
         ) as session:
-            async with session.get(_base() + path, allow_redirects=False) as response:
-                if response.status == 404:
-                    raise KiwixError("local_article_missing", "not in the local copy")
-                if response.status != 200:
-                    raise KiwixError(
-                        "local_mirror_unavailable",
-                        f"the local Wikipedia answered HTTP {response.status}",
-                    )
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in response.content.iter_chunked(65_536):
-                    chunks.append(chunk)
-                    size += len(chunk)
-                    if size > MAX_BYTES:
-                        raise KiwixError("local_mirror_unavailable", "page too large")
-                return b"".join(chunks)
+            for _ in range(_HOPS + 1):
+                async with session.get(base + path, allow_redirects=False) as response:
+                    if response.status in _REDIRECTS:
+                        path = _redirect(response.headers.get("Location", ""), base)
+                        continue
+                    if response.status == 404:
+                        raise KiwixError(
+                            "local_article_missing", "not in the local copy"
+                        )
+                    if response.status != 200:
+                        raise KiwixError(
+                            "local_mirror_unavailable",
+                            f"the local Wikipedia answered HTTP {response.status}",
+                        )
+                    chunks: list[bytes] = []
+                    size = 0
+                    async for chunk in response.content.iter_chunked(65_536):
+                        chunks.append(chunk)
+                        size += len(chunk)
+                        if size > MAX_BYTES:
+                            raise KiwixError(
+                                "local_mirror_unavailable", "page too large"
+                            )
+                    return path, b"".join(chunks)
+            raise KiwixError("local_mirror_unavailable", "too many redirects")
     except KiwixError:
         raise
     except (aiohttp.ClientError, TimeoutError, OSError):
@@ -127,20 +167,72 @@ def _folded(text: str) -> str:
     return " ".join(re.findall(r"\w+", plain))
 
 
+# Title markers of pages that are not an entity's article: disambiguation pages of the
+# five editions, and namespaces (categories, portals) the full-text index also holds.
+_LIST_PAGE = re.compile(
+    r"\((?:homonymie|disambiguation|begriffsklarung|desambiguacion|disambigua)\)\s*$"
+)
+_NAMESPACE = re.compile(
+    r"^(?:categor(?:y|ie|ia)|kategorie|portal|portail|wikipedia|aide|help|hilfe|"
+    r"ayuda|aiuto|modele|template|vorlage|plantilla)\s*:"
+)
+
+
+def _plain_title(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(c for c in folded if not unicodedata.combining(c)).strip()
+
+
 def best(hits: list[Hit], query: str) -> list[Hit]:
     """Hits with the article titled as the query first: full-text ranking can put a
-    page that mentions the name many times (a museum named after a person) first."""
+    page that mentions the name many times (a museum named after a person, a school)
+    first. The title as written (case aside) beats a title equal only once accents
+    and punctuation are dropped (``Berlin`` before ``.berlin``, ``München`` before
+    ``Munchen``). Disambiguation pages and namespaces (categories) come last."""
     wanted = _folded(query)
 
-    def rank(hit: Hit) -> int:
-        title = _folded(hit.title)
-        if title == wanted:
-            return 0
-        if title.startswith(wanted + " ") or wanted.startswith(title + " "):
-            return 1
-        return 2
+    def as_written(text: str) -> str:
+        return " ".join(unicodedata.normalize("NFC", text).casefold().split())
 
-    return sorted(hits, key=rank)
+    written = as_written(query)
+
+    def rank(hit: Hit) -> tuple[int, int]:
+        plain = _plain_title(hit.title)
+        listing = int(bool(_LIST_PAGE.search(plain) or _NAMESPACE.match(plain)))
+        title = _folded(hit.title)
+        if as_written(hit.title) == written:
+            return listing, 0
+        if title == wanted:
+            return listing, 1
+        if title.startswith(wanted + " ") or wanted.startswith(title + " "):
+            return listing, 2
+        return listing, 3
+
+    seen: set[str] = set()
+    unique = []
+    for hit in hits:
+        if hit.path not in seen:
+            seen.add(hit.path)
+            unique.append(hit)
+    return sorted(unique, key=rank)
+
+
+def parse_suggestions(body: bytes, book: str) -> list[Hit]:
+    """kiwix-serve's title suggestions (JSON), as hits on the book's article paths."""
+    try:
+        rows = json.loads(body)
+    except ValueError:
+        raise KiwixError(
+            "local_mirror_unavailable", "unreadable suggestion answer"
+        ) from None
+    hits = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict) or row.get("kind") != "path":
+            continue
+        title, path = unescape(str(row.get("value", ""))), str(row.get("path", ""))
+        if title and path and ".." not in path and not path.startswith("/"):
+            hits.append(Hit(title, f"/content/{book}/" + quote(path, safe=_SAFE), ""))
+    return hits
 
 
 class _Intro(HTMLParser):
@@ -186,33 +278,53 @@ def introduction(html_body: bytes, limit: int) -> str:
     return text[:limit]
 
 
+def _path_name(path: str) -> str:
+    parts = path.split("/", 3)
+    name = parts[3] if len(parts) > 3 else ""
+    if name.startswith("A/"):
+        name = name[2:]
+    return unquote(name.split("#", 1)[0])
+
+
+def path_title(path: str) -> str:
+    """The article title of a local path (/content/<book>/Albert_Einstein)."""
+    return _path_name(path).replace("_", " ")
+
+
 def public_url(language: str, path: str) -> str:
     """The public Wikipedia address of a local article path (/content/<book>/[A/]Title)."""
-    parts = path.split("/", 3)
-    title = parts[3] if len(parts) > 3 else ""
-    if title.startswith("A/"):
-        title = title[2:]
-    title = unquote(title.split("#", 1)[0])
     return f"https://{language}.wikipedia.org/wiki/" + quote(
-        title.replace(" ", "_"), safe="_(),'-.:"
+        _path_name(path).replace(" ", "_"), safe=_SAFE
     )
 
 
 async def search(query: str, language: str, timeout: float) -> tuple[str, list[Hit]]:
+    """Title suggestions first (the title index: "Albert Einstein" finds the article
+    even when full-text ranking puts schools and prizes named after him first), then
+    full-text hits when no title matches the query exactly."""
     book = books().get(language)
     if book is None:
         raise KiwixError("local_language_missing", f"no local Wikipedia in {language}")
-    body = await _get(
+    _, body = await _fetch(
+        "/suggest?" + urlencode({"content": book, "term": query, "count": "10"}),
+        timeout,
+    )
+    hits = parse_suggestions(body, book)
+    wanted = _folded(query)
+    if any(_folded(hit.title) == wanted for hit in hits):
+        return book, hits
+    _, body = await _fetch(
         "/search?"
         + urlencode(
             {"books.name": book, "pattern": query, "format": "xml", "pageLength": "10"}
         ),
         timeout,
     )
-    return book, parse_search(body)
+    return book, hits + parse_search(body)
 
 
-async def article(path: str, timeout: float) -> bytes:
+async def article(path: str, timeout: float) -> tuple[str, bytes]:
+    """The article's final path (after a redirect entry) and its page."""
     if not path.startswith("/content/") or ".." in path:
         raise KiwixError("local_article_missing", "unexpected article path")
-    return await _get(path, timeout)
+    return await _fetch(path, timeout)

@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from collections.abc import Callable
+from contextvars import Token
 from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
@@ -588,11 +589,70 @@ KIWIX_PAGE = """<html><body><table class="infobox"><tr><td>Naissance 1911</td></
 <p>Lucienne Varnier, née le 3 mars 1911 dans le 5<sup>e</sup> arrondissement de
 Bellerive<sup class="reference">[1]</sup>, est une ingénieure.</p>
 <p>Elle dirige le port.</p></body></html>""".encode()
+# A configured mirror, no forced backend: the request's level picks the source.
 KIWIX_ENV = {
-    "ATLAS_ENCYCLOPEDIA_BACKEND": "local",
+    "ATLAS_ENCYCLOPEDIA_BACKEND": "",
     "ATLAS_KIWIX_URL": "http://127.0.0.1:1",
     "ATLAS_KIWIX_BOOKS": "fr=wikipedia_fr_test_mini_2026-10,en=bad/../book",
 }
+NO_KIWIX_ENV = {
+    "ATLAS_ENCYCLOPEDIA_BACKEND": "",
+    "ATLAS_KIWIX_URL": "",
+    "ATLAS_KIWIX_BOOKS": "",
+}
+ENCYCLOPEDIA_TOOL = {"type": "function", "function": {"name": "encyclopedia"}}
+
+
+# Title suggestions: the article itself, and a redirect entry (short name).
+KIWIX_SUGGEST = json.dumps(
+    [
+        {
+            "value": "Lucienne Varnier (homonymie)",
+            "label": "x",
+            "kind": "path",
+            "path": "Lucienne_Varnier_(homonymie)",
+        },
+        {
+            "value": "Lucienne Varnier",
+            "label": "x",
+            "kind": "path",
+            "path": "Lucienne_Varnier",
+        },
+        {"value": "containing 'lucienne varnier'...", "kind": "pattern"},
+    ]
+).encode()
+
+
+async def kiwix_ok(path: str, timeout: float) -> tuple[str, bytes]:
+    if path.startswith("/suggest?"):
+        return path, KIWIX_SUGGEST
+    return path, KIWIX_SEARCH if path.startswith("/search?") else KIWIX_PAGE
+
+
+async def kiwix_unused(path: str, timeout: float) -> tuple[str, bytes]:
+    raise AssertionError("the local copy is not read on this path")
+
+
+async def third_party_unused(*args: object, **kwargs: object) -> bytes:
+    raise AssertionError("no third-party request on this path")
+
+
+async def live_down(*args: object, **kwargs: object) -> bytes:
+    raise SourceError("source_unavailable", "fr.wikipedia.org answered HTTP 503")
+
+
+class AtLevel:
+    """Run a block at a privacy level (standard needs no change)."""
+
+    def __init__(self, level: str) -> None:
+        self.level = level
+        self.token: Token[privacy.Level] | None = None
+
+    def __enter__(self) -> None:
+        self.token = privacy.elevate(self.level)
+
+    def __exit__(self, *exc: object) -> None:
+        privacy.reset(self.token)
 
 
 class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
@@ -620,21 +680,122 @@ class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
             # A malformed book name is ignored, never put in a URL.
             self.assertEqual(kiwix.books(), {"fr": "wikipedia_fr_test_mini_2026-10"})
 
-    async def test_strict_reads_the_local_copy_only(self) -> None:
+    def test_title_index_and_ranking(self) -> None:
         from services.orchestrator import kiwix
 
-        async def local(path: str, timeout: float) -> bytes:
-            return KIWIX_SEARCH if path.startswith("/search?") else KIWIX_PAGE
+        book = "wikipedia_fr_test_mini_2026-10"
+        hits = kiwix.parse_suggestions(KIWIX_SUGGEST, book)
+        # Only article paths; a "containing ..." full-text suggestion is not one.
+        self.assertEqual(
+            [hit.path for hit in hits],
+            [
+                f"/content/{book}/Lucienne_Varnier_(homonymie)",
+                f"/content/{book}/Lucienne_Varnier",
+            ],
+        )
 
-        async def third_party(*args: object, **kwargs: object) -> bytes:
-            raise AssertionError("no third-party request in strict mode")
+        def hit(title: str) -> kiwix.Hit:
+            return kiwix.Hit(title, "/content/b/" + title.replace(" ", "_"), "")
+
+        ranked = kiwix.best(
+            [
+                hit("Lycée Lucienne-Varnier"),
+                hit("Catégorie:Lucienne Varnier"),
+                hit("Lucienne Varnier (homonymie)"),
+                hit("Lucienne-Varnier-Schule"),
+                hit("Lucienne Varnier"),
+                hit("Lucienne Varnier"),
+            ],
+            "Lucienne Varnier",
+        )
+        self.assertEqual(
+            [h.title for h in ranked],
+            [
+                "Lucienne Varnier",
+                "Lucienne-Varnier-Schule",
+                "Lycée Lucienne-Varnier",
+                "Lucienne Varnier (homonymie)",
+                "Catégorie:Lucienne Varnier",
+            ],
+        )
+        # The title as written beats one equal only without its punctuation.
+        self.assertEqual(
+            kiwix.best([hit(".bellerive"), hit("Bellerive")], "bellerive")[0].title,
+            "Bellerive",
+        )
+        self.assertEqual(
+            kiwix.best([hit("Kervalec"), hit("Kervalëc")], "kervalëc")[0].title,
+            "Kervalëc",
+        )
+        self.assertEqual(
+            kiwix.path_title(f"/content/{book}/Lucienne_Varnier"), "Lucienne Varnier"
+        )
+
+    def test_only_the_mirrors_own_redirects_are_followed(self) -> None:
+        from services.orchestrator import kiwix
+
+        base = "http://127.0.0.1:8390"
+        self.assertEqual(
+            kiwix._redirect(base + "/content/b/Lucienne_Varnier", base),
+            "/content/b/Lucienne_Varnier",
+        )
+        self.assertEqual(
+            kiwix._redirect("/content/b/Lucienne_Varnier", base),
+            "/content/b/Lucienne_Varnier",
+        )
+        for location in (
+            "https://fr.wikipedia.org/wiki/Lucienne_Varnier",
+            "http://127.0.0.1:8391/content/b/X",
+            base + "/catalog/v2/entries",
+            base + "/content/b/../../etc",
+            "",
+        ):
+            with self.subTest(location=location):
+                with self.assertRaises(kiwix.KiwixError):
+                    kiwix._redirect(location, base)
+
+    async def test_full_text_search_when_no_title_matches(self) -> None:
+        from services.orchestrator import kiwix
+
+        asked: list[str] = []
+
+        async def mirror(path: str, timeout: float) -> tuple[str, bytes]:
+            asked.append(path.split("?")[0])
+            if path.startswith("/suggest?"):
+                return path, b"[]"
+            if path.startswith("/search?"):
+                return path, KIWIX_SEARCH
+            # The hit is a redirect entry: the page answers on its target's path.
+            assert path.endswith("/Lucienne_Varnier"), path
+            final = "/content/wikipedia_fr_test_mini_2026-10/Lucienne_Varnier_(ing%C3%A9nieure)"
+            return final, KIWIX_PAGE
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", mirror),
+            AtLevel(privacy.STRICT),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier ingenieure"}', 5, "fr"
+            )
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(asked[:2], ["/suggest", "/search"])
+        self.assertEqual(data["title"], "Lucienne Varnier (ingénieure)")
+        self.assertEqual(
+            data["url"],
+            "https://fr.wikipedia.org/wiki/Lucienne_Varnier_(ing%C3%A9nieure)",
+        )
+
+    async def test_strict_reads_the_local_copy_only(self) -> None:
+        from services.orchestrator import kiwix
 
         token = privacy.elevate(privacy.STRICT)
         try:
             with (
                 patch.dict("os.environ", KIWIX_ENV),
-                patch.object(kiwix, "_get", local),
-                patch.object(reference_fetch, "get", third_party),
+                patch.object(kiwix, "_fetch", kiwix_ok),
+                patch.object(reference_fetch, "get", third_party_unused),
             ):
                 declaration = {"type": "function", "function": {"name": "encyclopedia"}}
                 self.assertEqual(privacy.allowed_tools([declaration]), [declaration])
@@ -660,6 +821,225 @@ class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
                 "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
             )
         self.assertEqual(result["error"], "local_mirror_unavailable")
+
+
+class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
+    """The encyclopedia picks the live API or the local copy per request level."""
+
+    def test_plan_and_offer_per_level_and_setup(self) -> None:
+        forced = {**KIWIX_ENV, "ATLAS_ENCYCLOPEDIA_BACKEND": "local"}
+        cases = (
+            # (environment, level, plan, offered)
+            (KIWIX_ENV, privacy.STANDARD, "live_then_local", True),
+            (KIWIX_ENV, privacy.ENHANCED, "local", True),
+            (KIWIX_ENV, privacy.STRICT, "local", True),
+            (NO_KIWIX_ENV, privacy.STANDARD, "live", True),
+            (NO_KIWIX_ENV, privacy.ENHANCED, "refused", False),
+            (NO_KIWIX_ENV, privacy.STRICT, "refused", False),
+            (forced, privacy.STANDARD, "local", True),
+            (forced, privacy.STRICT, "local", True),
+        )
+        for environment, level, plan, offered in cases:
+            with self.subTest(env=environment, level=level):
+                with patch.dict("os.environ", environment), AtLevel(level):
+                    self.assertEqual(encyclopedia.source_plan(), plan)
+                    self.assertEqual(
+                        privacy.allowed_tools([ENCYCLOPEDIA_TOOL]),
+                        [ENCYCLOPEDIA_TOOL] if offered else [],
+                    )
+
+    def test_privacy_and_client_agree_on_the_setup(self) -> None:
+        from services.orchestrator import kiwix
+
+        for url, books in (
+            ("http://127.0.0.1:1", "fr=wikipedia_fr_test_mini_2026-10"),
+            ("http://127.0.0.1:1", ""),
+            ("http://127.0.0.1:1", "en=bad/../book"),
+            ("http://127.0.0.1:1", " de=wikipedia_de_test_mini_2026-10 ,x"),
+            ("", "fr=wikipedia_fr_test_mini_2026-10"),
+        ):
+            with self.subTest(url=url, books=books):
+                environment = {"ATLAS_KIWIX_URL": url, "ATLAS_KIWIX_BOOKS": books}
+                with patch.dict("os.environ", environment):
+                    self.assertEqual(privacy.local_encyclopedia(), kiwix.configured())
+
+    def test_book_date(self) -> None:
+        from services.orchestrator import kiwix
+
+        self.assertEqual(kiwix.book_date("wikipedia_fr_all_mini_2026-11"), "2026-11")
+        self.assertEqual(kiwix.book_date("custom_book"), "")
+
+    async def test_enhanced_reads_the_local_copy_only(self) -> None:
+        from services.orchestrator import kiwix
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", kiwix_ok),
+            patch.object(reference_fetch, "get", third_party_unused),
+            AtLevel(privacy.ENHANCED),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(data["url"], "https://fr.wikipedia.org/wiki/Lucienne_Varnier")
+        self.assertEqual(data["copy_date"], "2026-10")
+        self.assertNotIn("facts", data)
+        self.assertNotIn("live_error", data)
+
+    async def test_strict_and_enhanced_without_mirror_are_refused(self) -> None:
+        from services.orchestrator import kiwix
+
+        for level in (privacy.STRICT, privacy.ENHANCED):
+            with self.subTest(level=level):
+                with (
+                    patch.dict("os.environ", NO_KIWIX_ENV),
+                    patch.object(kiwix, "_fetch", kiwix_unused),
+                    patch.object(reference_fetch, "get", third_party_unused),
+                    AtLevel(level),
+                ):
+                    result = await source_tools.execute(
+                        "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+                    )
+                self.assertEqual(
+                    result["error"], privacy.refusal_code("reference_lookup", level)
+                )
+
+    async def test_standard_keeps_the_live_api_when_a_mirror_exists(self) -> None:
+        from services.orchestrator import kiwix
+
+        routes = {
+            "query": json.dumps(SEARCH).encode(),
+            "Q901": json.dumps(ENTITY).encode(),
+            "Q910": json.dumps(LABELS).encode(),
+        }
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", kiwix_unused),
+            patch.object(reference_fetch, "get", fake_get(routes)),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(data["source"], "Wikipedia (fr) and Wikidata")
+        self.assertNotIn("local_book", data)
+        self.assertIn("facts", data)
+
+    async def test_standard_falls_back_to_the_dated_copy(self) -> None:
+        from services.orchestrator import kiwix
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", kiwix_ok),
+            patch.object(reference_fetch, "get", live_down),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(data["url"], "https://fr.wikipedia.org/wiki/Lucienne_Varnier")
+        self.assertEqual(data["live_error"], "source_unavailable")
+        self.assertEqual(data["copy_date"], "2026-10")
+        self.assertIn("dated 2026-10", str(data["note"]))
+        self.assertIn("did not answer", str(data["note"]))
+        self.assertNotIn("facts", data)
+
+    async def test_standard_falls_back_when_the_live_api_is_too_slow(self) -> None:
+        import asyncio
+
+        from services.orchestrator import kiwix
+
+        async def slow(*args: object, **kwargs: object) -> bytes:
+            await asyncio.sleep(30)
+            return b"{}"
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", kiwix_ok),
+            patch.object(reference_fetch, "get", slow),
+            patch.object(encyclopedia, "LOCAL_RESERVE", 3.5),
+        ):
+            started = asyncio.get_running_loop().time()
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 4, "fr"
+            )
+            elapsed = asyncio.get_running_loop().time() - started
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(data["live_error"], "source_unavailable")
+        self.assertLess(elapsed, 3)
+
+    async def test_no_article_is_an_answer_not_an_outage(self) -> None:
+        from services.orchestrator import kiwix
+
+        empty = json.dumps({"query": {"pages": []}}).encode()
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", kiwix_unused),
+            patch.object(reference_fetch, "get", fake_get({"query": empty})),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        self.assertEqual(result["error"], "no_encyclopedia_entry")
+
+    async def test_both_down_keeps_the_live_error(self) -> None:
+        from services.orchestrator import kiwix
+
+        async def mirror_down(path: str, timeout: float) -> tuple[str, bytes]:
+            raise kiwix.KiwixError("local_mirror_unavailable", "unreachable")
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", mirror_down),
+            patch.object(reference_fetch, "get", live_down),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        self.assertEqual(result["error"], "source_unavailable")
+        self.assertIn("local_mirror_unavailable", str(result["message"]))
+
+    async def test_forced_local_keeps_the_summary_when_wikidata_fails(self) -> None:
+        from services.orchestrator import kiwix
+
+        forced = {**KIWIX_ENV, "ATLAS_ENCYCLOPEDIA_BACKEND": "local"}
+        with (
+            patch.dict("os.environ", forced),
+            patch.object(kiwix, "_fetch", kiwix_ok),
+            patch.object(reference_fetch, "get", live_down),
+        ):
+            result = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        data = result["data"]
+        assert isinstance(data, dict)
+        self.assertEqual(data["local_book"], "wikipedia_fr_test_mini_2026-10")
+        self.assertNotIn("live_error", data)
+        self.assertIn("could not be fetched (source_unavailable)", str(data["note"]))
+
+    async def test_chat_records_the_public_address_of_a_fallback(self) -> None:
+        from services.orchestrator import kiwix
+
+        with (
+            patch.dict("os.environ", KIWIX_ENV),
+            patch.object(kiwix, "_fetch", kiwix_ok),
+            patch.object(reference_fetch, "get", live_down),
+        ):
+            item = Interaction()
+            tools = ChatTools(item)
+            tools.search_language = "fr"
+            result = await tools.execute(
+                Call("1", "encyclopedia", '{"query": "Lucienne Varnier"}'), 5
+            )
+        self.assertIn("data", result)
+        self.assertEqual(
+            item.retrieved_urls, ["https://fr.wikipedia.org/wiki/Lucienne_Varnier"]
+        )
 
 
 if __name__ == "__main__":
