@@ -115,8 +115,11 @@ def prepare_api(
     def one(target: Target) -> Plan:
         prices = ServerlessPolicy(allow_unpriced=True).prices
         price = prices[target.model]
-        endpoint = str(
-            provider_settings.preset_value(target.provider, "base_url")
+        # An owned target has no fixed address: the operator configures its server.
+        endpoint = (
+            provider_settings.owned_endpoint()
+            if target.privacy == "owned"
+            else str(provider_settings.preset_value(target.provider, "base_url"))
         ).rstrip("/")
         payload = dict(
             body,

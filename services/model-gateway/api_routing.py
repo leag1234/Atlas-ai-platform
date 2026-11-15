@@ -86,6 +86,9 @@ def pinned_models() -> list[str]:
             for item in entries:
                 if not isinstance(item, dict):
                     continue
+                # An owned target is listed only where an owned server is configured.
+                if item.get("privacy") == "owned" and not privacy.owned_available():
+                    continue
                 identifier = f"{item['provider']}/{item['model']}"
                 if identifier not in ids:
                     ids.append(identifier)
@@ -103,6 +106,10 @@ def targets(
             raise ValueError("invalid_model")
         if strict and target.privacy != "owned":
             raise privacy.refusal("inference")
+        if target.privacy == "owned" and not privacy.owned_available():
+            if strict:
+                raise privacy.refusal("inference")
+            raise ValueError("invalid_model")
         return usage, (target,)
     entries = config().get("usages", {}).get(usage, {}).get(effort)
     if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
@@ -119,8 +126,12 @@ def targets(
     )
     if strict:
         selected = tuple(target for target in selected if target.privacy == "owned")
-        if not selected:
+        if not selected or not privacy.owned_available():
             raise privacy.refusal("inference")
+    else:
+        # Owned servers serve owned-only requests. They may be powered off between uses
+        # (an on-demand GPU) and are never a fallback for shared traffic.
+        selected = tuple(target for target in selected if target.privacy != "owned")
     if not selected or effort not in EFFORTS:
         raise ValueError("invalid_model")
     return usage, selected
