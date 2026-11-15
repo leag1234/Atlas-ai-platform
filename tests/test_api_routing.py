@@ -145,6 +145,35 @@ class ApiRoutingTests(unittest.TestCase):
             self.assertEqual(str(pinned.exception), "invalid_model")
             self.assertIsNotNone(pinned_target("owned-vllm/owned-vllm-model"))
 
+    def test_strict_context_plans_owned_target_with_the_real_policy(self) -> None:
+        from packages import privacy
+        from packages.dev_request import Request
+        from serverless_support import environment
+
+        request = Request.model_validate(
+            {"messages": [{"role": "user", "content": "Bonjour"}], "max_tokens": 10}
+        )
+        env = environment() | {
+            "ATLAS_HIDDEN_PROFILES": "atlas-mistral",
+            "MISTRAL_API_KEY": "test-only",
+            "ATLAS_OWNED_VLLM_BASE_URL": OWNED_URL,
+            "ATLAS_OWNED_VLLM_API_KEY": "owned-test-only",
+        }
+        token = privacy.elevate("strict")
+        try:
+            with patch.dict(os.environ, env):
+                plan = dev_gateway.prepare_api(
+                    request, "atlas-chat", "key-test", strict=True
+                )
+        finally:
+            privacy.reset(token)
+        self.assertEqual(
+            (plan.endpoint, plan.model, plan.privacy),
+            (OWNED_URL, "owned-vllm-model", "owned"),
+        )
+        self.assertEqual(plan.api_key, "owned-test-only")
+        self.assertIsNone(plan.fallback)
+
     def test_strict_mode_with_owned_target_but_no_server_is_refused(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != "ATLAS_OWNED_VLLM_BASE_URL"}
         with patch.dict(os.environ, env, clear=True):
