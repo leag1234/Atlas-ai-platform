@@ -113,6 +113,9 @@ class AgentRequest(BaseModel):
     reasoning_ceiling: Literal["none", "low", "medium", "high"] | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    # The question asks for a developed answer (request router, in_depth): a
+    # model configured to reason thinks one level longer on this call.
+    in_depth: bool = Field(default=False, exclude_if=lambda value: value is False)
     # Set by the orchestrator once a reasoning recovery happened: the following
     # turns of the same answer must not restart the reasoning that already failed.
     reasoning_disabled: bool = Field(
@@ -198,6 +201,7 @@ class AgentRequest(BaseModel):
                 or self.budget_eur is not None
                 or self.reasoning_effort == "high"
                 or self.reasoning_ceiling is not None
+                or self.in_depth
                 or self.sampling_temperature is not None
                 or self.single_attempt
                 or self.vision_role != "vision"

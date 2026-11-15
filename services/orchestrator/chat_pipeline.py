@@ -1686,6 +1686,15 @@ async def _process(
         has_attachments=request.has_attachments,
         produces_files=produces_files,
     )
+    # A question the router judged to need a developed answer (why, how, an
+    # analysis, a comparison, a design) thinks one level longer on a model
+    # configured to reason; a bounded question keeps the configured level.
+    model.in_depth = bool(
+        answer_only
+        and routed is not None
+        and routed.in_depth
+        and routed.kind in ("answer", "research")
+    )
     model.cost_ceiling = cost_limit
     model.spent = image_cost
     item.reasoning_effort = request.reasoning_effort

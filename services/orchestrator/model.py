@@ -55,6 +55,11 @@ class Configuration(BaseModel):
     # First-attempt output room the gateway may add for configured reasoning.
     reasoning_output_tokens: int = Field(default=0, ge=0, le=12000)
     profile_reasoning_output_tokens: dict[str, int] = Field(default_factory=dict)
+    # The same rooms for an in-depth question (one reasoning level more).
+    in_depth_reasoning_output_tokens: int = Field(default=0, ge=0, le=12000)
+    profile_in_depth_reasoning_output_tokens: dict[str, int] = Field(
+        default_factory=dict
+    )
 
 
 class WireCall(BaseModel):
@@ -134,6 +139,8 @@ class GatewayModel:
         self.note_hold: Literal["off", "after_tool", "turn"] = "off"
         self.reasoning_effort = "none"
         self.reasoning_ceiling: Literal["none", "low", "medium", "high"] | None = None
+        # The turn's question asks for a developed answer (request router).
+        self.in_depth = False
         self.stream_turn = 0
         self.profile: str | None = None
         self.max_tokens = configuration.max_tokens
@@ -174,15 +181,22 @@ class GatewayModel:
         self.has_attachments = has_attachments
         self.produces_files = produces_files
         self.reasoning_effort = "none"
+        self.in_depth = False
 
     @property
     def reasoning_room(self) -> int:
         """Reasoning widening the gateway may apply to this turn's first attempt."""
         if not self.profile or self.reasoning_retried:
             return 0
-        return self.configuration.profile_reasoning_output_tokens.get(
+        room = self.configuration.profile_reasoning_output_tokens.get(
             self.profile, self.configuration.reasoning_output_tokens
         )
+        if self.in_depth:
+            return self.configuration.profile_in_depth_reasoning_output_tokens.get(
+                self.profile,
+                max(room, self.configuration.in_depth_reasoning_output_tokens),
+            )
+        return room
 
     @property
     def allowance(self) -> Decimal:
@@ -559,6 +573,8 @@ class GatewayModel:
                 payload["reasoning_disabled"] = True
             if self.reasoning_ceiling is not None:
                 payload["reasoning_ceiling"] = self.reasoning_ceiling
+            if self.in_depth and not self.reasoning_retried:
+                payload["in_depth"] = True
             if self.sampling_temperature is not None:
                 payload["sampling_temperature"] = self.sampling_temperature
         if self.strict:
@@ -745,7 +761,9 @@ class GatewayModel:
                 # Recovery can request tools; its following turn must finish
                 # without restarting the reasoning that already failed.
                 self.reasoning_effort = "none"
-                self.max_tokens = 3000
+                if not self.in_depth:
+                    # An in-depth answer keeps its room: 3000 tokens cut it.
+                    self.max_tokens = 3000
         if not self.profile and result.cost_eur is not None:
             if result.cost_eur > reserved.cost:
                 raise ValueError("invalid_provider_cost")

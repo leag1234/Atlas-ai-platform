@@ -308,6 +308,11 @@ async def stream_quality(
     from stream_transport import attempt, response_window
 
     policy = ServerlessPolicy()
+    # The output of a recovery attempt: 3000 tokens, or for an in-depth answer the
+    # requested room, still within what the budget affords (2026-11-15: an in-depth
+    # answer recovered after an empty completion was cut at 3000 tokens). The checks
+    # that keep a recovery affordable still reserve the 3000-token bound.
+    recovery_tokens = request.max_tokens if request.in_depth else 3000
     task = classify_task(request.messages)
     role = (
         request.vision_role
@@ -533,7 +538,7 @@ async def stream_quality(
             current = request.model_copy(
                 update={
                     "max_tokens": min(
-                        3000 if index else request.max_tokens, affordable
+                        recovery_tokens if index else request.max_tokens, affordable
                     ),
                     "reasoning_effort": "none" if index else request.reasoning_effort,
                 }
@@ -546,7 +551,7 @@ async def stream_quality(
                 "reasoning_effort": "none"
                 if index or request.reasoning_disabled
                 else min(
-                    policy.efforts.get(model, "none"),
+                    policy.effort(model, request.in_depth),
                     request.reasoning_ceiling or "high",
                     key=REASONING_EFFORTS.index,
                 )

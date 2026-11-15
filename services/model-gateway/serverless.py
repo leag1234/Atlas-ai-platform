@@ -33,6 +33,22 @@ from provider_settings import (
 # The orchestrator reserves and bounds the same room (/agent/config).
 REASONING_OUTPUT_TOKENS = {"low": 2000, "medium": 6000, "high": 12000}
 
+
+def deeper(effort: str) -> str:
+    """The effort of an in-depth question: one level above a configured effort.
+
+    A model configured without reasoning stays without it; "high" stays "high".
+    Measured 2026-11-15 on one model at "low": in-depth answers were half as long as
+    another profile's (3,959 vs 6,766 characters), never cut by the output budget, with
+    30 to 300 thinking tokens; one level more made them about 1.5 times longer and left
+    short answers unchanged.
+    """
+    levels = ("none", "low", "medium", "high")
+    if effort not in levels[1:]:
+        return effort
+    return levels[min(levels.index(effort) + 1, len(levels) - 1)]
+
+
 Task = Literal["text", "code", "vision"]
 
 
@@ -237,24 +253,35 @@ class ServerlessPolicy:
             configuration["reasoning_output_tokens"] = room
         if profile_room := self.profile_reasoning_room():
             configuration["profile_reasoning_output_tokens"] = profile_room
+        if (room := self.reasoning_room(in_depth=True)) != self.reasoning_room():
+            configuration["in_depth_reasoning_output_tokens"] = room
+        if (
+            profile_room := self.profile_reasoning_room(in_depth=True)
+        ) != self.profile_reasoning_room():
+            configuration["profile_in_depth_reasoning_output_tokens"] = profile_room
         return configuration
 
-    def reasoning_room(self) -> int:
+    def effort(self, model: str, in_depth: bool = False) -> str:
+        """Configured reasoning effort of a model, one level more for an in-depth question."""
+        configured = self.efforts.get(model, "none")
+        return deeper(configured) if in_depth else configured
+
+    def reasoning_room(self, in_depth: bool = False) -> int:
         """Largest first-attempt widening any configured reasoning may receive."""
         return max(
             (
                 REASONING_OUTPUT_TOKENS[effort]
                 for role, entry in self.config.items()
                 if role not in self.hidden_profiles.values()
-                for effort in (self.efforts.get(self.models[role], "none"),)
+                for effort in (self.effort(self.models[role], in_depth),)
                 if effort != "none"
             ),
             default=0,
         )
 
-    def profile_reasoning_room(self) -> dict[str, int]:
+    def profile_reasoning_room(self, in_depth: bool = False) -> dict[str, int]:
         return {
-            profile: REASONING_OUTPUT_TOKENS[self.efforts[self.models[role]]]
+            profile: REASONING_OUTPUT_TOKENS[self.effort(self.models[role], in_depth)]
             for profile, role in self.hidden_profiles.items()
             if self.efforts.get(self.models[role], "none") != "none"
         }
