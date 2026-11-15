@@ -88,17 +88,22 @@ The encyclopedia has two backends:
 
 - the live Wikipedia and Wikidata APIs;
 - a local mirror: a [kiwix-serve](https://github.com/kiwix/kiwix-tools) instance run by
-  Atlas (`ATLAS_KIWIX_URL`) with one ZIM book per language (`ATLAS_KIWIX_BOOKS`, for
-  example `fr=wikipedia_fr_all_mini_2026-11,en=wikipedia_en_all_mini_2026-09`). The
-  article is found with kiwix-serve's title index first (`/suggest`), then its
+  Atlas (`ATLAS_KIWIX_URL`) with one ZIM book per language (`ATLAS_KIWIX_BOOKS`). A
+  book is named either by its dated name (`fr=wikipedia_fr_all_mini_2026-11`) or by its
+  undated family (`fr=wikipedia_fr_all_mini`): a family is resolved to the newest book
+  of that family listed in kiwix-serve's own catalog (`/catalog/v2/entries`, read again
+  after five minutes or after a failed lookup). A family the catalog does not list, or
+  an unreadable catalog, makes the mirror unavailable for that language; nothing
+  outside the mirror is asked. Instances use family names, so a refreshed book is
+  picked up without a settings change. The article is found with kiwix-serve's title index first (`/suggest`), then its
   full-text search when no title equals the query: on the `de` mini book, full-text
   search for "Albert Einstein" ranked schools and prizes named after him and did not
   return his article in its first ten results. The title as written comes first
   (`München` before the redirect `Munchen`), disambiguation pages and categories
   last, and the mirror's redirect entries (`Einstein`, `Goethe`) are followed to the
   article. Its introduction is read from the local page; the answer cites the public
-  Wikipedia address and names the local book, whose date (`copy_date`, from the book
-  name) gives the copy's age. Structured
+  Wikipedia address and names the local book, whose date (`copy_date`, from the served
+  book's name, a family being resolved first) gives the copy's age. Structured
   Wikidata facts are added from the Wikidata API when the request's level allows it,
   and left out otherwise.
 
@@ -176,9 +181,16 @@ stop in March 2025. The `mini` ZIM is the maintained source of introductions.
   later. Keep the previous file during a refresh: about 2 x 32 GB for `mini`.
 - Facts in strict mode: a Wikidata extract (one weekly truthy download of 44 GB as
   `.bz2`, filtered in a stream, then deleted), stored as SQLite next to the books.
-- Refresh: a monthly job reads the Kiwix listing, downloads a newer book with its
-  `.sha256`, checks it, points `ATLAS_KIWIX_BOOKS` at it, restarts kiwix-serve and
-  deletes the old file.
+- Refresh: a monthly job on the host (outside the repository; day 3 at 04:10 UTC on
+  the build VM) reads the Kiwix listing for each language served, one language at a
+  time. When a newer `wikipedia_<lang>_all_mini_YYYY-MM.zim` is published, it checks
+  free space (new size plus a margin, never above 85 % of the volume), downloads it
+  with parallel HTTP ranges, checks the published `.sha256`, restarts kiwix-serve with
+  both books, waits until the catalog lists the new book and a title suggestion
+  answers, then deletes the old file and restarts kiwix-serve again to release it.
+  `ATLAS_KIWIX_BOOKS` holds family names, so no setting changes; the old file is kept
+  while any rendered instance file still names it by its dated name. Any failure keeps
+  the old file and writes one alert line.
 
 ## Accounts and decisions needed
 
