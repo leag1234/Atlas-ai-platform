@@ -16,6 +16,7 @@ import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 from typing import Literal
 
+from packages import linear_scan
 from packages.artifact_html import Problem, quote_attributes, validate
 
 Kind = Literal["html", "svg"]
@@ -25,9 +26,24 @@ _OPENING = re.compile(r"^[ \t]{0,3}(`{3,})[ \t]*([A-Za-z0-9_+-]*)[^\n`]*$")
 _HTML_LANGUAGES = frozenset({"html", "htm", "xhtml"})
 _SVG_LANGUAGES = frozenset({"svg"})
 _GENERIC_LANGUAGES = frozenset({"", "xml", "code", "text"})
-_RAW_HTML = re.compile(r"(?is)(<!doctype html\b.*?</html\s*>|<html\b.*?</html\s*>)")
-_RAW_SVG = re.compile(r"(?is)<svg\b.*?</svg\s*>")
-_TITLE = re.compile(r"(?is)<title[^>]*>(.*?)</title\s*>")
+# Lazy spans to a closing tag: a failed attempt means no closer follows, so
+# every later opening fails too and the scan stops (no reread per opening).
+_RAW_HTML = linear_scan.Scan(
+    re.compile(r"(?is)(<!doctype html\b.*?</html\s*>|<html\b.*?</html\s*>)"),
+    re.compile(r"(?i)<!doctype html\b|<html\b"),
+    linear_scan.nothing_after,
+)
+_RAW_SVG = linear_scan.Scan(
+    re.compile(r"(?is)<svg\b.*?</svg\s*>"),
+    re.compile(r"(?i)<svg\b"),
+    linear_scan.nothing_after,
+)
+_TITLE = linear_scan.Scan(
+    re.compile(r"(?is)<title[^>]*+>(.*?)</title\s*>"),
+    re.compile(r"(?i)<title"),
+    linear_scan.nothing_after,
+)
+
 _FORBIDDEN_XML = re.compile(r"(?i)<!(?:doctype|entity)")
 _BARE_AMPERSAND = re.compile(r"&(?!#?[A-Za-z0-9]+;)")
 
@@ -158,7 +174,7 @@ def title_of(content: str) -> str:
     match = _TITLE.search(content)
     if match is None:
         return ""
-    title = html.unescape(re.sub(r"<[^>]*>", "", match.group(1)))
+    title = html.unescape(linear_scan.TAGS.sub("", match.group(1)))
     title = re.sub(r"[\s\[\]]+", " ", title).strip()
     return title[:80].strip()
 

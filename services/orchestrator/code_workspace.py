@@ -10,6 +10,7 @@ from typing import Any
 from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
+from packages import linear_scan
 from packages.ports import atlas_ports
 from services.orchestrator.terminal_stack import IMAGE
 from services.orchestrator import code_worker
@@ -63,6 +64,46 @@ def state_dir() -> Path:
     return path
 
 
+# A conventional plaintext secret assignment: name, optional quote, "=" or ":",
+# value. A name is entered at the start of its run of word characters and
+# dashes only (a later start reads the same run to the same end), and only its
+# first secret word is tried (a later one ends the name at the same place), so
+# each run is read once: retrying every position and every word of a long
+# dashed run was cubic. The leading dashes join the kept part, so the masked
+# text is the same.
+SECRET_ASSIGNMENT = re.compile(
+    r"(?i)(?<![\w-])(-*+\b(?>[\w-]*?(?:password|secret|api[_-]?key|token|private_key))[\w-]*+[\"']?+\s*+[=:]\s*+[\"']?+)[^\s\"',;]++"
+)
+
+
+# "...PRIVATE KEY-----" right after "-----BEGIN ": the run ends at its first "-".
+_KEY_HEADER = re.compile(r"[^-]*+(?<=PRIVATE KEY)-----")
+_KEY_FOOTER = re.compile(r"-----END [^-]*PRIVATE KEY-----")
+
+
+def _key_viable(text: str) -> linear_scan.Viable:
+    """A PEM block needs its header's "PRIVATE KEY-----" and a footer after it:
+    the last footer is found once, not searched again from every header."""
+    footers = [match.start() for match in _KEY_FOOTER.finditer(text)]
+    last = footers[-1] if footers else -1
+
+    def viable(found: re.Match[str]) -> bool:
+        header = _KEY_HEADER.match(text, found.end())
+        return header is not None and last >= header.end()
+
+    return viable
+
+
+PRIVATE_KEYS = linear_scan.Scan(
+    re.compile(
+        r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----", re.S
+    ),
+    re.compile(r"-----BEGIN "),
+    linear_scan.attempted,
+    _key_viable,
+)
+
+
 def redact(value: Any) -> Any:
     """Remove host credential values and conventional plaintext secret assignments."""
     if isinstance(value, dict):
@@ -92,11 +133,7 @@ def redact(value: Any) -> Any:
             and len(secret) >= 6
         ):
             value = value.replace(secret, "[REDACTED]")
-    value = re.sub(
-        r"(?i)(\b(?:[\w-]*(?:password|secret|api[_-]?key|token|private_key)[\w-]*)[\"']?\s*[=:]\s*[\"']?)[^\s\"',;]+",
-        r"\1[REDACTED]",
-        value,
-    )
+    value = SECRET_ASSIGNMENT.sub(r"\1[REDACTED]", value)
     value = re.sub(
         r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{12,}|AK[I]A[A-Z0-9]{16})\b",
         "[REDACTED]",
@@ -106,12 +143,7 @@ def redact(value: Any) -> Any:
     value = re.sub(
         r"(?i)\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*", r"\1 [REDACTED]", value
     )
-    value = re.sub(
-        r"-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----",
-        "[REDACTED PRIVATE KEY]",
-        value,
-        flags=re.S,
-    )
+    value = PRIVATE_KEYS.sub("[REDACTED PRIVATE KEY]", value)
     return value
 
 

@@ -87,7 +87,7 @@ def answer_content(text: str) -> str:
             line = re.sub(
                 r"(?:ID|identifiant|record)?\s*" + identifier, "", line, flags=re.I
             )
-            line = re.sub(r"[ \t]+([.,;])", r"\1", line)
+            line = re.sub(r"(?<![ \t])[ \t]++([.,;])", r"\1", line)
         lines.append(line.rstrip())
     return "\n".join(lines).strip()
 

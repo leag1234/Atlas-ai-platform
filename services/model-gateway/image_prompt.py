@@ -145,7 +145,7 @@ class RewriteRoleUnavailable(RuntimeError):
 def candidates(text: object) -> tuple[str, str]:
     if not isinstance(text, str):
         return "", ""
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+    text = re.sub(r"^```(?:json)?\s*|(?:(?<!\s)\s+)?```$", "", text.strip())
     if text.startswith("{"):
         try:
             data = json.loads(text)
@@ -169,8 +169,11 @@ def faithful(source: str, candidate: str, *, formatted: bool) -> str | None:
         re.IGNORECASE,
     ):
         return None
+    # Each label is read from its first occurrence (atomic): a later one has
+    # less text after it, so the outcome is the same. Retrying every
+    # occurrence was polynomial in the number of repeated labels.
     if formatted and not re.fullmatch(
-        r"\s*Subjects:\s*\S.*?Attributes:\s*\S.*?Scene:\s*\S.*?Style:\s*\S.*",
+        r"\s*Subjects:\s*\S(?>.*?Attributes:)\s*\S(?>.*?Scene:)\s*\S(?>.*?Style:)\s*\S.*",
         candidate,
         re.DOTALL,
     ):
@@ -417,7 +420,7 @@ def scene_from_text(text: object, turns: list[str]) -> Scene:
     if not isinstance(text, str):
         raise ValueError("invalid_scene")
     data = complete_character_fields(
-        json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip()))
+        json.loads(re.sub(r"^```(?:json)?\s*|(?:(?<!\s)\s+)?```$", "", text.strip()))
     )
     updates = TypeAdapter(list[ScenePatch]).validate_python(data["updates"])
     if not 1 <= len(updates) <= 24 or (len(turns) > 1 and len(updates) != len(turns)):

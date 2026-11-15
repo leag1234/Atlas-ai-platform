@@ -3,6 +3,7 @@
 import re
 from typing import Any
 
+from packages import linear_scan
 from services.retrieval.project_identity import ProjectError
 
 HASH = r"[a-f0-9]{64}"
@@ -15,6 +16,45 @@ REFERENCE = re.compile(
     # others reach the same "]" and rescanning from each is quadratic.
     rf"|(?<!\[)\[[^\]\n]*\]\((?:/api/atlas/orgs/[^\s)]+/sources/)?({HASH})\)"
     rf"|\(({HASH})\)\(({HASH})\)|\[({HASH})\]|\b({HASH})\b"
+)
+_HASH_AT = re.compile(HASH)
+_LABEL_STOP = re.compile(r"[\]\n]")
+
+
+def _reference_viable(text: str) -> linear_scan.Viable:
+    """Whether an opening can start a citation, by lookups instead of attempts:
+    a "[" whose label run fails was otherwise rescanned from every later "["
+    of that run (quadratic). The attempt itself still decides."""
+    label_end = linear_scan.RunEnd(text, _LABEL_STOP)
+
+    def hash_at(position: int, closer: str) -> bool:
+        return (
+            _HASH_AT.match(text, position) is not None
+            and text[position + 64 : position + 65] == closer
+        )
+
+    def viable(found: re.Match[str]) -> bool:
+        start = found.start()
+        if text[start] == "(":
+            return hash_at(start + 1, ")") and text[start + 66 : start + 67] == "("
+        if text[start] != "[":
+            return True
+        if hash_at(start + 1, "]"):
+            return True
+        close = label_end(start + 1)
+        target = close + 2
+        return text[close : close + 2] == "](" and (
+            hash_at(target, ")") or text.startswith("/api/atlas/orgs/", target)
+        )
+
+    return viable
+
+
+REFERENCES = linear_scan.Scan(
+    REFERENCE,
+    re.compile(rf"[\[(]|\b(?={HASH}\b)"),
+    linear_scan.attempted,
+    _reference_viable,
 )
 
 
@@ -34,4 +74,4 @@ def render(answer: str, passages: list[dict[str, Any]], org: str, project: str) 
     # label form would rescan each unclosed "[" to the end of its line.
     if not re.search(HASH, answer):
         return answer
-    return REFERENCE.sub(replace, answer)
+    return REFERENCES.sub(replace, answer)

@@ -1,0 +1,20 @@
+{
+  "services/model-gateway/image_constraints.py:6402772a47c9:nested": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Each alternative ends with a space run and starts with a letter, so iterations cannot share characters.",
+  "services/model-gateway/image_constraints.py:6402772a47c9:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear.",
+  "services/orchestrator/appearance.py:5542b8efb093:overlap": "Word-bounded cues: each start reads one word (\\w* runs stop at a space); measured linear in tests/test_input_regex_cost.py (no visual).",
+  "services/orchestrator/appearance.py:f387221839ab:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Attributes are quoted, so a split of a space run is retried only locally.",
+  "services/orchestrator/appearance.py:ce9672b9e1e5:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Lazy spans to a closer; the space run is the closer's own.",
+  "services/orchestrator/appearance.py:8cb51afc822b:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Anchored at a line start, one line read per start.",
+  "services/orchestrator/appearance.py:4752f3c8bdef:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear.",
+  "services/orchestrator/citation_cleanup.py:6d03d45bf5c1:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Matched at the start of one line.",
+  "services/orchestrator/code_tools.py:4e147c8996ed:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear.",
+  "services/orchestrator/grounding.py:1aa280ad7c67:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Covered on the answer path by tests/test_answer_postprocessing_cost.py.",
+  "services/orchestrator/image_tool.py:894c14573bd2:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear.",
+  "services/orchestrator/pictures/judge.py:7bda2d16c905:nested": "Applied to part names of a drawing (a few characters), never to user text or model prose.",
+  "services/orchestrator/source_truth.py:8f19cd75f71d:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Anchored at a line start; leading spaces bounded to three.",
+  "services/orchestrator/work_machine_tools.py:248708a3f961:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Anchored at a line start, one line read per start.",
+  "services/tts/service.py:b5fa5c8b96ae:overlap": "Atomic and possessive runs; the trailing space run is retried only to find a line end. Read through packages/linear_scan.py; measured in tests/test_input_regex_cost.py (table rules).",
+  "packages/artifact_source.py:103124a10b70:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear. Matched at the start of one line.",
+  "packages/project_memory.py:e6c28707b094:overlap": "fullmatch from the start: the separator split is retried only when no fact follows, a few steps; measured in tests/test_input_regex_cost.py (explicit memory).",
+  "packages/work_intent.py:fc08aa240a91:overlap": "Audit of 2026-11-15 (adversarial inputs to 50 000 characters, real call style): linear."
+}

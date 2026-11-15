@@ -29,6 +29,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
+from packages import linear_scan
 from services.orchestrator.pictures.texts import language_code
 
 MAX_TOKENS = 900
@@ -178,7 +179,8 @@ def enforce(prompt: str, *, reserve: bool = False) -> str:
         text = re.sub(r"\b" + word + r"\b", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\.(?:\s*\.)+", ".", text)
-    text = re.sub(r"[\s.]+$", "", text).strip()
+    # A run is entered at its first character only (same match, read once).
+    text = re.sub(r"(?<![\s.])[\s.]+$", "", text).strip()
     if not text:
         return ""
     return text + ". " + (RESERVE + ". " if reserve else "") + STYLE
@@ -303,6 +305,16 @@ def _loose(line: str) -> str:
     return r"\s+".join("".join(out).split("\\ "))
 
 
+# A quoted string and what introduced it. An attempt fails only without a
+# closing quote after it, and then every later one fails too: the scan stops
+# (the former sub reread the rest from every opening quote: quadratic).
+_QUOTED = linear_scan.Scan(
+    re.compile(_INTRO + r"[\u00ab\u201c\"][^\u00bb\u201d\"]*[\u00bb\u201d\"]"),
+    re.compile(_INTRO + r"[\u00ab\u201c\"]"),
+    linear_scan.nothing_after,
+)
+
+
 def _without_words(prompt: str, words: list[str]) -> str:
     """The prompt without the words to set, any quoted string or what
     introduced them: the image model would letter them (badly); code sets
@@ -314,12 +326,10 @@ def _without_words(prompt: str, words: list[str]) -> str:
             prompt,
             flags=re.IGNORECASE,
         )
-    prompt = re.sub(
-        _INTRO + r"[\u00ab\u201c\"][^\u00bb\u201d\"]*[\u00bb\u201d\"]", "", prompt
-    )
+    prompt = _QUOTED.sub("", prompt)
     prompt = re.sub(_INTRO + r"''", "", prompt)
     prompt = re.sub(r"\b(?:in|at|of|on|for|with|from)\s*(?=[,.;:])", "", prompt)
-    prompt = re.sub(r"\s+([,.;:])", r"\1", prompt)
+    prompt = re.sub(r"(?<!\s)\s++([,.;:])", r"\1", prompt)
     return re.sub(r"[,;:]+(?=[.,;:])", "", prompt)
 
 

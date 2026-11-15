@@ -152,7 +152,8 @@ def markdown(text: str, title: str) -> Content:
     index = 0
     while index < len(lines):
         line = lines[index].strip()
-        if re.search(r"!\[.*?\]\(", line) or line.startswith("```"):
+        # From the first "![" only (atomic): a later one has fewer "](" after it.
+        if re.match(r"(?>.*?!\[).*?\]\(", line) or line.startswith("```"):
             raise ValueError("Unsupported Markdown image or fenced block")
         heading = re.fullmatch(r"#{1,6}\s+(.+)", line)
         bullet = re.fullmatch(r"(?:[-+*]|\d+[.)])\s+(.+)", line)

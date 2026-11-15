@@ -3,6 +3,7 @@
 import re
 import unicodedata
 
+from packages import linear_scan
 from packages.file_answers import strip_file_promises as strip_file_promises
 
 
@@ -27,6 +28,15 @@ _ACK = re.compile(r"^(?:sure|certainly|okay|ok|bien sur|d'accord)[,.!:\s]+")
 _FAILURE = re.compile(
     r"^(?:(?:the )?file (?:operation failed|could not be produced)|"
     r"le fichier n'a pas pu etre|la creation du fichier a echoue)"
+)
+
+
+# A line of Python, after blank space; a failed line start skips the line
+# starts of its blank run (each reaches the same character).
+_CODE_LINES = linear_scan.Scan(
+    re.compile(r"(?m)^\s*(?:from \w+ import |import \w+|def \w+\(|doc\.add_|print\()"),
+    re.compile(r"(?m)^"),
+    linear_scan.run_from_start(r"\s*"),
 )
 
 
@@ -129,12 +139,7 @@ def failed_terminal_content(text: str, messages: list[dict[str, object]]) -> boo
         r"\b(?:script|code|python|sql|function|fonction|programm)\b",
         normalized(question),
     )
-    if not code_requested and (
-        "```" in text
-        or re.search(
-            r"(?m)^\s*(?:from \w+ import |import \w+|def \w+\(|doc\.add_|print\()", text
-        )
-    ):
+    if not code_requested and ("```" in text or _CODE_LINES.search(text)):
         return True
     prose = re.sub(r"```.*?(?:```|$)", "", text, flags=re.S)
     parts = re.split(r"[.!?;:\n]+\s*", prose.strip())

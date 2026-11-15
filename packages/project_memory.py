@@ -35,12 +35,17 @@ def pin_tokens(entries: list[dict[str, Any]]) -> int:
     return tokens(encoded({"pinned_memory": entries}))
 
 
+# The fact runs to its last non-space character: "(.*\S|.)" is the former lazy
+# "(.+?)" before trailing spaces, read once instead of retried at each
+# character (a long space run was cubic).
+EXPLICIT = re.compile(
+    r"\s*+(?:remember that|remember|retiens que|retiens|merke dir(?:,? dass)?|recuerda que|recuerda|ricorda che|ricorda)\s*[:：]?\s+(.*\S|.)\s*",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def explicit(text: str) -> str | None:
-    match = re.fullmatch(
-        r"\s*(?:remember that|remember|retiens que|retiens|merke dir(?:,? dass)?|recuerda que|recuerda|ricorda che|ricorda)\s*[:：]?\s+(.+?)\s*",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
+    match = EXPLICIT.fullmatch(text)
     if match:
         fact = re.sub(
             r"^(?:"

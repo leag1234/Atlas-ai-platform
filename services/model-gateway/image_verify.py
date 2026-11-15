@@ -73,7 +73,9 @@ async def verify(image: str, scene: Scene, timeout: float) -> Verification:
         if cost > reserved or result.choices[0].finish_reason != "stop":
             raise ValueError("invalid_verification_usage")
         raw = result.choices[0].message.content or ""
-        data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip()))
+        data = json.loads(
+            re.sub(r"^```(?:json)?\s*|(?:(?<!\s)\s+)?```$", "", raw.strip())
+        )
         expected = scene.expected_answers()
         if (
             not isinstance(data, dict)

@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from services.orchestrator.link_requests import unavailable
 from services.orchestrator.loop import Message
-from services.orchestrator.shopping_prices import MONEY
+from services.orchestrator.shopping_prices import MONEYS
 
 
 def render_shopping(searches: dict[str, list[Message]], language: str) -> str | None:
@@ -38,7 +38,7 @@ def render_shopping(searches: dict[str, list[Message]], language: str) -> str | 
             line = "- [" + shop.capitalize() + "](" + str(row["link"]) + ")"
             # Multiple amounts could be an accessory or instalment offer. Keep
             # those ambiguous prices out; the link is useful on its own.
-            prices = list(MONEY.finditer(str(row.get("snippet", ""))))
+            prices = list(MONEYS.finditer(str(row.get("snippet", ""))))
             if len(prices) == 1:
                 line += " — " + prices[0][0]
             lines.append(line)

@@ -11,7 +11,34 @@ import json
 import re
 import xml.etree.ElementTree as ET
 
-_SVG = re.compile(r"<svg\b.*</svg>", re.S)
+from packages import linear_scan
+
+# Spans to a closer: a failed attempt means no closer follows, so every later
+# opening fails too and the scan stops (the former search reread the rest of
+# the answer from each opening: quadratic).
+_SVG = linear_scan.Scan(
+    re.compile(r"<svg\b.*</svg>", re.S),
+    re.compile(r"<svg\b"),
+    linear_scan.nothing_after,
+)
+_JSON_OBJECT = linear_scan.Scan(
+    re.compile(r"\{.*\}", re.S), re.compile(r"\{"), linear_scan.nothing_after
+)
+_COMMENTS = linear_scan.Scan(
+    re.compile(r"<!--.*?-->", re.S), re.compile(r"<!--"), linear_scan.nothing_after
+)
+
+
+def _opening_tags(name: str) -> linear_scan.Scan:
+    """Opening tags of an element that are not self-closing; a failed one reads to
+    the first ">", which every later opening before it reaches too."""
+    return linear_scan.Scan(
+        re.compile(rf"<{name}\b[^>]*?(?<!/)>"),
+        re.compile(rf"<{name}\b"),
+        linear_scan.up_to(r">"),
+    )
+
+
 _OPEN_SVG = re.compile(r"<svg\b.*", re.S)
 _ATTRIBUTE = re.compile(r'\s([A-Za-z_:][\w:.-]*)\s*=\s*("[^"]*"|\'[^\']*\')')
 _TAG = re.compile(r"<[A-Za-z][^<>]*>")
@@ -25,6 +52,7 @@ _CUT_CONTAINERS = (
     "defs",
     "text",
 )
+_CUT_OPENINGS = {name: _opening_tags(name) for name in ("g", *_CUT_CONTAINERS)}
 
 
 def extract_svg(text: str | None) -> str | None:
@@ -38,7 +66,7 @@ def extract_svg(text: str | None) -> str | None:
 
 def extract_json(text: str | None) -> dict[str, object] | None:
     """The first JSON object of an answer, or None."""
-    found = re.search(r"\{.*\}", text or "", re.S)
+    found = _JSON_OBJECT.search(text or "")
     if not found:
         return None
     try:
@@ -78,7 +106,7 @@ def salvage(svg: str | None) -> tuple[str | None, str]:
         return None, "no_svg"
     if _parses(svg):
         return svg, ""
-    fixed = re.sub(r"<!--.*?-->", "", svg, flags=re.S)
+    fixed = _COMMENTS.sub("", svg)
     fixed = _BARE_AMPERSAND.sub("&amp;", fixed)
     fixed = _TAG.sub(_dedupe_attributes, fixed)
     if "xlink:" in fixed and "xmlns:xlink" not in fixed:
@@ -92,11 +120,11 @@ def salvage(svg: str | None) -> tuple[str | None, str]:
         # Cut by the output limit: drop the unfinished tag, close open groups.
         cut = fixed[: fixed.rfind(">") + 1]
         for name in _CUT_CONTAINERS:
-            opened = len(re.findall(rf"<{name}\b[^>]*?(?<!/)>", cut))
+            opened = len(list(_CUT_OPENINGS[name].finditer(cut)))
             if opened > len(re.findall(rf"</{name}>", cut)):
                 cut = cut[: cut.rfind(f"<{name}")]
         # Opening tags that are not self-closing (an attribute-less <g> too).
-        depth = len(re.findall(r"<g\b[^>]*?(?<!/)>", cut)) - len(
+        depth = len(list(_CUT_OPENINGS["g"].finditer(cut))) - len(
             re.findall(r"</g>", cut)
         )
         cut += "</g>" * max(depth, 0) + "</svg>"

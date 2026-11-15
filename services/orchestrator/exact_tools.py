@@ -200,7 +200,9 @@ _DATE_CUES = re.compile(
             r"\bquelle\s+heure\b|\bwhat\s+time\b|\bwie\s+spat\b|\buhrzeit\b|\bque\s+hora\b|\bche\s+ore\b",
             r"\bheure\s+(?:a|au|aux|en|de|locale|actuelle)\b|\bfuseaux?\s+horaires?\b",
             r"\btime\s?zones?\b|\bdecalage\s+horaire\b|\btime\s+difference\b|\bjet\s?lag\b|\bzeitzone\b",
-            r"\b(?:utc|gmt)\b|\b\d{1,2}(?::\d{2})?\s*(?:h|am|pm)?\s*(?:cet|cest|pst|pdt|est|edt|bst|jst|ist)\b",
+            # Possessive spaces: the former "\s*(?:h|am|pm)?\s*" split each space
+            # run between two repeats (no zone name starts with a space or "h").
+            r"\b(?:utc|gmt)\b|\b\d{1,2}(?::\d{2})?\s*+(?:(?:h|am|pm)\s*+)?(?:cet|cest|pst|pdt|est|edt|bst|jst|ist)\b",
             rf"\b(?:dans|in|il y a|ago|d'ici|apres|after|avant|before|plus|moins|minus|en)\s+\d+\s+{_PERIOD}\b",
             rf"\b\d+\s+{_PERIOD}\s+(?:apres|after|avant|before|from|later|plus tard|ago|de plus|de moins)\b",
             r"\bhow\s+long\s+(?:until|till|before|since|ago)\b|\bdepuis\s+(?:combien|quand)\b",
@@ -222,7 +224,9 @@ _UNIT = (
     r"go|gb|mo|mb|to|tb|ko|kb|gio|gib|mio|mib|octets?|bytes?|bits?|mpg|"
     r"l/100\s?km|barils?|barrels?)"
 )
-_NUMBER = r"\d+(?:[.,]\d+)?"
+# Entered at the first digit of a run, read once: no unit starts with a digit,
+# so a number never ends inside a digit run (a long digit run was quadratic).
+_NUMBER = r"(?<!\d)\d++(?:[.,]\d++)?"
 _U = rf"(?<!\w){_UNIT}(?!\w)"
 # Without a number in front, short symbols that are also words (to, go, m, l)
 # would match ordinary sentences: a bare unit must be one of these.

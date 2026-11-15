@@ -9,6 +9,25 @@ import unicodedata
 from packages.file_answers import strip_file_promises
 
 
+_FAILED = re.compile(
+    r"pas pu|impossible|echou|could not|cannot|failed|unable|keine|nicht|no se pudo|ningun|nessun"
+)
+_NOT_PUBLISHED = re.compile(r"^(?>.*?non).*pubblic", re.M)
+# "A ... B" announcements read from the line's first A (atomic): a later A has
+# fewer B after it, so the outcome is the same; the former expressions retried
+# ".*" from every A (quadratic on a repeated word).
+_PROMISED_FILE = re.compile(
+    r"^(?>.*?(?:je vais|je publie|i will|i'll|ich werde|voy a|procedero))"
+    r".*?(?:fichier|file|document|pptx|pdf|datei)",
+    re.M,
+)
+_ANNOUNCED_FILE = re.compile(
+    r"^(?>.*?(?:fichier|file|document|pptx|pdf|datei))"
+    r".*(?:genere|generated|cree|created|publie|published|disponible|available)",
+    re.M,
+)
+
+
 def folded(text: str) -> str:
     return "".join(
         c
@@ -21,10 +40,7 @@ def failure_notice(text: str) -> bool:
     value = folded(text)
     return bool(
         re.search(r"file|fichier|document|datei|archivo", value)
-        and re.search(
-            r"pas pu|impossible|echou|could not|cannot|failed|unable|keine|nicht|no se pudo|ningun|non.*pubblic|nessun",
-            value,
-        )
+        and (_FAILED.search(value) or _NOT_PUBLISHED.search(value))
     )
 
 
@@ -49,14 +65,8 @@ def answer_content(text: str, *, preserve_code: bool = False) -> str:
             or "untrusted_tool_history" in line
             or "sandbox:" in line
             or re.search(r"download|telecharg|herunterlad|descarg|scaric", value)
-            or re.search(
-                r"(?:je vais|je publie|i will|i'll|ich werde|voy a|procedero).*?(?:fichier|file|document|pptx|pdf|datei)",
-                value,
-            )
-            or re.search(
-                r"(?:fichier|file|document|pptx|pdf|datei).*(?:genere|generated|cree|created|publie|published|disponible|available)",
-                value,
-            )
+            or _PROMISED_FILE.search(value)
+            or _ANNOUNCED_FILE.search(value)
             or re.search(
                 r"^\s*#+\s*(?:generation|creation|download|telecharg).*?(?:document|file|fichier)",
                 value,

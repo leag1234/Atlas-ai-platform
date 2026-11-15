@@ -6,6 +6,8 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from xml.etree import ElementTree
+from bisect import bisect_left
+from packages import linear_scan
 from packages.imagegen import positive_image_prompt
 from packages.language import LanguageMessage
 
@@ -16,14 +18,32 @@ _PROCESS_OR_COMPARISON = re.compile(
     r"comparacion|proceso|confronto|processo|architettura)\b",
     re.IGNORECASE,
 )
-_APPEARANCE = re.compile(
-    r"\b(?:what does .+ look like|how is .+ (?:physically )?built|exploded view|"
-    r"cutaway view|parts of|a quoi ca ressemble|a quoi ressemble(?:nt)?|les pieces|ce qui tourne|"
-    r"vue eclatee|wie sieht .+ aus|teile von|was dreht sich|teile.*drehen|explosions(?:ansicht|zeichnung)|"
-    r"como es por dentro|piezas de|que gira|vista explosionada|com[' ]e fatto|"
-    r"pezzi di|cosa gira|pezzi.*girano|vista esplosa)\b",
-    re.IGNORECASE,
+# "A ... B" cues are read per line from the line's first A (atomic): a later A
+# on the line has fewer B after it, so the outcome is the same, and the former
+# single alternation retried ".+" from every A (quadratic on repeated words).
+_APPEARANCE_PARTS = (
+    re.compile(
+        r"\b(?:exploded view|"
+        r"cutaway view|parts of|a quoi ca ressemble|a quoi ressemble(?:nt)?|les pieces|ce qui tourne|"
+        r"vue eclatee|teile von|was dreht sich|explosions(?:ansicht|zeichnung)|"
+        r"como es por dentro|piezas de|que gira|vista explosionada|com[' ]e fatto|"
+        r"pezzi di|cosa gira|vista esplosa)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^(?>.*?\bwhat does ).+ look like\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(
+        r"^(?>.*?\bhow is ).+ (?:physically )?built\b", re.IGNORECASE | re.MULTILINE
+    ),
+    re.compile(r"^(?>.*?\bwie sieht ).+ aus\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^(?>.*?\bteile).*drehen\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^(?>.*?\bpezzi).*girano\b", re.IGNORECASE | re.MULTILINE),
 )
+
+
+def _appearance(text: str) -> bool:
+    return any(part.search(text) for part in _APPEARANCE_PARTS)
+
+
 _VISUAL_FOLLOWUP = re.compile(
     r"\b(?:visuellement|en image|montre(?:[ -]moi)?|(?:le|la|les) voir|"
     r"show me|show (?:it|that)|see (?:it|that)|zeigen|mostrar\w*|mostra\w*)\b",
@@ -35,12 +55,23 @@ _PHYSICAL_CONTEXT = re.compile(
     r"turbine|turbina|machine|wheel|roue|volant|valve|soupape)\b",
     re.IGNORECASE,
 )
-_NO_VISUAL = re.compile(
-    r"\b(?:ne\b.*\bpas|sans image|not\b.*\b(?:show|image|draw)|"
-    r"don't\b.*\b(?:show|draw)|no image|nicht|kein\w*|no\s+\w*mostr\w*|"
-    r"non\s+\w*mostr\w*)\b",
-    re.IGNORECASE,
+_NO_VISUAL_PARTS = (
+    re.compile(
+        r"\b(?:sans image|no image|nicht|kein\w*|no\s+\w*mostr\w*|non\s+\w*mostr\w*)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^(?>.*?\bne\b).*\bpas\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(
+        r"^(?>.*?\bnot\b).*\b(?:show|image|draw)\b", re.IGNORECASE | re.MULTILINE
+    ),
+    re.compile(r"^(?>.*?\bdon't\b).*\b(?:show|draw)\b", re.IGNORECASE | re.MULTILINE),
 )
+
+
+def _no_visual(text: str) -> bool:
+    return any(part.search(text) for part in _NO_VISUAL_PARTS)
+
+
 _DRAWING_REQUEST = re.compile(
     r"^\s*(?P<verb>dessine(?:-moi)?|dessiner|draw|sketch|zeichne|dibuja|disegna)\b\s+.+",
     re.IGNORECASE,
@@ -66,9 +97,9 @@ def is_appearance_request(
 ) -> bool:
     """Return true only for a request to see a physical object or its mechanics."""
     normalized = _normalized(question)
-    if _NO_VISUAL.search(normalized) or _PROCESS_OR_COMPARISON.search(normalized):
+    if _no_visual(normalized) or _PROCESS_OR_COMPARISON.search(normalized):
         return False
-    if _APPEARANCE.search(normalized):
+    if _appearance(normalized):
         return True
     # A deictic visual request needs a nearby physical referent. Do not carry a
     # stale object across a topic change, or turn an abstract process into a machine.
@@ -77,18 +108,21 @@ def is_appearance_request(
         _VISUAL_FOLLOWUP.search(normalized)
         and context
         and (
-            _APPEARANCE.search(_normalized(context))
+            _appearance(_normalized(context))
             or _PHYSICAL_CONTEXT.search(_normalized(context))
         )
     )
 
 
+_SPATIAL_REFUSAL = re.compile(
+    r"\b(?:do not|don't|no|without|sans|pas de|nicht|kein\w*|sin|senza)\b"
+)
+_SPATIAL_NE_PAS = re.compile(r"^(?>.*?\bne ).*pas\b", re.MULTILINE)
+
+
 def is_spatial_drawing_request(question: str) -> bool:
     text = _normalized(question)
-    if re.search(
-        r"\b(?:do not|don't|no|without|sans|pas de|ne .*pas|nicht|kein\w*|sin|senza)\b",
-        text,
-    ):
+    if _SPATIAL_REFUSAL.search(text) or _SPATIAL_NE_PAS.search(text):
         return False
     return bool(
         re.search(
@@ -213,12 +247,76 @@ def simple_drawing_instruction() -> str:
     )
 
 
-_SVG = re.compile(r"<svg\b[^>]*>.*?</svg\s*>", re.I | re.S)
+# A failed <svg ...>...</svg> attempt means no closer follows: every later
+# opening fails too, so the scan stops instead of rereading the rest each time.
+SVG_ELEMENT = re.compile(r"<svg\b[^>]*+>.*?</svg\s*>", re.I | re.S)
+SVG_ELEMENTS = linear_scan.Scan(
+    SVG_ELEMENT, re.compile(r"<svg\b", re.I), linear_scan.nothing_after
+)
 _SVG_START = re.compile(r"<svg\b", re.I)
 _SVG_END = re.compile(r"</svg\s*>", re.I)
-_XML_PREAMBLE = re.compile(
-    r"<\?xml\b[^>]*\?>|<!DOCTYPE\b(?:[^>\[]|\[[\s\S]*?\])*>", re.I
-)
+_PREAMBLE_OPENING = re.compile(r"<\?xml\b|<!DOCTYPE\b", re.I)
+
+
+def strip_xml_preamble(text: str) -> str:
+    """Remove XML declarations and DOCTYPEs in one pass.
+
+    Same text as the former single expression (kept as the reference in
+    tests/test_input_regex_cost.py), which was exponential on unclosed
+    brackets: a declaration ends at the first ">" after it, right after a "?";
+    a DOCTYPE ends at the first ">" outside brackets, a bracket running to its
+    first "]" (the only reading that can succeed). Where a DOCTYPE fails is
+    remembered per position, so each character is read a bounded number of
+    times.
+    """
+    if _PREAMBLE_OPENING.search(text) is None:
+        return text
+    closes = [i for i, char in enumerate(text) if char == ">"]
+    stops = [i for i, char in enumerate(text) if char in "[>"]
+    ends = [i for i, char in enumerate(text) if char == "]"]
+    outcome: dict[int, int] = {}
+
+    def doctype_end(position: int) -> int:
+        path = []
+        result = -1
+        while True:
+            if position in outcome:
+                result = outcome[position]
+                break
+            path.append(position)
+            index = bisect_left(stops, position)
+            if index == len(stops):
+                break
+            stop = stops[index]
+            if text[stop] == ">":
+                result = stop + 1
+                break
+            index = bisect_left(ends, stop + 1)
+            if index == len(ends):
+                break
+            position = ends[index] + 1
+        for visited in path:
+            outcome[visited] = result
+        return result
+
+    parts: list[str] = []
+    last = position = 0
+    while (found := _PREAMBLE_OPENING.search(text, position)) is not None:
+        if found[0][1] == "?":
+            index = bisect_left(closes, found.end())
+            close = closes[index] if index < len(closes) else -1
+            end = close + 1 if close >= 0 and text[close - 1] == "?" else -1
+        else:
+            end = doctype_end(found.end())
+        if end < 0:
+            position = found.start() + 1
+            continue
+        parts.append(text[last : found.start()])
+        last = position = end
+    parts.append(text[last:])
+    return "".join(parts)
+
+
 _ALLOWED_TAGS = {
     "svg",
     "rect",
@@ -276,7 +374,9 @@ def _deduplicate_svg_attributes(raw: str) -> str:
     tag = re.compile(
         r"<(?P<name>[A-Za-z_:][\w:.-]*)(?P<attrs>(?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)\s*(?P<close>/?)>"
     )
-    attribute = re.compile(r"\s+([A-Za-z_:][\w:.-]*)\s*=\s*(\"[^\"]*\"|'[^']*')")
+    attribute = re.compile(
+        r"(?<!\s)\s++([A-Za-z_:][\w:.-]*+)\s*+=\s*+(\"[^\"]*+\"|'[^']*+')"
+    )
 
     def deduplicate(match: re.Match[str]) -> str:
         seen: set[str] = set()
@@ -297,7 +397,8 @@ def _close_svg_at_end(raw: str) -> str:
         raw += ">"
     if "<!--" in raw or "<?" in raw or "<!" in raw or not raw.rstrip().endswith(">"):
         return raw
-    tag = re.compile(r"<(?P<closing>/)?(?P<name>[A-Za-z_:][\w:.-]*)(?P<body>[^<>]*)>")
+    # Possessive: the body reads what the name leaves, to the same "<" or ">".
+    tag = re.compile(r"<(?P<closing>/)?(?P<name>[A-Za-z_:][\w:.-]*+)(?P<body>[^<>]*+)>")
     tags = list(tag.finditer(raw))
     if not tags or len(tags) != raw.count("<"):
         return raw
@@ -327,18 +428,60 @@ def _repair_svg_xml(raw: str) -> str:
 
 
 _SVG_NAMESPACE = "http://www.w3.org/2000/svg"
-_COMMONS_QUERY = re.compile(
-    r"<!--\s*commons-query:\s*([A-Za-z0-9 -]{2,80})\s*-->", re.I
-)
+# <!-- commons-query: words -->. The former single expression
+# <!--\s*commons-query:\s*([A-Za-z0-9 -]{2,80})\s*--> split each space run
+# between three repeats (minutes on a long blank run); drawing_subject reads
+# the same comment in one pass.
+_COMMONS_OPENING = re.compile(r"<!--\s*+commons-query:", re.I)
+_COMMONS_WORDS = re.compile(r"[A-Za-z0-9 -]*")
+_LEADING_SPACE = re.compile(r"\s*")
 _FIXED_VIEWBOX = (0.0, 0.0, 800.0, 500.0)
 _MIN_STROKE = 2.0
 _MIN_TEXT = 16.0
 
 
 def drawing_subject(model_text: str) -> str:
-    """Read bounded search metadata, never send a whole conversation to Commons."""
-    match = _COMMONS_QUERY.search(model_text)
-    return " ".join(match.group(1).split()) if match else ""
+    """Read bounded search metadata, never send a whole conversation to Commons.
+
+    The words are 2 to 80 characters of letters, digits, spaces and dashes
+    between optional spaces, closed by the first "-->" (a ">" cannot be
+    skipped). Read once per comment; an opening inside a failed comment's text
+    fails the same way and is skipped.
+    """
+    text = model_text
+    position = 0
+    while (found := _COMMONS_OPENING.search(text, position)) is not None:
+        close = text.find(">", found.end())
+        if close < 0:
+            return ""
+        position = found.start() + 1
+        if close - 2 < found.end() or text[close - 2 : close] != "--":
+            position = max(position, close)
+            continue
+        inner = text[found.end() : close - 2]
+        start = _LEADING_SPACE.match(inner)
+        first = start.end() if start else 0
+        last = len(inner)
+        while last > first and _LEADING_SPACE.fullmatch(inner, last - 1, last):
+            last -= 1
+        core = inner[first:last]
+        words = _COMMONS_WORDS.fullmatch(core)
+        if words is None:
+            # A character outside the words: openings before it fail as well.
+            prefix = _COMMONS_WORDS.match(core)
+            position = max(
+                position, found.end() + first + (prefix.end() if prefix else 0)
+            )
+            continue
+        if core:
+            before = len(inner[:first]) - len(inner[:first].rstrip(" "))
+            after = len(inner[last:]) - len(inner[last:].lstrip(" "))
+            if len(core) <= 80 and len(core) + before + after >= 2:
+                return " ".join(core.split())
+        elif "  " in inner:
+            return ""
+        position = max(position, close)
+    return ""
 
 
 def _number(value: str | None, default: float = 0.0) -> float:
@@ -740,22 +883,31 @@ def without_svg_or_code(model_text: str) -> str:
     )
     # An SVG declaration is transport syntax, not answer prose. In particular,
     # models sometimes put it immediately before a Commons-backed image.
-    clean = _XML_PREAMBLE.sub("", clean)
+    clean = strip_xml_preamble(clean)
     # Splitting around an SVG can leave one half of its fence in each section.
     # Never let those delimiters fence the service-owned image and source line.
     return re.sub(r"(?m)^[ \t]*(?:`{3,}|~{3,})[^\n]*$", "", clean).strip()
 
 
+# A numbered line, with the blank space before it. A failed line start skips
+# the line starts of its blank run: each reaches the same character.
+_FIRST_ITEM = linear_scan.Scan(
+    re.compile(r"^\s*\d+[.)]\s+", re.M),
+    re.compile(r"^", re.M),
+    linear_scan.run_from_start(r"\s*"),
+)
+
+
 def mechanical_prose(model_text: str) -> tuple[str, str]:
     """Separate introductory prose without treating it as numbered parts."""
-    drawing = _SVG.search(model_text)
+    drawing = SVG_ELEMENTS.search(model_text)
     if drawing:
         return (
             without_svg_or_code(model_text[: drawing.start()]),
             without_svg_or_code(model_text[drawing.end() :]),
         )
     clean = without_svg_or_code(model_text)
-    first_item = re.search(r"^\s*\d+[.)]\s+", clean, re.M)
+    first_item = _FIRST_ITEM.search(clean)
     if not first_item:
         return clean, ""
     return clean[: first_item.start()].strip(), clean[first_item.start() :].strip()

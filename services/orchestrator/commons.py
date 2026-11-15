@@ -13,12 +13,14 @@ from urllib.error import HTTPError, URLError
 
 import aiohttp
 
+from packages import linear_scan
+
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def plain_metadata(value: str) -> str:
-    text = html.unescape(re.sub(r"<[^>]*>", "", value))
+    text = html.unescape(linear_scan.TAGS.sub("", value))
     return re.sub(r"([\\`*_{}\[\]()<>!])", r"\\\1", " ".join(text.split()))
 
 

@@ -4,12 +4,20 @@ from contextvars import ContextVar
 import re
 from urllib.parse import urlparse
 
+from packages import linear_scan
 from services.orchestrator.interactions import Interaction
 
 URL = re.compile(r"https?://[^\s<>\"'()\]]+")
 # An XML namespace declaration directly before a URL: xmlns="..." or xmlns:x="...".
 _NAMESPACE = re.compile(r"\bxmlns(?::[\w.-]+)?\s*=\s*[\"']$")
 REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
+# A reference list; a failed opening reads to the first "]", which every later
+# opening before it reaches too (not retried: quadratic on unclosed openings).
+_REFERENCE_RUNS = linear_scan.Scan(
+    re.compile(REFERENCE.pattern + r"(?:[,;][ \t]*" + REFERENCE.pattern + r")*"),
+    re.compile(r"\[\[atlas-reference:"),
+    linear_scan.up_to(r"\]"),
+)
 # A link label starts at the first "[" of a run of "[" that can start one: the
 # later ones reach the same "]" with the same outcome, and retrying each of them
 # rescans to that "]" (100 000 "[" took 14 seconds, 2026-11-15).
@@ -17,6 +25,41 @@ LABEL_START = r"(?:(?<!\[)|(?<=!\[))"
 _MARKDOWN_LINK = re.compile(
     rf"(?<!!){LABEL_START}\[\[([^\]\n]+)\]\(([^)\n]+)\)\]"
     rf"|(?<!!){LABEL_START}\[([^\]\n]+)\]\(([^)\n]+)\)"
+)
+_LINK_OPENING = re.compile(rf"(?<!!){LABEL_START}\[")
+# Openings that share a failed label or target run are not retried: many "[a]("
+# before one far ")" would rescan that run from each of them (quadratic).
+_MARKDOWN_LINKS = linear_scan.Scan(
+    _MARKDOWN_LINK,
+    _LINK_OPENING,
+    linear_scan.bracket_link_failure(r"\]\n", r")\n"),
+)
+_PLACEHOLDER_START = re.compile(r"\[unverified", re.I)
+# A fabricated citation: a link to a placeholder or to a web URL (up to the
+# first ")" after the URL's first character).
+_CITATION_LINK = re.compile(
+    rf"(?<!!){LABEL_START}\[[^\]\n]+\]\((?:\[unverified source\]|https?://[^\s][^\s)]*+)\)",
+    re.I,
+)
+_CITATION_LINKS = linear_scan.Scan(
+    _CITATION_LINK,
+    _LINK_OPENING,
+    linear_scan.bracket_link_failure(
+        r"\]\n",
+        r"\s)",
+        # A target run that stops on the space of "[unverified source" may
+        # still be that placeholder.
+        run_end_fails=lambda text, end: text[end : end + 1] != ")"
+        and not (
+            text[end : end + 1] == " "
+            and _PLACEHOLDER_START.fullmatch(text, max(0, end - 11), end) is not None
+        ),
+    ),
+)
+_WEB_LINKS = linear_scan.Scan(
+    re.compile(rf"(?<!!){LABEL_START}\[[^\]]+\]\((https?://[^\s)]+)\)"),
+    _LINK_OPENING,
+    linear_scan.bracket_link_failure(r"\]", r"\s)"),
 )
 _PRODUCT_URL_KEYS = frozenset(
     {
@@ -102,12 +145,12 @@ def person_citations(text: str, evidence_urls: set[str]) -> str:
     parts = re.split(r"(?<=[.!?])(?=\s)|(?<=\n)", text)
     cleaned: list[str] = []
     for part in parts:
-        matches = list(_MARKDOWN_LINK.finditer(part))
+        matches = list(_MARKDOWN_LINKS.finditer(part))
         if matches and any(not valid(match) for match in matches):
-            kept = _MARKDOWN_LINK.sub(
+            kept = _MARKDOWN_LINKS.sub(
                 lambda match: match[0] if valid(match) else "", part
             )
-            if not any(valid(match) for match in _MARKDOWN_LINK.finditer(kept)):
+            if not any(valid(match) for match in _MARKDOWN_LINKS.finditer(kept)):
                 continue
             cleaned.append(kept)
         else:
@@ -174,11 +217,9 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
 
     # Remove fabricated Markdown citations as a whole, including placeholder URLs.
     # Bare unknown URLs retain the existing explicit provenance notice.
-    text = re.sub(
-        rf"(?<!!){LABEL_START}\[[^\]\n]+\]\((?:\[unverified source\]|https?://[^\s]+?)\)",
+    text = _CITATION_LINKS.sub(
         lambda m: m[0] if urls(m[0]) and all(map(fetched, urls(m[0]))) else "",
         text,
-        flags=re.I,
     )
     definitions = re.compile(r"(?m)^\s{0,3}\[([^\]\n]+)\]:[ \t]*(\S+)[^\n]*$")
     for definition in list(definitions.finditer(text)):
@@ -257,9 +298,7 @@ def inline_source_markers(
             return match[0]
         return f"[{numbers[url]}]({url})" if url in numbers else match.group(0)
 
-    text = re.sub(
-        rf"(?<!!){LABEL_START}\[[^\]]+\]\((https?://[^\s)]+)\)", markdown, text
-    )
+    text = _WEB_LINKS.sub(markdown, text)
 
     def bare(match: re.Match[str]) -> str:
         url = match[0].rstrip(".,;:)]}>'\"")
@@ -288,8 +327,7 @@ def provider_reference_markers(text: str, retrieved: list[str]) -> str:
 
     # Resolve a reference list together so rejected numeric IDs cannot leave
     # separators behind after provenance filtering.
-    run = re.compile(REFERENCE.pattern + r"(?:[,;][ \t]*" + REFERENCE.pattern + r")*")
-    return run.sub(
+    return _REFERENCE_RUNS.sub(
         lambda match: ", ".join(
             rendered
             for part in REFERENCE.finditer(match[0])
