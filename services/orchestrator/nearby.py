@@ -39,6 +39,38 @@ class NearbyError(ValueError):
     """Only fixed error codes cross the provider boundary."""
 
 
+# Nominatim address keys that name the way or square a house number belongs to
+# (a bakery on a pedestrian street has "pedestrian", not "road").
+STREET_KEYS = (
+    "road",
+    "pedestrian",
+    "square",
+    "place",
+    "footway",
+    "path",
+    "cycleway",
+    "living_street",
+)
+
+
+def postal_address(tags: dict[str, Any]) -> str:
+    """A shown address from OSM addr:* tags; never a house number without its way.
+
+    "186, 14000, Caen" (staging 2026-11-14) came from a house number whose
+    street was missing: the number alone locates nothing, so it is omitted.
+    OSM maps an address on a square or a hamlet with addr:place, not addr:street.
+    """
+
+    def tag(key: str) -> str:
+        value = tags.get(key)
+        return " ".join(value.split()) if isinstance(value, str) else ""
+
+    street = tag("addr:street") or tag("addr:place")
+    number = tag("addr:housenumber")
+    line = " ".join(filter(None, (number, street))) if street else ""
+    return ", ".join(filter(None, (line, tag("addr:postcode"), tag("addr:city"))))
+
+
 def distance(origin: Position, latitude: float, longitude: float) -> int:
     a, b = math.radians(origin.latitude), math.radians(latitude)
     d = (
@@ -290,6 +322,63 @@ class OSM:
         except (KeyError, IndexError, TypeError, ValueError):
             raise NearbyError("place_not_found") from None
 
+    async def reverse(self, position: Position) -> str:
+        """The street and locality around a consented device position.
+
+        Used when a position-dependent answer is not a nearby-places search
+        (a route, a travel time, the weather here): the answering model reads
+        a place name, never coordinates. Same public service, privacy rule and
+        rate limit as a place lookup; nothing is cached.
+        """
+        search = os.environ.get(
+            "ATLAS_NOMINATIM_URL", "https://nominatim.openstreetmap.org/search"
+        )
+        endpoint = os.environ.get("ATLAS_NOMINATIM_REVERSE_URL") or (
+            search[: -len("/search")] + "/reverse"
+            if search.endswith("/search")
+            else "https://nominatim.openstreetmap.org/reverse"
+        )
+        data = await self.request(
+            "geocode",
+            {
+                "lat": f"{position.latitude:.3f}",
+                "lon": f"{position.longitude:.4f}",
+                "format": "jsonv2",
+                "zoom": "17",
+                "addressdetails": "1",
+            },
+            endpoint,
+        )
+        address = data.get("address") if isinstance(data, dict) else None
+        if not isinstance(address, dict):
+            raise NearbyError("place_not_found")
+
+        def first(*keys: str) -> str:
+            return next(
+                (
+                    str(address[k])[:100]
+                    for k in keys
+                    if isinstance(address.get(k), str)
+                ),
+                "",
+            )
+
+        street = first(*STREET_KEYS)
+        district = first("suburb", "neighbourhood", "quarter", "hamlet")
+        locality = first("city", "town", "village", "municipality")
+        postcode = first("postcode")
+        country = first("country")
+        if not locality and not district:
+            raise NearbyError("place_not_found")
+        self.area = locality or district
+        parts = [
+            street,
+            district if district != locality else "",
+            " ".join(filter(None, (postcode, locality))),
+            country,
+        ]
+        return ", ".join(part for part in parts if part)
+
     async def candidates(
         self,
         origin: Position,
@@ -426,24 +515,7 @@ class OSM:
                 meters = distance(origin, lat, lon)
                 if meters > radius:
                     continue
-                address = ", ".join(
-                    filter(
-                        None,
-                        (
-                            " ".join(
-                                filter(
-                                    None,
-                                    (
-                                        tags.get("addr:housenumber"),
-                                        tags.get("addr:street"),
-                                    ),
-                                )
-                            ),
-                            tags.get("addr:postcode"),
-                            tags.get("addr:city"),
-                        ),
-                    )
-                )
+                address = postal_address(tags)
                 result.append(
                     dict(
                         name=str(tags["name"])[:200],
@@ -602,7 +674,17 @@ class OSM:
                 tags[CATEGORIES[kind][0]] = CATEGORIES[kind][1]
                 for key_part, value in (
                     ("housenumber", address.get("house_number")),
-                    ("street", address.get("road")),
+                    (
+                        "street",
+                        next(
+                            (
+                                address[k]
+                                for k in STREET_KEYS
+                                if isinstance(address.get(k), str)
+                            ),
+                            None,
+                        ),
+                    ),
                     ("postcode", address.get("postcode")),
                     ("country", address.get("country_code")),
                     (

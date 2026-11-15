@@ -37,6 +37,17 @@ SHOPS = [
     },
 ]
 
+CASTLE = [
+    {
+        "role": "user",
+        "content": "Le château de Valombre est ouvert cet après-midi ? Et combien de temps pour y aller depuis chez moi ?",
+    },
+    {
+        "role": "assistant",
+        "content": "Pour répondre, j’ai besoin de votre position : je la demande à votre appareil.",
+    },
+]
+
 # (text, history, needs_location expected or None for either, a stated origin
 # expected). A trip between two named places may be read either way: both
 # paths answer from the places the person named.
@@ -86,6 +97,25 @@ CASES: list[tuple[str, list[dict[str, str]], bool | None, bool]] = [
         True,
     ),
     ("place de la gare caen", SHOPS, True, True),
+    # Owner categories of 2026-11-15 (fictional places), French and English with typos.
+    (
+        "Le château de Valombre est ouvert cet aprèm pour une visite avec les expos ? Et combien de temps pour y aller depuis chez moi",
+        [],
+        True,
+        False,
+    ),
+    ("is the castle open this afternoon and how long to get ther from home", [], True, False),
+    ("directions to the old castle by car pls", [], True, False),
+    ("will it rain here tonite", [], True, False),
+    ("any bakery open near me rn", [], True, False),
+    ("a quelle distance je suis de la plage la plus proche", [], True, False),
+    ("des concerts ce soir dans le coin ?", [], True, False),
+    ("whats on tonight near me", [], True, False),
+    # A request to use the device position after a question that needed it.
+    ("Ask my phone for my position !!!", CASTLE, True, False),
+    ("demande ma position au tel", CASTLE, True, False),
+    ("prends ma position GPS stp", CASTLE, True, False),
+    ("use my locaiton", CASTLE, True, False),
     # Not about where the person is.
     ("horaires d'ouverture du musée du Louvre", [], False, False),
     ("quel temps fera-t-il à Nantes demain ?", [], False, False),

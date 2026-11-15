@@ -188,6 +188,7 @@ Rules:
 - When unsure between "answer" and another kind, choose the kind that delivers what the user asked to SEE, USE or DOWNLOAD.
 - A short follow-up ("make it blue", "ajoute un niveau", "plus grand", "relance") keeps the kind of what it changes, with follow_up true.
 - A message that only says where the user is, after a question that needed it, keeps that question's kind with needs_location true and origin set.
+- A message asking the assistant to use, read or ask for the user's own position (their phone, GPS, browser or device location) keeps the kind of the question it completes, with needs_location true and origin null: the assistant can ask the device for it.
 
 Examples (last message, then the reply):
 "Tu pourrais me faire un chat qui joue de la guitare ?" {"kind": "drawing", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
@@ -199,6 +200,8 @@ Examples (last message, then the reply):
 "quel temps fera-t-il à Nantes demain ?" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "il y a une pharmacie de garde pas loin ?" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": null}
 "how long would it take me to walk to the cathedral from here" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": null}
+"how long to get there from home" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": null}
+"demande ma position a mon tel" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": null}
 "je suis devant la mairie de Rennes, il me faut un distributeur" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": "mairie, Rennes"}
 "écris un script python qui trie mes photos par date et lance-le" {"kind": "run", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "vérifie l'espace disque de mon VPS" {"kind": "remote", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}

@@ -54,31 +54,39 @@
     } catch { return null; }
   };
   const permissionKey = id => 'atlas-location-permission:' + id;
+  const loadLocationStyle = () => {
+    if (document.getElementById('atlas-nearby-style')) return;
+    const style = document.createElement('link');
+    style.id = 'atlas-nearby-style'; style.rel = 'stylesheet'; style.href = '/static/atlas/nearby.css';
+    document.head.append(style);
+  };
+  const locationFrench = () => (localStorage.getItem('locale') || navigator.language).startsWith('fr');
   async function requestLocation(signal) {
-    if (!document.getElementById('atlas-nearby-style')) {
-      const style = document.createElement('link');
-      style.id = 'atlas-nearby-style'; style.rel = 'stylesheet'; style.href = '/static/atlas/nearby.css';
-      document.head.append(style);
-    }
+    loadLocationStyle();
     const id = await locationIdentity();
-    const french = (localStorage.getItem('locale') || navigator.language).startsWith('fr');
+    const french = locationFrench();
     const words = french ? ['Partager votre position approximative ?', 'Cette fois seulement', 'Toujours partager', 'Refuser', 'Indiquez un lieu (par exemple près de la place Bellecour)', 'Utiliser ce lieu', 'Annuler', 'Seule la permission est mémorisée. Révocable dans les paramètres. La position approximative est utilisée pour cette demande uniquement.'] : ['Share your approximate location?', 'Share this time only', 'Always share', 'Refuse', 'Enter a place (for example near Bellecour square)', 'Use this place', 'Cancel', 'Only permission is remembered. Revoke it in settings. Approximate location is used for this request only.'];
+    // Why no position came, shown above the place field and sent to Atlas, which then says it
+    // precisely instead of "cannot access your location" (owner report 2026-11-15).
+    const failures = french
+      ? { unsupported: 'Ce navigateur ne fournit pas la position de l’appareil.', permission: 'Le navigateur refuse l’accès à la position pour ce site (autorisation de localisation désactivée).', unavailable: 'L’appareil n’a pas pu déterminer sa position.', timeout: 'L’appareil n’a pas donné sa position à temps.' }
+      : { unsupported: 'This browser does not provide the device position.', permission: 'The browser blocks location access for this site (location permission turned off).', unavailable: 'The device could not determine its position.', timeout: 'The device did not give its position in time.' };
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const locate = mode => new Promise(resolve => {
-      if (!navigator.geolocation) { resolve(null); return; }
+      if (!navigator.geolocation) { resolve({ failure: 'unsupported' }); return; }
       navigator.geolocation.getCurrentPosition(position => {
         const latitude = Math.round(position.coords.latitude * 1000) / 1000;
         const step = .001 / Math.max(.01, Math.cos(latitude * Math.PI / 180));
         // The accuracy radius lets the server refuse a network/IP estimate instead of using it silently.
         const accuracy = Number.isFinite(position.coords.accuracy) ? Math.min(40000000, Math.max(0, Math.round(position.coords.accuracy))) : undefined;
         resolve({ consent: mode, timezone, accuracy, position: { latitude, longitude: Math.max(-180, Math.min(180, Math.round(position.coords.longitude / step) * step)) } });
-      }, () => resolve(null), { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+      }, error => resolve({ failure: error?.code === 1 ? 'permission' : error?.code === 3 ? 'timeout' : 'unavailable' }), { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
     });
-    let denied = false;
-    if (id && localStorage.getItem(permissionKey(id)) === 'always') {
+    let failed = navigator.geolocation ? '' : 'unsupported';
+    if (!failed && id && localStorage.getItem(permissionKey(id)) === 'always') {
       const result = await locate('always');
-      if (result) return result;
-      denied = true;
+      if (result.position) return result;
+      failed = result.failure;
     }
     return new Promise((resolve, reject) => {
       const dialog = document.createElement('dialog'); dialog.id = 'atlas-location-consent'; dialog.setAttribute('aria-label', words[0]);
@@ -87,21 +95,23 @@
       const finish = value => { signal?.removeEventListener('abort', abort); dialog.remove(); resolve(value); };
       const abort = () => { dialog.remove(); reject(new DOMException('Aborted', 'AbortError')); };
       const button = (label, action) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.addEventListener('click', action); controls.append(b); return b; };
-      const typed = consent => {
+      const typed = (consent, failure) => {
         controls.replaceChildren(); title.textContent = words[4];
+        if (failure) { note.textContent = failures[failure] || failures.unavailable; note.dataset.failure = failure; }
+        const reason = consent === 'denied' && failure ? { failure } : {};
         const form = document.createElement('form'), input = document.createElement('input');
         input.required = true; input.minLength = 2; input.maxLength = 200; input.autocomplete = 'off'; input.setAttribute('aria-label', words[4]);
         const submit = document.createElement('button'); submit.type = 'submit'; submit.textContent = words[5];
-        form.append(input, submit); controls.append(form); button(words[6], () => finish({ consent, timezone }));
-        form.addEventListener('submit', event => { event.preventDefault(); finish({ consent, timezone, place: input.value.trim() }); }); input.focus();
+        form.append(input, submit); controls.append(form); button(words[6], () => finish({ consent, timezone, ...reason }));
+        form.addEventListener('submit', event => { event.preventDefault(); finish({ consent, timezone, ...reason, place: input.value.trim() }); }); input.focus();
       };
       for (const [mode, label] of [['once', words[1]], ['always', words[2]]]) {
         const b = button(label, async () => {
           controls.querySelectorAll('button').forEach(control => { control.disabled = true; });
           const result = await locate(mode);
           if (!dialog.isConnected) return;
-          if (result) { if (mode === 'always' && id) localStorage.setItem(permissionKey(id), 'always'); finish(result); }
-          else typed('denied');
+          if (result.position) { if (mode === 'always' && id) localStorage.setItem(permissionKey(id), 'always'); finish(result); }
+          else typed('denied', result.failure);
         });
         if (mode === 'always' && !id) b.disabled = true;
       }
@@ -109,9 +119,56 @@
       dialog.addEventListener('cancel', event => { event.preventDefault(); finish({ consent: 'refused', timezone }); });
       document.body.append(dialog); dialog.showModal();
       signal?.addEventListener('abort', abort, { once: true });
-      if (signal?.aborted) abort(); else if (denied) typed('denied');
+      if (signal?.aborted) abort(); else if (failed) typed('denied', failed);
     });
   }
+  // Owner decision 2026-11-15: when Atlas needs the person's position it asks the device first.
+  // The server decides (any wording, any language): its reply carries a LOCATION_REQUEST link
+  // (services/orchestrator/location_route.py). For the reply to the message just sent, the
+  // stored "always" permission or the consent dialog gets the position, then the same turn is
+  // sent again through Open WebUI's own regenerate control, with the position attached, so the
+  // question is replaced by the answer. The link stays a button for any later use.
+  const LOCATION_REQUEST = '#atlas-location-request';
+  let pendingLocation = null, lastChatSend = 0, lastSendLocated = false, locationFlow = null;
+  const autoLocation = new Set();
+  const regenerateControl = message => message.closest('[id^="message-"]')?.querySelector('.regenerate-response-button') || null;
+  async function shareLocationFor(link) {
+    if (locationFlow) return locationFlow;
+    locationFlow = (async () => {
+      const location = await requestLocation();
+      const regenerate = regenerateControl(link);
+      if (!regenerate) return false;
+      // One use, by the next chat request only (the regenerate below), and only briefly.
+      pendingLocation = { location, expires: Date.now() + 30000 };
+      regenerate.click();
+      return true;
+    })().catch(() => false).finally(() => { locationFlow = null; });
+    return locationFlow;
+  }
+  const locationLinks = () => {
+    const links = [...document.querySelectorAll('.chat-assistant a[href$="' + LOCATION_REQUEST + '"]')];
+    if (!links.length) return;
+    loadLocationStyle();
+    for (const link of links) {
+      if (!link.dataset.atlasLocation) {
+        link.dataset.atlasLocation = 'ready'; link.classList.add('atlas-location-request'); link.setAttribute('role', 'button');
+        link.removeAttribute('target');
+        link.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); shareLocationFor(link); }, true);
+      }
+    }
+    const assistants = [...document.querySelectorAll('.chat-assistant')].filter(item => !item.closest('[id^="chat-preview-"]'));
+    const last = assistants[assistants.length - 1];
+    const link = last && links.find(candidate => last.contains(candidate));
+    const message = link?.closest('[id^="message-"]');
+    // Automatic only for the answer to a message sent from this tab in the last three minutes,
+    // once per message, after Open WebUI shows its controls (the answer is complete), and never
+    // again for a reply to a request that already carried a position (no loop).
+    if (!link || !message || lastSendLocated || Date.now() - lastChatSend > 180000 || autoLocation.has(message.id) || !regenerateControl(link)) return;
+    autoLocation.add(message.id);
+    shareLocationFor(link);
+  };
+  let locationScan = 0;
+  new MutationObserver(() => { if (!locationScan) locationScan = requestAnimationFrame(() => { locationScan = 0; locationLinks(); }); }).observe(document.documentElement, { childList: true, subtree: true });
   window.atlasLocation = { needs: nearbyIntent, request: requestLocation, async revoke() { const id = await locationIdentity(); if (id) localStorage.removeItem(permissionKey(id)); } };
 
   let activeCancellation = null;
@@ -153,8 +210,12 @@
       options = { ...options, body: JSON.stringify(body) };
       const message = body.user_message || [...(body.messages || [])].reverse().find(m => m.role === 'user');
       const text = typeof message?.content === 'string' ? message.content : (message?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
-      if (!body.location && !body.code_mode && nearbyIntent(text)) {
-        const location = await requestLocation(options.signal);
+      lastChatSend = Date.now();
+      const pending = pendingLocation && pendingLocation.expires > Date.now() ? pendingLocation : null;
+      pendingLocation = null; lastSendLocated = Boolean(pending || body.location || body.location_ref);
+      // The keyword pre-check only saves a round trip for shop questions; the server decides.
+      if (!body.location && !body.code_mode && (pending || nearbyIntent(text))) {
+        const location = pending ? pending.location : await requestLocation(options.signal);
         if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         if (url.pathname.startsWith('/api/')) {
           // The host expects a background-task response and persists its body.
@@ -166,6 +227,7 @@
         } else {
           body.location = location;
         }
+        lastSendLocated = true;
         options = { ...options, body: JSON.stringify(body) };
       }
     }

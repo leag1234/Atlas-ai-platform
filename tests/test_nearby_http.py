@@ -184,10 +184,15 @@ class NearbyHTTPTests(unittest.TestCase):
                         if case == "lyon-pharmacy" and not stream:
                             body["location"] = dict(consent="refused")
                             refused = client.post("/v1/chat/completions", json=body)
+                            # The refusal is named, then one question for a place.
+                            refused_answer = refused.json()["choices"][0]["message"][
+                                "content"
+                            ]
                             self.assertIn(
-                                "Indiquez un lieu",
-                                refused.json()["choices"][0]["message"]["content"],
+                                "Vous n’avez pas partagé votre position.",
+                                refused_answer,
                             )
+                            self.assertIn("Indiquez une adresse", refused_answer)
                             body["location"] = dict(
                                 consent="refused", place=rows[0]["category"]
                             )
