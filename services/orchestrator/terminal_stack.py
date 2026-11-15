@@ -116,7 +116,26 @@ def identity_allowed(header: bytes) -> bool:
     user = found.group(1).strip()
     if user and not user.startswith(b"@"):
         return True
+    if public_build_asset(header):
+        return True
     return re.search(rb"(?im)^authorization:[ \t]*Bearer sk-\S", header) is not None
+
+
+PUBLIC_BUILD = re.compile(r"/_app/immutable/[A-Za-z0-9_./-]+")
+
+
+def public_build_asset(header: bytes) -> bool:
+    """A read of the content-hashed interface build, which holds no user data.
+
+    Phone browsers sometimes fetch these files without the basic credentials, and
+    a refusal there breaks the whole interface, so the front door may send them
+    without a user. Only GET and HEAD, only that folder, after path normalization.
+    """
+    method = header.split(b" ", 1)[0].upper()
+    if method not in (b"GET", b"HEAD"):
+        return False
+    path = normalized_path(header)
+    return path is not None and PUBLIC_BUILD.fullmatch(path) is not None
 
 
 DOWNLOAD = re.compile(

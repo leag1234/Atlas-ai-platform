@@ -53,6 +53,27 @@ class GuestProjectRoutes(unittest.TestCase):
 
 
 class FrontDoorIdentityTests(unittest.TestCase):
+    def test_public_build_assets_need_no_user(self) -> None:
+        from services.orchestrator.terminal_stack import identity_allowed
+
+        empty = b"\r\nHost: guest\r\nX-Atlas-User: @guest"
+        self.assertTrue(
+            identity_allowed(b"GET /_app/immutable/chunks/Ab1-c_D.js HTTP/1.1" + empty)
+        )
+        self.assertTrue(
+            identity_allowed(b"HEAD /_app/immutable/assets/0.Xy.css HTTP/1.1" + empty)
+        )
+        for line in (
+            b"POST /_app/immutable/chunks/Ab1.js HTTP/1.1",
+            b"GET /_app/immutable/../../api/v1/chats HTTP/1.1",
+            b"GET /_app/immutable/%2e%2e/%2e%2e/api/config HTTP/1.1",
+            b"GET /_app/immutable/%252e%252e/api/config HTTP/1.1",
+            b"GET /_app/version.json HTTP/1.1",
+            b"GET /api/v1/auths/ HTTP/1.1",
+            b"GET /_app/immutablex/a.js HTTP/1.1",
+        ):
+            self.assertFalse(identity_allowed(line + empty), line)
+
     def test_empty_user_only_beside_an_interface_key(self) -> None:
         from services.orchestrator.terminal_stack import identity_allowed
 
