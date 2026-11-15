@@ -4,6 +4,8 @@ import logging
 import re
 from functools import lru_cache
 
+from packages import linear_scan
+
 FENCE = re.compile(
     r"(?m)^[ \t]*(?P<fence>`{3,}|~{3,})mermaid[^\S\n]*\n"
     r"(?P<source>[\s\S]*?)(?:\n[ \t]*(?P=fence)[ \t]*(?=\n|$)|\Z)",
@@ -15,7 +17,14 @@ _KNOWN_HEADERS = re.compile(
     r"^\s*(?:flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|pie|gantt|mindmap|timeline)\b",
     re.I,
 )
-_NODE = re.compile(r"\b[A-Za-z_][\w-]*(?P<open>\[\[|\[\(|\(\[|\(\(|\{\{|\[|\(|\{)")
+# A node id and its opening bracket. The id reads its whole run (no bracket is a
+# word character), and a failed id skips the later ids of the same run, which
+# reach the same end: a long dashed run is read once, not once per dash.
+_NODE = linear_scan.Scan(
+    re.compile(r"\b[A-Za-z_][\w-]*+(?P<open>\[\[|\[\(|\(\[|\(\(|\{\{|\[|\(|\{)"),
+    re.compile(r"\b[A-Za-z_]"),
+    linear_scan.run_from_start(r"[\w-]*"),
+)
 _CLOSERS = {
     "[[": "]]",
     "[(": ")]",
@@ -75,11 +84,31 @@ def _quoted(label: str, strip_emoji: bool) -> str:
     )
 
 
-def _repair_subgraphs(source: str, strip_emoji: bool) -> str:
-    pattern = re.compile(
-        r"(?ms)^(?P<prefix>\s*subgraph\s+[A-Za-z_][\w-]*\s*)\[(?P<label>.*?)\](?=\s*$)"
-    )
+_SUBGRAPH = re.compile(
+    r"(?ms)^(?P<prefix>\s*+subgraph\s++[A-Za-z_][\w-]*+\s*+)\[(?P<label>.*?)\](?=\s*$)"
+)
+_SUBGRAPH_PREFIX = re.compile(r"(?m)^\s*+subgraph\s++[A-Za-z_][\w-]*+\s*+\[")
+_BLANK = re.compile(r"\s*")
 
+
+def _subgraph_failure(text: str) -> linear_scan.FailedUntil:
+    """A line start that reaches "subgraph id [" failed on its label: no "]" at
+    a line end follows, so no later one can match. Otherwise the line starts of
+    its blank run reach the same text and fail too."""
+
+    def failed_until(found: re.Match[str]) -> int:
+        if _SUBGRAPH_PREFIX.match(text, found.start()):
+            return len(text) + 1
+        blank = _BLANK.match(text, found.start())
+        return blank.end() if blank else found.end()
+
+    return failed_until
+
+
+_SUBGRAPHS = linear_scan.Scan(_SUBGRAPH, re.compile(r"(?m)^"), _subgraph_failure)
+
+
+def _repair_subgraphs(source: str, strip_emoji: bool) -> str:
     def replace(match: re.Match[str]) -> str:
         label = match["label"]
         if not _DANGEROUS_LABEL.search(label) and not (
@@ -88,7 +117,7 @@ def _repair_subgraphs(source: str, strip_emoji: bool) -> str:
             return match[0]
         return f'{match["prefix"]}["{_quoted(label, strip_emoji)}"]'
 
-    return pattern.sub(replace, source)
+    return _SUBGRAPHS.sub(replace, source)
 
 
 @lru_cache(maxsize=256)

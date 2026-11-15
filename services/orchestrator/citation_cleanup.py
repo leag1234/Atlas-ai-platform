@@ -3,7 +3,24 @@
 from bisect import bisect_right
 import re
 
+from packages import linear_scan
+
 _LABEL_PREFIX = re.compile(r"[\w -]*")
+
+
+def _emphasis_viable(text: str) -> linear_scan.Viable:
+    """A tag needs a ">" after it: looked up, not rescanned from every "<b"."""
+    last_close = text.rfind(">")
+    return lambda found: found[0] in "*_`" or last_close >= found.end()
+
+
+# Emphasis marks and tags.
+_EMPHASIS = linear_scan.Scan(
+    re.compile(r"[*_`]|</?(?:strong|b|h[1-6])[^>]*+>"),
+    re.compile(r"[*_`]|</?(?:strong|b|h[1-6])"),
+    linear_scan.attempted,
+    _emphasis_viable,
+)
 
 
 def slash_label(text: str) -> bool:
@@ -55,7 +72,7 @@ def cleanup(text: str) -> str:
             continue
         line = lines[i]
         plain = re.sub(r"^\s*(?:#{1,6}\s+|[-*+•·]\s*|\d+[.)]\s+)?", "", line)
-        plain = re.sub(r"[*_`]|</?(?:strong|b|h[1-6])[^>]*>", "", plain).strip()
+        plain = _EMPHASIS.sub("", plain).strip()
         if not plain:
             lines[i] = ""
             continue

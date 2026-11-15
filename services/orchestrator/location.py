@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from packages import attached_blocks
+
 import math
 import re
 import unicodedata
@@ -74,7 +76,7 @@ def categories(text: str) -> list[str]:
 
 
 def location_dependent(text: str) -> bool:
-    text = re.sub(r"<attached_files>.*?</attached_files>", "", text, flags=re.S)
+    text = attached_blocks.BLOCKS.sub("", text)
     text = re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M)
     value = normalized(text)
     if re.search(

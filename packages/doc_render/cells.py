@@ -68,11 +68,14 @@ class Reading:
 # Emphasis opens and closes at a word boundary: "2*3*4", "5 * 3", "*args" and
 # "a_b_c" are not emphasis. Underscores are never emphasis: identifiers such as
 # "__init__" keep theirs. A link keeps its text.
-URL = r"(?:https?://|mailto:)[^\s()]*(?:\([^\s()]*\)[^\s()]*)*"
+# Code and labels read their whole run once, with a lookahead for a non-space
+# character: the former [^`]*[^`\s][^`]* split the run between two repeats
+# (quadratic on an unclosed run). Same matches.
+URL = r"(?:https?://|mailto:)[^\s()]*+(?:\([^\s()]*+\)[^\s()]*+)*+"
 INLINE = re.compile(
     r"\\(?P<escaped>[\\`*\[\]])"
-    r"|`(?P<code>[^`]*[^`\s][^`]*)`"
-    r"|(?<![\w\]])!?\[(?P<label>[^\[\]]*[^\[\]\s][^\[\]]*)\]\((?P<url>" + URL + r")\)"
+    r"|`(?P<code>(?=\s*+[^`\s])[^`]*+)`"
+    r"|(?<![\w\]])!?\[(?P<label>(?=\s*+[^\[\]\s])[^\[\]]*+)\]\((?P<url>" + URL + r")\)"
     r"|(?<![\w*])(?P<stars>\*{1,3})(?![\s*])(?P<inner>.{1,400}?)(?<![\s*])"
     r"(?P=stars)(?![\w*])"
 )

@@ -9,6 +9,8 @@ import re
 from collections.abc import Sequence
 import unicodedata
 
+from packages import linear_scan
+
 from typing import Protocol
 
 
@@ -21,6 +23,24 @@ class LanguageMessage(Protocol):
 
 
 LANGUAGES = ("fr", "de", "es", "it", "en")
+
+
+_CLOSER = {"`": "`", '"': '"', "«": "»"}
+
+
+def _quote_viable(text: str) -> linear_scan.Viable:
+    """A quote needs its closer later on; last positions are looked up, not
+    scanned again from every unclosed quote (quadratic)."""
+    last = {closer: text.rfind(closer) for closer in _CLOSER.values()}
+    return lambda found: last[_CLOSER[found[0]]] >= found.end()
+
+
+_QUOTED = linear_scan.Scan(
+    re.compile(r'`[^`]*`|"[^"]*"|«[^»]*»'),
+    re.compile(r'[`"«]'),
+    linear_scan.attempted,
+    _quote_viable,
+)
 
 
 def status_language(messages: Sequence[LanguageMessage], locale: object) -> str:
@@ -97,7 +117,7 @@ def requested_language(text: str) -> str | None:
         for c in unicodedata.normalize("NFKD", user_prose(text).lower())
         if not unicodedata.combining(c)
     )
-    normalized = re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", normalized)
+    normalized = _QUOTED.sub("", normalized)
     names = {
         "en": "english|anglais|englisch|ingles|inglese",
         "fr": "french|francais|franzosisch|frances|francese",

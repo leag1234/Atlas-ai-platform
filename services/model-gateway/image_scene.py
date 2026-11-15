@@ -21,6 +21,15 @@ def character_key(name: str) -> str:
     return {"virgin mary": "mary"}.get(normalized(name), normalized(name))
 
 
+# "A ... B" read from the line's first A (atomic): a later A has fewer B after
+# it; the former expressions retried ".*" from every A (quadratic).
+_BIRTH_ATTRIBUTE = re.compile(r"pregnan|swaddl|clean|serene|calm", re.I)
+_HOLDING_BABY = re.compile(r"^(?>.*?holding).*(?:baby|newborn)", re.I | re.M)
+_HELD_BABY = re.compile(
+    r"^(?>.*?(?:holds|holding|cradl|swaddl)).*(?:baby|newborn|Jesus)", re.I | re.M
+)
+
+
 class Character(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     name: str = Field(min_length=1, max_length=100)
@@ -354,22 +363,15 @@ class Scene(BaseModel):
             person.attributes = [
                 value
                 for value in person.attributes
-                if not re.search(
-                    r"pregnan|swaddl|clean|serene|calm|holding.*(?:baby|newborn)",
-                    value,
-                    re.I,
-                )
+                if not _BIRTH_ATTRIBUTE.search(value)
+                and not _HOLDING_BABY.search(value)
             ]
             if person not in (mother, newborn) and self._birth_request(person.role):
                 person.role = "an adult companion"
         self.action_bindings = [
             binding
             for binding in self.action_bindings
-            if not re.search(
-                r"(?:holds|holding|cradl|swaddl).*(?:baby|newborn|Jesus)",
-                binding.render(),
-                re.I,
-            )
+            if not _HELD_BABY.search(binding.render())
         ]
         self.action = (
             "delivery happening now: the woman half-lying on her back on straw, "

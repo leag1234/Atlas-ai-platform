@@ -5,6 +5,7 @@ import re
 import time
 from decimal import Decimal
 
+from packages.attached_blocks import BLOCKS as ATTACHED_FILES
 from services.orchestrator.appearance import (
     _normalized,
     is_spatial_drawing_request,
@@ -22,8 +23,18 @@ _DIAGRAM = (
 )
 
 
+_NOT_DRAW = re.compile(
+    r"\b(?:do not|don't|nicht|non)\s+(?:draw|dessine|zeichne|disegna)\b"
+)
+# "ne ... pas dessine" is read from the line's first "ne " (atomic): the former
+# alternation retried ".*" from every "ne " (quadratic on a repeated word).
+_NE_PAS_DRAW = re.compile(
+    r"^(?>.*?\bne ).*pas\s+(?:draw|dessine|zeichne|disegna)\b", re.MULTILINE
+)
+
+
 def requested(question: str) -> bool:
-    question = re.sub(r"<attached_files>.*?</attached_files>", "", question, flags=re.S)
+    question = ATTACHED_FILES.sub("", question)
     question = re.sub(r"^\[Attachment: [^\n]*\]$", "", question, flags=re.M)
     if is_spatial_drawing_request(question):
         return False
@@ -33,13 +44,14 @@ def requested(question: str) -> bool:
         text,
     ):
         return False
-    if re.search(
-        r"\b(?:without|no|not|sans|pas de|ohne|kein\w*|sin|senza)\s+(?:a\s+|any\s+)?"
-        + _DIAGRAM,
-        text,
-    ) or re.search(
-        r"\b(?:do not|don't|ne .*pas|nicht|non)\s+(?:draw|dessine|zeichne|disegna)\b",
-        text,
+    if (
+        re.search(
+            r"\b(?:without|no|not|sans|pas de|ohne|kein\w*|sin|senza)\s+(?:a\s+|any\s+)?"
+            + _DIAGRAM,
+            text,
+        )
+        or _NOT_DRAW.search(text)
+        or _NE_PAS_DRAW.search(text)
     ):
         return False
     if re.search(r"\b" + _DIAGRAM + r"\b", text):

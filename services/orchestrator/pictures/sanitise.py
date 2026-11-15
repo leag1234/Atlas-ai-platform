@@ -10,6 +10,8 @@ that cannot be made safe is refused, never rendered.
 from __future__ import annotations
 
 import re
+
+from packages import linear_scan
 import xml.etree.ElementTree as ET
 
 NS = "http://www.w3.org/2000/svg"
@@ -44,7 +46,31 @@ REMOVED = frozenset(
     }
 )
 _HREF_ATTRIBUTES = ("href", f"{{{XLINK_NS}}}href")
-_EXTERNAL_URL = re.compile(r"url\(\s*(['\"]?)\s*(?!#)[^)]*\)", re.I)
+# url( up to its ")", unless "#" follows "url(" at once: the former
+# url\(\s*(['"]?)\s*(?!#)[^)]*\) matched exactly these spans (a space before
+# "#" let it through), but split each space run between three repeats: cubic.
+EXTERNAL_URL = re.compile(r"url\((?!#)[^)]*+\)", re.I)
+
+
+def _external_url_failure(text: str) -> linear_scan.FailedUntil:
+    last_close = text.rfind(")")
+    # Without a ")" after it no url( can close; otherwise only "#" failed.
+    return lambda found: len(text) + 1 if found.end() > last_close else found.end()
+
+
+_EXTERNAL_URL = linear_scan.Scan(
+    EXTERNAL_URL, re.compile(r"url\(", re.I), _external_url_failure
+)
+# An entity-free DOCTYPE, and the opening <svg> tag: read to their first ">"
+# (or "[") once, not again from each later opening before it.
+_DOCTYPE = linear_scan.Scan(
+    re.compile(r"<!DOCTYPE[^>\[]*+>", re.I),
+    re.compile(r"<!DOCTYPE", re.I),
+    linear_scan.up_to(r"[>\[]"),
+)
+_SVG_OPENING = linear_scan.Scan(
+    re.compile(r"<svg\b[^>]*+>"), re.compile(r"<svg\b"), linear_scan.up_to(r">")
+)
 _CSS_IMPORT = re.compile(r"@import[^;]*;?", re.I)
 _CSS_EXPRESSION = re.compile(r"expression\s*\(|javascript:|-moz-binding", re.I)
 
@@ -91,10 +117,10 @@ def sanitise(svg: str) -> str:
         raise UnsafeSvg("svg_too_large")
     if re.search(r"<!ENTITY", svg, re.I):
         raise UnsafeSvg("svg_entity")
-    text = re.sub(r"<!DOCTYPE[^>\[]*>", "", svg, flags=re.I)
+    text = _DOCTYPE.sub("", svg)
     if re.search(r"<!DOCTYPE", text, re.I):
         raise UnsafeSvg("svg_doctype")
-    opening = re.search(r"<svg\b[^>]*>", text)
+    opening = _SVG_OPENING.search(text)
     if opening is None:
         raise UnsafeSvg("svg_missing")
     if "xmlns=" not in opening.group(0):

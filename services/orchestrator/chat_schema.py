@@ -1,5 +1,8 @@
 """OpenAI-compatible text/image chat; clients cannot alter tool budgets."""
 
+from collections.abc import Callable
+
+from packages import attached_blocks, linear_scan
 from packages.profiles import accepted_profile, context_window, default_profile
 from packages.file_intent import produces_file
 from packages.work_intent import continues_work
@@ -39,7 +42,7 @@ def continuation_instruction(answer: str, language: str) -> str:
     """Ask for a suffix only, preserving any unfinished Markdown structure."""
     instruction = CONTINUATION_INSTRUCTIONS[language]
     open_fence = answer.count("```") % 2 == 1
-    cut_citation = bool(re.search(r"\[[^\]]*$|\[[^\]]*\]\([^)]*$", answer))
+    cut_citation = _CUT_CITATION.search(answer) is not None
     lines = [line for line in answer.splitlines() if line.strip()]
     cut_table = len(lines) >= 2 and "|" in lines[-1] and "|" in lines[-2]
     if open_fence or cut_citation or cut_table:
@@ -47,6 +50,58 @@ def continuation_instruction(answer: str, language: str) -> str:
             " Preserve and complete any unfinished code block, citation, or table."
         )
     return instruction
+
+
+def markdown_tail_viable(
+    *, target: bool, bracket: bool = False, bare: bool = False
+) -> Callable[[str], linear_scan.Viable]:
+    """Whether a "[" (or "![") can start unfinished Markdown that runs to the
+    end of the text: its label reaches the end, or its "]" is followed by a
+    "(" (``target``) or "[" (``bracket``) whose run reaches the end, or the "]"
+    itself ends the text (``bare``). Decided from memoized run ends, so an
+    opening is not reread to the end each time (the former searches retried
+    every "[" to the end: quadratic).
+    """
+
+    def build(text: str) -> linear_scan.Viable:
+        label_end = linear_scan.RunEnd(text, re.compile(r"\]"))
+        target_end = linear_scan.RunEnd(text, re.compile(r"\)"))
+        bracket_end = linear_scan.RunEnd(text, re.compile(r"\]"))
+        size = len(text)
+        line_end = size - 1 if text.endswith("\n") else size
+
+        def viable(found: re.Match[str]) -> bool:
+            if not found[0].endswith("["):
+                return True
+            close = label_end(found.end())
+            if close == size:
+                return True
+            following = text[close + 1 : close + 2]
+            if target and following == "(":
+                return target_end(close + 2) == size
+            if bracket and following == "[":
+                return bracket_end(close + 2) == size
+            return bare and close + 1 >= line_end
+
+        return viable
+
+    return build
+
+
+# A citation cut at the end of the answer.
+_CUT_CITATION = linear_scan.Scan(
+    re.compile(r"\[[^\]]*$|\[[^\]]*\]\([^)]*$"),
+    re.compile(r"\["),
+    linear_scan.attempted,
+    markdown_tail_viable(target=True),
+)
+# An Open WebUI filesystem file tag; a failed "<file " reads to the first ">",
+# which every later "<file " before it reaches too (same outcome, skipped).
+_FILESYSTEM_TAG = linear_scan.Scan(
+    re.compile(r'<file\s[^>]*type=[\'"]filesystem[\'"]'),
+    re.compile(r"<file\s"),
+    linear_scan.up_to(r">"),
+)
 
 
 class ChatRequest(VisionInput):
@@ -231,12 +286,10 @@ class ChatRequest(VisionInput):
     def has_attachments(self) -> bool:
         # Open WebUI filesystem uploads arrive as file tags, not document bytes.
         return bool(self.documents) or any(
-            re.search(r'<file\s[^>]*type=[\'"]filesystem[\'"]', block) is not None
+            _FILESYSTEM_TAG.search(block) is not None
             for message in self.messages
             if message.role == "user"
-            for block in re.findall(
-                r"<attached_files>(.*?)</attached_files>", message.text, re.S
-            )
+            for block in attached_blocks.CONTENTS.findall(message.text)
         )
 
     @property

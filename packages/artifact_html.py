@@ -11,6 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from packages import linear_scan
 from packages.text_deliverables import TextDeliverableError, validate_text
 
 DEFAULT_MAX_BYTES = 262144
@@ -76,10 +77,43 @@ DIALOG_API_PATTERNS = (
 EXTERNAL_URL_PATTERN = re.compile(
     r"(?:https?|wss?)://[^\s'\"<>]+|(?<![\w:/])//[^\s'\"<>]+", re.IGNORECASE
 )
-STYLE_URL_PATTERN = re.compile(r"url\(\s*['\"]?([^'\")]+)['\"]?\s*\)", re.IGNORECASE)
-STYLE_IMPORT_PATTERN = re.compile(r"@import\s+['\"]([^'\"]+)['\"]", re.IGNORECASE)
+# url( spaces, quote, address, quote, spaces ). Possessive runs read each
+# character once (the former "\s*...[^'")]+...\s*" split a space run between
+# three quantifiers: cubic, 8 000 spaces took over a minute). The second branch
+# keeps the former result when the address is a single space before ")" or
+# before a quote and ")": url( ) and url( ').
+_STYLE_URL_BODY = r"""(?:\s*+['"]?+|\s*(?=\s['"]?\)))([^'")]++)['"]?+\s*+\)"""
+STYLE_URL_PATTERN = re.compile(r"url\(" + _STYLE_URL_BODY, re.IGNORECASE)
+STYLE_IMPORT_PATTERN = re.compile(r"@import\s++['\"]([^'\"]++)['\"]", re.IGNORECASE)
 STYLE_IMPORT_URL_PATTERN = re.compile(
-    r"@import\s+url\(\s*['\"]?([^'\")]+)['\"]?\s*\)", re.IGNORECASE
+    r"@import\s++url\(" + _STYLE_URL_BODY, re.IGNORECASE
+)
+# After a failed url( every url( that ends inside the same address run reads the
+# same run to the same end and fails too: skipping them keeps "url(url(url(..."
+# linear. Only a url( that ends where the run's trailing spaces start may read
+# the character after them as its opening quote, so it is still tried.
+_STYLE_URL_RUN = re.compile(r"""\s*+['"]?+[^'")]*+""")
+_SPACE = re.compile(r"\s")
+
+
+def _style_url_failure(text: str) -> linear_scan.FailedUntil:
+    def failed_until(found: re.Match[str]) -> int:
+        run = _STYLE_URL_RUN.match(text, found.end())
+        end = run.end() if run else found.end()
+        while end > found.end() and _SPACE.match(text, end - 1):
+            end -= 1
+        return end
+
+    return failed_until
+
+
+STYLE_URLS = linear_scan.Scan(
+    STYLE_URL_PATTERN, re.compile(r"url\(", re.IGNORECASE), _style_url_failure
+)
+STYLE_IMPORT_URLS = linear_scan.Scan(
+    STYLE_IMPORT_URL_PATTERN,
+    re.compile(r"@import\s++url\(", re.IGNORECASE),
+    _style_url_failure,
 )
 LOCATION_ASSIGNMENT_PATTERN = re.compile(
     r"(?<![\w.])(?:location|location\.href)\s*=[^=]", re.IGNORECASE
@@ -226,7 +260,7 @@ class _Validator(html.parser.HTMLParser):
             self.problems.append(Problem("relative_reference", line))
 
     def _check_style(self, value: str, line: int) -> None:
-        for match in STYLE_URL_PATTERN.finditer(value):
+        for match in STYLE_URLS.finditer(value):
             url = match.group(1).strip()
             if not url.startswith(("data:", "#")):
                 self.problems.append(Problem("external_reference", line))
@@ -234,7 +268,7 @@ class _Validator(html.parser.HTMLParser):
             url = match.group(1).strip()
             if not url.startswith(("data:", "#")):
                 self.problems.append(Problem("external_reference", line))
-        for match in STYLE_IMPORT_URL_PATTERN.finditer(value):
+        for match in STYLE_IMPORT_URLS.finditer(value):
             url = match.group(1).strip()
             if not url.startswith(("data:", "#")):
                 self.problems.append(Problem("external_reference", line))

@@ -6,11 +6,48 @@ import re
 import time
 import unicodedata
 
+from packages import linear_scan
+
 from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.visual_copy import copy, failure
+
+
+# A quoted payload; an opening quote without a closing one ends the scan.
+_QUOTED = linear_scan.Scan(
+    re.compile(r'["“]([^"”]+)["”]'), re.compile(r'["“]'), linear_scan.up_to(r'["”]')
+)
+_PAYLOAD_WORD = re.compile(r"\b(?:pour|for|fur|para|per)", re.I)
+_SPACES = re.compile(r"\s*")
+
+
+def precise_payload(question: str) -> str | None:
+    """Group 1 of the former search for r"\\b(?:pour|for|fur|para|per)\\s*:?\\s+(.+)$".
+
+    "(.+)$" stays on the last line (before a final newline), so the payload
+    starts at the latest place the separator allows on that line. Read once
+    per word, where the expression split each space run between two repeats
+    (quadratic, and spaces may span lines).
+    """
+    end = len(question) - 1 if question.endswith("\n") else len(question)
+    line = question.rfind("\n", 0, end) + 1
+    for word in _PAYLOAD_WORD.finditer(question):
+        after = _SPACES.match(question, word.end())
+        spaces = after.end() if after else word.end()
+        starts = []
+        if question[spaces : spaces + 1] == ":":
+            # Colon, then at least one space: the payload starts inside that run.
+            more = _SPACES.match(question, spaces + 1)
+            starts.append((spaces + 2, more.end() if more else spaces + 1))
+        # No colon: at least one space before the payload.
+        starts.append((word.end() + 1, spaces))
+        for low, high in starts:
+            start = min(high, end - 1)
+            if start >= max(low, line):
+                return question[start:end]
+    return None
 
 
 def normalized(value: str) -> str:
@@ -53,7 +90,7 @@ def strategy(question: str) -> tuple[Call, ...] | None:
             "blue" if re.search(r"\b(?:blue|bleu|blau|azul|blu)\b", text) else "black"
         )
         # Quoted text and standard QR URI formats are exact user payloads.
-        quoted = re.findall(r'["“]([^"”]+)["”]', question)
+        quoted = _QUOTED.findall(question)
         urls = re.findall(r"https?://[^\s<>]+", question)
         payloads = quoted or [url.rstrip(".,;") for url in urls]
         if not payloads:
@@ -65,14 +102,12 @@ def strategy(question: str) -> tuple[Call, ...] | None:
             if uri:
                 payloads = [uri[0]]
         if not payloads:
-            precise = re.search(
-                r"\b(?:pour|for|fur|para|per)\s*:?\s+(.+)$", question, re.I
-            )
-            if precise and not re.search(
+            precise = precise_payload(question)
+            if precise is not None and not re.search(
                 r"\b(?:test|tester|testing|tests|testen|pruebas|prova|provare|different|categories|categorias|kategorien|categorie)\b",
-                normalized(precise[1]),
+                normalized(precise),
             ):
-                payloads = [precise[1]]
+                payloads = [precise]
         if payloads:
             if len(payloads) > 10:
                 return None

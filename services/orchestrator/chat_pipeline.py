@@ -1,5 +1,6 @@
 """Chat uses the bounded harness and resolves citations through retrieval HTTP."""
 
+from packages import linear_scan
 from packages.limits import LimitError
 from packages.validation import describe_validation
 from pydantic import ValidationError
@@ -238,12 +239,27 @@ async def source(key: str) -> dict[str, object]:
     return Source.model_validate(json.loads(body)).model_dump()
 
 
+_SOURCE_END = re.compile(r"/sources/[a-f0-9]{64}")
+# "(?<!\[)": in a run of "[", only the first can start a label; the others
+# reach the same "]" and rescanning from each is quadratic. Openings that share
+# a failed target run are not retried either (many "[a](" before one far ")").
+_SOURCE_LINKS = linear_scan.Scan(
+    re.compile(r"(?<!\[)\[[^\]]*\]\([^)]*/sources/[a-f0-9]{64}\)"),
+    re.compile(r"(?<!\[)\["),
+    linear_scan.bracket_link_failure(
+        r"\]",
+        r")",
+        empty_label=True,
+        run_end_fails=lambda text, end: text[end : end + 1] != ")"
+        or _SOURCE_END.fullmatch(text, max(0, end - 73), end) is None,
+    ),
+)
+
+
 async def render_citations(item: Interaction) -> None:
-    # "(?<!\[)": in a run of "[", only the first can start a label; the others
-    # reach the same "]" and rescanning from each is quadratic. Without
-    # "/sources/" nothing can match: each unclosed "](" is not rescanned.
+    # Without "/sources/" nothing can match.
     uncited = (
-        re.sub(r"(?<!\[)\[[^\]]*\]\([^)]*/sources/[a-f0-9]{64}\)", "", item.reponse)
+        _SOURCE_LINKS.sub("", item.reponse)
         if "/sources/" in item.reponse
         else item.reponse
     )

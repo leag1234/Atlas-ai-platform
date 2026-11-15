@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from packages import linear_scan
 from packages.language import detected_language
 
 VOICE_TABLE = Path(__file__).with_name("voices.json")
@@ -420,6 +421,41 @@ def _normalize_numbers(text: str, language: str) -> str:
     return re.sub(r"\b\d+\b", lambda match: say_year(match[0]), text)
 
 
+# A Markdown table separator line ("| --- | :---: |"), with the blank space around
+# it. The former form split each space run between up to three repeats and
+# entered every blank line: 8 000 characters of blank lines held the
+# interpreter for minutes. Atomic and possessive runs read each character once;
+# a failed line start skips the line starts of its blank run (same outcome).
+TABLE_RULE = re.compile(
+    r"^(?>\s*\|?\s*):?-{3,}+:?(?:\s*+\|\s*+:?-{3,}+:?)+(?:\s*+\|)?\s*$", re.M
+)
+TABLE_RULES = linear_scan.Scan(
+    TABLE_RULE, re.compile(r"^", re.M), linear_scan.run_from_start(r"\s*")
+)
+# Spaces around a comma; a failed attempt skips the rest of its space run when
+# no comma follows it (every start in the run would read to the same place).
+_COMMA = re.compile(r"(?<!\d)\s*,\s*|\s*,\s*(?!\d)")
+_SPACES = re.compile(r"\s*")
+
+
+def _comma_failure(text: str) -> linear_scan.FailedUntil:
+    def failed_until(found: re.Match[str]) -> int:
+        run = _SPACES.match(text, found.start())
+        end = run.end() if run else found.end()
+        return end if text[end : end + 1] != "," else found.end()
+
+    return failed_until
+
+
+COMMAS = linear_scan.Scan(_COMMA, re.compile(r"\s|,"), _comma_failure)
+# Markdown links and images; openings sharing a failed run are not retried.
+LINKS = linear_scan.Scan(
+    re.compile(r"!?(\[([^\]]*)\]\([^)]*\))"),
+    re.compile(r"!?\["),
+    linear_scan.bracket_link_failure(r"\]", r")", empty_label=True),
+)
+
+
 def spoken_text(value: str, language: str | None = None) -> str:
     """Turn chat presentation into deterministic, language-aware speech input."""
     language = language or detected_language(value) or "en"
@@ -431,17 +467,15 @@ def spoken_text(value: str, language: str | None = None) -> str:
         "it": " codice ",
     }[language]
     text = re.sub(r"```.*?```", marker, value, flags=re.S)
-    text = re.sub(r"!?(\[([^\]]*)\]\([^)]*\))", r"\2", text)
+    text = LINKS.sub(r"\2", text)
     text = re.sub(r"https?://[^\s|]+", " ", text)
-    text = re.sub(
-        r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$", "", text, flags=re.M
-    )
+    text = TABLE_RULES.sub("", text)
     text = re.sub(r"(?m)^[ \t]*\|[ \t]*", "", text)
     text = re.sub(r"\|", ", ", text)
     text = re.sub(r"[`*_>#~]", "", text)
     text = re.sub(r"[\U00010000-\U0010ffff]", " ", text)
     text = _replace_lexicon(text, language)
-    text = re.sub(r"(?<!\d)\s*,\s*|\s*,\s*(?!\d)", ", ", text)
+    text = COMMAS.sub(", ", text)
     try:
         text = _normalize_numbers(text, language)
     except Exception:

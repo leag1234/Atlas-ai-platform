@@ -5,6 +5,8 @@ from pathlib import Path, PurePosixPath
 import re
 from urllib.parse import unquote, urlsplit
 
+from packages import linear_scan
+
 
 def inline_fallback(
     text: str, language: str, *, preserve_code: bool = False, partial: bool = False
@@ -55,9 +57,19 @@ def file_footer(files: list[str], strategies: list[str], language: str) -> str:
     return text
 
 
+# "(?<!\[)": in a run of "[", only the first can start a label; the others
+# reach the same "]" and rescanning from each is quadratic. Openings that share
+# a failed label or target run are not retried either: many "[a](" before one
+# far ")" would rescan that run from each of them.
+_LINKS = linear_scan.Scan(
+    re.compile(r"(?<!\[)\[([^\]]+)\]\(([^\s)]+)\)"),
+    re.compile(r"(?<!\[)\["),
+    linear_scan.bracket_link_failure(r"\]", r"\s)"),
+)
+
+
 def canonical_links(text: str, files: list[str]) -> str:
-    # A link needs "](" and a closing ")": without them nothing can match, and
-    # each unclosed "[" would be rescanned to the end of the answer.
+    # A link needs "](" and a closing ")": without them nothing can match.
     if "](" not in text or ")" not in text:
         return text
     for url in files:
@@ -68,9 +80,7 @@ def canonical_links(text: str, files: list[str]) -> str:
             return f"[{match[1]}]({url})" if target == filename else match[0]
 
         # A model may turn a relative UI URL into an invented external host.
-        # "(?<!\[)": in a run of "[", only the first can start a label; the
-        # others reach the same "]" and rescanning from each is quadratic.
-        text = re.sub(r"(?<!\[)\[([^\]]+)\]\(([^\s)]+)\)", canonical, text)
+        text = _LINKS.sub(canonical, text)
     return text
 
 

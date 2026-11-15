@@ -1,5 +1,6 @@
 """Code-side link discovery and bounded shopping answer policy (D7)."""
 
+from packages import attached_blocks
 import re
 import unicodedata
 from collections.abc import Sequence
@@ -7,9 +8,7 @@ from collections.abc import Sequence
 
 def link_request(question: str, *, prices: bool = False) -> bool:
     # Upload transport metadata is not a request for URLs or product prices.
-    question = re.sub(
-        r"<attached_files>.*?</attached_files>", "", question, flags=re.S | re.I
-    )
+    question = attached_blocks.BLOCKS_ANY_CASE.sub("", question)
     text = "".join(
         c
         for c in unicodedata.normalize("NFD", question.casefold())

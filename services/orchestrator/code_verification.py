@@ -17,18 +17,49 @@ class VerificationStatus(BaseModel):
     reason: str = "No test command recorded in this turn"
 
 
+# "python3 - <<'EOF'": the command line up to its heredoc delimiter.
+_HEREDOC_HEADER = re.compile(
+    r"([^\n<>]*\bpython(?:3)?(?:\.\d+)?)(?:\s+-)?\s*<<\s*"
+    r"(['\"]?)([A-Za-z_][A-Za-z_0-9]*)\2"
+)
+_SPACES = re.compile(r"\s*")
+
+
+def heredoc(command: str) -> tuple[str, str, str, str] | None:
+    """Groups of the former full match of a one-heredoc Python command.
+
+    Same result as fullmatch of header, spaces, newline, source (lazy) and the
+    delimiter line, read in one pass: the source ends where the command ends
+    with its delimiter line, and starts after the last newline of the spaces
+    that follow the header. The single expression retried every split of those
+    spaces with a lazy scan of the source: quadratic (a 50 000-character
+    heredoc took about 30 seconds).
+    """
+    header = _HEREDOC_HEADER.match(command)
+    if header is None:
+        return None
+    delimiter = header[3]
+    for closing in ("\n" + delimiter + "\n", "\n" + delimiter):
+        if command.endswith(closing):
+            end = len(command) - len(closing)
+            break
+    else:
+        return None
+    spaces = _SPACES.match(command, header.end())
+    stop = min(spaces.end() if spaces else header.end(), end)
+    newline = command.rfind("\n", header.end(), stop)
+    if newline < 0:
+        return None
+    return header[1], header[2], delimiter, command[newline + 1 : end]
+
+
 def inline_command(command: str) -> str:
     """Normalize a single terminal Python heredoc, never its output or prose."""
     command = command.strip()
-    match = re.fullmatch(
-        r"([^\n<>]*\bpython(?:3)?(?:\.\d+)?)(?:\s+-)?\s*<<\s*"
-        r"(['\"]?)([A-Za-z_][A-Za-z_0-9]*)\2\s*\n(.*?)\n\3\n?",
-        command,
-        re.S,
-    )
-    if match is None:
+    groups = heredoc(command)
+    if groups is None:
         return command
-    prefix, quoted, _, source = match.groups()
+    prefix, quoted, _, source = groups
     # Unquoted heredocs undergo shell expansion, so the parsed source may differ.
     if not quoted and any(char in source for char in "$`\\"):
         return command
@@ -157,7 +188,9 @@ class Verification:
         """A shell exit is test evidence only when it cannot mask or skip the test."""
         # A trailing stderr-to-stdout redirect preserves the terminal exit status.
         # Normalize only this exact unquoted suffix; retain every control operator.
-        command = re.sub(r"\s+2>&1\s*$", "", inline_command(command))
+        # Entered at the first space of a run only: a later start reaches the same
+        # "2>&1", and retrying each was quadratic on a long space run.
+        command = re.sub(r"(?<!\s)\s++2>&1\s*$", "", inline_command(command))
         try:
             lexer = shlex.shlex(
                 inline_command(command), posix=True, punctuation_chars=";&|()\n"

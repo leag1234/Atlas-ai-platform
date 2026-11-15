@@ -35,6 +35,13 @@ class RemoteWrite(BaseModel):
     content: str = Field(max_length=2_000_000)
 
 
+# "cd <dir> && ...": the former \s*cd\s+.+&& split the space run after "cd"
+# between "\s+" and ".+" (quadratic). Same answer: after the run, a line that
+# holds "&&" past its first character, or "&&" right after a run of at least
+# two spaces that does not end with a newline.
+_CD_CHAIN = re.compile(r"\s*+cd(?=\s)\s*+(?:[^\n]+?&&|(?<=[^\S\n])(?<=\s\s)&&)")
+
+
 def declarations() -> list[dict[str, object]]:
     from services.orchestrator.work_machine_tools import relay_enabled
 
@@ -418,7 +425,7 @@ async def execute(
     if name == "remote_run":
         folder = await connected_folder(tools, args["target"], invoke)
         local = folder is not None
-        if re.match(r"\s*cd\s+.+&&", args["command"]):
+        if _CD_CHAIN.match(args["command"]):
             return dict(
                 error="runner_cd_chain_not_supported",
                 next_step=(

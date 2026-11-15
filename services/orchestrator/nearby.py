@@ -28,8 +28,10 @@ from services.orchestrator.location import (
 
 
 # A word joining a street or landmark to its town in free text (fr, en, de, es, it).
+# Entered at the first space of a run, read once (a retry from each later
+# space of a long run was quadratic).
 PLACE_JOINER = re.compile(
-    r"\s+(?:à|a|au|aux|in|at|near|bei|en|a la|in der)\s+", re.IGNORECASE
+    r"(?<!\s)\s++(?:à|a|au|aux|in|at|near|bei|en|a la|in der)\s++", re.IGNORECASE
 )
 
 

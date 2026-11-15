@@ -4,6 +4,8 @@ from bisect import bisect_right
 import re
 from urllib.parse import urlsplit
 
+from packages import linear_scan
+
 
 # Fenced or inline code. Reference form: code_spans and split_code find the same
 # spans in linear time (the expression retries each "```" of a last line without
@@ -84,6 +86,12 @@ _CITATION_RUN = re.compile(
     + r")?"
 )
 _CITATION_PART = re.compile(_REFERENCE_TOKEN + r"|" + _HOST + _CITATION_TAIL)
+# A run starts with a reference read to its first "]": a failed opening is
+# shared by every later opening before that "]", which is not retried.
+_REFERENCE_OPENING = re.compile(r"\[\[atlas-reference:")
+_CITATION_RUNS = linear_scan.Scan(
+    _CITATION_RUN, _REFERENCE_OPENING, linear_scan.up_to(r"\]")
+)
 
 
 def tool_citations(text: str, retrieved: set[str]) -> str:
@@ -157,7 +165,7 @@ def tool_citations(text: str, retrieved: set[str]) -> str:
             date = "" if citation_host else (match["date"] or "")
             return result + punctuation + date
 
-        value = _CITATION_RUN.sub(reference_run, value)
+        value = _CITATION_RUNS.sub(reference_run, value)
         value = _VISIT.sub("", value)
 
         def replace(match: re.Match[str]) -> str:

@@ -2,6 +2,8 @@
 
 import re
 
+from packages import linear_scan
+
 from services.orchestrator.chat_schema import ChatMessage
 
 
@@ -28,7 +30,24 @@ def is_followup(messages: list[ChatMessage]) -> bool:
 
 
 # Only generated-image references establish a thread, never an image mention.
-_IMAGE_CONTEXT = re.compile(r"!\[[^\]]*\]\([^)]*/images/[^)]+\)", re.IGNORECASE)
+# Markdown images. Openings that share a failed label or target run are not
+# retried ("![a](" repeated before one far ")" was quadratic): a later opening
+# inside the run has a shorter target, which cannot hold "/images/" either.
+_IMAGE_CONTEXT = linear_scan.Scan(
+    # The target is read once to its ")" after a lookahead for "/images/" and
+    # one more character: the former [^)]*/images/[^)]+ reread the rest of the
+    # target from every "/images/" in it (cubic with the openings).
+    re.compile(r"!\[[^\]]*\]\((?=[^)]*/images/[^)])[^)]*+\)", re.IGNORECASE),
+    re.compile(r"!\["),
+    linear_scan.bracket_link_failure(
+        r"\]", r")", empty_label=True, run_end_fails=lambda text, end: True
+    ),
+)
+_IMAGE_TARGETS = linear_scan.Scan(
+    re.compile(r"!\[[^\]]*\]\(([^)]+)\)"),
+    re.compile(r"!\["),
+    linear_scan.bracket_link_failure(r"\]", r")", empty_label=True),
+)
 _IMAGE_EXPLANATION = re.compile(
     r"\b(?:en quoi|pourquoi|why|warum|por qu[eé]|perch[eé])\b.{0,120}"
     r"\b(?:bloqu\w*|probl[eè]m\w*|problem\w*|cannot|can't|refus\w*|interdit|"
@@ -157,7 +176,7 @@ def image_medium(messages: list[ChatMessage]) -> str | None:
     for message in reversed(messages[:-1]):
         if message.role != "assistant":
             continue
-        for reference in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", message.text):
+        for reference in _IMAGE_TARGETS.findall(message.text):
             if medium := generated_medium(reference):
                 return medium
     return None
