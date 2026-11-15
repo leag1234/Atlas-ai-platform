@@ -52,6 +52,7 @@ EGRESS: dict[str, str] = {
     "services/orchestrator/fx_rates.py": "third_party",
     "services/orchestrator/mcp_http.py": "third_party",
     "services/orchestrator/nearby.py": "third_party",
+    "services/orchestrator/reference_fetch.py": "third_party",
     "services/orchestrator/searxng.py": "third_party",
     "services/orchestrator/tools.py": "third_party",
     "services/orchestrator/visual_tools.py": "third_party",
@@ -76,6 +77,8 @@ INTERNAL = {
     "services/orchestrator/document_chat.py",
     "services/orchestrator/image_errors.py",
     "services/orchestrator/key_subject.py",
+    # The local Wikipedia mirror (kiwix-serve) is an Atlas-operated server.
+    "services/orchestrator/kiwix.py",
     "services/orchestrator/model.py",
     "services/orchestrator/project_commands.py",
     "services/orchestrator/project_forge.py",
@@ -475,6 +478,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             mcp_http,
             mcp_transport,
             nearby,
+            reference_fetch,
             searxng,
             tools,
             visual_tools,
@@ -492,6 +496,17 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             "image_search": lambda: visual_tools.search_images("phare", "serpapi", 5),
             "commons": lambda: commons.find_drawing("phare", lambda url: None),
             "places": lambda: nearby.OSM.request(Mock(), "geocode", {"q": "Lyon"}),
+            "reference_sources": lambda: reference_fetch.get(
+                "https://www.wikidata.org/w/api.php",
+                capability="reference_lookup",
+                timeout=5,
+            ),
+            "news_feeds": lambda: reference_fetch.get(
+                "https://www.franceinfo.fr/titres.rss",
+                capability="news_feeds",
+                timeout=5,
+                extra_hosts=frozenset({"www.franceinfo.fr"}),
+            ),
             "mcp_http": lambda: mcp_http.HTTP.exchange(Mock(), "tools/list", {}),
             "mcp_local": lambda: mcp_transport.invoke(
                 "/bin/false", [], {}, [], "tool", {}, 1
