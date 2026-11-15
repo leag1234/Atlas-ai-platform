@@ -313,6 +313,10 @@ class Grounding:
         ]
         if supporting_passages:
             return ""
+        # A contradiction is about the same thing: a source sentence that does
+        # not name the claim's own entities says nothing about it (a city news
+        # headline was quoted under a bakery's opening hours, staging 2026-11-14).
+        entities = question_entities(claim.text)
         for passage in self.evidence:
             for match in re.finditer(r"[^\n]+?(?:[.!?](?=\s|$)|(?=\n|$))", passage):
                 source_sentence = match[0].strip()
@@ -338,6 +342,11 @@ class Grounding:
                     normalized(quoted[1]) for quoted in QUOTED.finditer(source_sentence)
                 )
                 if not source_values or source_values & claim_values:
+                    continue
+                if not all(
+                    re.search(r"\b" + re.escape(entity) + r"\b", source)
+                    for entity in entities
+                ):
                     continue
                 overlap = content & terms(source_sentence)
                 if overlap and len(overlap) / len(content) >= 0.75:

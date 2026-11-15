@@ -235,16 +235,24 @@ class LocationTurnTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(await location_turn(req, Interaction()))
                 self.nearby.assert_not_awaited()
 
-    async def test_without_a_decision_the_lexical_gate_is_unchanged(self) -> None:
+    async def test_without_a_decision_a_lexical_gate_decides(self) -> None:
+        # Router off or failed: a known position still searches nearby shops;
+        # any position-dependent request (owner decision 2026-11-15) asks for the
+        # position instead of being answered from a guessed place.
         with patch.dict(os.environ, {"ATLAS_MODEL_ROUTER": ""}):
-            req = request("boulangerie ouverte pres moi")
+            req = request("boulangerie ouverte pres moi", location=browser(30))
             self.assertTrue(await location_turn(req, Interaction()))
             self.nearby.assert_awaited_once()
             self.nearby.reset_mock()
-            self.assertFalse(
-                await location_turn(request("prochain bus pour la gare"), Interaction())
+            item = Interaction()
+            self.assertTrue(
+                await location_turn(request("prochain bus pour la gare"), item)
             )
             self.nearby.assert_not_awaited()
+            self.assertEqual(item.reponse, origin_question("fr"))
+            self.assertFalse(
+                await location_turn(request("train Paris Lyon demain"), Interaction())
+            )
 
 
 class CoarsePositionTests(unittest.IsolatedAsyncioTestCase):

@@ -249,8 +249,18 @@ async def _process_nearby(
     # this message completing the previous one ("I am at ...").
     text = category_text or request.user_text
     if location is None or (location.position is None and not location.place):
+        from services.orchestrator.location_route import (
+            missing_reason,
+            no_position_reply,
+        )
+
+        # A refused or failed device position is named as such, never as
+        # "cannot access your location".
+        reason = missing_reason(location)
         item.reponse = (
-            "Indiquez un lieu, par exemple « près de la place Bellecour », ou partagez votre position approximative pour cette demande."
+            no_position_reply(reason, request.lang)
+            if reason
+            else "Indiquez un lieu, par exemple « près de la place Bellecour », ou partagez votre position approximative pour cette demande."
             if request.lang == "fr"
             else "Enter a place, for example ‘near Bellecour square’, or share your approximate location for this request."
         )

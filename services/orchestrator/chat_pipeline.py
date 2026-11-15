@@ -806,12 +806,14 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     )
     # A Work answer describes the file it delivered: its sentences are not factual
     # claims to match against the pages read ("no source mentions this entity" was
-    # put in front of delivered documents, staging 2026-11-10).
+    # put in front of delivered documents, staging 2026-11-10). A nearby answer is
+    # rendered by the service from map data; its verification searches only feed
+    # the opening status (nearby_chat), they are not sources of its sentences.
     if (
         check is not None
         and check.evidence
         and item.state == "done"
-        and item.task_type != "work"
+        and item.task_type not in {"work", "nearby"}
     ):
         item.reponse = check.check(
             item.reponse,

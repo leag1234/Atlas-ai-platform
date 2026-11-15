@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 import aiohttp
 
 from packages import privacy
+from services.orchestrator.location import Position
 from serverless_support import environment
 
 # Modules that open an outbound HTTP connection, by destination. A new egress must be
@@ -496,6 +497,10 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             "image_search": lambda: visual_tools.search_images("phare", "serpapi", 5),
             "commons": lambda: commons.find_drawing("phare", lambda url: None),
             "places": lambda: nearby.OSM.request(Mock(), "geocode", {"q": "Lyon"}),
+            # A consented device position turned into a street and locality.
+            "places_reverse": lambda: nearby.OSM().reverse(
+                Position(latitude=45.76, longitude=4.83)
+            ),
             "reference_sources": lambda: reference_fetch.get(
                 "https://www.wikidata.org/w/api.php",
                 capability="reference_lookup",

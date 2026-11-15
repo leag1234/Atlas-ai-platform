@@ -91,6 +91,134 @@ def location_dependent(text: str) -> bool:
     )
 
 
+def _plain(text: str) -> str:
+    text = attached_blocks.BLOCKS.sub("", text)
+    text = re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M)
+    return " ".join(normalized(text).replace("'", " ").replace("’", " ").split())
+
+
+# The device position, in the five interface languages, with common spellings
+# ("geoloc", "localisation", "GPS", "where I am").
+_POSITION = (
+    r"(?:position\w*|positon|postion|posiiton|posicion\w*|posizione|localisation|"
+    r"locali[sz]ation|location|locaiton|loaction|locatoin|"
+    r"localizacion|localizzazione|geoloc\w*|gps|coordonnees|coordinates|"
+    r"standort\w*|ubicacion|emplacement|ou je suis|ou je me trouve|"
+    r"where i am|where am i|wo ich bin|donde estoy|dove sono)"
+)
+# A device that knows it, or a verb asking to read or share it.
+_DEVICE = (
+    r"(?:tel|tele|telephone|phone|portable|mobile|smartphone|iphone|android|"
+    r"navigateur|browser|appareil|device|handy|movil|telefono|cellulare)"
+)
+_ASK = (
+    r"(?:demand\w*|prend\w*|pren|utilis\w*|use|using|get|grab|ask|take|read|"
+    r"check|regard\w*|cherch\w*|trouv\w*|recup\w*|activ\w*|share|partag\w*|"
+    r"send|envo\w*|lis|lit|lire|nutz\w*|verwend\w*|frag\w*|usa\w*|prendi|"
+    r"pide|chiedi|toma|leggi)"
+)
+_ME = r"(?:ma|mon|mes|my|meine?n?|mi|mia)"
+_OWNER = r"(?:ma|mon|mes|my|la|le|the|your|votre|ta|ton|tu|meine?n?|mi|mia|su|sua|il)"
+_UNAMBIGUOUS = (
+    r"(?:location|locaiton|loaction|localisation|locali[sz]ation|geoloc\w*|gps|"
+    r"standort\w*|ubicacion|localizacion|localizzazione|coordonnees|coordinates)"
+)
+_LOCATE_ME = (
+    r"\b(?:localise[sz]?|geolocalise[sz]?|locate|find|trouve|ortet?|localiza|"
+    r"localizza)(?:\s|-)*(?:moi|me|mich|mi)\b"
+)
+# Questions about how location works, not a request to use it.
+_EXPLAIN = (
+    r"\b(?:explain|explique\w*|how does|how do \w+ work|comment (?:ca )?marche|"
+    r"comment fonctionne|what is|qu est ce que|c est quoi le gps|wie funktioniert)\b"
+)
+# How-to questions about some application's own sharing feature.
+_HOW_TO = (
+    r"\b(?:comment|how (?:do|to|can)|wie kann|como se|come si)\b(?:\s+\w+){0,3}?\s+"
+    r"(?:partag|share|envo|send|activ|desactiv|turn|teil|compart|condivid)"
+)
+
+
+def device_position_request(text: str) -> bool:
+    """The message asks the assistant to read or ask for the device position.
+
+    "demande ma position au tel", "use my location", "prends ma position GPS",
+    "localise-moi", "where am I": the location consent flow answers it, never a
+    text reply saying the position cannot be read.
+    """
+    value = _plain(text)
+    if not value or re.search(_HOW_TO, value) or re.search(_EXPLAIN, value):
+        return False
+    if re.search(_LOCATE_ME, value):
+        return True
+    position = re.search(rf"\b{_POSITION}\b", value)
+    if not position:
+        return False
+    if re.search(
+        r"\b(?:where am i|ou suis je|ou je suis|donde estoy|dove sono|wo bin ich)\b",
+        value,
+    ):
+        return True
+    # "prendre position" (take a stance) and "my position on this" are not the
+    # device: a verb needs an owner word before the position, and an owner word
+    # alone needs an unambiguous term (location, GPS, geoloc).
+    return bool(
+        re.search(rf"\b{_DEVICE}\b", value)
+        or re.search(
+            rf"\b{_ASK}\b(?:\s+\w+){{0,2}}?\s+{_OWNER}\s+(?:\w+\s+)?{_POSITION}\b",
+            value,
+        )
+        or re.search(rf"\b{_ME}\s+(?:\w+\s+)?{_UNAMBIGUOUS}\b", value)
+    )
+
+
+# Requests that depend on where the person is, beyond nearby shops: travel
+# times, routes, departures "from here", "from home", the weather here, places
+# near me. Used when no routing decision exists (router off or failed).
+_FROM_HERE = (
+    r"\b(?:from (?:here|home|my place|where i am)|d ici|depuis ici|de chez moi|"
+    r"depuis chez moi|depuis la maison|de la maison|d ou je suis|depuis ma position|"
+    r"von hier|von zu hause|desde aqui|desde casa|da qui|da casa)\b"
+)
+_NEAR_ME = (
+    r"\b(?:near me|nearby|around me|close to me|around here|pres de (?:moi|chez moi|ici)|"
+    r"autour de (?:moi|chez moi|ici)|pas loin|dans le coin|a proximite|dans les environs|"
+    r"in der nahe|cerca de mi|vicino a me|qui vicino)\b"
+)
+_HERE_NOW = (
+    r"\b(?:(?:meteo|temps|weather|wetter|tiempo|tempo|pluie|rain|pleuvoir|pleut)\b"
+    r"(?:\s+\w+){0,4}\s+(?:ici|here|hier|aqui|qui|chez moi|outside|dehors)|"
+    r"(?:il fait|it is|it s)\s+(?:quel temps|beau|froid|chaud|how)\s+(?:ici|here|dehors|outside))\b"
+)
+_TRAVEL = (
+    r"\b(?:itinerai\w*|directions?|route to|how (?:do i|can i|to) get (?:to|there)|"
+    r"comment (?:aller|me rendre|y aller|je vais|on va|rejoindre)|"
+    r"combien de temps (?:(?:faut il )?pour (?:aller|me rendre|y aller|arriver|rejoindre|venir)|a pied|en voiture|en bus|en velo|en train|de trajet|de route)|"
+    r"how long (?:to (?:get|walk|drive)|does it take|would it take)|a quelle distance|"
+    r"how far (?:is|am i)|prochain (?:bus|train|tram|metro|car)|next (?:bus|train|tram|metro)|"
+    r"wie komme ich|como llego|come arrivo)\b"
+)
+
+
+def position_dependent(text: str) -> bool:
+    """The answer depends on the person's position (lexical, any category)."""
+    if location_dependent(text):
+        return True
+    value = _plain(text)
+    if re.search(
+        r"\b(?:recette|recipe|translate|tradui\w*|definition|explain|explique)\b",
+        value,
+    ):
+        return False
+    return bool(
+        re.search(_FROM_HERE, value)
+        or re.search(_NEAR_ME, value)
+        or re.search(_HERE_NOW, value)
+        or re.search(_TRAVEL, value)
+        or device_position_request(text)
+    )
+
+
 class Position(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
     latitude: float = Field(ge=-90, le=90, repr=False)
@@ -122,6 +250,12 @@ class Location(BaseModel):
     # coords.accuracy). A large radius means a network or IP estimate, which
     # often places the person at their access provider rather than where they are.
     accuracy: int | None = Field(default=None, ge=0, le=40_000_000, exclude=True)
+    # Why the device gave no position (consent "denied"): the browser has no
+    # geolocation, the site permission is refused, no fix, or no fix in time.
+    # The reply says which instead of a generic "cannot access your position".
+    failure: Literal["unsupported", "permission", "unavailable", "timeout"] | None = (
+        None
+    )
 
     @property
     def coarse(self) -> bool:
@@ -137,6 +271,8 @@ class Location(BaseModel):
         if self.position is not None and (
             self.consent in {"refused", "denied"} or self.place
         ):
+            raise ValueError("location_consent_conflict")
+        if self.failure is not None and self.consent != "denied":
             raise ValueError("location_consent_conflict")
         if self.timezone:
             try:

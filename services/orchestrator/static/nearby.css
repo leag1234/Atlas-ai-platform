@@ -5,3 +5,6 @@
 #atlas-location-consent p { margin-bottom: 16px; }
 #atlas-location-consent button, #atlas-location-consent input { display: block; box-sizing: border-box; width: 100%; min-height: 44px; margin-top: 10px; padding: 8px; border: 1px solid #718078; border-radius: 8px; }
 #atlas-location-consent button:disabled { opacity: .5; }
+/* The server's request for the device position (location_route.py), shown as a button. */
+a.atlas-location-request { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border: 1px solid #718078; border-radius: 999px; text-decoration: none; color: inherit; cursor: pointer; }
+a.atlas-location-request::before { content: "\2316"; margin-right: 8px; }
