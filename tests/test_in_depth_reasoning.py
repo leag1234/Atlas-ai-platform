@@ -8,6 +8,8 @@ request router marks the question (in_depth); bounded questions keep the configu
 
 from decimal import Decimal
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -223,10 +225,22 @@ class RouterDepthTests(unittest.TestCase):
 
 class PipelineDepthTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
-        # The pipeline harness of test_request_router, without its own tests.
+        # The environment of test_request_router's pipeline tests, patched and
+        # restored by this test; its harness only drives the pipeline.
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        environment = patch.dict(
+            os.environ,
+            {
+                "ATLAS_MODEL_ROUTER": "1",
+                "ATLAS_ARTIFACTS": "1",
+                "ATLAS_DATA_DIR": directory.name,
+                "ATLAS_WEB_CACHE": str(Path(directory.name) / "web.sqlite"),
+            },
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
         self.helper = router_tests.PipelineGateTests("test_answer_stays_a_chat_answer")
-        self.helper.setUp()
-        self.addCleanup(self.helper.doCleanups)
 
     async def test_in_depth_answer_marks_the_model(self) -> None:
         for kind in ("answer", "research"):
