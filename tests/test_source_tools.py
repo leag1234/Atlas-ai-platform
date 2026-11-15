@@ -1,6 +1,7 @@
 """T8: specialized public sources (encyclopedia, news feeds, Eurostat, French communes)."""
 
 import json
+import os
 import tempfile
 import unittest
 from collections.abc import Callable
@@ -595,6 +596,25 @@ KIWIX_ENV = {
     "ATLAS_KIWIX_URL": "http://127.0.0.1:1",
     "ATLAS_KIWIX_BOOKS": "fr=wikipedia_fr_test_mini_2026-10,en=bad/../book",
 }
+# The same mirror named by undated families: the server's catalog picks the book.
+KIWIX_FAMILY_ENV = {
+    **KIWIX_ENV,
+    "ATLAS_KIWIX_BOOKS": "fr=wikipedia_fr_test_mini,en=wikipedia_en_test_mini",
+}
+# kiwix-serve's OPDS catalog (/catalog/v2/entries): two editions of the French family,
+# one English book, a link that is not a served book.
+KIWIX_CATALOG = b"""<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/">
+<entry><name>wikipedia_fr_test</name><flavour>mini</flavour>
+<link type="text/html" href="/content/wikipedia_fr_test_mini_2026-05" /></entry>
+<entry><name>wikipedia_fr_test</name><flavour>mini</flavour>
+<link rel="http://opds-spec.org/image/thumbnail" href="/catalog/v2/illustration/x" />
+<link type="text/html" href="/content/wikipedia_fr_test_mini_2026-11" /></entry>
+<entry><name>wikipedia_en_test</name><flavour>mini</flavour>
+<link type="text/html" href="/content/wikipedia_en_test_mini_2026-09" /></entry>
+<entry><name>custom</name>
+<link type="text/html" href="/content/custom_book" /></entry>
+</feed>"""
 NO_KIWIX_ENV = {
     "ATLAS_ENCYCLOPEDIA_BACKEND": "",
     "ATLAS_KIWIX_URL": "",
@@ -619,6 +639,13 @@ KIWIX_SUGGEST = json.dumps(
             "path": "Lucienne_Varnier",
         },
         {"value": "containing 'lucienne varnier'...", "kind": "pattern"},
+        # kiwix-serve escapes the value and the path as HTML.
+        {
+            "value": "Pont d&apos;Ys",
+            "label": "x",
+            "kind": "path",
+            "path": "Pont_d&apos;Ys",
+        },
     ]
 ).encode()
 
@@ -691,8 +718,10 @@ class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
             [
                 f"/content/{book}/Lucienne_Varnier_(homonymie)",
                 f"/content/{book}/Lucienne_Varnier",
+                f"/content/{book}/Pont_d'Ys",
             ],
         )
+        self.assertEqual(hits[2].title, "Pont d'Ys")
 
         def hit(title: str) -> kiwix.Hit:
             return kiwix.Hit(title, "/content/b/" + title.replace(" ", "_"), "")
@@ -856,6 +885,10 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
             ("http://127.0.0.1:1", ""),
             ("http://127.0.0.1:1", "en=bad/../book"),
             ("http://127.0.0.1:1", " de=wikipedia_de_test_mini_2026-10 ,x"),
+            (
+                "http://127.0.0.1:1",
+                "fr=wikipedia_fr_test_mini,en=wikipedia_en_test_mini",
+            ),
             ("", "fr=wikipedia_fr_test_mini_2026-10"),
         ):
             with self.subTest(url=url, books=books):
@@ -868,6 +901,106 @@ class SourcePerLevelTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(kiwix.book_date("wikipedia_fr_all_mini_2026-11"), "2026-11")
         self.assertEqual(kiwix.book_date("custom_book"), "")
+        self.assertTrue(kiwix.is_family("wikipedia_fr_all_mini"))
+        self.assertFalse(kiwix.is_family("wikipedia_fr_all_mini_2026-11"))
+
+    def test_catalog_keeps_the_newest_book_of_each_family(self) -> None:
+        from services.orchestrator import kiwix
+
+        self.assertEqual(
+            kiwix.parse_catalog(KIWIX_CATALOG),
+            {
+                "wikipedia_fr_test_mini": "wikipedia_fr_test_mini_2026-11",
+                "wikipedia_en_test_mini": "wikipedia_en_test_mini_2026-09",
+            },
+        )
+        with self.assertRaises(kiwix.KiwixError):
+            kiwix.parse_catalog(b"<!DOCTYPE x [<!ENTITY a 'b'>]><feed/>")
+
+    async def test_family_name_reads_the_newest_served_book(self) -> None:
+        from services.orchestrator import kiwix
+
+        reads: list[str] = []
+
+        async def served(path: str, timeout: float) -> tuple[str, bytes]:
+            reads.append(path.split("?", 1)[0])
+            if path.startswith("/catalog/"):
+                return path, KIWIX_CATALOG
+            self.assertIn("wikipedia_fr_test_mini_2026-11", path)
+            return await kiwix_ok(path, timeout)
+
+        kiwix.forget_catalog()
+        self.addCleanup(kiwix.forget_catalog)
+        with (
+            patch.dict("os.environ", KIWIX_FAMILY_ENV),
+            patch.object(kiwix, "_fetch", served),
+            patch.object(reference_fetch, "get", third_party_unused),
+            AtLevel(privacy.STRICT),
+        ):
+            first = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+            second = await source_tools.execute(
+                "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+            )
+        for result in (first, second):
+            data = result["data"]
+            assert isinstance(data, dict)
+            # The answer names the resolved book and its real edition date.
+            self.assertEqual(data["local_book"], "wikipedia_fr_test_mini_2026-11")
+            self.assertEqual(data["copy_date"], "2026-11")
+        # The catalog is read once, then reused.
+        self.assertEqual(reads.count("/catalog/v2/entries"), 1)
+
+    async def test_unresolved_family_is_an_unavailable_mirror(self) -> None:
+        from services.orchestrator import kiwix
+
+        async def no_family(path: str, timeout: float) -> tuple[str, bytes]:
+            if path.startswith("/catalog/"):
+                return path, KIWIX_CATALOG.replace(b"_fr_test_", b"_fr_other_")
+            raise AssertionError("no book is read without a resolved name")
+
+        async def catalog_down(path: str, timeout: float) -> tuple[str, bytes]:
+            raise kiwix.KiwixError("local_mirror_unavailable", "unreachable")
+
+        for fetch in (no_family, catalog_down):
+            with self.subTest(fetch=fetch.__name__):
+                kiwix.forget_catalog()
+                self.addCleanup(kiwix.forget_catalog)
+                with (
+                    patch.dict("os.environ", KIWIX_FAMILY_ENV),
+                    patch.object(kiwix, "_fetch", fetch),
+                    patch.object(reference_fetch, "get", third_party_unused),
+                    AtLevel(privacy.STRICT),
+                ):
+                    result = await source_tools.execute(
+                        "encyclopedia", '{"query": "Lucienne Varnier"}', 5, "fr"
+                    )
+                self.assertEqual(result["error"], "local_mirror_unavailable")
+
+    @unittest.skipUnless(
+        os.environ.get("ATLAS_KIWIX_LIVE_URL"),
+        "live check: set ATLAS_KIWIX_LIVE_URL to a running kiwix-serve",
+    )
+    async def test_live_mirror_resolves_families(self) -> None:
+        from services.orchestrator import kiwix
+
+        environment = {
+            "ATLAS_KIWIX_URL": os.environ["ATLAS_KIWIX_LIVE_URL"],
+            "ATLAS_KIWIX_BOOKS": os.environ.get(
+                "ATLAS_KIWIX_LIVE_BOOKS", "fr=wikipedia_fr_all_mini"
+            ),
+        }
+        kiwix.forget_catalog()
+        self.addCleanup(kiwix.forget_catalog)
+        with patch.dict("os.environ", environment):
+            for language, family in kiwix.books().items():
+                with self.subTest(language=language):
+                    book = await kiwix.resolve(language, 5)
+                    self.assertTrue(book.startswith(family + "_"))
+                    self.assertRegex(kiwix.book_date(book), r"^\d{4}-\d{2}$")
+                    _, hits = await kiwix.search("Paris", language, 5)
+                    self.assertTrue(hits)
 
     async def test_enhanced_reads_the_local_copy_only(self) -> None:
         from services.orchestrator import kiwix

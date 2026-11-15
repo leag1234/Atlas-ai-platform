@@ -6,8 +6,11 @@ lookup never leaves Atlas: this backend is allowed at every privacy level, stric
 included. Configuration:
 
 - ``ATLAS_KIWIX_URL``: base URL of the server (loopback or the instance network);
-- ``ATLAS_KIWIX_BOOKS``: one book per language, ``fr=wikipedia_fr_all_nopic_2026-05,
-  en=wikipedia_en_all_nopic_2026-06`` (the names kiwix-serve shows in its catalog).
+- ``ATLAS_KIWIX_BOOKS``: one book per language, either a dated book name
+  (``fr=wikipedia_fr_all_mini_2026-11``, as kiwix-serve names it) or an undated family
+  (``fr=wikipedia_fr_all_mini``). A family is resolved to the newest book of that
+  family the server lists in its own catalog (``/catalog/v2/entries``), so a monthly
+  refresh of the ZIM files needs no settings change.
 
 The page URL returned for citation is the article's public Wikipedia address; the
 result also names the local book, whose date says how fresh the copy is.
@@ -18,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import unicodedata
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
@@ -63,10 +67,85 @@ def books() -> dict[str, str]:
     return found
 
 
+_DATED = re.compile(r"_(\d{4}-\d{2})$")
+
+
 def book_date(book: str) -> str:
-    """The copy's month from the book name (``wikipedia_fr_all_mini_2026-11``), or ''."""
-    match = re.search(r"_(\d{4}-\d{2})$", book)
+    """The copy's month from the book name (``wikipedia_fr_all_mini_2026-11``), or ''.
+    A family name is resolved to a dated book before this is read (``search``)."""
+    match = _DATED.search(book)
     return match.group(1) if match else ""
+
+
+def is_family(book: str) -> bool:
+    """Whether a configured name is an undated family (``wikipedia_fr_all_mini``)."""
+    return not _DATED.search(book)
+
+
+# Seconds a read of the server's catalog is reused: a refresh adds a book at most once
+# a month, and a lookup must not pay a catalog request each time.
+CATALOG_TTL = 300.0
+_catalog: tuple[float, str, dict[str, str]] | None = None
+_ATOM = "{http://www.w3.org/2005/Atom}"
+
+
+def parse_catalog(body: bytes) -> dict[str, str]:
+    """The newest served book of every family in kiwix-serve's OPDS catalog: a book
+    ``wikipedia_fr_all_mini_2026-11`` (the last part of its ``/content/`` link, the
+    name the server serves it under) belongs to the family ``wikipedia_fr_all_mini``."""
+    if b"<!DOCTYPE" in body[:2000].upper() or b"<!ENTITY" in body.upper():
+        raise KiwixError("local_mirror_unavailable", "unexpected catalog answer")
+    try:
+        root = ElementTree.fromstring(body)
+    except ElementTree.ParseError:
+        raise KiwixError(
+            "local_mirror_unavailable", "unreadable catalog answer"
+        ) from None
+    newest: dict[str, str] = {}
+    for entry in root.iter(f"{_ATOM}entry"):
+        for link in entry.iter(f"{_ATOM}link"):
+            href = link.get("href") or ""
+            if link.get("type") != "text/html" or "/content/" not in href:
+                continue
+            book = href.rstrip("/").rsplit("/content/", 1)[1]
+            match = _DATED.search(book)
+            if not match or not _BOOK.fullmatch(book) or "/" in book:
+                continue
+            family = book[: match.start()]
+            # Same family: the later month wins ("YYYY-MM" sorts as text).
+            if family not in newest or book_date(newest[family]) < match.group(1):
+                newest[family] = book
+    return newest
+
+
+def forget_catalog() -> None:
+    global _catalog
+    _catalog = None
+
+
+async def resolve(language: str, timeout: float) -> str:
+    """The served book for a language: a dated name as configured, a family as the
+    newest book of that family in the server's catalog. A family the catalog does not
+    list, or a catalog that cannot be read, makes the mirror unavailable for that
+    language; nothing outside the mirror is asked."""
+    global _catalog
+    book = books().get(language)
+    if book is None:
+        raise KiwixError("local_language_missing", f"no local Wikipedia in {language}")
+    if not is_family(book):
+        return book
+    base = _base()
+    now = time.monotonic()
+    if _catalog is None or _catalog[1] != base or now - _catalog[0] > CATALOG_TTL:
+        _, body = await _fetch("/catalog/v2/entries?count=500", timeout)
+        _catalog = (now, base, parse_catalog(body))
+    served = _catalog[2].get(book)
+    if served is None:
+        raise KiwixError(
+            "local_mirror_unavailable",
+            f"the local Wikipedia serves no book of the family {book}",
+        )
+    return served
 
 
 def _base() -> str:
@@ -229,7 +308,11 @@ def parse_suggestions(body: bytes, book: str) -> list[Hit]:
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict) or row.get("kind") != "path":
             continue
-        title, path = unescape(str(row.get("value", ""))), str(row.get("path", ""))
+        # kiwix-serve escapes both fields as HTML ("Jeanne d&apos;Arc").
+        title, path = (
+            unescape(str(row.get("value", ""))),
+            unescape(str(row.get("path", ""))),
+        )
         if title and path and ".." not in path and not path.startswith("/"):
             hits.append(Hit(title, f"/content/{book}/" + quote(path, safe=_SAFE), ""))
     return hits
@@ -301,14 +384,18 @@ def public_url(language: str, path: str) -> str:
 async def search(query: str, language: str, timeout: float) -> tuple[str, list[Hit]]:
     """Title suggestions first (the title index: "Albert Einstein" finds the article
     even when full-text ranking puts schools and prizes named after him first), then
-    full-text hits when no title matches the query exactly."""
-    book = books().get(language)
-    if book is None:
-        raise KiwixError("local_language_missing", f"no local Wikipedia in {language}")
-    _, body = await _fetch(
-        "/suggest?" + urlencode({"content": book, "term": query, "count": "10"}),
-        timeout,
-    )
+    full-text hits when no title matches the query exactly. The returned book is the
+    served (dated) name, a configured family resolved."""
+    book = await resolve(language, timeout)
+    try:
+        _, body = await _fetch(
+            "/suggest?" + urlencode({"content": book, "term": query, "count": "10"}),
+            timeout,
+        )
+    except KiwixError:
+        # The server may have been restarted on a newer book: read the catalog again.
+        forget_catalog()
+        raise
     hits = parse_suggestions(body, book)
     wanted = _folded(query)
     if any(_folded(hit.title) == wanted for hit in hits):
