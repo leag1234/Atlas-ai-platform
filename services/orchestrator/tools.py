@@ -6,6 +6,7 @@ from packages.ports import atlas_ports
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
@@ -13,6 +14,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
+from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     from services.orchestrator.connectors import Selection
@@ -50,6 +52,19 @@ class SearchQuotaError(ValueError):
 
 SEARCH_PROVIDERS = frozenset({"serpapi", "tavily", "searxng"})
 SHORT_COOLDOWN_SECONDS = 5
+# No time is kept for a provider that refused for its quota this recently:
+# SearXNG then has the whole search budget to wait for an engine slot
+# (staging 2026-11-15: SearXNG got 8 of 15 s while Tavily and SerpAPI were
+# exhausted, and searches failed with quota_exceeded).
+EXHAUSTED_SECONDS = 300
+_EXHAUSTED: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, float]] = (
+    WeakKeyDictionary()
+)
+
+
+def exhausted_providers() -> dict[str, float]:
+    """Quota refusal expiry per provider, shared by one serving event loop."""
+    return _EXHAUSTED.setdefault(asyncio.get_running_loop(), {})
 
 
 def search_providers(value: str | None = None) -> tuple[str, ...]:
@@ -182,6 +197,31 @@ class Runtime:
 
     async def search(self, request: Search, timeout: float) -> Message:
         require_shared("web_search")  # strict privacy: no web search (packages.privacy)
+        started = asyncio.get_running_loop().time()
+        self._last_search_attempts = []
+        attempts: object = None
+        try:
+            result = await self._search(request, timeout)
+            attempts = result.get("attempts")
+            return result
+        finally:
+            attempts = attempts or self._last_search_attempts
+            if isinstance(attempts, list) and len(attempts) > 1:
+                # Provider names and outcome codes only, never the query.
+                logging.getLogger(__name__).warning(
+                    json.dumps(
+                        {
+                            "event": "search_chain",
+                            "attempts": attempts,
+                            "seconds": round(
+                                asyncio.get_running_loop().time() - started, 2
+                            ),
+                        }
+                    )
+                )
+
+    async def _search(self, request: Search, timeout: float) -> Message:
+        require_shared("web_search")  # strict privacy: no web search (packages.privacy)
         providers = search_providers()
         available = tuple(
             provider
@@ -200,16 +240,29 @@ class Runtime:
         last_limit: LimitError | None = None
         attempts: list[Message] = []
         last_searxng_result: Message | None = None
-        deadline = asyncio.get_running_loop().time() + timeout
-        for provider in available:
-            remaining = deadline - asyncio.get_running_loop().time()
+        clock = asyncio.get_running_loop().time
+        deadline = clock() + timeout
+        exhausted = exhausted_providers()
+
+        def can_serve(provider: str) -> bool:
+            # A provider still runs when its turn comes (its refusal is the
+            # reported cause, D5); this only decides whether time is kept.
+            return exhausted.get(provider, 0.0) <= clock() and (
+                self.cache.search_credits_left(
+                    provider, credits=2 if provider == "tavily" else 1
+                )
+            )
+
+        for index, provider in enumerate(available):
+            remaining = deadline - clock()
             if remaining <= 0:
                 break
             # A later provider keeps enough time to answer: a paid provider takes 3
             # to 5 s, while slow SearXNG engines used to take all but 2 s of the
             # budget and the whole turn failed on the timeout (staging 2026-11-12).
-            later = (
-                provider == "searxng" and available.index(provider) < len(available) - 1
+            # No time is kept for providers that cannot answer.
+            later = provider == "searxng" and any(
+                can_serve(other) for other in available[index + 1 :]
             )
             reserve = max(2.05, min(7.0, remaining * 0.5)) if later else 0.0
             try:
@@ -253,6 +306,8 @@ class Runtime:
                 # provider served (D5: never as an outage).
                 last_quota = exc
                 attempts.append({"provider": provider, "outcome": str(exc)})
+                if str(exc) == "quota_exceeded":
+                    exhausted[provider] = clock() + EXHAUSTED_SECONDS
             except BudgetRefusal as exc:
                 # The allowance of this provider is used up, not the search
                 # itself: the next provider may still answer. Stopping here
@@ -268,6 +323,7 @@ class Runtime:
                     # The local monthly reservation of this provider is full:
                     # like its own quota, the next provider may still answer.
                     last_limit = exc
+                    exhausted[provider] = clock() + EXHAUSTED_SECONDS
                     continue
                 self._last_search_attempts = attempts
                 raise

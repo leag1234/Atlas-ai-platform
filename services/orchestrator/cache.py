@@ -78,3 +78,16 @@ class Cache:
                 raise LimitError(
                     "quota_exceeded", used + credits, 900, "monthly search credits"
                 )
+
+    def search_credits_left(self, provider: str, *, credits: int = 1) -> bool:
+        """Whether reserve_search would accept, without reserving anything."""
+        if provider == "searxng":
+            return True
+        month = time.strftime("%Y-%m", time.gmtime())
+        if provider != "serpapi":
+            month = provider + ":" + month
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT used FROM quota WHERE month=?", (month,)
+            ).fetchone()
+        return (int(row[0]) if row else 0) + credits <= 900
