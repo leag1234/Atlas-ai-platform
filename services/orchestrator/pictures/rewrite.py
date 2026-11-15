@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from packages import linear_scan
+from services.orchestrator.pictures.texts import language_code
 
 MAX_TOKENS = 900
 TEMPERATURE = 0.2
@@ -101,7 +102,9 @@ SYSTEM = (
     "each subject once; one subject asked is 'a single' subject, never plural. Put "
     "each number, colour or unusual feature the user wrote in 'checks', as a "
     "short statement in the user's language that can be checked by looking at "
-    "the picture (for example ['un seul mouton', 'le mouton a cinq pattes']); "
+    "the picture (for example, for 'un mouton à cinq pattes': ['un seul mouton', "
+    "'le mouton a cinq pattes']; for 'a sheep with five legs': ['a single sheep', "
+    "'the sheep has five legs']); "
     "never the setting, objects you chose, the empty area or the words to show; "
     "'checks' is empty when the user wrote no number, colour or unusual feature.\n"
     "10. Words to show: if the user wants words on the picture (a name, title or "
@@ -114,20 +117,20 @@ SYSTEM = (
     "or label 'reading' anything); describe the design with a wide plain empty "
     "area across the top. 'text' is empty when nothing is to be "
     "written on the picture. A diagram's words go in 'labels', never in 'text'.\n"
-    'Reply with JSON only: {"prompt": "...", "labels": [...], "diagram": true|false, '
-    '"title": "...", "checks": [...], "text": [...], "refuse": false}. labels is '
-    "empty when nothing is to be written."
+    "11. 'language', the first key of the reply: the ISO 639-1 code of the language "
+    "of the user's own words, whatever the language of these rules and examples "
+    "(en for 'a fox on a bench', es for 'dibujame un gato'; for a change, the "
+    "language of the change). The user's language in these rules is that language.\n"
+    'Reply with JSON only: {"language": "...", "prompt": "...", "labels": [...], '
+    '"diagram": true|false, "title": "...", "checks": [...], "text": [...], '
+    '"refuse": false}. labels is empty when nothing is to be written.'
 )
-LANGUAGES = {
-    "en": "English",
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "it": "Italian",
-}
+# No language is named here: naming the conversation's (French) made the call
+# answer French for "a fox on a bench" (staging gateway, 2026-11-15).
 ANSWER_LANGUAGE = (
-    "\n\n(Write 'checks' in {language}. The prompt stays in English; 'text' "
-    "stays as the user wrote it.)"
+    "\n\n(Write 'checks' and 'title' in the language of the request, the one "
+    "'language' names, even where the examples are French. The prompt stays in "
+    "English; 'text' stays as the user wrote it.)"
 )
 CHANGE = (
     "The picture was drawn from this request: {request}\n"
@@ -149,20 +152,22 @@ class Rewrite:
     checks: list[str] = field(default_factory=list)
     # Words to set on the picture, one string per line, as the user wrote them.
     text: list[str] = field(default_factory=list)
+    # The request's language as the call identified it ("" when not given).
+    language: str = ""
 
 
 def messages(
-    request_text: str, *, previous: str = "", change: str = "", language: str = ""
+    request_text: str, *, previous: str = "", change: str = ""
 ) -> list[dict[str, str]]:
     """The rewrite call; with `change`, the prompt of a changed picture. The
-    answer language names the language of the checks the answer quotes."""
+    checks and the title follow the request's language, which the reply names
+    (`language`); code falls back to the conversation's when it does not."""
     user = (
         CHANGE.format(request=request_text, prompt=previous, change=change)
         if change
         else request_text
     )
-    if language in LANGUAGES:
-        user += ANSWER_LANGUAGE.format(language=LANGUAGES[language])
+    user += ANSWER_LANGUAGE
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
 
 
@@ -334,8 +339,9 @@ def parse(text: str, *, source: str = "") -> Rewrite | None:
     value = _object(text)
     if value is None:
         return None
+    language = language_code(value.get("language"))
     if value.get("refuse") is True:
-        return Rewrite(prompt="", refused=True)
+        return Rewrite(prompt="", refused=True, language=language)
     raw = value.get("prompt")
     if not isinstance(raw, str):
         return None
@@ -361,4 +367,5 @@ def parse(text: str, *, source: str = "") -> Rewrite | None:
         title=" ".join(title.split())[:80] if isinstance(title, str) else "",
         checks=_strings(value.get("checks"), MAX_CHECKS, MAX_CHECK_CHARS),
         text=words,
+        language=language,
     )

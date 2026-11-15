@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
+LANGUAGES = ("en", "fr", "de", "es", "it")
+
 TEXTS: dict[str, dict[str, str]] = {
     "en": {
         "intro": "Here are {n} proposals; the first, framed, is the one I suggest.",
@@ -214,6 +218,30 @@ TEXTS: dict[str, dict[str, str]] = {
         "cpu_check_unknown": "Il modello di immagini non rispetta sempre i numeri esatti e i dettagli insoliti, e questa volta non è stato possibile verificarli: {items}.",
     },
 }
+
+
+def language_code(value: object) -> str:
+    """A language code as a model reply gives it ("es", "ES", "es-ES",
+    "pt_BR"), reduced to its lower-case language part; "" when it is not one."""
+    if not isinstance(value, str):
+        return ""
+    code = re.split(r"[-_]", value.strip().lower(), maxsplit=1)[0]
+    return code if re.fullmatch(r"[a-z]{2,3}", code) else ""
+
+
+def answer_language(found: object, fallback: str) -> str:
+    """The language of the picture turn's fixed texts.
+
+    The request's own language, as the turn's model call identified it, when it
+    is one of the five: a short request carries too little prose for the
+    conversation's language detection ("dibujame un gato con sombrero" with an
+    English interface was answered in English, nightly 2026-11-15). Otherwise
+    the conversation's language (`fallback`), and English for any other one.
+    """
+    code = language_code(found)
+    if code in LANGUAGES:
+        return code
+    return fallback if fallback in LANGUAGES else "en"
 
 
 def text(language: str, key: str, **values: object) -> str:

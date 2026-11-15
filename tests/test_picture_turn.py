@@ -228,6 +228,23 @@ class TurnTests(unittest.IsolatedAsyncioTestCase):
         await turn.process_picture_turn(request, item, complete=gateway)
         return item
 
+    async def test_texts_follow_the_language_the_checklist_names(self) -> None:
+        # Painting by code: the checklist call names the request's language.
+        gateway = FakeGateway("banc")
+        gateway.data["checklist"]["language"] = "es"
+        request = Request(gateway.data["request"])
+        request.lang = "en"
+        item = Interaction()
+        await turn.process_picture_turn(request, item, complete=gateway)
+        self.assertIn("Aquí tienes 4 propuestas", item.reponse)
+        self.assertIn('"language"', gateway.payloads[0]["messages"][0]["content"])
+        gateway = FakeGateway("banc")
+        gateway.data["checklist"]["language"] = "pt"
+        request = Request(gateway.data["request"])
+        item = Interaction()
+        await turn.process_picture_turn(request, item, complete=gateway)
+        self.assertIn("Voici 4 propositions", item.reponse)
+
     async def test_four_candidates_ordered_stored_and_shown(self) -> None:
         gateway = FakeGateway("banc")
         item = await self.run_turn(gateway)

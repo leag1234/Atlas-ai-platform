@@ -112,14 +112,14 @@ class RewriteDetailTests(unittest.TestCase):
         self.assertTrue(parsed.diagram)
         self.assertEqual(parsed.text, [])
 
-    def test_answer_language_is_named_and_the_prompt_stays_english(self) -> None:
-        content = rewrite.messages("a sheep with 5 legs", language="fr")[1]["content"]
+    def test_request_language_is_asked_and_the_prompt_stays_english(self) -> None:
+        content = rewrite.messages("a sheep with 5 legs")[1]["content"]
         self.assertTrue(content.startswith("a sheep with 5 legs"))
-        self.assertIn("checks' in French", content)
+        self.assertIn("'checks' and 'title' in the language of the request", content)
         self.assertIn("prompt stays in English", content)
-        self.assertEqual(rewrite.messages("x", language="xx")[1]["content"], "x")
-        change = rewrite.messages("x", previous="P", change="y", language="en")
-        self.assertIn("in English", change[1]["content"])
+        change = rewrite.messages("x", previous="P", change="y")
+        self.assertIn("in the language of the request", change[1]["content"])
+        self.assertIn('"language"', rewrite.SYSTEM)
 
 
 class TextSettingTests(unittest.TestCase):
@@ -329,7 +329,10 @@ class CpuTurnDetailTests(unittest.IsolatedAsyncioTestCase):
                 payload["messages"][1]["content"][0]["text"],
             )
         rewrite_payload = gateway.payloads[0]
-        self.assertIn("checks' in French", rewrite_payload["messages"][1]["content"])
+        self.assertIn(
+            "'checks' and 'title' in the language of the request",
+            rewrite_payload["messages"][1]["content"],
+        )
         self.assertIn(
             "l'image 1 ne montre peut-être pas « le mouton a cinq pattes »",
             item.reponse,
