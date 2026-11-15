@@ -5,6 +5,27 @@
   // browser engine is removed before Open WebUI looks for it (the microphone then stays
   // silent for that setting instead of sending audio away).
   try { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; } catch (error) { /* read-only in some browsers */ }
+  // Open WebUI starts from a few hundred code modules. When one download fails while the page
+  // starts (a phone switching networks, a reset connection), the app stops on an empty page or
+  // on its "500: Internal Error" page, without a composer and without any retry. Reload once,
+  // as Vite documents for vite:preloadError (Open WebUI 0.11.3 and 0.13.3 both emit it); the
+  // entry modules fail as an unhandled rejection instead. Only while no composer has appeared
+  // in the first 20 s, so no draft or open form is lost, and at most once a minute per tab,
+  // so a lasting outage stays visible instead of looping.
+  const reloadAfterCodeFailure = () => {
+    if (document.getElementById("chat-input") || performance.now() > 20000) return;
+    try {
+      if (Date.now() - Number(sessionStorage.getItem("atlas-code-reload") || 0) < 60000) return;
+      sessionStorage.setItem("atlas-code-reload", String(Date.now()));
+    } catch { return; }
+    if (navigator.onLine === false) window.addEventListener("online", () => location.reload(), { once: true });
+    else location.reload();
+  };
+  window.addEventListener("vite:preloadError", reloadAfterCodeFailure);
+  window.addEventListener("unhandledrejection", event => {
+    // Chromium, Firefox and Safari wordings of a failed dynamic import.
+    if (/dynamically imported module|Importing a module script failed/i.test(String(event.reason?.message || ""))) reloadAfterCodeFailure();
+  });
   // Open WebUI stores its selected interface language in "locale" (v0.11.3).
   // Keep this in the shared overlay so the trial and host launcher agree.
   // Set the first-visit language before Open WebUI initializes its i18n store.
