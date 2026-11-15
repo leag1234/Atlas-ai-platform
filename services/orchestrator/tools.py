@@ -24,7 +24,7 @@ from packages.validation import describe_validation
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from services.orchestrator import mcp_client
+from services.orchestrator import mcp_client, search_freshness
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.calculator import calculate
@@ -100,6 +100,14 @@ def searxng_cooldown_wait(result: Message) -> float:
             return float(retry_after)
         return 0
     return 0
+
+
+def paid_search_ttl(request: "Search") -> int:
+    """A paid answer is kept as long as SearXNG's: each repeat costs a credit."""
+    return search_freshness.cache_ttl(
+        bound=search_freshness.time_bound(request.query, request.news),
+        degraded=False,
+    )
 
 
 class Arguments(BaseModel):
@@ -425,7 +433,7 @@ class Runtime:
             "results": items,
             "consulted_at": datetime.now(timezone.utc).isoformat(),
         }
-        self.cache.put(key, output, 3600)
+        self.cache.put(key, output, paid_search_ttl(request))
         return output
 
     async def searxng(self, request: Search, timeout: float) -> Message:
@@ -546,7 +554,7 @@ class Runtime:
             "results": items,
             "consulted_at": consulted,
         }
-        self.cache.put(key, output, 3600)
+        self.cache.put(key, output, paid_search_ttl(request))
         return output
 
     async def fetch(self, request: Fetch, timeout: float) -> Message:

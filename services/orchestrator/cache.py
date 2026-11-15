@@ -4,11 +4,16 @@ from contextlib import contextmanager
 from packages.limits import LimitError
 from collections.abc import Iterator
 import hashlib
+import itertools
 import json
 import sqlite3
 import time
 from pathlib import Path
 from typing import cast
+
+# Every this many writes in a process, expired entries are deleted.
+PRUNE_EVERY = 200
+_PUTS = itertools.count(1)
 
 
 class Cache:
@@ -49,6 +54,10 @@ class Cache:
                 "INSERT OR REPLACE INTO cache VALUES (?,?,?)",
                 (key, time.time() + ttl, json.dumps(value)),
             )
+            # Expired rows are never read again; without this the file only
+            # grew (staging 2026-11-15: 2468 rows, 85 % of them expired).
+            if next(_PUTS) % PRUNE_EVERY == 0:
+                db.execute("DELETE FROM cache WHERE expires<=?", (time.time(),))
 
     def reserve_search(self, provider: str = "serpapi", *, credits: int = 1) -> None:
         if credits not in (1, 2):
