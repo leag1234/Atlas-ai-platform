@@ -743,6 +743,78 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("quota exhausted. Provider HTTP 432.", raised.exception.detail)
         self.assertNotIn("provider failed", raised.exception.detail)
 
+    async def test_near_identical_queries_share_one_upstream_search(self) -> None:
+        first = await self.search("Public release, history of the printing press")
+        self.assertEqual(len(self.seen), 2)
+        # Case, accents, punctuation, stop words and order: same cache entry.
+        again = await self.search("printing PRESS history: public release")
+        self.assertEqual(again, first)
+        self.assertEqual(len(self.seen), 2)
+        # Another language is another search.
+        self.state = sx.State()
+        await self.search("printing press history public release", lang="fr")
+        self.assertEqual(len(self.seen), 4)
+
+    async def test_concurrent_near_identical_queries_share_one_flight(self) -> None:
+        self.hold = asyncio.Event()
+        tasks = [
+            asyncio.create_task(self.search(query))
+            for query in ("Public release!", "release public", "the public release")
+        ]
+        for _ in range(100):
+            if len(self.started) == 2:
+                break
+            await asyncio.sleep(0.001)
+        self.hold.set()
+        outputs = await asyncio.gather(*tasks)
+        self.assertEqual(outputs[0], outputs[1])
+        self.assertEqual(outputs[0], outputs[2])
+        self.assertEqual(len(self.seen), 2)
+
+    async def test_cache_lifetime_follows_time_sensitivity_and_degradation(
+        self,
+    ) -> None:
+        lifetimes: list[int] = []
+        put = self.cache.put
+
+        def record(key: str, value: dict[str, object], ttl: int) -> None:
+            lifetimes.append(ttl)
+            put(key, value, ttl)
+
+        async def fresh(query: str, **scripts: str) -> None:
+            # A fresh engine state per search: no spacing between them.
+            self.state = sx.State()
+            self.scripts = scripts
+            await self.search(query)
+
+        with patch.object(self.cache, "put", side_effect=record):
+            await fresh("history of the printing press")
+            await fresh("printing press news today")
+            # A short answer with every engine answering is kept as long.
+            await fresh("rare manuscript catalogue", **{e: "few" for e in sx.ENGINES})
+            # An engine failure makes the result degraded: retried sooner.
+            await fresh("medieval bridge engineering", **{sx.ENGINES[0]: "403"})
+            await fresh("bridge closures today", **{sx.ENGINES[0]: "403"})
+        self.assertEqual(lifetimes, [3 * 86400, 3600, 3 * 86400, 3600, 60])
+
+    async def test_search_asks_the_healthy_engines_first(self) -> None:
+        endpoint = f"http://127.0.0.1:{self.port}"
+        self.state.health.setdefault(
+            endpoint + ":" + sx.ENGINES[0], sx.Health()
+        ).demoted_until = time.monotonic() + 600
+        with self.assertLogs(sx.__name__, "WARNING") as logs:
+            output = await self.search()
+        self.assertEqual(output["outcome"], "ok")
+        self.assertEqual(
+            [engine for engine in self.started if engine != "wikipedia"],
+            [sx.ENGINES[1]],
+        )
+        line = next(entry for entry in logs.output if "searxng_outcome" in entry)
+        logged = json.loads(line.split("searxng_outcome ", 1)[1])
+        self.assertEqual(logged["order"][-1], sx.ENGINES[0])
+        self.assertEqual(logged["cache_ttl"], 3 * 86400)
+        self.assertTrue(any("searxng_health" in entry for entry in logs.output))
+
 
 class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
     async def test_ten_uncached_searches_per_rolling_minute(self) -> None:
@@ -918,3 +990,58 @@ class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
         one.record("upstream_blocked", 0, 60, sx.Policy())
         self.assertEqual(two.blocks, 0)
         self.assertEqual(two.until, 0)
+
+    def test_frequent_refusals_move_an_engine_to_the_end_then_it_recovers(
+        self,
+    ) -> None:
+        state = sx.State()
+        endpoint = "http://searx.test"
+        engines = ("startpage", "duckduckgo", "mojeek", "seznam")
+        health = state.health.setdefault(endpoint + ":startpage", sx.Health())
+        circuit = sx.Circuit()
+        demoted = []
+        # One refusal in two: the circuit never sees three in a row.
+        for index, outcome in enumerate(
+            ("upstream_blocked", "ok", "upstream_blocked", "ok")
+        ):
+            circuit.record(outcome, 100 + index, 0, sx.Policy())
+            demoted.append(health.record(outcome, 100 + index))
+        self.assertFalse(circuit.quarantined)
+        self.assertEqual(demoted, [False, False, False, True])
+        self.assertEqual(
+            sx.engine_order(state, endpoint, engines, 104),
+            ("duckduckgo", "mojeek", "seznam", "startpage"),
+        )
+        # Calls during the cooldown are recorded but never demote again.
+        self.assertFalse(health.record("upstream_blocked", 200))
+        self.assertEqual(health.counts(200)["demoted_seconds"], 1703)
+        # After the cooldown the configured order returns with a fresh window.
+        self.assertEqual(sx.engine_order(state, endpoint, engines, 1903), engines)
+        self.assertEqual(health.counts(1903)["asked"], 0)
+        self.assertFalse(health.record("upstream_blocked", 1904))
+
+    def test_demotion_needs_enough_calls_and_never_drops_an_engine(self) -> None:
+        state = sx.State()
+        endpoint = "http://searx.test"
+        engines = ("startpage", "duckduckgo")
+        for engine in engines:
+            health = state.health.setdefault(endpoint + ":" + engine, sx.Health())
+            # Three refusals are below the minimum number of calls.
+            for now in (1, 2, 3):
+                self.assertFalse(health.record("upstream_blocked", now))
+        self.assertEqual(sx.engine_order(state, endpoint, engines, 4), engines)
+        # Old calls leave the window: they do not count toward a demotion.
+        health = state.health[endpoint + ":startpage"]
+        self.assertFalse(health.record("upstream_blocked", 1803.5))
+        self.assertEqual(health.counts(1803.5)["asked"], 1)
+        # Every engine demoted: the configured order applies unchanged.
+        for engine in engines:
+            state.health[endpoint + ":" + engine].demoted_until = 5000
+        self.assertEqual(sx.engine_order(state, endpoint, engines, 10), engines)
+        state.health[endpoint + ":startpage"].demoted_until = 0
+        self.assertEqual(sx.engine_order(state, endpoint, engines, 10), engines)
+        state.health[endpoint + ":startpage"].demoted_until = 5000
+        state.health[endpoint + ":duckduckgo"].demoted_until = 0
+        self.assertEqual(
+            sx.engine_order(state, endpoint, engines, 10), ("duckduckgo", "startpage")
+        )

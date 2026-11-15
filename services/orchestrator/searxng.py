@@ -19,6 +19,7 @@ import aiohttp
 
 from packages.images import VisionMessage
 from packages.language import user_prose
+from services.orchestrator import search_freshness
 from services.orchestrator.cache import Cache
 from services.orchestrator.loop import Message
 from services.orchestrator.web import MAX_BYTES
@@ -41,6 +42,18 @@ SKIPPED = frozenset({"cooldown", "quarantined"})
 # A search waits for a busy engine only when the call can still start this
 # long before the search deadline; observed engine answers take 0.5 to 2.5 s.
 MIN_CALL_SECONDS = 2.0
+# Adaptive order. An engine that refused at least half of the calls it really
+# received in the last half hour (four calls or more) moves behind the other
+# engines for half an hour, then rejoins its configured place with a fresh
+# window. Three consecutive refusals already quarantine an engine (Circuit);
+# this catches engines that refuse one call in two without ever reaching
+# three in a row.
+HEALTH_WINDOW_SECONDS = 1800.0
+DEMOTE_MIN_CALLS = 4
+DEMOTE_BLOCK_RATE = 0.5
+DEMOTE_SECONDS = 1800.0
+# Rolling health is written to the journal at most this often per process.
+HEALTH_LOG_SECONDS = 600.0
 LANGUAGES = {"en", "de", "es", "fr", "it", "nl"}
 SEARCH_REGIONS = {
     "fr": "fr-FR",
@@ -186,6 +199,67 @@ class Circuit:
             self.blocks = 0
 
 
+@dataclass
+class Health:
+    """Outcomes of the calls an engine really received, in a rolling window."""
+
+    events: deque[tuple[float, str]] = field(default_factory=lambda: deque(maxlen=200))
+    demoted_until: float = 0.0
+
+    def demoted(self, now: float) -> bool:
+        if self.demoted_until and now >= self.demoted_until:
+            # The cooldown is over: the engine gets its place back and is
+            # judged on new calls only.
+            self.demoted_until = 0.0
+            self.events.clear()
+        return self.demoted_until > now
+
+    def record(self, outcome: str, now: float) -> bool:
+        """Record one asked call; True when this call demotes the engine."""
+        demoted = self.demoted(now)
+        while self.events and self.events[0][0] <= now - HEALTH_WINDOW_SECONDS:
+            self.events.popleft()
+        self.events.append((now, outcome))
+        if demoted:
+            return False
+        blocked = sum(seen == "upstream_blocked" for _, seen in self.events)
+        if len(self.events) >= DEMOTE_MIN_CALLS and blocked >= DEMOTE_BLOCK_RATE * len(
+            self.events
+        ):
+            self.demoted_until = now + DEMOTE_SECONDS
+            return True
+        return False
+
+    def counts(self, now: float) -> dict[str, object]:
+        recent = [seen for at, seen in self.events if at > now - HEALTH_WINDOW_SECONDS]
+        return {
+            "asked": len(recent),
+            "ok": recent.count("ok"),
+            "blocked": recent.count("upstream_blocked"),
+            "empty": recent.count("empty_results"),
+            "timeout": recent.count("upstream_timeout"),
+            "demoted_seconds": round(max(0.0, self.demoted_until - now)),
+        }
+
+
+def engine_order(
+    state: "State", endpoint: str, engines: Sequence[str], now: float
+) -> tuple[str, ...]:
+    """Configured order with recently refusing engines moved to the end.
+
+    No engine is ever dropped, and when every engine is demoted the
+    configured order applies unchanged.
+    """
+    demoted = [
+        engine
+        for engine in engines
+        if state.health.setdefault(endpoint + ":" + engine, Health()).demoted(now)
+    ]
+    if len(demoted) == len(engines):
+        return tuple(engines)
+    return (*(engine for engine in engines if engine not in demoted), *demoted)
+
+
 def retry_after(value: str | None, now: float | None = None) -> float:
     if not value:
         return 0
@@ -207,6 +281,8 @@ class State:
     http_slots: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(3))
     circuits: dict[str, Circuit] = field(default_factory=dict)
     flights: dict[str, asyncio.Task[Message]] = field(default_factory=dict)
+    health: dict[str, Health] = field(default_factory=dict)
+    health_logged: float = float("-inf")
 
     async def admit(self, limit: int = 30, deadline: float = float("inf")) -> None:
         while True:
@@ -334,6 +410,17 @@ async def engine_search(
                 circuit.record(
                     str(evidence["outcome"]), time.monotonic(), retry, policy
                 )
+                health = state.health.setdefault(endpoint + ":" + engine, Health())
+                if health.record(str(evidence["outcome"]), time.monotonic()):
+                    logging.getLogger(__name__).warning(
+                        "searxng_engine_demoted %s",
+                        json.dumps(
+                            {
+                                "engine": engine,
+                                **health.counts(time.monotonic()),
+                            }
+                        ),
+                    )
                 evidence["retry_after"] = max(0, circuit.until - time.monotonic())
     except TimeoutError:
         evidence["reason"] = "deadline"
@@ -401,6 +488,10 @@ async def search(
 ) -> Message:
     policy = Policy.environment()
     language = search_language([], language)
+    # Near-identical queries of one language (case, accents, punctuation,
+    # stop words, word order) share the cache entry and the flight below.
+    identity = search_freshness.normalized_query(query, language)
+    bound = search_freshness.time_bound(query, news)
     # SearXNG query operators can override explicit engine/locale parameters.
     # Quote these tokens so untrusted search text cannot bypass the policy.
     query = re.sub(
@@ -410,10 +501,23 @@ async def search(
     )
     endpoint = endpoint.rstrip("/")
     key = cache.key(
-        ["searxng-individual-v2", endpoint, query, language, n, news, policy.__dict__]
+        [
+            "searxng-individual-v3",
+            endpoint,
+            identity,
+            language,
+            n,
+            news,
+            policy.__dict__,
+        ]
     )
     cached = cache.get(key)
+    log = logging.getLogger(__name__)
     if cached is not None:
+        # Metadata only, never the query: read by tools/search_health_report.py.
+        log.warning(
+            "searxng_cache %s", json.dumps({"result": "hit", "time_bound": bound})
+        )
         return cached
     state = shared_state()
     # Share ongoing work across Runtime instances. A cancelled waiter must not
@@ -421,11 +525,25 @@ async def search(
     if key not in state.flights:
         task = asyncio.create_task(
             run_search(
-                state, cache, key, endpoint, query, language, n, news, timeout, policy
+                state,
+                cache,
+                key,
+                endpoint,
+                query,
+                language,
+                n,
+                news,
+                timeout,
+                policy,
+                bound,
             )
         )
         state.flights[key] = task
         task.add_done_callback(lambda done: state.flights.pop(key, None))
+    else:
+        log.warning(
+            "searxng_cache %s", json.dumps({"result": "shared", "time_bound": bound})
+        )
     try:
         async with asyncio.timeout(max(0.001, timeout - 0.02)):
             return await asyncio.shield(state.flights[key])
@@ -452,6 +570,7 @@ async def run_search(
     news: bool,
     timeout: float,
     policy: Policy,
+    bound: bool = True,
 ) -> Message:
     deadline = time.monotonic() + max(0.001, timeout - 0.05)
     evidence: list[Message] = []
@@ -469,6 +588,7 @@ async def run_search(
         params["time_range"] = "month"
     wiki: asyncio.Task[Message] | None = None
     waited = 0.0
+    order: tuple[str, ...] = policy.engines
     try:
         async with asyncio.timeout_at(deadline):
             async with state.slots:
@@ -484,7 +604,11 @@ async def run_search(
                     )
                 )
                 web_rows: dict[str, Message] = {}
-                pending = list(policy.engines)
+                # Tiers follow the adaptive order; spacing stays with the
+                # configured tiers, so a promoted fallback engine is never
+                # called more often than configured.
+                order = engine_order(state, endpoint, policy.engines, time.monotonic())
+                pending = list(order)
                 while pending:
                     # Concurrent searches queue for an engine's next spacing
                     # slot instead of skipping it: a search that found every
@@ -502,11 +626,7 @@ async def run_search(
                     }
                     usable = {
                         engine: circuit.opens(now)
-                        + (
-                            policy.engine_interval
-                            if policy.engines.index(engine) >= 2
-                            else 0
-                        )
+                        + (policy.engine_interval if order.index(engine) >= 2 else 0)
                         for engine, circuit in circuits.items()
                         # A free engine is always asked; a wait must leave
                         # the call time to answer before the deadline.
@@ -519,7 +639,7 @@ async def run_search(
                         )
                         break
                     engine = min(usable, key=lambda name: usable[name])
-                    index = policy.engines.index(engine)
+                    index = order.index(engine)
                     pending.remove(engine)
                     slot = circuits[engine].book(now, policy.spacing(engine))
                     waited += slot - now
@@ -612,10 +732,18 @@ async def run_search(
     }
     if outcome in NOTICES:
         output["message"] = NOTICES[outcome]
+    # A result is degraded when an engine failed or was skipped: a later call
+    # may get that engine. A short result with every engine answering is the
+    # engines' answer and is kept as long as a full one.
+    ttl = search_freshness.cache_ttl(
+        bound=bound,
+        degraded=outcome != "ok" and bool(outcomes - {"ok", "empty_results"}),
+    )
+    log = logging.getLogger(__name__)
     # Metadata only (engines, outcomes, pacing), never the query. Warning level
     # so that the serving journal shows it: the info line was not recorded and
     # a search failure under concurrency could not be read (2026-11-15).
-    logging.getLogger(__name__).warning(
+    log.warning(
         "searxng_outcome %s",
         json.dumps(
             {
@@ -625,9 +753,29 @@ async def run_search(
                     if k not in {"results", "consulted_at", "message"}
                 },
                 "waited_seconds": round(waited, 2),
+                "order": list(order) if order != policy.engines else None,
+                "time_bound": bound,
+                "cache_ttl": ttl if results else 0,
             }
         ),
     )
+    now = time.monotonic()
+    if now - state.health_logged >= HEALTH_LOG_SECONDS:
+        state.health_logged = now
+        log.warning(
+            "searxng_health %s",
+            json.dumps(
+                {
+                    "window_seconds": HEALTH_WINDOW_SECONDS,
+                    "engines": {
+                        engine: state.health.setdefault(
+                            endpoint + ":" + engine, Health()
+                        ).counts(now)
+                        for engine in (*policy.engines, "wikipedia")
+                    },
+                }
+            ),
+        )
     if results:
-        cache.put(key, output, 3600 if outcome == "ok" else 60)
+        cache.put(key, output, ttl)
     return output
