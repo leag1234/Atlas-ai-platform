@@ -119,6 +119,61 @@ class UiProxyTests(unittest.TestCase):
         self.assertEqual(headers["x-atlas-user-role"], "user")
         self.assertNotIn("x-atlas-proxy-secret", headers)
 
+    def test_stable_relay_serves_interface_files_anonymously(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"ATLAS_STABLE": "1", "ATLAS_PROXY_SECRET": "test-proxy-secret"},
+            clear=False,
+        ):
+            context = loopback_html_injector(
+                "127.0.0.1:0", ("127.0.0.1", self.backend.server_address[1])
+            )
+            host, port = context.__enter__()
+            self.addCleanup(context.__exit__, None, None, None)
+
+            def send(method: str, path: str, user: str) -> int:
+                connection = http.client.HTTPConnection(host, port, timeout=10)
+                connection.request(
+                    method,
+                    path,
+                    headers={
+                        "X-Atlas-User": user,
+                        "X-Atlas-Proxy-Secret": "test-proxy-secret",
+                        "Cookie": "token=session",
+                        "Authorization": "Basic eDp5",
+                    },
+                )
+                status = connection.getresponse().status
+                connection.close()
+                return status
+
+            self.assertEqual(send("GET", "/_app/immutable/chunks/A1.js", "@guest"), 200)
+            anonymous = Backend.headers_seen[-1]
+            for name in (
+                "cookie",
+                "authorization",
+                "x-atlas-user",
+                "x-atlas-user-role",
+            ):
+                self.assertNotIn(name, anonymous)
+            self.assertNotIn("x-atlas-proxy-secret", anonymous)
+            self.assertEqual(send("HEAD", "/static/loader.js", "@guest"), 200)
+            seen = len(Backend.headers_seen)
+            for method, path in (
+                ("GET", "/"),
+                ("GET", "/api/config"),
+                ("GET", "/static/%2e%2e/api/config"),
+                ("POST", "/static/loader.js"),
+            ):
+                self.assertEqual(send(method, path, "@guest"), 403, path)
+            self.assertEqual(len(Backend.headers_seen), seen)
+            # A named user keeps the session on the same file.
+            self.assertEqual(send("GET", "/static/loader.js", "ana@guest"), 200)
+        named = Backend.headers_seen[-1]
+        self.assertEqual(named["cookie"], "token=session")
+        self.assertEqual(named["x-atlas-user"], "ana@guest")
+        self.assertEqual(named["x-atlas-user-role"], "user")
+
     def test_large_upload_is_streamed_to_the_backend(self) -> None:
         for size in (10_000, 300_000, 3_000_000):
             status, data = self.request("POST", "/upload", b"x" * size)

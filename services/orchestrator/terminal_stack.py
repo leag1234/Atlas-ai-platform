@@ -104,38 +104,71 @@ def dictation_upgrade(target_path: str, header: bytes) -> bool:
 
 
 def identity_allowed(header: bytes) -> bool:
-    """A front-door identity names a user, except beside an interface API key.
+    """A front-door identity names a user, except for interface files and API keys.
 
-    nginx turns basic authentication off for "Bearer sk-" interface keys, so it sends
-    an empty user ("@host") with the proxy secret; the interface then checks the key
-    itself. Any other request with an empty user is refused, whatever nginx sends.
+    nginx turns basic authentication off for "Bearer sk-" interface keys and for the
+    public interface files, so it sends an empty user ("@host") with the proxy secret;
+    the interface then checks the key itself, and the files are the same for everyone.
+    Any other request with an empty user is refused, whatever nginx sends.
     """
-    found = re.search(rb"(?im)^x-atlas-user:[ \t]*([^\r\n]*)", header)
-    if found is None:
+    if re.search(rb"(?im)^x-atlas-user:", header) is None:
         return False
-    user = found.group(1).strip()
-    if user and not user.startswith(b"@"):
+    if named_user(header):
         return True
-    if public_build_asset(header):
+    if public_interface_file(header):
         return True
     return re.search(rb"(?im)^authorization:[ \t]*Bearer sk-\S", header) is not None
 
 
-PUBLIC_BUILD = re.compile(r"/_app/immutable/[A-Za-z0-9_./-]+")
+def named_user(header: bytes) -> bool:
+    """The front door names a user ("ana@host"), not the empty user ("@host")."""
+    found = re.search(rb"(?im)^x-atlas-user:[ \t]*([^\r\n]*)", header)
+    user = found.group(1).strip() if found else b""
+    return bool(user) and not user.startswith(b"@")
 
 
-def public_build_asset(header: bytes) -> bool:
-    """A read of the content-hashed interface build, which holds no user data.
+# Files every browser loads to start the interface, the same for every user: the
+# content-hashed build and its version file, the interface's static files (Open WebUI's
+# and the Atlas overlay mounted under /static/atlas/), the web app manifest, the
+# pictures at the root of the build (icon, default avatar, image placeholder), and the
+# Atlas page scripts and styles the relay injects into the page shell. The front door
+# serves exactly these without basic authentication (infra/stable/nginx/*.conf).
+PUBLIC_INTERFACE_FILES = re.compile(
+    r"/_app/immutable/[A-Za-z0-9_./-]+"
+    r"|/_app/version\.json"
+    r"|/static/[A-Za-z0-9_./-]+"
+    r"|/manifest\.json"
+    r"|/(?:favicon|user|image-placeholder)\.png"
+    r"|/api/atlas/keys/(?:client\.js|style\.css)"
+    r"|/api/atlas/(?:user-memory|voice)/client\.js"
+    r"|/project-mode/(?:client\.js|locale\.js|shell\.js|style\.css)"
+)
 
-    Phone browsers sometimes fetch these files without the basic credentials, and
-    a refusal there breaks the whole interface, so the front door may send them
-    without a user. Only GET and HEAD, only that folder, after path normalization.
+
+def public_interface_file(header: bytes) -> bool:
+    """A read of an interface file, which holds no user data.
+
+    Phone browsers (Chrome on Android, measured 2026-11-15) fetch many of these files
+    without the basic credentials and do not retry module scripts after the 401, which
+    broke the whole interface, so the front door sends them without a user. Only GET
+    and HEAD, only these paths, after path normalization.
     """
     method = header.split(b" ", 1)[0].upper()
     if method not in (b"GET", b"HEAD"):
         return False
     path = normalized_path(header)
-    return path is not None and PUBLIC_BUILD.fullmatch(path) is not None
+    return path is not None and PUBLIC_INTERFACE_FILES.fullmatch(path) is not None
+
+
+def anonymous_interface_read(header: bytes) -> bytes:
+    """Forward a read of an interface file without a user as an anonymous request.
+
+    No cookie, credential or identity reaches Open WebUI, so the answer cannot depend
+    on a session and is the one every visitor gets.
+    """
+    for name in (b"cookie", b"authorization", b"x-atlas-user"):
+        header = without_header(header, name)
+    return header
 
 
 # Listen backlog of the front relays (bounded by net.core.somaxconn).
@@ -479,7 +512,10 @@ def loopback_html_injector(
                             return
                         header = without_header(header, b"x-atlas-proxy-secret")
                         header = without_header(header, b"x-atlas-user-role")
-                        header += b"\r\nX-Atlas-User-Role: user"
+                        if not named_user(header) and public_interface_file(header):
+                            header = anonymous_interface_read(header)
+                        else:
+                            header += b"\r\nX-Atlas-User-Role: user"
                     header = disable_webui_file_processing(header)
                     method = header.split(b" ", 1)[0].upper()
                     upgrade = re.search(rb"(?im)^upgrade:", header) is not None

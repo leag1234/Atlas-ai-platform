@@ -18,6 +18,7 @@ from zipfile import ZipFile
 
 from reportlab.pdfgen.canvas import Canvas
 from PIL import Image
+from basic_auth_phone_browser import check as phone_check
 from playwright.sync_api import (
     BrowserContext,
     FilePayload,
@@ -240,6 +241,8 @@ def main() -> None:
         anonymous = playwright.request.new_context()
         assert anonymous.get(BASE_URL).status == 401
         anonymous.dispose()
+        # Cold phone loads, with and without basic credentials on subresources.
+        phone = phone_check(playwright, loads=1)
         alice = signin(context)
         page = open_page(context, alice)
         websocket_ping(page)
@@ -388,6 +391,7 @@ def main() -> None:
             "rate_limited": True,
             "same_origin": True,
             "deep_reload": True,
+            "phone_cold_loads": bool(phone),
             "signout": True,
         }
         (OUTPUT / "browser.json").write_text(json.dumps(evidence, indent=2) + "\n")
