@@ -229,7 +229,11 @@ def parse_suggestions(body: bytes, book: str) -> list[Hit]:
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict) or row.get("kind") != "path":
             continue
-        title, path = unescape(str(row.get("value", ""))), str(row.get("path", ""))
+        # kiwix-serve escapes both fields as HTML ("Jeanne d&apos;Arc").
+        title, path = (
+            unescape(str(row.get("value", ""))),
+            unescape(str(row.get("path", ""))),
+        )
         if title and path and ".." not in path and not path.startswith("/"):
             hits.append(Hit(title, f"/content/{book}/" + quote(path, safe=_SAFE), ""))
     return hits

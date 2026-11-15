@@ -619,6 +619,13 @@ KIWIX_SUGGEST = json.dumps(
             "path": "Lucienne_Varnier",
         },
         {"value": "containing 'lucienne varnier'...", "kind": "pattern"},
+        # kiwix-serve escapes the value and the path as HTML.
+        {
+            "value": "Pont d&apos;Ys",
+            "label": "x",
+            "kind": "path",
+            "path": "Pont_d&apos;Ys",
+        },
     ]
 ).encode()
 
@@ -691,8 +698,10 @@ class LocalMirrorTests(unittest.IsolatedAsyncioTestCase):
             [
                 f"/content/{book}/Lucienne_Varnier_(homonymie)",
                 f"/content/{book}/Lucienne_Varnier",
+                f"/content/{book}/Pont_d'Ys",
             ],
         )
+        self.assertEqual(hits[2].title, "Pont d'Ys")
 
         def hit(title: str) -> kiwix.Hit:
             return kiwix.Hit(title, "/content/b/" + title.replace(" ", "_"), "")
