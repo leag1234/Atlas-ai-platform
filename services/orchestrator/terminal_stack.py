@@ -138,6 +138,9 @@ def public_build_asset(header: bytes) -> bool:
     return path is not None and PUBLIC_BUILD.fullmatch(path) is not None
 
 
+# Listen backlog of the front relays (bounded by net.core.somaxconn).
+LISTEN_BACKLOG = 1024
+
 DOWNLOAD = re.compile(
     r"/api/v1/terminals/atlas-files/files/serve/home/user/requests/"
     r"(chatcmpl-[a-f0-9]{32})/[A-Za-z0-9][A-Za-z0-9_.-]*"
@@ -313,6 +316,10 @@ def loopback_forward(
     class Server(socketserver.ThreadingTCPServer):
         daemon_threads = True
         allow_reuse_address = True
+        # nginx opens one upstream connection per request and a page load sends
+        # 200-300 requests at once; the default backlog of 5 overflowed, the kernel
+        # dropped SYNs and browsers waited 1-31 s per retry (2026-11-15).
+        request_queue_size = LISTEN_BACKLOG
 
     with Server((host, int(port)), Handler) as server:
         worker = threading.Thread(target=server.serve_forever, daemon=True)
@@ -580,6 +587,10 @@ def loopback_html_injector(
     class Server(socketserver.ThreadingTCPServer):
         daemon_threads = True
         allow_reuse_address = True
+        # nginx opens one upstream connection per request and a page load sends
+        # 200-300 requests at once; the default backlog of 5 overflowed, the kernel
+        # dropped SYNs and browsers waited 1-31 s per retry (2026-11-15).
+        request_queue_size = LISTEN_BACKLOG
 
     with Server((host, int(port)), Handler) as server:
         worker = threading.Thread(target=server.serve_forever, daemon=True)

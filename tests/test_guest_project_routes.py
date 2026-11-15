@@ -94,5 +94,19 @@ class FrontDoorIdentityTests(unittest.TestCase):
         )
 
 
+class RelayBacklogTests(unittest.TestCase):
+    def test_front_relays_listen_with_a_deep_backlog(self) -> None:
+        import inspect
+
+        from services.orchestrator import terminal_stack
+
+        source = inspect.getsource(terminal_stack)
+        self.assertGreaterEqual(terminal_stack.LISTEN_BACKLOG, 512)
+        self.assertEqual(
+            source.count("request_queue_size = LISTEN_BACKLOG"),
+            source.count("(socketserver.ThreadingTCPServer)"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
