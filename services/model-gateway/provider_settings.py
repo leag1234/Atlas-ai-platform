@@ -89,6 +89,16 @@ def api_key_for(provider: str) -> str:
     return os.environ.get(str(preset["api_key_env"]), "")
 
 
+def key_configured(provider: str) -> bool:
+    """Whether a routed provider has a key configured. A configuration check that hands
+    no credential out: the routing policy is built at every privacy level, Strict
+    included, and a strict request then calls owned targets only."""
+    preset = presets().get(provider)
+    if not preset or not preset.get("api_key_env"):
+        raise ValueError("unknown_provider")
+    return bool(os.environ.get(str(preset["api_key_env"])))
+
+
 def owned_endpoint() -> str:
     value = os.environ.get("ATLAS_OWNED_VLLM_BASE_URL", "")
     if not value:

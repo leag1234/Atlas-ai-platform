@@ -332,6 +332,34 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(session.calls, [])
 
+    async def test_strict_context_with_hidden_profile_calls_owned_endpoint(
+        self,
+    ) -> None:
+        # The gateway restores the strict level for the whole request: building the
+        # routing policy must not ask for shared provider keys (it used to raise
+        # strict_privacy_unavailable even with an owned server configured).
+        from packages import privacy
+
+        session = Session([Response()])
+        env = HIDDEN_ENVIRONMENT | {
+            "ATLAS_OWNED_VLLM_BASE_URL": "https://owned.example.invalid/v1",
+            "ATLAS_OWNED_VLLM_API_KEY": "owned-test-only",
+        }
+        token = privacy.elevate("strict")
+        try:
+            with patch.dict(os.environ, env):
+                await self.collect(
+                    session,
+                    self.request("atlas-mistral", privacy="strict", budget_eur="0.10"),
+                )
+        finally:
+            privacy.reset(token)
+        self.assertEqual(
+            [call[0] for call in session.calls],
+            ["https://owned.example.invalid/v1/chat/completions"],
+        )
+        self.assertEqual(session.calls[0][1], "Bearer owned-test-only")
+
     async def test_provider_error_redacts_key(self) -> None:
         from stream_transport import provider_error_message
 

@@ -21,8 +21,8 @@ import yaml
 
 from provider_settings import (
     REASONING_EFFORTS,
-    api_key_for,
     configure,
+    key_configured,
     presets,
     reasoning_control,
     selected,
@@ -135,7 +135,7 @@ class ServerlessPolicy:
                 continue
             entry = hidden_roles[role]
             provider = str(entry["provider"])
-            if not api_key_for(provider):
+            if not key_configured(provider):
                 raise ValueError("provider_key_missing")
             self.config[role] = entry
             self.hidden_profiles[profile] = role
