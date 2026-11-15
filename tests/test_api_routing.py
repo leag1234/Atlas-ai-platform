@@ -111,10 +111,12 @@ class ApiRoutingTests(unittest.TestCase):
         ):
             policy.return_value.prices = prices
             plan = dev_gateway.prepare_api(request, "atlas-code", "key-test")
-        chain = [plan, plan.fallback]
+        fallback = plan.fallback
+        assert fallback is not None
+        chain = [plan, fallback]
         self.assertEqual([p.model for p in chain], ["first", "second"])
         self.assertEqual([p.privacy for p in chain], ["shared", "shared"])
-        self.assertIsNone(plan.fallback.fallback)
+        self.assertIsNone(fallback.fallback)
 
     def test_routing_unchanged_without_an_owned_server(self) -> None:
         # Production has no owned server: standard routes are the configured shared
