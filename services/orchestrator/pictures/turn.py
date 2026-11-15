@@ -716,6 +716,17 @@ async def process_picture_turn(
         or DEFAULT_TITLES["drawing"].get(language, DEFAULT_TITLES["drawing"]["en"])
     )
     owner = str(getattr(request, "artifact_owner", "") or "")
+    # A CPU picture keeps the server's own picture: a later edit starts from it.
+    renders = [
+        (
+            (await _store_image({"mime": "image/png", "data": c["render"]})).rsplit(
+                "/", 1
+            )[-1]
+            if c.get("render")
+            else ""
+        )
+        for c in candidates
+    ]
     picture_set = await asyncio.to_thread(
         store.create,
         owner,
@@ -729,8 +740,10 @@ async def process_picture_turn(
                 source=str(candidate.get("source") or ""),
                 seed=int(candidate.get("seed") or 0),
                 prompt=str(candidate.get("prompt") or ""),
+                render_key=render,
+                render_hash=str(candidate.get("render_hash") or ""),
             )
-            for url, candidate in zip(urls, candidates)
+            for url, candidate, render in zip(urls, candidates, renders)
         ],
     )
     if cpu is not None and cpu.rewrite is not None:

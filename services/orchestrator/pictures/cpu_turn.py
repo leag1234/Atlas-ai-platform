@@ -32,6 +32,8 @@ server is a fixed cost (0 per picture), its render seconds are logged.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import logging
 import secrets
 import time
@@ -57,6 +59,15 @@ LOCATE_SECONDS = 40.0
 LOCATE_BUDGET = Decimal("0.01")
 NSFW_LIMIT = 0.5
 FINISH_SECONDS = 30.0
+# Added by code to an edit instruction (a server that edits the picture).
+EDIT_KEEP = (
+    "Keep everything else exactly as in the picture: the same subjects, "
+    "poses, clothes, composition, colours and flat illustration style."
+)
+# Changes kept in a set and repeated to every later change.
+MAX_CHANGES = 8
+# The change given to the rewrite for a plain retry (nothing to change found).
+SAME_PICTURE = "No visual change: keep the picture exactly as described."
 
 
 class CpuUnavailable(Exception):
@@ -121,6 +132,11 @@ def _image_url(image: dict[str, str]) -> str:
 async def _ready(pictures: int, clock: Clock) -> float:
     """Health and queue check before anything is spent: the expected wait,
     or CpuUnavailable when it does not fit what is left of the budget."""
+    return (await _health(pictures, clock))[0]
+
+
+async def _health(pictures: int, clock: Clock) -> tuple[float, dict[str, Any]]:
+    """(_ready's expected wait, the server's health)."""
     if not cpu_server.configured():
         raise CpuUnavailable("picture_cpu_unconfigured")
     try:
@@ -136,7 +152,16 @@ async def _ready(pictures: int, clock: Clock) -> float:
             status.get("queue"),
         )
         raise CpuUnavailable("picture_cpu_busy")
-    return expected
+    return expected, status
+
+
+def render_hash(image: str) -> str:
+    """sha256 of a base64 picture's bytes: the same picture drawn again."""
+    try:
+        data = base64.b64decode(image, validate=True)
+    except (ValueError, TypeError):
+        data = image.encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
 
 
 async def _rewrite(
@@ -235,17 +260,27 @@ async def pictures(
     call: Any,
     errors: list[str],
     progress: Any = None,
+    reference: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, dict[str, float]]:
     """(finished pictures, how many the filter removed, timings) of one plan.
 
-    One job for every seed. Busy (the server's own check) or a failure is
-    CpuUnavailable while painting by code still fits, CpuLate after."""
+    One job for every seed; with `reference` (base64 PNG), one edit of that
+    picture by the instruction plan.edit (first seed). Busy (the server's
+    own check) or a failure is CpuUnavailable while painting by code still
+    fits, CpuLate after."""
     timings: dict[str, float] = {}
     started = time.monotonic()
     try:
-        rendered = await cpu_server.render_set(
-            plan.prompt, seeds, max(5.0, clock.left())
-        )
+        if reference is not None:
+            rendered: list[cpu_server.Rendered | None] = [
+                await cpu_server.render_edit(
+                    edit_prompt(plan.edit), seeds[0], reference, max(5.0, clock.left())
+                )
+            ]
+        else:
+            rendered = await cpu_server.render_set(
+                plan.prompt, seeds, max(5.0, clock.left())
+            )
     except cpu_server.CpuServerError as error:
         errors.append(error.code)
         LOGGER.warning(
@@ -329,9 +364,18 @@ async def pictures(
                 "labels": dict(job.get("report") or {}),
                 "render_seconds": result.render_seconds,
                 "unmet": unmet,
+                # The server's own picture: a later edit starts from it, and
+                # its hash tells a picture drawn again identical.
+                "render": result.image,
+                "render_hash": render_hash(result.image),
             }
         )
     return finished, filtered, timings
+
+
+def edit_prompt(edit: str) -> str:
+    """The prompt of an edit: the change, then what stays as it is."""
+    return edit.rstrip(" .") + ". " + EDIT_KEEP
 
 
 async def draw(
@@ -396,12 +440,26 @@ async def change(
     cost_limit: Decimal | None = None,
     wall_clock_limit: float | None = None,
     complete: Any = None,
+    instruction: str | None = None,
+    requirements: list[str] | None = None,
 ) -> bool:
-    """A change to a CPU picture: the changed prompt drawn again with the
-    picture's seed, as the next version of the same artifact. Without the
-    server (flag off, unreachable, busy) the picture stays as it is, said
-    with the ordinary unchanged-version sentence (a CPU picture has no SVG
-    drawing for the painter to edit)."""
+    """A change to a CPU picture, as the next version of the same artifact.
+
+    `instruction` is the change to make (the follow-up understood with its
+    conversation, dialogue.py; the user's own words when not given), and
+    `requirements` everything the user wants the picture to show. The
+    rewrite keeps the earlier changes and the rest of the prompt word for
+    word. A server that edits (its health says so) changes the current
+    picture itself from the edit instruction; otherwise the changed prompt
+    is drawn again with the picture's seed.
+
+    Never a change claimed that did not happen: an empty instruction or a
+    prompt the rewrite left unchanged (after one stronger attempt) is a new
+    draw of the same description with a new seed, said as such; a picture
+    identical to the current one (same bytes) makes no new version and is
+    said plainly. Without the server (flag off, unreachable, busy) the
+    picture stays as it is, said with the ordinary unchanged-version
+    sentence."""
     from packages.artifact_source import Block, prepare
     from packages.user_errors import app_failure
     from services.orchestrator import artifact_store
@@ -431,22 +489,46 @@ async def change(
     limit = request.timeout_seconds if wall_clock_limit is None else wall_clock_limit
     errors: list[str] = []
     profile = picture_profile("picture_rewrite")
+    wanted = (request.user_text if instruction is None else instruction).strip()
+    render_key, current_hash = store.current_render(picture_set)
+    variation = False
+    edited = False
     try:
         if not cpu_enabled() or profile is None:
             raise CpuUnavailable("picture_cpu_off")
         clock = Clock(started, started + max(60.0, limit - 20.0))
-        await _ready(1, clock)
+        _, status = await _health(1, clock)
         await _status("changing", language)
-        plan = await _rewrite(
-            rewrite.messages(
+        call = complete or _gateway
+
+        def asked(change_text: str, stronger: bool) -> list[dict[str, str]]:
+            return rewrite.messages(
                 picture_set.request,
                 previous=picture_set.prompt,
-                change=request.user_text,
-            ),
-            profile,
-            spend,
-            complete or _gateway,
+                change=change_text,
+                earlier=list(picture_set.changes),
+                requirements=requirements,
+                stronger=stronger,
+            )
+
+        # Nothing to change found (a plain "try again"): the prompt is read
+        # again unchanged (its words to set and checks), and the picture is
+        # a new draw of the same description, decided here.
+        plan = await _rewrite(
+            asked(wanted or SAME_PICTURE, False), profile, spend, call
         )
+        if (
+            wanted
+            and not plan.refused
+            and rewrite.same_prompt(plan.prompt, picture_set.prompt)
+        ):
+            # The change did not reach the prompt: one stronger attempt.
+            plan = await _rewrite(asked(wanted, True), profile, spend, call)
+        variation = not wanted or (
+            not plan.refused and rewrite.same_prompt(plan.prompt, picture_set.prompt)
+        )
+        if not wanted:
+            plan.prompt = picture_set.prompt
         language = answer_language(plan.language, language)
         unchanged = app_failure(
             "drawing", language, unchanged_version=picture_set.artifact_version
@@ -455,15 +537,45 @@ async def change(
             item.reponse, item.state = text(language, "cpu_refused"), "done"
             item.cout_eur = float(spend.total)
             return True
-        finished, filtered, timings = await pictures(
-            plan,
-            [picture_set.seed or secrets.randbelow(2**31)],
-            clock=clock,
-            profile=profile,
-            spend=spend,
-            call=complete or _gateway,
-            errors=errors,
+        seed = (
+            secrets.randbelow(2**31)
+            if variation or not picture_set.seed
+            else picture_set.seed
         )
+        reference = None
+        if not variation and plan.edit and cpu_server.edits(status):
+            raw = store.image_bytes(render_key)
+            if (
+                raw is not None
+                and cpu_server.expected_wait(status, 1, edit=True) <= clock.left()
+            ):
+                reference = base64.b64encode(raw).decode("ascii")
+        try:
+            finished, filtered, timings = await pictures(
+                plan,
+                [seed],
+                clock=clock,
+                profile=profile,
+                spend=spend,
+                call=call,
+                errors=errors,
+                reference=reference,
+            )
+            edited = reference is not None
+        except CpuUnavailable:
+            if reference is None:
+                raise
+            # The edit failed: the changed prompt drawn again, if it fits.
+            errors.append("picture_cpu_edit_failed")
+            finished, filtered, timings = await pictures(
+                plan,
+                [seed],
+                clock=clock,
+                profile=profile,
+                spend=spend,
+                call=call,
+                errors=errors,
+            )
     except Refused as refused:
         # D5: the user's own budget or quota, with its measurements.
         from packages.limits import LimitError
@@ -488,6 +600,14 @@ async def change(
         item.state = "done"
         return True
     result = finished[0]
+    if current_hash and result.get("render_hash") == current_hash:
+        # The same picture again: no new version, and no claimed change.
+        item.erreurs.append("picture_cpu_same_image")
+        item.reponse = text(
+            language, "cpu_same_image", version=picture_set.artifact_version
+        )
+        item.state = "done"
+        return True
     prepared = prepare(
         Block("svg", result["svg"], True), picture_set.title, picture_set.language
     )
@@ -513,19 +633,37 @@ async def change(
         item.reponse, item.state = unchanged, "done"
         return True
     image = await _store_image(result["image"])
+    render_url = await _store_image({"mime": "image/png", "data": result["render"]})
     picture_set.artifact_version = int(stored["version"])
     picture_set.prompt = plan.prompt
     picture_set.labels = list(plan.labels)
     picture_set.diagram = plan.diagram
+    picture_set.seed = seed
+    picture_set.image_key = image.rsplit("/", 1)[-1]
+    picture_set.render_key = render_url.rsplit("/", 1)[-1]
+    picture_set.render_hash = str(result.get("render_hash") or "")
+    picture_set.edited = edited
+    if wanted and not variation:
+        picture_set.changes = [*picture_set.changes, wanted][-MAX_CHANGES:]
     await asyncio.to_thread(store.update, picture_set)
     item.images = [{"reference": image, "kind": "picture"}]
     item.artifacts = [
         {"id": picture_set.artifact_id, "version": picture_set.artifact_version}
     ]
+    if variation:
+        item.erreurs.append("picture_cpu_variation")
     checks = cpu_checks.note(language, plan.checks, [result.get("unmet")])
     item.reponse = "\n\n".join(
         [
-            " ".join(filter(None, [text(language, "changed"), checks])),
+            " ".join(
+                filter(
+                    None,
+                    [
+                        text(language, "cpu_variation" if variation else "changed"),
+                        checks,
+                    ],
+                )
+            ),
             f"![{picture_set.title}]({image})",
             footer(
                 picture_set.artifact_id,
@@ -540,9 +678,12 @@ async def change(
     item.state = "done"
     item.latence_ms["picture_change"] = (time.monotonic() - started) * 1000
     LOGGER.info(
-        "picture_cpu_change cost_eur=%s seconds=%.1f render_seconds=%s",
+        "picture_cpu_change cost_eur=%s seconds=%.1f render_seconds=%s "
+        "edited=%s variation=%s",
         spend.total,
         time.monotonic() - started,
         result.get("render_seconds"),
+        edited,
+        variation,
     )
     return True

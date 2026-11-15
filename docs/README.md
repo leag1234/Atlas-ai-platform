@@ -39,6 +39,7 @@ The default decision is therefore *not to host GPUs unless the load justifies it
 | `21-pictures-by-code.md` | Pictures by code: four SVG drafts finished by code, the choice, flags, cost and limits | Backend / product |
 | `22-dates-units-currencies.md` | Dates, time zones, units and ECB currency rates computed by code: tools, replay-safe offering, library survey | Backend / product |
 | `23-specialized-sources.md` | Specialized public sources before web search (Wikipedia and Wikidata, news feeds, Eurostat, French mayors and communes), local Wikipedia mirror survey, privacy levels | Backend / product |
+| `24-picture-follow-ups.md` | Picture follow-ups: understood with their conversation, honest about unchanged pictures, critiques from evidence, survey of open picture editors on CPU | Backend / product |
 
 ## 2. Normative Conventions (RFC 2119)
 

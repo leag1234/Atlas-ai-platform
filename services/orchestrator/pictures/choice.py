@@ -136,6 +136,11 @@ def _write_choice(
     picture_set.current_source = picture_set.candidates[index].source
     picture_set.seed = picture_set.candidates[index].seed
     picture_set.prompt = picture_set.candidates[index].prompt or picture_set.prompt
+    # The chosen candidate is now the current picture (finished and raw).
+    picture_set.image_key = picture_set.candidates[index].image_key
+    picture_set.render_key = picture_set.candidates[index].render_key
+    picture_set.render_hash = picture_set.candidates[index].render_hash
+    picture_set.changes = []
     return str(stored["id"]), int(stored["version"]), current.filename
 
 

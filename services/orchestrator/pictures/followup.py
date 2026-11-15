@@ -95,8 +95,16 @@ async def process_picture_followup(
     cost_limit: Decimal | None = None,
     wall_clock_limit: float | None = None,
     complete: Complete | None = None,
+    instruction: str | None = None,
+    requirements: list[str] | None = None,
 ) -> bool:
-    """Change the conversation's picture; False when the artifact is not one."""
+    """Change the conversation's picture; False when the artifact is not one.
+
+    `instruction` is the change understood with its conversation
+    (dialogue.py), the user's own words when not given. A chat that still
+    shows an older version of the picture (a reply regenerated, two turns
+    crossing) changes the latest version: the set always holds it, and the
+    picture is never handed to the HTML artifact editor for a conflict."""
     from packages.artifact_source import Block, prepare
     from packages.user_errors import app_failure
     from services.orchestrator import artifact_store
@@ -113,10 +121,10 @@ async def process_picture_followup(
     if (
         picture_set is None
         or picture_set.owner != store.owner_hash(owner)
-        or int(artifact.get("version") or 0) != picture_set.artifact_version
+        or int(artifact.get("version") or 0) > picture_set.artifact_version
         or not picture_set.request
     ):
-        # Not a picture by code, or changed since by another path.
+        # Not a picture by code, or a version this set does not know.
         return False
     if picture_set.engine == "cpu":
         from services.orchestrator.pictures import cpu_turn
@@ -128,6 +136,8 @@ async def process_picture_followup(
             cost_limit=cost_limit,
             wall_clock_limit=wall_clock_limit,
             complete=complete,
+            instruction=instruction,
+            requirements=requirements,
         )
     chosen = profiles()
     if chosen is None:
@@ -141,7 +151,9 @@ async def process_picture_followup(
     spend = Spend(min(own, cost_limit) if cost_limit is not None else own)
     limit = request.timeout_seconds if wall_clock_limit is None else wall_clock_limit
     seconds = max(30.0, min(240.0, limit - 40.0))
-    change, redrawn = messages(picture_set, request.user_text)
+    change, redrawn = messages(
+        picture_set, (instruction or "").strip() or request.user_text
+    )
     unchanged = app_failure(
         "drawing", language, unchanged_version=picture_set.artifact_version
     )
@@ -203,6 +215,14 @@ async def process_picture_followup(
         previous = artifact_store.read(
             picture_set.artifact_id, owner, picture_set.artifact_version
         )
+        if previous.content == prepared.document.encode("utf-8"):
+            # The drawing came back identical: no new version, no claimed change.
+            item.erreurs.append("picture_change_identical")
+            item.reponse = text(
+                language, "same_drawing", version=picture_set.artifact_version
+            )
+            item.state = "done"
+            return True
         stored = artifact_store.update(
             picture_set.artifact_id,
             owner,
@@ -219,6 +239,7 @@ async def process_picture_followup(
     image = await _store_image(result["image"])
     picture_set.artifact_version = int(stored["version"])
     picture_set.current_source = str(result.get("source") or svg)
+    picture_set.image_key = image.rsplit("/", 1)[-1]
     await asyncio.to_thread(store.update, picture_set)
     lines = [text(language, "redrawn" if redrawn else "changed")]
     lines.append(f"![{picture_set.title}]({image})")
