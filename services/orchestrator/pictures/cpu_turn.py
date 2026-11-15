@@ -41,6 +41,7 @@ from typing import Any
 
 from packages.profiles import picture_profile
 from services.orchestrator.pictures import cpu_checks, cpu_server, locate, rewrite
+from services.orchestrator.pictures.texts import answer_language
 from services.orchestrator.pictures.worker import PictureJobError, run_job
 
 LOGGER = logging.getLogger(__name__)
@@ -104,6 +105,8 @@ class CpuDrawing:
     # The attempt failed after LATE_SHARE of the turn: the failure is said.
     late: bool = False
     timings: dict[str, float] = field(default_factory=dict)
+    # The language of the fixed texts, once the rewrite named the request's.
+    language: str = ""
 
 
 def shown(nsfw: float | None) -> bool:
@@ -350,10 +353,9 @@ async def draw(
     clock = Clock(started, deadline)
     expected = await _ready(CANDIDATES, clock)
     await _status("reading", language)
-    plan = await _rewrite(
-        rewrite.messages(request_text, language=language), profile, spend, complete
-    )
-    drawing = CpuDrawing(rewrite=plan)
+    plan = await _rewrite(rewrite.messages(request_text), profile, spend, complete)
+    language = answer_language(plan.language, language)
+    drawing = CpuDrawing(rewrite=plan, language=language)
     drawing.timings["cpu_rewrite"] = (time.monotonic() - started) * 1000
     if plan.refused:
         drawing.refused = True
@@ -418,7 +420,7 @@ async def change(
     )
 
     started = time.monotonic()
-    language = request.lang if request.lang in ("en", "fr", "de", "es", "it") else "en"
+    language = answer_language(picture_set.language, request.lang)
     item.task_type = "drawing"
     owner = str(getattr(request, "artifact_owner", "") or "")
     unchanged = app_failure(
@@ -440,11 +442,14 @@ async def change(
                 picture_set.request,
                 previous=picture_set.prompt,
                 change=request.user_text,
-                language=language,
             ),
             profile,
             spend,
             complete or _gateway,
+        )
+        language = answer_language(plan.language, language)
+        unchanged = app_failure(
+            "drawing", language, unchanged_version=picture_set.artifact_version
         )
         if plan.refused:
             item.reponse, item.state = text(language, "cpu_refused"), "done"

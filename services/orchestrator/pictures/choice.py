@@ -18,7 +18,7 @@ from typing import Any
 
 from packages.artifact_source import Block, prepare
 from services.orchestrator.pictures import store
-from services.orchestrator.pictures.texts import text
+from services.orchestrator.pictures.texts import answer_language, text
 
 LOGGER = logging.getLogger(__name__)
 SET_LINK = re.compile(r"/images/picture/([0-9a-f]{32})/[1-4]\b")
@@ -192,7 +192,11 @@ async def handle_choice(request: Any, item: Any) -> bool:
         return False
     owner = str(getattr(request, "artifact_owner", "") or "")
     picture_set = await asyncio.to_thread(store.load, set_id)
-    language = request.lang if request.lang in ("en", "fr", "de", "es", "it") else "en"
+    # "la segunda" is too short to tell its language: the choice answers in
+    # the language of the pictures it chooses from.
+    language = answer_language(
+        picture_set.language if picture_set is not None else "", request.lang
+    )
     if picture_set is not None and not _owned(picture_set, owner):
         return False
     item.task_type = "drawing"

@@ -29,7 +29,7 @@ from services.orchestrator.pictures import (
     store,
 )
 from services.orchestrator.pictures.svg_text import extract_svg, salvage
-from services.orchestrator.pictures.texts import text
+from services.orchestrator.pictures.texts import answer_language, text
 from services.orchestrator.pictures.turn import (
     REFUSALS,
     Complete,
@@ -134,7 +134,8 @@ async def process_picture_followup(
         return False
     _, painter_profile = chosen
     started = time.monotonic()
-    language = request.lang if request.lang in ("en", "fr", "de", "es", "it") else "en"
+    # A change keeps the language of the picture it changes.
+    language = answer_language(picture_set.language, request.lang)
     item.task_type = "drawing"
     own = turn_ceiling()
     spend = Spend(min(own, cost_limit) if cost_limit is not None else own)
