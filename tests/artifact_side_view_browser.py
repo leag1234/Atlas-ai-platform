@@ -95,6 +95,25 @@ def main() -> None:
             )
         page.goto(URL, wait_until="networkidle")
         page.wait_for_function("window.atlasSideView")
+        # Open WebUI 0.13 renders a hovered sidebar chat in a hidden preview:
+        # its app link opens nothing, gets no chip and leaves the focus alone.
+        page.evaluate(
+            """href => {
+              const box = document.createElement('div'); box.className = 'hidden';
+              box.dataset.previewFixture = '';
+              box.innerHTML = '<div id="chat-preview-0123"><div id="message-preview" class="chat-assistant">'
+                + '<div class="markdown-prose"><a></a></div></div></div>';
+              box.querySelector('a').href = href; box.querySelector('a').textContent = 'Open probe';
+              document.querySelector('#messages-container').parentElement.prepend(box);
+              const input = document.createElement('textarea'); input.id = 'focus-probe';
+              document.body.append(input); input.focus();
+            }""",
+            f"{PREFIX}/1/open#atlas-view=app&artifact={ARTIFACT}&version=1&title=Probe",
+        )
+        page.wait_for_timeout(800)
+        assert page.locator(".atlas-side-frame").count() == 0
+        assert page.locator("[data-preview-fixture] .atlas-side-chip").count() == 0
+        assert page.evaluate("document.activeElement.id") == "focus-probe"
         install(page, 1)
         frame = page.locator(".atlas-side-frame")
         frame.wait_for()

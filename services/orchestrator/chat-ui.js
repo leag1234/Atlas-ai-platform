@@ -116,7 +116,7 @@
 
   let activeCancellation = null;
   const stopMark = () => {
-    const messages = document.querySelectorAll(".chat-assistant");
+    const messages = [...document.querySelectorAll(".chat-assistant")].filter(item => !item.closest('[id^="chat-preview-"]'));
     const message = messages[messages.length - 1];
     if (!message || message.querySelector(".atlas-stop-mark")) return;
     const mark = document.createElement("p");
@@ -1004,6 +1004,11 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !pane.hidden) { close(); event.preventDefault(); } });
     window.atlasSideView = { open, close };
     const seen = new WeakSet(), opened = new Set(), versions = new Map();
+    // Open WebUI 0.13 renders a whole conversation in a hidden preview when the pointer rests on a sidebar row
+    // (#chat-preview-<id>). A preview is not the conversation the user has open: it never opens a view, gets no chip
+    // and never counts as the latest answer (staging 2026-11-15: hovering a row on the home page opened that chat's
+    // app, whose frame took the keyboard focus, so Escape no longer closed the row menu).
+    const inPreview = node => Boolean(node.closest('[id^="chat-preview-"]'));
     // On a phone the side view covers the whole conversation: never open it by itself there, the chip stays one tap away.
     const wide = () => matchMedia("(min-width: 768px)").matches;
     const chip = (node, descriptor) => { const control = button(text(0), () => open(typeof descriptor === "function" ? descriptor() : descriptor)); control.classList.add("atlas-side-chip"); node.after(control); };
@@ -1011,14 +1016,14 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       // This pinned renderer escapes raw spans as text; hide only our exact wire marker.
       document.querySelectorAll('.chat-assistant .markdown-prose p').forEach(node => { if (/^<span class="atlas-view" data-atlas-view="(?:pdf|markdown|html|url)" [^<>]*hidden><\/span>$/.test(node.textContent.trim())) node.hidden = true; });
       document.querySelectorAll('.chat-assistant .atlas-view[data-atlas-view]').forEach(node => {
-        if (seen.has(node)) return; seen.add(node);
+        if (seen.has(node) || inPreview(node)) return; seen.add(node);
         const descriptor = { kind: node.dataset.atlasView, src: node.dataset.src, title: node.dataset.title, slot: node.dataset.slot };
         const message = node.closest('[id^="message-"]') || node.closest(".chat-assistant");
         const identity = `${location.pathname}:${message?.id || ""}:${JSON.stringify(descriptor)}`;
         chip(node, descriptor); if (wide() && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
       });
       document.querySelectorAll('.chat-assistant .markdown-prose a[href], .user-message .markdown-prose a[href]').forEach(node => {
-        if (seen.has(node)) return;
+        if (seen.has(node) || inPreview(node)) return;
         const url = new URL(node.href, location.href), transport = new URLSearchParams(url.hash.slice(1));
         const kind = transport.get("atlas-view");
         if (Object.hasOwn(views, kind)) {
@@ -1043,7 +1048,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
           node.addEventListener("click", event => { event.preventDefault(); open(descriptor).catch(() => {}); });
           if (descriptor.kind !== "app" && wide() && !opened.has(identity)) { opened.add(identity); open(descriptor).catch(() => {}); }
           if (descriptor.kind === "app") {
-            const messages = [...document.querySelectorAll(".chat-assistant")], last = messages[messages.length - 1], latest = message === last || message?.contains(last);
+            const messages = [...document.querySelectorAll(".chat-assistant")].filter(item => !inPreview(item)), last = messages[messages.length - 1], latest = message === last || message?.contains(last);
             const current = slots.get(descriptor.slot === "bottom" ? "bottom" : "top");
             // A version this page has not met yet, in the last answer, is the one the conversation just produced.
             const known = versions.get(descriptor.artifact) || 0, produced = latest && descriptor.version > known;
@@ -1065,7 +1070,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         chip(node, { kind: match[1].toLowerCase() === "pdf" ? "pdf" : "markdown", src: node.href, title: node.textContent });
       });
       document.querySelectorAll('.chat-assistant .markdown-prose pre, .chat-assistant .markdown-prose .cm-editor, .user-message .markdown-prose pre, .user-message .markdown-prose .cm-editor').forEach(node => {
-        if (seen.has(node)) return;
+        if (seen.has(node) || inPreview(node)) return;
         const code = node.querySelector("code"), wrapper = node.closest(".code-block") || node.parentElement?.parentElement;
         const language = (node.querySelector(".cm-content")?.dataset.language || code?.className.match(/language-(html|markdown|md)\b/i)?.[1] || wrapper?.querySelector(".lang")?.textContent || wrapper?.querySelector(".text-xs")?.textContent || "").trim().toLowerCase();
         if (!["html", "markdown", "md"].includes(language)) return; seen.add(node);
