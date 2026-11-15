@@ -1,7 +1,7 @@
 """Search cache identity and lifetime, decided by code from the query alone.
 
-Two searches that differ only in case, accents, punctuation, stop words or
-word order share one cache entry and one in-flight request. A query whose
+Two searches that differ only in case, accents, punctuation or stop words
+share one cache entry and one in-flight request; word order is kept. A query whose
 answer changes with time keeps the short lifetime; other answers are kept
 for days, since asking upstream engines again returns the same pages and
 spends the server's allowance with them.
@@ -21,7 +21,7 @@ DEGRADED_TIME_BOUND_TTL = 60
 
 # Function words only. Negations ("sans", "without", "ohne", "not"),
 # question words ("when" and "where" ask different things) and direction
-# words are never removed.
+# words ("to", "from", "nach") are never removed.
 STOP_WORDS = {
     "en": "a an and are as at be by for in is it of on or the with does do did "
     "i me my you your this that",
@@ -33,17 +33,6 @@ STOP_WORDS = {
     "it": "al alla alle con dal dalla de dei del della delle di e gli i il in "
     "la le lo o per che su un una uno",
 }
-# Word order carries the meaning of a route or a direction ("from Paris to
-# Lyon", "von Ulm nach Bern"). The French, Spanish and Italian "de X a Y"
-# form needs proper nouns: a price "in Lyon" is not a route to Lyon.
-DIRECTION = re.compile(
-    r"\bfrom\s+\S+(?:\s+\S+)?\s+to\b|\bvon\s+\S+(?:\s+\S+)?\s+(?:nach|bis|zu)\b"
-    r"|\b(?:towards?|into|vers|jusqu|nach|hacia|desde|verso)\b",
-    re.IGNORECASE,
-)
-ROUTE = re.compile(
-    r"\b(?:de|da|del)\s+[A-ZÀ-Ý][\w'-]*\s+(?:à|a|au|al|hasta)\s+[A-ZÀ-Ý]"
-)
 # Search operators: exact phrases, "site:"-style filters and bangs.
 OPERATORS = re.compile(r"[\"“”«»]|\b\w+:\S|(?:^|\s)[!:<]\w")
 STOP = {lang: frozenset(words.split()) for lang, words in STOP_WORDS.items()}
@@ -81,10 +70,11 @@ def fold(text: str) -> str:
 def normalized_query(query: str, language: str) -> str:
     """Cache identity of a query within one search language.
 
-    Takes the query as the model wrote it, before operator quoting. Exact
-    phrases and operators keep their word order and stop words. A query
-    with a direction keeps its order without stop words; otherwise the
-    identity is the sorted set of content words.
+    Takes the query as the model wrote it, before operator quoting. Case,
+    accents, punctuation and stop words are ignored; word order is always
+    kept, since it carries meaning ("lyon paris" is not "paris lyon",
+    "convert A to B" is not "convert B to A"). Exact phrases and operators
+    also keep their stop words.
     """
     text = fold(query)
     tokens = re.findall(r"[\w+#]+", text.replace("'", " ").replace("’", " "))
@@ -93,10 +83,7 @@ def normalized_query(query: str, language: str) -> str:
     if OPERATORS.search(query):
         return " ".join(tokens)
     content = [token for token in tokens if token not in STOP.get(language, ())]
-    content = content or tokens
-    if DIRECTION.search(text) or ROUTE.search(query):
-        return " ".join(content)
-    return " ".join(sorted(set(content)))
+    return " ".join(content or tokens)
 
 
 def time_bound(query: str, news: bool, now: float | None = None) -> bool:
