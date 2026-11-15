@@ -3,6 +3,7 @@
 from decimal import Decimal
 import json
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -99,6 +100,79 @@ class CandidateTests(unittest.TestCase):
             {"results": [{"link": "https://example.test/88", "snippet": "x"}]}
         )
         self.assertNotIn(Decimal(88), tracker.values)
+
+
+def bank_sum(terms: int, result: bool = False) -> str:
+    """A long French sum like a bank export total, with or without its result."""
+    amounts = [
+        Decimal(f"{(i * 37) % 90 + 10}.{(i * 13) % 90 + 10}") for i in range(terms)
+    ]
+    written = " + ".join(format(amount, "f").replace(".", ",") for amount in amounts)
+    total = format(sum(amounts), "f").replace(".", ",")
+    return f"Total : {written}{' = ' + total if result else ''} euros.\n"
+
+
+def elapsed(action: object) -> float:
+    start = time.perf_counter()
+    action()  # type: ignore[operator]
+    return time.perf_counter() - start
+
+
+class ScanCostTests(unittest.TestCase):
+    """The scan is linear: a long answer never holds the interpreter (staging 2026-11-15)."""
+
+    def test_long_sums_without_result_finish_fast(self) -> None:
+        for terms in (20, 50, 200):
+            with self.subTest(terms=terms):
+                answer = bank_sum(terms)
+                self.assertLess(elapsed(lambda: report(answer)), 0.05)
+
+    def test_long_sum_with_its_result_is_still_recomputed(self) -> None:
+        fields = report(bank_sum(20, result=True))
+        self.assertEqual((fields["computed"], fields["recomputed"]), (1, 1))
+
+    def test_overlong_calculation_and_line_are_skipped(self) -> None:
+        self.assertEqual(report(bank_sum(80, result=True))["computed"], 0)
+        line = "au total 4321 " + "word " * (number_provenance.MAX_LINE // 5)
+        self.assertEqual(candidates(line), [])
+        self.assertEqual(len(candidates("au total 4321\n" + line)), 1)
+
+    def test_pathological_answers_finish_fast(self) -> None:
+        answers = [
+            "1 + " * 20_000,
+            "(1 + " * 20_000,
+            "1 " * 50_000,
+            "= 1 + " * 20_000,
+            "au total 12 " * 10_000,
+            " " * 100_000 + "x",
+            "[a](" * 25_000,
+            "<details>" * 10_000,
+        ]
+        for answer in answers:
+            with self.subTest(answer=answer[:12]):
+                self.assertLess(elapsed(lambda: report(answer)), 1.0)
+
+    def test_large_evidence_pool_matches_a_full_scan(self) -> None:
+        tracker = Provenance()
+        tracker.add_text(" ".join(f"{i * 7.31:.2f}" for i in range(40_000)))
+        answer = " ".join(f"Total {i * 3.7:.1f} units." for i in range(1, 301))
+        start = time.perf_counter()
+        fields = tracker.report(answer, []).fields()
+        self.assertLess(time.perf_counter() - start, 1.0)
+        # The former full scan, on a sample: same verdict for every candidate.
+        pool = number_provenance.Pool(tracker.values)
+        for candidate in candidates(answer)[:40]:
+            decimals = number_provenance.places(candidate.token)
+            tolerance = Decimal("0.01") if candidate.approximate else Decimal(0)
+            full = any(
+                number_provenance.matches(candidate.value, decimals, value, tolerance)
+                or number_provenance.matches(
+                    candidate.value, decimals, value * 100, tolerance
+                )
+                for value in tracker.values
+            )
+            self.assertEqual(tracker.supported(candidate, pool), full)
+        self.assertEqual(fields["computed"], 300)
 
 
 class DeliveryTests(unittest.IsolatedAsyncioTestCase):

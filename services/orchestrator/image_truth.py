@@ -112,6 +112,40 @@ def wants_generation(text: str) -> bool:
     )
 
 
+class _Balanced:
+    """_balanced_end for every bracket of one text, from one pass per pair.
+
+    A scan from each "![" of an answer to its closing bracket rescanned the rest
+    of the answer when none closed (2026-11-15). A bracket that follows any
+    character other than a backslash is reached by the same scan from the start
+    of the text, so a stack over that scan gives every result at once.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.ends: dict[tuple[str, str], dict[int, int]] = {}
+
+    def end(self, start: int, opening: str, closing: str) -> int | None:
+        if start == 0 or self.text[start - 1] == "\\":
+            return _balanced_end(self.text, start, opening, closing)
+        if (opening, closing) not in self.ends:
+            ends: dict[int, int] = {}
+            stack: list[int] = []
+            pos = 0
+            while pos < len(self.text):
+                char = self.text[pos]
+                if char == "\\":
+                    pos += 2
+                    continue
+                if char == opening:
+                    stack.append(pos)
+                elif char == closing and stack:
+                    ends[stack.pop()] = pos + 1
+                pos += 1
+            self.ends[(opening, closing)] = ends
+        return self.ends[(opening, closing)].get(start)
+
+
 def _balanced_end(text: str, start: int, opening: str, closing: str) -> int | None:
     depth, pos = 1, start + 1
     while pos < len(text):
@@ -129,6 +163,9 @@ def _balanced_end(text: str, start: int, opening: str, closing: str) -> int | No
     return None
 
 
+_MARKER_RUN = re.compile(r"`+|~+")
+
+
 def _target(value: str) -> str:
     value = value.strip()
     if value.startswith("<") and ">" in value:
@@ -142,6 +179,9 @@ class ImageVerifier:
     def __init__(self) -> None:
         self.pending = ""
         self.source = ""
+        # The first characters (at most 4) of the current line: enough to tell a
+        # fence indented by at most 3 spaces, without copying the whole line for
+        # every character (quadratic on a long line).
         self.line_prefix = ""
 
     def feed(self, text: str, references: set[str], *, final: bool = False) -> str:
@@ -149,6 +189,7 @@ class ImageVerifier:
         self.pending += text
         text = self.pending
         output: list[str] = []
+        balanced = _Balanced(text)
         pos = 0
         while pos < len(text):
             start, end, keep = pos, pos + 1, True
@@ -157,7 +198,7 @@ class ImageVerifier:
                     break
                 end = min(pos + 2, len(text))
             elif text[pos] in "`~":
-                run = re.match(r"`+|~+", text[pos:])
+                run = _MARKER_RUN.match(text, pos)
                 assert run is not None
                 marker = run[0]
                 if pos + len(marker) == len(text) and not final:
@@ -165,42 +206,48 @@ class ImageVerifier:
                 fenced = len(marker) >= 3 and bool(
                     re.fullmatch(r" {0,3}", self.line_prefix)
                 )
+                # Searched in place, not in a copy of the rest of the text: the
+                # copy per marker was quadratic. In the former copy, "^" also
+                # matched right after the marker; the first match covers it.
+                after = pos + len(marker)
                 if fenced:
-                    close = re.search(
-                        r"(?m)^ {0,3}"
+                    fence = (
+                        r" {0,3}"
                         + re.escape(marker[0])
                         + "{"
                         + str(len(marker))
-                        + r",}[ \t]*(?:\n|$)",
-                        text[pos + len(marker) :],
+                        + r",}[ \t]*(?:\n|$)"
+                    )
+                    close = re.compile("(?m)" + fence).match(text, after) or (
+                        re.compile("(?m)^" + fence).search(text, after)
                     )
                     if close is None:
                         if not final:
                             break
                         end = len(text)
                     else:
-                        end = pos + len(marker) + close.end()
+                        end = close.end()
                 elif marker[0] == "`":
-                    close = re.search(
-                        r"(?<!`)" + marker + r"(?!`)", text[pos + len(marker) :]
+                    # The marker run is maximal: no backtick follows it, so the
+                    # lookbehind reads the same as in the former copy.
+                    close = re.compile(r"(?<!`)" + marker + r"(?!`)").search(
+                        text, after
                     )
                     if close is None and not final:
                         break
-                    end = (
-                        pos + len(marker) + close.end() if close else pos + len(marker)
-                    )
+                    end = close.end() if close else after
                 else:
                     end = pos + len(marker)
             elif text[pos] == "!":
                 if pos + 1 == len(text) and not final:
                     break
                 if text[pos : pos + 2] == "![":
-                    alt_end = _balanced_end(text, pos + 1, "[", "]")
+                    alt_end = balanced.end(pos + 1, "[", "]")
                     if alt_end is None or alt_end == len(text):
                         if not final:
                             break
                     elif text[alt_end] == "(":
-                        image_end = _balanced_end(text, alt_end, "(", ")")
+                        image_end = balanced.end(alt_end, "(", ")")
                         if image_end is None:
                             if not final:
                                 break
@@ -214,7 +261,7 @@ class ImageVerifier:
                         label = text[pos + 2 : alt_end - 1]
                         ref_end = alt_end
                         if text[alt_end : alt_end + 1] == "[":
-                            found = _balanced_end(text, alt_end, "[", "]")
+                            found = balanced.end(alt_end, "[", "]")
                             if found is not None:
                                 label = text[alt_end + 1 : found - 1] or label
                                 ref_end = found
@@ -227,7 +274,11 @@ class ImageVerifier:
             part = text[start:end]
             if keep:
                 output.append(part)
-            self.line_prefix = (self.line_prefix + part).rsplit("\n", 1)[-1]
+            newline = part.rfind("\n")
+            if newline >= 0:
+                self.line_prefix = part[newline + 1 : newline + 5]
+            else:
+                self.line_prefix = (self.line_prefix + part[:4])[:4]
             pos = end
         self.pending = text[pos:]
         return "".join(output)

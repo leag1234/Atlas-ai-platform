@@ -1,6 +1,29 @@
 """Remove Markdown containers emptied by provenance filtering, outside code."""
 
+from bisect import bisect_right
 import re
+
+_LABEL_PREFIX = re.compile(r"[\w -]*")
+
+
+def slash_label(text: str) -> bool:
+    r"""re.fullmatch(r"[\w -]+\s+/\s+[\w -]+", text), in linear time.
+
+    The expression splits every space run between "[\w -]+" and "\s+" in all
+    ways before it fails: a long run took seconds (2026-11-15). The text holds
+    exactly one "/"; before it, one or more label characters then one or more
+    spaces; after it, the mirror image.
+    """
+    left, slash, right = text.partition("/")
+    return bool(slash) and _label_side(left) and _label_side(right[::-1])
+
+
+def _label_side(side: str) -> bool:
+    """side = label characters (one or more), then whitespace (one or more)."""
+    label = _LABEL_PREFIX.match(side).end()  # type: ignore[union-attr]
+    spaces = len(side) - len(side.rstrip())
+    # A split point k: side[:k] is all label characters, side[k:] all spaces.
+    return max(len(side) - spaces, 1) <= min(label, len(side) - 1)
 
 
 def cleanup(text: str) -> str:
@@ -20,7 +43,14 @@ def cleanup(text: str) -> str:
         if i not in protected and re.fullmatch(r"\s*(?:-{3,}|={3,})\s*", line):
             boundaries.add(i)
             lines[i] = ""
+    ordered_boundaries = sorted(boundaries)
+    # "following" is the next non-blank line, kept while walking backwards:
+    # lines after i are final, and searching them again for each line was
+    # quadratic once many lines were blanked.
+    following: int | None = None
     for i in reversed(range(len(lines))):
+        if i + 1 < len(lines) and lines[i + 1].strip():
+            following = i + 1
         if i in protected:
             continue
         line = lines[i]
@@ -29,9 +59,6 @@ def cleanup(text: str) -> str:
         if not plain:
             lines[i] = ""
             continue
-        following = next(
-            (j for j in range(i + 1, len(lines)) if lines[j].strip()), None
-        )
         child = following is not None and (
             len(lines[following]) - len(lines[following].lstrip())
             > len(line) - len(line.lstrip())
@@ -43,12 +70,13 @@ def cleanup(text: str) -> str:
         numbered_title = bool(numbered) and (
             plain.endswith(":")
             or bool(numbered and re.fullmatch(r"\*\*[^*]+\*\*", numbered[1]))
-            or bool(numbered and re.fullmatch(r"[\w -]+\s+/\s+[\w -]+", numbered[1]))
+            or bool(numbered and slash_label(numbered[1]))
         )
         next_line = lines[following] if following is not None else ""
         next_heading = re.match(r"^\s*(#{1,6})\s", next_line)
-        section_end = following is None or any(
-            i < boundary < following for boundary in boundaries
+        section_end = following is None or (
+            bisect_right(ordered_boundaries, i) < len(ordered_boundaries)
+            and ordered_boundaries[bisect_right(ordered_boundaries, i)] < following
         )
         if heading and next_heading:
             section_end |= len(next_heading[1]) <= len(heading[1])

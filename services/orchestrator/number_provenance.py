@@ -8,9 +8,12 @@ numbers, recomputes written calculations deterministically, and reports counts.
 It never changes the answer. ATLAS_NUMBER_PROVENANCE=log enables it (default off).
 """
 
+from bisect import bisect_left, bisect_right
+from collections.abc import Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, Inexact, InvalidOperation, localcontext
+from itertools import islice
 import json
 import logging
 import os
@@ -32,11 +35,35 @@ NUMBER_TEXT = (
 )
 NUMBER = re.compile(rf"(?<![\w.,/])(?<!\w-)(?:{NUMBER_TEXT})(?![\w]|[.,]\d)")
 OPERATOR = r"[+\-−×x*/÷]"
-TERM = rf"\(?\s*(?:{NUMBER_TEXT})\s*\)?"
-EXPRESSION = rf"{TERM}(?:\s*{OPERATOR}\s*{TERM})+"
-CHAIN = re.compile(
-    rf"(?<![\w.,])({EXPRESSION})((?:\s*(?:=|≈|~)\s*[-−+]?\s*(?:{EXPRESSION}|{TERM}))+)"
+# A written calculation: terms joined by operators, then "=" (or "≈", "~") and
+# results. Every term is atomic and every space run possessive: a term, once
+# read, is never split again. The former nested ambiguous quantifiers tried every
+# split of every term when no "=" followed, doubling the time per term (a 14-term
+# sum held the interpreter for over a minute, staging 2026-11-15).
+# A term reads its number as the first written form that fits; a joined term
+# reads the one form followed by an operator or "=" (at most one form is: the
+# others end before more digits).
+TERM = rf"(?>\(?\s*+(?:{NUMBER_TEXT})\s*+\)?)"
+JOINED = rf"(?>\(?\s*+(?:{NUMBER_TEXT})(?=\s*+\)?\s*+[+\-−×x*/÷=≈~])\s*+\)?)"
+OPENING = rf"(?>\(?\s*+(?:{NUMBER_TEXT})(?=\s*+\)?\s*+{OPERATOR})\s*+\)?)"
+# Terms joined by operators; "last" is the final term.
+# A run may start inside a run of spaces only at its first possible start: every
+# later start reaches the same next character, and retrying each one would cost
+# the square of the run length.
+RUN = re.compile(
+    rf"(?<![\w.,])(?!(?<=\s)(?<![\w.,]\s)\s)"
+    rf"{JOINED}(?:\s*+{OPERATOR}\s*+(?P<last>{JOINED}))++"
 )
+# The results that follow a run: "= 3530", "= 58 / 7 ≈ 8.29".
+RESULTS = re.compile(
+    rf"(?:\s*+(?:=|≈|~)\s*+[-−+]?\s*+"
+    rf"(?:{OPENING}(?:\s*+{OPERATOR}\s*+{TERM})++|{TERM}))++"
+)
+PIECE = re.compile(r"[+\-−×x*/÷=≈~]")
+# Size caps: a longer calculation, line or answer is skipped, never scanned slowly.
+MAX_PIECES = 64
+MAX_LINE = 10_000
+MAX_SCANNED = 200_000
 # Words that announce a computed value just before it, in the five UI languages.
 CUE = re.compile(
     r"(?i)(?:\b(?:total\w*|in total|in all|sum|average|mean|median|difference|"
@@ -60,9 +87,13 @@ HIDDEN = re.compile(
     r"|!?\[[^\]]*\]\([^)]*\)|https?://\S+|/api/\S+",
     re.IGNORECASE,
 )
+DETAILS_OPENING = re.compile(r"<details>", re.IGNORECASE)
+DETAILS_CLOSING = re.compile(r"</details>", re.IGNORECASE)
+BRACKET = re.compile(r"[\[\]]")
 # "1 cup = 8 fl oz": a quantity with a unit stated equal to another unit.
 CONVERSION = re.compile(r"\d[\d.,/]*\s*[^\W\d_][^=\n\d]{0,20}(?:=|≈)[\s*~]*$")
-LIST_MARKER = re.compile(r"^\s*(?:[-*]\s*)?\d+[.)]\s")
+# Multiline: matched at a line start inside the answer, not only at its beginning.
+LIST_MARKER = re.compile(r"^\s*(?:[-*]\s*)?\d+[.)]\s", re.MULTILINE)
 SKIPPED_KEYS = frozenset({"url", "link", "reference", "credit_url", "error", "id"})
 
 
@@ -95,8 +126,43 @@ def numbers(text: str) -> set[Decimal]:
 
 
 def visible(text: str) -> str:
-    """Answer prose without tool details, code, links or image references."""
-    return HIDDEN.sub(" ", text)
+    """Answer prose without tool details, code, links or image references.
+
+    An opening that can never close is masked before the substitution: a
+    "<details>" with no later "</details>", or a "[" whose next "]" is not
+    followed by "(...)". Otherwise the expression would rescan the rest of the
+    answer from each of them (10 000 unclosed openings took over 2 seconds). The
+    masks are other characters of the same classes, restored afterwards, so the
+    result is the same as the plain substitution.
+    """
+    present = set(text)
+    masks = list(
+        islice((chr(c) for c in range(0xE000, 0xF900) if chr(c) not in present), 2)
+    )
+    if len(masks) < 2:
+        return HIDDEN.sub(" ", text)
+    opening_mask, bracket_mask = masks[:2]
+    characters: list[str] | None = None
+    last_closing = max((m.start() for m in DETAILS_CLOSING.finditer(text)), default=-1)
+    for opening in DETAILS_OPENING.finditer(text):
+        if last_closing < opening.end():
+            characters = characters or list(text)
+            characters[opening.start()] = opening_mask
+    last_parenthesis = text.rfind(")")
+    following = -1
+    for bracket in reversed(list(BRACKET.finditer(text))):
+        position = bracket.start()
+        if bracket[0] == "]":
+            following = position
+        elif following < 0 or not (
+            text.startswith("(", following + 1) and last_parenthesis > following + 1
+        ):
+            characters = characters or list(text)
+            characters[position] = bracket_mask
+    if characters is None:
+        return HIDDEN.sub(" ", text)
+    hidden = HIDDEN.sub(" ", "".join(characters))
+    return hidden.replace(opening_mask, "<").replace(bracket_mask, "[")
 
 
 def places(token: str) -> int:
@@ -145,18 +211,49 @@ class Candidate:
     conversion: bool = False
 
 
+def calculations(text: str) -> Iterator[tuple[int, int]]:
+    """Spans of written calculations, in one left-to-right pass.
+
+    Same spans as one regular expression for a run followed by its results, but a
+    run with no result is not scanned again from each of its inner terms: every
+    inner start reaches the same run end, where the results are already missing.
+    The search resumes at the run's last term, which may start another run.
+    """
+    position = 0
+    while (run := RUN.search(text, position)) is not None:
+        results = RESULTS.match(text, run.end())
+        if results is None:
+            position = run.start("last")
+            continue
+        yield run.start(), results.end()
+        position = results.end()
+
+
+def scanned(answer: str) -> str:
+    """Visible answer text within the size caps; an overlong line becomes spaces."""
+    text = visible(answer[:MAX_SCANNED])
+    if len(text) <= MAX_LINE:
+        return text
+    return "\n".join(
+        line if len(line) <= MAX_LINE else " " * len(line) for line in text.split("\n")
+    )
+
+
 def candidates(answer: str) -> list[Candidate]:
     """Numbers the answer presents as computed, with their recomputed value if any."""
-    text = visible(answer)
+    text = scanned(answer)
     found: dict[int, Candidate] = {}
     spans: list[tuple[int, int]] = []
-    for chain in CHAIN.finditer(text):
-        spans.append((chain.start(), chain.end()))
-        sides = re.split(r"\s*(?:=|≈|~)\s*", chain[0])
+    for begin, end in calculations(text):
+        spans.append((begin, end))
+        written = text[begin:end]
+        if len(PIECE.findall(written)) >= MAX_PIECES:
+            continue
+        sides = re.split(r"\s*(?:=|≈|~)\s*", written)
         values = [
             evaluate(side) if re.search(OPERATOR, side[1:]) else None for side in sides
         ]
-        offset = chain.start()
+        offset = begin
         for index, side in enumerate(sides):
             position = text.index(side, offset)
             offset = position + len(side)
@@ -169,23 +266,29 @@ def candidates(answer: str) -> list[Candidate]:
             value = number(token[0])
             if value is None:
                 continue
-            if re.match(r"\s*\(?\s*[-−]", side):
+            if re.match(r"\s*+\(?\s*+[-−]", side):
                 value = -value
             expected = next(
                 (v for v in reversed(values[:index]) if v is not None), None
             )
             start = position + token.start()
             found[start] = Candidate(
-                start, token[0], value, "≈" in chain[0] or "~" in chain[0], expected
+                start, token[0], value, "≈" in written or "~" in written, expected
             )
+    # Sorted starts make each lookup logarithmic: no rescan per number.
+    span_starts = [begin for begin, _ in spans]
+    line_starts = [0] + [newline.end() for newline in re.finditer("\n", text)]
     for match in NUMBER.finditer(text):
-        if match.start() in found or any(a <= match.start() < b for a, b in spans):
+        if match.start() in found:
             continue
-        line_start = text.rfind("\n", 0, match.start()) + 1
+        inside = bisect_right(span_starts, match.start()) - 1
+        if inside >= 0 and match.start() < spans[inside][1]:
+            continue
+        line_start = line_starts[bisect_right(line_starts, match.start()) - 1]
         before = text[max(line_start, match.start() - 40) : match.start()]
         if not CUE.search(before):
             continue
-        if LIST_MARKER.match(text[line_start:]) and match.start() - line_start < 6:
+        if match.start() - line_start < 6 and LIST_MARKER.match(text, line_start):
             continue
         value = number(match[0])
         if value is None or value in (0, 1):
@@ -224,6 +327,42 @@ class Report:
             "wrong": self.wrong,
             "unsupported": self.unsupported,
         }
+
+
+class Pool:
+    """Numbers sorted once, as written and as percentages (value × 100).
+
+    A stated number can only match a value within half a unit of its last written
+    place, or within its tolerance: a sorted window replaces a pass over the whole
+    pool for every candidate (512 000 characters of evidence hold tens of
+    thousands of numbers).
+    """
+
+    def __init__(self, values: set[Decimal]) -> None:
+        self.pending = values
+        self.values: list[Decimal] = []
+        self.percents: list[Decimal] = []
+
+    def near(
+        self, stated: Decimal, decimals: int, tolerance: Decimal
+    ) -> Iterator[Decimal]:
+        if self.pending:
+            finite = [value for value in self.pending if value.is_finite()]
+            self.values = sorted(finite)
+            self.percents = sorted(value * 100 for value in finite)
+            self.pending = set()
+        try:
+            with localcontext() as context:
+                context.prec = 60
+                context.traps[Inexact] = True
+                reach = max(Decimal(5).scaleb(-decimals - 1), abs(stated) * tolerance)
+                low, high = stated - reach, stated + reach
+        except (Inexact, InvalidOperation):
+            yield from self.values
+            yield from self.percents
+            return
+        for ordered in (self.values, self.percents):
+            yield from ordered[bisect_left(ordered, low) : bisect_right(ordered, high)]
 
 
 @dataclass
@@ -265,22 +404,22 @@ class Provenance:
         self.tool_results += 1
         self.collect(output)
 
-    def supported(self, candidate: Candidate, pool: set[Decimal]) -> bool:
+    def supported(self, candidate: Candidate, pool: "Pool") -> bool:
         decimals = places(candidate.token)
         tolerance = Decimal("0.01") if candidate.approximate else Decimal(0)
         stated = candidate.value
         return any(
             matches(stated, decimals, value, tolerance)
-            or matches(stated, decimals, value * 100, tolerance)
-            for value in pool
+            for value in pool.near(stated, decimals, tolerance)
         )
 
     def report(self, answer: str, conversation: list[str]) -> Report:
-        said = (
+        said = Pool(
             set().union(*(numbers(text) for text in conversation))
             if conversation
             else set()
         )
+        held = Pool(self.values)
         result = Report()
         for candidate in candidates(answer):
             result.computed += 1
@@ -294,7 +433,7 @@ class Provenance:
                     result.recomputed += 1
                 else:
                     result.wrong += 1
-            elif self.supported(candidate, self.values):
+            elif self.supported(candidate, held):
                 result.evidence += 1
             elif self.supported(candidate, said):
                 result.conversation += 1

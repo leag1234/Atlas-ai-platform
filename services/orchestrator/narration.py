@@ -78,7 +78,9 @@ class ProtocolFilter:
     """Hold non-code JSON objects until they can be proven safe for delivery."""
 
     def __init__(self) -> None:
-        self.pending = ""
+        # Held characters, joined only when the object closes: appending to one
+        # string per character copied it each time (quadratic on a long object).
+        self.held: list[str] = []
         self.depth = 0
         self.quote = False
         self.escape = False
@@ -90,18 +92,18 @@ class ProtocolFilter:
         output: list[str] = []
         for char in text:
             self.backticks = self.backticks + 1 if char == "`" else 0
-            if self.backticks == 3 and not self.pending:
+            if self.backticks == 3 and not self.held:
                 self.code = not self.code
             if self.code:
                 output.append(char)
                 continue
-            if not self.pending:
+            if not self.held:
                 if char == "{":
-                    self.pending, self.depth = char, 1
+                    self.held, self.depth = [char], 1
                 else:
                     output.append(char)
                 continue
-            self.pending += char
+            self.held.append(char)
             if self.quote:
                 if self.escape:
                     self.escape = False
@@ -117,28 +119,50 @@ class ProtocolFilter:
             elif char == "}":
                 self.depth -= 1
                 if self.depth == 0:
-                    if protocol_material(self.pending):
-                        self.removed.append(self.pending)
+                    held = "".join(self.held)
+                    if protocol_material(held):
+                        self.removed.append(held)
                     else:
-                        output.append(self.pending)
-                    self.pending = ""
+                        output.append(held)
+                    self.held = []
         return "".join(output)
 
+    @property
+    def pending(self) -> str:
+        return "".join(self.held)
+
     def finish(self) -> str:
-        tail, self.pending = self.pending, ""
+        tail, self.held = self.pending, []
         if protocol_material(tail):
             self.removed.append(tail)
             return ""
         return tail
 
 
+_LONGEST_PREFIX = max(len(prefix) for prefix in _PREFIXES)
+
+
 class NarrationFilter:
     def __init__(self) -> None:
-        self.pending = ""
+        # Held characters, joined only when released or removed, and the start
+        # of their lower-cased text without leading spaces: recomputing both for
+        # every character was quadratic on a long space run or sentence.
+        self.held: list[str] = []
+        self.head = ""
+        self.matched = False
         self.removed: list[str] = []
         self.passing = False
         self.code = False
         self.backticks = 0
+
+    @property
+    def pending(self) -> str:
+        return "".join(self.held)
+
+    def release(self) -> str:
+        held = self.pending
+        self.held, self.head, self.matched = [], "", False
+        return held
 
     def feed(self, text: str) -> str:
         output = []
@@ -151,22 +175,28 @@ class NarrationFilter:
                 if char in ".!?\n" and not self.code:
                     self.passing = False
                 continue
-            self.pending += char
-            candidate = self.pending.lstrip().lower()
-            match = any(candidate.startswith(prefix) for prefix in _PREFIXES)
-            possible = any(prefix.startswith(candidate) for prefix in _PREFIXES)
-            if match:
+            self.held.append(char)
+            # head = the held text without leading spaces, lower-cased, as far
+            # as a prefix can reach: a longer head can no longer start one.
+            if (self.head or not char.isspace()) and not self.matched:
+                if len(self.head) <= _LONGEST_PREFIX:
+                    self.head += char.lower()
+                    self.matched = any(
+                        self.head.startswith(prefix) for prefix in _PREFIXES
+                    )
+            possible = len(self.head) <= _LONGEST_PREFIX and any(
+                prefix.startswith(self.head) for prefix in _PREFIXES
+            )
+            if self.matched:
                 if char in ".!?\n":
-                    self.removed.append(self.pending.strip())
-                    self.pending = ""
+                    self.removed.append(self.release().strip())
             elif not possible:
-                output.append(self.pending)
-                self.pending = ""
+                output.append(self.release())
                 self.passing = char not in ".!?\n"
         return "".join(output)
 
     def finish(self) -> str:
-        tail, self.pending = self.pending, ""
+        tail = self.release()
         if any(tail.lstrip().lower().startswith(prefix) for prefix in _PREFIXES):
             self.removed.append(tail.strip())
             return ""

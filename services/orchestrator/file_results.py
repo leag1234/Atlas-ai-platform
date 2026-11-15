@@ -56,6 +56,10 @@ def file_footer(files: list[str], strategies: list[str], language: str) -> str:
 
 
 def canonical_links(text: str, files: list[str]) -> str:
+    # A link needs "](" and a closing ")": without them nothing can match, and
+    # each unclosed "[" would be rescanned to the end of the answer.
+    if "](" not in text or ")" not in text:
+        return text
     for url in files:
         filename = unquote(PurePosixPath(url).name)
 
@@ -64,7 +68,9 @@ def canonical_links(text: str, files: list[str]) -> str:
             return f"[{match[1]}]({url})" if target == filename else match[0]
 
         # A model may turn a relative UI URL into an invented external host.
-        text = re.sub(r"\[([^\]]+)\]\(([^\s)]+)\)", canonical, text)
+        # "(?<!\[)": in a run of "[", only the first can start a label; the
+        # others reach the same "]" and rescanning from each is quadratic.
+        text = re.sub(r"(?<!\[)\[([^\]]+)\]\(([^\s)]+)\)", canonical, text)
     return text
 
 

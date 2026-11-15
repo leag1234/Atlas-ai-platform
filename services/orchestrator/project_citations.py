@@ -11,7 +11,9 @@ HASH = r"[a-f0-9]{64}"
 REFERENCE = re.compile(
     rf"\[({HASH})\]\(https?://[^\s)]+\)"
     rf"|\(({HASH})\)\(https?://[^\s)]+\)"
-    rf"|\[[^\]\n]*\]\((?:/api/atlas/orgs/[^\s)]+/sources/)?({HASH})\)"
+    # "(?<!\[)": in a run of "[", only the first can start this label; the
+    # others reach the same "]" and rescanning from each is quadratic.
+    rf"|(?<!\[)\[[^\]\n]*\]\((?:/api/atlas/orgs/[^\s)]+/sources/)?({HASH})\)"
     rf"|\(({HASH})\)\(({HASH})\)|\[({HASH})\]|\b({HASH})\b"
 )
 
@@ -28,4 +30,8 @@ def render(answer: str, passages: list[dict[str, Any]], org: str, project: str) 
         number = numbers.setdefault(chunk, len(numbers) + 1)
         return f"[{number}](/api/atlas/orgs/{org}/projects/{project}/sources/{chunk})"
 
+    # Every form holds a 64-hex hash: without one nothing can match, and the
+    # label form would rescan each unclosed "[" to the end of its line.
+    if not re.search(HASH, answer):
+        return answer
     return REFERENCE.sub(replace, answer)

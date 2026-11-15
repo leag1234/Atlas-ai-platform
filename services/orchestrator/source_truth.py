@@ -10,8 +10,13 @@ URL = re.compile(r"https?://[^\s<>\"'()\]]+")
 # An XML namespace declaration directly before a URL: xmlns="..." or xmlns:x="...".
 _NAMESPACE = re.compile(r"\bxmlns(?::[\w.-]+)?\s*=\s*[\"']$")
 REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
+# A link label starts at the first "[" of a run of "[" that can start one: the
+# later ones reach the same "]" with the same outcome, and retrying each of them
+# rescans to that "]" (100 000 "[" took 14 seconds, 2026-11-15).
+LABEL_START = r"(?:(?<!\[)|(?<=!\[))"
 _MARKDOWN_LINK = re.compile(
-    r"(?<!!)\[\[([^\]\n]+)\]\(([^)\n]+)\)\]|(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)"
+    rf"(?<!!){LABEL_START}\[\[([^\]\n]+)\]\(([^)\n]+)\)\]"
+    rf"|(?<!!){LABEL_START}\[([^\]\n]+)\]\(([^)\n]+)\)"
 )
 _PRODUCT_URL_KEYS = frozenset(
     {
@@ -90,6 +95,10 @@ def person_citations(text: str, evidence_urls: set[str]) -> str:
     def valid(match: re.Match[str]) -> bool:
         return target(match) in evidence_urls
 
+    # A link needs "](" and a closing ")": without them nothing can match, and
+    # each unclosed "[" would be rescanned to the end of its line.
+    if "](" not in text or ")" not in text:
+        return text
     parts = re.split(r"(?<=[.!?])(?=\s)|(?<=\n)", text)
     cleaned: list[str] = []
     for part in parts:
@@ -140,7 +149,7 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     def fetched(url: str) -> bool:
         return url in retrieved or canonical_url(url) in known
 
-    from services.orchestrator.citation_fragments import _CODE, tool_citations
+    from services.orchestrator.citation_fragments import code_spans, tool_citations
     from services.orchestrator.mermaid_check import FENCE
 
     original = text
@@ -166,7 +175,7 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     # Remove fabricated Markdown citations as a whole, including placeholder URLs.
     # Bare unknown URLs retain the existing explicit provenance notice.
     text = re.sub(
-        r"(?<!!)\[[^\]\n]+\]\((?:\[unverified source\]|https?://[^\s]+?)\)",
+        rf"(?<!!){LABEL_START}\[[^\]\n]+\]\((?:\[unverified source\]|https?://[^\s]+?)\)",
         lambda m: m[0] if urls(m[0]) and all(map(fetched, urls(m[0]))) else "",
         text,
         flags=re.I,
@@ -175,7 +184,12 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     for definition in list(definitions.finditer(text)):
         if not fetched(definition[2].strip("<>")):
             label = re.escape(definition[1])
-            text = re.sub(r"(?<!!)\[[^\]\n]+\]\[" + label + r"\]", "", text, flags=re.I)
+            text = re.sub(
+                rf"(?<!!){LABEL_START}\[[^\]\n]+\]\[" + label + r"\]",
+                "",
+                text,
+                flags=re.I,
+            )
             text = text.replace(definition[0], "")
     text = text.replace("[unverified source]", "")
     diagram_ranges = [(m.start(), m.end()) for m in FENCE.finditer(text)]
@@ -183,15 +197,18 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     # citation and stays under the guard.
     code_ranges = [
         span
-        for span in (m.span() for m in _CODE.finditer(text))
+        for span in code_spans(text)
         if text.startswith("```", span[0])
         and not any(start < span[1] and span[0] < end for start, end in diagram_ranges)
     ]
     text = URL.sub(replace, text)
     # Retrieval provenance contains URLs, not model-authored visit dates. Never
     # preserve an invented date merely because some other URL was retrieved.
+    # Space runs are entered at their first character only (here and below): a
+    # retry from each later space rescans the run, the square of its length
+    # (100 000 spaces took over 30 seconds, 2026-11-15). The matches are the same.
     text = re.sub(
-        r"(?i)[ \t]*\(?\b(?:consult[eé]\w* le|consulted (?:on|at)|accessed on)"
+        r"(?i)(?<![ \t])[ \t]*\(?\b(?:consult[eé]\w* le|consulted (?:on|at)|accessed on)"
         r"[ \t]+(?:\d{4}-\d{2}-\d{2}|\d{1,2}[./]\d{1,2}[./]\d{4}|"
         r"\d{1,2} [^\s()]+ \d{4}|[A-Za-z]+ \d{1,2},? \d{4})\)?",
         "",
@@ -209,20 +226,21 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
 
 def clean_citation_residue(text: str) -> str:
     """Remove citation-only connective phrases and punctuation gaps in prose."""
-    from services.orchestrator.citation_fragments import _CODE
+    from services.orchestrator.citation_fragments import split_code
 
     def clean(value: str) -> str:
         value = re.sub(
-            r"(?i)[ \t]+(?:issues? de sources?|according to sources?|from sources?)[ \t]*(?=[.,;]|$)",
+            r"(?i)(?<![ \t])[ \t]+(?:issues? de sources?|according to sources?|from sources?)"
+            r"[ \t]*(?=[.,;]|$)",
             "",
             value,
         )
         value = re.sub(r",[ \t]*(?=\.)", "", value)
-        return re.sub(r"[ \t]+([.,])", r"\1", value)
+        return re.sub(r"(?<![ \t])[ \t]+([.,])", r"\1", value)
 
     return "".join(
         part if index % 2 else clean(part)
-        for index, part in enumerate(_CODE.split(text))
+        for index, part in enumerate(split_code(text))
     )
 
 
@@ -239,7 +257,9 @@ def inline_source_markers(
             return match[0]
         return f"[{numbers[url]}]({url})" if url in numbers else match.group(0)
 
-    text = re.sub(r"(?<!!)\[[^\]]+\]\((https?://[^\s)]+)\)", markdown, text)
+    text = re.sub(
+        rf"(?<!!){LABEL_START}\[[^\]]+\]\((https?://[^\s)]+)\)", markdown, text
+    )
 
     def bare(match: re.Match[str]) -> str:
         url = match[0].rstrip(".,;:)]}>'\"")
