@@ -31,6 +31,9 @@ HEALTH_SECONDS = 4.0
 # Seconds per picture when the server does not say (COMPUTE3-X16C-32G, 4
 # steps: 23.3 s for a new prompt, 19.7 s for the next picture of it).
 PICTURE_SECONDS = 22.0
+# An edit (a reference picture read with the prompt) against a new picture,
+# when the server does not say its own measure (estimate, gate.py).
+EDIT_FACTOR = 2.2
 # The client waits this much longer than the wait the server admitted.
 GRACE_SECONDS = 15.0
 MAX_REPLY_BYTES = 8_000_000
@@ -152,20 +155,33 @@ async def health(seconds: float = HEALTH_SECONDS) -> dict[str, Any]:
     return reply
 
 
-def expected_wait(status: dict[str, Any], pictures: int) -> float:
+def edits(status: dict[str, Any]) -> bool:
+    """The server edits a reference picture (its health says so)."""
+    return status.get("edit") is True
+
+
+def expected_wait(status: dict[str, Any], pictures: int, edit: bool = False) -> float:
     """Seconds until `pictures` more pictures would be drawn, from the
-    server's own measure (busy_seconds, seconds_per_image), else from its
-    queue length and PICTURE_SECONDS."""
+    server's own measure (busy_seconds, seconds_per_image or, for an edit,
+    seconds_per_edit), else from its queue length and PICTURE_SECONDS."""
     per = status.get("seconds_per_image")
     per_image = (
         float(per) if isinstance(per, (int, float)) and per > 0 else PICTURE_SECONDS
     )
+    ahead_per_image = per_image
+    if edit:
+        per = status.get("seconds_per_edit")
+        per_image = (
+            float(per)
+            if isinstance(per, (int, float)) and per > 0
+            else EDIT_FACTOR * per_image
+        )
     busy = status.get("busy_seconds")
     if isinstance(busy, (int, float)) and busy >= 0:
         ahead = float(busy)
     else:
         queue = status.get("queue")
-        ahead = (int(queue) if isinstance(queue, int) else 0) * per_image
+        ahead = (int(queue) if isinstance(queue, int) else 0) * ahead_per_image
     return ahead + pictures * per_image
 
 
@@ -219,6 +235,30 @@ async def render_set(
     return [
         _rendered(by_seed[seed], waited) if seed in by_seed else None for seed in seeds
     ]
+
+
+async def render_edit(
+    prompt: str, seed: int, reference: str, max_wait: float
+) -> Rendered:
+    """One picture: `reference` (base64 PNG) changed as `prompt` says, by a
+    server whose health says it edits (edits). Busy or failure is
+    CpuServerError, as for render_set."""
+    reply = await _call(
+        "POST",
+        "/v1/render",
+        {
+            "prompt": prompt,
+            "seeds": [seed],
+            "max_wait_seconds": round(max_wait, 1),
+            "reference": reference,
+        },
+        max_wait + GRACE_SECONDS,
+    )
+    items = reply.get("images")
+    if not isinstance(items, list) or not items or not isinstance(items[0], dict):
+        raise CpuServerError("picture_cpu_invalid_reply")
+    queue = reply.get("queue_seconds")
+    return _rendered(items[0], float(queue) if isinstance(queue, (int, float)) else 0.0)
 
 
 async def _one_by_one(

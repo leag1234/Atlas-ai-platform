@@ -1286,6 +1286,35 @@ async def _process(
     # The model routing decision (ATLAS_MODEL_ROUTER=1) is read first; the
     # lexical tests below decide only when there is none.
     routed = request_router.decision(request)
+    picture = None
+    if artifact_eligible and artifact_current is not None and _pictures_by_code():
+        from services.orchestrator.pictures import dialogue as picture_dialogue
+
+        picture = await asyncio.to_thread(
+            picture_dialogue.picture_of, request, artifact_current
+        )
+        if picture is not None:
+            # A follow-up on the conversation's picture (a change, a retry, a
+            # critique) takes the picture path, whatever its wording.
+            legacy_change = (
+                routed.kind == "drawing" and routed.follow_up
+                if routed is not None
+                else app_intent(request.user_text, artifact_history) == "modify"
+                or "dessine" in request.user_text.casefold()
+            )
+            if await picture_dialogue.follow_up(
+                request,
+                item,
+                artifact_current,
+                picture,
+                routed,
+                legacy_change=legacy_change,
+                cost_limit=cost_limit,
+                wall_clock_limit=wall_clock_limit,
+            ):
+                return
+            # A picture is never handed to the HTML artifact editor.
+            artifact_current = None
     if routed is not None:
         artifact_intent = (
             request_router.app_route(
@@ -1307,6 +1336,9 @@ async def _process(
         ):
             artifact_intent = "modify"
 
+    if picture is not None and artifact_intent == "modify":
+        # The current artifact was a picture: anything else is a new one.
+        artifact_intent = "create"
     if (
         not request.continuation
         and not request.has_attachments

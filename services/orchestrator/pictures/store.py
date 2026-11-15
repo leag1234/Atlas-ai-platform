@@ -37,6 +37,10 @@ class Candidate:
     # A picture of the CPU server: its seed and the prompt it was drawn from.
     seed: int = 0
     prompt: str = ""
+    # The server's own picture (before code set words or labels): the image
+    # store key of the PNG an edit starts from, and the sha256 of its bytes.
+    render_key: str = ""
+    render_hash: str = ""
 
 
 @dataclass
@@ -65,6 +69,53 @@ class PictureSet:
     seed: int = 0
     labels: list[str] = field(default_factory=list)
     diagram: bool = False
+    # The artifact's current picture: the image store key of the finished
+    # picture (what the user sees), and for a CPU picture the server's own
+    # picture and its sha256 (render_key, render_hash, as in Candidate).
+    image_key: str = ""
+    render_key: str = ""
+    render_hash: str = ""
+    # The changes applied so far, in order (English instructions): every
+    # later change keeps them.
+    changes: list[str] = field(default_factory=list)
+    # The last change edited the picture itself (a server that edits).
+    edited: bool = False
+
+
+def current_image_key(picture_set: PictureSet) -> str:
+    """The image store key of the picture the artifact holds now."""
+    if picture_set.image_key:
+        return picture_set.image_key
+    index = picture_set.artifact_candidate
+    if 0 <= index < len(picture_set.candidates):
+        return picture_set.candidates[index].image_key
+    return ""
+
+
+def current_render(picture_set: PictureSet) -> tuple[str, str]:
+    """(render_key, render_hash) of the artifact's current CPU picture."""
+    if picture_set.render_key:
+        return picture_set.render_key, picture_set.render_hash
+    index = picture_set.artifact_candidate
+    if 0 <= index < len(picture_set.candidates):
+        candidate = picture_set.candidates[index]
+        return candidate.render_key, candidate.render_hash
+    return "", ""
+
+
+def image_bytes(key: str) -> bytes | None:
+    """The bytes of a stored picture (image store key), or None."""
+    from services.orchestrator.image_store import directory as images
+
+    if not re.fullmatch(r"[0-9a-f]{32}", key or ""):
+        return None
+    path = images() / (key + ".png")
+    if path.is_symlink():
+        return None
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
 
 
 def directory() -> Path:

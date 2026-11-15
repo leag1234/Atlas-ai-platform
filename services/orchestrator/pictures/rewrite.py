@@ -41,6 +41,7 @@ MAX_CHECK_CHARS = 80
 MAX_TEXT_LINES = 3
 MAX_TEXT_CHARS = 60
 MAX_PROMPT_CHARS = 1200
+MAX_EDIT_CHARS = 400
 # Added by code when words are to be set: the image model leaves them room.
 RESERVE = (
     "Leave a wide plain empty band of flat background colour across the top "
@@ -139,6 +140,27 @@ CHANGE = (
     "Write the prompt of the changed picture: apply the change and keep "
     "everything else as it was."
 )
+# What a change adds to CHANGE: the edits already made and what the user
+# wants overall (both kept by every later change), the rule that keeps the
+# rest of the prompt word for word (composition drift measured on staging:
+# a detail of the face made the clothes asked for earlier disappear), and
+# the edit instruction for a server that edits the picture itself.
+KEEP = (
+    "\nCopy every sentence of the previous prompt that the change does not "
+    "touch word for word, in the same order; change only the words of what "
+    "the change asks; add a new detail to the sentence of the subject it "
+    "belongs to; never drop a subject, a garment, a colour, a pose or a "
+    "visible body part the prompt names."
+    "\nAlso reply with 'edit': the change alone as one short English "
+    "instruction to an image editor that changes the existing picture (for "
+    "example 'Make the scarf red.'), without the style line."
+)
+EARLIER = "\nChanges already made, all still wanted: {changes}"
+WANTED = "\nEverything the user wants the picture to show: {requirements}"
+STRONGER = (
+    "\nA first answer returned the previous prompt unchanged: the new prompt "
+    "must show the change, in concrete visual words."
+)
 
 
 @dataclass
@@ -154,21 +176,42 @@ class Rewrite:
     text: list[str] = field(default_factory=list)
     # The request's language as the call identified it ("" when not given).
     language: str = ""
+    # For a change: the change alone, as an instruction to an image editor.
+    edit: str = ""
 
 
 def messages(
-    request_text: str, *, previous: str = "", change: str = ""
+    request_text: str,
+    *,
+    previous: str = "",
+    change: str = "",
+    earlier: list[str] | None = None,
+    requirements: list[str] | None = None,
+    stronger: bool = False,
 ) -> list[dict[str, str]]:
-    """The rewrite call; with `change`, the prompt of a changed picture. The
-    checks and the title follow the request's language, which the reply names
-    (`language`); code falls back to the conversation's when it does not."""
-    user = (
-        CHANGE.format(request=request_text, prompt=previous, change=change)
-        if change
-        else request_text
-    )
+    """The rewrite call; with `change`, the prompt of a changed picture
+    (`earlier` changes and the user's `requirements` are kept; `stronger`
+    after a reply that left the prompt unchanged). The checks and the title
+    follow the request's language, which the reply names (`language`); code
+    falls back to the conversation's when it does not."""
+    if change:
+        user = CHANGE.format(request=request_text, prompt=previous, change=change)
+        if earlier:
+            user += EARLIER.format(changes=json.dumps(earlier, ensure_ascii=False))
+        if requirements:
+            user += WANTED.format(
+                requirements=json.dumps(requirements, ensure_ascii=False)
+            )
+        user += KEEP + (STRONGER if stronger else "")
+    else:
+        user = request_text
     user += ANSWER_LANGUAGE
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]
+
+
+def same_prompt(first: str, second: str) -> bool:
+    """Two prompts that would draw the same picture (case and spacing aside)."""
+    return " ".join(first.casefold().split()) == " ".join(second.casefold().split())
 
 
 def enforce(prompt: str, *, reserve: bool = False) -> str:
@@ -360,7 +403,13 @@ def parse(text: str, *, source: str = "") -> Rewrite | None:
     if len(prompt) <= len(STYLE) + 2:
         return None
     title = value.get("title")
+    edit = value.get("edit")
+    edit = " ".join(edit.split())[:MAX_EDIT_CHARS] if isinstance(edit, str) else ""
+    for word in PHOTOGRAPHIC:
+        edit = re.sub(r"\b" + word + r"\b", "", edit, flags=re.IGNORECASE)
+    edit = " ".join(edit.replace(STYLE, "").split())
     return Rewrite(
+        edit=edit,
         prompt=prompt,
         labels=labels,
         diagram=diagram,

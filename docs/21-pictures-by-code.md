@@ -150,6 +150,11 @@ answer a change, the picture stays as it is (unchanged-version sentence).
 version carries them; the size always fits the band (a request for a bigger
 name does not make it bigger than the band allows).
 
+Follow-ups are first understood with their conversation (a retry, a critique,
+a plan to apply), keep every earlier change, never claim a change that did not
+happen, and use a reference-image edit when the server offers one: see
+`24-picture-follow-ups.md`.
+
 Fallback: server not configured, unreachable, not ready, busy, a rewrite that
 fails or cannot be read, no picture drawn in time, or a diagram with no part
 located: the turn is painted by code, with no user-visible error; the log line
