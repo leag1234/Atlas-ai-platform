@@ -33,36 +33,65 @@ class NormalizedQueryTests(unittest.TestCase):
             sf.normalized_query(first, language), sf.normalized_query(second, language)
         )
 
-    def test_case_accents_punctuation_stop_words_and_order(self) -> None:
+    def test_case_accents_punctuation_and_stop_words(self) -> None:
         self.same(
             "fr",
             "Prix de l'électricité en France",
             "prix electricite france",
-            "France, prix de l’électricité ?",
+            "Prix, de l’électricité en France ?",
             "PRIX ÉLECTRICITÉ FRANCE",
         )
-        self.same("en", "history of the Lumiere brothers", "Lumière brothers history")
-        self.same("de", "Geschichte der Stadt Ulm", "Ulm Stadt Geschichte")
-        self.same("es", "receta de la paella", "paella receta")
-        self.same("it", "ricetta della pasta al forno", "pasta forno ricetta")
+        self.same("en", "history of the Lumiere brothers", "History Lumière brothers")
+        self.same("de", "Geschichte der Stadt Ulm", "Geschichte Stadt Ulm")
+        self.same("es", "receta de la paella", "receta paella")
+        self.same("it", "ricetta della pasta al forno", "ricetta pasta forno")
         self.same("fr", "prix moyen du m² à Lyon 2026", "Prix moyen m2 Lyon 2026")
         self.same(
             "fr",
             "Recettes végétariennes populaires !",
             "recettes végétariennes populaires",
         )
-        self.same("en", "how to cook rice", "cook rice: how to")
+
+    def test_word_order_is_always_kept(self) -> None:
+        # Reordering can swap meanings: never the same cache entry.
+        self.different(
+            "en", "history of the Lumiere brothers", "Lumiere brothers history"
+        )
+        self.different("en", "how to cook rice", "cook rice: how to")
+        # Itineraries, lowercase as a model often writes them, in five languages.
+        for language, first, second in (
+            ("fr", "train de lyon à paris", "train de paris à lyon"),
+            ("fr", "horaires bus lyon paris", "horaires bus paris lyon"),
+            ("en", "train from lyon to paris", "train from paris to lyon"),
+            ("en", "flights london paris", "flights paris london"),
+            ("de", "zug von ulm nach bern", "zug von bern nach ulm"),
+            ("de", "fahrplan ulm bern", "fahrplan bern ulm"),
+            ("es", "tren de madrid a sevilla", "tren de sevilla a madrid"),
+            ("es", "horarios tren madrid sevilla", "horarios tren sevilla madrid"),
+            ("it", "treno da roma a milano", "treno da milano a roma"),
+            ("it", "orari treno roma milano", "orari treno milano roma"),
+        ):
+            self.different(language, first, second)
+        # Comparisons, conversions and arithmetic.
+        for language, first, second in (
+            ("en", "is python better than java", "is java better than python"),
+            (
+                "fr",
+                "le vélo est-il plus rapide que le bus",
+                "le bus est-il plus rapide que le vélo",
+            ),
+            ("en", "convert usd to eur", "convert eur to usd"),
+            ("fr", "convertir 10 miles en km", "convertir 10 km en miles"),
+            ("de", "100 euro in dollar umrechnen", "100 dollar in euro umrechnen"),
+            ("en", "2026 minus 1989", "1989 minus 2026"),
+            ("es", "diferencia entre 10 y 3", "diferencia entre 3 y 10"),
+        ):
+            self.different(language, first, second)
 
     def test_words_that_change_the_answer_are_kept(self) -> None:
         self.different("en", "when did the bridge open", "where did the bridge open")
         self.different("fr", "pain sans gluten", "pain gluten")
         self.different("en", "laptops without fan", "laptops fan")
-        self.different("en", "train from Paris to Lyon", "train from Lyon to Paris")
-        self.different("fr", "train de Paris à Lyon", "train de Lyon à Paris")
-        self.different("de", "Zug von Ulm nach Bern", "Zug von Bern nach Ulm")
-        self.different(
-            "en", "translate english into french", "translate french into english"
-        )
         self.different("en", "python 3.12 release", "python 3.13 release")
         self.different("en", "c++ tutorial", "c tutorial")
 
@@ -73,7 +102,7 @@ class NormalizedQueryTests(unittest.TestCase):
         self.same("en", '"Red Green" paint', '"red green" PAINT')
 
     def test_only_stop_words_keep_every_word(self) -> None:
-        self.assertEqual(sf.normalized_query("The The", "en"), "the")
+        self.assertEqual(sf.normalized_query("The The", "en"), "the the")
         self.assertEqual(sf.normalized_query("?!", "en"), "?!")
 
 

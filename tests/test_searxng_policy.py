@@ -21,7 +21,6 @@ from services.orchestrator.cache import Cache
 from services.orchestrator.chat_pipeline import ChatTools
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call
-from services.orchestrator.loop import Message
 from services.orchestrator.model import GatewayError
 from packages.limits import LimitError
 from services.orchestrator.tools import Runtime, Search, SearchQuotaError
@@ -127,23 +126,25 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             self.cache, f"http://127.0.0.1:{self.port}", query, lang, 5, False, timeout
         )
 
-    async def test_tier_one_and_wikipedia_parallel_then_cache(self) -> None:
+    async def test_tier_one_only_then_cache(self) -> None:
+        # The exact-title "wikipedia" engine is never asked (always empty).
         self.hold = asyncio.Event()
         task = asyncio.create_task(self.search())
         for _ in range(100):
-            if len(self.started) == 2:
+            if self.started:
                 break
             await asyncio.sleep(0.001)
-        self.assertEqual(set(self.started), {sx.ENGINES[0], "wikipedia"})
-        self.assertEqual(self.peak, 2)
+        await asyncio.sleep(0.01)
+        self.assertEqual(self.started, [sx.ENGINES[0]])
+        self.assertEqual(self.peak, 1)
         self.hold.set()
         output = await task
         self.assertEqual(output["outcome"], "ok")
         results = output["results"]
         assert isinstance(results, list)
-        self.assertEqual(len(results), 6)
+        self.assertEqual(len(results), 5)
         self.assertEqual(await self.search(), output)
-        self.assertEqual(len(self.seen), 2)
+        self.assertEqual(len(self.seen), 1)
 
     async def test_sparse_primary_uses_brave_without_other_fallbacks(self) -> None:
         self.scripts[sx.ENGINES[0]] = "few"
@@ -326,10 +327,10 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                 self.scripts = {engine: signal for engine in (*sx.ENGINES, "wikipedia")}
                 result = await self.search(query=signal)
                 self.assertEqual(result["outcome"], "upstream_blocked")
-                self.assertEqual(len(self.seen), len(sx.ENGINES) + 1)
+                self.assertEqual(len(self.seen), len(sx.ENGINES))
                 again = await self.search(query=signal + " distinct")
                 self.assertEqual(again["outcome"], "upstream_blocked")
-                self.assertEqual(len(self.seen), len(sx.ENGINES) + 1)
+                self.assertEqual(len(self.seen), len(sx.ENGINES))
                 if signal in {"403", "429"}:
                     self.assertGreater(
                         self.state.circuits[
@@ -339,13 +340,12 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                         119,
                     )
 
-    async def test_wikipedia_survives_blocked_web_engines(self) -> None:
+    async def test_blocked_web_engines_never_fall_back_to_wikipedia(self) -> None:
         self.scripts = {engine: "429" for engine in sx.ENGINES}
         result = await self.search(lang="fr")
-        self.assertEqual(result["outcome"], "partial_results")
-        results = result["results"]
-        assert isinstance(results, list)
-        self.assertEqual(results[0]["engine"], "wikipedia")
+        self.assertEqual(result["outcome"], "upstream_blocked")
+        self.assertEqual(result["results"], [])
+        self.assertNotIn("wikipedia", self.started)
         self.assertTrue(all(request["language"] == "fr-FR" for request in self.seen))
 
     async def test_distinct_empty_timeout_and_invalid_outcomes(self) -> None:
@@ -364,42 +364,6 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["outcome"], expected)
                 self.assertEqual(result["results"], [])
                 self.assertIn("message", result)
-
-    async def test_completed_wikipedia_is_preserved_at_web_deadline(self) -> None:
-        self.scripts = {engine: "timeout" for engine in sx.ENGINES}
-        wikipedia_gate = asyncio.Event()
-        original_engine_search = sx.engine_search
-
-        async def gated_engine_search(
-            state: sx.State,
-            endpoint: str,
-            engine: str,
-            params: dict[str, str],
-            policy: sx.Policy,
-            deadline: float,
-            slot: float | None = None,
-        ) -> Message:
-            if engine == "wikipedia":
-                result = await original_engine_search(
-                    state, endpoint, engine, params, policy, deadline, slot
-                )
-                wikipedia_gate.set()
-                return result
-            await wikipedia_gate.wait()
-            return {
-                "engine": engine,
-                "outcome": "upstream_timeout",
-                "results": [],
-                "reason": "deadline",
-            }
-
-        with patch.object(sx, "engine_search", side_effect=gated_engine_search):
-            result = await self.search(query="deadline", timeout=0.12)
-        self.assertEqual(self.started, ["wikipedia"])
-        self.assertEqual(result["outcome"], "partial_results")
-        results = result["results"]
-        assert isinstance(results, list)
-        self.assertEqual(results[0]["engine"], "wikipedia")
 
     async def test_partial_notice_reaches_final_answer_and_stream(self) -> None:
         from services.orchestrator import chat_pipeline
@@ -440,7 +404,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         first = asyncio.create_task(self.search())
         second = asyncio.create_task(self.search())
         for _ in range(100):
-            if len(self.started) == 2:
+            if len(self.started) == 1:
                 break
             await asyncio.sleep(0.001)
         first.cancel()
@@ -448,7 +412,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             await first
         self.hold.set()
         self.assertEqual((await second)["outcome"], "ok")
-        self.assertEqual(len(self.seen), 2)
+        self.assertEqual(len(self.seen), 1)
         self.assertEqual(len(self.state.searches), 1)
         self.assertEqual(self.state.flights, {})
 
@@ -456,7 +420,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.hold = asyncio.Event()
         first = asyncio.create_task(self.search())
         for _ in range(100):
-            if len(self.started) == 2:
+            if len(self.started) == 1:
                 break
             await asyncio.sleep(0.001)
         result = await self.search(timeout=0.06)
@@ -465,7 +429,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(first.done())
         self.hold.set()
         self.assertEqual((await first)["outcome"], "ok")
-        self.assertEqual(len(self.seen), 2)
+        self.assertEqual(len(self.seen), 1)
 
     async def test_http_concurrency_never_exceeds_three(self) -> None:
         self.hold = asyncio.Event()
@@ -510,7 +474,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             Search(query="!google CERN :auto <999", lang="de"), 2
         )
         self.assertEqual(result["language"], "de")
-        self.assertEqual(set(self.started), {sx.ENGINES[0], "wikipedia"})
+        self.assertEqual(set(self.started), {sx.ENGINES[0]})
         self.assertTrue(all(request["language"] == "de-DE" for request in self.seen))
         self.assertTrue(
             all(
@@ -567,17 +531,14 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         await sx.search(
             self.cache, f"http://127.0.0.1:{self.port}", "CERN", "de", 1, True, 2
         )
-        wiki = next(
-            request for request in self.seen if request["engines"] == "wikipedia"
-        )
         self.assertTrue(all("categories" not in request for request in self.seen))
+        self.assertNotIn("wikipedia", [request["engines"] for request in self.seen])
         for request in self.seen:
             self.assertEqual(
                 request.get("time_range"),
                 "month" if request["engines"] in sx.TIME_RANGE_ENGINES else None,
             )
-        self.assertNotIn("time_range", wiki)
-        self.assertEqual(wiki["language"], "de-DE")
+            self.assertEqual(request["language"], "de-DE")
 
     async def test_pipeline_preserves_outcomes_and_partial_sources(self) -> None:
         for outcome in sx.OUTCOMES:
@@ -745,31 +706,31 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_near_identical_queries_share_one_upstream_search(self) -> None:
         first = await self.search("Public release, history of the printing press")
-        self.assertEqual(len(self.seen), 2)
-        # Case, accents, punctuation, stop words and order: same cache entry.
-        again = await self.search("printing PRESS history: public release")
+        self.assertEqual(len(self.seen), 1)
+        # Case, accents, punctuation and stop words: same cache entry.
+        again = await self.search("Public release: history of printing PRESS")
         self.assertEqual(again, first)
-        self.assertEqual(len(self.seen), 2)
+        self.assertEqual(len(self.seen), 1)
         # Another language is another search.
         self.state = sx.State()
         await self.search("printing press history public release", lang="fr")
-        self.assertEqual(len(self.seen), 4)
+        self.assertEqual(len(self.seen), 2)
 
     async def test_concurrent_near_identical_queries_share_one_flight(self) -> None:
         self.hold = asyncio.Event()
         tasks = [
             asyncio.create_task(self.search(query))
-            for query in ("Public release!", "release public", "the public release")
+            for query in ("Public release!", "public RELEASE", "the public release")
         ]
         for _ in range(100):
-            if len(self.started) == 2:
+            if len(self.started) == 1:
                 break
             await asyncio.sleep(0.001)
         self.hold.set()
         outputs = await asyncio.gather(*tasks)
         self.assertEqual(outputs[0], outputs[1])
         self.assertEqual(outputs[0], outputs[2])
-        self.assertEqual(len(self.seen), 2)
+        self.assertEqual(len(self.seen), 1)
 
     async def test_cache_lifetime_follows_time_sensitivity_and_degradation(
         self,

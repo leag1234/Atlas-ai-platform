@@ -67,7 +67,7 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 )
                 for call in calls
             ],
-            [("fr-FR", None)] * (len(tried) + 1),
+            [("fr-FR", None)] * len(tried),
         )
         for call in calls:
             engine = call.kwargs["params"]["engines"]
@@ -82,7 +82,7 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 engines.count("wikipedia"),
                 client.__aenter__.return_value.get.call_count,
             ),
-            (tried, 1, len(tried) + 1),
+            (tried, 0, len(tried)),
         )
 
     async def test_empty_or_error_retries_once_then_is_not_disguised(self) -> None:
@@ -131,7 +131,7 @@ class SearxngTests(unittest.IsolatedAsyncioTestCase):
                 engines.count("wikipedia"),
                 empty.__aenter__.return_value.get.call_count,
             ),
-            (list(sx.ENGINES), 1, len(sx.ENGINES) + 1),
+            (list(sx.ENGINES), 0, len(sx.ENGINES)),
         )
         calls = empty.__aenter__.return_value.get.call_args_list
         self.assertNotEqual(

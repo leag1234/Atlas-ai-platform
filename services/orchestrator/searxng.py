@@ -118,7 +118,7 @@ class Policy:
         # The first two configured engines are the primary tier.
         return (
             self.engine_interval
-            if engine == "wikipedia" or engine in self.engines[:2]
+            if engine in self.engines[:2]
             else self.fallback_interval
         )
 
@@ -502,7 +502,7 @@ async def search(
     endpoint = endpoint.rstrip("/")
     key = cache.key(
         [
-            "searxng-individual-v3",
+            "searxng-individual-v4",
             endpoint,
             identity,
             language,
@@ -586,23 +586,15 @@ async def run_search(
     }
     if news:
         params["time_range"] = "month"
-    wiki: asyncio.Task[Message] | None = None
+    # The SearXNG "wikipedia" engine is not asked: it looks up an exact
+    # article title and returned no result for every model query measured
+    # (staging 2026-11-15: 39 of 39 calls empty), one wasted call per search.
     waited = 0.0
     order: tuple[str, ...] = policy.engines
     try:
         async with asyncio.timeout_at(deadline):
             async with state.slots:
                 await state.admit(policy.searches_per_minute, deadline)
-                wiki = asyncio.create_task(
-                    engine_search(
-                        state,
-                        endpoint,
-                        "wikipedia",
-                        {k: v for k, v in params.items() if k != "time_range"},
-                        policy,
-                        deadline,
-                    )
-                )
                 web_rows: dict[str, Message] = {}
                 # Tiers follow the adaptive order; spacing stays with the
                 # configured tiers, so a promoted fallback engine is never
@@ -668,21 +660,10 @@ async def run_search(
                     # engine is used only when neither primary produced enough.
                     if len(web_rows) >= (policy.minimum or n) or (index >= 2 and rows):
                         break
-                evidence.append(await asyncio.shield(wiki))
     except TimeoutError:
         evidence.append(
             {"engine": "scheduler", "outcome": "upstream_timeout", "results": []}
         )
-    finally:
-        if wiki is not None and not any(
-            row.get("engine") == "wikipedia" for row in evidence
-        ):
-            if not wiki.done():
-                wiki.cancel()
-            try:
-                evidence.append(await wiki)
-            except asyncio.CancelledError:
-                pass
     results: dict[str, Message] = {}
     for attempt in evidence:
         rows = attempt.get("results", [])
@@ -698,7 +679,7 @@ async def run_search(
         for attempt in evidence
         if attempt.get("reason") not in SKIPPED
     }
-    web_count = sum(row.get("engine") != "wikipedia" for row in results.values())
+    web_count = len(results)
     outcome = (
         "partial_results"
         if results
@@ -711,16 +692,12 @@ async def run_search(
         if "upstream_timeout" in outcomes
         else "empty_results"
     )
-    # Wikipedia remains complementary even when the web already filled n slots.
-    web = [row for row in results.values() if row.get("engine") != "wikipedia"][:n]
-    wikipedia = [row for row in results.values() if row.get("engine") == "wikipedia"][
-        :1
-    ]
+    web = list(results.values())[:n]
     output: Message = {
         "provider": "searxng",
         "language": language,
         "outcome": outcome,
-        "results": web + wikipedia,
+        "results": web,
         "engines": [
             {
                 **{k: v for k, v in row.items() if k != "results"},
@@ -771,7 +748,7 @@ async def run_search(
                         engine: state.health.setdefault(
                             endpoint + ":" + engine, Health()
                         ).counts(now)
-                        for engine in (*policy.engines, "wikipedia")
+                        for engine in policy.engines
                     },
                 }
             ),
