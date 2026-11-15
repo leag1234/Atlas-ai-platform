@@ -49,7 +49,7 @@ from services.orchestrator.pictures import (
 )
 from services.orchestrator.pictures.routes import choice_url
 from services.orchestrator.pictures.svg_text import extract_svg, salvage
-from services.orchestrator.pictures.texts import text
+from services.orchestrator.pictures.texts import answer_language, text
 from services.orchestrator.pictures.worker import PictureJobError, run_job
 
 LOGGER = logging.getLogger(__name__)
@@ -671,6 +671,11 @@ async def process_picture_turn(
     if spend.models:
         item.provider_model = spend.models[-1]
     item.latence_ms.update({f"picture_{k}": v for k, v in timings.items()})
+    # The request's own language, as the rewrite (CPU) or the checklist
+    # (painting by code) named it; else the conversation's.
+    language = answer_language(
+        cpu.language if cpu is not None else (ck or {}).get("language"), language
+    )
     if cpu is not None and cpu.late:
         item.reponse = app_failure("drawing", language, timeout=True)
         item.state = "done"

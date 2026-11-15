@@ -28,6 +28,7 @@ from services.orchestrator.pictures import (
     locate,
     rewrite,
     store,
+    texts,
     turn,
 )
 from services.orchestrator.pictures.choice import latest_set_id
@@ -188,6 +189,43 @@ class RewriteTests(unittest.TestCase):
         self.assertIn("A fox on a bench.", messages[1]["content"])
         self.assertIn("plus grand", messages[1]["content"])
         self.assertIn("un renard sur un banc", messages[1]["content"])
+
+
+class LanguageTests(unittest.TestCase):
+    def test_language_codes_as_models_write_them(self) -> None:
+        for value, code in [
+            ("es", "es"),
+            (" ES ", "es"),
+            ("es-ES", "es"),
+            ("pt_BR", "pt"),
+            ("Spanish", ""),
+            ("", ""),
+            (None, ""),
+            (3, ""),
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(texts.language_code(value), code)
+
+    def test_the_request_language_wins_among_the_five(self) -> None:
+        self.assertEqual(texts.answer_language("es", "en"), "es")
+        self.assertEqual(texts.answer_language("DE", "fr"), "de")
+        # Without fixed texts in that language: the conversation's, else English.
+        self.assertEqual(texts.answer_language("pt", "it"), "it")
+        self.assertEqual(texts.answer_language("", "fr"), "fr")
+        self.assertEqual(texts.answer_language("pt", "nl"), "en")
+
+    def test_rewrite_reply_carries_the_language(self) -> None:
+        parsed = rewrite.parse(rewrite_reply(language="es-ES"))
+        assert parsed is not None
+        self.assertEqual(parsed.language, "es")
+        refused = rewrite.parse('{"refuse": true, "language": "it"}')
+        assert refused is not None
+        self.assertTrue(refused.refused)
+        self.assertEqual(refused.language, "it")
+        without = rewrite.parse(rewrite_reply())
+        assert without is not None
+        self.assertEqual(without.language, "")
+        self.assertIn('"language"', rewrite.SYSTEM)
 
 
 class LocateTests(unittest.TestCase):
@@ -354,6 +392,61 @@ class CpuTurnTests(unittest.IsolatedAsyncioTestCase):
             picture_set = store.load(set_id)
         assert picture_set is not None
         return picture_set
+
+    async def language_turn(
+        self, text: str, interface: str, reply: str
+    ) -> tuple[Interaction, CpuGateway]:
+        gateway = CpuGateway(reply)
+        self.serve(FakeServer())
+        request = Request(text)
+        request.lang = interface
+        item = Interaction()
+        await turn.process_picture_turn(request, item, complete=gateway)
+        return item, gateway
+
+    async def test_fixed_texts_follow_the_request_language(self) -> None:
+        # Short requests with typos, interface in another language (nightly
+        # 2026-11-15: "dibujame un gato con sombrero" with an English interface
+        # was answered "Here are 2 proposals").
+        cases = [
+            ("dibújame un gato con sonbrero", "en", "es", "Aquí tienes 2 propuestas."),
+            ("zeichne mir eine katze mit hutt", "en", "de", "Hier sind 2 Vorschläge."),
+            ("disegnami un gatto con capelo", "en", "it", "Ecco 2 proposte."),
+            ("dessine moi un chat avc un chapeau", "en", "fr", "Voici 2 propositions."),
+            ("draw me a cat wiht a hat", "fr", "en", "Here are 2 proposals."),
+            # No fixed texts in Portuguese: the conversation's language.
+            ("desenha um gato de chapeu", "fr", "pt", "Voici 2 propositions."),
+            # A reply without a language: the conversation's, as before.
+            ("un chat", "it", "", "Ecco 2 proposte."),
+        ]
+        for text, interface, found, intro in cases:
+            with self.subTest(text=text):
+                reply = rewrite_reply(language=found) if found else rewrite_reply()
+                item, gateway = await self.language_turn(text, interface, reply)
+                self.assertTrue(item.reponse.startswith(intro), item.reponse[:80])
+                message = gateway.payloads[0]["messages"][1]["content"]
+                self.assertIn("'title' in the language of the request", message)
+                # The conversation's language is never named: it drew the reply
+                # to it ("a fox on a bench" came back French, staging gateway).
+                self.assertEqual(message, text + rewrite.ANSWER_LANGUAGE)
+
+    async def test_checks_note_and_choice_follow_the_pictures_language(self) -> None:
+        reply = rewrite_reply(language="es", checks=["el gato lleva sombrero"])
+        first, _ = await self.language_turn(
+            "dibújame un gato con sombrero", "en", reply
+        )
+        self.assertIn("Aquí tienes 2 propuestas.", first.reponse)
+        self.assertNotIn("Here are", first.reponse)
+        self.assertNotIn("Choose:", first.reponse)
+        history = [
+            ("user", "dibújame un gato con sombrero"),
+            ("assistant", first.reponse),
+        ]
+        pick = Request("la segunda", history)
+        pick.lang = "en"
+        chosen = Interaction()
+        self.assertTrue(await choice.handle_choice(pick, chosen))
+        self.assertIn("La imagen 2 está elegida", chosen.reponse)
 
     async def test_two_pictures_stored_and_shown(self) -> None:
         gateway, server = CpuGateway(), FakeServer()

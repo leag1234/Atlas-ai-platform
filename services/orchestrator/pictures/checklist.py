@@ -15,6 +15,7 @@ import unicodedata
 from typing import Any
 
 from services.orchestrator.pictures.svg_text import extract_json
+from services.orchestrator.pictures.texts import language_code
 
 KINDS = ("character", "object", "place", "text", "labels")
 WHERE = ("ground", "air", "wall", "other", "none")
@@ -63,6 +64,7 @@ Never add anything the request does not say: no extra object, no part, no number
 
 Return one JSON object:
 {
+ "language": the ISO 639-1 code of the language the request is written in, even for a request of a few words,
  "genre": "scene" | "portrait" | "still_life" | "landscape" | "poster" | "diagram",
  "things": [ {
    "id": short English name in lower case with hyphens, singular (it will be used as an SVG group id),
@@ -262,6 +264,8 @@ def parse_checklist(text: str, request: str) -> tuple[dict[str, Any] | None, lis
     if raw is None:
         return None, ["no_json"]
     ck, removed = sanitise_checklist(raw, request)
+    if language := language_code(raw.get("language")):
+        ck["language"] = language
     return (ck if ck["things"] else None), removed
 
 
