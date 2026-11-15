@@ -30,6 +30,7 @@ does not make a search partial when another engine answered.
 | `ATLAS_SEARXNG_PROBE_SECONDS` | `60` | Minimum spacing for request-triggered health probes, at least 60 |
 | `ATLAS_SEARXNG_ENGINE_SECONDS` | `3` | Minimum call spacing for the first two engines and Wikipedia, at least 3 |
 | `ATLAS_SEARXNG_FALLBACK_SECONDS` | `30` | Minimum spacing for each other engine, at least 30 and no less than primary spacing |
+| `ATLAS_SEARXNG_SEARCHES_PER_MINUTE` | `30` | Uncached logical searches per rolling minute for the process, 10 to 60 |
 
 CAPTCHA, HTTP 403/429 and SearXNG engine suspension produce block signals.
 There is no immediate retry. Retry-After seconds and HTTP dates are honored on
@@ -39,9 +40,24 @@ Each engine needs two successful probes, spaced apart after quarantine expires,
 before its circuit reopens. No background probes run without user searches.
 Timeouts, empty results and malformed responses cannot count as successful probes.
 
-The single-process trial shares a rolling limit of ten uncached logical searches
-per minute, at most three searches and three engine HTTP requests concurrently,
-per-engine circuits and single-flight deduplication. Multiple replicas would need
+The single-process trial shares a rolling limit of uncached logical searches
+per minute (30 by default; ten rejected three concurrent research turns on
+2026-11-15), at most three searches and three engine HTTP requests concurrently,
+per-engine circuits and single-flight deduplication.
+
+Concurrent searches queue for engines instead of skipping them (a slot
+reservation in the manner of the generic cell rate algorithm). Each call books
+the engine's next start slot, so two calls on one engine always start at least
+its spacing apart, also when a call runs past its slot. A search takes the
+engine that can start first; a fallback engine only when it starts at least one
+primary spacing sooner than the primaries. A search waits only when the call can
+still start two seconds before its deadline, and admission never waits past the
+deadline. Wikipedia never waits: it is skipped while it cools down. When every
+later provider of the chain refused for its quota in the last five minutes, or
+its local monthly reservation is full, no time is kept for it and SearXNG has the
+whole search budget. Each SearXNG search writes one `searxng_outcome` warning
+line (engines, outcomes, pacing reasons and waited seconds, never the query), and
+a search that moved along the provider chain writes one `search_chain` line. Multiple replicas would need
 a shared coordinator before scaling; each process currently owns its limits.
 The existing disk cache remains: complete results last one hour, partial results
 one minute, and empty/blocked/timeout outcomes are not cached. Endpoint, effective

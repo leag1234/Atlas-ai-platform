@@ -38,6 +38,9 @@ SUPPORTED = (*ENGINES, "bing")
 TIME_RANGE_ENGINES = frozenset({"duckduckgo", "google", "startpage", "mojeek"})
 # Local pacing decisions: the engine was not asked, so it is not a failure.
 SKIPPED = frozenset({"cooldown", "quarantined"})
+# A search waits for a busy engine only when the call can still start this
+# long before the search deadline; observed engine answers take 0.5 to 2.5 s.
+MIN_CALL_SECONDS = 2.0
 LANGUAGES = {"en", "de", "es", "fr", "it", "nl"}
 SEARCH_REGIONS = {
     "fr": "fr-FR",
@@ -92,6 +95,19 @@ class Policy:
     engine_interval: float = 3
     fallback_interval: float = 30
     minimum: int = 0  # Zero means the requested result count.
+    # Logical searches per rolling minute for this process. Upstream engines
+    # are protected by the per-engine spacing above; this bound only caps the
+    # total. Ten per minute rejected three concurrent research turns
+    # (staging 2026-11-15: searches waited past their deadline).
+    searches_per_minute: int = 30
+
+    def spacing(self, engine: str) -> float:
+        # The first two configured engines are the primary tier.
+        return (
+            self.engine_interval
+            if engine == "wikipedia" or engine in self.engines[:2]
+            else self.fallback_interval
+        )
 
     @classmethod
     def environment(cls) -> "Policy":
@@ -106,6 +122,9 @@ class Policy:
             engine_interval=float(os.getenv("ATLAS_SEARXNG_ENGINE_SECONDS", "3")),
             fallback_interval=float(os.getenv("ATLAS_SEARXNG_FALLBACK_SECONDS", "30")),
             minimum=int(os.getenv("ATLAS_SEARXNG_MIN_RESULTS", "0")),
+            searches_per_minute=int(
+                os.getenv("ATLAS_SEARXNG_SEARCHES_PER_MINUTE", "30")
+            ),
         )
         if (
             not engines
@@ -116,6 +135,7 @@ class Policy:
             or policy.engine_interval < 3
             or policy.fallback_interval < max(30, policy.engine_interval)
             or not 0 <= policy.minimum <= 5
+            or not 10 <= policy.searches_per_minute <= 60
         ):
             raise ValueError("invalid_searxng_policy")
         return policy
@@ -128,7 +148,18 @@ class Circuit:
     next_call: float = 0
     quarantined: bool = False
     probes: int = 0
+    last_start: float = float("-inf")
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def opens(self, now: float) -> float:
+        """Earliest start a new booking can get: spacing and cooldowns."""
+        return max(now, self.next_call, self.until)
+
+    def book(self, now: float, interval: float) -> float:
+        """Reserve the next start slot; later bookings queue behind it."""
+        slot = self.opens(now)
+        self.next_call = slot + interval
+        return slot
 
     def record(self, outcome: str, now: float, retry: float, policy: Policy) -> None:
         if retry > 0:
@@ -177,15 +208,20 @@ class State:
     circuits: dict[str, Circuit] = field(default_factory=dict)
     flights: dict[str, asyncio.Task[Message]] = field(default_factory=dict)
 
-    async def admit(self) -> None:
+    async def admit(self, limit: int = 30, deadline: float = float("inf")) -> None:
         while True:
             now = time.monotonic()
             while self.searches and self.searches[0] <= now - 60:
                 self.searches.popleft()
-            if len(self.searches) < 10:
+            if len(self.searches) < limit:
                 self.searches.append(now)
                 return
-            await asyncio.sleep(max(0.001, self.searches[0] + 60 - now))
+            wait = max(0.001, self.searches[0] + 60 - now)
+            if now + wait > deadline - MIN_CALL_SECONDS:
+                # Waiting cannot end in time: fail now and leave the time to
+                # the next provider of the chain.
+                raise TimeoutError
+            await asyncio.sleep(wait)
 
 
 _STATES: WeakKeyDictionary[asyncio.AbstractEventLoop, State] = WeakKeyDictionary()
@@ -224,31 +260,39 @@ async def engine_search(
     params: dict[str, str],
     policy: Policy,
     deadline: float,
+    slot: float | None = None,
 ) -> Message:
+    """Ask one engine. Without a booked slot, a busy engine is skipped."""
     from packages.privacy import require_shared
 
     # The query is forwarded to public search engines: not in strict privacy.
     require_shared("web_search")
     circuit = state.circuits.setdefault(endpoint + ":" + engine, Circuit())
     evidence: Message = {"engine": engine, "outcome": "upstream_timeout", "results": []}
+    interval = policy.spacing(engine)
     try:
         async with asyncio.timeout(max(0, deadline - time.monotonic())):
+            now = time.monotonic()
+            if slot is None:
+                if circuit.opens(now) > now:
+                    return skipped(engine, circuit, now)
+                slot = circuit.book(now, interval)
+            if slot > now:
+                await asyncio.sleep(slot - now)
             async with circuit.lock:
                 now = time.monotonic()
-                if now < circuit.until or now < circuit.next_call:
-                    return {
-                        **evidence,
-                        "outcome": "upstream_blocked",
-                        "reason": "quarantined" if circuit.quarantined else "cooldown",
-                        "retry_after": max(circuit.until, circuit.next_call) - now,
-                    }
-                # The first two configured engines are the primary tier.
-                interval = (
-                    policy.engine_interval
-                    if engine == "wikipedia" or engine in policy.engines[:2]
-                    else policy.fallback_interval
+                if now < circuit.until:
+                    # Blocked or quarantined by a call that ended after the
+                    # booking: the engine is not asked.
+                    return skipped(engine, circuit, now)
+                # A call that ran past its slot still leaves the full spacing
+                # before the next call starts (the lock keeps booking order).
+                if circuit.last_start + interval > now:
+                    await asyncio.sleep(circuit.last_start + interval - now)
+                circuit.last_start = time.monotonic()
+                circuit.next_call = max(
+                    circuit.next_call, circuit.last_start + interval
                 )
-                circuit.next_call = now + interval
                 retry = 0.0
                 async with state.http_slots:
                     try:
@@ -294,6 +338,17 @@ async def engine_search(
     except TimeoutError:
         evidence["reason"] = "deadline"
     return evidence
+
+
+def skipped(engine: str, circuit: Circuit, now: float) -> Message:
+    """Evidence of a local pacing decision: the engine was not asked."""
+    return {
+        "engine": engine,
+        "outcome": "upstream_blocked",
+        "results": [],
+        "reason": "quarantined" if circuit.quarantined else "cooldown",
+        "retry_after": circuit.opens(now) - now,
+    }
 
 
 def parse_results(data: object, engine: str) -> Message:
@@ -413,10 +468,11 @@ async def run_search(
     if news:
         params["time_range"] = "month"
     wiki: asyncio.Task[Message] | None = None
+    waited = 0.0
     try:
         async with asyncio.timeout_at(deadline):
             async with state.slots:
-                await state.admit()
+                await state.admit(policy.searches_per_minute, deadline)
                 wiki = asyncio.create_task(
                     engine_search(
                         state,
@@ -428,7 +484,45 @@ async def run_search(
                     )
                 )
                 web_rows: dict[str, Message] = {}
-                for index, engine in enumerate(policy.engines):
+                pending = list(policy.engines)
+                while pending:
+                    # Concurrent searches queue for an engine's next spacing
+                    # slot instead of skipping it: a search that found every
+                    # engine cooling down used to fail at once and fall to
+                    # exhausted paid providers (staging 2026-11-15, three
+                    # research turns). A fallback engine is taken only when it
+                    # starts at least one primary spacing sooner, so the load
+                    # spreads across engines without leaving the primaries.
+                    now = time.monotonic()
+                    circuits = {
+                        engine: state.circuits.setdefault(
+                            endpoint + ":" + engine, Circuit()
+                        )
+                        for engine in pending
+                    }
+                    usable = {
+                        engine: circuit.opens(now)
+                        + (
+                            policy.engine_interval
+                            if policy.engines.index(engine) >= 2
+                            else 0
+                        )
+                        for engine, circuit in circuits.items()
+                        # A free engine is always asked; a wait must leave
+                        # the call time to answer before the deadline.
+                        if circuit.opens(now) <= max(now, deadline - MIN_CALL_SECONDS)
+                    }
+                    if not usable:
+                        evidence.extend(
+                            skipped(engine, circuit, now)
+                            for engine, circuit in circuits.items()
+                        )
+                        break
+                    engine = min(usable, key=lambda name: usable[name])
+                    index = policy.engines.index(engine)
+                    pending.remove(engine)
+                    slot = circuits[engine].book(now, policy.spacing(engine))
+                    waited += slot - now
                     result = await engine_search(
                         state,
                         endpoint,
@@ -438,6 +532,7 @@ async def run_search(
                         else {k: v for k, v in params.items() if k != "time_range"},
                         policy,
                         deadline,
+                        slot,
                     )
                     evidence.append(result)
                     rows = result.get("results", [])
@@ -517,13 +612,19 @@ async def run_search(
     }
     if outcome in NOTICES:
         output["message"] = NOTICES[outcome]
-    logging.getLogger(__name__).info(
+    # Metadata only (engines, outcomes, pacing), never the query. Warning level
+    # so that the serving journal shows it: the info line was not recorded and
+    # a search failure under concurrency could not be read (2026-11-15).
+    logging.getLogger(__name__).warning(
         "searxng_outcome %s",
         json.dumps(
             {
-                k: v
-                for k, v in output.items()
-                if k not in {"results", "consulted_at", "message"}
+                **{
+                    k: v
+                    for k, v in output.items()
+                    if k not in {"results", "consulted_at", "message"}
+                },
+                "waited_seconds": round(waited, 2),
             }
         ),
     )

@@ -1,6 +1,7 @@
 """Owner search memo: scripted HTTP failures and bounded engine state."""
 
 import asyncio
+from contextlib import AbstractContextManager
 from datetime import datetime, timezone
 from decimal import Decimal
 from email.utils import format_datetime
@@ -22,7 +23,8 @@ from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import Call
 from services.orchestrator.loop import Message
 from services.orchestrator.model import GatewayError
-from services.orchestrator.tools import Runtime, Search
+from packages.limits import LimitError
+from services.orchestrator.tools import Runtime, Search, SearchQuotaError
 
 
 def rows(engine: str, count: int = 5) -> dict[str, object]:
@@ -65,6 +67,8 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.seen: list[dict[str, str]] = []
         self.started: list[str] = []
         self.hold: asyncio.Event | None = None
+        self.delay = 0.0
+        self.starts: list[tuple[str, float]] = []
         self.active = 0
         self.peak = 0
         app = web.Application()
@@ -78,11 +82,14 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.seen.append(dict(request.query))
         engine = request.query["engines"]
         self.started.append(engine)
+        self.starts.append((engine, time.monotonic()))
         self.active += 1
         self.peak = max(self.peak, self.active)
         try:
             if self.hold:
                 await self.hold.wait()
+            if self.delay:
+                await asyncio.sleep(self.delay)
             action = self.scripts.get(engine, "ok")
             if action == "timeout":
                 # Well past every deadline used below, so a loaded CI runner cannot
@@ -154,10 +161,146 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         result = await self.search()
         self.assertEqual(result["outcome"], "ok")
         self.assertNotIn("message", result)
+        # The cooling engine is passed over, not asked and not a failure.
         self.assertEqual([e for e in self.started if e != "wikipedia"], [sx.ENGINES[1]])
         engines = result["engines"]
         assert isinstance(engines, list)
-        self.assertEqual(engines[0]["reason"], "cooldown")
+        self.assertNotIn(sx.ENGINES[0], [row["engine"] for row in engines])
+
+    def fast_policy(
+        self, engines: tuple[str, ...] = sx.ENGINES
+    ) -> AbstractContextManager[object]:
+        # The real spacing (3 s and 30 s) scaled down; same rules.
+        return patch.object(
+            sx.Policy,
+            "environment",
+            return_value=sx.Policy(
+                engines=engines, engine_interval=0.2, fallback_interval=1.0
+            ),
+        )
+
+    def assert_spacing(self, engines: tuple[str, ...] = sx.ENGINES) -> None:
+        for engine in {name for name, _ in self.starts}:
+            spacing = 0.2 if engine == "wikipedia" or engine in engines[:2] else 1.0
+            times = [moment for name, moment in self.starts if name == engine]
+            gaps = [later - earlier for earlier, later in zip(times, times[1:])]
+            # Arrival times at the server carry connection setup jitter.
+            self.assertTrue(all(gap >= spacing - 0.05 for gap in gaps), (engine, gaps))
+
+    async def test_concurrent_searches_queue_for_slots_instead_of_failing(
+        self,
+    ) -> None:
+        # Staging 2026-11-15: three research turns at once found every engine
+        # cooling down; searches failed and fell to exhausted paid providers.
+        # Calls are shorter than the spacing, as on staging (1-2 s for 3 s).
+        self.delay = 0.1
+        engines = sx.ENGINES[:3]
+        with self.fast_policy(engines):
+            results = await asyncio.gather(
+                *(self.search(query=f"question {i}", timeout=4) for i in range(9))
+            )
+        self.assertEqual([r["outcome"] for r in results], ["ok"] * 9)
+        self.assert_spacing(engines)
+        web = [name for name, _ in self.starts if name != "wikipedia"]
+        self.assertEqual(len(web), 9)
+        # Primaries take the queue; fallbacks only absorb the overflow.
+        self.assertTrue(set(sx.ENGINES[:2]) <= set(web))
+        self.assertGreater(sum(name in sx.ENGINES[:2] for name in web), len(web) / 2)
+
+    async def test_short_wait_for_a_primary_rather_than_a_fallback(self) -> None:
+        endpoint = f"http://127.0.0.1:{self.port}:"
+        first, second = (
+            self.state.circuits.setdefault(endpoint + name, sx.Circuit())
+            for name in sx.ENGINES[:2]
+        )
+        first.next_call = time.monotonic() + 0.15
+        second.next_call = time.monotonic() + 0.5
+        with self.fast_policy():
+            result = await self.search(timeout=4)
+        self.assertEqual(result["outcome"], "ok")
+        self.assertEqual([e for e in self.started if e != "wikipedia"], [sx.ENGINES[0]])
+        self.started.clear()
+        # Both primaries far away: the next fallback answers without waiting.
+        first.next_call = second.next_call = time.monotonic() + 30
+        with self.fast_policy():
+            result = await self.search(query="another question", timeout=4)
+        self.assertEqual(result["outcome"], "ok")
+        self.assertEqual([e for e in self.started if e != "wikipedia"], [sx.ENGINES[2]])
+
+    async def test_no_wait_past_the_deadline(self) -> None:
+        for name in (*sx.ENGINES, "wikipedia"):
+            circuit = self.state.circuits.setdefault(
+                f"http://127.0.0.1:{self.port}:{name}", sx.Circuit()
+            )
+            circuit.next_call = time.monotonic() + 30
+        started = time.monotonic()
+        with self.fast_policy():
+            result = await self.search(timeout=4)
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(result["outcome"], "upstream_blocked")
+        self.assertEqual(self.seen, [])
+        engines = result["engines"]
+        assert isinstance(engines, list)
+        self.assertTrue(all(row["reason"] == "cooldown" for row in engines))
+
+    async def test_research_turns_with_exhausted_paid_providers_get_sources(
+        self,
+    ) -> None:
+        # Four concurrent turns of three searches each; Tavily answers 432 and
+        # the local SerpAPI reservation is full. Every search must be served by
+        # SearXNG, which answers, instead of ending on quota_exceeded. Calls
+        # outlast the primary spacing here, so booked slots also overrun.
+        self.delay = 0.3
+        tavily = AsyncMock(side_effect=SearchQuotaError(432))
+        serpapi = AsyncMock(
+            side_effect=LimitError("quota_exceeded", 902, 900, "monthly search credits")
+        )
+
+        async def turn(number: int) -> list[dict[str, object]]:
+            runtime = Runtime(self.cache, Decimal(0))
+            outputs = []
+            for search in range(3):
+                outputs.append(
+                    await runtime.execute(
+                        Call(
+                            f"{number}-{search}",
+                            "web_search",
+                            json.dumps(
+                                {
+                                    "query": f"turn {number} search {search}",
+                                    "lang": "en",
+                                }
+                            ),
+                        ),
+                        15,
+                    )
+                )
+            return outputs
+
+        engines = sx.ENGINES[:3]
+        with (
+            self.fast_policy(engines),
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_SEARCH_PROVIDER": "searxng,tavily,serpapi",
+                    "TAVILY_API_KEY": "test-key",
+                    "SERPAPI_KEY": "test-key",
+                },
+            ),
+            patch.object(Runtime, "tavily", tavily),
+            patch.object(Runtime, "serpapi", serpapi),
+        ):
+            turns = await asyncio.gather(*(turn(number) for number in range(4)))
+        outputs = [output for outputs in turns for output in outputs]
+        self.assertEqual([output.get("error") for output in outputs], [None] * 12)
+        for output in outputs:
+            data = output["data"]
+            assert isinstance(data, dict)
+            self.assertEqual(data["provider"], "searxng")
+            self.assertEqual(data["outcome"], "ok")
+        self.assertEqual(tavily.await_count, 0)
+        self.assert_spacing(engines)
 
     async def test_fallbacks_are_ordered_and_individual(self) -> None:
         self.scripts = {engine: "empty" for engine in sx.ENGINES[:-1]}
@@ -234,10 +377,11 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
             params: dict[str, str],
             policy: sx.Policy,
             deadline: float,
+            slot: float | None = None,
         ) -> Message:
             if engine == "wikipedia":
                 result = await original_engine_search(
-                    state, endpoint, engine, params, policy, deadline
+                    state, endpoint, engine, params, policy, deadline, slot
                 )
                 wikipedia_gate.set()
                 return result
@@ -390,6 +534,7 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(3):
             circuit = state.circuits.setdefault(endpoint + ":duckduckgo", sx.Circuit())
             circuit.until = circuit.next_call = 0
+            circuit.last_start = float("-inf")
             self.assertEqual(
                 (await attempt("duckduckgo"))["outcome"], "upstream_blocked"
             )
@@ -400,11 +545,13 @@ class SearxngPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.seen), count)
         self.scripts["duckduckgo"] = "ok"
         circuit.until = circuit.next_call = 0
+        circuit.last_start = float("-inf")
         self.assertEqual((await attempt("duckduckgo"))["outcome"], "ok")
         self.assertTrue(circuit.quarantined)
         self.assertGreater(circuit.until - time.monotonic(), 59)
         self.assertEqual((await attempt("duckduckgo"))["reason"], "quarantined")
         circuit.until = circuit.next_call = 0
+        circuit.last_start = float("-inf")
         self.assertEqual((await attempt("duckduckgo"))["outcome"], "ok")
         self.assertFalse(circuit.quarantined)
         self.assertEqual((await attempt("qwant"))["outcome"], "ok")
@@ -612,9 +759,20 @@ class SearxngStateTests(unittest.IsolatedAsyncioTestCase):
             patch.object(asyncio, "sleep", side_effect=sleep),
         ):
             for _ in range(11):
-                await state.admit()
+                await state.admit(10)
         self.assertEqual(waits, [60])
         self.assertEqual(list(state.searches), [160])
+
+    async def test_admission_never_waits_past_the_deadline(self) -> None:
+        state = sx.State()
+        now = [100.0]
+        with patch.object(time, "monotonic", side_effect=lambda: now[0]):
+            for _ in range(10):
+                await state.admit(10, 200)
+            with self.assertRaises(TimeoutError):
+                await state.admit(10, 115)
+        self.assertEqual(len(state.searches), 10)
+        self.assertEqual(sx.Policy.environment().searches_per_minute, 30)
 
     def test_three_blocks_quarantine_then_two_spaced_probes(self) -> None:
         circuit = sx.Circuit()

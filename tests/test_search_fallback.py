@@ -64,6 +64,75 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(call.args[1], 0)
             self.assertLessEqual(call.args[1], 1)
 
+    async def test_no_time_is_kept_for_providers_that_cannot_answer(self) -> None:
+        # Staging 2026-11-15: SearXNG got 8 of 15 s while Tavily (432) and
+        # SerpAPI (local monthly reservation) could not answer.
+        blocked = {"provider": "searxng", "results": [], "outcome": "upstream_blocked"}
+        found = {
+            "provider": "searxng",
+            "results": [{"link": "https://example.org/a"}],
+            "outcome": "ok",
+        }
+        env = {
+            "ATLAS_SEARCH_PROVIDER": "searxng,tavily,serpapi",
+            "SERPAPI_KEY": "fixture",
+            "TAVILY_API_KEY": "fixture",
+        }
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(
+                self.runtime, "searxng", new=AsyncMock(side_effect=[blocked, found])
+            ) as searxng,
+            patch.object(
+                self.runtime, "tavily", new=AsyncMock(side_effect=SearchQuotaError(432))
+            ) as tavily,
+            patch.object(
+                self.runtime,
+                "serpapi",
+                new=AsyncMock(
+                    side_effect=LimitError(
+                        "quota_exceeded", 902, 900, "monthly search credits"
+                    )
+                ),
+            ),
+        ):
+            with self.assertRaises(SearchQuotaError):
+                await self.runtime.search(self.request, 15)
+            self.assertEqual(await self.runtime.search(self.request, 15), found)
+        first, second = searxng.await_args_list
+        # Before any refusal is known, time is kept for the paid providers.
+        self.assertLess(first.args[1], 8.5)
+        # Both refused for quota: the next search gives SearXNG the whole budget.
+        self.assertGreater(second.args[1], 14.5)
+        tavily.assert_awaited_once()
+
+    async def test_full_local_reservation_keeps_no_time_for_its_provider(
+        self,
+    ) -> None:
+        found = {
+            "provider": "searxng",
+            "results": [{"link": "https://example.org/a"}],
+            "outcome": "ok",
+        }
+        for _ in range(900):
+            self.runtime.cache.reserve_search("serpapi")
+        with (
+            patch.dict(
+                os.environ,
+                {"ATLAS_SEARCH_PROVIDER": "searxng,serpapi", "SERPAPI_KEY": "fixture"},
+                clear=True,
+            ),
+            patch.object(
+                self.runtime, "searxng", new=AsyncMock(return_value=found)
+            ) as searxng,
+        ):
+            self.assertEqual(await self.runtime.search(self.request, 15), found)
+        call = searxng.await_args
+        assert call is not None
+        self.assertGreater(call.args[1], 14.5)
+        self.assertFalse(self.runtime.cache.search_credits_left("serpapi"))
+        self.assertTrue(self.runtime.cache.search_credits_left("tavily", credits=2))
+
     async def test_spent_allowance_of_one_provider_moves_to_the_next(self) -> None:
         empty = {"provider": "searxng", "results": [], "outcome": "empty_results"}
         found = {"provider": "serpapi", "results": [], "consulted_at": "now"}
