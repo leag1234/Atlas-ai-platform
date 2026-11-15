@@ -77,10 +77,23 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 block for block in text.split("location ") if "proxy_pass " in block
             ]
             # The production front door has one more proxy location: the image route.
-            # Both have the Stop cancel route and the dictation WebSocket.
-            self.assertEqual(len(blocks), 7 if name == "atlas.indidea.org.conf" else 5)
+            # Both have the Stop cancel route, the dictation WebSocket and the
+            # anonymous interface files.
+            self.assertEqual(len(blocks), 8 if name == "atlas.indidea.org.conf" else 6)
             prefix = "atlas" if name == "atlas.indidea.org.conf" else "atlas_test"
             for block in blocks:
+                if block.startswith("~ ^/(?:_app/immutable/"):
+                    # Read only, without basic authentication, as an anonymous request:
+                    # a fixed empty user, never the unchecked $remote_user.
+                    self.assertIn("auth_basic off;", block)
+                    self.assertIn("limit_except GET HEAD { deny all; }", block)
+                    self.assertIn("include /etc/nginx/atlas-proxy-secret.conf;", block)
+                    self.assertIn('proxy_set_header X-Atlas-User "@atlas.', block)
+                    self.assertNotIn("$remote_user", block.split("{", 1)[1])
+                    self.assertIn("proxy_set_header X-Atlas-User-Role user;", block)
+                    self.assertIn('proxy_set_header Authorization "";', block)
+                    self.assertIn('proxy_set_header Cookie "";', block)
+                    continue
                 if block.startswith("^~ /api/atlas/v1/"):
                     self.assertIn("auth_basic off;", block)
                     self.assertIn(
