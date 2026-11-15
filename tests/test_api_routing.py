@@ -8,6 +8,8 @@ from unittest.mock import patch
 from api_routing import select_public_model, targets
 import dev_gateway
 
+OWNED_URL = "http://127.0.0.1:18090/v1"
+
 
 class ApiRoutingTests(unittest.TestCase):
     def test_usage_effort_routes_and_aliases(self) -> None:
@@ -40,27 +42,60 @@ class ApiRoutingTests(unittest.TestCase):
             select_public_model("raw/internal")
 
     def test_strict_mode_keeps_only_owned_targets_and_never_falls_back(self) -> None:
-        with patch(
-            "api_routing.config",
-            return_value={
-                "usages": {
-                    "atlas-code": {
-                        "none": [
-                            {"provider": "mistral", "model": "shared", "context": 1000},
-                            {
-                                "provider": "owned-vllm",
-                                "model": "owned",
-                                "context": 1000,
-                                "privacy": "owned",
-                            },
-                        ]
+        with (
+            patch(
+                "api_routing.config",
+                return_value={
+                    "usages": {
+                        "atlas-code": {
+                            "none": [
+                                {
+                                    "provider": "mistral",
+                                    "model": "shared",
+                                    "context": 1000,
+                                },
+                                {
+                                    "provider": "owned-vllm",
+                                    "model": "owned",
+                                    "context": 1000,
+                                    "privacy": "owned",
+                                },
+                            ]
+                        }
                     }
-                }
-            },
+                },
+            ),
+            patch.dict(os.environ, {"ATLAS_OWNED_VLLM_BASE_URL": OWNED_URL}),
         ):
             _, entries = targets("atlas-code", "none", strict=True)
         self.assertEqual([target.privacy for target in entries], ["owned"])
         self.assertEqual(entries[0].model, "owned")
+
+    def test_owned_targets_serve_strict_requests_only(self) -> None:
+        # The configured owned target is never a fallback for shared traffic.
+        with patch.dict(os.environ, {"ATLAS_OWNED_VLLM_BASE_URL": OWNED_URL}):
+            for usage in ("atlas-code", "atlas-chat"):
+                for effort in ("none", "low", "medium", "high"):
+                    _, shared = targets(usage, effort)
+                    self.assertNotIn("owned", [t.privacy for t in shared])
+                    _, owned = targets(usage, effort, strict=True)
+                    self.assertEqual([t.provider for t in owned], ["owned-vllm"])
+
+    def test_strict_mode_with_owned_target_but_no_server_is_refused(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k != "ATLAS_OWNED_VLLM_BASE_URL"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaises(ValueError) as raised:
+                targets("atlas-chat", "none", strict=True)
+        self.assertEqual(str(raised.exception), "strict_privacy_unavailable")
+
+    def test_owned_pinned_model_listed_only_with_a_server(self) -> None:
+        from api_routing import pinned_models
+
+        env = {k: v for k, v in os.environ.items() if k != "ATLAS_OWNED_VLLM_BASE_URL"}
+        with patch.dict(os.environ, env, clear=True):
+            self.assertNotIn("owned-vllm/owned-vllm-model", pinned_models())
+        with patch.dict(os.environ, {"ATLAS_OWNED_VLLM_BASE_URL": OWNED_URL}):
+            self.assertIn("owned-vllm/owned-vllm-model", pinned_models())
 
     def test_strict_mode_without_owned_target_is_refused(self) -> None:
         with self.assertRaises(ValueError) as raised:
@@ -106,10 +141,15 @@ class ApiRoutingTests(unittest.TestCase):
                         "output_eur_per_mtok": 0,
                     }
                 }
-                plan = dev_gateway.prepare_api(
-                    request, "atlas-code", "key-test", strict=True
-                )
+                with patch.dict(
+                    os.environ, {"ATLAS_OWNED_VLLM_BASE_URL": OWNED_URL + "/"}
+                ):
+                    plan = dev_gateway.prepare_api(
+                        request, "atlas-code", "key-test", strict=True
+                    )
         self.assertEqual(plan.privacy, "owned")
+        # The owned target is called at the operator's server, not at a preset address.
+        self.assertEqual(plan.endpoint, OWNED_URL)
         self.assertIsNone(plan.fallback)
 
 
