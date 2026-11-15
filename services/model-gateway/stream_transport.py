@@ -84,16 +84,34 @@ async def stream(
                     continue
                 result = event.get("result")
                 if isinstance(result, dict):
-                    result["cost_eur"] = "0"
+                    # The orchestrator accepts the same answer fields as from the
+                    # quality path; the decoder's diagnostics (provider id, finish
+                    # reason, reasoning token count) stay in the gateway.
+                    usage = result["usage"]
+                    assert isinstance(usage, dict)
+                    answer: dict[str, object] = {
+                        "provider_model": model,
+                        "text": result["text"],
+                        "calls": result["calls"],
+                        "usage": {
+                            "prompt_tokens": usage["prompt_tokens"],
+                            "completion_tokens": usage["completion_tokens"],
+                        },
+                        "cost_eur": "0",
+                        "reasoning": str(result.get("reasoning") or ""),
+                        "reasoning_effort": request.reasoning_effort,
+                    }
                     if request.observe:
-                        result["observation"] = {
+                        answer["observation"] = {
                             "provider": "owned",
                             "route": "simple"
                             if classify(request.messages) == "chat_simple"
                             else "complexe",
                             "fallback": False,
                         }
-                    yield event
+                    yield {"result": answer}
+                    continue
+                yield event
         return
     if request.profile is not None:
         from quality import stream_quality
