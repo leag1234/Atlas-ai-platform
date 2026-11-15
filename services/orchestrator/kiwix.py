@@ -46,6 +46,7 @@ class Hit:
 
 
 def configured() -> bool:
+    # packages.privacy.local_encyclopedia reads the same settings (tested together).
     return bool(os.environ.get("ATLAS_KIWIX_URL", "").strip()) and bool(books())
 
 
@@ -56,6 +57,12 @@ def books() -> dict[str, str]:
         if re.fullmatch(r"[a-z]{2,3}", language) and _BOOK.fullmatch(book):
             found[language] = book
     return found
+
+
+def book_date(book: str) -> str:
+    """The copy's month from the book name (``wikipedia_fr_all_mini_2026-11``), or ''."""
+    match = re.search(r"_(\d{4}-\d{2})$", book)
+    return match.group(1) if match else ""
 
 
 def _base() -> str:

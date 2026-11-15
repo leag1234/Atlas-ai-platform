@@ -12,21 +12,30 @@ API etiquette (https://www.mediawiki.org/wiki/API:Etiquette): serial requests pe
 (reference_fetch), a descriptive User-Agent with the project URL, responses cached for a
 day, gzip, ``maxlag`` on Wikidata.
 
-Backends (``ATLAS_ENCYCLOPEDIA_BACKEND``): ``api`` (default) reads the live Wikipedia
-API; ``local`` reads a Wikipedia mirror operated by Atlas (kiwix.py), which never leaves
-Atlas and is therefore the only one allowed in strict privacy mode. With the local
-backend, structured facts still come from the Wikidata API when the request's privacy
-level allows a third-party lookup, and are left out otherwise (a local Wikidata extract
-is the next step, docs/23).
+Backend, chosen per request (``source_plan``):
+
+- a level that refuses third-party lookups (strict, enhanced) reads the Wikipedia mirror
+  operated by Atlas (kiwix.py) when one is configured: the query never leaves Atlas.
+  Without a mirror, the lookup is refused like any other third-party egress;
+- the standard level reads the live API, whose Wikidata facts are fresh (current office
+  holders, latest figures). When the API fails or does not answer in time, the mirror
+  answers instead and the result says how old its copy is;
+- ``ATLAS_ENCYCLOPEDIA_BACKEND=local`` forces the mirror at every level (an offline
+  instance).
+
+With the mirror, structured facts still come from the Wikidata API when the request's
+privacy level allows a third-party lookup, and are left out otherwise (a local Wikidata
+extract is the next step, docs/23).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 from packages import privacy
@@ -130,10 +139,24 @@ async def search(query: str, language: str, timeout: float) -> list[dict[str, An
     return sorted(rows, key=lambda page: int(page.get("index", 99)))
 
 
-def local_backend() -> bool:
+def forced_local() -> bool:
+    """The operator's override: the local mirror at every level (offline instances)."""
     return (
         os.environ.get("ATLAS_ENCYCLOPEDIA_BACKEND", "api").strip().lower() == "local"
     )
+
+
+Plan = Literal["live", "live_then_local", "local", "refused"]
+
+
+def source_plan() -> Plan:
+    """Which backend answers this request, from its privacy level and the setup."""
+    mirror = kiwix.configured()
+    if forced_local():
+        return "local"
+    if not privacy.allows(CAPABILITY):
+        return "local" if mirror else "refused"
+    return "live_then_local" if mirror else "live"
 
 
 async def entities(
@@ -372,7 +395,23 @@ _NOTE = (
 )
 
 
-async def _local(query: str, language: str, timeout: float) -> dict[str, object]:
+# Live failures the local copy may answer instead: an outage, a refusal to serve now,
+# an unreadable answer, a timeout. "No article" is an answer, not a failure.
+FALLBACK_CODES = frozenset(
+    {"source_unavailable", "source_rate_limited", "source_invalid"}
+)
+# Seconds kept for the local copy when the live API is tried first.
+LOCAL_RESERVE = 3.0
+
+
+async def _local(
+    query: str,
+    language: str,
+    timeout: float,
+    live_failure: str | None = None,
+) -> dict[str, object]:
+    """The article from the local copy. ``live_failure``: the code of the live error
+    this answer replaces (standard level), which also skips the Wikidata facts."""
     available = kiwix.books()
     edition = language if language in available else "en" if "en" in available else ""
     if not edition:
@@ -391,29 +430,53 @@ async def _local(query: str, language: str, timeout: float) -> dict[str, object]
         page = await kiwix.article(hits[0].path, timeout)
     except kiwix.KiwixError as exc:
         raise SourceError(exc.code, exc.detail) from None
+    dated = kiwix.book_date(book)
+    copy = f"the local copy {book}" + (f", dated {dated}" if dated else "")
     result: dict[str, object] = {
         "source": f"Wikipedia ({edition}), local copy {book}",
         "title": hits[0].title,
         "url": kiwix.public_url(edition, hits[0].path),
         "local_book": book,
+        "copy_date": dated or None,
         "summary": kiwix.introduction(page, SUMMARY_CHARS),
         "other_matches": [hit.title for hit in hits[1:4]],
         "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "license": "Wikipedia text CC BY-SA 4.0; Wikidata data CC0",
-        "note": _NOTE + " The text comes from the local copy named in local_book.",
+        "note": _NOTE + f" The text comes from {copy}.",
     }
-    if privacy.allows(CAPABILITY):
-        await _facts(
-            result,
-            list(dict.fromkeys([edition, language])),
-            timeout,
-            site_title=(f"{edition}wiki", hits[0].title),
+    notes: list[str] = []
+    if live_failure is not None:
+        result["live_error"] = live_failure
+        notes.append(
+            f"The live Wikipedia did not answer ({live_failure}): this text comes from "
+            f"{copy}. Events after that date (a new office holder, a latest figure) "
+            "are missing: tell the user the answer comes from a copy of that date, and "
+            "use web_search for anything recent."
         )
+        notes.append(
+            "Structured Wikidata facts were not fetched: answer from the summary only."
+        )
+    elif privacy.allows(CAPABILITY):
+        try:
+            await _facts(
+                result,
+                list(dict.fromkeys([edition, language])),
+                timeout,
+                site_title=(f"{edition}wiki", hits[0].title),
+            )
+        except SourceError as exc:
+            # The local summary stands on its own; say why the facts are missing.
+            notes.append(
+                f"Structured Wikidata facts could not be fetched ({exc.code}): "
+                "answer from the summary only."
+            )
     else:
-        result["note"] = str(result["note"]) + (
-            " Structured Wikidata facts are not available at this privacy level: "
+        notes.append(
+            "Structured Wikidata facts are not available at this privacy level: "
             "answer from the summary only."
         )
+    if notes:
+        result["note"] = " ".join([str(result["note"]), *notes])
     return result
 
 
@@ -424,12 +487,38 @@ async def lookup(query: str, language: str, timeout: float) -> dict[str, object]
         raise SourceError(
             "invalid_query", "name the person, place, organisation or work"
         )
-    if local_backend():
+    plan = source_plan()
+    if plan == "refused":
+        # No mirror: the live API would carry the subject out of Atlas.
+        raise privacy.refusal(CAPABILITY)
+    if plan == "local":
         if not kiwix.configured():
             raise SourceError(
                 "local_mirror_unavailable", "the local Wikipedia is not configured"
             )
         return await _local(query, language, timeout)
+    if plan == "live":
+        return await _live(query, language, timeout)
+    try:
+        return await asyncio.wait_for(
+            _live(query, language, timeout), max(1.0, timeout - LOCAL_RESERVE)
+        )
+    except TimeoutError:
+        failure = SourceError("source_unavailable", "the live Wikipedia timed out")
+    except SourceError as exc:
+        if exc.code not in FALLBACK_CODES:
+            raise
+        failure = exc
+    try:
+        return await _local(query, language, LOCAL_RESERVE, live_failure=failure.code)
+    except SourceError as exc:
+        raise SourceError(
+            failure.code,
+            f"{failure.detail}; the local copy did not answer either ({exc.code})",
+        ) from None
+
+
+async def _live(query: str, language: str, timeout: float) -> dict[str, object]:
     edition = language
     pages = await search(query, language, timeout)
     if not pages and language != "en":

@@ -71,7 +71,10 @@ model to `web_search` for what is missing.
 | Tool | Capability | Standard | Enhanced | Strict |
 |---|---|---|---|---|
 | `encyclopedia`, live API | `reference_lookup` (carries the subject) | yes | refused, like web search | refused |
-| `encyclopedia`, local mirror | none (Atlas-operated server) | yes | yes, summary only | yes, summary only |
+| `encyclopedia`, local mirror | none (Atlas-operated server) | when the live API fails or times out (dated copy, summary only) | yes, summary only | yes, summary only |
+
+Without a configured mirror, the `encyclopedia` tool is not offered in enhanced and
+strict turns, and a call is refused with the level's code.
 | `news_headlines` | `news_feeds` (fixed URLs, no request content) | yes | yes, like the currency rate feed | refused |
 | `eu_statistics` | `public_statistics` (carries the country and indicator) | yes | refused | refused |
 | `french_commune` | `public_datasets` (whole files, searched locally) | yes | yes | refused |
@@ -81,18 +84,34 @@ and calls `require_shared` before any request; `kiwix.py` is classified internal
 
 ## Local Wikipedia mirror
 
-The encyclopedia has two backends, chosen by `ATLAS_ENCYCLOPEDIA_BACKEND`:
+The encyclopedia has two backends:
 
-- `api` (default): the live Wikipedia and Wikidata APIs;
-- `local`: a [kiwix-serve](https://github.com/kiwix/kiwix-tools) instance run by Atlas
-  (`ATLAS_KIWIX_URL`) with one ZIM book per language (`ATLAS_KIWIX_BOOKS`, for example
-  `fr=wikipedia_fr_all_nopic_2026-05,en=wikipedia_en_all_nopic_2026-06`). The article
-  is found with kiwix-serve's full-text search and its introduction read from the
-  local page; the answer cites the public Wikipedia address and names the local book,
-  whose date gives the copy's age. Structured Wikidata facts are added from the
-  Wikidata API when the request's level allows it, and left out otherwise.
+- the live Wikipedia and Wikidata APIs;
+- a local mirror: a [kiwix-serve](https://github.com/kiwix/kiwix-tools) instance run by
+  Atlas (`ATLAS_KIWIX_URL`) with one ZIM book per language (`ATLAS_KIWIX_BOOKS`, for
+  example `fr=wikipedia_fr_all_mini_2026-11,en=wikipedia_en_all_mini_2026-09`). The
+  article is found with kiwix-serve's full-text search and its introduction read from
+  the local page; the answer cites the public Wikipedia address and names the local
+  book, whose date (`copy_date`, from the book name) gives the copy's age. Structured
+  Wikidata facts are added from the Wikidata API when the request's level allows it,
+  and left out otherwise.
 
-In strict mode only the local backend runs (`packages.privacy.local_encyclopedia`).
+The backend is chosen per request (`encyclopedia.source_plan`), from the request's
+privacy level and the setup (`packages.privacy.local_encyclopedia`: a URL and one
+well-formed book at least):
+
+| Setup | Standard | Enhanced, strict |
+|---|---|---|
+| mirror configured | live API; on an outage, HTTP 429, unreadable answer or timeout, the local copy, with `live_error` and a note naming the copy's date | local copy |
+| no mirror | live API | tool not offered; a call is refused |
+| `ATLAS_ENCYCLOPEDIA_BACKEND=local` (offline instance) | local copy | local copy |
+
+Standard keeps the live API first because Wikidata facts are fresh (current office
+holders, latest figures) while a `mini` book is months old. When a mirror is
+configured, the live attempt gets the tool's time budget minus three seconds, kept for
+the local copy. "No article" from the live API is an answer, not an outage: the copy is
+not read then. A fallback answer carries no Wikidata facts, and its note asks the
+model to say that the answer comes from a copy of that date.
 
 ### Survey (2026-11-15)
 
