@@ -504,7 +504,8 @@ class AddressTests(unittest.TestCase):
                 "city": "Caen",
             },
         )
-        with tempfile.TemporaryDirectory(dir="BRAIN") as root:
+        # Outside BRAIN/: the test needs no checkout state.
+        with tempfile.TemporaryDirectory() as root:
             with patch.dict(os.environ, {"ATLAS_OSM_STATE": root}):
                 osm = OSM()
 
