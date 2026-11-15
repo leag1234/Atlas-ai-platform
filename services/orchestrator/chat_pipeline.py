@@ -239,7 +239,14 @@ async def source(key: str) -> dict[str, object]:
 
 
 async def render_citations(item: Interaction) -> None:
-    uncited = re.sub(r"\[[^\]]*\]\([^)]*/sources/[a-f0-9]{64}\)", "", item.reponse)
+    # "(?<!\[)": in a run of "[", only the first can start a label; the others
+    # reach the same "]" and rescanning from each is quadratic. Without
+    # "/sources/" nothing can match: each unclosed "](" is not rescanned.
+    uncited = (
+        re.sub(r"(?<!\[)\[[^\]]*\]\([^)]*/sources/[a-f0-9]{64}\)", "", item.reponse)
+        if "/sources/" in item.reponse
+        else item.reponse
+    )
     keys = list(dict.fromkeys(re.findall(r"\b[a-f0-9]{64}\b", uncited)))
     retrieved = {str(p["chunk_id"]): p for p in item.chunks_recuperes}
     if not set(keys) <= retrieved.keys():

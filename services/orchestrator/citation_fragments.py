@@ -1,14 +1,69 @@
 """Normalize tool-result citation text before URL provenance filtering."""
 
+from bisect import bisect_right
 import re
 from urllib.parse import urlsplit
 
 
+# Fenced or inline code. Reference form: code_spans and split_code find the same
+# spans in linear time (the expression retries each "```" of a last line without
+# a newline up to the end of the answer: 30 000 of them took over 2 seconds).
 _CODE = re.compile(r"(```[^\n]*\n[\s\S]*?(?:```|$)|`[^`\n]+`)")
+_TICK_OR_NEWLINE = re.compile(r"[`\n]")
+
+
+def code_spans(text: str) -> list[tuple[int, int]]:
+    """Spans of _CODE.finditer(text), found in one pass."""
+    spans: list[tuple[int, int]] = []
+    last_newline = text.rfind("\n")
+    stops = [m.start() for m in _TICK_OR_NEWLINE.finditer(text)]
+    position = 0
+    while (tick := text.find("`", position)) >= 0:
+        # A fence needs a newline after its opening line; it ends at the next
+        # "```" or at "$" (the end, or just before a final newline).
+        if text.startswith("```", tick) and last_newline > tick + 2:
+            body = text.index("\n", tick + 3) + 1
+            closing = text.find("```", body)
+            anchor = len(text)
+            if text.endswith("\n") and len(text) - 1 >= body:
+                anchor = len(text) - 1
+            end = closing + 3 if 0 <= closing < anchor else anchor
+            spans.append((tick, end))
+            position = end
+            continue
+        stop = bisect_right(stops, tick)
+        if (
+            tick + 1 < len(text)
+            and text[tick + 1] not in "`\n"
+            and stop < len(stops)
+            and text[stops[stop]] == "`"
+        ):
+            spans.append((tick, stops[stop] + 1))
+            position = stops[stop] + 1
+            continue
+        position = tick + 1
+    return spans
+
+
+def split_code(text: str) -> list[str]:
+    """_CODE.split(text): prose and code alternate, code at odd indexes."""
+    parts: list[str] = []
+    position = 0
+    for start, end in code_spans(text):
+        parts += [text[position:start], text[start:end]]
+        position = end
+    parts.append(text[position:])
+    return parts
+
+
 _DATE = r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?"
-_VISIT = re.compile(r"(?:,?[ \t]*)consulted_at[ \t]*=[ \t]*" + _DATE)
+# A space run is entered at its first character only: a retry from each later
+# space rescans the run (the square of its length). The matches are the same.
+_VISIT = re.compile(r"(?!(?<=[ \t])[ \t])(?:,?[ \t]*)consulted_at[ \t]*=[ \t]*" + _DATE)
 _URL = r"https?://[^\s<>\"'()\],]+"
-_BARE = r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/[^\s<>\"'()\],]*"
+# At most 32 dotted labels (real host names have a few): each label start of a
+# long dotted run otherwise rescans the whole run (25 s on "a.a.a…", 2026-11-15).
+_BARE = r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+){1,32}/[^\s<>\"'()\],]*"
 _REFERENCE = re.compile(r"\[\[atlas-reference:([^\]]+)\]\]")
 # Provider reference IDs can stop at the hostname's first dot. Keep the suffix
 # attached to that identity before the legacy bare-URL safety net sees it.
@@ -59,6 +114,10 @@ def tool_citations(text: str, retrieved: set[str]) -> str:
         + r")|(?P<alias>"
         + (alternatives or r"(?!)")
         + r")(?![\w/?#%=-])|(?P<unknown>"
+        # A bare host starts where its name starts, never inside it: that start
+        # already reached the same end (each retry rescanned the rest of the
+        # token, over 30 s on a 100 000-digit run, 2026-11-15).
+        + r"(?<![A-Za-z0-9-])"
         + _BARE
         + r")"
     )
@@ -133,5 +192,5 @@ def tool_citations(text: str, retrieved: set[str]) -> str:
 
     return "".join(
         part if index % 2 else prose(part)
-        for index, part in enumerate(_CODE.split(text))
+        for index, part in enumerate(split_code(text))
     )

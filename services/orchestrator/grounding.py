@@ -1,5 +1,6 @@
 """Deterministic checks for precise claims in same-conversation evidence."""
 
+from bisect import bisect_right
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 import json
@@ -136,10 +137,14 @@ def extract_claims(text: str) -> list[Claim]:
         (match.start(), match.end())
         for match in re.finditer(r"```[\s\S]*?(?:```|$)", text)
     ]
+    fence_starts = [start for start, _ in fences]
     claims: list[Claim] = []
     for match in re.finditer(r"[^\n]+?(?:[.!?](?=\s|$)|(?=\n|$))", text):
         sentence = match[0]
-        if any(start <= match.start() < end for start, end in fences):
+        # Fences are sorted and disjoint: one lookup, not a pass over all of
+        # them for every sentence (quadratic on many fences).
+        fence = bisect_right(fence_starts, match.start()) - 1
+        if fence >= 0 and match.start() < fences[fence][1]:
             continue
         plain = normalized(sentence)
         if (
