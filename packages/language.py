@@ -9,7 +9,6 @@ import re
 from collections.abc import Sequence
 import unicodedata
 
-from packages import linear_scan
 
 from typing import Protocol
 
@@ -26,21 +25,35 @@ LANGUAGES = ("fr", "de", "es", "it", "en")
 
 
 _CLOSER = {"`": "`", '"': '"', "«": "»"}
+_QUOTE_OPENING = re.compile('[`"«]')
 
 
-def _quote_viable(text: str) -> linear_scan.Viable:
-    """A quote needs its closer later on; last positions are looked up, not
-    scanned again from every unclosed quote (quadratic)."""
-    last = {closer: text.rfind(closer) for closer in _CLOSER.values()}
-    return lambda found: last[_CLOSER[found[0]]] >= found.end()
-
-
-_QUOTED = linear_scan.Scan(
-    re.compile(r'`[^`]*`|"[^"]*"|«[^»]*»'),
-    re.compile(r'[`"«]'),
-    linear_scan.attempted,
-    _quote_viable,
-)
+def without_quoted(text: str) -> str:
+    """The text without `code`, "quoted" and «quoted» spans, like the former
+    re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", text), in one pass: an opening
+    without a closer after it is kept, and so is every later one of its kind
+    (the expression reread the rest of the text from each: quadratic). This
+    module is copied alone into the chat UI image, so it uses no other package.
+    """
+    parts: list[str] = []
+    last = position = 0
+    closed: set[str] = set()
+    while (found := _QUOTE_OPENING.search(text, position)) is not None:
+        position = found.start()
+        char = found[0]
+        closer = _CLOSER[char]
+        if char in closed:
+            position += 1
+            continue
+        end = text.find(closer, position + 1)
+        if end < 0:
+            closed.add(char)
+            position += 1
+            continue
+        parts.append(text[last:position])
+        last = position = end + 1
+    parts.append(text[last:])
+    return "".join(parts)
 
 
 def status_language(messages: Sequence[LanguageMessage], locale: object) -> str:
@@ -117,7 +130,7 @@ def requested_language(text: str) -> str | None:
         for c in unicodedata.normalize("NFKD", user_prose(text).lower())
         if not unicodedata.combining(c)
     )
-    normalized = _QUOTED.sub("", normalized)
+    normalized = without_quoted(normalized)
     names = {
         "en": "english|anglais|englisch|ingles|inglese",
         "fr": "french|francais|franzosisch|frances|francese",

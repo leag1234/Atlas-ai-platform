@@ -895,8 +895,8 @@ DIFFERENTIAL.update(
         ),
         "quotes": (
             ["`", '"', "«", "»", "x", " ", "\n"],
-            former_sub(r'`[^`]*`|"[^"]*"|«[^»]*»'),
-            lambda t: language._QUOTED.sub("#", t),
+            former_sub(r'`[^`]*`|"[^"]*"|«[^»]*»', ""),
+            lambda t: language.without_quoted(t),
         ),
         "table rules": (
             ["|", "---", "-", ":", " ", "\n", "\t", "x", "|---|", ":---:", "  \n"],
@@ -1263,6 +1263,27 @@ class InputRegexCostTests(unittest.TestCase):
                         rng.choice(pieces) for _ in range(rng.randint(0, 16))
                     )
                     self.assertEqual(rewritten(text), former(text), repr(text))
+
+    def test_chat_ui_modules_stay_standalone(self) -> None:
+        # These modules are copied alone into the chat UI image
+        # (infra/docker/Dockerfile.webui, serving.py mounts): no package import.
+        import ast
+        from pathlib import Path
+
+        for name in ("language", "profiles", "turn_attachments"):
+            tree = ast.parse(Path(f"packages/{name}.py").read_text())
+            imported = {
+                node.module.split(".")[0]
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module
+            } | {
+                alias.name.split(".")[0]
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Import)
+                for alias in node.names
+            }
+            self.assertNotIn("packages", imported, name)
+            self.assertNotIn("services", imported, name)
 
     def test_rewritten_forms_stay_within_budget_on_long_inputs(self) -> None:
         slow = []
