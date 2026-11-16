@@ -791,6 +791,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             or (
                 unsourced_details.wants_review(request.user_text)
                 and not request.has_attachments
+                and not request.project_id
             )
         )
         else None
@@ -881,16 +882,22 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         and item.state == "done"
         and item.task_type not in {"work", "nearby"}
     ):
-        if unsourced_details.mode() != "off" and not request.has_attachments:
+        if (
+            unsourced_details.mode() != "off"
+            and not request.has_attachments
+            and not request.project_id
+        ):
             # Precise details no retrieved text holds: looked up in the subject's
             # encyclopedia article, then corrected or removed by one bounded call
             # (unsourced_details.py). Grounding then checks the final text.
             item.reponse, details_report = await unsourced_details.review(
                 item.reponse,
-                check.evidence,
+                # The passages of the instance's own corpus are retrieved texts too.
+                check.evidence
+                + [str(chunk.get("text", "")) for chunk in item.chunks_recuperes],
                 # The conversation's own words (earlier answers included) are not
-                # added details; an attachment's facts are never in the evidence
-                # read here, so a turn with one is left to grounding alone.
+                # added details; an attachment's or a project's files are never in
+                # the evidence read here, so such a turn is left to grounding alone.
                 [m.text for m in request.messages],
                 profile=request.model,
                 language=asked_language,
