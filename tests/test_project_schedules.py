@@ -2,7 +2,7 @@
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
@@ -170,13 +170,57 @@ class ScheduledTaskTests(ProjectIsolationTests):
         with store(self.app_dsn).scope(
             self.identity("editor"), self.org, self.project
         ) as scope:
-            Schedules(scope).finish(task["id"], job["run_id"], "failed", 0)
+            # A run that really spent the whole cap leaves nothing for today.
+            Schedules(scope).finish(task["id"], job["run_id"], "failed", 0.5)
         self.due(task)
         self.assertEqual(take_due(), {})
         result = self.request(
             "GET", self.project_path() + "/scheduled-tasks/" + task["id"], "viewer"
         ).json()
         self.assertEqual(result["last_result"]["status"], "budget_cap")
+
+    def test_failed_run_is_charged_its_measured_cost_not_its_reservation(
+        self,
+    ) -> None:
+        # Staging 2026-11-16: a failed run that cost 0.013 EUR kept its whole
+        # 0.50 EUR reservation, exhausted the daily cap and blocked the retry.
+        task = self.create_task()
+        self.due(task)
+        job = take_due()
+        self.assertEqual(job["reserved_eur"], 0.5)
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            value = Schedules(scope).finish(task["id"], job["run_id"], "failed", 0.013)
+        self.assertAlmostEqual(value["spent_eur"], 0.013)
+        self.assertEqual(value["last_result"]["status"], "failed")
+        self.assertAlmostEqual(value["last_result"]["cost_eur"], 0.013)
+        self.due(task)
+        retry = take_due()
+        self.assertTrue(retry, "the day's retry must still run")
+        self.assertAlmostEqual(retry["reserved_eur"], 0.487)
+
+    def test_failed_run_with_unknown_cost_keeps_its_reservation(self) -> None:
+        # A Work session still holding its lease may have a model call in
+        # flight: only then is the cost unknown and the reservation kept.
+        task = self.create_task()
+        self.due(task)
+        job = take_due()
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            schedules = Schedules(scope)
+            with patch.object(schedules, "measured", return_value=None) as measured:
+                value = schedules.finish(task["id"], job["run_id"], "failed", 0.01)
+            measured.assert_called_once()
+        self.assertAlmostEqual(value["spent_eur"], 0.5)
+        self.assertAlmostEqual(value["last_result"]["cost_eur"], 0.5)
+
+    def test_claim_says_whether_the_target_file_exists(self) -> None:
+        task = self.create_task()
+        self.due(task)
+        job = take_due()
+        self.assertIs(job["target_exists"], False)
 
     def test_removed_membership_pauses(self) -> None:
         task = self.create_task()
@@ -323,22 +367,28 @@ class ScheduledTaskTests(ProjectIsolationTests):
                 content = (
                     f"# Fictional orchard\nHarvest revision {ordinal}: 42 baskets.\n"
                 )
+                publish = Call(
+                    str(uuid4()),
+                    "publish_document"
+                    if target.endswith(".docx")
+                    else "publish_scheduled_file",
+                    json.dumps(
+                        dict(path=target, content=content, sources=[])
+                        if target.endswith(".docx")
+                        else dict(content=content)
+                    ),
+                )
+                # A repeated text publication in the same run is answered, not
+                # fatal (staging 2026-11-16: a second call failed the run).
+                again = Call(
+                    str(uuid4()),
+                    "publish_scheduled_file",
+                    json.dumps(dict(content="x")),
+                )
                 answers = [
                     Turn(
                         "",
-                        (
-                            Call(
-                                str(uuid4()),
-                                "publish_document"
-                                if target.endswith(".docx")
-                                else "publish_scheduled_file",
-                                json.dumps(
-                                    dict(path=target, content=content, sources=[])
-                                    if target.endswith(".docx")
-                                    else dict(content=content)
-                                ),
-                            ),
-                        ),
+                        (publish,) if target.endswith(".docx") else (publish, again),
                         Reservation(0, Decimal(0)),
                     ),
                     Turn(
@@ -350,12 +400,40 @@ class ScheduledTaskTests(ProjectIsolationTests):
                 self.due(task)
                 job = take_due()
                 self.assertTrue(job)
+                # 23:30 UTC is already tomorrow in the creator's zone (Paris).
+                late = datetime(2026, 11, 16, 23, 30, tzinfo=timezone.utc)
                 with (
                     patch.object(CodeModel, "connect", AsyncMock(return_value=model)),
-                    patch.object(CodeModel, "complete", AsyncMock(side_effect=answers)),
+                    patch.object(
+                        CodeModel, "complete", AsyncMock(side_effect=answers)
+                    ) as complete,
                     patch("services.orchestrator.session_updates.schedule"),
+                    patch(
+                        "services.orchestrator.work_clock.datecalc.utc_now",
+                        return_value=late,
+                    ),
                 ):
                     asyncio.run(run_task(job))
+                first = json.dumps(complete.call_args_list[0].args[0])
+                # Today's date reaches the model in the creator's time zone.
+                self.assertIn('\\"date\\": \\"2026-11-17\\"', first)
+                self.assertIn('\\"time_zone\\": \\"Europe/Paris\\"', first)
+                # The deliverable note is model context only, and says whether an
+                # earlier version exists.
+                self.assertIn("Scheduled deliverable: publish the result to", first)
+                self.assertIn(
+                    "It already exists" if ordinal == 2 else "It does not exist yet",
+                    first,
+                )
+                if not target.endswith(".docx"):
+                    published = json.dumps(complete.call_args_list[1].args[0])
+                    self.assertIn(
+                        "new_version_added_previous_kept"
+                        if ordinal == 2
+                        else "file_created_no_previous_version",
+                        published,
+                    )
+                    self.assertIn("already_published_in_this_run", published)
                 result = self.request(
                     "GET",
                     self.project_path() + "/scheduled-tasks/" + task["id"],
@@ -384,6 +462,13 @@ class ScheduledTaskTests(ProjectIsolationTests):
                 self.assertEqual(turns[0]["action"], "work")
                 self.assertEqual(turns[0]["state"], "completed")
                 self.assertIn("fictional orchard", turns[0]["content_refs"][-1]["text"])
+                questions = [
+                    ref["text"]
+                    for ref in turns[0]["content_refs"]
+                    if ref["kind"] == "question"
+                ]
+                # The user sees their own instruction, never the internal note.
+                self.assertEqual(questions, [payload["instruction"]])
             self.assertNotEqual(versions[0], versions[1])
             for ordinal, version in enumerate(versions, 1):
                 response = self.request(

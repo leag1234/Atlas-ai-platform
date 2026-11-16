@@ -249,7 +249,44 @@ class Schedules:
         self.scope.event("scheduled_task_changed", self.project)
         return 200, value
 
-    def failed(self, row: dict[str, Any], reason: str) -> None:
+    def measured(self, data: dict[str, Any], cost: float) -> Decimal | None:
+        """The run's real model cost, or None while it cannot be known.
+
+        A released Work session holds its measured cost, plus its reservation
+        when a call ended unmeasured (unknown_eur). A session still holding its
+        lease may have a model call in flight: its cost is not known yet.
+        """
+        session = data.get("session_id")
+        if not session:
+            return Decimal(str(cost))
+        work = Work(self.scope)
+        lease = work.lease(session)
+        if lease is not None and not lease["data"].get("released"):
+            return None
+        usage = work.get(session).get("usage") or {}
+        return max(
+            Decimal(str(cost)),
+            Decimal(str(usage.get("cost_eur", 0)))
+            + Decimal(str(usage.get("unknown_eur", 0))),
+        )
+
+    def charge(self, row: dict[str, Any], measured: Decimal | None) -> float:
+        """Replace the run's reservation in the task's daily spend by its cost.
+
+        Only a cost that cannot be known keeps the whole reservation: a failed
+        run that cost 0.013 EUR kept 0.50 EUR, exhausted the task's daily cap
+        and blocked the day's retry (staging 2026-11-16).
+        """
+        value, data = row["data"], row["run_data"]
+        reserved = Decimal(str(data.get("reserved_eur", 0)))
+        charged = reserved if measured is None else measured
+        if value["spent_day"] == data.get("day"):
+            value["spent_eur"] = float(
+                max(Decimal(0), Decimal(str(value["spent_eur"])) - reserved + charged)
+            )
+        return float(charged)
+
+    def failed(self, row: dict[str, Any], reason: str, cost: float = 0.0) -> None:
         value = row["data"]
         session = row["run_data"].get("session_id")
         lease = Work(self.scope).lease(session) if session else None
@@ -260,12 +297,18 @@ class Schedules:
             row["next_run"] = max(
                 row["next_run"], datetime.fromisoformat(value["retry_after"])
             )
+        charged = (
+            self.charge(row, self.measured(row["run_data"], cost))
+            if "reserved_eur" in row["run_data"]
+            else None
+        )
         value["failures"] += 1
         value["last_result"] = dict(
             status="failed",
             reason=reason,
             conversation_id=row["run_data"].get("conversation_id"),
             at=clock().isoformat(),
+            **({"cost_eur": charged} if charged is not None else {}),
         )
         if value["failures"] >= 3:
             row["enabled"] = False
@@ -315,9 +358,17 @@ class Schedules:
         for folder in self.files.listing("folder"):
             if folder["locality"] != "local_only" and folder["model_use"] == "allow":
                 folders.append(folder["id"])
-        for file in self.files.listing("file"):
+        files = self.files.listing("file")
+        for file in files:
             if file["folder_id"] in folders and file.get("version_id"):
                 bases.append(dict(file_id=file["id"], version_id=file["version_id"]))
+        # Said to the model before it works: with no earlier version it once
+        # claimed to have "kept the previous version" (staging 2026-11-16).
+        target_exists = bool(value["target_file"]) and any(
+            file["id"] == value["target_file_id"]
+            or file["relative_path"] == value["target_file"]
+            for file in files
+        )
         session = Work(self.scope).create(
             dict(
                 conversation_id=conversation["id"],
@@ -334,6 +385,7 @@ class Schedules:
                 session_id=session["id"],
                 reserved_eur=float(reserve),
                 day=day,
+                target_exists=target_exists,
             ),
         )
         value["spent_eur"] = float(Decimal(str(value["spent_eur"])) + reserve)
@@ -366,6 +418,7 @@ class Schedules:
             row["lease_until"] = clock() + timedelta(seconds=90)
         else:
             session = Work(self.scope).get(data["session_id"])
+            reason = "work_failed"
             if status == "completed":
                 if session["state"] != "completed" or session["usage"]["unknown_eur"]:
                     status = "failed"
@@ -375,25 +428,18 @@ class Schedules:
                 and value["target_file"]
                 and not data.get("published")
             ):
-                status = "failed"
+                status, reason = "failed", "not_published"
             if status != "completed":
-                self.failed(row, "work_failed")
+                self.failed(row, reason, cost)
                 return value
-            if value["spent_day"] == data["day"]:
-                value["spent_eur"] = float(
-                    max(
-                        Decimal(0),
-                        Decimal(str(value["spent_eur"]))
-                        - Decimal(str(data["reserved_eur"]))
-                        + Decimal(str(cost)),
-                    )
-                )
+            charged = self.charge(row, Decimal(str(cost)))
             value.update(
                 failures=0,
                 last_result=dict(
                     status="completed",
                     conversation_id=data["conversation_id"],
                     at=clock().isoformat(),
+                    cost_eur=charged,
                 ),
             )
             row.update(run_id=None, lease_until=None, run_data={})
@@ -430,9 +476,18 @@ class Schedules:
                 "invalid_request",
                 "Use the verified document publication tool for Office/PDF",
             )
-        if row["run_data"].get("published"):
-            raise ProjectError(409, "revision_conflict")
         files = self.files
+        if row["run_data"].get("published") and task["target_file_id"]:
+            # Saved once per run. A repeated call changes nothing and is not a
+            # failure: a second call ended a run as failed after its file was
+            # saved (staging 2026-11-16).
+            file = files.get("file", task["target_file_id"])
+            return dict(
+                file=file,
+                download_route=f"/api/atlas/orgs/{self.org}/projects/{self.project}/files/{file['id']}/content?version={file['version_id']}",
+                already_published=True,
+                outcome="already_published_in_this_run_this_content_not_saved",
+            )
         files.publication_context = dict(
             request_id=str(row["run_id"]),
             session_id=session,
@@ -449,6 +504,7 @@ class Schedules:
             raise ProjectError(409, "revision_conflict")
         else:
             file = matches[0] if matches else {}
+        previous = file.get("version_id") if file else None
         if file:
             work = Work(self.scope).get(session)
             base = next(
@@ -492,7 +548,13 @@ class Schedules:
         task["target_file_id"] = file["id"]
         row["run_data"]["published"] = file["version_id"]
         self.save(row)
+        # The model reports what happened from this result: it must not invent
+        # a kept earlier version when the file was created by this run.
         return dict(
             file=file,
             download_route=f"/api/atlas/orgs/{self.org}/projects/{self.project}/files/{file['id']}/content?version={file['version_id']}",
+            previous_version=dict(existed=previous is not None, version_id=previous),
+            outcome="new_version_added_previous_kept"
+            if previous is not None
+            else "file_created_no_previous_version",
         )

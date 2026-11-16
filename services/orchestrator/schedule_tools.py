@@ -89,7 +89,7 @@ def publish_declaration() -> Message:
         type="function",
         function=dict(
             name="publish_scheduled_file",
-            description="Publish UTF-8 text to this scheduled task's exact target file, preserving the previous version. Use for Markdown, text, CSV, JSON or source code. For PDF and Office files use publish_document instead. Call once after completing the requested content.",
+            description="Publish UTF-8 text to this scheduled task's exact target file. An existing file receives a new version and keeps its earlier ones; a missing file is created. The result's previous_version says which happened: report only that. Use for Markdown, text, CSV, JSON or source code. For PDF and Office files use publish_document instead. Call once after completing the requested content.",
             parameters=Output.model_json_schema(),
         ),
     )
