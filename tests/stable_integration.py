@@ -370,6 +370,8 @@ def main() -> None:
     test_env = {
         **environment(),
         "ATLAS_STABLE": "1",
+        # A disposable harness: its containers stay the first OOM candidates.
+        "ATLAS_SERVICE_OOM_SCORE_ADJ": "0",
         "ATLAS_TRUSTED_EMAIL_HEADER": "X-Atlas-User",
         "WEBUI_SECRET_KEY": secrets.token_hex(32),
         "ATLAS_PROXY_SECRET": secrets.token_hex(32),

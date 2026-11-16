@@ -184,6 +184,7 @@ def require_accepted_stop(
 
 def require_stable_configuration() -> None:
     """Fail before Docker side effects when stable authentication is incomplete."""
+    service_oom_options()
     if project_mode():
         require_env(
             (
@@ -295,6 +296,31 @@ def stable_webui_options() -> list[str]:
     ]
 
 
+# Long-lived service containers of a hosted instance (chat UI, its database, sidecars)
+# must outlive memory pressure from test runs and per-turn work containers, which keep
+# Docker's default score and so stay the first candidates of the OOM killer.
+SERVICE_OOM_SCORE_ADJ_DEFAULT = -500
+
+
+def service_oom_options() -> list[str]:
+    """``docker run`` options that protect an instance's long-lived service containers.
+
+    ATLAS_SERVICE_OOM_SCORE_ADJ sets the score (-1000 to 1000, 0 disables). Unset, a
+    hosted instance uses SERVICE_OOM_SCORE_ADJ_DEFAULT and a local or test stack keeps
+    Docker's default, so disposable stacks stay killable first.
+    """
+    raw = os.environ.get("ATLAS_SERVICE_OOM_SCORE_ADJ", "").strip()
+    if not raw:
+        value = SERVICE_OOM_SCORE_ADJ_DEFAULT if stable_mode() else 0
+    elif re.fullmatch(r"-?[0-9]{1,4}", raw) and -1000 <= int(raw) <= 1000:
+        value = int(raw)
+    else:
+        raise RuntimeError(
+            "invalid_configuration: ATLAS_SERVICE_OOM_SCORE_ADJ must be an integer from -1000 to 1000"
+        )
+    return ["--oom-score-adj", str(value)] if value else []
+
+
 def docker(*args: str) -> str:
     result = subprocess.run(["docker", *args], capture_output=True, text=True)
     if result.returncode:
@@ -303,6 +329,8 @@ def docker(*args: str) -> str:
 
 
 def docker_run(name: str, image: str, options: list[str]) -> None:
+    """Start one long-lived service container of this stack, replacing our own copy."""
+    oom = service_oom_options()
     existing = docker(
         "ps", "-a", "--filter", "name=^/" + name + "$", "--format", "{{.Names}}"
     )
@@ -321,7 +349,7 @@ def docker_run(name: str, image: str, options: list[str]) -> None:
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(0.1)
-    docker("run", "--rm", "-d", "--name", name, *options, image)
+    docker("run", "--rm", "-d", "--name", name, *oom, *options, image)
 
 
 def require_docker_image(image: str) -> None:
