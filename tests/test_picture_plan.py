@@ -205,6 +205,49 @@ class PlanFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("must say so", deliverable_check.decide(tools, outcome))
 
 
+class SettledTests(unittest.IsolatedAsyncioTestCase):
+    async def test_once_planned_the_agent_publishes_instead_of_drawing(self) -> None:
+        # Staging -93: after the plan drew the follow-up's pictures, the agent
+        # called make_pictures eight more times and the turn ran out of time
+        # without publishing the file.
+        case = RECORDED["deliverable_plan role"]["table_no_pictures_fr"]
+        tools = tools_for("subject|settled", case["request"])
+        tools.selection = SimpleNamespace(
+            groups={
+                "documents": ("read_file", "publish_document", "make_pictures"),
+                "code": ("run_command",),
+            }
+        )
+        with mock.patch.object(work_pictures, "enabled", return_value=True):
+            await work_pictures.prepare(
+                tools,
+                case["request"],
+                280,
+                server=FakeServer([0.0]),
+                call=AsyncMock(return_value=dict(case["reply"])),
+            )
+        self.assertEqual(
+            tools.selection.groups["documents"], ("read_file", "publish_document")
+        )
+        with self.assertRaisesRegex(ValueError, "pictures_already_planned"):
+            await work_pictures.execute(
+                tools, json.dumps({"items": [{"label": "x", "description": "y"}]}), 60
+            )
+
+    async def test_without_a_plan_the_agent_keeps_the_tool(self) -> None:
+        tools = tools_for("subject|unsettled", "un imagier")
+        tools.selection = SimpleNamespace(groups={"documents": ("make_pictures",)})
+        with mock.patch.object(work_pictures, "enabled", return_value=True):
+            await work_pictures.prepare(
+                tools,
+                "un imagier",
+                280,
+                server=FakeServer([0.0]),
+                call=AsyncMock(side_effect=TimeoutError()),
+            )
+        self.assertEqual(tools.selection.groups["documents"], ("make_pictures",))
+
+
 class PlacedTests(unittest.TestCase):
     def content(self, text: str) -> Content:
         return Content.model_validate(

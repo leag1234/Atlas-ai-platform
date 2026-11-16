@@ -46,9 +46,9 @@ REFERENCE = re.compile(r"picture-[0-9a-f]{12}")
 CLOSING_RESERVE_SECONDS = 75.0
 # Pictures drawn before the agent writes leave this for writing the document,
 # publishing and checking it (the turn's closing is kept apart).
-WRITING_RESERVE_SECONDS = 90.0
+WRITING_RESERVE_SECONDS = 75.0
 # Per picture, beyond the server's own drawing time: transfer and the check.
-CHECK_SECONDS = 4.0
+CHECK_SECONDS = 2.0
 # The vision check of all the pictures of a call, at most.
 CHECK_BUDGET_EUR = Decimal("0.05")
 # The longest a call may take (the loop gives this tool more than others).
@@ -302,6 +302,13 @@ async def execute(
     from services.orchestrator.pictures.cpu_turn import shown
     from services.orchestrator.pictures.turn import Spend, _gateway
 
+    if getattr(tools, "pictures_prepared", False) is True:
+        raise ValueError(
+            "pictures_already_planned: the pictures of this file were planned and "
+            "drawn before you started (their references are in your instructions). "
+            "Publish the file now with them; the answer names the pictures still "
+            "missing and offers to continue."
+        )
     server = server or default_server
     call = call or _gateway
     started = time.monotonic()
@@ -704,7 +711,25 @@ LEFT = (
 )
 
 
-async def prepare(
+def settled(tools: Any) -> None:
+    """The plan settled the pictures of this turn: the agent no longer draws.
+
+    On staging -93 the follow-up turn drew its pictures by plan, then the
+    agent called make_pictures eight more times with no time left, and the
+    turn ended on its time limit without publishing anything. Once code has
+    planned (and drawn) the pictures, the tool leaves the agent's tools and a
+    late call is refused with what to do instead.
+    """
+    tools.pictures_prepared = True
+    selection = getattr(tools, "selection", None)
+    groups = getattr(selection, "groups", None)
+    if isinstance(groups, dict):
+        for name, members in list(groups.items()):
+            if NAME in members:
+                groups[name] = tuple(member for member in members if member != NAME)
+
+
+async def _prepare(
     tools: Any, request: str, seconds: float, *, server: Any = None, call: Any = None
 ) -> Plan | None:
     """Plan the pictures of a file turn, draw them, tell the agent where they are."""
@@ -764,4 +789,15 @@ async def prepare(
         )
     tools.instructions = (getattr(tools, "instructions", "") or "") + text
     tools.pictures_drawn = {str(p["reference"]): str(p["label"]) for p in drawn}
+    return planned
+
+
+async def prepare(
+    tools: Any, request: str, seconds: float, *, server: Any = None, call: Any = None
+) -> Plan | None:
+    """Plan the pictures of a file turn, draw them, tell the agent where they
+    are; once planned, the pictures are settled for the rest of the turn."""
+    planned = await _prepare(tools, request, seconds, server=server, call=call)
+    if planned is not None:
+        settled(tools)
     return planned
