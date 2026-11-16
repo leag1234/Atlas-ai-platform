@@ -7,6 +7,7 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
+from packages.closing_intent import polite_closing
 from packages.writing_intent import plain_writing
 
 
@@ -87,6 +88,10 @@ _CHANGE = re.compile(
 def app_intent(text: str, history: Sequence[Mapping[str, object]]) -> Intent | None:
     normalized = _normalized(text)
     if not normalized:
+        return None
+    # A thanks or a compliment after an app asks for nothing: a chat answer,
+    # never the app again (staging 2026-11-16).
+    if polite_closing(text):
         return None
     if _OFFICE.search(normalized) and not _EXPLICIT_WEB.search(normalized):
         return None

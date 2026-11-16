@@ -306,6 +306,19 @@ class FollowUpTests(Base):
         self.assertFalse(done)
         self.assertEqual(gateway.follows, [])
 
+    async def test_a_polite_closing_skips_the_reading_call(self) -> None:
+        gateway, server = DialogueGateway(), FakeServer()
+        first, _ = await self.start(gateway, server)
+        history = [("user", "un jardinier"), ("assistant", first.reponse)]
+        for text in ("merci, c'est parfait !", "love it 😍"):
+            with self.subTest(text=text):
+                # Even when a failed reading would have kept a change.
+                done, item = await self.follow(gateway, history, text, legacy=True)
+                self.assertFalse(done)
+                self.assertEqual(item.cout_eur, 0)
+        self.assertEqual(gateway.follows, [])
+        self.assertEqual(len(server.renders), 2)  # the first two only
+
     async def test_a_failed_reading_keeps_the_former_change(self) -> None:
         gateway = DialogueGateway(GatewayError("provider_error", 502))
         first, _ = await self.start(gateway, FakeServer())

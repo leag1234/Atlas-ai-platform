@@ -479,6 +479,11 @@ async def follow_up(
 
     if routed is not None and getattr(routed, "kind", "") in OUTSIDE:
         return False
+    from packages.closing_intent import polite_closing
+
+    # A thanks or a compliment on the picture asks for no change and no review.
+    if polite_closing(request.user_text):
+        return False
     started = time.monotonic()
     call = complete or _gateway
     own = turn_ceiling()
