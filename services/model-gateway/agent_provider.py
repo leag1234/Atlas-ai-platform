@@ -385,7 +385,7 @@ class AgentProvider:
 
     async def serverless_complete(self, request: AgentRequest) -> dict[str, object]:
         from serverless import ServerlessPolicy
-        from provider_retry import RetryLedger, retry_stream
+        from provider_retry import RetryLedger, retry_stream, unbilled
         from contextlib import aclosing
 
         if request.privacy == "strict":
@@ -444,7 +444,11 @@ class AgentProvider:
                 if isinstance(exc, MalformedToolCall):
                     malformed_name = exc
                 unknown += ledger.spent + (
-                    plan.fallback_bound if index else plan.primary_bound
+                    Decimal(0)
+                    if unbilled(exc)
+                    else plan.fallback_bound
+                    if index
+                    else plan.primary_bound
                 )
                 logging.getLogger(__name__).info(
                     json.dumps(
@@ -502,7 +506,7 @@ class AgentProvider:
     async def _complete(
         self, request: AgentRequest, endpoint: str, model: str, key: str, timeout: float
     ) -> dict[str, object]:
-        from provider_retry import TransientProviderError
+        from provider_retry import ProviderUnreached, TransientProviderError
 
         body = {
             "model": model,
@@ -525,7 +529,12 @@ class AgentProvider:
                     allow_redirects=False,
                 ) as response:
                     if response.status in (502, 503, 504):
-                        raise TransientProviderError("provider_error")
+                        # Refused before running: nothing billed, except a 504
+                        # (provider_retry.unbilled).
+                        raise TransientProviderError(
+                            "provider_error",
+                            received_bytes=None if response.status == 504 else 0,
+                        )
                     if response.status != 200:
                         raise RuntimeError("provider_error")
                     data = bytearray()
@@ -581,5 +590,8 @@ class AgentProvider:
             if limit is not None:
                 raise limit from None
             raise RuntimeError("provider_error") from None
+        except aiohttp.ClientConnectorError:
+            # No connection, so no request reached the provider.
+            raise ProviderUnreached("provider_error") from None
         except (aiohttp.ClientError, ValueError):
             raise RuntimeError("provider_error") from None

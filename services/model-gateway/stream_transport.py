@@ -24,9 +24,11 @@ from provider_refusal import classify_refusal, error_envelope
 from provider_retry import (
     ModelUnavailableError,
     ProviderResponseError,
+    ProviderUnreached,
     TransientProviderError,
     RetryLedger,
     retry_stream,
+    unbilled,
 )
 from decimal import Decimal
 from packages.limits import LimitError, ProviderLimitError
@@ -197,9 +199,13 @@ async def stream(
                     yield event
         except LimitError:
             raise
-        except (RuntimeError, TimeoutError):
+        except (RuntimeError, TimeoutError) as exc:
             unknown += ledger.spent + (
-                plan.fallback_bound if index else plan.primary_bound
+                Decimal(0)
+                if unbilled(exc)
+                else plan.fallback_bound
+                if index
+                else plan.primary_bound
             )
             logging.getLogger(__name__).info(
                 json.dumps(
@@ -461,7 +467,15 @@ async def attempt(
                         ),
                     )
                     if response.status in (502, 503, 504):
-                        raise TransientProviderError("provider_error", refusal=refusal)
+                        # A refusal before any completion frame ran nothing at
+                        # the provider (provider_retry.unbilled); a 504 is a
+                        # proxy that gave up on a request the model may still
+                        # have been running, so its usage stays unknown.
+                        raise TransientProviderError(
+                            "provider_error",
+                            refusal=refusal,
+                            received_bytes=None if response.status == 504 else 0,
+                        )
                     if (
                         response.status in (400, 404)
                         and message is not None
@@ -495,12 +509,15 @@ async def attempt(
     except TimeoutError:
         diagnostic("timeout")
         raise
-    except aiohttp.ClientError:
+    except aiohttp.ClientError as exc:
         diagnostic("transport")
         if request.privacy == "strict" and decoder.total == 0:
             # The owned server may be powered off between uses: its starter is
             # asked to power it on and the request gets the starter's answer.
             await owned_start.ensure()
+        if isinstance(exc, aiohttp.ClientConnectorError):
+            # No connection, so no request reached the provider.
+            raise ProviderUnreached("provider_error") from None
         raise RuntimeError("provider_error") from None
     except LimitError:
         raise

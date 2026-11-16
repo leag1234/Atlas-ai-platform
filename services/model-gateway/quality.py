@@ -27,6 +27,7 @@ from provider_retry import (
     ModelUnavailableError,
     ProviderResponseError,
     TransientProviderError,
+    unbilled,
 )
 from packages.limits import (
     ProviderFailure,
@@ -353,6 +354,41 @@ async def stream_quality(
     current = request
     model = primary
     malformed_name: MalformedToolCall | None = None
+    # The failure that sent this call to its recovery attempt, if any.
+    failure: tuple[BaseException, int] | None = None
+
+    def given_up(exc: BaseException, index: int) -> BaseException:
+        """What a failed attempt without recovery reports: the failure itself."""
+        if malformed_name is not None and not isinstance(exc, LimitError):
+            return MalformedToolCall(malformed_name.measured, index)
+        if isinstance(exc, (TimeoutError, LimitError)):
+            return exc
+        return ProviderFailure(str(exc), getattr(exc, "finish_reason", None), index)
+
+    def recovery_unaffordable(measured: Decimal) -> BaseException | None:
+        """A provider failure is never reported as a budget refusal.
+
+        When the recovery of a failed attempt no longer fits the call budget,
+        the call failed because the provider failed: it reports that failure
+        (provider_failure, timeout), never cost_budget (the mirror of D5).
+        """
+        if failure is None:
+            return None
+        logging.getLogger(__name__).warning(
+            json.dumps(
+                {
+                    "event": "quality_recovery_unaffordable",
+                    "measured_microeur": int(
+                        (measured * 1_000_000).to_integral_value(rounding=ROUND_CEILING)
+                    ),
+                    "limit_microeur": int(
+                        (budget * 1_000_000).to_integral_value(rounding=ROUND_FLOOR)
+                    ),
+                    "spent_eur": str(spent),
+                }
+            )
+        )
+        return given_up(*failure)
 
     def select_affordable_model() -> None:
         nonlocal role, model, fallback_role, fallback
@@ -516,6 +552,12 @@ async def stream_quality(
                 else 3000
             )
             if affordable < 1:
+                if (
+                    abandoned := recovery_unaffordable(
+                        spent + recovery + policy.cost(model, incoming, 1)
+                    )
+                ) is not None:
+                    raise abandoned from None
                 raise ProviderLimitError(
                     "cost_budget",
                     int(
@@ -578,6 +620,8 @@ async def stream_quality(
                 current = current.model_copy(update={"max_tokens": widened})
         reserved = policy.cost(model, incoming, current.max_tokens)
         if spent + reserved > budget:
+            if (abandoned := recovery_unaffordable(spent + reserved)) is not None:
+                raise abandoned from None
             raise ProviderLimitError(
                 "cost_budget",
                 int(
@@ -807,8 +851,16 @@ async def stream_quality(
             failed_usage = (
                 exc.usage if isinstance(exc, TransientProviderError) else None
             )
-            received_bytes = (
-                exc.received_bytes if isinstance(exc, TransientProviderError) else None
+            # Charging rule: provider_retry.unbilled. Reported usage is charged;
+            # an attempt the provider refused before running it (or never
+            # received) costs nothing and keeps no reservation; any other
+            # failure keeps its full reservation.
+            charge = (
+                "measured"
+                if failed_usage is not None
+                else "none"
+                if unbilled(exc)
+                else "reservation"
             )
             if failed_usage is not None:
                 if (
@@ -824,7 +876,7 @@ async def stream_quality(
                 prompt_tokens += failed_usage.prompt_tokens
                 completion_tokens += failed_usage.completion_tokens
                 retry_completion_tokens += failed_usage.completion_tokens
-            elif received_bytes != 0:
+            elif charge == "reservation":
                 spent += reserved
                 prompt_tokens += incoming
                 completion_tokens += current.max_tokens
@@ -849,6 +901,7 @@ async def stream_quality(
                         "elapsed_seconds": round(monotonic() - started, 3),
                         "reserved_unknown_eur": str(spent),
                         "final_usage_measured": failed_usage is not None,
+                        "attempt_charge": charge,
                         "visible_content": answer_started,
                         # Lengths only, never text: what the cut attempt had
                         # received (staging 2026-11-12, researched reports cut
@@ -870,13 +923,11 @@ async def stream_quality(
                     and model == policy.models[fallback_role]
                 )
             ):
-                if malformed_name is not None and not isinstance(exc, LimitError):
-                    raise MalformedToolCall(malformed_name.measured, index) from None
-                if isinstance(exc, (TimeoutError, LimitError)):
+                abandoned = given_up(exc, index)
+                if abandoned is exc:
                     raise
-                raise ProviderFailure(
-                    str(exc), getattr(exc, "finish_reason", None), index
-                ) from None
+                raise abandoned from None
+            failure = (exc, index)
             role = fallback_role
             model = policy.models[role]
             fallback = True
