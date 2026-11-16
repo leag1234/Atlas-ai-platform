@@ -864,6 +864,24 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     held = sink_context.set(holder) if holder is not None else None
     if holder is not None:
         travel.hold = holder.hold
+    from services.orchestrator import relative_dates
+
+    # Relative dates and weekdays in the answer are checked against the calendar
+    # (relative_dates): a near miss is repaired in the stream and the stored answer.
+    # The gate sits inside the quotation gate, so the stream applies the checks
+    # in the stored order (quotes, then dates). A held answer (travel, grounding)
+    # is sent whole at the end; the date gate then only feeds the holder.
+    answer_language = request.prose_lang
+    today = relative_dates.local_today(request.ui_timezone)
+    asked_days = relative_dates.asked_weekdays(request.user_text, answer_language)
+    date_gate: relative_dates.Gate | None = None
+    dating = None
+    if (current_sink := sink_context.get()) is not None:
+        date_gate = relative_dates.Gate(
+            current_sink,
+            relative_dates.Rewriter(answer_language, today, asked_days),
+        )
+        dating = sink_context.set(date_gate)
     # Quotations attributed to the turn's documents are checked word for word
     # (document_quotes): the gate holds an open quotation until it can be checked.
     quotes = document_quotes.Sources() if document_quotes.mode() != "off" else None
@@ -898,9 +916,13 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         await _process_request(request, item)
         if quote_gate is not None:
             await quote_gate.flush()
+        if date_gate is not None:
+            await date_gate.flush()
     finally:
         if gating is not None:
             sink_context.reset(gating)
+        if dating is not None:
+            sink_context.reset(dating)
         document_quotes.current.reset(quoting)
         user_urls.reset(supplied)
         # The routing call is part of this turn's cost.
@@ -932,7 +954,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # rendered by the service from map data; its verification searches only feed
     # the opening status (nearby_chat), they are not sources of its sentences.
     # Post-checks, in order: document quotes (above), unsourced details, travel
-    # values, grounding. Travel durations, distances and times belong to the
+    # values, relative dates, grounding. Travel durations, distances and times belong to the
     # travel check alone: the details review sees them as the person's own, so
     # one value is never rewritten twice.
     reviewable = (
@@ -975,6 +997,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.cout_eur = float(Decimal(str(item.cout_eur)) + details_report.cost_eur)
     if travel_checked:
         item.reponse = travel.check(item.reponse, asked_language or travel.language)
+    # A relative date or weekday that disagrees with the calendar (relative_dates).
+    item.reponse = relative_dates.repair(
+        item.reponse, answer_language, today, asked=asked_days
+    )
     if reviewable and check is not None and check.evidence:
         item.reponse = check.check(item.reponse, asked, asked_language)
     if provenance is not None and item.state == "done" and item.task_type != "work":
@@ -1857,6 +1883,17 @@ async def _process(
     )
     if exact_subjects:
         model.tools.extend(exact_tools.declarations(exact_subjects))
+    from services.orchestrator import relative_dates
+
+    # A question naming a relative day (tomorrow, the weekend, a weekday, in N
+    # days) reads its dates from a calendar computed by code (T8). Offered on
+    # those turns only: other turns keep their recorded requests.
+    calendar_note = relative_dates.note(
+        request.user_text,
+        earlier[-1] if earlier else "",
+        request.ui_timezone,
+        request.prose_lang,
+    )
     from services.orchestrator import journey
 
     # A trip from one place to another: a door-to-door plan whose times code
@@ -2176,7 +2213,8 @@ async def _process(
                 else mechanical_svg_instruction(include_svg=mechanical_svg_enabled())
                 if appearance
                 else ""
-            ),
+            )
+            + calendar_note,
             Limits(
                 profile=request.model,
                 tool_calls=0 if appearance else max(0, 10 - len(attachment_sources)),
