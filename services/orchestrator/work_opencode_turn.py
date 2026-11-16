@@ -267,11 +267,14 @@ async def run_opencode_turn(
             follow_up=None if guard is None else partial(guard.next_step, RUN_TOOL),
         )
         # opencode's own prompt is English: without this line short French
-        # messages were answered in English (owner test 2026-11-10).
+        # messages were answered in English (owner test 2026-11-10). The date
+        # in the person's zone comes first, as on the loop (work_clock.py).
+        from services.orchestrator.work_clock import engine_preamble
         from services.orchestrator.work_plan import instruction
 
         outcome = await driver.run(
-            "Answer in the language of the user's message."
+            engine_preamble(request)
+            + "\nAnswer in the language of the user's message."
             # The plan the person sees in the chat, if any (work_plan.py).
             + instruction(engine=True)
             + "\n\n"

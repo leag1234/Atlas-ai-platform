@@ -289,6 +289,54 @@ class TrackingTests(Isolated):
         self.assertEqual(failed.markdown(), "")
 
 
+class PictureStepTests(Isolated):
+    def test_pictures_drawn_by_code_are_a_step_of_their_own(self) -> None:
+        # PR 505: the pictures a file needs are drawn before the agent writes.
+        plan = ChatPlan("en", "atlas-test", route="work-file")
+        plan.propose(
+            validate(
+                [
+                    {"text": "Write the story text", "type": "document"},
+                    {"text": "Build the picture book file", "type": "document"},
+                    {"text": "Hand you the book", "type": "deliver"},
+                ],
+                "en",
+            ),
+            source="model",
+        )
+        step = plan.code_insert("Draw the pictures", "document")
+        assert step is not None
+        self.assertEqual([s.number for s in plan.steps], [1, 2, 3, 4])
+        self.assertEqual(
+            [s.status for s in plan.steps],
+            ["in_progress", "pending", "pending", "pending"],
+        )
+        # While the pictures are drawn, nothing else is marked done.
+        told = plan.update(
+            [{"text": "x", "status": "completed"}] * 2
+            + [{"text": "y", "status": "pending"}] * 2
+        )
+        self.assertEqual(told["refused"], [1, 2])
+        plan.code_done(step, True)
+        self.assertEqual(plan.steps[0].status, "completed")
+        self.assertEqual(plan.steps[1].status, "pending")
+        self.assertIn(
+            "1. Draw the pictures; 2. Write the story text", self.instruction(plan)
+        )
+        failed = ChatPlan("en", "atlas-test", route="work-file")
+        failed.propose(validate(STEPS_EN, "en"), source="model")
+        other = failed.code_insert("Draw the pictures", "document")
+        failed.code_done(other, False)
+        self.assertEqual(failed.steps[0].status, "failed")
+
+    def instruction(self, plan: ChatPlan) -> str:
+        token = work_plan.current.set(plan)
+        try:
+            return work_plan.instruction()
+        finally:
+            work_plan.current.reset(token)
+
+
 class DisplayTests(unittest.TestCase):
     def test_ranges(self) -> None:
         self.assertEqual(duration_range("en", 130, 230), "2 to 4 min")

@@ -80,7 +80,7 @@ def main() -> None:
         expect(modal).to_have_count(0)
         expect(page.locator("body")).to_contain_text("OpenStreetMap", timeout=115000)
         expect(page.locator("body")).to_contain_text(
-            "Position approximative, utilisée pour cette demande uniquement",
+            "Position approximative, utilisée pour cette conversation uniquement",
             timeout=115000,
         )
         answer = page.locator(".markdown-prose").last

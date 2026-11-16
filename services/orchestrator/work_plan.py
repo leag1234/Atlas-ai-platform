@@ -406,6 +406,40 @@ class ChatPlan:
             target.checked = True
         self.version += 1
 
+    def code_insert(self, text: str, kind: str) -> Step | None:
+        """A step the code runs itself before the agent (the pictures a file
+        needs, work_pictures.py): inserted before the first step not done yet,
+        in progress; None when the plan is full, not shown or closed."""
+        if self.finished or not self.steps or len(self.steps) >= MAX_STEPS:
+            return None
+        now = time.monotonic()
+        index = next(
+            (i for i, s in enumerate(self.steps) if s.status != "completed"),
+            len(self.steps),
+        )
+        active = self._active()
+        if active is not None and active.calls == 0:
+            # Nothing was done for it yet: it waits for the code's step.
+            active.status = "pending"
+        step = Step(0, text, kind, checked=True)
+        self._start(step, now)
+        self.steps.insert(index, step)
+        for number, item in enumerate(self.steps, 1):
+            item.number = number
+        self.version += 1
+        return step
+
+    def code_done(self, step: Step | None, success: bool) -> None:
+        """The code's own step ended: done, or failed, as the code saw it."""
+        if step is None or self.finished or step not in self.steps:
+            return
+        now = time.monotonic()
+        if success:
+            self._done(step, now)
+        else:
+            step.status, step.finished = "failed", now
+        self.version += 1
+
     def statuses(self) -> list[str]:
         """The checked status of each step, as update_plan items carry it."""
         return [

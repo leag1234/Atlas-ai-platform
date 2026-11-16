@@ -41,6 +41,7 @@ from services.orchestrator.loop import (
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.terminal_client import TerminalClient
+from services.orchestrator.work_clock import work_context
 from services.orchestrator.work_plan import instruction as plan_instruction
 
 
@@ -554,6 +555,7 @@ async def process_code(request: ChatRequest, item: Interaction) -> None:
                 "archive_state": "already_extracted",
                 "paths": "relative or absolute under /workspace",
                 "listing": listing,
+                **work_context(request),
             }
             await tools.emit(
                 "workspace",
@@ -1284,6 +1286,14 @@ async def process_work(
                     retrieved=lambda: tools.retrieved_urls,
                     report=tools.sink,
                 )
+            if file_requested and selection.group in {"documents", "presentations"}:
+                # The pictures the file needs are planned and drawn by code
+                # before the agent writes (work_pictures.prepare).
+                from services.orchestrator.work_pictures import prepare
+
+                await prepare(
+                    tools, request.user_text, left(WORK_CLOSING_SECONDS).wall_clock
+                )
             result = await execute_turn(
                 request,
                 model,
@@ -1306,6 +1316,9 @@ async def process_work(
                     ],
                     environment=execution.session["environment"],
                     plan=execution.session.get("plan", []),
+                    # Today's date in the person's zone, and a scheduled run's
+                    # deliverable note: trusted context, never the user's words.
+                    **work_context(request),
                 ),
                 **({"references": references} if references is not None else {}),
             )

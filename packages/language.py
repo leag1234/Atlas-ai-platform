@@ -65,8 +65,21 @@ def status_language(messages: Sequence[LanguageMessage], locale: object) -> str:
     return conversation_language(messages, "en") if messages else "en"
 
 
+# Notes the service adds to the person's message for one answer (the English
+# position note of services/orchestrator/location_route.py). They are not the
+# person's words: counted as prose, the English note made a French trip
+# question read as English, and the web search ran with an English region
+# (owner test 2026-11-16, first results unrelated to the question).
+_SERVICE_NOTE = re.compile(
+    r"^\[(?:Position shared by the user's device|Starting point given by the user)"
+    r"[^\n]*\]$",
+    re.M,
+)
+
+
 def user_prose(text: str) -> str:
     text = re.sub(r"<attached_files>.*?</attached_files>", "", text, flags=re.S)
+    text = _SERVICE_NOTE.sub("", text)
     return re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M).strip()
 
 

@@ -92,6 +92,20 @@ def answer_content(text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def failure_message(item: Interaction, lang: str) -> str:
+    """The message stored with a failed turn's error.
+
+    The transcript adds it as a visible answer fragment when the answer does not
+    already contain it: an internal reason code there showed a stray answer
+    reading only "cost" (staging 2026-11-16, a scheduled run with a tiny cap).
+    A known Work failure's public reply is the message in every language; an
+    unknown failure keeps its diagnostic codes outside French, as before.
+    """
+    if lang == "fr" or (item.work_failure and item.reponse.strip()):
+        return item.reponse
+    return "; ".join(item.erreurs) or item.state
+
+
 def recurring_guidance(question: str, language: str) -> str | None:
     """Return turn-local capability guidance without changing the shared prompt."""
     recurring = re.search(
@@ -728,12 +742,9 @@ async def process_scoped_project(request: ChatRequest, item: Interaction) -> Non
         if terminal == "failed":
             from packages.configuration import temporarily_unavailable
 
-            if scoped.lang == "fr":
-                if not item.work_failure:
-                    item.reponse = temporarily_unavailable(scoped.lang)
-                message = item.reponse
-            else:
-                message = "; ".join(item.erreurs) or item.state
+            if scoped.lang == "fr" and not item.work_failure:
+                item.reponse = temporarily_unavailable(scoped.lang)
+            message = failure_message(item, scoped.lang)
             if item.work_failure:
                 error = ProjectError(422, "invalid_request", message).body
             else:

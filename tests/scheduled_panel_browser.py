@@ -31,8 +31,27 @@ class ScheduledPanelTests(unittest.TestCase):
                 "enabled": True,
                 "revision": 0,
                 "next_run": "2026-11-02T08:00:00Z",
-                "last_result": None,
-            }
+                "last_result": {"status": "failed", "at": "2026-11-01T08:00:00Z"},
+                "pause_reason": None,
+            },
+            {
+                "id": "60000000-0000-4000-8000-000000000003",
+                "project_id": fixture.PROJECT,
+                "project_name": "Example",
+                "project_role": "editor",
+                "name": "Orchard cellar log",
+                "instruction": "Log the fictional cellar temperatures.",
+                "schedule": {
+                    "frequency": "daily",
+                    "time": "07:00",
+                    "timezone": "Europe/Paris",
+                },
+                "enabled": False,
+                "revision": 0,
+                "next_run": "2026-11-02T06:00:00Z",
+                "last_result": {"status": "budget_cap", "at": "2026-11-01T06:00:00Z"},
+                "pause_reason": "three_failures",
+            },
         ]
 
         def scheduled(route: Route) -> None:
@@ -66,6 +85,27 @@ class ScheduledPanelTests(unittest.TestCase):
         expect(
             view.page.get_by_role("heading", name="Scheduled tasks", exact=True)
         ).to_be_visible()
+        # Each card says when it runs next, how its last run ended and why it
+        # is paused (staging 2026-11-16: the page showed none of these).
+        digest = view.page.locator(
+            "[data-task-id='60000000-0000-4000-8000-000000000001']"
+        )
+        expect(digest.locator(".atlas-project-task-next")).to_contain_text("Next run: ")
+        expect(digest.locator(".atlas-project-task-last")).to_contain_text(
+            "Last result: Failed"
+        )
+        cellar = view.page.locator(
+            "[data-task-id='60000000-0000-4000-8000-000000000003']"
+        )
+        expect(cellar.locator(".atlas-project-task-next")).to_have_text(
+            "Next run: Paused"
+        )
+        expect(cellar.locator(".atlas-project-task-last")).to_contain_text(
+            "Last result: Daily spending cap reached"
+        )
+        expect(cellar.locator(".atlas-project-task-reason")).to_contain_text(
+            "Paused after three consecutive failures."
+        )
         view.page.get_by_role("searchbox", name="Search tasks", exact=True).fill(
             "absent"
         )
@@ -76,9 +116,8 @@ class ScheduledPanelTests(unittest.TestCase):
         view.page.get_by_role("combobox", name="Status", exact=True).select_option(
             "paused"
         )
-        expect(
-            view.page.get_by_text("No scheduled tasks yet.", exact=True)
-        ).to_be_visible()
+        expect(digest).to_have_count(0)
+        expect(cellar).to_be_visible()
         view.page.get_by_role("combobox", name="Status", exact=True).select_option("")
         view.page.get_by_role("tab", name="Templates", exact=True).click()
         expect(view.page.get_by_text("Weekly news digest", exact=True)).to_be_visible()
@@ -86,11 +125,50 @@ class ScheduledPanelTests(unittest.TestCase):
             "button", name="New task", exact=True
         ).click()
         dialog = view.page.locator("[data-task-dialog]")
+        project = dialog.get_by_label("Project", exact=True)
+        # Opened from no project: an explicit choice, never the first project.
+        expect(project).to_have_value("")
+        dialog.get_by_role("button", name="Create", exact=True).click()
+        expect(dialog).to_be_visible()
+        project.select_option(fixture.PROJECT)
+        zone = dialog.get_by_label("Owner time zone", exact=True)
+        browser_zone = view.page.evaluate(
+            "Intl.DateTimeFormat().resolvedOptions().timeZone"
+        )
+        expect(zone).to_have_value(browser_zone)
+        self.assertEqual(
+            zone.evaluate(
+                "input => input.list.querySelector('option[value=\"Europe/Paris\"]') !== null"
+            ),
+            True,
+        )
+        zone.fill("Atlantis/Lumen")
+        dialog.get_by_role("button", name="Create", exact=True).click()
+        expect(dialog).to_be_visible()
+        zone.fill("Europe/Paris")
+        dialog.get_by_role("button", name="Create", exact=True).click()
+        expect(view.page.get_by_text("Weekly news digest", exact=True)).to_be_visible()
+        self.assertEqual(tasks[-1]["schedule"]["timezone"], "Europe/Paris")
+
+    def test_page_opened_from_a_project_preselects_it(self) -> None:
+        view = fixture.ProjectComposerTests()
+        view.setUp()
+        self.addCleanup(view.tearDown)
+        view.context.route(
+            "**/scheduled-tasks**",
+            lambda route: route.fulfill(
+                json={"items": [], "next_cursor": None, "can_manage": True}
+            ),
+        )
+        view.mount()
+        view.page.locator(".atlas-project-sidebar-row").filter(
+            has_text="Scheduled tasks"
+        ).click()
+        view.page.get_by_role("button", name="New task", exact=True).first.click()
+        dialog = view.page.locator("[data-task-dialog]")
         expect(dialog.get_by_label("Project", exact=True)).to_have_value(
             fixture.PROJECT
         )
-        dialog.get_by_role("button", name="Create", exact=True).click()
-        expect(view.page.get_by_text("Weekly news digest", exact=True)).to_be_visible()
 
     def test_panel_create_pause_run_delete_and_mobile(self) -> None:
         view = fixture.ProjectComposerTests()

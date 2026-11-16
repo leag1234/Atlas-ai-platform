@@ -46,6 +46,8 @@ CASES = (
 LINK = re.compile(
     r"/api/atlas/orgs/[0-9a-f-]+/projects/[0-9a-f-]+/deliverables/[0-9a-f-]+/download"
 )
+# Smallest side of a picture counted as one (an emoji glyph image is 136 px).
+PICTURE_PIXELS = 256
 JUDGE = (
     "You read an assistant's answer that delivers a file. Say whether the answer "
     "states plainly that some requested pictures or items are missing from the "
@@ -129,10 +131,19 @@ def measure(raw: bytes) -> dict[str, Any]:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(raw))
+        pictures = glyphs = 0
+        for page in reader.pages:
+            for image in page.images:
+                # An emoji is drawn as a small picture at the size of its
+                # text (doc_render/emoji.py, 136 px at most): it is a glyph,
+                # not one of the pictures a request asks for.
+                width, height = image.image.size if image.image else (0, 0)
+                if min(width, height) >= PICTURE_PIXELS:
+                    pictures += 1
+                else:
+                    glyphs += 1
         return dict(
-            format="pdf",
-            units=len(reader.pages),
-            pictures=sum(len(page.images) for page in reader.pages),
+            format="pdf", units=len(reader.pages), pictures=pictures, glyphs=glyphs
         )
     if raw.startswith(b"PK"):
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:

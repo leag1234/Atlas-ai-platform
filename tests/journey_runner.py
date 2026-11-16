@@ -127,7 +127,23 @@ def main() -> None:
             "m24_gate",
             "m25_gate",
         ):
-            subprocess.run([sys.executable, "tests/" + script + ".py"], check=True)
+            completed = subprocess.run(
+                [sys.executable, "tests/" + script + ".py"],
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            sys.stderr.write(completed.stderr)
+            if completed.returncode:
+                # verify-m17 discards stderr: name the failing gate and its last
+                # lines on stdout, or a CI failure says only "test-journeys failed".
+                print(
+                    f"journey gate {script} failed (exit {completed.returncode}):\n"
+                    + completed.stderr[-6000:],
+                    flush=True,
+                )
+                raise subprocess.CalledProcessError(
+                    completed.returncode, completed.args
+                )
 
     run(Path.cwd(), run_id, execute)
 

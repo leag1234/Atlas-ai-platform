@@ -283,6 +283,7 @@ class Location(BaseModel):
 
 
 LEDGER_LABEL = "location used: approximate, this request"
+LEDGER_LABEL_REUSED = "location used: approximate, shared earlier in this conversation"
 
 
 # Open WebUI persists its own request bodies. Only this random, single-use
