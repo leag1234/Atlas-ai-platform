@@ -30,7 +30,7 @@ jobs:
             if [ "$(echo "$pr" | jq -r .head.repo.full_name)" != "$REPO" ]; then echo "#$n: fork, skip"; continue; fi
             if [ "$(echo "$pr" | jq -r .user.login)" != "$OWNER" ]; then echo "#$n: not opened by the owner, skip"; continue; fi
             if [ "$(echo "$pr" | jq -r .draft)" = "true" ]; then echo "#$n: draft, skip"; continue; fi
-            protected=$(gh api --paginate "repos/$REPO/pulls/$n/files" --jq '.[].filename' | grep -E '^(\.github/|scripts/verify-[^/]*\.sh$|evals/holdout/|docs/)' || true)
+            protected=$(gh api --paginate "repos/$REPO/pulls/$n/files" --jq '.[].filename' | grep -E '^(\.github/|scripts/verify-[^/]*\.sh$|evals/holdout/)' || true)
             if [ -n "$protected" ]; then
               echo "#$n: touches owner-only paths, skip"
               gh pr comment "$n" --repo "$REPO" --body "automerge skipped: this PR touches owner-only paths, so the owner merges it by hand."
