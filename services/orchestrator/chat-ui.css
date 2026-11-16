@@ -113,7 +113,8 @@ html:root body .chat-assistant .markdown-prose :is(p,li,ul,ol,td,th,blockquote) 
   font-family:var(--atlas-body-font); font-size:var(--atlas-body-size)!important;
   line-height:var(--atlas-line-height)!important; color:var(--atlas-text)!important;
 }
-html:root body .chat-assistant .markdown-prose :is(h1,h2,h3,h4,h5,h6) { font-family:var(--atlas-body-font); line-height:var(--atlas-line-height)!important; color:var(--atlas-text)!important; }
+/* Headings take a title leading: the 1.6 answer leading spread a two-line H1 over 90 px. */
+html:root body .chat-assistant .markdown-prose :is(h1,h2,h3,h4,h5,h6) { font-family:var(--atlas-body-font); line-height:1.3!important; color:var(--atlas-text)!important; }
 .chat-assistant .markdown-prose h1 { font-size:calc(var(--atlas-body-size) * 1.75)!important; }
 .chat-assistant .markdown-prose h2 { font-size:calc(var(--atlas-body-size) * 1.375)!important; }
 .chat-assistant .markdown-prose h3 { font-size:calc(var(--atlas-body-size) * 1.125)!important; }
@@ -343,7 +344,8 @@ html.dark .atlas-option[data-value="graphite"] { --swatch:#e6e6e6; }
 .chat-assistant .markdown-prose table { border-radius:10px; border-collapse:separate; border-spacing:0; }
 .chat-assistant .markdown-prose th { font-weight:600!important; text-transform:none!important; }
 .chat-assistant .markdown-prose li::marker { color:var(--atlas-muted); }
-html:root body .user-message .markdown-prose :is(h1,h2,h3,h4,h5,h6) { font-family:var(--atlas-body-font); line-height:1.5!important; color:inherit!important; }
+/* Same title leading for headings in user messages. */
+html:root body .user-message .markdown-prose :is(h1,h2,h3,h4,h5,h6) { font-family:var(--atlas-body-font); line-height:1.3!important; color:inherit!important; }
 .user-message .markdown-prose h1 { font-size:calc(var(--atlas-body-size) * 1.75)!important; }
 .user-message .markdown-prose h2 { font-size:calc(var(--atlas-body-size) * 1.375)!important; }
 .user-message .markdown-prose h3 { font-size:calc(var(--atlas-body-size) * 1.125)!important; }
@@ -634,3 +636,28 @@ html.dark .atlas-privacy-choice:hover:not(:disabled) { background:var(--atlas-bg
 .atlas-privacy-error { margin:4px 6px 0; color:#b42318; font-size:12.5px; }
 /* Dark mode: the error colour keeps its contrast. */
 html.dark .atlas-privacy-error { color:#ff8a80; }
+
+/* Phone chat header (Open WebUI renders its navbar sidebar toggle below 768 px, the same
+   #sidebar-toggle-button > div.p-1.5 > svg.size-4 in 0.11 and 0.13): the only way to the conversation
+   list gets a 44 x 44 px tap target (WCAG 2.5.5), a 24 px icon and body text contrast instead of grey-500. */
+@media (max-width:767px) {
+  /* The negative block margins keep the header row height; the left margin keeps the 16 px gutter. */
+  #sidebar-toggle-button { box-sizing:border-box; min-width:44px; min-height:44px; margin:-8px 0 -8px -8px; align-items:center; justify-content:center; color:var(--atlas-text)!important; }
+  /* The upstream padding wrapper would shift the larger icon off centre. */
+  #sidebar-toggle-button > div { padding:0!important; }
+  /* Icon at 24 px, the platform size for toolbar icons. */
+  #sidebar-toggle-button svg { width:24px!important; height:24px!important; }
+}
+/* Phone answers: Markdown headings scale down so a short title stays on one or two lines (an H1 at 1.75x
+   wrapped over three to four lines at 390 px). Body-size multiples keep the user's size choice. */
+@media (max-width:640px) {
+  /* Tighter space around headings; a heading that opens the message needs none above it. */
+  html:root body :is(.chat-assistant,.user-message) .markdown-prose :is(h1,h2,h3,h4,h5,h6) { margin:14px 0 6px; }
+  html:root body :is(.chat-assistant,.user-message) .markdown-prose :is(h1,h2,h3,h4,h5,h6):first-child { margin-top:0; }
+  /* h1 about 1.25rem at the default size. */
+  :is(.chat-assistant,.user-message) .markdown-prose h1 { font-size:calc(var(--atlas-body-size) * 1.25)!important; }
+  /* h2 about 1.125rem. */
+  :is(.chat-assistant,.user-message) .markdown-prose h2 { font-size:calc(var(--atlas-body-size) * 1.125)!important; }
+  /* h3 about 1rem; its weight keeps it apart from body text. */
+  :is(.chat-assistant,.user-message) .markdown-prose h3 { font-size:calc(var(--atlas-body-size) * 1.0625)!important; }
+}
