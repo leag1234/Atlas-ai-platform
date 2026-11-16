@@ -820,6 +820,21 @@ async def process(request: ChatRequest, item: Interaction) -> None:
                 document_quotes.rewriter(quotes, quote_language, request.user_text),
             )
             gating = sink_context.set(quote_gate)
+    from services.orchestrator import relative_dates
+
+    # Relative dates and weekdays in the answer are checked against the calendar
+    # (relative_dates): a near miss is repaired in the stream and the stored answer.
+    answer_language = request.prose_lang
+    today = relative_dates.local_today(request.ui_timezone)
+    asked_days = relative_dates.asked_weekdays(request.user_text, answer_language)
+    date_gate: relative_dates.Gate | None = None
+    dating = None
+    if (current_sink := sink_context.get()) is not None:
+        date_gate = relative_dates.Gate(
+            current_sink,
+            relative_dates.Rewriter(answer_language, today, asked_days),
+        )
+        dating = sink_context.set(date_gate)
     from services.orchestrator.source_truth import urls as text_urls, user_urls
 
     supplied = user_urls.set(
@@ -832,9 +847,13 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     )
     try:
         await _process_request(request, item)
+        if date_gate is not None:
+            await date_gate.flush()
         if quote_gate is not None:
             await quote_gate.flush()
     finally:
+        if dating is not None:
+            sink_context.reset(dating)
         if gating is not None:
             sink_context.reset(gating)
         document_quotes.current.reset(quoting)
@@ -855,6 +874,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     item.reponse = verified_images(
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
+    )
+    item.reponse = relative_dates.repair(
+        item.reponse, answer_language, today, asked=asked_days
     )
     if quotes is not None and quotes.active() and item.state == "done":
         item.reponse, quote_counts = document_quotes.checked(
@@ -1730,6 +1752,17 @@ async def _process(
     )
     if exact_subjects:
         model.tools.extend(exact_tools.declarations(exact_subjects))
+    from services.orchestrator import relative_dates
+
+    # A question naming a relative day (tomorrow, the weekend, a weekday, in N
+    # days) reads its dates from a calendar computed by code (T8). Offered on
+    # those turns only: other turns keep their recorded requests.
+    calendar_note = relative_dates.note(
+        request.user_text,
+        earlier[-1] if earlier else "",
+        request.ui_timezone,
+        request.prose_lang,
+    )
     # Specialized public sources (encyclopedia, news feeds, Eurostat, French
     # communes) before a general search (T8). Offered on the turns about them
     # only: other turns keep their recorded requests; web_search stays offered.
@@ -2025,7 +2058,8 @@ async def _process(
                 else mechanical_svg_instruction(include_svg=mechanical_svg_enabled())
                 if appearance
                 else ""
-            ),
+            )
+            + calendar_note,
             Limits(
                 profile=request.model,
                 tool_calls=0 if appearance else max(0, 10 - len(attachment_sources)),
