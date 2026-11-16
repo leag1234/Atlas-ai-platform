@@ -188,6 +188,10 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
         )
 
         result.extend(machine_declarations())
+        from services.orchestrator import work_pictures
+
+        if work_pictures.enabled():
+            result.append(work_pictures.declaration())
     return result + (project_document_tools.declarations() if scoped else [])
 
 
@@ -533,6 +537,17 @@ class WorkTools(CodeTools):
         # (each one is refused once; see calculation_check).
         self.request_text = ""
         self.calculation_refusals: set[str] = set()
+        # The check of a built file against the request (deliverable_check.py):
+        # the turn's model (its profile and spending), the conversation's
+        # earlier requests, the checks made and whether a file was refused.
+        self.check_model: Any = None
+        self.earlier_requests: list[str] = []
+        self.deliverable_checks = 0
+        self.deliverable_refused = False
+        # Pictures drawn for a document (work_pictures.py): the conversation
+        # they belong to, and the items this turn had no time to draw.
+        self.picture_scope = ""
+        self.pictures_pending: list[str] = []
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.
         self.lang = "en"
@@ -753,6 +768,25 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return dict(result)
+        if call.name == "make_pictures":
+            from services.orchestrator import work_pictures
+
+            await self.emit(
+                "tool", tool=call.name, label=call.name, status="running", output={}
+            )
+            try:
+                async with asyncio.timeout(timeout):
+                    result = await work_pictures.execute(self, call.arguments, timeout)
+            except (ValueError, OSError, RuntimeError, TimeoutError) as exc:
+                result = {"error": redact(str(exc)) or "pictures_timeout"}
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return dict(trust="untrusted", **result)
         if call.name in project_document_tools.SCHEMAS:
             from services.retrieval.project_identity import ProjectError
 

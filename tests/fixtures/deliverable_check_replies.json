@@ -1,0 +1,69 @@
+{
+ "recorded": "2026-11-16, staging gateway, vision role (first page shown) and text route (no page)",
+ "cases": {
+  "pictures_asked_emoji_given": {
+   "request": "fait moi un imagier en pdf pour mon fils de 3 ans avec une image par mot : voilier, radeau, banane, tambour, radis, poule",
+   "suffix": ".pdf",
+   "markdown": "# Imagier\n\n## voilier\n\n⛵\n\nvoilier\n\n## radeau\n\n🛶\n\nradeau\n\n## banane\n\n🍌\n\nbanane\n\n## tambour\n\n🥁\n\ntambour\n\n## radis\n\n🌱\n\nradis\n\n## poule\n\n🐔\n\npoule",
+   "pictures": false,
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": [\"The image for 'radis' is a generic sprout instead of a radish\", \"The image for 'poule' is missing from the first page (content cut off)\"]}",
+     "cost_eur": "0.0002755"
+    },
+    "text": {
+     "text": "{\n  \"gaps\": [\n    \"Missing real images: the request asked for 'une image par mot' (an image per word), but the file contains only emojis instead of actual pictures or illustrations.\",\n    \"Incorrect representation for 'radis': the emoji used (🌱) depicts a seedling/sprout, not a radish vegetable as requested.\"\n  ],\n  \"variants\": []\n}",
+     "cost_eur": "0.0007776"
+    }
+   }
+  },
+  "pictures_asked_pictures_given": {
+   "request": "fait moi un imagier en pdf pour mon fils de 3 ans avec une image par mot : voilier, radeau, banane, tambour, radis, poule",
+   "suffix": ".pdf",
+   "markdown": "# Imagier\n\n## voilier\n\n![voilier](picture-5b9e32e12c3b)\n\nvoilier\n\n## radeau\n\n![radeau](picture-86784affcf77)\n\nradeau\n\n## banane\n\n![banane](picture-4d1f50b2d245)\n\nbanane\n\n## tambour\n\n![tambour](picture-c3635e8d5d7d)\n\ntambour\n\n## radis\n\n![radis](picture-9f4aab6b83be)\n\nradis\n\n## poule\n\n![poule](picture-d392ad009066)\n\npoule",
+   "pictures": true,
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": []}",
+     "cost_eur": "0.0002635"
+    },
+    "text": {
+     "text": "{\n  \"gaps\": [],\n  \"variants\": [\n    \"Each word appears twice in the text (once as a heading and once as a paragraph), whereas a standard picture dictionary for a 3-year-old typically displays the word only once per image.\"\n  ]\n}",
+     "cost_eur": "0.0006732"
+    }
+   }
+  },
+  "table_three_of_five_columns": {
+   "request": "Fais-moi un document Word avec un tableau de 5 colonnes : prénom, nom, ville, âge, métier, pour 3 personnes fictives.",
+   "suffix": ".docx",
+   "markdown": "# Personnes\n\n| Prénom | Nom | Ville |\n|---|---|---|\n| Lina | Morvan | Brest |\n| Paul | Ternier | Lyon |\n| Sacha | Belloc | Nancy |\n",
+   "pictures": false,
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": [\"The table has 3 columns instead of the requested 5 (missing 'âge' and 'métier')\", \"The columns 'âge' and 'métier' are missing\"]}",
+     "cost_eur": "0.00022675"
+    },
+    "text": {
+     "text": "{\"gaps\": [\"Table has 3 columns instead of the requested 5 (missing 'âge' and 'métier')\", \"Table headers are incomplete (missing 'âge' and 'métier')\", \"Data rows are incomplete (missing age and profession for each person)\"]}",
+     "cost_eur": "0.000531"
+    }
+   }
+  },
+  "table_five_columns": {
+   "request": "Fais-moi un document Word avec un tableau de 5 colonnes : prénom, nom, ville, âge, métier, pour 3 personnes fictives.",
+   "suffix": ".docx",
+   "markdown": "# Personnes\n\n| Prénom | Nom | Ville | Âge | Métier |\n|---|---|---|---|---|\n| Lina | Morvan | Brest | 34 | Infirmière |\n| Paul | Ternier | Lyon | 51 | Boulanger |\n| Sacha | Belloc | Nancy | 27 | Graphiste |\n",
+   "pictures": false,
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": []}",
+     "cost_eur": "0.0002185"
+    },
+    "text": {
+     "text": "{\"gaps\": [], \"variants\": [\"The file content is presented as plain text in the analysis but the facts confirm it is a valid .docx file containing a table with the requested 5 columns and 3 data rows.\", \"The specific names, cities, ages, and professions chosen for the fictitious people are creative variations acceptable under the request.\", \"The visual styling (colors, fonts, borders) of the table is not specified in the facts but constitutes an acceptable variant as long as the structure is correct.\"]}",
+     "cost_eur": "0.0007266"
+    }
+   }
+  }
+ }
+}

@@ -8,7 +8,9 @@ from PIL import Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+from . import emoji
 from .cells import shown
+from .glyphs import drawable
 from .schema import Content
 
 FONT = "AtlasContentVera"
@@ -80,12 +82,27 @@ def font() -> TTFont:
     return registered
 
 
+def width_of(text: str, size: float) -> float:
+    """The drawn width of a line: its text in the face, its emoji as pictures."""
+    total, run = 0.0, ""
+    for token in emoji.tokens(text):
+        if emoji.is_emoji(token) and emoji.drawable(token):
+            total += (
+                pdfmetrics.stringWidth(run, FONT, size) + emoji.advance(token) * size
+            )
+            run = ""
+        else:
+            run += token
+    return total + pdfmetrics.stringWidth(run, FONT, size)
+
+
 def wrap(text: str, width: float, size: float) -> tuple[str, ...]:
     # Character wrapping preserves supplied whitespace and long unbroken values.
+    # An emoji sequence (a family joined by U+200D) is never cut.
     lines: list[str] = []
     current = ""
-    for character in text:
-        if pdfmetrics.stringWidth(current + character, FONT, size) > width:
+    for character in emoji.tokens(text):
+        if width_of(current + character, size) > width:
             if not current:
                 raise ValueError("glyph_exceeds_line_width")
             lines.append(current)
@@ -141,6 +158,27 @@ def image_path(root: Path, value: str) -> Path:
     return path
 
 
+def picture_opening(
+    section: object, image_root: Path, g: Geometry, heading: float
+) -> float:
+    """Height of a section up to its first picture (0 without a picture or
+    with a table, which keeps the former breaks)."""
+    from .schema import Section
+
+    if not isinstance(section, Section) or not section.images or section.tables:
+        return 0.0
+    height = heading
+    for text in section.paragraphs:
+        plain = shown(text)
+        size = emoji.PICTURE_SIZE if emoji.pictures_only(plain) else 12
+        height += text_block(plain, size, body=g.body).height
+    for text in section.bullets:
+        height += text_block(shown(text), bullet=True, body=g.body).height
+    with Image.open(image_path(image_root, section.images[0])) as image:
+        scale = min(g.body / image.width, g.image_height / image.height)
+        return height + image.height * scale + 8
+
+
 def pages(
     content: Content,
     image_root: Path,
@@ -150,9 +188,9 @@ def pages(
 ) -> tuple[tuple[Placed, ...], ...]:
     """Lay the content out on pages; a workbook has none for its tables."""
     g = geometry
-    registered = font()
+    font()
     for text in content.texts():
-        if any(ord(c) not in registered.face.charToGlyph for c in text):
+        if not all(drawable(token) for token in emoji.tokens(text)):
             raise ValueError("unsupported_font_character")
     result: list[tuple[Placed, ...]] = []
     current: list[Placed] = []
@@ -168,8 +206,17 @@ def pages(
                 raise ValueError("title_exceeds_layout")
             current.append(Placed(title, top))
             top += title.height
-        elif not g.flow or g.height - g.margin - top < heading.height + 2 * 16 + 8:
-            # A slide per section; on a report page, a heading never ends a page.
+        elif (
+            not g.flow
+            or g.height - g.margin - top < heading.height + 2 * 16 + 8
+            or g.height - g.margin - top
+            < picture_opening(section, image_root, g, heading.height)
+            <= g.height - 2 * g.margin
+        ):
+            # A slide per section; on a report page, a heading never ends a
+            # page, and a section's text before its first picture stays on
+            # the page of that picture (a picture book put a word at the foot
+            # of a page and its picture on the next, 2026-11-16).
             result.append(tuple(current))
             current, top = [], g.margin
         else:
@@ -182,7 +229,9 @@ def pages(
         # Inline markers are read, never laid out: a page and a slide show
         # the text in one face.
         for text in section.paragraphs:
-            body.append(text_block(shown(text), body=g.body))
+            plain = shown(text)
+            size = emoji.PICTURE_SIZE if emoji.pictures_only(plain) else 12
+            body.append(text_block(plain, size, body=g.body))
         for text in section.bullets:
             body.append(text_block(shown(text), bullet=True, body=g.body))
         for table in section.tables if tables else ():

@@ -30,7 +30,7 @@ from services.orchestrator.loop import Call, Limits, Message, Query, run
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.tools import Rag, Runtime, search_providers
 from services.orchestrator.stream_client import Sink, sink_context
-from services.orchestrator import grounding, number_provenance
+from services.orchestrator import document_quotes, grounding, number_provenance
 from services.orchestrator.vision import process_vision
 from services.orchestrator.search_policy import required_research, corpus_allowed
 from services.orchestrator.followup import (
@@ -319,13 +319,17 @@ class ChatTools(Runtime):
             self.terminal = TerminalClient(item.request_id)
 
     async def execute(self, call: Call, timeout: float) -> Message:
-        return number_provenance.observe(
-            await self._execute(call, timeout, trusted_render=False)
+        return document_quotes.observe(
+            number_provenance.observe(
+                await self._execute(call, timeout, trusted_render=False)
+            )
         )
 
     async def execute_trusted_render(self, call: Call, timeout: float) -> Message:
-        return number_provenance.observe(
-            await self._execute(call, timeout, trusted_render=True)
+        return document_quotes.observe(
+            number_provenance.observe(
+                await self._execute(call, timeout, trusted_render=True)
+            )
         )
 
     async def _execute(
@@ -427,11 +431,10 @@ class ChatTools(Runtime):
             try:
                 output = await super().execute(call, timeout)
             except BudgetRefusal as exc:
-                period = "this month" if "monthly" in exc.category else "today"
-                return {
-                    "error": "daily_search_limit",
-                    "message": f"search limit reached {period} ({exc.used} of {exc.limit})",
-                }
+                from services.orchestrator.search_guard import refusal_text
+
+                # A limit stays a limit for the model and the user (D5).
+                return {"error": "daily_search_limit", "message": refusal_text(exc)}
             data = output.get("data")
             if call.name in {"web_images", "make_qr"} and isinstance(data, dict):
                 images = data.get("images", [data] if call.name == "make_qr" else [])
@@ -618,6 +621,8 @@ class ChatTools(Runtime):
             succeeded = True
             passages = [p.model_dump() for p in result.passages]
             self.item.chunks_recuperes.extend(passages)
+            for passage in result.passages:
+                document_quotes.add_document(passage.text)
             return {
                 "trust": "untrusted",
                 "data": {
@@ -794,6 +799,26 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     tracking = number_provenance.current.set(provenance)
     sink = sink_context.get()
     held = sink_context.set(_HeldAnswer(sink)) if check and sink else None
+    # Quotations attributed to the turn's documents are checked word for word
+    # (document_quotes): the gate holds an open quotation until it can be checked.
+    quotes = document_quotes.Sources() if document_quotes.mode() != "off" else None
+    quoting = document_quotes.current.set(quotes)
+    quote_gate: document_quotes.Gate | None = None
+    gating = None
+    quote_language = ""
+    if quotes is not None:
+        for message in request.messages:
+            if message.role == "user":
+                quotes.add_conversation(message.text)
+        quote_language = conversation_language(
+            request.conversation_messages, request.ui_locale
+        )
+        if (current_sink := sink_context.get()) is not None:
+            quote_gate = document_quotes.Gate(
+                current_sink,
+                document_quotes.rewriter(quotes, quote_language, request.user_text),
+            )
+            gating = sink_context.set(quote_gate)
     from services.orchestrator.source_truth import urls as text_urls, user_urls
 
     supplied = user_urls.set(
@@ -806,7 +831,12 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     )
     try:
         await _process_request(request, item)
+        if quote_gate is not None:
+            await quote_gate.flush()
     finally:
+        if gating is not None:
+            sink_context.reset(gating)
+        document_quotes.current.reset(quoting)
         user_urls.reset(supplied)
         # The routing call is part of this turn's cost.
         routing_cost = request.__dict__.get("model_route_cost_eur")
@@ -825,6 +855,11 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
     )
+    if quotes is not None and quotes.active() and item.state == "done":
+        item.reponse, quote_counts = document_quotes.checked(
+            quotes, item.reponse, quote_language, request.user_text
+        )
+        document_quotes.log(quote_counts, quotes, item.task_type)
     # A Work answer describes the file it delivered: its sentences are not factual
     # claims to match against the pages read ("no source mentions this entity" was
     # put in front of delivered documents, staging 2026-11-10). A nearby answer is
@@ -938,6 +973,12 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         answer, cost = await title_answer(request.user_text, request.lang)
         item.reponse = answer
         item.state, item.task_type, item.cout_eur = "done", "title", float(cost)
+        return
+    # "Remind me tomorrow at 9 to ...": code reads the date and time and returns a
+    # calendar file with an alarm, without a model call (no routing call either).
+    from services.orchestrator.reminder_route import reminder_turn
+
+    if await reminder_turn(request, item):
         return
     # The model decides what this plain chat turn asks for (ATLAS_MODEL_ROUTER=1),
     # once, before any gate reads it; None leaves the lexical gates unchanged.
@@ -1365,6 +1406,8 @@ async def _process(
         tools = ChatTools(item, request.user_text, allow_image=False)
         tools.daily_ledger = getattr(request, "daily_ledger", None)
         tools.daily_user = getattr(request, "daily_user", "unknown")
+        tools.search_identities = getattr(request, "search_identities", ())
+        tools.search_conversation = getattr(request, "native_chat_id", "")
         tools.daily_lang = request.lang
         await lookup(request, item, tools, name)
         return
@@ -1815,6 +1858,8 @@ async def _process(
     )
     tools.daily_ledger = getattr(request, "daily_ledger", None)
     tools.daily_user = getattr(request, "daily_user", "unknown")
+    tools.search_identities = getattr(request, "search_identities", ())
+    tools.search_conversation = getattr(request, "native_chat_id", "")
     tools.daily_lang = request.lang
     if request.ui_timezone != "UTC":
         tools.home_zone = request.ui_timezone

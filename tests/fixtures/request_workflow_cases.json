@@ -1,0 +1,91 @@
+{
+ "note": "Composite requests of the request-workflow battery (tools/request_workflow_eval.py): varied deliverables, French and English, typos, one follow-up. Expectations are measured on the downloaded file.",
+ "cases": [
+  {
+   "id": "picture_book_fr_typos",
+   "ui_locale": "en",
+   "turns": [
+    {
+     "text": "fait moi un imagier en pdf pour mon fils de 3 ans avc une image par mot : voilier, radeau, banane, tambour, radis, poule, masque et tuba, petit robot, bonbon, toboggan, maison dans un arbre, pomme",
+     "expect": {
+      "format": "pdf",
+      "pictures": 12
+     }
+    },
+    {
+     "text": "merci ! il manque des images, tu peux finir stp ?",
+     "expect": {
+      "format": "pdf",
+      "pictures": 12
+     }
+    }
+   ]
+  },
+  {
+   "id": "menu_photos_fr",
+   "ui_locale": "fr",
+   "turns": [
+    {
+     "text": "Je voudrais un menu de restaurant en PDF pour mon bistrot, avec une photo de chaque plat : soupe à l'oignon, bœuf bourguignon, ratatouille et tarte tatin, avec les prix",
+     "expect": {
+      "format": "pdf",
+      "pictures": 4
+     }
+    }
+   ]
+  },
+  {
+   "id": "animal_slides_en",
+   "ui_locale": "en",
+   "turns": [
+    {
+     "text": "can you make me a slide deck presenting 5 savanna animals, one slide per animal with a picture and two short facts",
+     "expect": {
+      "format": "pptx",
+      "pictures": 5
+     }
+    }
+   ]
+  },
+  {
+   "id": "illustrated_howto_en",
+   "ui_locale": "en",
+   "turns": [
+    {
+     "text": "I need an illustrated how-to as a Word doc: repotting a houseplant in 4 steps, each step with an illustration",
+     "expect": {
+      "format": "docx",
+      "pictures": 4
+     }
+    }
+   ]
+  },
+  {
+   "id": "comparison_table_fr",
+   "ui_locale": "en",
+   "turns": [
+    {
+     "text": "Fais moi un doc word qui compare 4 langages de programmation dans un tableau avec les colonnes nom, année de création, typage, usage principal (une ligne par langage)",
+     "expect": {
+      "format": "docx",
+      "table_columns": 4,
+      "table_rows": 4
+     }
+    }
+   ]
+  },
+  {
+   "id": "poster_en",
+   "ui_locale": "en",
+   "turns": [
+    {
+     "text": "make an A4 poster as a PDF for our neighbourhood bike repair workshop, saturday 10am at the community hall, free, with a big illustration of a bicycle",
+     "expect": {
+      "format": "pdf",
+      "pictures": 1
+     }
+    }
+   ]
+  }
+ ]
+}

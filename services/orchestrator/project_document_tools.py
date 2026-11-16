@@ -120,7 +120,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. In an XLSX table a cell starting with = is a formula, with or without formulas=true (a cell that must show a leading = as text starts with an apostrophe: \'=A1); formulas support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Inline Markdown (**bold**, *italic*, `code`, [text](address)) is read in headings, paragraphs, bullets and table cells of every format, never shown as markers. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets; omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors: sources lists only files of this session by their read_input identifiers; cite web pages in the content with their address. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. Images require scoped resolution and are rejected. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.',
+    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. In an XLSX table a cell starting with = is a formula, with or without formulas=true (a cell that must show a leading = as text starts with an apostrophe: \'=A1); formulas support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Inline Markdown (**bold**, *italic*, `code`, [text](address)) is read in headings, paragraphs, bullets and table cells of every format, never shown as markers. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets (and images: make_pictures references); omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors: sources lists only files of this session by their read_input identifiers; cite web pages in the content with their address. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. A picture drawn by make_pictures in this conversation is placed in its section as its own Markdown line ![label](picture-reference), at most five per section; no other image is accepted. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.',
 }
 
 
@@ -335,13 +335,21 @@ async def execute(
             text_args = TextPublish.model_validate(value).model_dump(exclude_none=True)
         await tools.execution.check()
         return await publish(tools, text_args, timeout)
+    missing: list[str] = []
     if name == "publish_document":
         value = normalize(value)
+        if isinstance(value, dict):
+            # Before validation adapts the text: what the format cannot draw.
+            from services.orchestrator.deliverable_check import left_out
+
+            missing = left_out(value.get("content"))
     with explained(SCHEMAS[name]):
         args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
     await tools.execution.check()
     if name == "publish_document":
-        return await publish(tools, args, timeout, append_sources=markdown_input)
+        return await publish(
+            tools, args, timeout, append_sources=markdown_input, left_out=missing
+        )
     if name == "organize_files":
         return dict(
             await tools.execution.broker.call(
@@ -437,8 +445,34 @@ def include_sources(content: Content, texts: list[str]) -> Content:
     return Content(title=content.title, sections=content.sections + sections)
 
 
+def placed_pictures(tools: Any, content: Content) -> tuple[Content, dict[str, bytes]]:
+    """The content with its picture references as file names, and their bytes.
+
+    A section's images are references returned by make_pictures in this
+    conversation (work_pictures.py); anything else is refused by name.
+    """
+    references = [image for section in content.sections for image in section.images]
+    if not references:
+        return content, {}
+    from services.orchestrator.work_pictures import resolve
+
+    pictures = {
+        reference + ".jpg": resolve(tools, reference)
+        for reference in dict.fromkeys(references)
+    }
+    value = content.model_dump(mode="json")
+    for section in value["sections"]:
+        section["images"] = [image + ".jpg" for image in section["images"]]
+    return Content.model_validate(value), pictures
+
+
 async def publish(
-    tools: Any, args: dict[str, Any], timeout: float, *, append_sources: bool = False
+    tools: Any,
+    args: dict[str, Any],
+    timeout: float,
+    *,
+    append_sources: bool = False,
+    left_out: list[str] | None = None,
 ) -> dict[str, Any]:
     from services.orchestrator.presentation_delivery import build_project_document
     from services.orchestrator.terminal_client import ProjectPublisher
@@ -522,6 +556,7 @@ async def publish(
         source_texts.extend(texts)
         versions.append(resolved["version"])
 
+    pictures: dict[str, bytes] = {}
     if path.suffix in TEXT_MIMES:
         document = text_document(args["content"], path.suffix, source_texts)
         content = None
@@ -529,6 +564,7 @@ async def publish(
         content = Content.model_validate(args["content"])
         if append_sources:
             content = include_sources(content, source_texts)
+        content, pictures = placed_pictures(tools, content)
         document = await asyncio.to_thread(
             build_project_document,
             content,
@@ -536,6 +572,7 @@ async def publish(
             source_texts,
             max_bytes=16 * 1024 * 1024,
             timeout=remaining(),
+            pictures=pictures,
         )
     if (
         content is not None
@@ -549,6 +586,23 @@ async def publish(
         from packages.doc_render.spreadsheet import validate_sources
 
         validate_sources(document.content, source_sheets)
+    # The built file against the request, before it is published and claimed
+    # (deliverable_check.py): the first gaps of a turn are refused once for a
+    # repair, later ones are published with a note the answer must say.
+    from services.orchestrator import deliverable_check
+
+    checked = await deliverable_check.review(
+        tools,
+        path.suffix,
+        content,
+        document.content,
+        document.preview,
+        list(left_out or ()),
+        pictures=pictures if content is not None else {},
+        # The publication itself keeps 20 seconds of the tool's time.
+        seconds=deadline - time.monotonic() - 20,
+    )
+    lacking = deliverable_check.decide(tools, checked)
     publisher = ProjectPublisher(execution)
     note: dict[str, str] = {}
     if getattr(tools, "numbered_copies", False):
@@ -599,6 +653,8 @@ async def publish(
         )
     if calculated:
         note["note"] = " ".join(filter(None, (note.get("note"), calculated)))
+    if lacking:
+        note["note"] = " ".join(filter(None, (note.get("note"), lacking)))
     if ignored:
         note["note"] = " ".join(
             filter(None, (note.get("note"), IGNORED_SOURCES.format(count=ignored)))
@@ -613,6 +669,7 @@ async def publish(
         file_version_ids=[receipt["file_version_id"]],
         read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
         **note,
+        **(dict(gaps=checked.gaps) if lacking else {}),
     )
 
 

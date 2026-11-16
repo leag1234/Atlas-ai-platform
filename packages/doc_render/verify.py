@@ -11,6 +11,7 @@ from pptx.shapes.autoshape import Shape
 from pptx.shapes.graphfrm import GraphicFrame
 from pypdf import PdfReader
 
+from . import emoji
 from .cells import shown
 from .schema import Content
 
@@ -36,12 +37,19 @@ def verify(
 ) -> Verification:
     """Parsing errors propagate; blank units and missing content fail explicitly."""
     text: list[str] = []
+    pictured: list[bool] = []
     unit: Literal["page", "slide", "document", "worksheet"]
     if path.suffix == ".pdf":
         reader = PdfReader(path, strict=True)
         if reader.is_encrypted:
             raise VerificationError("encrypted_pdf")
         text = [page.extract_text() for page in reader.pages]
+        # A page that holds only a picture (a picture moved to the next page
+        # with no text after it) is not blank.
+        pictured = [
+            not value.strip() and bool(page.images)
+            for value, page in zip(text, reader.pages)
+        ]
         unit = "page"
     elif path.suffix == ".pptx":
         deck = Presentation(str(path))
@@ -86,7 +94,10 @@ def verify(
         unit = "worksheet"
     else:
         raise VerificationError("unsupported_output_format")
-    if not text or any(not value.strip() for value in text):
+    if not text or any(
+        not value.strip() and not (path.suffix == ".pdf" and pictured[index])
+        for index, value in enumerate(text)
+    ):
         raise VerificationError("empty_document_or_unit")
     if expected_count is not None and len(text) != expected_count:
         raise VerificationError(f"unit_count_mismatch:{len(text)}:{expected_count}")
@@ -98,12 +109,15 @@ def verify(
 
         expected = bind_summaries(expected)
     if expected:
+        # A PDF page draws its emoji as pictures (emoji.py): its text layer
+        # holds the rest of each text.
+        drawn = emoji.without_pictures if path.suffix == ".pdf" else lambda value: value
         units = ["".join(value.split()) for value in text]
         if paginated:
             seen: set[str] = set()
             headings = sorted(
                 {
-                    "".join(shown(section.heading).split())
+                    "".join(drawn(shown(section.heading)).split())
                     for section in expected.sections
                 },
                 key=len,
@@ -118,7 +132,9 @@ def verify(
                 seen.update(heading for heading in headings if heading in value)
         combined = "".join(units)
         # A workbook stores a number for a cell typed as one.
-        wanted = expected.texts(sheet=path.suffix == ".xlsx")
+        wanted = [
+            drawn(value) for value in expected.texts(sheet=path.suffix == ".xlsx")
+        ]
         if any("".join(value.split()) not in combined for value in wanted):
             raise VerificationError("missing_expected_text")
     return Verification(unit, len(text), tuple(text), paginated)

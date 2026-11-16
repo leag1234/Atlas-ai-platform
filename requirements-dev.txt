@@ -43,6 +43,13 @@ opening-hours-py==2.1.4
 holidays==0.107
 python-dateutil==2.9.0.post0
 
+# Reminders (.ics): tests only. The files are written by code without a package
+# (services/orchestrator/reminder_ics.py); icalendar (BSD-2-Clause, pure Python,
+# released 2026-08-19) parses them back as an independent check. tzdata
+# (Apache-2.0, data only) is its one new dependency. Survey in docs/25-reminders.md.
+icalendar==7.3.0
+tzdata==2026.6
+
 # Nearby presentation: locale dates and country-aware phone formatting.
 Babel==2.18.0
 phonenumberslite==9.0.41

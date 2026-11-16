@@ -175,6 +175,12 @@ class PresentationSlide(ContentModel):
     bullets: tuple[Text, ...] = Field(min_length=1, max_length=8)
     notes: Text | None = None
     table: Table | None = None
+    # Pictures drawn for the deck (make_pictures references), shown on the slide.
+    images: tuple[Text, ...] = Field(
+        default=(),
+        max_length=2,
+        description="references returned by make_pictures, shown on this slide",
+    )
 
 
 class PresentationOutline(ContentModel):
@@ -192,6 +198,7 @@ class PresentationOutline(ContentModel):
                     paragraphs=(slide.notes,) if slide.notes else (),
                     bullets=slide.bullets,
                     tables=(slide.table,) if slide.table else (),
+                    images=slide.images,
                 )
                 for slide in self.slides
             ),

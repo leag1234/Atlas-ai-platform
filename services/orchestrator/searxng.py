@@ -2,7 +2,7 @@
 
 import asyncio
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -62,6 +62,25 @@ SEARCH_REGIONS = {
     "es": "es-ES",
     "it": "it-IT",
     "nl": "nl-NL",
+}
+# How long the sidecar suspends an engine after each kind of refusal: the
+# SearXNG defaults, kept equal to search.suspended_times of
+# infra/searxng/settings.yml (a test compares them). Atlas does not ask a
+# refusing engine again before the sidecar would: short local suspensions
+# (60 s until 2026-11-16) asked engines that had just blocked the server's
+# address again and again, and the blocks lasted.
+SUSPENDED_SECONDS = {
+    "access_denied": 86400,
+    "captcha": 86400,
+    "too_many_requests": 3600,
+    "recaptcha": 604800,
+}
+# The settings.yml key of each kind above.
+SUSPENDED_SETTINGS = {
+    "access_denied": "SearxEngineAccessDenied",
+    "captcha": "SearxEngineCaptcha",
+    "too_many_requests": "SearxEngineTooManyRequests",
+    "recaptcha": "recaptcha_SearxEngineCaptcha",
 }
 OUTCOMES = {"upstream_blocked", "upstream_timeout", "empty_results", "partial_results"}
 NOTICES = {
@@ -261,7 +280,7 @@ def engine_order(
 
 
 def retry_after(value: str | None, now: float | None = None) -> float:
-    if not value:
+    if not isinstance(value, str) or not value:
         return 0
     try:
         return max(0, float(value))
@@ -327,6 +346,23 @@ def classify(reason: str) -> str:
     ):
         return "upstream_blocked"
     return "upstream_timeout"
+
+
+def refusal_kind(reason: str, engine: str) -> str:
+    """The sidecar's refusal kind named by an unresponsive-engine reason.
+
+    SearXNG reports "CAPTCHA", "access denied" or "too many requests", with
+    "Suspended: " in front while the engine is suspended. Google's CAPTCHA is
+    a reCAPTCHA. Any other failure (timeouts, parsing) has no long suspension.
+    """
+    text = reason.lower()
+    if "captcha" in text:
+        return "recaptcha" if engine == "google" else "captcha"
+    if "access denied" in text or "forbidden" in text or "403" in text:
+        return "access_denied"
+    if "too many" in text or "429" in text:
+        return "too_many_requests"
+    return ""
 
 
 async def engine_search(
@@ -407,6 +443,11 @@ async def engine_search(
                                         evidence.update(parse_results(data, engine))
                     except (aiohttp.ClientError, TimeoutError, ValueError):
                         evidence["reason"] = "transport_or_invalid_response"
+                # The engine refused: Atlas waits as long as the sidecar
+                # suspends it, so it never asks a suspended engine again.
+                kind = str(evidence.get("refusal", ""))
+                if kind:
+                    retry = max(retry, float(SUSPENDED_SECONDS[kind]))
                 circuit.record(
                     str(evidence["outcome"]), time.monotonic(), retry, policy
                 )
@@ -474,7 +515,11 @@ def parse_results(data: object, engine: str) -> Message:
             elif failure == engine:
                 reason = "unresponsive"
     outcome = classify(reason) if reason else "ok" if items else "empty_results"
-    return {"results": items, "outcome": outcome}
+    parsed: Message = {"results": items, "outcome": outcome}
+    if outcome == "upstream_blocked" and (kind := refusal_kind(reason, engine)):
+        # engine_search suspends the engine locally for this kind.
+        parsed["refusal"] = kind
+    return parsed
 
 
 async def search(
@@ -485,7 +530,10 @@ async def search(
     n: int,
     news: bool,
     timeout: float,
+    admit: Callable[[], None] | None = None,
 ) -> Message:
+    """One search. ``admit`` runs only when this call starts upstream work (a
+    cache miss that joins no search in flight); it may refuse by raising."""
     policy = Policy.environment()
     language = search_language([], language)
     # Near-identical queries of one language (case, accents, punctuation,
@@ -523,6 +571,8 @@ async def search(
     # Share ongoing work across Runtime instances. A cancelled waiter must not
     # cancel another user's search. The flight has its own bounded deadline.
     if key not in state.flights:
+        if admit is not None:
+            admit()
         task = asyncio.create_task(
             run_search(
                 state,
