@@ -413,8 +413,11 @@ def _previous_language(
 def _carries_evidence(text: str, history: str | None) -> bool:
     # A message of a few words keeps the conversation's language ("Describe
     # this image" in a French conversation); a first one without one frequent
-    # word ("Tesla stock price", "Caen") keeps the interface's.
-    return word_count(text) >= 5 or (history is None and has_language_words(text))
+    # word ("Tesla stock price", "Caen") keeps the interface's, and so does a
+    # single word: "Hello", "Ciao" or "Merci" are said in every language (a
+    # German interface's maintenance notice came back English for "Hello").
+    words = word_count(text)
+    return words >= 5 or (history is None and words >= 2 and has_language_words(text))
 
 
 def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> str:

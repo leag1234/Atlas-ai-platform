@@ -4728,6 +4728,54 @@
     "en",
     "fr"
    ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Hello",
+   "expected": "de",
+   "locales": [
+    "de"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Hi!",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Ciao",
+   "expected": "de",
+   "locales": [
+    "de"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Thanks",
+   "expected": "it",
+   "locales": [
+    "it"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Merci",
+   "expected": "en",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Hola",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
   }
  ]
 }
