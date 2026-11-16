@@ -14,6 +14,11 @@ def requests_file_delivery(text: str, *, include_images: bool = True) -> bool:
     text = attached_blocks.BLOCKS.sub("", text)
     if _requests_inline_chat_answer(text) and not _requests_download(text):
         return False
+    from packages.writing_intent import plain_writing
+
+    # A text to write that names no file or format is answered in the chat.
+    if plain_writing(text):
+        return False
     return produces_file(text, include_images=include_images)
 
 

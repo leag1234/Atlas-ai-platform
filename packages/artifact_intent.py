@@ -7,6 +7,8 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
+from packages.writing_intent import plain_writing
+
 
 Intent = Literal["create", "modify", "available"]
 
@@ -108,10 +110,12 @@ def app_intent(text: str, history: Sequence[Mapping[str, object]]) -> Intent | N
     if _QUESTION.search(normalized):
         return None
     if not _has_artifact(history):
-        return "create"
+        # "Write a short message to ..." is a text for the chat: a writing verb
+        # alone is not an app request (staging 2026-11-16).
+        return None if plain_writing(normalized) else "create"
     if _CHANGE.search(normalized) and not _QUESTION.search(normalized):
         return "modify"
-    return "available"
+    return None if plain_writing(normalized) else "available"
 
 
 def svg_intent(
