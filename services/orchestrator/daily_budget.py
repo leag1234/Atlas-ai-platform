@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -173,7 +174,46 @@ class DailyLedger:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS budget_ledger (kind TEXT NOT NULL, period TEXT NOT NULL, user TEXT NOT NULL, reserved_micro INTEGER NOT NULL DEFAULT 0, measured_micro INTEGER NOT NULL DEFAULT 0, searches INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(kind, period, user))"
             )
+            # The interface account id of a verified email (budget_identity.py).
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS budget_alias (email TEXT PRIMARY KEY, bucket TEXT NOT NULL, seen_at INTEGER NOT NULL)"
+            )
         self.path.chmod(0o600)
+
+    def remember_alias(self, email: str, bucket: str) -> None:
+        """Record that a person's email and interface account id are one bucket.
+
+        Only identities the interface asserted together are recorded: its
+        forwarded id and email on a chat request, or its signed-in user.
+        """
+        key = email.strip().casefold()
+        if (
+            "@" not in key
+            or len(key) > 320
+            or not bucket.strip()
+            or len(bucket) > 200
+            or "@" in bucket
+            or bucket.startswith(OWN_BUDGET_PREFIX)
+        ):
+            return
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT bucket FROM budget_alias WHERE email=?", (key,)
+            ).fetchone()
+            if row is None or row[0] != bucket:
+                db.execute(
+                    "INSERT INTO budget_alias(email,bucket,seen_at) VALUES (?,?,?) "
+                    "ON CONFLICT(email) DO UPDATE SET bucket=excluded.bucket, seen_at=excluded.seen_at",
+                    (key, bucket, int(time.time())),
+                )
+
+    def alias(self, email: str) -> str | None:
+        with self.connection() as db:
+            row = db.execute(
+                "SELECT bucket FROM budget_alias WHERE email=?",
+                (email.strip().casefold(),),
+            ).fetchone()
+        return str(row[0]) if row else None
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -239,15 +279,25 @@ class DailyLedger:
         )
 
     def reserve_cost(
-        self, user: str, amount: Decimal, lang: str, *, user_limits: bool = True
+        self,
+        user: str,
+        amount: Decimal,
+        lang: str,
+        *,
+        user_limits: bool = True,
+        aliases: tuple[str, ...] = (),
     ) -> CostReservation:
         # Exempt test accounts skip the per-user caps; instance caps still apply.
         # So does an API key with its own budget (bucket "api-key:<id>"): its weekly
         # key cap governs it on every path. The chat path applied the 30 EUR user
         # month to such a key while the API path did not (production, 2026-11-13).
+        # aliases: other verified names of the same person (their email when the
+        # bucket is their account id, budget_identity.py); exemptions list emails.
+        exempt = _exempt_users()
         user_limits = (
             user_limits
-            and user not in _exempt_users()
+            and user not in exempt
+            and not any(alias in exempt for alias in aliases)
             and not user.startswith(OWN_BUDGET_PREFIX)
         )
         limits = (
