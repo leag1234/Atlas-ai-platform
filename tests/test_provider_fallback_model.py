@@ -9,7 +9,7 @@ from agent_provider import AgentProvider, AgentRequest
 from provider_retry import ProviderResponseError, TransientProviderError
 from quality import stream_quality
 from serverless import ServerlessPolicy
-from packages.limits import ProviderLimitError
+from packages.limits import ProviderFailure, ProviderLimitError
 
 
 def request() -> AgentRequest:
@@ -134,7 +134,7 @@ class ProviderFallbackModelTests(unittest.IsolatedAsyncioTestCase):
             with (
                 patch("stream_transport.attempt", upstream),
                 patch("quality.ServerlessPolicy", return_value=policy),
-                self.assertRaises(ProviderLimitError),
+                self.assertRaises(ProviderFailure) as raised,
             ):
                 _ = [
                     event
@@ -143,4 +143,7 @@ class ProviderFallbackModelTests(unittest.IsolatedAsyncioTestCase):
                         request().model_copy(update={"budget_eur": "0.00011"}),
                     )
                 ]
+        # No fallback call above the budget; the call reports the provider
+        # failure that needed it, never a budget refusal (staging 2026-11-16).
+        self.assertNotIsInstance(raised.exception, ProviderLimitError)
         self.assertEqual(len(calls), 1)

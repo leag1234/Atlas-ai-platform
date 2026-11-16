@@ -115,6 +115,20 @@ non-retry completion against its requested maximum plus3000 recovery tokens;
 individual provider output remains at most6000. These are accounting envelopes,
 not an increase in the per-request monetary budget or model context.
 
+Failed-attempt charging rule (2026-11-16, one place: `provider_retry.unbilled`).
+A failed attempt that reported usage is charged that usage. An attempt the
+provider never ran costs nothing and releases its reservation: the request never
+left (invalid options, connection not established) or the provider refused it
+with an HTTP error status before any completion frame (502, 503, model not
+found). Every other failure keeps its full reservation, because the provider may
+have billed tokens it never reported: a timeout, a cut connection, a stream cut
+after some bytes, and HTTP 504 (a proxy that gave up while the model may still
+have run). When the recovery of a failed attempt no longer fits the call budget,
+the call reports the failure itself (provider failure or timeout), never
+cost_budget: an outage is not disguised as a budget refusal, the mirror of D5.
+Staging 2026-11-16: two HTTP 503 refusals with zero bytes were each charged
+their full reservation and the turn ended as HTTP 429.
+
 Search preview allocation divides the remaining monetary allowance by the
 configured input price and JSON escaping overhead, retaining half the budget for
 output/other context. An inherited multiplier for ten hypothetical future turns

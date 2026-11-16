@@ -52,8 +52,42 @@ class ProviderResponseError(RuntimeError):
         self.refusal_class = refusal.kind if refusal is not None else "other"
 
 
+class ProviderUnreached(RuntimeError):
+    """The connection to the provider was never established: nothing was sent."""
+
+    usage: Usage | None = None
+    received_bytes = 0
+
+
 class ModelUnavailableError(RuntimeError):
     """A requested model is unavailable and may use the configured alternate."""
+
+    # The provider refused the request ("model not found"): nothing ran.
+    usage: Usage | None = None
+    received_bytes = 0
+
+
+def unbilled(exc: BaseException) -> bool:
+    """Whether a failed provider attempt provably consumed nothing.
+
+    Charging rule for a failed attempt (one place, used by every retry path):
+    - the provider reported usage: charge that usage;
+    - the provider never ran the request: charge nothing. That is a request
+      that never left (invalid options, connection not established) or one the
+      provider refused with an HTTP error status before any completion frame
+      (a 503 "Service unavailable", staging 2026-11-16). The raising site marks
+      these with received_bytes=0;
+    - anything else (a timeout, a cut connection, a 504 from a proxy that gave
+      up while the model may still have run, a stream cut after some bytes)
+      keeps the full reservation: the provider may have billed tokens it never
+      reported.
+    A refused attempt charged in full counted as measured spend: two refusals
+    exhausted the per-call budget and the turn ended as a budget refusal (429)
+    instead of a provider failure.
+    """
+    return getattr(exc, "usage", None) is None and (
+        getattr(exc, "received_bytes", None) == 0
+    )
 
 
 @dataclass
@@ -106,6 +140,8 @@ async def retry_stream(
                 prompt, output = exc.usage.prompt_tokens, exc.usage.completion_tokens
                 if prompt > incoming or output > request.max_tokens:
                     raise RuntimeError("provider_usage_exceeds_reservation") from None
+            elif unbilled(exc):
+                prompt, output = 0, 0
             else:
                 ledger.estimated = True
             ledger.spent += policy.cost(model, prompt, output)
@@ -119,6 +155,7 @@ async def retry_stream(
                         "delay_seconds": delay,
                         "reserved_eur": str(ledger.spent),
                         "usage_measured": exc.usage is not None,
+                        "unbilled": exc.usage is None and unbilled(exc),
                     }
                 )
             )
