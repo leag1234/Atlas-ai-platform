@@ -335,13 +335,21 @@ async def execute(
             text_args = TextPublish.model_validate(value).model_dump(exclude_none=True)
         await tools.execution.check()
         return await publish(tools, text_args, timeout)
+    missing: list[str] = []
     if name == "publish_document":
         value = normalize(value)
+        if isinstance(value, dict):
+            # Before validation adapts the text: what the format cannot draw.
+            from services.orchestrator.deliverable_check import left_out
+
+            missing = left_out(value.get("content"))
     with explained(SCHEMAS[name]):
         args = SCHEMAS[name].model_validate(value).model_dump(exclude_none=True)
     await tools.execution.check()
     if name == "publish_document":
-        return await publish(tools, args, timeout, append_sources=markdown_input)
+        return await publish(
+            tools, args, timeout, append_sources=markdown_input, left_out=missing
+        )
     if name == "organize_files":
         return dict(
             await tools.execution.broker.call(
@@ -438,7 +446,12 @@ def include_sources(content: Content, texts: list[str]) -> Content:
 
 
 async def publish(
-    tools: Any, args: dict[str, Any], timeout: float, *, append_sources: bool = False
+    tools: Any,
+    args: dict[str, Any],
+    timeout: float,
+    *,
+    append_sources: bool = False,
+    left_out: list[str] | None = None,
 ) -> dict[str, Any]:
     from services.orchestrator.presentation_delivery import build_project_document
     from services.orchestrator.terminal_client import ProjectPublisher
@@ -549,6 +562,22 @@ async def publish(
         from packages.doc_render.spreadsheet import validate_sources
 
         validate_sources(document.content, source_sheets)
+    # The built file against the request, before it is published and claimed
+    # (deliverable_check.py): the first gaps of a turn are refused once for a
+    # repair, later ones are published with a note the answer must say.
+    from services.orchestrator import deliverable_check
+
+    checked = await deliverable_check.review(
+        tools,
+        path.suffix,
+        content,
+        document.content,
+        document.preview,
+        list(left_out or ()),
+        # The publication itself keeps 20 seconds of the tool's time.
+        seconds=deadline - time.monotonic() - 20,
+    )
+    lacking = deliverable_check.decide(tools, checked)
     publisher = ProjectPublisher(execution)
     note: dict[str, str] = {}
     if getattr(tools, "numbered_copies", False):
@@ -599,6 +628,8 @@ async def publish(
         )
     if calculated:
         note["note"] = " ".join(filter(None, (note.get("note"), calculated)))
+    if lacking:
+        note["note"] = " ".join(filter(None, (note.get("note"), lacking)))
     if ignored:
         note["note"] = " ".join(
             filter(None, (note.get("note"), IGNORED_SOURCES.format(count=ignored)))
@@ -613,6 +644,7 @@ async def publish(
         file_version_ids=[receipt["file_version_id"]],
         read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
         **note,
+        **(dict(gaps=checked.gaps) if lacking else {}),
     )
 
 

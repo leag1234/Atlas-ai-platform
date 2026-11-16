@@ -11,6 +11,7 @@ from pptx.shapes.autoshape import Shape
 from pptx.shapes.graphfrm import GraphicFrame
 from pypdf import PdfReader
 
+from . import emoji
 from .cells import shown
 from .schema import Content
 
@@ -98,12 +99,15 @@ def verify(
 
         expected = bind_summaries(expected)
     if expected:
+        # A PDF page draws its emoji as pictures (emoji.py): its text layer
+        # holds the rest of each text.
+        drawn = emoji.without_pictures if path.suffix == ".pdf" else lambda value: value
         units = ["".join(value.split()) for value in text]
         if paginated:
             seen: set[str] = set()
             headings = sorted(
                 {
-                    "".join(shown(section.heading).split())
+                    "".join(drawn(shown(section.heading)).split())
                     for section in expected.sections
                 },
                 key=len,
@@ -118,7 +122,9 @@ def verify(
                 seen.update(heading for heading in headings if heading in value)
         combined = "".join(units)
         # A workbook stores a number for a cell typed as one.
-        wanted = expected.texts(sheet=path.suffix == ".xlsx")
+        wanted = [
+            drawn(value) for value in expected.texts(sheet=path.suffix == ".xlsx")
+        ]
         if any("".join(value.split()) not in combined for value in wanted):
             raise VerificationError("missing_expected_text")
     return Verification(unit, len(text), tuple(text), paginated)

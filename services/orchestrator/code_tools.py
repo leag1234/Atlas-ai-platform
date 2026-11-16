@@ -533,6 +533,13 @@ class WorkTools(CodeTools):
         # (each one is refused once; see calculation_check).
         self.request_text = ""
         self.calculation_refusals: set[str] = set()
+        # The check of a built file against the request (deliverable_check.py):
+        # the turn's model (its profile and spending), the conversation's
+        # earlier requests, the checks made and whether a file was refused.
+        self.check_model: Any = None
+        self.earlier_requests: list[str] = []
+        self.deliverable_checks = 0
+        self.deliverable_refused = False
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.
         self.lang = "en"
