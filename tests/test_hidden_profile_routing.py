@@ -360,6 +360,46 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(session.calls[0][1], "Bearer owned-test-only")
 
+    async def test_strict_stream_answer_is_accepted_by_the_orchestrator(self) -> None:
+        # Live staging 2026-11-15: the strict branch forwarded the decoder's raw result
+        # (provider_id, finish_reason, reasoning_tokens) and an "owned" observation the
+        # orchestrator refused, so every strict turn ended in a stream error.
+        from packages import privacy
+        from services.orchestrator.model import WireTurn
+        from stream_transport import stream
+
+        session = Session([Response()])
+        env = HIDDEN_ENVIRONMENT | {
+            "ATLAS_OWNED_VLLM_BASE_URL": "https://owned.example.invalid/v1",
+            "ATLAS_OWNED_VLLM_API_KEY": "owned-test-only",
+        }
+        events: list[dict[str, object]] = []
+        token = privacy.elevate("strict")
+        try:
+            with (
+                patch.dict(os.environ, env),
+                patch("stream_transport.aiohttp.ClientSession", return_value=session),
+                patch("provider_retry.retry_stream", side_effect=_identity_retry),
+            ):
+                payload = self.request(
+                    "atlas-mistral", privacy="strict", budget_eur="0.10", observe=True
+                ).model_dump(mode="json")
+                async with aclosing(stream(AgentProvider(), payload)) as answers:
+                    async for event in answers:
+                        events.append(event)
+        finally:
+            privacy.reset(token)
+        self.assertEqual(
+            [call[0] for call in session.calls],
+            ["https://owned.example.invalid/v1/chat/completions"],
+        )
+        results = [e["result"] for e in events if "result" in e]
+        self.assertEqual(len(results), 1)
+        turn = WireTurn.model_validate(results[0])
+        self.assertEqual(turn.text, "answer")
+        assert turn.observation is not None
+        self.assertEqual(turn.observation.provider, "owned")
+
     async def test_provider_error_redacts_key(self) -> None:
         from stream_transport import provider_error_message
 

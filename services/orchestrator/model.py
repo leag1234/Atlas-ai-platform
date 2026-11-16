@@ -72,7 +72,8 @@ class WireUsage(BaseModel):
 
 class Observation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    provider: Literal["local", "escalade"]
+    # "owned": a server Atlas controls (strict privacy), see docs/08-plateforme-api.md.
+    provider: Literal["local", "escalade", "owned"]
     route: Literal["simple", "complexe"]
     task_type: Literal["text", "code", "vision"] | None = None
     fallback: bool = False
