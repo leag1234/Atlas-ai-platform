@@ -12,7 +12,13 @@ from packages.limits import LimitError
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
 from services.orchestrator.loop import Call, Reservation
-from services.orchestrator.tools import Runtime, Search, SearchQuotaError
+from services.orchestrator.tools import (
+    Runtime,
+    Search,
+    SearchQuotaError,
+    paid_search_key,
+    provider_breakers,
+)
 
 
 class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
@@ -504,6 +510,8 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                     self.runtime, "serpapi", new=AsyncMock(return_value=found)
                 ) as serpapi,
             ):
+                # Each refusal is a fresh case: no breaker left by the last one.
+                provider_breakers().clear()
                 result = await self.runtime.search(self.request, 5)
                 serpapi.assert_awaited_once()
                 code = refusal.code if isinstance(refusal, LimitError) else str(refusal)
@@ -542,6 +550,7 @@ class SearchFallbackTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 patch.object(self.runtime, "serpapi", new=AsyncMock(side_effect=last)),
             ):
+                provider_breakers().clear()
                 result = await self.runtime.execute(
                     Call("1", "web_search", '{"query":"public release","lang":"en"}'),
                     5,
@@ -595,10 +604,8 @@ class SearchFallbackBudgetTests(unittest.TestCase):
             cache = Cache(Path(root) / "cache.sqlite")
             request = Search(query="same query", lang="en")
             self.assertNotEqual(
-                cache.key(["serpapi-search-v1", 4096, request.model_dump()]),
-                cache.key(
-                    ["tavily-advanced-contextual-excerpts", request.model_dump()]
-                ),
+                paid_search_key(cache, "serpapi-search-v2", request),
+                paid_search_key(cache, "tavily-advanced-contextual-v2", request),
             )
             with patch.dict(
                 os.environ,

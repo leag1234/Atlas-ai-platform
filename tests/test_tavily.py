@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from services.orchestrator.cache import Cache
-from services.orchestrator.tools import Fetch, Runtime, Search
+from services.orchestrator.tools import Fetch, Runtime, Search, provider_breakers
 
 
 class TavilyTests(unittest.IsolatedAsyncioTestCase):
@@ -37,6 +37,8 @@ class TavilyTests(unittest.IsolatedAsyncioTestCase):
                     return_value=client,
                 ),
             ):
+                # Each status is a fresh case: no breaker left by the last one.
+                provider_breakers().clear()
                 runtime = Runtime(Cache(Path(root) / "cache.sqlite"), Decimal(0))
                 result = await runtime.execute(
                     Call("1", "web_search", '{"query":"public news","lang":"en"}'), 1
@@ -88,6 +90,7 @@ class TavilyTests(unittest.IsolatedAsyncioTestCase):
                     return_value=client,
                 ),
             ):
+                provider_breakers().clear()
                 with self.assertRaises(GatewayError) as caught:
                     await ChatTools(Interaction()).execute(
                         Call("1", "web_search", '{"query":"public news","lang":"en"}'),
@@ -384,6 +387,7 @@ class TavilyTests(unittest.IsolatedAsyncioTestCase):
                     return_value=client,
                 ),
             ):
+                provider_breakers().clear()
                 runtime = Runtime(Cache(Path(root) / "cache.sqlite"), Decimal(0))
                 result = await runtime.execute(
                     Call("search", "web_search", '{"query":"CPC","lang":"en"}'), 1

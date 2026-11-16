@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Sequence
 from zoneinfo import ZoneInfo
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -375,6 +375,34 @@ class DailyLedger:
                 db.execute(
                     "UPDATE budget_ledger SET searches=searches+1 WHERE kind=? AND period=? AND user=?",
                     (kind, period, user),
+                )
+
+    def reserve_counted_searches(
+        self,
+        checks: Sequence[tuple[str, str, str, int]],
+        lang: str,
+        refusal: type[BudgetRefusal] = BudgetRefusal,
+    ) -> None:
+        """Count one search in every (category, kind, subject, limit) daily
+        bucket, atomically: all of them, or none when one is full."""
+        if not checks:
+            return
+        day = self.day()
+        with self.connection() as db:
+            used = [
+                self._total(db, kind, day, subject, "searches")
+                for _, kind, subject, _ in checks
+            ]
+            for (category, _, _, limit), count in zip(checks, used, strict=True):
+                if count >= limit:
+                    raise refusal(category, count, limit, lang)
+            for (category, kind, subject, limit), count in zip(
+                checks, used, strict=True
+            ):
+                self._warn(subject, category, count, count + 1, limit)
+                db.execute(
+                    "UPDATE budget_ledger SET searches=searches+1 WHERE kind=? AND period=? AND user=?",
+                    (kind, day, subject),
                 )
 
     def summary(self) -> list[dict[str, object]]:
