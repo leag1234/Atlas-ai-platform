@@ -188,6 +188,10 @@ def declarations(*, scoped: bool = False) -> list[dict[str, object]]:
         )
 
         result.extend(machine_declarations())
+        from services.orchestrator import work_pictures
+
+        if work_pictures.enabled():
+            result.append(work_pictures.declaration())
     return result + (project_document_tools.declarations() if scoped else [])
 
 
@@ -540,6 +544,10 @@ class WorkTools(CodeTools):
         self.earlier_requests: list[str] = []
         self.deliverable_checks = 0
         self.deliverable_refused = False
+        # Pictures drawn for a document (work_pictures.py): the conversation
+        # they belong to, and the items this turn had no time to draw.
+        self.picture_scope = ""
+        self.pictures_pending: list[str] = []
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.
         self.lang = "en"
@@ -677,12 +685,28 @@ class WorkTools(CodeTools):
             )
             return result
         if call.name == "publish_scheduled_file":
+            from services.retrieval.project_identity import ProjectError
+
             arguments = json.loads(call.arguments)
-            return dict(
-                await self.execution.broker.call(
-                    "scheduled-publish", dict(self.execution.fence(), **arguments)
+            try:
+                result = dict(
+                    await self.execution.broker.call(
+                        "scheduled-publish", dict(self.execution.fence(), **arguments)
+                    )
                 )
+            except ProjectError as exc:
+                # A refusal is the model's to report, not a crash of the whole
+                # run: a raised 409 ended a run as failed after its file was
+                # saved (staging 2026-11-16).
+                result = dict(exc.body)
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
             )
+            return result
         if self.connectors is not None and call.name in self.connectors.targets:
             return dict(await self.connectors.execute(call, timeout))
         if self.skills is not None:
@@ -744,6 +768,25 @@ class WorkTools(CodeTools):
                 output=result,
             )
             return dict(result)
+        if call.name == "make_pictures":
+            from services.orchestrator import work_pictures
+
+            await self.emit(
+                "tool", tool=call.name, label=call.name, status="running", output={}
+            )
+            try:
+                async with asyncio.timeout(timeout):
+                    result = await work_pictures.execute(self, call.arguments, timeout)
+            except (ValueError, OSError, RuntimeError, TimeoutError) as exc:
+                result = {"error": redact(str(exc)) or "pictures_timeout"}
+            await self.emit(
+                "tool",
+                tool=call.name,
+                label=call.name,
+                status="failed" if result.get("error") else "completed",
+                output=result,
+            )
+            return dict(trust="untrusted", **result)
         if call.name in project_document_tools.SCHEMAS:
             from services.retrieval.project_identity import ProjectError
 

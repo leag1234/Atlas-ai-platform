@@ -41,6 +41,7 @@ from services.orchestrator.loop import (
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.terminal_client import TerminalClient
+from services.orchestrator.work_clock import work_context
 
 
 def code_profile() -> str:
@@ -551,6 +552,7 @@ async def process_code(request: ChatRequest, item: Interaction) -> None:
                 "archive_state": "already_extracted",
                 "paths": "relative or absolute under /workspace",
                 "listing": listing,
+                **work_context(request),
             }
             await tools.emit(
                 "workspace",
@@ -873,6 +875,7 @@ async def process_work(
     tools.earlier_requests = [
         message.text for message in request.messages[:-1] if message.role == "user"
     ]
+    tools.picture_scope = f"{subject}|{request.conversation_id}"
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,
@@ -1302,6 +1305,9 @@ async def process_work(
                     ],
                     environment=execution.session["environment"],
                     plan=execution.session.get("plan", []),
+                    # Today's date in the person's zone, and a scheduled run's
+                    # deliverable note: trusted context, never the user's words.
+                    **work_context(request),
                 ),
                 **({"references": references} if references is not None else {}),
             )

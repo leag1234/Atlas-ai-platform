@@ -36,6 +36,11 @@ places_search is allowed (standard). In enhanced and strict privacy the device
 is never asked; the person may still name a place in text.
 
 Without a routing decision (flag off, router failure) a lexical gate decides.
+
+Owner report 2026-11-16: a correction sent two minutes after a located answer
+asked the device again. A position or place shared in a conversation now
+answers its follow-ups for a bounded time (location_memory), and the person's
+own words, never the service note, feed the discovery search (asked_text).
 """
 
 from __future__ import annotations
@@ -44,12 +49,14 @@ from typing import TYPE_CHECKING
 
 from services.orchestrator.location import (
     LEDGER_LABEL,
+    LEDGER_LABEL_REUSED,
     Location,
     categories,
     device_position_request,
     location_dependent,
     position_dependent,
 )
+from services.orchestrator.location_memory import conversation_key, positions, usable
 from services.orchestrator.stream_client import sink_context
 
 if TYPE_CHECKING:
@@ -256,10 +263,22 @@ def position_note(place: str, accuracy: int | None, typed: bool) -> str:
     )
 
 
-def replace_question(request: ChatRequest, text: str) -> None:
-    """The last user message becomes ``text`` for this answer only."""
+# The person's own question, before a service note is added to it: what the
+# discovery search and the travel checks read (never the English note).
+ASKED_KEY = "asked_text"
+
+
+def asked_text(request: ChatRequest) -> str:
+    value = request.__dict__.get(ASKED_KEY)
+    return value if isinstance(value, str) and value.strip() else request.user_text
+
+
+def replace_question(request: ChatRequest, question: str, note: str = "") -> None:
+    """The last user message becomes ``question`` and ``note`` for this answer only."""
     from packages.images import TextPart
 
+    request.__dict__[ASKED_KEY] = question
+    text = question + ("\n\n" + note if note else "")
     index = max(i for i, m in enumerate(request.messages) if m.role == "user")
     message = request.messages[index]
     if isinstance(message.content, str):
@@ -303,6 +322,18 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
         # "I am at the station square in Caen" after "open bakeries?"
         category_text = previous + "\n" + text
     location = request.location
+    key = conversation_key(request)
+    reused = False
+    if usable(location):
+        assert location is not None
+        positions.remember(key, location)
+    elif location is not None and location.consent in {"refused", "denied"}:
+        positions.forget(key)
+    elif location is None and not origin:
+        # Shared earlier in this conversation: a follow-up does not ask again.
+        location = positions.recall(key)
+        reused = location is not None
+        request.location = location
     if origin:
         # The person's own words win over a browser estimate.
         request.location = Location(
@@ -331,14 +362,19 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
     # Not a nearby-places search: research answers it from the stated place,
     # which the answering model reads in the conversation itself.
     request.location = None
+    from services.orchestrator import travel_claims
+
+    travel = travel_claims.current.get()
     if origin:
         if question != text:
             replace_question(request, question + "\n\n" + text)
+        if travel is not None:
+            travel.located(place=origin)
         return False
     if location is not None and location.place:
-        replace_question(
-            request, question + "\n\n" + position_note(location.place, None, True)
-        )
+        if travel is not None:
+            travel.located(place=location.place)
+        replace_question(request, question, position_note(location.place, None, True))
         location.place = None
         return False
     if location is not None and location.position is not None:
@@ -363,12 +399,15 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
             )
             return True
         replace_question(
-            request,
-            question + "\n\n" + position_note(place, location.accuracy, False),
+            request, question, position_note(place, location.accuracy, False)
         )
-        item.location_used = LEDGER_LABEL
+        if travel is not None:
+            # Kept for this turn only: the straight-line distance code computes.
+            travel.located(place=place, position=position)
+        label = LEDGER_LABEL_REUSED if reused else LEDGER_LABEL
+        item.location_used = label
         if sink := sink_context.get():
-            await sink({"phase": "location_used", "description": LEDGER_LABEL})
+            await sink({"phase": "location_used", "description": label})
         return False
     await ask_for_position(request, item, location)
     return True

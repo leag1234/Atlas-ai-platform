@@ -101,7 +101,7 @@ Reading rules:
 | Groups and per-member connector rules | In progress, not verified | doc19 S-B |
 | MCP backend: HTTP connectors, per-member OAuth, three-layer allowance | Built (#76), not usable: no connector configured, no UI | mcp |
 | Connectors UI | Decided, not built | SV |
-| Scheduled tasks | In review; a "Scheduled tasks" page exists in the sidebar; runtime behaviour not verified (section 12, item 2) | SV |
+| Scheduled tasks | Enabled on staging and production (`ATLAS_PROJECT_MODE=1`, `ATLAS_SCHEDULED_TASKS=1`) since PR #90. Runtime verified on staging on 2026-11-16 with real runs (Run now, deliverable file, daily cap, failure); the defects found that day are fixed (section 12, item 2). Not built: sub-daily frequencies, notifications | SV |
 | Archive and delete projects | In review | SV |
 | Images in projects | Decided (Q10), not built | SV; log M17 |
 | Skills (SKILL.md, organization catalog, five built-in skills) | Decided, not built | SV |
@@ -719,11 +719,22 @@ is not met). Each item gives its current resolution.
    WebUI 0.11.3; doc20 §1-2 diagrams still show "Open WebUI + Atlas UI"; the decision of
    2026-10-31 moves to the web shell plus OpenAtelierUI. Resolved here (section 10); doc20 needs
    updating.
-2. **Scheduled tasks.** Gap. The contract (REQ-PROJ-01) and p0design disable scheduling
-   (`scheduled_tasks: false`); a "Scheduled tasks" sidebar page exists and the feature is in
-   review. A sidebar page does not show that the capability is active. No contract section
-   defines scheduled tasks. Resolution: decision Q4 defines the contract; runtime behaviour on
-   the guest instance must be checked before merge.
+2. **Scheduled tasks.** Resolved in the runtime, stale in the contract. The contract
+   (REQ-PROJ-01) and p0design still disable scheduling (`scheduled_tasks: false`); the feature
+   is enabled on staging and production (`ATLAS_SCHEDULED_TASKS=1` with `ATLAS_PROJECT_MODE=1`)
+   and decision Q4 defines its behaviour. Runtime verified on staging on 2026-11-16 with real
+   runs. Defects found that day and fixed: a Work run did not receive the current date, time
+   and time zone (every Work turn now starts with them, in the zone of the person, or of the
+   task's creator for a scheduled run); a failed run kept its whole reservation in the task's
+   daily spend (it is now charged its measured cost, the reservation only when the cost cannot
+   be known); runs left no log line (metadata-only `scheduled_run_started` and
+   `scheduled_run_finished`; the first tick after a restart waits for retrieval); the internal
+   deliverable note was shown as the user's message (now model context only, and it says
+   whether the target file already exists; the publication result says whether an earlier
+   version was kept); a stray answer showed an internal reason code; task cards lacked next
+   run, last result and pause reason; a person's daily cap was split between their account id
+   and their email (project and scheduled spend now use the account id). REQ-PROJ-01 still
+   needs a scheduled tasks section.
 3. **Local folder priority.** Contradiction. The 2026-10-21 priority on local folders against a
    server that refuses all local-only content, with desktop placed in P1 or P2 depending on the
    source; doc18 also excludes desktop access. Resolved by Q3 (relay prototyped early,

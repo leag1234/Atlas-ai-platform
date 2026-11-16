@@ -39,6 +39,12 @@ from packages.validation import describe_validation
 from services.guardrails.input_filter import validate_input
 
 
+# Work tools that may run longer than a step: drawing the pictures of a
+# document takes about 25 s per picture (work_pictures.py), bounded by the
+# turn's own time.
+LONG_TOOL_SECONDS = {"make_pictures": 900.0}
+
+
 class Query(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     question: str = Field(min_length=1, pattern=r"\S")
@@ -869,7 +875,13 @@ async def run(
                     references.reopen(call)
                     if references is not None and call.name == "reopen_result"
                     else tools.execute(
-                        call, min(125 if limits.code_mode else 15, remaining())
+                        call,
+                        min(
+                            (LONG_TOOL_SECONDS.get(call.name, 125))
+                            if limits.code_mode
+                            else 15,
+                            remaining(),
+                        ),
                     )
                 )
                 if not isinstance(output, dict):

@@ -11,6 +11,7 @@ as it is in the file.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -65,18 +66,31 @@ def _line(
             x += drawn.advance * size
 
 
-def first_page(content: Content, suffix: str) -> bytes | None:
-    """The first page as PNG bytes, or None for a format without pages."""
+def first_page(
+    content: Content, suffix: str, image_root: Path | None = None
+) -> bytes | None:
+    """The first page as PNG bytes, or None for a format without pages.
+
+    image_root holds the content's pictures (the publication resolves them).
+    """
     g = geometry(content, suffix)
     if g is None:
         return None
-    laid = pages(content, FONT_FILE.parent, geometry=g)
+    laid = pages(content, image_root or FONT_FILE.parent, geometry=g)
     page = Image.new("RGBA", (round(g.width * SCALE), round(g.height * SCALE)), "white")
     draw = ImageDraw.Draw(page)
     for placed in laid[0] if laid else ():
         block, top = placed.block, placed.top
         if block.image is not None:
-            continue  # publication refuses images (presentation_delivery)
+            with Image.open(block.image) as source:
+                picture = source.convert("RGBA").resize(
+                    (
+                        max(1, round(block.width * SCALE)),
+                        max(1, round((block.height - 8) * SCALE)),
+                    )
+                )
+            page.alpha_composite(picture, (round(g.margin * SCALE), round(top * SCALE)))
+            continue
         if block.bullet:
             draw.ellipse(
                 [

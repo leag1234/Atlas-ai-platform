@@ -127,7 +127,9 @@ def explained(model: type[BaseModel], root: str = "") -> Iterator[None]:
 def markdown(text: str, title: str) -> Content:
     """A deliberately small text format: headings, paragraphs, lists and tables."""
     sections: list[dict[str, Any]] = []
-    section: dict[str, Any] = dict(heading=title, paragraphs=[], bullets=[], tables=[])
+    section: dict[str, Any] = dict(
+        heading=title, paragraphs=[], bullets=[], tables=[], images=[]
+    )
     paragraph: list[str] = []
     lines = text.splitlines()
 
@@ -138,7 +140,12 @@ def markdown(text: str, title: str) -> Content:
 
     def finish() -> None:
         flush()
-        if section["paragraphs"] or section["bullets"] or section["tables"]:
+        if (
+            section["paragraphs"]
+            or section["bullets"]
+            or section["tables"]
+            or section["images"]
+        ):
             sections.append(section.copy())
 
     def cells(line: str) -> list[str]:
@@ -152,6 +159,14 @@ def markdown(text: str, title: str) -> Content:
     index = 0
     while index < len(lines):
         line = lines[index].strip()
+        # A picture drawn in this turn (work_pictures.py), on its own line:
+        # "![radishes](picture-0123456789ab)". Any other image is refused.
+        picture = re.fullmatch(r"!\[[^\]\n]{0,200}\]\((picture-[0-9a-f]{12})\)", line)
+        if picture:
+            flush()
+            section["images"].append(picture[1])
+            index += 1
+            continue
         # From the first "![" only (atomic): a later one has fewer "](" after it.
         if re.match(r"(?>.*?!\[).*?\]\(", line) or line.startswith("```"):
             raise ValueError("Unsupported Markdown image or fenced block")
@@ -159,7 +174,9 @@ def markdown(text: str, title: str) -> Content:
         bullet = re.fullmatch(r"(?:[-+*]|\d+[.)])\s+(.+)", line)
         if heading:
             finish()
-            section = dict(heading=heading[1], paragraphs=[], bullets=[], tables=[])
+            section = dict(
+                heading=heading[1], paragraphs=[], bullets=[], tables=[], images=[]
+            )
             if index == 0 and line.startswith("# "):
                 title = heading[1]
         elif not line:

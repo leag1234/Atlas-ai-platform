@@ -37,12 +37,19 @@ def verify(
 ) -> Verification:
     """Parsing errors propagate; blank units and missing content fail explicitly."""
     text: list[str] = []
+    pictured: list[bool] = []
     unit: Literal["page", "slide", "document", "worksheet"]
     if path.suffix == ".pdf":
         reader = PdfReader(path, strict=True)
         if reader.is_encrypted:
             raise VerificationError("encrypted_pdf")
         text = [page.extract_text() for page in reader.pages]
+        # A page that holds only a picture (a picture moved to the next page
+        # with no text after it) is not blank.
+        pictured = [
+            not value.strip() and bool(page.images)
+            for value, page in zip(text, reader.pages)
+        ]
         unit = "page"
     elif path.suffix == ".pptx":
         deck = Presentation(str(path))
@@ -87,7 +94,10 @@ def verify(
         unit = "worksheet"
     else:
         raise VerificationError("unsupported_output_format")
-    if not text or any(not value.strip() for value in text):
+    if not text or any(
+        not value.strip() and not (path.suffix == ".pdf" and pictured[index])
+        for index, value in enumerate(text)
+    ):
         raise VerificationError("empty_document_or_unit")
     if expected_count is not None and len(text) != expected_count:
         raise VerificationError(f"unit_count_mismatch:{len(text)}:{expected_count}")

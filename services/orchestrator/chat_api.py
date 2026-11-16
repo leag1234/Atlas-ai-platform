@@ -352,8 +352,22 @@ async def chat(request: Request) -> Response:
             ):
                 raise BudgetRefusal("maintenance", 0, 0, lang)
             user, ledger = user_from_headers(request.headers), DailyLedger()
+            aliases: tuple[str, ...] = ()
             if payload._project_subject:
-                user = payload._project_subject
+                from services.orchestrator.budget_identity import person_bucket
+
+                # The person's one bucket, shared with their chat and API keys.
+                user = await person_bucket(payload._project_subject, ledger)
+                aliases = (payload._project_subject,)
+            elif (
+                authenticated_key is None
+                and request.headers.get("x-openwebui-user-id", "").strip()
+            ):
+                # The interface asserts the account id and email together: the
+                # person's project and scheduled spend then joins this bucket.
+                ledger.remember_alias(
+                    request.headers.get("x-openwebui-user-email", ""), user
+                )
             from services.orchestrator.request_owners import record as record_owner
 
             artifact_owner = payload._project_subject or (
@@ -376,7 +390,7 @@ async def chat(request: Request) -> Response:
                 from services.orchestrator.code_mode import settings
 
                 reserve = settings().cost
-            reservation = ledger.reserve_cost(user, reserve, lang)
+            reservation = ledger.reserve_cost(user, reserve, lang, aliases=aliases)
             key_reservation = None
             if authenticated_key is not None:
                 try:
@@ -422,6 +436,29 @@ async def chat(request: Request) -> Response:
             native_chat = request.headers.get("x-openwebui-chat-id", "")
             if re.fullmatch(r"[A-Za-z0-9:_-]{1,120}", native_chat):
                 payload.__dict__["native_chat_id"] = native_chat
+            # Identities matched against the configured test identities
+            # (search_guard): test traffic gets its own search cap.
+            identities = [
+                request.headers.get("x-openwebui-user-email", ""),
+                str(payload._project_subject or ""),
+            ]
+            if authenticated_key is not None:
+                identities += [
+                    authenticated_key.id,
+                    "api-key:" + authenticated_key.id,
+                    authenticated_key.subject,
+                    authenticated_key.budget_user,
+                ]
+                # The public prefix of the presented key, never its secret part.
+                presented = re.match(
+                    r"Bearer (atl_[0-9a-f]{8})_",
+                    request.headers.get("authorization", ""),
+                )
+                if presented:
+                    identities.append(presented[1])
+            payload.__dict__["search_identities"] = tuple(
+                identity for identity in identities if identity
+            )
             interface_user = request.headers.get("x-openwebui-user-id", "")
             if authenticated_key is None and interface_user:
                 from packages.privacy import elevate

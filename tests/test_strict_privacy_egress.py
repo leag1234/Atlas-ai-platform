@@ -96,6 +96,9 @@ INTERNAL = {
     "services/orchestrator/stream_client.py",
     "services/orchestrator/terminal_client.py",
     "services/orchestrator/terminal_stack.py",
+    # Calls the instance's own model gateway; its encyclopedia reads go through
+    # reference_fetch (classified there).
+    "services/orchestrator/unsourced_details.py",
     "services/orchestrator/user_memory.py",
     "services/orchestrator/user_memory_ui.py",
     "services/orchestrator/voice_ui.py",
