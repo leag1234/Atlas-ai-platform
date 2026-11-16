@@ -355,14 +355,19 @@ class AgentProvider:
     async def owned_complete(self, request: AgentRequest) -> dict[str, object]:
         endpoint = provider_settings.owned_endpoint()
         model = str(provider_settings.preset_value("owned-vllm", "text_model"))
-        async with asyncio.timeout(request.timeout):
-            answer = await self._complete(
-                request,
-                endpoint,
-                model,
-                provider_settings.owned_api_key(),
-                request.timeout,
-            )
+        key = provider_settings.owned_api_key()
+        try:
+            async with asyncio.timeout(request.timeout):
+                answer = await self._complete(
+                    request, endpoint, model, key, request.timeout
+                )
+        except RuntimeError as exc:
+            if str(exc) == "provider_error":
+                # A silent owned server may be powered off: ask its starter.
+                import owned_start
+
+                await owned_start.ensure()
+            raise
         if request.observe:
             answer["observation"] = {
                 "provider": "owned",

@@ -5,7 +5,7 @@ from packages.profiles import accepted_profile
 from packages import context_usage
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
-from packages import privacy
+from packages import owned_server, privacy
 from packages.image_response import IMAGE_RESPONSE_BODY_LIMIT
 
 import json
@@ -24,6 +24,7 @@ from services.orchestrator.loop import (
     Call,
     GatewayError,
     Message,
+    OwnedServerAnswer,
     Reservation,
     StrictPrivacyRefusal,
     Turn,
@@ -220,6 +221,13 @@ class GatewayModel:
                     if capability := response.headers.get(privacy.REFUSAL_HEADER):
                         # Strict privacy: no owned target; named, never an outage.
                         raise StrictPrivacyRefusal(capability[:64])
+                    if response.headers.get(owned_server.HEADER) and (
+                        answer := owned_server.parse(
+                            json.loads(await response.content.read(2048))
+                        )
+                    ):
+                        # The owned server is starting, or its starter refused (D5).
+                        raise OwnedServerAnswer(answer)
                     if response.status != 200 and url.endswith(
                         ("/images/generate", "/images/start", "/images/ready")
                     ):

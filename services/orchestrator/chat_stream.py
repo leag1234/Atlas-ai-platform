@@ -779,7 +779,7 @@ def response(
                     else exc.detail or exc.code
                 )
                 readable = (
-                    ui_failure(exc.code, payload.answer_language)
+                    ui_failure(exc.code, payload.answer_language, exc.measurements)
                     if payload.atlas_ui
                     else None
                 )

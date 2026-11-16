@@ -3,9 +3,11 @@
 The technical code and diagnostics stay in the error code, the logs and the
 interaction record; the person reading the chat gets one sentence in their
 language. Budget and quota refusals are not mapped here: they keep their
-measured values (D5).
+measured values (D5); the refusals of the on-demand owned server's starter are
+written here with their measured values.
 """
 
+from collections.abc import Mapping
 from typing import Literal
 
 PROVIDER_FAILURES = frozenset(
@@ -37,8 +39,87 @@ _TOO_LONG = {
 }
 
 
-def ui_failure(code: str, language: str) -> str | None:
-    """One readable sentence for a provider failure or deadline, else None."""
+_OWNED_STARTING = {
+    "fr": "Le serveur privé démarre (environ {wait}). Votre message n'a été envoyé nulle part ailleurs. Renvoyez-le dans un instant.",
+    "en": "The private server is starting (about {wait}). Your message was not sent anywhere else. Send it again in a moment.",
+    "de": "Der private Server startet (etwa {wait}). Ihre Nachricht wurde nirgendwo anders hin gesendet. Senden Sie sie gleich noch einmal.",
+    "es": "El servidor privado se está iniciando (unos {wait}). Su mensaje no se ha enviado a ningún otro sitio. Vuelva a enviarlo en un momento.",
+    "it": "Il server privato si sta avviando (circa {wait}). Il messaggio non è stato inviato altrove. Invialo di nuovo tra un momento.",
+}
+_OWNED_BUDGET = {
+    "fr": "Le mode strict n'utilise que le serveur privé, et sa limite est atteinte : {used} sur {limit} {period}. Votre message n'a été envoyé nulle part ailleurs.",
+    "en": "Strict mode runs only on the private server, and its limit is reached: {used} of {limit} {period}. Your message was not sent anywhere else.",
+    "de": "Der strikte Modus nutzt nur den privaten Server, und dessen Grenze ist erreicht: {used} von {limit} {period}. Ihre Nachricht wurde nirgendwo anders hin gesendet.",
+    "es": "El modo estricto solo usa el servidor privado y se ha alcanzado su límite: {used} de {limit} {period}. Su mensaje no se ha enviado a ningún otro sitio.",
+    "it": "La modalità rigorosa usa solo il server privato e il suo limite è stato raggiunto: {used} su {limit} {period}. Il messaggio non è stato inviato altrove.",
+}
+_OWNED_START_LIMIT = {
+    "fr": "Le serveur privé a déjà été démarré {used} fois dans l'heure (limite {limit}). Votre message n'a été envoyé nulle part ailleurs.",
+    "en": "The private server was already started {used} times in the last hour (limit {limit}). Your message was not sent anywhere else.",
+    "de": "Der private Server wurde in der letzten Stunde bereits {used}-mal gestartet (Grenze {limit}). Ihre Nachricht wurde nirgendwo anders hin gesendet.",
+    "es": "El servidor privado ya se ha iniciado {used} veces en la última hora (límite {limit}). Su mensaje no se ha enviado a ningún otro sitio.",
+    "it": "Il server privato è già stato avviato {used} volte nell'ultima ora (limite {limit}). Il messaggio non è stato inviato altrove.",
+}
+_OWNED_RETRY = {
+    "fr": " Réessayez dans environ {wait}.",
+    "en": " Try again in about {wait}.",
+    "de": " Versuchen Sie es in etwa {wait} erneut.",
+    "es": " Vuelva a intentarlo dentro de unos {wait}.",
+    "it": " Riprova tra circa {wait}.",
+}
+_PERIODS = {
+    "fr": {"today": "aujourd'hui", "month": "ce mois-ci", "hour": "dans l'heure"},
+    "en": {"today": "today", "month": "this month", "hour": "this hour"},
+    "de": {"today": "heute", "month": "in diesem Monat", "hour": "in dieser Stunde"},
+    "es": {"today": "hoy", "month": "este mes", "hour": "en esta hora"},
+    "it": {"today": "oggi", "month": "questo mese", "hour": "in quest'ora"},
+}
+
+
+def _amount(value: object, unit: object) -> str:
+    number = float(value) if isinstance(value, (int, float)) else 0.0
+    shown = str(int(number)) if number.is_integer() else f"{number:.2f}"
+    return shown + {"hours": " h", "EUR": " EUR"}.get(str(unit), "")
+
+
+def owned_server_sentence(
+    code: str, language: str, values: Mapping[str, object]
+) -> str | None:
+    """The readable sentence of an on-demand owned server answer (starting, or a
+    starter refusal with its measured values: D5), else None."""
+    from packages.owned_server import BUDGET, START_LIMIT, STARTING, wait_text
+
+    lang = language if language in _OWNED_STARTING else "en"
+    retry = values.get("retry_after")
+    wait = (
+        wait_text(int(retry)) if isinstance(retry, (int, float)) and retry > 0 else ""
+    )
+    if code == STARTING:
+        return _OWNED_STARTING[lang].format(wait=wait or "2 min")
+    if code not in (BUDGET, START_LIMIT):
+        return None
+    labels = _OWNED_BUDGET if code == BUDGET else _OWNED_START_LIMIT
+    measured, limit, unit = (values.get(k) for k in ("measured", "limit", "unit"))
+    sentence = (
+        labels[lang]
+        .format(
+            used=_amount(measured, unit) if code == BUDGET else _amount(measured, None),
+            limit=_amount(limit, unit) if code == BUDGET else _amount(limit, None),
+            period=_PERIODS[lang].get(str(values.get("period")), ""),
+        )
+        .replace(" .", ".")
+    )
+    return sentence + (_OWNED_RETRY[lang].format(wait=wait) if wait else "")
+
+
+def ui_failure(
+    code: str, language: str, values: Mapping[str, object] | None = None
+) -> str | None:
+    """One readable sentence for a provider failure, a deadline or an owned server
+    answer, else None."""
+    owned = owned_server_sentence(code, language, values or {})
+    if owned is not None:
+        return owned
     if code not in PROVIDER_FAILURES:
         return None
     labels = _TOO_LONG if code == "timeout" else _INTERRUPTED

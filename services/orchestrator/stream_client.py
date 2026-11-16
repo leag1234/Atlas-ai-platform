@@ -3,6 +3,7 @@
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
 from packages import privacy
+from packages.owned_server import parse as parse_owned
 
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
@@ -68,6 +69,13 @@ async def receive(
                         raise StrictPrivacyRefusal(
                             str(event.get("capability") or "inference")[:64]
                         )
+                    if event.get("error") == "owned_server" and (
+                        answer := parse_owned(event)
+                    ):
+                        from services.orchestrator.loop import OwnedServerAnswer
+
+                        # Starting, or a named refusal of its starter (D5).
+                        raise OwnedServerAnswer(answer)
                     if event.get("error") == "provider_failure":
                         from services.orchestrator.model import GatewayError
 

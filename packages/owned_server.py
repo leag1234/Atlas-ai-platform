@@ -1,0 +1,132 @@
+"""Answers about an on-demand owned inference server, shared by the gateway and the edge.
+
+An owned server (``"privacy": "owned"`` preset, ``ATLAS_OWNED_VLLM_BASE_URL``) may be a
+rented GPU that is powered off between uses. When a strict request finds it silent, the
+gateway asks the host's starter to power it on (``owned_start``) and the request gets one
+of these answers instead of a provider error:
+
+- ``owned_server_starting`` (503, ``Retry-After``): a start is under way; nothing was sent
+  anywhere else, the client sends the request again when the server is up;
+- ``owned_server_budget`` (429): the starter refused because a budget cap is reached
+  (daily hours or monthly euros), with the measured value and the limit (D5: a budget
+  refusal is never reported as an outage);
+- ``owned_server_start_limit`` (429, ``Retry-After``): too many starts in the last hour.
+
+The gateway marks these answers with the ``X-Atlas-Owned-Server`` response header (value:
+the code) so that its clients name them without guessing from the status.
+"""
+
+from typing import Any
+
+STARTING = "owned_server_starting"
+BUDGET = "owned_server_budget"
+START_LIMIT = "owned_server_start_limit"
+CODES = frozenset({STARTING, BUDGET, START_LIMIT})
+STATUS = {STARTING: 503, BUDGET: 429, START_LIMIT: 429}
+HEADER = "X-Atlas-Owned-Server"
+# Units of a measured cap: hours used today, euros spent this month, starts this hour.
+UNITS = frozenset({"hours", "EUR", "starts"})
+PERIODS = frozenset({"today", "month", "hour"})
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != value or not 0 <= value <= 10**7:
+        return None
+    return float(value)
+
+
+def _show(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else f"{value:.2f}"
+
+
+def wait_text(seconds: int) -> str:
+    """A rounded-up wait for people: minutes below an hour, else hours."""
+    if seconds < 3600:
+        return f"{max(1, -(-seconds // 60))} min"
+    return f"{-(-seconds // 3600)} h"
+
+
+class OwnedServerUnavailable(RuntimeError):
+    """The owned server is starting, or its starter refused to start it (named, D5)."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        retry_after: int | None = None,
+        measured: float | None = None,
+        limit: float | None = None,
+        unit: str | None = None,
+        period: str | None = None,
+    ) -> None:
+        if code not in CODES:
+            raise ValueError("invalid_owned_server_code")
+        super().__init__(code)
+        self.code = code
+        self.retry_after = retry_after
+        self.measured, self.limit = measured, limit
+        self.unit = unit if unit in UNITS else None
+        self.period = period if period in PERIODS else None
+
+    @property
+    def status(self) -> int:
+        return STATUS[self.code]
+
+    def fields(self) -> dict[str, Any]:
+        """Public fields: the code and the measured values, never any content."""
+        values: dict[str, Any] = {
+            "retry_after": self.retry_after,
+            "measured": self.measured,
+            "limit": self.limit,
+            "unit": self.unit,
+            "period": self.period,
+        }
+        return {"code": self.code} | {k: v for k, v in values.items() if v is not None}
+
+    @property
+    def message(self) -> str:
+        wait = (
+            f" Retry in about {wait_text(self.retry_after)}."
+            if self.retry_after
+            else ""
+        )
+        if self.code == STARTING:
+            return (
+                "The owned inference server for strict privacy is starting. Nothing "
+                "was sent to any other provider." + wait
+            )
+        used = (
+            f": {_show(self.measured)} {self.unit} used of {_show(self.limit)} "
+            f"{self.unit}" + (f" ({self.period})" if self.period else "")
+            if self.measured is not None
+            and self.limit is not None
+            and self.unit is not None
+            else ""
+        )
+        if self.code == START_LIMIT:
+            return (
+                "The owned inference server for strict privacy cannot be started again "
+                f"yet{used}. Nothing was sent to any other provider." + wait
+            )
+        return (
+            "The owned inference server for strict privacy is not started: its budget "
+            f"cap is reached{used}. Nothing was sent to any other provider." + wait
+        )
+
+
+def parse(value: object) -> OwnedServerUnavailable | None:
+    """The answer carried by a gateway response or stream event, else None."""
+    if not isinstance(value, dict) or value.get("code") not in CODES:
+        return None
+    retry = _number(value.get("retry_after"))
+    unit, period = value.get("unit"), value.get("period")
+    return OwnedServerUnavailable(
+        str(value["code"]),
+        retry_after=int(retry) if retry is not None else None,
+        measured=_number(value.get("measured")),
+        limit=_number(value.get("limit")),
+        unit=unit if isinstance(unit, str) else None,
+        period=period if isinstance(period, str) else None,
+    )

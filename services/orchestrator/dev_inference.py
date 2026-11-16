@@ -3,6 +3,7 @@
 from packages.limits import LimitError
 from packages.validation import describe_validation
 from packages.privacy import PrivacyRefusal
+from packages.owned_server import OwnedServerUnavailable
 
 import asyncio
 import os
@@ -18,6 +19,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 import api_routing
 import dev_gateway as gateway
+import owned_start
 from services.orchestrator.dev_auth import QuotaError, Store
 from services.orchestrator.call_repair import repaired_frames
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
@@ -722,10 +724,19 @@ async def chat(
             if raw_model is not None
             else gateway.prepare(cast(ChatInput, parsed))
         )
+        if strict and plan.privacy == "owned":
+            # The owned server may be powered off between uses: when it does not
+            # answer, its starter is asked to power it on and the client gets the
+            # starter's answer (503 with Retry-After, or a named refusal) before
+            # anything is reserved or streamed.
+            await owned_start.ensure()
         store, developer = request.state.store, request.state.developer
         request_id = store.reserve(
             developer, plan.reserved, monetary=plan.reserved > 0 and not plan.unpriced
         )
+    except OwnedServerUnavailable as exc:
+        values = {k: v for k, v in exc.fields().items() if k != "code"}
+        return error(exc.code, exc.status, exc.message, **values)
     except LimitError as exc:
         return JSONResponse(
             {

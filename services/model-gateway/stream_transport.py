@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from agent_provider import AgentProvider, AgentRequest, Usage, classify
 from streaming import StreamDecoder
+import owned_start
 import upstream
 from provider_refusal import classify_refusal, error_envelope
 from provider_retry import (
@@ -496,6 +497,10 @@ async def attempt(
         raise
     except aiohttp.ClientError:
         diagnostic("transport")
+        if request.privacy == "strict" and decoder.total == 0:
+            # The owned server may be powered off between uses: its starter is
+            # asked to power it on and the request gets the starter's answer.
+            await owned_start.ensure()
         raise RuntimeError("provider_error") from None
     except LimitError:
         raise

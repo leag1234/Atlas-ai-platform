@@ -44,6 +44,8 @@ EGRESS: dict[str, str] = {
     "services/model-gateway/generation.py": "provider",
     "services/model-gateway/image_lifecycle.py": "internal",
     "services/model-gateway/imagegen.py": "internal",
+    # Readiness probe of the owned server only (provider_settings.owned_endpoint).
+    "services/model-gateway/owned_start.py": "provider",
     "services/model-gateway/realtime_transcription.py": "provider",
     "services/model-gateway/stream_transport.py": "provider",
     "services/model-gateway/transcription.py": "provider",
