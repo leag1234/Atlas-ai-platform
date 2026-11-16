@@ -41,6 +41,9 @@ _RUN = re.compile(
     rf"\b{_RUN_VERB}\b.{{0,60}}\b{_CODE_OBJECT}\b"
     # "…et lance-le", "…and run it"
     rf"|\b(?:et|puis|and|then|und|y|e)\s+{_RUN_VERB}[- ]?(?:le|la|les|it|them|lo|es|sie)\b"
+    # "…et l'exécuter", "…puis le lancer": the French pronoun comes first
+    # (staging 2026-11-16: a program to write and run got "I cannot run code").
+    rf"|\b(?:et|puis)\s+(?:l['’]\s?|le\s|la\s|les\s){_RUN_VERB}\b"
     # "make sure the tests pass", "vérifie que pytest passe"
     r"|\b(?:tests?|pytest|unittest)\b.{0,30}\b(?:pass(?:es|ent|e)?|reussi\w*|green|verts?)\b"
 )
