@@ -33,7 +33,7 @@ class CreateKey(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     # Every scope unless the operator restricts the key explicitly (generic keys).
     scopes: list[Literal["assistant", "model"]] = Field(
-        default_factory=lambda: list(ALL_SCOPES), min_length=1
+        default_factory=lambda: ["assistant", "model"], min_length=1
     )
     lifetime_days: int = Field(default=90, ge=1, le=365)
     daily_requests: int | None = Field(default=None, ge=1)

@@ -512,7 +512,9 @@ class KeyTests(unittest.TestCase):
                 )
                 self.assertEqual(reply.status_code, 403, reply.text)
                 self.assertIn("assistant scope", reply.text)
-                self.assertIn('"missing_scope":"assistant"', reply.text.replace(" ", ""))
+                self.assertIn(
+                    '"missing_scope":"assistant"', reply.text.replace(" ", "")
+                )
             reply = client.get(
                 "/api/atlas/v1/models/atlas-dev",
                 headers={"Authorization": "Bearer " + assistant_only},

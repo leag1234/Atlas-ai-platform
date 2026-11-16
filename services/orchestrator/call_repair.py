@@ -21,7 +21,6 @@ import ast
 import json
 import logging
 import math
-import re
 from contextlib import aclosing
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Sequence
 from time import monotonic
@@ -162,7 +161,6 @@ def repair(
 # refused it and sent the whole request again (about two minutes lost). Every call is
 # now complete and checked before it leaves: safe slips with one reading are rewritten,
 # anything else is asked again once, and invalid arguments never reach the client.
-FENCE = re.compile(r"^```[A-Za-z0-9_-]*[ \t]*\n?(.*?)\n?[ \t]*```$", re.S)
 # Seconds without a frame to the client while a call is held: an empty delta keeps
 # idle-timeout clients connected during a long call (a whole file in one argument).
 KEEPALIVE_S = 15.0
@@ -225,6 +223,17 @@ def _without_trailing_commas(text: str) -> str:
     return "".join(out)
 
 
+def _unfenced(text: str) -> str | None:
+    """The text inside a markdown code fence (```json ... ```), None without one."""
+    if len(text) < 6 or not (text.startswith("```") and text.endswith("```")):
+        return None
+    inner = text[3:-3]
+    language, newline, rest = inner.partition("\n")
+    if newline and language.strip().replace("_", "").replace("-", "").isalnum():
+        inner = rest
+    return inner.strip()
+
+
 def _python_literal(text: str) -> dict[str, Any] | None:
     """A Python dict literal ({'a': 'b'}, True, None) read without evaluating code."""
     try:
@@ -251,9 +260,9 @@ def normalized_arguments(arguments: str) -> tuple[str, str | None] | None:
         # Some models send nothing for a call without parameters.
         return "{}", "empty"
     repairs: list[str] = []
-    fenced = FENCE.match(text)
-    if fenced:
-        text = fenced.group(1).strip()
+    fenced = _unfenced(text)
+    if fenced is not None:
+        text = fenced
         repairs.append("code_fence")
         value = _parse(text)
         if isinstance(value, dict):
@@ -418,9 +427,7 @@ async def repaired_frames(
     _log("devapi_call_arguments", outcome="retry_succeeded")
 
 
-def _with_usage(
-    frame: dict[str, Any], prior: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _with_usage(frame: dict[str, Any], prior: list[dict[str, Any]]) -> dict[str, Any]:
     """The final usage frame with the first attempt's tokens and cost added."""
     frame = dict(frame)
     usage = dict(frame["usage"])
@@ -511,9 +518,16 @@ async def _repair(
         open_calls.pop(position, None)
         if not calls:
             return None
+        # An answer cut by max_tokens says so in its finish_reason ("length"): its
+        # last call is incomplete by nature and leaves as sent, without a retry.
+        cut = any(
+            choice.get("index", 0) == position
+            and choice.get("finish_reason") == "length"
+            for choice in (frame or {}).get("choices") or []
+        )
         out, problems = [], []
         for call in calls:
-            checked, problem = checked_call(call, declared)
+            checked, problem = (call, None) if cut else checked_call(call, declared)
             if problem is not None:
                 detail = (
                     _decode_error(checked["arguments"])

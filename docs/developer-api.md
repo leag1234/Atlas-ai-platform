@@ -284,6 +284,10 @@ being written, an empty delta keeps the stream alive every 15 seconds):
   is valid JSON but still lacks a required parameter is returned, so that your client can tell the
   model. Send the request again.
 
+An answer cut by `max_tokens` (`finish_reason: "length"`, `status: "incomplete"`, `stop_reason:
+"max_tokens"`) is the one exception: its last call is incomplete by nature and is returned as the
+model wrote it. Raise `max_tokens` (a whole file in one call needs several thousand tokens).
+
 ### Responses tools
 
 On Responses, the tools of the OpenAI format are translated for the direct models:

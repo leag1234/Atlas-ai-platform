@@ -7,7 +7,7 @@ from packages.owned_server import OwnedServerUnavailable
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
 import json
 import logging
@@ -45,6 +45,17 @@ def error(code: str, status: int, detail: str = "", **values: Any) -> JSONRespon
     )
 
 
+def corrected_events(
+    plan: gateway.Plan,
+) -> Callable[[str], AsyncGenerator[dict[str, Any], None]]:
+    """Opens the corrected attempt of ``plan`` (call_repair asks for it with a note)."""
+
+    def start(note: str) -> AsyncGenerator[dict[str, Any], None]:
+        return gateway.events(gateway.corrected(plan, note))
+
+    return start
+
+
 async def validated_drive(
     store: Store,
     developer: str,
@@ -72,9 +83,7 @@ async def validated_drive(
                     repaired_frames(
                         gateway.events(current),
                         request.tools,
-                        lambda note, target=current: gateway.events(
-                            gateway.corrected(target, note)
-                        ),
+                        corrected_events(current),
                         plan.reserved - charged,
                     )
                 ) as frames:
@@ -288,7 +297,7 @@ async def drive(
                     gateway.events(plan),
                     output.request.tools,
                     # One corrected attempt when a tool call stays unusable.
-                    lambda note: gateway.events(gateway.corrected(plan, note)),
+                    corrected_events(plan),
                     plan.reserved,
                 )
             ) as frames,

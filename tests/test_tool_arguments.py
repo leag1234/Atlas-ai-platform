@@ -133,7 +133,10 @@ class NormalizeTests(unittest.TestCase):
 
     def test_safe_slips_are_rewritten_to_one_object(self) -> None:
         cases = {
-            '{"path": "B2", "text": "x",}': ("trailing_comma", {"path": "B2", "text": "x"}),
+            '{"path": "B2", "text": "x",}': (
+                "trailing_comma",
+                {"path": "B2", "text": "x"},
+            ),
             '{"rows": [1, 2,], "sheet": "Q3",}': (
                 "trailing_comma",
                 {"rows": [1, 2], "sheet": "Q3"},
@@ -179,11 +182,18 @@ class NormalizeTests(unittest.TestCase):
                 self.assertIsNone(normalized_arguments(sent))
 
     def test_missing_required_parameter_is_a_problem(self) -> None:
-        call = {"index": 0, "id": "c", "name": "write_cell", "arguments": '{"path": "B2"}'}
+        call = {
+            "index": 0,
+            "id": "c",
+            "name": "write_cell",
+            "arguments": '{"path": "B2"}',
+        }
         self.assertEqual(checked_call(call, DECLARED)[1], "missing_required")
         undeclared = dict(call, name="other_tool")
         self.assertIsNone(checked_call(undeclared, DECLARED)[1])
-        self.assertEqual(checked_call(dict(call, arguments=CUT), DECLARED)[1], "invalid_json")
+        self.assertEqual(
+            checked_call(dict(call, arguments=CUT), DECLARED)[1], "invalid_json"
+        )
 
 
 class StreamTests(unittest.TestCase):
@@ -196,7 +206,9 @@ class StreamTests(unittest.TestCase):
         calls = sent_calls(out)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["id"], "call-2")
-        self.assertEqual(json.loads(calls[0]["function"]["arguments"]), json.loads(VALID))
+        self.assertEqual(
+            json.loads(calls[0]["function"]["arguments"]), json.loads(VALID)
+        )
         # The text of the first attempt is shown once; the second adds only its call.
         self.assertEqual(text(out), "Filling the cell.")
         roles = [
@@ -208,7 +220,9 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(roles, ["assistant"])
         usage = [frame for frame in out if "usage" in frame]
         self.assertEqual(len(usage), 1)
-        self.assertEqual(usage[0]["usage"], {"prompt_tokens": 200, "completion_tokens": 40})
+        self.assertEqual(
+            usage[0]["usage"], {"prompt_tokens": 200, "completion_tokens": 40}
+        )
         self.assertEqual(usage[0]["cost_micro_eur"], 60)
         finishes = [
             choice["finish_reason"]
@@ -226,9 +240,13 @@ class StreamTests(unittest.TestCase):
         self.assertIn("text", notes[0])
         self.assertEqual(sent_calls(out)[0]["id"], "call-2")
 
-    def test_still_missing_required_after_retry_is_returned_for_the_client(self) -> None:
+    def test_still_missing_required_after_retry_is_returned_for_the_client(
+        self,
+    ) -> None:
         out, _ = collect(call_frames('{"path": "B2"}'), call_frames('{"path": "B3"}'))
-        self.assertEqual(json.loads(sent_calls(out)[0]["function"]["arguments"]), {"path": "B3"})
+        self.assertEqual(
+            json.loads(sent_calls(out)[0]["function"]["arguments"]), {"path": "B3"}
+        )
 
     def test_safe_slip_needs_no_second_attempt(self) -> None:
         out, notes = collect(call_frames('{"path": "B2", "text": "x",}'))
@@ -290,7 +308,10 @@ class StreamTests(unittest.TestCase):
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"role": "assistant", "content": "The cell is filled."},
+                        "delta": {
+                            "role": "assistant",
+                            "content": "The cell is filled.",
+                        },
                         "finish_reason": None,
                     }
                 ]
@@ -300,6 +321,13 @@ class StreamTests(unittest.TestCase):
         out, _ = collect(call_frames(CUT), answer)
         self.assertEqual(text(out), "Filling the cell.\n\nThe cell is filled.")
         self.assertEqual(sent_calls(out), [])
+
+    def test_answer_cut_by_max_tokens_is_returned_as_sent(self) -> None:
+        frames = call_frames(CUT)
+        frames[-2]["choices"][0]["finish_reason"] = "length"
+        out, notes = collect(frames)
+        self.assertEqual(notes, [])
+        self.assertEqual(sent_calls(out)[0]["function"]["arguments"], CUT)
 
     def test_long_held_call_keeps_the_stream_alive(self) -> None:
         with patch.object(call_repair, "KEEPALIVE_S", 0.0):
@@ -477,7 +505,9 @@ class GatewayTests(unittest.TestCase):
             {
                 "model": "atlas-dev",
                 "input": "Put the total in B2",
-                "tools": [{"type": "function", "name": "write_cell", "parameters": WRITE}],
+                "tools": [
+                    {"type": "function", "name": "write_cell", "parameters": WRITE}
+                ],
             },
         )
         self.assertEqual(reply.status_code, 200, reply.text)
@@ -490,7 +520,9 @@ class GatewayTests(unittest.TestCase):
                 "model": "atlas-dev",
                 "input": "Put the total in B2",
                 "stream": True,
-                "tools": [{"type": "function", "name": "write_cell", "parameters": WRITE}],
+                "tools": [
+                    {"type": "function", "name": "write_cell", "parameters": WRITE}
+                ],
             },
         )
         self.assertIn("invalid_tool_arguments", reply.text)

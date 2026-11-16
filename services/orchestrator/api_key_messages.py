@@ -54,7 +54,7 @@ async def errors(
     detail = value.get("error", {})
     extra = {k: v for k, v in detail.items() if k not in {"type", "message"}}
     if isinstance(detail, dict) and isinstance(detail.get("type"), str):
-        # The Atlas code survives the Anthropic error class (for example
+        # The Atlas code survives the Messages error class (for example
         # invalid_tool_arguments under api_error).
         extra.setdefault("code", detail["type"])
     mapped = error(

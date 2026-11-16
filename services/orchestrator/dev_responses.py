@@ -290,9 +290,7 @@ class Wire:
                 "invalid_tool_arguments",
             )
             code = chunk["error"]["type"] if named else "server_error"
-            message = (
-                chunk["error"].get("message", code) if named else "provider_error"
-            )
+            message = chunk["error"].get("message", code) if named else "provider_error"
             # Clients such as Codex wait for a terminal response event; without one an
             # error mid-stream looks like a dropped connection (reported 2026-10-31).
             failed = self.result("failed") | {
