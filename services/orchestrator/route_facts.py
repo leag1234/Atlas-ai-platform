@@ -511,25 +511,32 @@ def _read(
                 start + frequency.start(),
             )
         )
-    unit.route = bool(lines or direct or frequency or (names and route_words))
+    timed = [
+        (clock_start, clock_end, value)
+        for clock_start, clock_end, value in clocks
+        if start <= clock_start < end
+        and not any(abs(value - own) < 0.5 for own in owned_clocks)
+    ]
+    # "arrives at Geneva Airport around 8:43" (staging -100): a place reached
+    # at a time is a route fact, verb or no verb.
+    unit.route = bool(
+        lines or direct or frequency or (names and (route_words or timed))
+    )
     unit.flavour = transit or bool(frequency)
     unit.disclaimer = bool(_DISCLAIMER.search(text))
     unit.anchors = anchors
     if not unit.route:
         return
-    for clock_start, clock_end, value in clocks:
-        if start <= clock_start < end and not any(
-            abs(value - own) < 0.5 for own in owned_clocks
-        ):
-            anchors.append(
-                Anchor(
-                    "clock",
-                    f"clock:{value:g}",
-                    plain[clock_start:clock_end],
-                    (_clock_pattern(value),),
-                    clock_start,
-                )
+    for clock_start, clock_end, value in timed:
+        anchors.append(
+            Anchor(
+                "clock",
+                f"clock:{value:g}",
+                plain[clock_start:clock_end],
+                (_clock_pattern(value),),
+                clock_start,
             )
+        )
     if unit.row:
         cells: list[tuple[int, list[Anchor]]] = []
         cell_start = start

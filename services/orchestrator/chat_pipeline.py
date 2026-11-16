@@ -990,7 +990,19 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.retrieved_urls.extend(details_report.reference_urls)
         item.cout_eur = float(Decimal(str(item.cout_eur)) + details_report.cost_eur)
     if travel_checked:
-        item.reponse = travel.check(item.reponse, asked_language or travel.language)
+        # What no source gives is left out; the answer is then rewritten from
+        # the sourced facts by one bounded call and checked again, or built by
+        # code (travel_rebuild).
+        from services.orchestrator import travel_rebuild
+
+        item.reponse, rebuild_report = await travel_rebuild.review(
+            travel,
+            item.reponse,
+            asked_language or travel.language,
+            question=asked,
+            profile=request.model,
+        )
+        item.cout_eur = float(Decimal(str(item.cout_eur)) + rebuild_report.cost_eur)
     # A relative date or weekday that disagrees with the calendar (relative_dates).
     item.reponse = relative_dates.repair(
         item.reponse, answer_language, today, asked=asked_days
