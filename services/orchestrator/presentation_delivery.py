@@ -217,12 +217,23 @@ from packages.doc_render import render, verify
 from packages.doc_render.schema import Content
 payload = json.load(sys.stdin)
 content = Content.model_validate(payload["content"])
-if any(section.images for section in content.sections):
+# Only the pictures resolved by the caller (work_pictures.resolve), by their
+# fixed names: a section never names another file.
+pictures = payload.get("pictures") or {}
+import re
+if any(
+    not re.fullmatch(r"picture-[0-9a-f]{12}\.jpg", name)
+    for name in pictures
+) or any(
+    image not in pictures for section in content.sections for image in section.images
+):
     raise ValueError("Scoped image resolution is required")
 suffix = payload["suffix"]
 if suffix not in (".docx", ".xlsx", ".pptx", ".pdf"):
     raise ValueError("Unsupported format")
 with tempfile.TemporaryDirectory(prefix="atlas-deliverable-") as directory:
+    for name, data in pictures.items():
+        (Path(directory) / name).write_bytes(base64.b64decode(data, validate=True))
     path = Path(directory) / ("artifact" + suffix)
     render(content, path, image_root=Path(directory))
     checked = verify(path, expected=content)
@@ -331,8 +342,13 @@ def build_project_document(
     *,
     max_bytes: int,
     timeout: float,
+    pictures: dict[str, bytes] | None = None,
 ) -> "VerifiedDocument":
-    """Render and reopen in a bounded process; no caller-supplied validation exists."""
+    """Render and reopen in a bounded process; no caller-supplied validation exists.
+
+    pictures maps the image names of the content (picture-<hex>.jpg) to the
+    bytes resolved by the caller from this conversation's pictures.
+    """
     import base64
     import hashlib
     import subprocess
@@ -351,6 +367,10 @@ def build_project_document(
                     suffix=suffix,
                     source_texts=source_texts,
                     max_bytes=max_bytes,
+                    pictures={
+                        name: base64.b64encode(data).decode()
+                        for name, data in (pictures or {}).items()
+                    },
                 )
             ).encode(),
             capture_output=True,

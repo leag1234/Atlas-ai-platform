@@ -94,6 +94,7 @@ CHAT_ACTIVITIES = {
     "webfetch": "web_fetch",
     "read_document": "reading_document",
     "generate_image": "generate_image",
+    "make_pictures": "generate_image",
 }
 
 # Tool names of the Work loop and of the code engine, by step kind.
