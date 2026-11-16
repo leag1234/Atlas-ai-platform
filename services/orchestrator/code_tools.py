@@ -566,6 +566,7 @@ class WorkTools(CodeTools):
         # that they are placed.
         self.picture_plan: Any = None
         self.picture_plan_failed = False
+        self.pictures_prepared = False
         self.pictures_drawn: dict[str, str] = {}
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.

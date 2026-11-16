@@ -136,7 +136,7 @@ class WorkPictureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_what_does_not_fit_in_the_turn_is_named_with_its_time(self) -> None:
         # 75 s are kept for the document and the answer: 140 s leave room for
-        # two pictures of 20 s (+4 s of check) and not for the others.
+        # two pictures of 20 s (+2 s of check) and not for the others.
         tools = tools_for("subject|chat-b", deadline=self.clock[0] + 75 + 50)
         tools.sink = AsyncMock()
         result = await work_pictures.execute(
@@ -149,7 +149,7 @@ class WorkPictureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["pictures"]), 2)
         self.assertEqual(result["not_drawn"], ["item 2", "item 3", "item 4"])
         self.assertEqual(tools.pictures_pending, ["item 2", "item 3", "item 4"])
-        self.assertEqual(result["seconds_needed_for_the_rest"], 72)
+        self.assertEqual(result["seconds_needed_for_the_rest"], 66)
         # Said when the drawing starts, not only at the end.
         first = tools.sink.await_args_list[0].args[0]["description"]
         self.assertEqual(
