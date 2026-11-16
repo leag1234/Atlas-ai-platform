@@ -559,7 +559,8 @@ async def plan(tools: Any, request: str, *, call: Any = None) -> Plan | None:
     except ArithmeticError:
         cost = Decimal(0)
     if (
-        cost.is_finite()
+        model is not None
+        and cost.is_finite()
         and cost > 0
         and isinstance(getattr(model, "spent", None), Decimal)
     ):

@@ -181,7 +181,7 @@ class PlacedTests(unittest.TestCase):
 
 class WrapTests(unittest.TestCase):
     def test_lines_break_between_words(self) -> None:
-        # Staging -87: "WORKSHO / P", "de la ma / ison", "gril / lé".
+        # Staging -87: headings and cells broke inside words ("WORKSHO / P").
         font()
         for text in (
             "NEIGHBOURHOOD BIKE REPAIR WORKSHOP",
