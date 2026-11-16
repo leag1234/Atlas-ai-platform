@@ -71,7 +71,7 @@ model to `web_search` for what is missing.
 | Tool | Capability | Standard | Enhanced | Strict |
 |---|---|---|---|---|
 | `encyclopedia`, live API | `reference_lookup` (carries the subject) | yes | refused, like web search | refused |
-| `encyclopedia`, local mirror | none (Atlas-operated server) | when the live API fails or times out (dated copy, summary only) | yes, summary only | yes, summary only |
+| `encyclopedia`, local mirror | none (Atlas-operated server and file) | when the live API fails or times out (dated copy; facts from the local extract) | yes, facts from the local extract | yes, facts from the local extract |
 
 Without a configured mirror, the `encyclopedia` tool is not offered in enhanced and
 strict turns, and a call is refused with the level's code.
@@ -104,8 +104,10 @@ The encyclopedia has two backends:
   article. Its introduction is read from the local page; the answer cites the public
   Wikipedia address and names the local book, whose date (`copy_date`, from the served
   book's name, a family being resolved first) gives the copy's age. Structured
-  Wikidata facts are added from the Wikidata API when the request's level allows it,
-  and left out otherwise.
+  Wikidata facts come from the local Wikidata extract when one is configured
+  (`ATLAS_WIKIDATA_LOCAL`, see "Local Wikidata facts" below), at every level; without
+  it, from the Wikidata API when the request's level allows it, and they are left out
+  otherwise (summary only).
 
 The backend is chosen per request (`encyclopedia.source_plan`), from the request's
 privacy level and the setup (`packages.privacy.local_encyclopedia`: a URL and one
@@ -121,8 +123,9 @@ Standard keeps the live API first because Wikidata facts are fresh (current offi
 holders, latest figures) while a `mini` book is months old. When a mirror is
 configured, the live attempt gets the tool's time budget minus three seconds, kept for
 the local copy. "No article" from the live API is an answer, not an outage: the copy is
-not read then. A fallback answer carries no Wikidata facts, and its note asks the
-model to say that the answer comes from a copy of that date.
+not read then. A fallback answer carries the local extract's facts (none without an
+extract), and its note asks the model to say that the answer comes from a copy of that
+date.
 
 ### Survey (2026-11-15)
 
@@ -164,11 +167,8 @@ Wikidata (`https://dumps.wikimedia.org/wikidatawiki/entities/`, weekly):
 (MIT, custom filtered RDF dumps, last change 2022),
 [simple-wikidata-db](https://github.com/neelguha/simple-wikidata-db) (splits the dump
 into tables, active, no licence detected by GitHub). None is a maintained, clearly
-licensed dependency: a streaming filter of about a hundred lines over the truthy dump
-(standard library only) is the safer choice. An extract of the entities with an article in the five editions, the
-properties read by `encyclopedia.PROPERTIES` and labels in five languages would give
-local facts in strict mode; its size is to be measured with one filter run (estimated
-in the low tens of GB as SQLite, not measured).
+licensed dependency. The extract was built on 2026-11-16 from the JSON dump, not the
+truthy one, which lacks the qualifiers the facts need: see "Local Wikidata facts".
 
 Wikipedia abstract dumps (`<lang>wiki-latest-abstract.xml.gz`) are no longer published
 (HTTP 404 on 2026-11-15); the Wikimedia Enterprise HTML snapshots on dumps.wikimedia.org
@@ -179,8 +179,8 @@ stop in March 2025. The `mini` ZIM is the maintained source of introductions.
 - Books: `mini` for the five languages (32.4 GB) gives introductions and infobox text,
   which is what the tool returns; `nopic` (106.5 GB) only if full articles are wanted
   later. Keep the previous file during a refresh: about 2 x 32 GB for `mini`.
-- Facts in strict mode: a Wikidata extract (one weekly truthy download of 44 GB as
-  `.bz2`, filtered in a stream, then deleted), stored as SQLite next to the books.
+- Facts in strict mode: the local Wikidata extract (next section), built from the JSON
+  dump streamed through a filter, stored as SQLite next to the books.
 - Refresh: a monthly job on the host (outside the repository; day 3 at 04:10 UTC on
   the build VM) reads the Kiwix listing for each language served, one language at a
   time. When a newer `wikipedia_<lang>_all_mini_YYYY-MM.zim` is published, it checks
@@ -191,6 +191,87 @@ stop in March 2025. The `mini` ZIM is the maintained source of introductions.
   `ATLAS_KIWIX_BOOKS` holds family names, so no setting changes; the old file is kept
   while any rendered instance file still names it by its dated name. Any failure keeps
   the old file and writes one alert line.
+
+## Local Wikidata facts
+
+`services/orchestrator/wikidata_local.py` reads a SQLite extract of Wikidata
+(`ATLAS_WIKIDATA_LOCAL`, read-only, opened per lookup, no network). The local backend
+looks up the article it found on the mirror by its title (`frwiki`, `Lyon`) and adds the
+same fields as the live path: `facts` (the `encyclopedia.PROPERTIES` keys, item
+references resolved to labels in the user's language, then `mul`, then English),
+`description`, `wikidata_url`, `wikidata_modified`, plus `facts_date` (the dump date)
+and a note saying that an office taken or a figure published after that date is
+missing. An unset or missing file, or an article the extract lacks, gives the previous
+answer (summary only at a level that refuses the API); an unreadable file is logged
+and treated the same way.
+
+Dump choice: the facts need qualifiers (start and end of an office, point in time of a
+population) and every non-deprecated statement (office holders, `latest` population),
+not only the best-ranked one. The truthy N-Triples dump has neither, so the extract
+is built from the JSON dump (`wikidata-YYYYMMDD-all.json.gz`, 157 GB), whose entities
+have the shape of `wbgetentities`: `tools/wikidata_extract.py` runs
+`encyclopedia.raw_facts` itself on each entity, so local and live facts cannot drift
+apart (`tests/test_wikidata_local.py` compares them on one fixture).
+
+Tools surveyed (2026-11-16, GitHub state): wikibase-dump-filter (archived, no licence
+detected, Node.js), wdumper (MIT, RDF output, last change 2022),
+[simple-wikidata-db](https://github.com/neelguha/simple-wikidata-db) (no licence
+detected, needs the dump on disk and writes every claim as JSON lines),
+[qwikidata](https://github.com/kensho-technologies/qwikidata) (Apache-2.0, a dump
+iterator over a local file, last change 2023), [wd2sql](https://github.com/p-e-w/wd2sql)
+(GPL-3.0, whole dump to SQLite, last change 2023), [KGTK](https://github.com/usc-isi-i2/kgtk)
+(MIT, active, converts the whole dump to edge files, heavy on memory and disk),
+[QLever](https://github.com/ad-freiburg/qlever) (Apache-2.0, active, a full SPARQL
+engine). None streams the dump without storing it, and none computes our fact shape:
+the extractor is a single-pass filter of about 400 lines (standard library, `orjson`
+when installed for speed).
+
+Content: every item with a main-namespace article on fr, en, de, es or it Wikipedia
+(categories, templates and other namespaces left out), with its facts (item
+references kept as Q identifiers), descriptions in the five languages and modification
+date; labels in the five languages plus `mul` for those items and for every item their
+facts name (a place, an office, an occupation, a unit), whether or not it has an
+article; article titles by edition, one item per title (the dump is written while
+Wikidata is edited, so a title moved between two items can appear under both: the item
+modified last keeps it). Tables `entity(qid)`, `label(qid)`, `sitelink(site, title)`
+(indexed) and `meta` (dump date, source, counts). Names shared by all languages are
+often stored under `mul` only (Douglas Adams has no `en` label): the reader falls back
+to `mul`, then English, like the live path.
+
+First build (dump of 2026-11-09, build VM, 4 vCPU, 16 GB): the 157 GB dump (about
+1.86 TB of JSON, 122.2 million items) streamed in 96 minutes, about 27 MB/s compressed
+and 320 MB/s decompressed; 98 minutes for the whole build including the labels and the
+title index. Result: 11,014,302 items with an article, 17,717,518 titles, 11,227,578
+label rows (213,276 of them for items named by facts without an article; 14,250 named
+items have no label in the five languages or `mul` and stay as Q identifiers), 39
+duplicate title rows dropped; **5.73 GB** of SQLite. Peak memory of the extractor
+1.73 GB (664 MB while streaming, the rest in the final label pass). Disk at most about
+10.6 GB on the data volume (the extract, 3.3 GB of compressed pending labels, at most
+1.6 GB of range chunks; the old extract counts once more on a refresh). In strict mode
+the tool answered in 80 to 210 ms per lookup once the mirror was warm.
+
+Live check (2026-11-16, in-process): in strict mode, with every third-party request
+trapped, Lyon, Montréal, Google, Airbus, Bordeaux, Munich, Victor Hugo and Marie Curie
+(French and English) returned facts from the extract (`facts_date` 2026-11-09) with the
+Wikipedia address. Wikidata has no founding date for Lyon (Q456 has no `inception`):
+the mirror's articles answered that one (Lugdunum, 43 BC). Eight questions on the
+standard model with the local backend forced cost 0.063 EUR. The dates, founders and
+populations taken from the extract were right; the Airbus answer added founding members
+beyond the sources, partly wrong (DASA did not exist in 1970), and the Munich answer
+showed the Wikidata figure (1,505,036 at 2025-12-31) next to a different figure of the
+article and said they disagree.
+
+Refresh: a monthly job on the host (outside the repository, day 5 at 03:00 UTC, after
+the books on day 3) finds the newest complete JSON dump on dumps.wikimedia.org and,
+when it is newer than the extract, streams it with parallel byte ranges (three
+connections to a mirror, three to dumps.wikimedia.org, its limit; one connection ran at
+4 to 20 MB/s) into pigz and the extractor, never storing the dump, into a new file. It
+checks the md5 of the stream against the published md5sums, the dump's closing
+bracket, SQLite `quick_check`, an entity count within 5 % of the previous extract and
+sample lookups, then renames the new file over the old one (readers open the file per
+lookup). Any failure keeps the old extract and writes one alert line. A failure while
+streaming starts again from the beginning of the dump; a failure after the whole dump
+was read (extractor exit 4) keeps the stream's output, which `--finish-only` completes.
 
 ## Accounts and decisions needed
 
