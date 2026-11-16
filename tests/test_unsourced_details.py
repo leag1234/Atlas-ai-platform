@@ -116,6 +116,11 @@ def _enabled_review_gate() -> None:
     assert details.wants_review("wich year was Velmora founded")
     assert not details.wants_review("imagine a story about Velmora Aerotech")
     assert not details.wants_review("merci")
+    # A definition or an explanation without a named subject keeps streaming.
+    assert not details.wants_review(
+        "c'est quoi la difference entre un virus et une bacterie"
+    )
+    assert not details.wants_review("what are the best rated budget laptops right now")
 
 
 def gateway(text: str) -> AsyncMock:

@@ -788,7 +788,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         if os.environ.get("ATLAS_GROUNDING", "off") == "on"
         and (
             grounding.needs_grounding(request.user_text)
-            or unsourced_details.wants_review(request.user_text)
+            or (
+                unsourced_details.wants_review(request.user_text)
+                and not request.has_attachments
+            )
         )
         else None
     )
@@ -878,14 +881,17 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         and item.state == "done"
         and item.task_type not in {"work", "nearby"}
     ):
-        if unsourced_details.mode() != "off":
+        if unsourced_details.mode() != "off" and not request.has_attachments:
             # Precise details no retrieved text holds: looked up in the subject's
             # encyclopedia article, then corrected or removed by one bounded call
             # (unsourced_details.py). Grounding then checks the final text.
             item.reponse, details_report = await unsourced_details.review(
                 item.reponse,
                 check.evidence,
-                [m.text for m in request.messages if m.role == "user"],
+                # The conversation's own words (earlier answers included) are not
+                # added details; an attachment's facts are never in the evidence
+                # read here, so a turn with one is left to grounding alone.
+                [m.text for m in request.messages],
                 profile=request.model,
                 language=asked_language,
                 question=asked,

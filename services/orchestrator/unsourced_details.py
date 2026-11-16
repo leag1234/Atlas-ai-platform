@@ -157,7 +157,7 @@ CONNECTORS = frozenset(
     "de du des la le les d l von van der den of the di da del dos".split()
 )
 STOP = CONNECTORS | frozenset("a an in on at to for by with and et y und e".split())
-# Titles before a name ("King Charles VIII", "le président Mitterrand"): a source
+# Titles before a name ("King Charles VIII", "President Ilse Varnholt"): a source
 # naming the person without the title still holds the name.
 TITLES = frozenset(
     (
@@ -204,14 +204,24 @@ def mode() -> str:
     return value if value in MODES else "off"
 
 
-# Questions about a named thing that grounding's precise-fact cues miss: "tell me
-# about", "what's the population of", "which missions", a typed "wich".
+# Questions about a named subject that grounding's precise-fact cues miss. A request
+# to present someone or something ("tell me about", "who is") is enough; a generic
+# "what is" or "which" counts only with a capitalised name in the question, so a
+# definition or an explanation ("what is the difference between...") keeps streaming.
 ABOUT = re.compile(
-    r"\b(?:tell me about|talk about|who s|who is|who was|what s|what is|what was|"
-    r"what are|what were|which|wich|whose|parle moi de|parle moi du|parle moi des|"
-    r"presente moi|c est qui|c est quoi|qui est|qui etait|qu est ce que|"
-    r"histoire de|history of|erzahl mir von|wer ist|wer war|was ist|"
-    r"hablame de|quien es|quien era|que es|parlami di|chi e|chi era|cos e)\b"
+    r"\b(?:tell me about|talk about|who s|who is|who was|parle moi de|parle moi du|"
+    r"parle moi des|presente moi|c est qui|qui est|qui etait|"
+    r"erzahl mir von|wer ist|wer war|hablame de|quien es|quien era|parlami di|"
+    r"chi e|chi era)\b"
+)
+GENERIC_ABOUT = re.compile(
+    r"\b(?:what s|what is|what was|what are|what were|which|wich|whose|c est quoi|"
+    r"qu est ce que|was ist|que es|cos e)\b"
+)
+
+
+OWN = re.compile(
+    r"\b(?:my|our|mon|ma|mes|notre|nos|mein|meine|unser|mi|mis|mio|mia|miei)\b"
 )
 
 
@@ -227,7 +237,14 @@ def wants_review(question: str) -> bool:
     text = normalized(question)
     if not text or CREATIVE.search(text) or small_talk(question) or len(text) > 400:
         return False
-    return needs_grounding(question) or bool(ABOUT.search(text))
+    if needs_grounding(question):
+        return True
+    if OWN.search(text):
+        # "my server", "notre facture": the person's own things, not a public subject.
+        return False
+    return bool(ABOUT.search(text)) or bool(
+        GENERIC_ABOUT.search(text) and question_entities(question)
+    )
 
 
 @dataclass(frozen=True)
@@ -391,7 +408,7 @@ def extract(answer: str) -> list[Detail]:
                 index += 1
                 continue
             # A capitalised word opening a sentence is an ordinary word unless it
-            # reads as a name: a list entry ("Name (…)", "Name:"), an acronym or
+            # reads as a name: a list entry ("Name (...)", "Name,"), an acronym or
             # an inner capital.
             after = plain[words[last].end() :].lstrip(" *_")
             name_like = (
