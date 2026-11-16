@@ -1,0 +1,40 @@
+{"id": "co-01", "lang": "fr", "kind": "company", "ref": ["fr:Airbus", "en:Airbus"], "question": "qui a fondé airbus et en quelle anné ?"}
+{"id": "co-02", "lang": "fr", "kind": "company", "ref": ["fr:Carrefour (entreprise)", "en:Carrefour"], "question": "d'ou vient le nom Carrefour ? et c'était quand le premier magasin"}
+{"id": "co-03", "lang": "en", "kind": "company", "ref": ["en:IKEA", "en:Ingvar Kamprad"], "question": "when was ikea founded and by who"}
+{"id": "co-04", "lang": "fr", "kind": "company", "ref": ["fr:Mistral AI", "en:Mistral AI"], "question": "Mistral AI c'est qui les fondateurs ? ils viennent d'où"}
+{"id": "co-05", "lang": "en", "kind": "product", "ref": ["en:Neumann U 87", "en:Georg Neumann GmbH"], "question": "neumann u87 mic, when did it come out and what are the specs?"}
+{"id": "co-06", "lang": "fr", "kind": "company", "ref": ["fr:Decathlon (entreprise)", "en:Decathlon"], "question": "quand a été créé Decathlon et ou était le premier magasin ?"}
+{"id": "co-07", "lang": "en", "kind": "company", "ref": ["en:Nokia", "en:Mobira Cityman"], "question": "what year did Nokia start making phones"}
+{"id": "co-08", "lang": "fr", "kind": "company", "ref": ["fr:Michelin", "en:Michelin"], "question": "Michelin a été fondée quand et par qui"}
+{"id": "pe-01", "lang": "fr", "kind": "person", "ref": ["fr:Lucie Aubrac", "en:Lucie Aubrac"], "question": "parle moi de Lucie Aubrac"}
+{"id": "pe-02", "lang": "en", "kind": "person", "ref": ["en:Hedy Lamarr"], "question": "when was hedy lamarr born and what did she invent"}
+{"id": "pe-03", "lang": "fr", "kind": "person", "ref": ["fr:Gisèle Halimi"], "question": "Gisèle Halimi elle est née où et quand"}
+{"id": "pe-04", "lang": "en", "kind": "person", "ref": ["en:Jensen Huang", "en:Nvidia"], "question": "tell me about Jensen Huang, how he started nvidia"}
+{"id": "pe-05", "lang": "fr", "kind": "person", "ref": ["fr:Raymond Poulidor"], "question": "quel age avait Raymond Poulidor quand il est mort"}
+{"id": "pe-06", "lang": "en", "kind": "person", "ref": ["en:Margaret Hamilton (software engineer)"], "question": "what did Margaret Hamilton do at NASA, which missions"}
+{"id": "pe-07", "lang": "fr", "kind": "person", "ref": ["fr:Jacques Santer", "fr:Jacques Delors"], "question": "Qui a succédé à Jacques Delors à la tête de la Commission européenne ?"}
+{"id": "pe-08", "lang": "en", "kind": "person", "ref": ["en:Ada Lovelace", "en:Analytical engine"], "question": "wich year did Ada Lovelace publish her notes on the analytical engine"}
+{"id": "pl-01", "lang": "fr", "kind": "place", "ref": ["fr:Brive-la-Gaillarde"], "question": "combien d'habitans à Brive-la-Gaillarde ?"}
+{"id": "pl-02", "lang": "fr", "kind": "place", "ref": ["fr:Eusko", "en:Eusko"], "question": "c'est quoi l'eusko au pays basque, ça date de quand ?"}
+{"id": "pl-03", "lang": "en", "kind": "place", "ref": ["en:Millau Viaduct"], "question": "when was the millau viaduct opened and how tall is it"}
+{"id": "pl-04", "lang": "fr", "kind": "place", "ref": ["fr:Quimper", "fr:Liste des maires de Quimper"], "question": "qui est le maire de Quimper en ce moment ?"}
+{"id": "pl-05", "lang": "en", "kind": "place", "ref": ["en:Mont Aiguille", "fr:Mont Aiguille"], "question": "how high is Mont Aiguille and who climbed it first"}
+{"id": "pl-06", "lang": "fr", "kind": "place", "ref": ["fr:Pont de Normandie"], "question": "le pont de normandie a été inauguré quand, il fait quelle longueur ?"}
+{"id": "pl-07", "lang": "en", "kind": "place", "ref": ["en:Ljubljana"], "question": "what's the population of Ljubljana?"}
+{"id": "pl-08", "lang": "fr", "kind": "place", "ref": ["fr:Cité de Carcassonne", "fr:Eugène Viollet-le-Duc"], "question": "la cité de Carcassonne a été restaurée par qui et quand"}
+{"id": "wo-01", "lang": "fr", "kind": "work", "ref": ["fr:La Haine", "en:La Haine"], "question": "qui a réalisé le film La Haine et il est sorti en quelle année"}
+{"id": "wo-02", "lang": "en", "kind": "work", "ref": ["en:The Name of the Rose", "en:Umberto Eco"], "question": "who wrote the name of the rose and when was it published"}
+{"id": "wo-03", "lang": "fr", "kind": "work", "ref": ["fr:Random Access Memories", "en:Random Access Memories"], "question": "l'album Random Access Memories de Daft Punk est sorti quand ? il a eu combien de grammys"}
+{"id": "wo-04", "lang": "en", "kind": "work", "ref": ["en:The Raft of the Medusa", "en:Théodore Géricault"], "question": "who painted the raft of the medusa and where is it now"}
+{"id": "wo-05", "lang": "fr", "kind": "work", "ref": ["fr:L'Étranger", "fr:Albert Camus"], "question": "qui a écrit L'Étranger et en quelle année il a eu le prix Nobel ?"}
+{"id": "wo-06", "lang": "en", "kind": "work", "ref": ["en:Stardew Valley", "en:Eric Barone"], "question": "when did stardew valley come out, who made it"}
+{"id": "wo-07", "lang": "fr", "kind": "work", "ref": ["fr:Pyramide du Louvre", "fr:Ieoh Ming Pei"], "question": "c'est qui l'architecte de la pyramide du Louvre ? inaugurée quelle année"}
+{"id": "wo-08", "lang": "en", "kind": "work", "ref": ["en:Carmen", "en:Georges Bizet"], "question": "what year did the opera Carmen premiere, was it a succes?"}
+{"id": "ev-01", "lang": "fr", "kind": "event", "ref": ["fr:Traité de Maastricht"], "question": "quand a été signé le traité de Maastricht et qui l'a signé pour la France ?"}
+{"id": "ev-02", "lang": "en", "kind": "event", "ref": ["en:Notre-Dame de Paris fire", "en:Notre-Dame de Paris"], "question": "when did the notre dame fire happen and when did the cathedral reopen"}
+{"id": "ev-03", "lang": "fr", "kind": "event", "ref": ["fr:Naufrage de l'Erika", "en:MV Erika"], "question": "le naufrage de l'Erika c'était quand ? combien de tonnes de fioul déversées"}
+{"id": "ev-04", "lang": "en", "kind": "event", "ref": ["en:1989 Tour de France"], "question": "who won the 1989 tour de france and by how many seconds"}
+{"id": "ev-05", "lang": "fr", "kind": "event", "ref": ["fr:Finale du championnat d'Europe de football 2016", "fr:Championnat d'Europe de football 2016"], "question": "Euro 2016 qui a gagné la finale et c'était quoi le score"}
+{"id": "ev-06", "lang": "en", "kind": "event", "ref": ["en:Paris Marathon", "fr:Marathon de Paris"], "question": "when was the first paris marathon held?"}
+{"id": "ev-07", "lang": "fr", "kind": "event", "ref": ["fr:Amoco Cadiz", "en:Amoco Cadiz oil spill"], "question": "la marée noire de l'amoco cadiz c'était en quelle année et où exactement"}
+{"id": "ev-08", "lang": "en", "kind": "event", "ref": ["en:Channel Tunnel"], "question": "when did the channel tunnel open and who inaugurated it"}
