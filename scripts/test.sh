@@ -18,15 +18,22 @@ if [[ "${GITHUB_ACTIONS:-}" == true && "${ATLAS_VERIFY_M0:-}" != 1 ]]; then
   # ATLAS_CI_MILESTONES. Without a shard the complete gate runs, as before.
   shard="${ATLAS_CI_SHARD:-all}"
   if [[ "$shard" == all || "$shard" == unit ]]; then
-    # M0 calls make test with ATLAS_VERIFY_M0=1: it owns the complete unit run.
+    # M0 calls make test with ATLAS_VERIFY_M0=1: it owns the unit run, or one part of it
+    # when the workflow splits the unit modules (ATLAS_CI_UNIT_PART, "K/N").
     make verify-m0
-    PYTHONPATH=".:tests:$PYTHONPATH" python3 tests/m2_gate.py
-    ATLAS_M3_EVAL_MODE=replay make verify-m3
-    make verify-m4
+    # M2 to M4 run once, in the first unit part.
+    if [[ -z "${ATLAS_CI_UNIT_PART:-}" || "${ATLAS_CI_UNIT_PART%%/*}" == 1 ]]; then
+      PYTHONPATH=".:tests:$PYTHONPATH" python3 tests/m2_gate.py
+      ATLAS_M3_EVAL_MODE=replay make verify-m3
+      make verify-m4
+    fi
   fi
   if [[ "$shard" == all || "$shard" == milestones ]]; then
     python3 tests/ci_regressions.py
   fi
+elif [[ -n "${ATLAS_CI_UNIT_PART:-}" ]]; then
+  # One part of the unit modules (tests/unit_part.py); the parts together run them all.
+  python3 tests/unit_part.py "$ATLAS_CI_UNIT_PART"
 else
   python3 -m unittest discover -s tests -v
 fi
