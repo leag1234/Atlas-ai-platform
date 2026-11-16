@@ -35,6 +35,7 @@ from packages.artifact_intent import Intent
 from packages import linear_scan
 from packages.model_json import object_content, unique_object
 from packages.work_intent import manages_machine
+from packages.writing_intent import plain_writing
 
 if TYPE_CHECKING:
     from services.orchestrator.chat_schema import ChatRequest
@@ -165,11 +166,11 @@ Reply with one JSON object only, exactly these keys:
 {"kind": "answer", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 
 kind is one of:
-- "answer": a reply written in the chat: explanation, advice, opinion, comparison, a text to write in the chat (email, poem, story, speech), translation, summary, code shown as text, small talk.
+- "answer": a reply written in the chat: explanation, advice, opinion, comparison, a text to write (message, email, letter, note, post, reply to a review, poem, story, speech, list), translation, summary, code shown as text, small talk.
 - "research": the reply needs current or external facts from the web: news, prices, weather, schedules, opening hours, recent events, a specific product, company, place or web page.
 - "drawing": something visual to LOOK at: drawing, illustration, picture, image, photo, logo, icon, poster, cartoon, diagram, schema, flowchart.
 - "app": something interactive to USE in the browser: game, quiz, flashcards, tool, calculator, converter, timer, simulator, music or drum toy, interactive chart, small web page.
-- "file": a real file to download: Word, Excel, PowerPoint, PDF, CSV or Markdown file, spreadsheet, slide deck, a CV or a letter as a document.
+- "file": a real file to download: Word, Excel, PowerPoint, PDF, CSV or Markdown file, spreadsheet, slide deck, a CV, a text asked as a document or a file.
 - "run": code or tests to execute, data to compute by running a program, or a program to build that is not a single web page (Python script, bot, server, API, scraper). A script or function only to write and show is "answer".
 - "remote": an action on a computer the user owns and reaches over SSH or connected to this assistant (their server, VPS, NAS, laptop, a named machine), including connecting, renaming, forgetting, removing or disconnecting one of those machines. Bookings, payments, phone calls, messages to people and smart-home devices are not "remote": they are "other".
 - "other": none of these.
@@ -182,7 +183,7 @@ origin: when needs_location is true and the last message or an earlier user turn
 
 Rules:
 - A request for a picture is "drawing" whatever the wording or politeness ("tu peux me dessiner", "j'aimerais une illustration", "draw me", "sketch", "un logo pour").
-- Something to play with or use is "app"; a document to keep, print or send is "file"; a text to read in the chat is "answer".
+- Something to play with or use is "app"; a file, a format or a document to download or print is "file"; a text to read, copy or send yourself (message, email, letter, post, reply) is "answer", whatever its length, unless a file or a format is named.
 - A question about how to do something, why, or what something is, is "answer" (or "research" when it needs current facts), even when it mentions files, code, drawings or servers.
 - When a message asks for an explanation and also for something to see, use or download, choose the kind of that thing.
 - When unsure between "answer" and another kind, choose the kind that delivers what the user asked to SEE, USE or DOWNLOAD.
@@ -196,6 +197,8 @@ Examples (last message, then the reply):
 "make me a little piano I can play with my keyboard" {"kind": "app", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "Hazme una hoja de cálculo para el presupuesto del viaje" {"kind": "file", "file_format": "xlsx", "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "rédige une lettre de motivation en Word pour un poste de comptable" {"kind": "file", "file_format": "docx", "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
+"écris un petit mot pour l'anniversaire de ma collègue, 4 phrases" {"kind": "answer", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
+"write a letter to the city council about the noisy street" {"kind": "answer", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "explique-moi comment marche un moteur diesel" {"kind": "answer", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "quel temps fera-t-il à Nantes demain ?" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "il y a une pharmacie de garde pas loin ?" {"kind": "research", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": true, "origin": null}
@@ -424,6 +427,31 @@ async def classify(
     return routed, (time.monotonic() - started) * 1000, cost, reason
 
 
+# Kinds that take a turn out of the chat text: the app panel, a picture, Work.
+_NOT_TEXT = frozenset({"app", "drawing", "file"})
+
+
+def settle(text: str, routed: Decision | None) -> Decision | None:
+    """The code rules over the model decision, where the words are reliable.
+
+    Forgetting or removing a machine is done by the machine tools: the chat
+    alone said "noted" and removed nothing (staging 2026-11-14). A text to
+    write that names no app, picture, code or file is answered in the chat: a
+    short message routed to the app panel took 62 s to build an app instead
+    of five sentences (staging 2026-11-16). A change to something delivered
+    earlier keeps the model's kind.
+    """
+    if routed is None:
+        return None
+    if routed.kind != "remote" and manages_machine(text):
+        return Decision(kind="remote")
+    if routed.kind in _NOT_TEXT and not routed.follow_up and plain_writing(text):
+        return routed.model_copy(
+            update={"kind": "answer", "file_format": None, "needs_research": False}
+        )
+    return routed
+
+
 async def route(request: ChatRequest) -> Decision | None:
     """Decide this plain chat turn once and store it on the request.
 
@@ -440,14 +468,7 @@ async def route(request: ChatRequest) -> Decision | None:
         for message in request.conversation_messages[:-1]
     ]
     routed, milliseconds, cost, reason = await classify(request.user_text, history)
-    if (
-        routed is not None
-        and routed.kind != "remote"
-        and manages_machine(request.user_text)
-    ):
-        # Forgetting or removing a machine is done by the machine tools; the
-        # chat alone said "noted" and removed nothing (staging 2026-11-14).
-        routed = Decision(kind="remote")
+    routed = settle(request.user_text, routed)
     request.__dict__[DECISION_KEY] = routed
     request.__dict__[COST_KEY] = cost
     log.info(
