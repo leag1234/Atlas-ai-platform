@@ -321,8 +321,7 @@ class DocumentRenderTests(unittest.TestCase):
         result = render(content, path, image_root=self.root)
         self.assertEqual(result.unit, "page")
         page = PdfReader(path).pages[0]
-        images = page["/Resources"]["/XObject"]
-        self.assertEqual(len(images), 2)  # one picture per distinct emoji
+        self.assertEqual(len(page.images), 2)  # one picture per distinct emoji
         text = page.extract_text()
         self.assertIn("Hen", text)
         self.assertNotIn("\U0001f414", text)

@@ -24,6 +24,8 @@ import os
 from pathlib import Path
 import struct
 
+from PIL import ImageFont
+
 # Debian and Ubuntu (fonts-noto-color-emoji), then Fedora and Arch.
 FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
@@ -235,8 +237,8 @@ def drawable(token: str) -> bool:
 
 
 @lru_cache(maxsize=1)
-def _face():  # type: ignore[no-untyped-def]
-    from PIL import ImageFont, features
+def _face() -> ImageFont.FreeTypeFont | None:
+    from PIL import features
 
     path = font_path()
     if path is None:
