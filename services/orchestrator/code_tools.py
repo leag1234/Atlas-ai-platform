@@ -301,10 +301,23 @@ class CodeTools:
                 raise ValueError("unknown_code_tool")
             args = schema.model_validate(json.loads(call.arguments)).model_dump()
             if call.name == "update_plan":
+                from services.orchestrator import work_plan
+
+                review: dict[str, Any] = {}
+                shown = work_plan.current.get()
+                if isinstance(self, WorkTools) and shown is not None:
+                    # A chat turn: the plan the person sees is checked by the
+                    # code, and a step is never done without a tool call.
+                    review = shown.update(args["items"])
+                    if len(args["items"]) == len(shown.steps):
+                        args["items"] = [
+                            dict(item, status=status)
+                            for item, status in zip(args["items"], shown.statuses())
+                        ]
                 state = self.workspace.metadata()
                 state["plan"] = args["items"]
                 self.workspace.save(state)
-                result = args
+                result = dict(args, **review)
                 await self.emit(
                     "plan",
                     tool=call.name,

@@ -53,6 +53,7 @@ from services.orchestrator.interactions import Interaction
 from services.orchestrator.loop import GatewayError, Message
 from services.orchestrator.model import GatewayModel
 from services.orchestrator.stream_client import Sink, sink_context
+from services.orchestrator.work_plan import ChatPlan
 
 Kind = Literal["app", "drawing"]
 
@@ -438,6 +439,11 @@ async def process_app_turn(
     summary = ""
     timed_out = False
     model: GatewayModel | None = None
+    # The plan of an app (work_plan.py): write, check, hand over. The code
+    # defines it, since one call writes the whole app; each step is checked
+    # by the code itself (block received, validation passed, app stored).
+    plan = _app_plan(request, previous is not None) if kind == "app" else None
+    built = False
     await progress.status(0)
     try:
         model = await GatewayModel.connect(
@@ -537,6 +543,8 @@ async def process_app_turn(
                 if answer and (previous is not None or question):
                     # A question about the app, or the one essential question.
                     item.reponse, item.state = answer, "done"
+                    if plan is not None:
+                        plan.discard()
                     return
                 failure = "artifact_missing"
                 messages += [
@@ -545,6 +553,8 @@ async def process_app_turn(
                 ]
                 continue
             await progress.status(2)
+            if plan is not None:
+                plan.code_step(2)
             title = (
                 title_of(block.content)
                 or (previous.title if previous is not None else "")
@@ -587,6 +597,7 @@ async def process_app_turn(
             )
             item.state = "done"
             item.latence_ms["artifact_ready"] = (time.monotonic() - started) * 1000
+            built = True
             return
         item.erreurs.append(failure)
         item.reponse = (
@@ -622,9 +633,30 @@ async def process_app_turn(
     finally:
         if model is not None:
             _record(item, model)
+        if plan is not None:
+            plan.finish(built, item.cout_eur)
         item.latence_ms["first_progress"] = (progress.first_status or 0.0) * 1000
         if progress.first_lines is not None:
             item.latence_ms["first_lines"] = progress.first_lines * 1000
+
+
+def _app_plan(request: ChatRequest, change: bool) -> ChatPlan | None:
+    """Show the plan of this app turn, its first step in progress."""
+    from services.orchestrator import work_estimates, work_plan
+
+    plan = work_plan.current.get()
+    if plan is None or plan.shown or plan.finished:
+        return None
+    plan.route = "app"
+    plan.propose(work_plan.app_steps(plan.language, change), source="app")
+    plan.classify(
+        work_estimates.remaining_month(
+            getattr(request, "daily_ledger", None),
+            str(getattr(request, "daily_user", "") or ""),
+        )
+    )
+    plan.code_step(1)
+    return plan
 
 
 def _fail(

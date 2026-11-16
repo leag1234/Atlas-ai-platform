@@ -1412,6 +1412,82 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
 
+// Plan of a long turn (work_plan.py, design note 2026-11-16): a turn handed to Work, or an
+// app being built, sends its plan with the status events (data.atlas_plan: title with the
+// estimate, numbered steps and their states). Open WebUI shows only the status line, so the
+// plan is drawn under it, in the answer being written, and updated live. It goes away when
+// the answer starts: the answer repeats the plan, checked. The Socket.IO frames are only
+// read, never changed or consumed (as guest-chat.js does); nothing touches the composer.
+(() => {
+  "use strict";
+  const plans = new Map();
+  const SYMBOLS = { completed: "✓", in_progress: "◉", pending: "○", failed: "✗" };
+  const valid = plan => plan && typeof plan === "object" && Array.isArray(plan.steps) && plan.steps.length > 0 && plan.steps.length <= 7;
+  const received = payload => {
+    const id = payload?.message_id, event = payload?.data;
+    if (typeof id !== "string" || !/^[\w-]{1,80}$/.test(id) || event?.type !== "status") return;
+    const data = event.data || {};
+    if (data.done === true) { if (plans.has(id)) { plans.set(id, null); schedule(); } return; }
+    if (data.action === "atlas_activity" && valid(data.atlas_plan)) { plans.set(id, data.atlas_plan); schedule(); }
+  };
+  const Socket = window.WebSocket;
+  window.WebSocket = class extends Socket {
+    constructor(...args) {
+      super(...args);
+      let socketIo = false;
+      try { socketIo = new URL(args[0], location.href).pathname.includes("/ws/socket.io"); } catch { /* not a URL this overlay reads */ }
+      if (!socketIo) return;
+      this.addEventListener("message", event => {
+        if (typeof event.data !== "string" || !event.data.startsWith("42")) return;
+        try {
+          const [name, payload] = JSON.parse(event.data.slice(event.data.indexOf("[")));
+          if (name === "events") received(payload);
+        } catch { /* other Engine.IO frames belong to the native client */ }
+      });
+    }
+  };
+  const node = (tag, className, text) => { const element = document.createElement(tag); if (className) element.className = className; if (text !== undefined) element.textContent = text; return element; };
+  const draw = (card, plan) => {
+    const title = node("p", "atlas-plan-title", String(plan.title || "Plan").slice(0, 80));
+    const list = node("ol", "atlas-plan-steps");
+    list.setAttribute("aria-label", String(plan.title || "Plan").slice(0, 80));
+    for (const step of plan.steps.slice(0, 7)) {
+      const status = Object.hasOwn(SYMBOLS, step?.status) ? step.status : "pending";
+      const row = node("li"); row.dataset.status = status;
+      const mark = node("span", "atlas-plan-mark", SYMBOLS[status]); mark.setAttribute("aria-hidden", "true");
+      // The state in words for screen readers (service text, in the conversation language).
+      const state = node("span", "atlas-plan-state", String(step?.state || "").slice(0, 30) + " ");
+      row.append(mark, node("span", "atlas-plan-text"));
+      row.lastChild.append(state, String(step?.text || "").slice(0, 120));
+      list.append(row);
+    }
+    card.replaceChildren(title, list);
+    card.dataset.version = String(plan.version);
+  };
+  const render = () => {
+    for (const [id, plan] of [...plans]) {
+      const message = document.getElementById("message-" + id);
+      let card = message?.querySelector(".atlas-plan");
+      if (!plan) { card?.remove(); plans.delete(id); continue; }
+      const host = message?.querySelector("#response-content-container");
+      if (!host) continue;
+      // The answer has started: the plan comes back checked inside it.
+      if (host.querySelector(".markdown-prose")?.textContent.trim()) { card?.remove(); plans.delete(id); continue; }
+      if (!card || card.parentElement !== host) {
+        card?.remove();
+        card = node("div", "atlas-plan");
+        card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
+        host.prepend(card);
+      }
+      if (card.dataset.version !== String(plan.version)) draw(card, plan);
+    }
+  };
+  let scheduled = false;
+  const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(() => { scheduled = false; render(); }); } };
+  const start = () => new MutationObserver(() => { if (plans.size) schedule(); }).observe(document.body, { childList: true, subtree: true });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true }); else start();
+})();
+
 // Real-time dictation (ATLAS_REALTIME_DICTATION): the Atlas voice button replaces the native
 // microphone. Everything Atlas adds lives in document.body: the button is laid over the
 // native microphone's place (hidden by chat-ui.css, kept in the layout), the live text is

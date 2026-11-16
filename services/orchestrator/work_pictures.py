@@ -723,6 +723,16 @@ async def prepare(
         tools.picture_plan = planned
         return planned
     tools.picture_plan = planned
+    # The chat's plan shows the drawing as a step of its own (work_plan.py).
+    from services.orchestrator import work_plan
+    from services.orchestrator.work_progress import plan_label
+
+    shown = work_plan.current.get()
+    drawing = (
+        shown.code_insert(plan_label(shown.language, "pictures"), "document")
+        if shown
+        else None
+    )
     budget = seconds - WRITING_RESERVE_SECONDS
     arguments = json.dumps(
         {
@@ -735,11 +745,15 @@ async def prepare(
             tools, arguments, max(0.0, budget), server=server, call=call
         )
     except ValueError as error:
+        if shown is not None:
+            shown.code_done(drawing, False)
         tools.instructions = (getattr(tools, "instructions", "") or "") + (
             "\n\nThe file needs pictures and none could be drawn: " + str(error)
         )
         return planned
     drawn = result.get("pictures") or []
+    if shown is not None:
+        shown.code_done(drawing, bool(drawn))
     text = PLACE.format(
         pictures="; ".join(f"{p['label']} -> {p['reference']}" for p in drawn) or "none"
     )

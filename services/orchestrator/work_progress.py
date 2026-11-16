@@ -85,6 +85,156 @@ LABELS: dict[str, dict[str, str]] = {
     },
 }
 
+# The plan of a turn (work_plan.py): its title with the estimate, the heading
+# repeated in the final answer, and the steps of an app turn, which the code
+# defines (one call writes the app, the code checks it and stores it).
+PLAN_LABELS: dict[str, dict[str, str]] = {
+    "fr": {
+        "title": "Plan",
+        "title_estimate": "Plan ({range})",
+        "title_prudent": "Plan (quelques minutes)",
+        "title_left": "Plan (encore {range})",
+        "about": "environ {n} {unit}",
+        "between": "{low} à {high} {unit}",
+        "under": "moins de {n} {unit}",
+        "done_in": "terminé en {duration}",
+        "stopped_after": "arrêté après {duration}",
+        "app_write": "Écrire l’application",
+        "app_change": "Modifier l’application",
+        "app_check": "Vérifier l’application",
+        "app_deliver": "Vous livrer l’application",
+        "pictures": "Dessiner les images",
+        "state_completed": "fait",
+        "state_in_progress": "en cours",
+        "state_pending": "à faire",
+        "state_failed": "échoué",
+    },
+    "en": {
+        "title": "Plan",
+        "title_estimate": "Plan ({range})",
+        "title_prudent": "Plan (a few minutes)",
+        "title_left": "Plan ({range} left)",
+        "about": "about {n} {unit}",
+        "between": "{low} to {high} {unit}",
+        "under": "under {n} {unit}",
+        "done_in": "done in {duration}",
+        "stopped_after": "stopped after {duration}",
+        "app_write": "Write the app",
+        "app_change": "Change the app",
+        "app_check": "Check the app",
+        "app_deliver": "Hand you the app",
+        "pictures": "Draw the pictures",
+        "state_completed": "done",
+        "state_in_progress": "in progress",
+        "state_pending": "to do",
+        "state_failed": "failed",
+    },
+    "de": {
+        "title": "Plan",
+        "title_estimate": "Plan ({range})",
+        "title_prudent": "Plan (einige Minuten)",
+        "title_left": "Plan (noch {range})",
+        "about": "etwa {n} {unit}",
+        "between": "{low} bis {high} {unit}",
+        "under": "unter {n} {unit}",
+        "done_in": "erledigt in {duration}",
+        "stopped_after": "angehalten nach {duration}",
+        "app_write": "Die App schreiben",
+        "app_change": "Die App ändern",
+        "app_check": "Die App prüfen",
+        "app_deliver": "Ihnen die App übergeben",
+        "pictures": "Die Bilder zeichnen",
+        "state_completed": "erledigt",
+        "state_in_progress": "läuft",
+        "state_pending": "offen",
+        "state_failed": "fehlgeschlagen",
+    },
+    "es": {
+        "title": "Plan",
+        "title_estimate": "Plan ({range})",
+        "title_prudent": "Plan (unos minutos)",
+        "title_left": "Plan (quedan {range})",
+        "about": "unos {n} {unit}",
+        "between": "de {low} a {high} {unit}",
+        "under": "menos de {n} {unit}",
+        "done_in": "hecho en {duration}",
+        "stopped_after": "detenido tras {duration}",
+        "app_write": "Escribir la aplicación",
+        "app_change": "Modificar la aplicación",
+        "app_check": "Comprobar la aplicación",
+        "app_deliver": "Entregarle la aplicación",
+        "pictures": "Dibujar las imágenes",
+        "state_completed": "hecho",
+        "state_in_progress": "en curso",
+        "state_pending": "pendiente",
+        "state_failed": "fallido",
+    },
+    "it": {
+        "title": "Piano",
+        "title_estimate": "Piano ({range})",
+        "title_prudent": "Piano (qualche minuto)",
+        "title_left": "Piano (ancora {range})",
+        "about": "circa {n} {unit}",
+        "between": "da {low} a {high} {unit}",
+        "under": "meno di {n} {unit}",
+        "done_in": "completato in {duration}",
+        "stopped_after": "interrotto dopo {duration}",
+        "app_write": "Scrivere l’app",
+        "app_change": "Modificare l’app",
+        "app_check": "Verificare l’app",
+        "app_deliver": "Consegnarle l’app",
+        "pictures": "Disegnare le immagini",
+        "state_completed": "fatto",
+        "state_in_progress": "in corso",
+        "state_pending": "da fare",
+        "state_failed": "non riuscito",
+    },
+}
+# Units are the same short forms in the five languages, except German minutes.
+UNITS = {"minutes": {"de": "Min."}, "hours": {}}
+
+
+def plan_label(language: str, key: str, **values: object) -> str:
+    table = PLAN_LABELS.get(language, PLAN_LABELS["en"])
+    return table[key].format(**values)
+
+
+def unit(language: str, name: str) -> str:
+    return UNITS[name].get(language, "min" if name == "minutes" else "h")
+
+
+def duration_range(language: str, low_seconds: float, high_seconds: float) -> str:
+    """'2 to 4 min', 'about 3 min', 'under 2 min', '1 to 2 h': whole units.
+
+    The lower bound is rounded down and the upper bound up, so the shown range
+    holds the computed one.
+    """
+    import math
+
+    hours = high_seconds >= 90 * 60
+    size = 3600.0 if hours else 60.0
+    name = unit(language, "hours" if hours else "minutes")
+    low = math.floor(low_seconds / size)
+    high = max(1, math.ceil(high_seconds / size))
+    if low < 1:
+        return plan_label(language, "under", n=high, unit=name)
+    if low >= high:
+        return plan_label(language, "about", n=high, unit=name)
+    return plan_label(language, "between", low=low, high=high, unit=name)
+
+
+def elapsed(language: str, seconds: float) -> str:
+    """'45 s', '2 min 10 s', '1 h 5 min'."""
+    total = max(0, round(seconds))
+    if total < 60:
+        return f"{total} s"
+    minutes, rest = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes} {unit(language, 'minutes')} {rest} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} {unit(language, 'minutes')}"
+
+
 # Activities the chat stream already labels itself (activity-labels.json and the
 # guest table): their own label is kept, so one step never has two wordings.
 CHAT_ACTIVITIES = {

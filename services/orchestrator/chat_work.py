@@ -376,11 +376,75 @@ async def escalate_to_work(request: ChatRequest, item: Interaction) -> bool:
     """Create (once per user) the hidden scratch project and a Work session bound
     to this conversation, then run the turn through process_work. Returns True
     when the turn was handed to Work."""
-    handed = await _escalate(request, item)
+    try:
+        handed = await _escalate(request, item)
+    finally:
+        await _close_plan(request, item)
     if not handed and request.__dict__.pop(_PREPARING_KEY, False):
         # The chat answers by itself: the preparing status must not stay.
         await _announce(request, "declined")
     return handed
+
+
+# Set on the request: the planning call (work_plan.py) and the outcome of the
+# Work turn for its plan (True: delivered; False: stopped and explained).
+_PLANNING_KEY = "work_planning"
+_PLAN_OUTCOME_KEY = "work_plan_outcome"
+
+
+def _start_plan(request: ChatRequest, kind: str | None) -> None:
+    """Ask for the plan while the workspace is being prepared (17 to 31 s for
+    code on staging): it is on screen before Work's first step, and Work
+    reads it when its instructions are built (work_plan.instruction)."""
+    from services.orchestrator import work_estimates, work_plan
+
+    plan = work_plan.current.get()
+    if plan is None or plan.shown or plan.finished:
+        return
+    plan.route = work_estimates.route(kind)
+    history = [
+        {"role": message.role, "content": message.text}
+        for message in request.conversation_messages[:-1]
+    ]
+
+    async def planning() -> Any:
+        cost = await work_plan.propose(plan, request.user_text, history)
+        if plan.shown:
+            plan.classify(
+                await asyncio.to_thread(
+                    work_estimates.remaining_month,
+                    request.__dict__.get("daily_ledger"),
+                    str(request.__dict__.get("daily_user") or ""),
+                )
+            )
+        return cost
+
+    request.__dict__[_PLANNING_KEY] = asyncio.create_task(planning())
+
+
+async def _close_plan(request: ChatRequest, item: Interaction) -> None:
+    """Finish the plan with the turn's outcome; count the planning call."""
+    from decimal import Decimal
+
+    from services.orchestrator import work_plan
+
+    task = request.__dict__.pop(_PLANNING_KEY, None)
+    if isinstance(task, asyncio.Task):
+        if not task.done():
+            task.cancel()
+        else:
+            cost = task.result() if not task.cancelled() else Decimal(0)
+            if cost:
+                item.cout_eur = float(Decimal(str(item.cout_eur)) + cost)
+    plan = work_plan.current.get()
+    if plan is None or plan.finished:
+        return
+    outcome = request.__dict__.pop(_PLAN_OUTCOME_KEY, None)
+    if outcome is None:
+        # Not handed to Work after all, or failed before an answer.
+        plan.discard()
+        return
+    plan.finish(bool(outcome), item.cout_eur)
 
 
 async def _escalate(request: ChatRequest, item: Interaction) -> bool:
@@ -442,7 +506,9 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         )
         return False
     # From here the setup (project, conversation, session, workspace and, for
-    # code, the engine) takes seconds before Work reports its first step.
+    # code, the engine) takes seconds before Work reports its first step. The
+    # plan is asked for at the same time, to be on screen before that step.
+    _start_plan(request, reason or (routed.kind if routed is not None else None))
     await _announce(request, "preparing")
     try:
         async with aiohttp.ClientSession(
@@ -636,6 +702,7 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
             item.reponse, item.task_type, item.state = produced, "work", "done"
             item.erreurs, item.work_failure = before[1], {}
             incomplete("file_delivered")
+            request.__dict__[_PLAN_OUTCOME_KEY] = True
             return True
         # A machine task or code to run needs Work's tools: the chat alone would
         # answer that it has no access, which is false. It gets the explanation.
@@ -662,6 +729,7 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
             item.reponse, item.task_type, item.state = reply, "work", "done"
             item.work_failure = {}
             incomplete("explained")
+            request.__dict__[_PLAN_OUTCOME_KEY] = False
             return True
         # Anything else: the chat answers by itself, as it did before Work existed
         # behind it. The person never gets a raw failure for a turn the chat can answer.
@@ -670,6 +738,7 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         incomplete("chat_answers")
         return False
     item.task_type = "work"
+    request.__dict__[_PLAN_OUTCOME_KEY] = True
     logger.info(
         "chat_work_escalated reason=%s conversation=%s session=%s",
         reason or ("machine_setup" if setup else "follow_up"),
