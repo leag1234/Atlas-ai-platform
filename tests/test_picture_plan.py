@@ -93,7 +93,7 @@ class PlanTests(unittest.IsolatedAsyncioTestCase):
         replies = AsyncMock(
             side_effect=[
                 dict(case["reply"]),
-                {"text": json.dumps({"met": [True]}), "cost_eur": "0.0004"},
+                {"text": json.dumps({"met": [True, True]}), "cost_eur": "0.0004"},
             ]
         )
         plan = await work_pictures.prepare(
@@ -125,7 +125,7 @@ class PlanTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_follow_up_completes_the_missing_pictures_only(self) -> None:
         cases = RECORDED["atlas-qwen"]
         first, follow = cases["picture_book_fr"], cases["follow_up_missing_pictures_fr"]
-        checks = [{"text": json.dumps({"met": [True]}), "cost_eur": "0"}] * 40
+        checks = [{"text": json.dumps({"met": [True, True]}), "cost_eur": "0"}] * 40
         server = FakeServer(self.clock)
         # A chat turn: 280 s hold the plan's reserve and 8 pictures of 24 s.
         tools = tools_for("subject|book", first["request"])

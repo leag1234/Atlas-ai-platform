@@ -67,7 +67,9 @@ DESCRIPTION = (
     "pictures, use them only when the person asks for emoji. Give each item a "
     "short label (the word or name as the document shows it) and a "
     "description in English of what the picture shows, concrete and visual; "
-    "give the common look (style) once. The tool returns a reference per "
+    "give the common look (style) once. A picture holds no writing: titles, "
+    "dates and names go in the document's text; set text only when the "
+    "person asks for words inside the picture. The tool returns a reference per "
     "picture drawn: place each one in its section of publish_document as a "
     "Markdown line ![label](reference), and nowhere else. Pictures take about "
     "25 seconds each: the tool draws what fits in the time of this turn and "
@@ -83,6 +85,33 @@ class Item(BaseModel):
 
     label: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=600)
+    # Words to show inside the picture, only when the person asks for them;
+    # otherwise the picture holds no writing (see lettering()).
+    text: str = Field(default="", max_length=120)
+
+
+# The image model letters badly: a poster's bicycle came with garbled
+# pseudo-words baked in (staging -91). Text belongs to the document's layout;
+# a picture holds writing only when the person asks for it, and its check
+# rejects unreadable lettering (redraw once, then the picture is left out).
+NO_LETTERING = (
+    " The picture contains no text: no letters, numbers, words, signs, labels "
+    "or captions anywhere."
+)
+
+
+def lettering(item: Item) -> tuple[str, str]:
+    """What the drawing prompt says about writing, and the check statement."""
+    if item.text:
+        return (
+            f' The only writing in the picture reads "{item.text}", clearly spelled.',
+            f'Any writing in the picture reads exactly "{item.text}" and is spelled '
+            "correctly; there is no other writing",
+        )
+    return (
+        NO_LETTERING,
+        "The picture contains no letters, words, numbers or writing of any kind",
+    )
 
 
 class MakePictures(BaseModel):
@@ -342,15 +371,20 @@ async def execute(
     spend = Spend(ceiling=CHECK_BUDGET_EUR)
     errors: list[str] = []
     drawn = 0
+    omitted: list[str] = []
     for count, (position, item, key) in enumerate(todo):
         left = end - time.monotonic()
         # The first picture also waits for the jobs queued before it.
         needed = (per if count == 0 else per_picture - CHECK_SECONDS) + CHECK_SECONDS
         if left < needed:
             break
-        prompt = (item.description + (". " + style if style else ""))[:1500]
+        writing, writing_check = lettering(item)
+        prompt = (
+            item.description.rstrip(".") + "." + (" " + style + "." if style else "")
+        )[: 1500 - len(writing)] + writing
         picture: Any = None
         verdict = "unchecked"
+        garbled = False
         for attempt in range(2):
             seed = int.from_bytes(os.urandom(4), "big") % 2**31
             try:
@@ -367,8 +401,9 @@ async def execute(
             picture = candidate
             if not isinstance(profile, str) or strict:
                 break
+            shows = f"The picture shows {item.label}: {item.description}"
             unmet = await cpu_checks.unmet(
-                [f"The picture shows {item.label}: {item.description}"],
+                [shows, writing_check],
                 candidate.image,
                 profile,
                 spend,
@@ -377,9 +412,14 @@ async def execute(
             )
             if unmet is None:
                 break
-            verdict = "matches" if not unmet else "does_not_match"
+            garbled = writing_check in unmet
+            verdict = "does_not_match" if shows in unmet else "matches"
             if not unmet or end - time.monotonic() < per_picture:
                 break
+        if garbled:
+            # Unreadable lettering after a redraw: left out, and said.
+            omitted.append(item.label)
+            continue
         if picture is None:
             if errors and errors[-1] not in {"picture_filtered_or_missing"}:
                 break
@@ -405,10 +445,15 @@ async def execute(
         and isinstance(getattr(model, "spent", None), Decimal)
     ):
         model.spent += spend.total
-    left_items = [r["label"] for r in results if "reference" not in r]
+    left_items = [
+        r["label"]
+        for r in results
+        if "reference" not in r and r["label"] not in omitted
+    ]
     pending = getattr(tools, "pictures_pending", None)
     if isinstance(pending, list):
-        pending[:] = left_items
+        # Neither kind can be repaired in this turn: the answer says them.
+        pending[:] = left_items + omitted
     output: dict[str, Any] = dict(
         pictures=[r for r in results if "reference" in r],
         seconds_per_picture=round(per_picture, 1),
@@ -420,6 +465,12 @@ async def execute(
             "These pictures do not clearly show their item after a redraw: "
             + ", ".join(mismatched)
             + ". The answer must say so."
+        )
+    if omitted:
+        output["left_out"] = omitted
+        notes.append(
+            "These pictures were left out: after a redraw they still carried "
+            "unreadable lettering: " + ", ".join(omitted) + ". The answer must say so."
         )
     if left_items:
         rest = round(per_picture * len(left_items))
@@ -480,8 +531,11 @@ PLAN_SYSTEM = (
     "person asks for emoji or symbols themselves. Each picture has a label "
     "(the word or name as the file shows it, in the person's language) and a "
     "description in English of what it shows, concrete and visual, in at "
-    "most 25 words. Reply with "
-    'JSON only: {"pictures": [{"label": "...", "description": "..."}], '
+    "most 25 words, describing the subject only, never writing (titles, dates "
+    "and names belong to the file's text, not to the picture); text holds "
+    "words to show inside the picture only when the person asks for words in "
+    "the picture, else it is empty. Reply with "
+    'JSON only: {"pictures": [{"label": "...", "description": "...", "text": ""}], '
     '"style": "one shared look in English, or empty", "emoji_requested": false}'
     ", at most 16 pictures."
 )
@@ -633,7 +687,9 @@ PLACE = (
     "\n\nPictures for this file were drawn before you started (make_pictures, "
     "checked against their items): {pictures}. Place each one in the section "
     "of its item as its own Markdown line ![label](reference) (for slides: in "
-    "the slide's images). Do not replace a picture with an emoji or a symbol."
+    "the slide's images). Do not replace a picture with an emoji or a symbol. "
+    "Write the items as the person gave them and add nothing the request did "
+    "not ask for (no exercises, annotations, variants or extra lines)."
 )
 NO_PLAN = (
     "\n\nThe pictures this file needs could not be planned before you started. "
