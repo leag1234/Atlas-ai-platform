@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 import reportlab
 from PIL import Image
@@ -96,18 +97,56 @@ def width_of(text: str, size: float) -> float:
     return total + pdfmetrics.stringWidth(run, FONT, size)
 
 
-def wrap(text: str, width: float, size: float) -> tuple[str, ...]:
-    # Character wrapping preserves supplied whitespace and long unbroken values.
-    # An emoji sequence (a family joined by U+200D) is never cut.
-    lines: list[str] = []
+def _cut(word: str, width: float, size: float) -> list[str]:
+    """A word longer than the line, cut where it must (an address, a code);
+    an emoji sequence (a family joined by U+200D) is never cut."""
+    parts: list[str] = []
     current = ""
-    for character in emoji.tokens(text):
+    for character in emoji.tokens(word):
         if width_of(current + character, size) > width:
             if not current:
                 raise ValueError("glyph_exceeds_line_width")
-            lines.append(current)
+            parts.append(current)
             current = ""
         current += character
+    if current:
+        parts.append(current)
+    return parts
+
+
+def wrap(text: str, width: float, size: float) -> tuple[str, ...]:
+    """Lines broken between words; a word wider than the line is cut.
+
+    Lines used to break at any character: headings and table cells showed
+    "WORKSHO / P" and "de la ma / ison" (staging 2026-11-16). The space at a
+    break is dropped; other whitespace is kept as supplied.
+    """
+    lines: list[str] = []
+    current = ""
+    space = ""
+    for piece in re.findall(r"\s+|\S+", text):
+        if piece.isspace():
+            space = piece if current or lines else ""
+            if not current and not lines:
+                current = piece  # leading whitespace is kept as supplied
+                space = ""
+            continue
+        candidate = current + space + piece
+        space = ""
+        if width_of(candidate, size) <= width:
+            current = candidate
+            continue
+        if current.strip():
+            lines.append(current)
+        current = ""
+        if width_of(piece, size) <= width:
+            current = piece
+            continue
+        parts = _cut(piece, width, size)
+        lines.extend(parts[:-1])
+        current = parts[-1]
+    if space and current and width_of(current + space, size) <= width:
+        current += space
     if current:
         lines.append(current)
     return tuple(lines)
