@@ -214,7 +214,12 @@ def context_window(profile: str, *, vision: bool = False) -> int:
 
 # Steps of the picture chain (services/orchestrator/pictures), each bound to a
 # declared profile by `picture_roles` in services/model-gateway/routing.yaml.
-PICTURE_ROLES = ("picture_painter", "picture_checklist", "picture_rewrite")
+PICTURE_ROLES = (
+    "picture_painter",
+    "picture_checklist",
+    "picture_rewrite",
+    "deliverable_plan",
+)
 
 
 def picture_profile(role: str) -> str | None:

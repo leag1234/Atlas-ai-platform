@@ -48,7 +48,7 @@ from typing import Any
 
 from packages.doc_render import emoji
 
-CHECK_SECONDS = 30.0
+CHECK_SECONDS = 45.0
 # Under this, the publication has no time to spare for the call.
 MIN_SECONDS = 8.0
 CHECK_BUDGET_EUR = Decimal("0.02")
@@ -76,7 +76,9 @@ SYSTEM = (
     "emoji or symbols); a number of columns, rows, items, slides or pages that "
     "differs from the one asked; characters the file could not draw and left "
     "out when the request needs them; placeholder, invented or empty content; "
-    "content cut off; the wrong language or format. Acceptable variants are "
+    "content cut off; the wrong language or format; items the person gave "
+    "written differently (split into syllables, renamed, translated, reworded) "
+    "when nothing asked for that. Acceptable variants are "
     "not gaps: style, colours, layout and wording choices that still do what "
     'was asked; list them under "variants", which changes nothing. Do not '
     "invent requirements the person did not ask for. Reply with JSON only: "
@@ -457,7 +459,7 @@ async def review(
         or count >= MAX_CHECKS
         or seconds < MIN_SECONDS
     ):
-        outcome.gaps = deterministic
+        outcome.gaps = deterministic + (unchecked(tools) if count < MAX_CHECKS else [])
         return outcome
     tools.deliverable_checks = count + 1
     strict = bool(getattr(model, "strict", False))
@@ -481,6 +483,10 @@ async def review(
         if isinstance(asked, list)
         else None,
     )
+    if getattr(tools, "picture_plan_failed", False) is True:
+        measured["picture_plan"] = (
+            "could not be made: judge from the request whether pictures are asked"
+        )
     page: bytes | None = None
     if content is not None and not strict:
         try:
@@ -499,65 +505,80 @@ async def review(
     if allowance <= 0:
         outcome.gaps = deterministic
         return outcome
-    payload: dict[str, Any] = {
-        "messages": messages(
-            request,
-            earlier,
-            measured,
-            drawn_text(content)
-            if content is not None
-            else preview.decode("utf-8", "replace"),
-            page,
-        ),
-        "tools": [],
-        "response_format": {"type": "json_object"},
-        "profile": profile,
-        "max_tokens": CHECK_TOKENS,
-        "timeout": seconds,
-        "budget_eur": str(allowance.quantize(Decimal("0.0001"), rounding=ROUND_FLOOR)),
-        "reasoning_effort": "none",
-        "sampling_temperature": 0.0,
-        "single_attempt": True,
-        "local_enabled": False,
-    }
-    if strict:
-        payload["privacy"] = "strict"
+    from services.orchestrator.work_pictures import plan_profiles
+
+    body = messages(
+        request,
+        earlier,
+        measured,
+        drawn_text(content)
+        if content is not None
+        else preview.decode("utf-8", "replace"),
+        page,
+    )
     call = complete or _complete
-    try:
-        reply = await call(payload, seconds + 5)
-    except Exception as error:  # noqa: BLE001 - never blocks the delivery
-        logging.getLogger(__name__).warning(
-            json.dumps(
-                {"event": "deliverable_check_failed", "error": type(error).__name__}
+    found: list[str] | None = None
+    cost = Decimal(0)
+    # The fast profile first (reasoning off), then the turn's own profile: a
+    # check that timed out on a slow profile let a file without its pictures
+    # pass (staging -91).
+    for name, limit in plan_profiles(tools) or [(profile, seconds)]:
+        left = seconds - (time.monotonic() - started)
+        if left < MIN_SECONDS:
+            break
+        payload: dict[str, Any] = {
+            "messages": body,
+            "tools": [],
+            "response_format": {"type": "json_object"},
+            "profile": name,
+            "max_tokens": CHECK_TOKENS,
+            "timeout": min(limit, left),
+            "budget_eur": str(
+                allowance.quantize(Decimal("0.0001"), rounding=ROUND_FLOOR)
+            ),
+            "reasoning_effort": "none",
+            "reasoning_disabled": True,
+            "sampling_temperature": 0.0,
+            "single_attempt": True,
+            "local_enabled": False,
+        }
+        if strict:
+            payload["privacy"] = "strict"
+        try:
+            reply = await call(payload, min(limit, left) + 5)
+        except Exception as error:  # noqa: BLE001 - never blocks the delivery
+            logging.getLogger(__name__).warning(
+                json.dumps(
+                    {"event": "deliverable_check_failed", "error": type(error).__name__}
+                )
             )
-        )
-        outcome.gaps = deterministic
-        outcome.seconds = time.monotonic() - started
-        return outcome
-    try:
-        cost = Decimal(str(reply.get("cost_eur") or 0))
-    except ArithmeticError:
-        cost = Decimal(0)
-    if cost.is_finite() and cost > 0:
-        outcome.cost_eur = cost
-        if model is not None and isinstance(getattr(model, "spent", None), Decimal):
-            model.spent += cost
-    found = gaps_of(str(reply.get("text") or ""))
+            continue
+        try:
+            spent = Decimal(str(reply.get("cost_eur") or 0))
+        except ArithmeticError:
+            spent = Decimal(0)
+        if spent.is_finite() and spent > 0:
+            cost += spent
+            if model is not None and isinstance(getattr(model, "spent", None), Decimal):
+                model.spent += spent
+        found = gaps_of(str(reply.get("text") or ""))
+        if found is not None:
+            break
+    outcome.cost_eur = cost
     outcome.seconds = time.monotonic() - started
     outcome.image = page is not None
     if found is None:
-        outcome.gaps = deterministic
+        outcome.gaps = deterministic + unchecked(tools)
         return outcome
     outcome.checked = True
-    # The model judges the left-out characters against the request: an
-    # emoji decoration of a report is not a gap, a picture book's are.
     outcome.gaps = certain + found
-    logging.getLogger(__name__).info(
+    logging.getLogger(__name__).warning(
         json.dumps(
             {
                 "event": "deliverable_check",
                 "format": suffix,
                 "gaps": len(found),
+                "certain": len(certain),
                 "image": outcome.image,
                 "seconds": round(outcome.seconds, 2),
                 "cost_eur": str(cost),
@@ -565,6 +586,17 @@ async def review(
         )
     )
     return outcome
+
+
+def unchecked(tools: Any) -> list[str]:
+    """When neither the plan nor the check could run, the answer must not
+    claim that the file has everything the request asks (pictures included)."""
+    if getattr(tools, "picture_plan_failed", False) is True:
+        return [
+            "the file could not be checked against the request, pictures it may "
+            "need included: do not claim it has everything that was asked"
+        ]
+    return []
 
 
 def joined(gaps: list[str]) -> str:

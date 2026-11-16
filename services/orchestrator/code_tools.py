@@ -552,6 +552,7 @@ class WorkTools(CodeTools):
         # and those drawn for it (reference -> item): the publication checks
         # that they are placed.
         self.picture_plan: Any = None
+        self.picture_plan_failed = False
         self.pictures_drawn: dict[str, str] = {}
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.

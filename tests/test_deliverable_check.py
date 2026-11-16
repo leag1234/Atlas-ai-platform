@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from packages.doc_render import emoji
 from packages.doc_render.schema import Content
-from services.orchestrator import deliverable_check
+from services.orchestrator import deliverable_check, work_pictures
 from services.orchestrator.presentation_delivery import build_project_document
 from services.orchestrator.project_document_input import normalize
 from services.orchestrator.project_document_tools import execute
@@ -167,7 +167,11 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(
                         payload["response_format"], {"type": "json_object"}
                     )
-                    self.assertEqual(payload["profile"], "atlas-qwen")
+                    # The fast profile of the plan role first (reasoning off).
+                    self.assertEqual(
+                        payload["profile"], work_pictures.plan_profiles(tools)[0][0]
+                    )
+                    self.assertTrue(payload["reasoning_disabled"])
                     self.assertLessEqual(
                         Decimal(payload["budget_eur"]), Decimal("0.02")
                     )

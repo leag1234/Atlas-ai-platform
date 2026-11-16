@@ -105,9 +105,15 @@ class WorkPictureTests(unittest.IsolatedAsyncioTestCase):
         clock.start()
         self.addCleanup(clock.stop)
 
-    def checker(self, *verdicts: bool) -> AsyncMock:
+    def checker(self, *verdicts: Any) -> AsyncMock:
+        # Each check reads two statements: the item, and no writing.
         replies = [
-            {"text": json.dumps({"met": [value]}), "cost_eur": "0.0004"}
+            {
+                "text": json.dumps(
+                    {"met": [value, True] if isinstance(value, bool) else value}
+                ),
+                "cost_eur": "0.0004",
+            }
             for value in verdicts
         ]
         return AsyncMock(side_effect=replies)
@@ -171,6 +177,39 @@ class WorkPictureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(server.prompts), 2)
         self.assertEqual(result["pictures"][0]["checked"], "does_not_match")
         self.assertIn("do not clearly show", result["note"])
+
+    async def test_a_picture_with_garbled_lettering_is_left_out(self) -> None:
+        # Staging -91: a poster's bicycle came with pseudo-words baked in.
+        tools = tools_for("subject|chat-h", deadline=self.clock[0] + 600)
+        server = FakeServer(self.clock)
+        result = await work_pictures.execute(
+            tools,
+            items(1),
+            900,
+            server=server,
+            call=self.checker([True, False], [True, False]),
+        )
+        self.assertEqual(len(server.prompts), 2)
+        self.assertEqual(result["pictures"], [])
+        self.assertEqual(result["left_out"], ["item 0"])
+        self.assertNotIn("not_drawn", result)
+        self.assertEqual(tools.pictures_pending, ["item 0"])
+        self.assertIn("unreadable lettering", result["note"])
+        self.assertTrue(server.prompts[0].endswith(work_pictures.NO_LETTERING))
+
+    async def test_words_asked_inside_a_picture_are_drawn_and_checked(self) -> None:
+        tools = tools_for("subject|chat-i", deadline=self.clock[0] + 600)
+        server = FakeServer(self.clock)
+        check = self.checker(True)
+        arguments = json.dumps(
+            {"items": [{"label": "sign", "description": "a shop sign", "text": "OPEN"}]}
+        )
+        await work_pictures.execute(tools, arguments, 900, server=server, call=check)
+        self.assertIn('reads "OPEN"', server.prompts[0])
+        statements = check.await_args_list[0].args[0]["messages"][1]["content"][0][
+            "text"
+        ]
+        self.assertIn("OPEN", statements)
 
     async def test_an_unavailable_server_is_said_never_replaced(self) -> None:
         server = DownServer(self.clock)
