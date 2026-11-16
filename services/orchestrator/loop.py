@@ -18,6 +18,7 @@ from services.orchestrator.tool_failures import (
 from packages.profiles import accepted_profile
 from packages.limits import LimitError
 from packages.privacy import STATUS, StrictPrivacyUnavailable, describe, refusal
+from packages.owned_server import OwnedServerUnavailable
 
 import asyncio
 import json
@@ -212,6 +213,23 @@ class StrictPrivacyRefusal(GatewayError, StrictPrivacyUnavailable):
         self.capability, self.level = capability, named.level
         GatewayError.__init__(
             self, named.code, STATUS, describe(capability, named.level)
+        )
+
+
+class OwnedServerAnswer(GatewayError):
+    """The on-demand owned server is starting, or its starter refused to start it
+    (budget cap or start limit, named with the measured values: D5). Never an outage:
+    the code, the status and ``retry_after`` reach the client as the gateway sent them.
+    """
+
+    def __init__(self, answer: OwnedServerUnavailable) -> None:
+        self.retry_after = answer.retry_after
+        GatewayError.__init__(
+            self,
+            answer.code,
+            answer.status,
+            answer.message,
+            measurements=answer.fields(),
         )
 
 

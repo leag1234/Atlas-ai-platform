@@ -25,6 +25,7 @@ from packages.configuration import MissingConfiguration
 from packages.ports import atlas_ports
 from packages.gpu_ownership import GPUDisabled
 from packages import privacy
+from packages.owned_server import HEADER as OWNED_HEADER, OwnedServerUnavailable
 
 import imagegen
 import image_lifecycle
@@ -173,7 +174,10 @@ def serve(
                         if isinstance(exc, TimeoutError)
                         else str(exc)
                         if str(exc) in known
-                        or isinstance(exc, privacy.StrictPrivacyUnavailable)
+                        or isinstance(
+                            exc,
+                            (privacy.StrictPrivacyUnavailable, OwnedServerUnavailable),
+                        )
                         else "invalid_or_unavailable"
                     )
                     logging.getLogger(__name__).warning(
@@ -192,6 +196,9 @@ def serve(
                                     "capability": exc.capability,
                                 }
                             )
+                        elif isinstance(exc, OwnedServerUnavailable):
+                            # Starting, or a named refusal of the starter (D5).
+                            await send({"error": "owned_server", **exc.fields()})
                         elif isinstance(exc, ProviderFailure):
                             await send(
                                 {
@@ -260,6 +267,7 @@ def serve(
             started = monotonic()
             request: object = {}
             refused: str | None = None
+            owned: OwnedServerUnavailable | None = None
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 maximum = (
@@ -456,6 +464,12 @@ def serve(
                         "retries": exc.retries,
                     },
                 )
+            except OwnedServerUnavailable as exc:
+                owned = exc
+                status, response = (
+                    exc.status,
+                    exc.fields() | {"message": exc.message},
+                )
             except imagegen.ImageWorkerFailure as exc:
                 status, response = (
                     exc.status,
@@ -485,6 +499,10 @@ def serve(
             self.send_header("Content-Length", str(len(body)))
             if refused is not None:
                 self.send_header(privacy.REFUSAL_HEADER, refused)
+            if owned is not None:
+                self.send_header(OWNED_HEADER, owned.code)
+                if owned.retry_after is not None:
+                    self.send_header("Retry-After", str(owned.retry_after))
             self.end_headers()
             self.wfile.write(body)
 

@@ -444,6 +444,8 @@ is one euro) and the limits that apply to your key.
 | 403 `strict_privacy_unavailable` | Strict privacy was asked (request, key or organisation minimum) and no owned server exists for that capability | Do not retry: remove the strict level, or ask the operator for an owned server |
 | 403 `enhanced_privacy_unavailable` | Enhanced privacy was asked and this server cannot pseudonymise yet (or does not offer the level) | Do not retry: use another level |
 | 403 `privacy_feature_refused` | The feature named in `feature` (`vision`, `ocr`, `web_search`, `web_fetch`, `embeddings`, `transcription`, ...) is not allowed at the applied `level` | Do not retry: remove the feature or use another level |
+| 503 `owned_server_starting` (with `Retry-After`) | Strict privacy: the owned server is powered off between uses and is starting for this request (about 2 minutes). Nothing was sent to any other provider | Retry after `Retry-After` seconds |
+| 429 `owned_server_budget` or `owned_server_start_limit` | Strict privacy: the owned server's starter refused, because its budget cap is reached (`measured`, `limit`, `unit`: `hours` today or `EUR` this month) or it was started too often this hour | Retry after `retry_after` seconds, or use another level |
 | 401 | Missing, wrong, expired or revoked key | Check the key and its expiry date |
 | 404 `storage_not_supported` | A stored response, conversation or completion was requested | Atlas stores nothing; keep your own history |
 | 409 `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
@@ -514,3 +516,10 @@ OpenAI-compatible vLLM server that the owner fully controls, whose address is se
 with the `X-Atlas-Privacy: strict` header; an operator can also make a key strict when issuing it, and a
 project can be set to strict through the project API. In strict mode web search and web fetch are not
 offered. See the strict privacy section of [the platform API notes](08-plateforme-api.md).
+
+An owned server may be powered off between uses (an on-demand GPU). Where the operator installs a
+starter for it (`ATLAS_OWNED_SERVER_STARTER_DIR`, a directory where Atlas drops a start request and
+reads the starter's `status.json`; the starter alone holds the cloud credentials and enforces its caps),
+a strict request that finds the server silent starts it and gets 503 `owned_server_starting` with
+`Retry-After`; a refusal of the starter is a named 429 with its measured values, never an outage.
+Without a starter, nothing changes. Shared traffic never starts the owned server.

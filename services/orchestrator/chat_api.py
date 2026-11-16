@@ -258,6 +258,7 @@ async def chat(request: Request) -> Response:
     status, code, payload = 200, "", None
     streaming = False
     detail = ""
+    retry_after: int | None = None
     try:
         body = bytearray()
         async with asyncio.timeout(5):
@@ -482,6 +483,8 @@ async def chat(request: Request) -> Response:
     except GatewayError as exc:
         item.provider_retries += exc.retries
         status, code = exc.status, exc.code
+        # The on-demand owned server is starting: the client may retry then.
+        retry_after = getattr(exc, "retry_after", None)
         if guest_configuration_failure(exc):
             logging.getLogger(__name__).error(
                 "Configuration failure; variables=%s", configuration_names(exc)
@@ -575,6 +578,7 @@ async def chat(request: Request) -> Response:
                 },
             },
             status_code=status,
+            headers={"Retry-After": str(retry_after)} if retry_after else None,
         )
     usage = {
         "prompt_tokens": item.tokens["in"],
