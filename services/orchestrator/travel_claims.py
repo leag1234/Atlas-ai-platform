@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -281,8 +282,13 @@ class Turn:
     journey_offered: bool = False
     journey_called: bool = False
     results: int = 0
+    started: float = field(default_factory=time.monotonic, repr=False)
     held: bool = False
     marked: int = 0
+
+    def elapsed(self) -> float:
+        """Seconds since the turn started (its checks were set up)."""
+        return time.monotonic() - self.started
 
     def located(self, *, place: str = "", position: Position | None = None) -> None:
         """The person's position or stated place for this turn (memory only)."""

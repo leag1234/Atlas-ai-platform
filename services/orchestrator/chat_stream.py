@@ -15,7 +15,7 @@ import traceback
 from fastapi.responses import StreamingResponse
 from packages.file_intent import produces_file, requests_file_delivery
 from packages.limits import LimitError
-from packages.user_errors import ui_failure
+from packages.user_errors import ui_failure, unexpected_failure
 
 from services.orchestrator.chat_schema import ChatRequest, markdown_tail_viable
 from services.orchestrator.deadline import request_deadline
@@ -829,6 +829,14 @@ def response(
                         f"reserved cost {item.cout_eur:.6f} EUR (limit {ceiling} EUR)."
                     )
                 item.rejection = {"code": "stream_error", "message": detail}
+                if (
+                    payload.atlas_ui
+                    and not payload.project_id
+                    and not guest_configuration_failure(exc)
+                ):
+                    # The diagnostic stays in the record and the logs; the
+                    # person reads one sentence in their language.
+                    detail = unexpected_failure(payload.answer_language)
                 frames = traceback.extract_tb(exc.__traceback__)
                 logging.getLogger(__name__).error(
                     "Unexpected stream exception %s; traceback:\n%s",

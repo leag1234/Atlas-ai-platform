@@ -570,7 +570,7 @@ class JourneyToolTests(unittest.IsolatedAsyncioTestCase):
         # A walking time is never derived from the straight line.
         self.assertIsNone(data["legs"][0]["duration"])
 
-    async def test_research_then_the_plan_is_required_once(self) -> None:
+    async def test_trip_research_is_bounded_and_never_forced(self) -> None:
         from types import SimpleNamespace
 
         from services.orchestrator.chat_pipeline import ChatTools
@@ -599,46 +599,40 @@ class JourneyToolTests(unittest.IsolatedAsyncioTestCase):
                 ]
             }
         }
+        search = Call("1", "web_search", '{"query": "trains Caen Paris", "lang": "fr"}')
         try:
             with patch(
                 "services.orchestrator.tools.Runtime.execute",
                 AsyncMock(return_value=found),
             ):
-                search = Call(
-                    "1", "web_search", '{"query": "trains Caen Paris", "lang": "fr"}'
-                )
-                first = await tools.execute(search, 10)
-                self.assertEqual(first["next_step"], journey.NEXT_STEP)
-                self.assertIsNone(model.required_file_tool)
+                for count in range(1, journey.RESEARCH_RESULTS + 1):
+                    output = await tools.execute(search, 10)
+                    # The plan is offered, never required: a model that writes
+                    # instead of calling it does not fail the turn.
+                    self.assertIsNone(model.required_file_tool)
+                    closed = count >= journey.RESEARCH_RESULTS
+                    self.assertEqual(model.answer_only, closed)
+                    self.assertEqual(
+                        output["next_step"],
+                        journey.WRITE_NOW if closed else journey.NEXT_STEP,
+                    )
+            # The time share closes research too, whatever the count.
+            model.answer_only = False
+            turn.results = 0
+            turn.started -= journey.research_seconds() + 1
+            with patch(
+                "services.orchestrator.tools.Runtime.execute",
+                AsyncMock(return_value=found),
+            ):
                 await tools.execute(search, 10)
-                self.assertEqual(model.required_file_tool, journey.NAME)
-                plan = Call("2", "journey_plan", '{"destination": "x", "legs": []}')
-                await tools.execute(plan, 10)
-                self.assertIsNone(model.required_file_tool)
-                self.assertFalse(model.answer_only)  # refused: research goes on
-            arguments = json.dumps(
-                {
-                    "destination": "Paris Saint-Lazare",
-                    "legs": [{"origin": "Caen", "destination": "Paris Saint-Lazare"}],
-                }
-            )
-            await tools.execute(Call("3", "journey_plan", arguments), 10)
             self.assertTrue(model.answer_only)
         finally:
             travel_claims.current.reset(token)
 
-    def test_gateway_accepts_the_required_plan(self) -> None:
-        from agent_provider import AgentRequest
-
-        request = AgentRequest.model_validate(
-            {
-                "messages": [{"role": "user", "content": "x"}],
-                "tools": [journey.declaration()],
-                "tool_choice": {"type": "function", "function": {"name": journey.NAME}},
-                "timeout": 60.0,
-            }
-        )
-        self.assertEqual(request.tool_choice["function"], {"name": journey.NAME})  # type: ignore[index]
+    def test_research_share_is_bounded(self) -> None:
+        for value, seconds in (("40", 40.0), ("5", 10.0), ("500", 80.0), ("x", 40.0)):
+            with patch.dict(os.environ, {"ATLAS_TRIP_RESEARCH_SECONDS": value}):
+                self.assertEqual(journey.research_seconds(), seconds)
 
     async def test_invalid_arguments_return_the_schema(self) -> None:
         output = await journey.execute('{"destination": "x", "legs": []}', 5)
@@ -747,3 +741,81 @@ class DiscoveryQueryTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReverseGeocodingTests(unittest.IsolatedAsyncioTestCase):
+    """Any country: a transient map failure is retried, then a second service answers."""
+
+    async def test_transient_failure_is_retried_then_photon_answers(self) -> None:
+        from services.orchestrator.nearby import OSM, NearbyError
+
+        munich = Position(latitude=48.15, longitude=11.54)
+        photon = {
+            "features": [
+                {
+                    "properties": {
+                        "street": "Musterstraße",
+                        "district": "Neuhausen",
+                        "city": "München",
+                        "postcode": "80636",
+                        "country": "Deutschland",
+                    }
+                }
+            ]
+        }
+        calls: list[str] = []
+
+        async def request(
+            service: str, parameters: dict[str, str], endpoint: str | None = None
+        ) -> object:
+            calls.append(str(endpoint))
+            if "photon" in str(endpoint):
+                return photon
+            raise NearbyError("osm_unavailable")
+
+        osm = OSM()
+        with (
+            patch.object(osm, "request", request),
+            patch("services.orchestrator.nearby.asyncio.sleep", AsyncMock()),
+            patch.dict(
+                os.environ,
+                {"ATLAS_PHOTON_REVERSE_URL": "https://photon.example.test/reverse"},
+            ),
+        ):
+            place = await osm.reverse(munich)
+        self.assertEqual(place, "Musterstraße, Neuhausen, 80636 München, Deutschland")
+        self.assertEqual(len(calls), 3)  # Nominatim twice, then Photon
+
+    async def test_a_lasting_refusal_is_not_retried_and_fallback_can_be_off(
+        self,
+    ) -> None:
+        from services.orchestrator.nearby import OSM, NearbyError
+
+        calls: list[str] = []
+
+        async def request(
+            service: str, parameters: dict[str, str], endpoint: str | None = None
+        ) -> object:
+            calls.append(str(endpoint))
+            raise NearbyError("osm_http_403")
+
+        osm = OSM()
+        with (
+            patch.object(osm, "request", request),
+            patch.dict(os.environ, {"ATLAS_PHOTON_REVERSE_URL": ""}),
+            self.assertRaises(NearbyError),
+        ):
+            await osm.reverse(Position(latitude=52.52, longitude=13.405))
+        self.assertEqual(len(calls), 1)
+
+
+class FailureTextTests(unittest.TestCase):
+    def test_unexpected_failure_reads_in_the_user_language_without_internals(
+        self,
+    ) -> None:
+        from packages.user_errors import unexpected_failure
+
+        for language in ("fr", "en", "de", "es", "it", "nl"):
+            text = unexpected_failure(language)
+            self.assertNotRegex(text, r"RuntimeError|EUR|limit|\\d")
+        self.assertIn("erreur inattendue", unexpected_failure("fr"))

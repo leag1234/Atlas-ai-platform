@@ -93,30 +93,48 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(final["event"]["data"]["hidden"])
         self.assertGreaterEqual(final["event"]["data"]["elapsed_seconds"], 2)
 
-    async def test_file_failure_discloses_authorized_ceiling(self) -> None:
+    async def test_file_failure_keeps_the_diagnostic_in_the_record(self) -> None:
+        # The chat UI shows one sentence in the person's language (staging
+        # 2026-11-16: an English diagnostic reached a French conversation); the
+        # authorized ceiling and the reserved cost stay in the record.
         async def process(payload: ChatRequest, item: Interaction) -> None:
             item.cout_eur = 0.3
             raise RuntimeError("private-provider-detail")
 
-        payload = ChatRequest.model_validate(
-            {
-                "atlas_ui": True,
-                "messages": [{"role": "user", "content": "Create a PDF"}],
-            }
-        )
-        with (
-            tempfile.TemporaryDirectory() as directory,
-            patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": directory}),
+        for language, words in (
+            ("en", "Create a PDF of my notes please"),
+            ("fr", "Crée un PDF de mes notes s'il te plaît"),
         ):
-            chunks = [
-                str(x)
-                async for x in response(
-                    payload, Interaction(), time.monotonic(), process
-                ).body_iterator
-            ]
-        text = "".join(chunks)
-        self.assertIn("reserved cost 0.300000 EUR (limit 0.30 EUR)", text)
-        self.assertNotIn("private-provider-detail", text)
+            with self.subTest(language=language):
+                payload = ChatRequest.model_validate(
+                    {
+                        "atlas_ui": True,
+                        "ui_locale": language,
+                        "messages": [{"role": "user", "content": words}],
+                    }
+                )
+                item = Interaction()
+                with (
+                    tempfile.TemporaryDirectory() as directory,
+                    patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": directory}),
+                ):
+                    chunks = [
+                        str(x)
+                        async for x in response(
+                            payload, item, time.monotonic(), process
+                        ).body_iterator
+                    ]
+                text = "".join(chunks)
+                from packages.user_errors import unexpected_failure
+
+                self.assertIn(json.dumps(unexpected_failure(language))[1:-1], text)
+                self.assertNotIn("EUR", text)
+                self.assertNotIn("RuntimeError", text)
+                self.assertNotIn("private-provider-detail", text)
+                self.assertIn(
+                    "reserved cost 0.300000 EUR (limit 0.30 EUR)",
+                    str(item.rejection),
+                )
 
     async def test_failure_after_delta_never_claims_success(self) -> None:
         async def process(payload: ChatRequest, item: Interaction) -> None:

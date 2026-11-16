@@ -39,6 +39,24 @@ _TOO_LONG = {
 }
 
 
+# Any other failure of a chat answer: the person reads one sentence in their
+# language; the exception, timings and costs stay in the logs and the record
+# (staging 2026-11-16: an English diagnostic with the exception name, elapsed
+# time and reserved cost was shown inside a French conversation).
+_UNEXPECTED = {
+    "fr": "La réponse n'a pas pu aboutir à cause d'une erreur inattendue. Réessayez dans un instant.",
+    "en": "The answer could not be completed because of an unexpected error. Please try again in a moment.",
+    "de": "Die Antwort konnte wegen eines unerwarteten Fehlers nicht abgeschlossen werden. Bitte versuchen Sie es gleich noch einmal.",
+    "es": "La respuesta no pudo completarse por un error inesperado. Inténtelo de nuevo en un momento.",
+    "it": "La risposta non è stata completata a causa di un errore imprevisto. Riprova tra un momento.",
+}
+
+
+def unexpected_failure(language: str) -> str:
+    """The chat UI's sentence for a failure that is no limit, deadline or refusal."""
+    return _UNEXPECTED.get(language, _UNEXPECTED["en"])
+
+
 _OWNED_STARTING = {
     "fr": "Le serveur privé démarre (environ {wait}). Votre message n'a été envoyé nulle part ailleurs. Renvoyez-le dans un instant.",
     "en": "The private server is starting (about {wait}). Your message was not sent anywhere else. Send it again in a moment.",

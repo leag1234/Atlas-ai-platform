@@ -445,13 +445,6 @@ class ChatTools(Runtime):
             if (
                 call.name == "journey_plan"
                 and self.model is not None
-                and self.model.required_file_tool == call.name
-            ):
-                # The plan is made (or refused with a reason): the model is free.
-                self.model.required_file_tool = None
-            if (
-                call.name == "journey_plan"
-                and self.model is not None
                 and isinstance(data, dict)
                 and data.get("rendered")
             ):
@@ -546,24 +539,24 @@ class ChatTools(Runtime):
                     check.collect(data)
                 travel_claims.collect_tool_output(call.name, data)
                 travel = travel_claims.current.get()
-                if (
-                    travel is not None
-                    and travel.journey_offered
-                    and not travel.journey_called
-                ):
-                    from services.orchestrator.journey import NAME, NEXT_STEP
+                if travel is not None and travel.journey_offered:
+                    from services.orchestrator import journey
 
-                    output = {**output, "next_step": NEXT_STEP}
                     travel.results += 1
-                    # Research alone answered with guessed timetables (owner test
-                    # 2026-11-16, and live again on the branch): after two results
-                    # the next model call is the plan, then the model is free again.
-                    if (
-                        travel.results >= 2
-                        and self.model is not None
-                        and not self.model.required_file_tool
-                    ):
-                        self.model.required_file_tool = NAME
+                    # A trip turn researches within a bounded share of the chat
+                    # deadline, then writes (staging 2026-11-16: a forced plan
+                    # call and a long answer passed the 120 s cut; a model that
+                    # answered instead of the forced call failed the turn). The
+                    # plan stays the model's choice; the answer is post-checked.
+                    closing = journey.research_closed(travel.results, travel.elapsed())
+                    output = {
+                        **output,
+                        "next_step": journey.WRITE_NOW
+                        if closing or travel.journey_called
+                        else journey.NEXT_STEP,
+                    }
+                    if closing and self.model is not None:
+                        self.model.answer_only = True
                 if call.name == "web_search" and isinstance(data, dict):
                     for row in data.get("results", []):
                         if isinstance(row, dict) and isinstance(row.get("link"), str):
