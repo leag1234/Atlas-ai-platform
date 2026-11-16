@@ -157,6 +157,18 @@ CONNECTORS = frozenset(
     "de du des la le les d l von van der den of the di da del dos".split()
 )
 STOP = CONNECTORS | frozenset("a an in on at to for by with and et y und e".split())
+# Titles before a name ("King Charles VIII", "le président Mitterrand"): a source
+# naming the person without the title still holds the name.
+TITLES = frozenset(
+    (
+        "king queen prince princess emperor empress pope saint st sir lord lady dame "
+        "president general captain duke count dr mr mrs ms "
+        "roi reine princesse empereur imperatrice pape sainte president presidente "
+        "general generale capitaine duc duchesse comte comtesse m mme "
+        "konig konigin kaiser papst rey reina emperador papa santo santa re regina "
+        "imperatore"
+    ).split()
+)
 
 # A full date: "18 December 1970", "December 18, 1970", "1st May 1968" (any of
 # the five interface languages).
@@ -444,7 +456,11 @@ def supported(detail: Detail, evidence: Evidence, own: Evidence) -> bool:
     if evidence.holds(phrase) or own.holds(phrase):
         return True
     if detail.kind == "name":
-        tokens = [token for token in phrase.split() if token not in STOP]
+        tokens = [
+            token
+            for token in phrase.split()
+            if token not in STOP and token not in TITLES
+        ]
         return bool(tokens) and all(
             token in evidence.words or token in own.words for token in tokens
         )

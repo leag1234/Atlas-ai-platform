@@ -60,6 +60,11 @@ def check_details_added_from_memory_are_found() -> None:
     assert sorted(unsupported(answer)) == ["1988", "Drummel Avionics", "Ostrava"]
 
 
+def check_a_title_before_a_sourced_name_is_supported() -> None:
+    passages = ["Corvane Industries was led by Ilse Varnholt from 1971."]
+    assert unsupported("It was led by President Ilse Varnholt.", passages) == []
+
+
 def check_question_words_and_today_are_not_added_details() -> None:
     answer = "Velmora Aerotech, which you asked about, was founded in 1970 in Brenzac."
     assert unsupported(answer, own="Who founded Velmora Aerotech?") == []
@@ -280,6 +285,9 @@ class UnsourcedDetailsTests(unittest.TestCase):
 
     def test_details_added_from_memory_are_found(self) -> None:
         check_details_added_from_memory_are_found()
+
+    def test_a_title_before_a_sourced_name_is_supported(self) -> None:
+        check_a_title_before_a_sourced_name_is_supported()
 
     def test_question_words_and_today_are_not_added_details(self) -> None:
         check_question_words_and_today_are_not_added_details()
