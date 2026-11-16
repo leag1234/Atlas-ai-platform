@@ -436,7 +436,8 @@ class KeyTests(unittest.TestCase):
             created_by="operator",
         )
         self.assertTrue(row["rotation_required"])
-        self.assertEqual(row["scopes"], ["model"])
+        # Keys are generic: an imported developer key gets every scope too.
+        self.assertEqual(row["scopes"], ["assistant", "model"])
         principal = self.store.resolve(secret)
         accounting = ModelAccounting(self.store, principal)
         accounting.finish(accounting.reserve(row["id"], 1000), 100)
@@ -455,6 +456,74 @@ class KeyTests(unittest.TestCase):
             self.assertEqual(reply.json()["key_id"], row["id"])
             self.store.revoke(row["id"])
             self.assertEqual(client.get("/v1/models", headers=headers).status_code, 401)
+
+    def test_keys_get_every_scope_unless_restricted_explicitly(self) -> None:
+        row, _ = self.store.create(
+            org_id="test-org",
+            member_id="test-member",
+            subject="tester@example.invalid",
+            budget_user="test-id",
+            name="generic",
+            created_by="operator",
+        )
+        self.assertEqual(row["scopes"], ["assistant", "model"])
+        headers = {"Authorization": "Bearer " + "test-admin-" * 4}
+        identity = dict(
+            org_id="test-org",
+            member_id="test-member",
+            subject="tester",
+            budget_user="test-id",
+            name="key",
+        )
+        with TestClient(admin_app, client=("127.0.0.1", 10000)) as client:
+            reply = client.post("/keys", headers=headers, json=identity)
+            self.assertEqual(reply.status_code, 201, reply.text)
+            self.assertEqual(reply.json()["scopes"], ["assistant", "model"])
+            reply = client.post(
+                "/keys", headers=headers, json=identity | {"scopes": ["model"]}
+            )
+            self.assertEqual(reply.json()["scopes"], ["model"])
+            self.assertEqual(
+                client.post(
+                    "/keys", headers=headers, json=identity | {"scopes": []}
+                ).status_code,
+                422,
+            )
+
+    def test_scope_follows_the_model_name_on_every_format(self) -> None:
+        _, model_only = self.create(scopes=["model"])
+        _, assistant_only = self.create(scopes=["assistant"])
+        with TestClient(app) as client:
+            for path, body in (
+                ("/api/atlas/v1/responses", {"model": "atlas", "input": "Hello"}),
+                (
+                    "/api/atlas/v1/messages",
+                    {
+                        "model": "atlas",
+                        "max_tokens": 16,
+                        "messages": [{"role": "user", "content": "Hello"}],
+                    },
+                ),
+            ):
+                reply = client.post(
+                    path,
+                    headers={"Authorization": "Bearer " + model_only},
+                    json=body,
+                )
+                self.assertEqual(reply.status_code, 403, reply.text)
+                self.assertIn("assistant scope", reply.text)
+                self.assertIn('"missing_scope":"assistant"', reply.text.replace(" ", ""))
+            reply = client.get(
+                "/api/atlas/v1/models/atlas-dev",
+                headers={"Authorization": "Bearer " + assistant_only},
+            )
+            self.assertEqual(reply.status_code, 403, reply.text)
+            self.assertEqual(reply.json()["error"]["missing_scope"], "model")
+            reply = client.get(
+                "/api/atlas/v1/models/no-such-model",
+                headers={"Authorization": "Bearer " + assistant_only},
+            )
+            self.assertEqual(reply.status_code, 404)
 
     def test_admin_requires_loopback_token_and_rejects_self_service(self) -> None:
         headers = {"Authorization": "Bearer " + "test-admin-" * 4}
@@ -569,7 +638,14 @@ class KeyTests(unittest.TestCase):
                 json=body,
             )
             self.assertEqual(reply.status_code, 403)
-            self.assertEqual(reply.json()["error"]["missing_scope"], "model")
+            refusal = reply.json()["error"]
+            self.assertEqual(refusal["missing_scope"], "model")
+            self.assertEqual(refusal["code"], "insufficient_scope")
+            self.assertEqual(refusal["key_scopes"], ["assistant"])
+            self.assertEqual(refusal["param"], "model")
+            # The message says what is missing and how to fix it.
+            self.assertIn("model scope", refusal["message"])
+            self.assertIn("without a scope restriction", refusal["message"])
             self.assertEqual(
                 client.post(
                     "/api/atlas/v1/chat/completions",

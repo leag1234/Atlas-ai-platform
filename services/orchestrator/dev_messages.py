@@ -291,10 +291,17 @@ class Wire:
             ):
                 self.thinking_open = event["output_index"]
             if kind == "error":
+                # A named output check (for example invalid_tool_arguments) keeps
+                # its code and message; any other failure stays generic.
+                named = event.get("code") not in (None, "server_error")
                 events.append(
                     {
                         "type": "error",
-                        "error": {"type": "api_error", "message": "provider_error"},
+                        "error": {
+                            "type": "api_error",
+                            "message": event["message"] if named else "provider_error",
+                            **({"code": event["code"]} if named else {}),
+                        },
                     }
                 )
             elif kind == "response.output_item.added" and event["item"]["type"] in (

@@ -17,6 +17,8 @@ from packages.limits import LimitError
 from services.orchestrator.dev_auth import Store as DeveloperStore, QuotaError
 
 MAX_CALL_RESERVATION = 5000000
+# Every usage a key can have; a new key gets all of them unless explicitly restricted.
+ALL_SCOPES = ("assistant", "model")
 
 
 @dataclass(frozen=True)
@@ -248,8 +250,8 @@ class Store(DeveloperStore):
         subject: str,
         budget_user: str,
         name: str,
-        scopes: list[str],
         created_by: str,
+        scopes: list[str] | None = None,
         daily_requests: int | None = None,
         daily_micro_eur: int | None = None,
         weekly_micro_eur: int | None = 100000000,
@@ -259,13 +261,16 @@ class Store(DeveloperStore):
         browser_policy: bool = False,
         administrator: bool = False,
     ) -> tuple[dict[str, Any], str]:
+        # Keys are generic (owner rule 2026-11-02): without an explicit restriction a
+        # key gets every scope, and the model name of each request chooses the usage.
+        scopes = list(ALL_SCOPES) if scopes is None else scopes
         if (
             any(
                 not v.strip() or len(v) > 320 or any(c in v for c in "\r\n")
                 for v in (org_id, member_id, subject, budget_user, name, created_by)
             )
             or not scopes
-            or set(scopes) - {"assistant", "model"}
+            or set(scopes) - set(ALL_SCOPES)
             or type(lifetime_days) is not int
             or not 1 <= lifetime_days <= 365
             or any(
@@ -618,7 +623,7 @@ class Store(DeveloperStore):
                     "legacy-" + owner["key_hash"][:8],
                     owner["key_hash"],
                     "sha256-legacy",
-                    '["model"]',
+                    json.dumps(list(ALL_SCOPES)),
                     now + 90 * 86400,
                     owner["daily_requests"],
                     owner["daily_micro_eur"],

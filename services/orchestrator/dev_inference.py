@@ -35,7 +35,7 @@ from services.orchestrator.dev_responses import Wire
 
 def error(code: str, status: int, detail: str = "", **values: Any) -> JSONResponse:
     return JSONResponse(
-        {"error": {"type": code, "message": detail or code, **values}},
+        {"error": {"type": code, "code": code, "message": detail or code, **values}},
         status_code=status,
         headers=(
             {"Retry-After": str(values["retry_after"])}
@@ -69,7 +69,14 @@ async def validated_drive(
                 candidate = Output(request_id, request)
                 emitted = False
                 async with aclosing(
-                    repaired_frames(gateway.events(current), request.tools)
+                    repaired_frames(
+                        gateway.events(current),
+                        request.tools,
+                        lambda note, target=current: gateway.events(
+                            gateway.corrected(target, note)
+                        ),
+                        plan.reserved - charged,
+                    )
                 ) as frames:
                     async for frame in frames:
                         chunk = candidate.feed(frame)
@@ -199,6 +206,14 @@ def _provider_error_status(error: dict[str, Any]) -> int:
 
 def provider_failure(exc: BaseException) -> dict[str, dict[str, Any]]:
     """D5: a provider refusal is reported with its cause, never as another model."""
+    if str(exc) == "invalid_tool_arguments":
+        return {
+            "error": {
+                "type": "invalid_tool_arguments",
+                "message": "The model returned tool-call arguments that are not valid "
+                "JSON, also after one corrected attempt. Send the request again.",
+            }
+        }
     status = getattr(exc, "status", None)
     retry_after = getattr(exc, "retry_after", None)
     if str(exc) == "provider_quota" or status == 402:
@@ -269,7 +284,13 @@ async def drive(
         async with (
             asyncio.timeout(max(0, deadline - monotonic())),
             aclosing(
-                repaired_frames(gateway.events(plan), output.request.tools)
+                repaired_frames(
+                    gateway.events(plan),
+                    output.request.tools,
+                    # One corrected attempt when a tool call stays unusable.
+                    lambda note: gateway.events(gateway.corrected(plan, note)),
+                    plan.reserved,
+                )
             ) as frames,
         ):
             async for frame in frames:

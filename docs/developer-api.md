@@ -5,7 +5,8 @@ scripts, data processing, assistants and coding agents. For the self-hosted deve
 list of supported OpenAI formats, see [API compatibility](api-compatibility.md).
 
 Every key gives the same offer. Keys differ only by their budget and their expiry date; the model name
-in each request chooses what Atlas does.
+in each request chooses what Atlas does (a key restricted on purpose is the only exception: see
+"Keys and scopes" in section 8).
 
 ## 1. Quick start
 
@@ -266,6 +267,23 @@ curl -s https://atlas.eu.com/api/atlas/v1/chat/completions \
        "messages":[{"role":"user","content":"What time is it in Paris?"}]}'
 ```
 
+**Valid arguments, always.** The arguments of every tool call Atlas returns are one valid JSON object:
+`function.arguments` on Chat Completions, `arguments` of `function_call` items on Responses, `input`
+of `tool_use` blocks on Messages. Each call is checked once it is complete, before your client sees it
+(a streamed call therefore arrives in one piece, just before its `finish_reason`; while a long call is
+being written, an empty delta keeps the stream alive every 15 seconds):
+
+- safe slips with one reading are rewritten: a code fence around the JSON, a trailing comma, a raw
+  line break inside a string, single-quoted (Python-style) keys and strings, arguments encoded twice
+  as a JSON string, and empty arguments (`{}`);
+- any other invalid JSON, or a call to one of your declared tools without one of its `required`
+  parameters, is asked again once, in the same request and within its reservation, with a short
+  correction; you pay for both attempts (the usage adds them up). Text already streamed stays as it is;
+- if the corrected attempt still returns invalid JSON, the request fails with 502
+  `invalid_tool_arguments` (an error event on a stream), never with the invalid arguments. A call that
+  is valid JSON but still lacks a required parameter is returned, so that your client can tell the
+  model. Send the request again.
+
 ### Responses tools
 
 On Responses, the tools of the OpenAI format are translated for the direct models:
@@ -432,27 +450,87 @@ is one euro) and the limits that apply to your key.
 
 ## 8. Errors
 
-| Status | Meaning | What to do |
-|---|---|---|
-| 400 `invalid_request` or `body_limit` | A field is invalid (for example an unknown `reasoning_effort`), the body is larger than 8 MiB, or the history has more than 4096 messages | Fix or shorten the request |
-| 400 `assistant_runs_its_own_tools` | Client tools were given to `atlas` or a profile | Use `atlas-dev` or `atlas-chat` for your own tools |
-| 400 `file_data_required`, `invalid_file_data`, `unreadable_file` | An attached file is missing, not base64, or has no readable text | Check the file part |
-| 400 `unknown field …`, `unsupported_parameter: …`, `unsupported_content: input_audio` | A field Atlas does not know, or an option no hosted model applies; the message names it | Remove it (see "OpenAI and Anthropic compatibility") |
-| 400 `storage_not_supported` | `previous_response_id`, `conversation` or `background`: Atlas stores nothing | Send the full history in `input` |
-| 400 `web_search_unavailable_in_strict_privacy` | The hosted web search was requested in strict privacy mode | Remove the tool or the strict header |
-| 400 `invalid_privacy_level` | `privacy` (field or `X-Atlas-Privacy` header) is not `standard`, `enhanced` or `strict` | Fix the value |
-| 403 `strict_privacy_unavailable` | Strict privacy was asked (request, key or organisation minimum) and no owned server exists for that capability | Do not retry: remove the strict level, or ask the operator for an owned server |
-| 403 `enhanced_privacy_unavailable` | Enhanced privacy was asked and this server cannot pseudonymise yet (or does not offer the level) | Do not retry: use another level |
-| 403 `privacy_feature_refused` | The feature named in `feature` (`vision`, `ocr`, `web_search`, `web_fetch`, `embeddings`, `transcription`, ...) is not allowed at the applied `level` | Do not retry: remove the feature or use another level |
-| 503 `owned_server_starting` (with `Retry-After`) | Strict privacy: the owned server is powered off between uses and is starting for this request (about 2 minutes). Nothing was sent to any other provider | Retry after `Retry-After` seconds |
-| 429 `owned_server_budget` or `owned_server_start_limit` | Strict privacy: the owned server's starter refused, because its budget cap is reached (`measured`, `limit`, `unit`: `hours` today or `EUR` this month) or it was started too often this hour | Retry after `retry_after` seconds, or use another level |
-| 401 | Missing, wrong, expired or revoked key | Check the key and its expiry date |
-| 404 `storage_not_supported` | A stored response, conversation or completion was requested | Atlas stores nothing; keep your own history |
-| 409 `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
-| 429 with a JSON body | The budget of the key is reached; the message says whether day or week | Stop, or ask for a higher budget |
-| 429 with an HTML page | Rate limit | Wait 30 to 60 seconds and resume; do not restart all workers at once |
-| 502 or 503 | The service is restarting for a deployment (usually under a minute) | Wait and retry |
-| 503 `key_service_unavailable` | A downstream failure; a common cause is a `max_tokens` too small for the reasoning effort | See section 3, then retry |
+### Error format
+
+Chat Completions, Responses, `GET /models`, embeddings and the audio routes answer an error in the
+OpenAI envelope. `type` holds the Atlas code of the table below (most errors repeat it in `code`): it
+is the stable value to test in your code; `message` is for people and may change. Some errors add fields: `missing_scope`, `key_scopes`,
+`param`, `measured`, `limit`, `unit`, `provider_status`, `retry_after`.
+
+```json
+{"error": {"type": "insufficient_scope", "code": "insufficient_scope",
+  "message": "This API key is restricted: it lacks the model scope needed for direct models (...)",
+  "param": "model", "missing_scope": "model", "key_scopes": ["assistant"]}}
+```
+
+Messages answers in the Anthropic envelope, `{"type": "error", "error": {"type": ..., "message": ...}}`,
+where `error.type` is the Anthropic class of the status (400 `invalid_request_error`, 401
+`authentication_error`, 403 `permission_error`, 404 `not_found_error`, 413 `request_too_large`, 429
+`rate_limit_error`, 5xx `api_error`) and the Atlas code below is in `error.code`.
+
+An error after a stream has started arrives as a last event: a `data: {"error": {...}}` chunk before
+`[DONE]` on Chat Completions, `error` then `response.failed` on Responses, an `error` event on
+Messages.
+
+### Keys and scopes
+
+Every key gives the same offer (owner rule): a new key has both scopes, `assistant` and `model`, and
+the model name of each request chooses what Atlas does. A key has fewer scopes only when its creator
+restricted it explicitly (an "Assistant only" or "Model access" key in the key page, or `--scope` for
+the operator). A restricted key that asks for a usage outside its scopes gets 403
+`insufficient_scope`; `missing_scope` names the scope, `key_scopes` lists the key's own. Create a key
+without a restriction (or ask your administrator), then send the same request.
+
+| Request | Scope it needs |
+|---|---|
+| `model`: `atlas` or an assistant profile, on Chat Completions, Responses or Messages | `assistant` |
+| `model`: `atlas-dev`, `atlas-chat`, `atlas-code`, a dated alias, a precise id of `GET /models`, or any other name (served as `atlas-dev`), on Chat Completions, Responses or Messages | `model` |
+| `POST /embeddings`, `/audio/speech`, `/audio/transcriptions`, `/audio/translations`, `/responses/input_tokens`, `/messages/count_tokens` | `model` |
+| `GET /models` | any key; the list shows the models the key's scopes allow |
+| `GET /models/{id}` | the scope of that model (403 `insufficient_scope` for a known model outside the key's scopes, 404 `model_not_found` for an unknown one) |
+| `GET /usage` | any key |
+| Project fields or headers (`project_id`, `conversation_id`, `file_version_ids`, `X-Atlas-Project`, ...) | never available to keys: 403 `insufficient_scope` with `missing_scope: "project"` |
+
+### Error codes
+
+| Status | Code | Meaning | What to do |
+|---|---|---|---|
+| 400 | `invalid_request` | The body is not JSON, a field is invalid (the message names it, for example `unknown field messages.2.foo`), or the history has more than 4096 messages | Fix the request |
+| 400 | `invalid_model` | `model` is not a string, or names nothing Atlas serves | Use a name from `GET /models` |
+| 400 | `unsupported_parameter` (`param` names it) | An option no hosted model applies, for example `response_format` with the assistant or `json_schema` strict on a route that cannot guarantee it | Remove the option or use another model |
+| 400 | `assistant_runs_its_own_tools` | Client tools were given to `atlas` or a profile | Use `atlas-dev` or `atlas-chat` for your own tools |
+| 400 | `file_data_required`, `invalid_file_data`, `unreadable_file`, `unsupported_content` | An attached file is missing, not base64 or has no readable text, or a content type (`input_audio`) is not accepted | Check the file part |
+| 400 | `storage_not_supported` | `previous_response_id`, `conversation` or `background`: Atlas stores nothing | Send the full history |
+| 400 | `context_exceeded`, `input_limit` | The input is longer than the model accepts, or an embeddings request has too many inputs or bytes (`measured`, `limit`, `unit`) | Shorten or split the input |
+| 400 | `cost_budget` | One call would cost more than the per-call cap (usually a huge `max_tokens` with a long input) | Lower `max_tokens` or the input |
+| 400 | `translation_not_supported` | `/audio/translations` is not offered | Transcribe, then translate with a chat model |
+| 400 | `web_search_unavailable_in_strict_privacy`, `web_fetch_unavailable_in_strict_privacy` | A hosted web tool was asked in strict privacy | Remove the tool or the strict level |
+| 400 | `invalid_privacy_level` | `privacy` (field or `X-Atlas-Privacy` header) is not `standard`, `enhanced` or `strict` | Fix the value |
+| 401 | `invalid_key_request` | No key, a key that does not start with `atl_`, two authorization headers, or a browser request (cookie or `Origin`) | Send one `Authorization: Bearer <key>` header from a server |
+| 401 | `unauthorized` | Wrong, expired or revoked key, or its owner is no longer an active member | Check the key and its expiry date |
+| 403 | `insufficient_scope` | A restricted key asked for a usage outside its scopes (see "Keys and scopes") | Use a key without a restriction |
+| 403 | `strict_privacy_unavailable` | Strict privacy was asked and no owned server exists for that capability | Do not retry: remove the strict level, or ask the operator for an owned server |
+| 403 | `enhanced_privacy_unavailable` | Enhanced privacy was asked and this server cannot pseudonymise yet | Do not retry: use another level |
+| 403 | `privacy_feature_refused` | The feature in `feature` is not allowed at the applied `level` | Do not retry: remove the feature or use another level |
+| 404 | `model_not_found` | `GET /models/{id}` for an unknown id | Use an id of `GET /models` |
+| 404 | `storage_not_supported` | A stored response, conversation or completion was requested | Atlas stores nothing; keep your own history |
+| 409 | `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
+| 413 (400 on some direct-model routes) | `body_limit` | The body is larger than the route accepts (`measured`, `limit`) | Send less, or split the request |
+| 429 | `quota_exceeded` | The key's own daily or weekly limit is reached (the fields say which) | Wait for the next day or week, or ask for a higher limit |
+| 429 | `budget_limit`, `cost_budget` (assistant) | The budget behind the key is reached (`used`, `limit`, `category`) | Stop, or ask for a higher budget |
+| 429 | `rate_limit` (`provider_status`, `Retry-After`) | The model provider rate-limited the request | Retry after the delay |
+| 429 | `provider_limit` | The transcription provider refused for quota or rate | Retry later |
+| 429 | `owned_server_budget`, `owned_server_start_limit` | Strict privacy: the owned server's starter refused (budget cap, or too many starts this hour) | Retry after `retry_after` seconds, or use another level |
+| 429 | (HTML page) | Rate limit of the front server: 600 requests per minute per key, 1800 per client address | Wait 30 to 60 seconds; do not restart all workers at once |
+| 402 | `provider_quota` (`provider_status`) | The model provider's account is out of credit | Do not retry at once; tell the operator |
+| 502 | `invalid_tool_arguments` | The model returned tool-call arguments that are not valid JSON, also after one corrected attempt (section 5) | Send the request again |
+| 502 | `invalid_response_format` | The answer did not match the requested JSON schema, also after one corrected attempt | Send the request again, or simplify the schema |
+| 502 | `provider_error` | The model provider failed in another way | Retry once, then report it |
+| 503 | `provider_unavailable` (`provider_status`) | The model provider is unavailable | Retry later |
+| 503 | `owned_server_starting` (`Retry-After`) | Strict privacy: the owned server is starting for this request (about 2 minutes) | Retry after `Retry-After` seconds |
+| 503 | `key_service_unavailable`, `unavailable`, `tts_unavailable`, `transcription_unavailable` | A component of Atlas is unavailable; a common cause on direct models is a `max_tokens` too small for the reasoning effort | See section 3, then retry |
+| 504 | `provider_timeout` | The model provider did not answer in time | Retry, with a shorter output if possible |
+| 502 or 503 (no JSON) | | The service is restarting for a deployment (usually under a minute) | Wait and retry |
 
 Loop thresholds, counted over the last 12 tool calls of the history (same tool, same arguments, same
 result): at 3, a note asking the model to change approach is appended to the tool output; from 5, the
@@ -463,7 +541,8 @@ edit) are never counted.
 Atlas also repairs two unambiguous tool-call slips before your client sees them: a shell command sent
 to an undeclared tool name (`bash`, `exec`, `shell`, ...) when the request declares exactly one shell
 tool, and a declared shell tool called with `command` instead of its required `cmd` (or the reverse).
-Any other malformed call is passed through unchanged.
+Arguments that are not valid JSON are repaired or asked again (section 5); a call to a tool you did
+not declare is passed through, so that your client can answer that the tool is unknown.
 
 ## 9. Privacy
 

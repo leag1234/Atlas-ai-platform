@@ -16,9 +16,6 @@ KEY_DEFAULT_OUTPUT_TOKENS = 16384
 
 
 async def respond(request: Request) -> Response:
-    missing = require(request, "model")
-    if missing is not None:
-        return missing
     try:
         body = bytearray()
         async with asyncio.timeout(60):
@@ -31,12 +28,16 @@ async def respond(request: Request) -> Response:
             return error(400, "invalid_request")
     except (ValueError, TimeoutError, RecursionError):
         return error(400, "invalid_request")
+    from packages.api_content import assistant_name
+
+    # The model name chooses the usage, and so the scope it needs.
+    missing = require(request, "assistant" if assistant_name(raw["model"]) else "model")
+    if missing is not None:
+        return missing
     from services.orchestrator.api_key_edge import body_privacy
 
     if (refused := body_privacy(request, raw)) is not None:
         return refused
-
-    from packages.api_content import assistant_name
 
     if assistant_name(raw["model"]):
         from services.orchestrator import assistant_bridge

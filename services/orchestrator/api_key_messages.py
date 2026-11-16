@@ -52,10 +52,15 @@ async def errors(
     )
     value = json.loads(body)
     detail = value.get("error", {})
+    extra = {k: v for k, v in detail.items() if k not in {"type", "message"}}
+    if isinstance(detail, dict) and isinstance(detail.get("type"), str):
+        # The Atlas code survives the Anthropic error class (for example
+        # invalid_tool_arguments under api_error).
+        extra.setdefault("code", detail["type"])
     mapped = error(
         response.status_code,
         str(detail.get("message", value.get("detail", "request_failed"))),
-        **{k: v for k, v in detail.items() if k not in {"type", "message"}},
+        **extra,
     )
     for name, content in response.headers.items():
         if name not in {"content-length", "content-type"}:
@@ -65,12 +70,13 @@ async def errors(
 
 async def messages(request: Request) -> Response:
     from api_routing import select_public_model
-    from services.orchestrator.api_key_edge import ModelAccounting, require
+    from services.orchestrator.api_key_edge import (
+        ModelAccounting,
+        require,
+        scope_refusal,
+    )
     from services.orchestrator.dev_inference import chat
 
-    missing = require(request, "model")
-    if missing is not None:
-        return missing
     try:
         body = bytearray()
         async with asyncio.timeout(60):
@@ -81,6 +87,18 @@ async def messages(request: Request) -> Response:
         raw = json.loads(body)
         if not isinstance(raw, dict) or not isinstance(raw.get("model"), str):
             return error(400, "invalid_request")
+        from packages.api_content import assistant_name
+
+        # The model name chooses the usage, and so the scope it needs.
+        missing = require(
+            request,
+            "assistant"
+            if assistant_name(raw["model"])
+            and not request.url.path.endswith("/count_tokens")
+            else "model",
+        )
+        if missing is not None:
+            return missing
         from services.orchestrator.api_key_edge import body_privacy
 
         if (refused := body_privacy(request, raw)) is not None:
@@ -109,8 +127,7 @@ async def messages(request: Request) -> Response:
                 reason="scope",
                 missing_scope="project",
             )
-            return error(403, "insufficient_scope", missing_scope="project")
-        from packages.api_content import assistant_name
+            return scope_refusal("project")
 
         if assistant_name(raw["model"]) and not request.url.path.endswith(
             "/count_tokens"

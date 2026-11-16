@@ -34,7 +34,10 @@ class KeyUiAssetTests(unittest.TestCase):
             for array in re.findall(rf"\n    {locale}: \[(.*?)\]", words.group("body"))
         ]
         self.assertEqual(len(parsed), 5)
-        self.assertEqual({len(array) for array in parsed}, {60})
+        self.assertEqual({len(array) for array in parsed}, {64})
+        # Default: every scope; single-scope keys are an explicit choice.
+        self.assertIn("[['all',t(60)],['assistant',t(61)],['model',t(47)]]", script)
+        self.assertEqual(parsed[0][60], "All usages (recommended)")
         self.assertIn("button(t(36))", script)
         self.assertEqual(parsed[0][36], "Save policy")
         self.assertIn("t(50)", script)

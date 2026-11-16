@@ -18,6 +18,7 @@ from packages import privacy
 from packages.profiles import accepted_profile, default_profile, PROFILES
 from services.orchestrator.api_key_messages import install as install_messages
 from services.orchestrator.api_keys import (
+    ALL_SCOPES,
     Principal,
     Store,
     KeyQuotaError,
@@ -164,7 +165,7 @@ async def authenticate(
             store.audit(
                 "failure", principal.id, reason="scope", missing_scope="project"
             )
-            return error(403, "insufficient_scope", missing_scope="project")
+            return scope_refusal("project")
         # A processing option, not an identity assertion: read it before the strip below.
         request.state.context_trim = (
             request.headers.get("x-atlas-context-trim", "").lower() == "on"
@@ -198,6 +199,36 @@ async def authenticate(
         return error(503, "key_service_unavailable")
 
 
+# What each scope serves, named in a refusal so the caller knows what to change.
+SCOPE_USES = {
+    "assistant": "the Atlas assistant (model atlas and its profiles)",
+    "model": "direct models (atlas-dev, atlas-chat, the dated aliases and the "
+    "precise ids of GET /models), embeddings, speech and transcription",
+}
+
+
+def scope_refusal(scope: str, principal: Principal | None = None) -> JSONResponse:
+    """403 insufficient_scope with a message that says what is missing and how to fix it."""
+    if scope == "project":
+        return error(
+            403,
+            "insufficient_scope",
+            message="Project fields and headers (project, conversation, files, work "
+            "sessions) are not available to API keys; send the conversation itself.",
+            missing_scope="project",
+        )
+    return error(
+        403,
+        "insufficient_scope",
+        message=f"This API key is restricted: it lacks the {scope} scope needed for "
+        f"{SCOPE_USES[scope]}. Keys get every scope unless restricted when created; "
+        "create a key without a scope restriction, or ask your administrator.",
+        param="model",
+        missing_scope=scope,
+        **({"key_scopes": list(principal.scopes)} if principal is not None else {}),
+    )
+
+
 def require(request: Request, scope: str) -> Response | None:
     principal: Principal = request.state.api_key
     if scope in principal.scopes:
@@ -205,13 +236,14 @@ def require(request: Request, scope: str) -> Response | None:
     request.state.key_store.audit(
         "failure", principal.id, reason="scope", missing_scope=scope
     )
-    return error(403, "insufficient_scope", missing_scope=scope)
+    return scope_refusal(scope, principal)
 
 
-def model_names(request: Request) -> list[str]:
+def model_names(request: Request, scopes: tuple[str, ...] | None = None) -> list[str]:
     from api_routing import PUBLIC_MODELS, pinned_models
 
-    scopes = request.state.api_key.scopes
+    if scopes is None:
+        scopes = request.state.api_key.scopes
     # Assistant names keep the full Atlas assistant (tools, search, memory).
     names = []
     if "assistant" in scopes:
@@ -285,6 +317,21 @@ def models(request: Request) -> Response | dict[str, object]:
 @app.get("/models/{model_id}", response_model=None)
 def model(model_id: str, request: Request) -> Response | dict[str, object]:
     if model_id not in model_names(request):
+        missing = next(
+            (
+                scope
+                for scope in ALL_SCOPES
+                if model_id in model_names(request, (scope,))
+            ),
+            None,
+        )
+        refused = require(request, missing) if missing is not None else None
+        if refused is not None:
+            # A model that exists but that this restricted key cannot use.
+            if messages_client(request):
+                detail = json.loads(bytes(refused.body))["error"]
+                return messages_error(403, "permission_error", detail["message"])
+            return refused
         message = f"The model {model_id!r} does not exist"
         if messages_client(request):
             return messages_error(404, "not_found_error", message)
@@ -355,7 +402,7 @@ async def chat(request: Request) -> Response:
         request.state.key_store.audit(
             "failure", request.state.api_key.id, reason="scope", missing_scope="project"
         )
-        return error(403, "insufficient_scope", missing_scope="project")
+        return scope_refusal("project")
     from api_routing import select_public_model
     from services.orchestrator.dev_inference import chat as raw_chat
 

@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.orchestrator.api_keys import configured_store
+from services.orchestrator.api_keys import ALL_SCOPES, configured_store
 from services.orchestrator.key_subject import SubjectError, resolve_login
 from services.orchestrator.dev_auth import Store as DeveloperStore
 
@@ -31,7 +31,10 @@ class CreateKey(BaseModel):
     budget_user: str | None = Field(default=None, min_length=1, max_length=200)
     login: str | None = Field(default=None, min_length=1, max_length=320)
     name: str = Field(min_length=1, max_length=100)
-    scopes: list[Literal["assistant", "model"]] = Field(min_length=1)
+    # Every scope unless the operator restricts the key explicitly (generic keys).
+    scopes: list[Literal["assistant", "model"]] = Field(
+        default_factory=lambda: list(ALL_SCOPES), min_length=1
+    )
     lifetime_days: int = Field(default=90, ge=1, le=365)
     daily_requests: int | None = Field(default=None, ge=1)
     daily_micro_eur: int | None = Field(default=None, ge=1)
@@ -152,7 +155,12 @@ def main() -> None:
     parser.add_argument("--key-file", type=Path)
     for field in ("org-id", "member-id", "subject", "budget-user", "login", "name"):
         parser.add_argument("--" + field)
-    parser.add_argument("--scope", action="append", choices=("assistant", "model"))
+    parser.add_argument(
+        "--scope",
+        action="append",
+        choices=ALL_SCOPES,
+        help="restrict the key to this scope (repeatable); default: every scope",
+    )
     parser.add_argument("--lifetime-days", type=int, default=90)
     parser.add_argument("--daily-requests", type=int)
     parser.add_argument("--daily-micro-eur", type=int)
@@ -193,7 +201,7 @@ def main() -> None:
         }
         values = {k: v for k, v in values.items() if v is not None}
         # Keys are generic (owner rule 2026-11-02): every key gets the whole offer unless restricted.
-        values["scopes"] = args.scope or ["assistant", "model"]
+        values["scopes"] = args.scope or list(ALL_SCOPES)
         try:
             body = CreateKey.model_validate(values).model_dump_json().encode()
         except ValueError:

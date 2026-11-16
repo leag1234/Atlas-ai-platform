@@ -407,6 +407,24 @@ def retry(plan: Plan, error: str, remaining: int) -> Plan:
     )
 
 
+def corrected(plan: Plan, note: str) -> Plan:
+    """The same request with a short correction after the conversation.
+
+    Used when a tool call stayed unusable (arguments that are not valid JSON): the
+    corrected attempt runs inside the same reservation, on every target of the plan.
+    """
+    body = json.loads(plan.body)
+    body["messages"] = [
+        *(body.get("messages") or []),
+        {"role": "user", "content": note},
+    ]
+    return replace(
+        plan,
+        body=json.dumps(body, ensure_ascii=False),
+        fallback=corrected(plan.fallback, note) if plan.fallback else None,
+    )
+
+
 class Usage(BaseModel):
     prompt_tokens: int = Field(ge=0, le=1048576, strict=True)
     completion_tokens: int = Field(ge=0, le=8 * 32768, strict=True)
