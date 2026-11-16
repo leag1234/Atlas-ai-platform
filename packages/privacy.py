@@ -319,8 +319,9 @@ def tool_capability(name: str) -> str | None:
         return "connectors"
     if name == "encyclopedia" and local_encyclopedia():
         # The local mirror is an Atlas-operated server: at a level that refuses the
-        # live API the lookup reads it and stays inside Atlas (Wikidata facts are
-        # added only where allowed). Without a mirror, the tool is not offered there.
+        # live API the lookup reads it and stays inside Atlas (Wikidata facts come
+        # from the local extract, a file read, or from the API only where allowed).
+        # Without a mirror, the tool is not offered there.
         return None
     return TOOL_CAPABILITIES.get(name)
 

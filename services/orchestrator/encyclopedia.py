@@ -23,15 +23,17 @@ Backend, chosen per request (``source_plan``):
 - ``ATLAS_ENCYCLOPEDIA_BACKEND=local`` forces the mirror at every level (an offline
   instance).
 
-With the mirror, structured facts still come from the Wikidata API when the request's
-privacy level allows a third-party lookup, and are left out otherwise (a local Wikidata
-extract is the next step, docs/23).
+With the mirror, structured facts come from the local Wikidata extract when one is
+configured (``ATLAS_WIKIDATA_LOCAL``, wikidata_local.py: a file read, at every level,
+dated by its dump); otherwise from the Wikidata API when the request's privacy level
+allows a third-party lookup, and are left out at the other levels.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -39,9 +41,10 @@ from typing import Any, Literal
 from urllib.parse import quote
 
 from packages import privacy
-from services.orchestrator import kiwix, reference_fetch
+from services.orchestrator import kiwix, reference_fetch, wikidata_local
 from services.orchestrator.reference_fetch import SourceError
 
+_log = logging.getLogger(__name__)
 CAPABILITY = "reference_lookup"
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 SUMMARY_CHARS = 1400
@@ -388,6 +391,36 @@ async def _facts(
         result["wikidata_modified"] = entity["modified"]
 
 
+async def _local_facts(
+    result: dict[str, object], languages: list[str], site: str, title: str
+) -> str | None:
+    """Add the facts of the local Wikidata extract to ``result`` (a file read, no
+    network) and return the note dating them; None when the extract is absent, has no
+    such article or cannot be read (the caller then does what it did without it)."""
+    if not wikidata_local.configured():
+        return None
+    try:
+        entry = await asyncio.to_thread(wikidata_local.lookup, site, title, languages)
+    except wikidata_local.LocalFactsError as exc:
+        _log.warning("local Wikidata extract: %s (%s)", exc.code, exc.detail)
+        return None
+    if entry is None:
+        return None
+    result["description"] = entry.description
+    result["facts"] = _resolve(entry.facts, entry.labels)
+    result["wikidata_url"] = f"https://www.wikidata.org/wiki/{quote(entry.qid)}"
+    if entry.modified:
+        result["wikidata_modified"] = entry.modified
+    dump = entry.dump_date or "an unknown date"
+    result["facts_date"] = entry.dump_date or None
+    result["source"] = f"{result['source']}; Wikidata, local extract of {dump}"
+    return (
+        f"The Wikidata facts come from a local copy of the Wikidata dump of {dump}: "
+        "an office taken or a figure published after that date is missing; say so "
+        "when the question is about the current state."
+    )
+
+
 _NOTE = (
     "Community-edited reference. Check that this entry is the entity asked "
     "about (see other_matches). Office holders and figures can lag behind "
@@ -411,7 +444,8 @@ async def _local(
     live_failure: str | None = None,
 ) -> dict[str, object]:
     """The article from the local copy. ``live_failure``: the code of the live error
-    this answer replaces (standard level), which also skips the Wikidata facts."""
+    this answer replaces (standard level), which also skips the Wikidata API (the local
+    extract, a file read, still answers)."""
     available = kiwix.books()
     edition = language if language in available else "en" if "en" in available else ""
     if not edition:
@@ -455,6 +489,11 @@ async def _local(
             "are missing: tell the user the answer comes from a copy of that date, and "
             "use web_search for anything recent."
         )
+    languages = list(dict.fromkeys([edition, language]))
+    local_note = await _local_facts(result, languages, f"{edition}wiki", title)
+    if local_note is not None:
+        notes.append(local_note)
+    elif live_failure is not None:
         notes.append(
             "Structured Wikidata facts were not fetched: answer from the summary only."
         )
@@ -462,7 +501,7 @@ async def _local(
         try:
             await _facts(
                 result,
-                list(dict.fromkeys([edition, language])),
+                languages,
                 timeout,
                 site_title=(f"{edition}wiki", title),
             )
