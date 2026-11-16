@@ -393,7 +393,11 @@ async def execute(
             len(todo),
             per_picture * (len(todo) - drawn),
         )
-    if spend.total > 0 and isinstance(getattr(model, "spent", None), Decimal):
+    if (
+        model is not None
+        and spend.total > 0
+        and isinstance(getattr(model, "spent", None), Decimal)
+    ):
         model.spent += spend.total
     left_items = [r["label"] for r in results if "reference" not in r]
     pending = getattr(tools, "pictures_pending", None)

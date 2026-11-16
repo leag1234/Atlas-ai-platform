@@ -11,7 +11,6 @@ from decimal import Decimal
 import io
 import json
 import os
-from pathlib import Path
 import tempfile
 import time
 from types import SimpleNamespace
@@ -42,7 +41,8 @@ class FakeServer:
     PICTURE_SECONDS = 22.0
 
     def __init__(self, clock: list[float], per: float = 20.0) -> None:
-        self.clock, self.per, self.prompts = clock, per, []
+        self.clock, self.per = clock, per
+        self.prompts: list[str] = []
 
     async def health(self) -> dict[str, Any]:
         return {"ready": True, "seconds_per_image": self.per, "busy_seconds": 0.0}

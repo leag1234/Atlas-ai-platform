@@ -251,7 +251,7 @@ def facts(
         measured["sections"] = sections[:60]
         measured["emoji_drawn_in_file"] = len(_pictures(drawn_text(content)))
         measured["pictures_placed"] = sum(
-            len(section["pictures"]) for section in sections
+            len(section.images) for section in content.sections
         )
     if missing:
         measured["left_out_characters"] = missing

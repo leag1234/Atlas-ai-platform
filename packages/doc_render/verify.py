@@ -46,7 +46,10 @@ def verify(
         text = [page.extract_text() for page in reader.pages]
         # A page that holds only a picture (a picture moved to the next page
         # with no text after it) is not blank.
-        pictured = [not value.strip() and bool(page.images) for value, page in zip(text, reader.pages)]
+        pictured = [
+            not value.strip() and bool(page.images)
+            for value, page in zip(text, reader.pages)
+        ]
         unit = "page"
     elif path.suffix == ".pptx":
         deck = Presentation(str(path))
