@@ -390,6 +390,10 @@ class _Names:
     dated: re.Pattern[str]
     anchors: re.Pattern[str]
     wide: re.Pattern[str]
+    # Words a date phrase is made of, and prefixes of the words that start one.
+    vocabulary: frozenset[str]
+    vocabulary_prefixes: frozenset[str]
+    anchor_prefixes: frozenset[str]
 
 
 def _date_pattern(prefix: str, months: str) -> str:
@@ -444,7 +448,54 @@ def _names(language: str) -> _Names:
     wide = re.compile(
         rf"(?<!\w)(?:{_alternation([k for k, v in weekdays.items() if v.width == 'wide'])})(?!\w)"
     )
-    return _Names(locale, weekdays, months, relative, dated, anchors, wide)
+    words = {
+        word
+        for phrase in (
+            *RELATIVE_DAYS,
+            *_CONNECTORS,
+            *weekdays,
+            *months,
+            "le the den el il lo de of del er st nd rd th",
+        )
+        for word in re.findall(r"\w+", phrase)
+    }
+    return _Names(
+        locale,
+        weekdays,
+        months,
+        relative,
+        dated,
+        anchors,
+        wide,
+        frozenset(words),
+        frozenset(w[:n] for w in words for n in range(1, len(w) + 1)),
+        frozenset(
+            w[:n]
+            for start in starts
+            for w in re.findall(r"\w+", start)[:1]
+            for n in range(1, len(w) + 1)
+        ),
+    )
+
+
+# Characters a date phrase may contain between its words.
+_PHRASE_MARKS = frozenset(" \t\u00a0\u202f,(:*.-\u2013\u2014'")
+
+
+def _pending(tail: str, names: _Names) -> bool:
+    """Whether the folded text from an anchor to the end may still grow into a
+    longer date phrase: every word and mark in it can belong to one."""
+    if any(not c.isalnum() and c != "_" and c not in _PHRASE_MARKS for c in tail):
+        return False
+    words = re.findall(r"\w+", tail)
+    open_word = words.pop() if words and re.search(r"\w$", tail) else None
+    if not all(word.isdigit() or word in names.vocabulary for word in words):
+        return False
+    return (
+        open_word is None
+        or open_word.isdigit()
+        or open_word in names.vocabulary_prefixes
+    )
 
 
 def _form(names: _Names, kind: str, index: int, like: _Name, original: str) -> str:
@@ -683,15 +734,20 @@ class Rewriter:
         names = _names(self.language)
         held = self.held
         folded = fold(held)
-        # The last word may still grow.
+        # Only text that may still become a date phrase is held: a last word
+        # that may grow into a phrase's first word, or a phrase still open.
+        # Any other text goes out at once (first-content latency unchanged).
         cut = len(held)
         tail = re.search(r"\w+$", folded)
-        if tail:
+        if tail and tail.group(0) in names.anchor_prefixes:
             cut = tail.start()
         start = max(0, len(held) - WINDOW)
-        found = names.anchors.search(folded, start)
-        if found is not None:
-            cut = min(cut, found.start())
+        for found in names.anchors.finditer(folded, start):
+            if found.start() >= cut:
+                break
+            if _pending(folded[found.start() :], names):
+                cut = found.start()
+                break
         # A phrase that started earlier and runs over the cut stays whole.
         moved = True
         while moved:

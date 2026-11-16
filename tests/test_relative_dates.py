@@ -256,10 +256,23 @@ class RepairTests(unittest.TestCase):
             self.assertEqual("".join(out), expected)
 
     def test_text_without_dates_streams_without_waiting(self) -> None:
-        rewriter = Rewriter("en", MONDAY)
-        self.assertEqual(rewriter.feed("The forecast is "), "The forecast is ")
-        self.assertEqual(rewriter.feed("rain"), "")
-        self.assertEqual(rewriter.feed(" later."), "rain later.")
+        # Every piece that cannot become a date phrase goes out at once, even
+        # a word cut in two ("Bon" + "jour"): first-content latency is unchanged.
+        for language in ("fr", "en", "de", "es", "it"):
+            rewriter = Rewriter(language, MONDAY)
+            self.assertEqual(rewriter.feed("Bon"), "Bon")
+            self.assertEqual(rewriter.feed("jour, il pleut "), "jour, il pleut ")
+            self.assertEqual(rewriter.feed("rain"), "rain")
+            self.assertEqual(rewriter.finish(), "")
+        # A phrase still open is held, and released once it is complete.
+        rewriter = Rewriter("fr", MONDAY)
+        self.assertEqual(rewriter.feed("Il pleuvra "), "Il pleuvra ")
+        self.assertEqual(rewriter.feed("dem"), "")
+        self.assertEqual(rewriter.feed("ain lundi"), "")
+        self.assertEqual(rewriter.feed(" 16 novembre"), "")
+        self.assertEqual(
+            rewriter.feed(" à Bayeux."), "demain mardi 17 novembre à Bayeux."
+        )
 
 
 class TurnTests(unittest.IsolatedAsyncioTestCase):
