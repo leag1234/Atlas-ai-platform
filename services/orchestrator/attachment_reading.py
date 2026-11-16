@@ -317,6 +317,7 @@ async def read_announced(
     from packages.language import user_prose
 
     from packages.attachment_reader import DOCUMENT_CONTEXT_BYTES
+    from services.orchestrator import document_quotes
     from services.orchestrator.content import hierarchical_summary
     from services.orchestrator.documents import DocumentError
 
@@ -336,6 +337,7 @@ async def read_announced(
                     remaining_cost=Decimal("0.30"),
                 )
                 text = document.text
+                document_quotes.add_document(text, attachment.filename)
                 share = DOCUMENT_CONTEXT_BYTES // max(1, len(request.documents))
                 hierarchical = len(text.encode()) > share
                 if hierarchical:
@@ -393,6 +395,9 @@ async def read_announced(
                 from packages.attachment_reader import failure_reason
 
                 announced_source["errors"] = [failure_reason(exc)]
+        document_quotes.add_document(
+            announced_source.get("text"), announced_source["filename"]
+        )
         sources.append(announced_source)
         record_source(item, announced_source)
     if sources and not requests_file_delivery(request.messages[-1].text):

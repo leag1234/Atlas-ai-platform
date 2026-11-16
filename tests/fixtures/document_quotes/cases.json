@@ -1,0 +1,30 @@
+{
+  "documents": {
+    "contract": {"text": "contract-fr.txt", "filename": "contrat-prestation-morvanel.docx"},
+    "report": {"text": "report-en.txt", "filename": "larkmoor-water-annual-report-2025.pdf"},
+    "law": {"text": "law-de.txt", "filename": "grundgesetz-art-1-5.pdf"},
+    "long": {"argument": "--long-pdf", "filename": "COM-2025-30-fr.pdf"}
+  },
+  "cases": [
+    {"id": "c1", "document": "contract", "request": "Cite moi exactement ce que dit le contrat sur la résiliation"},
+    {"id": "c2", "document": "contract", "request": "quelles sont les pénalités de retard ? donne les passages exacts du contrat stp"},
+    {"id": "c3", "document": "contract", "request": "Résume ce contrat en 5 points en citant à chaque fois la clause correspondante entre guillemets"},
+    {"id": "c4", "document": "contract", "request": "Is there a confidentiality clause in this contract? Quote it word for word."},
+    {"id": "c5", "document": "contract", "request": "le prestataire peut il sous traiter ? justifie avec une citation du contrat"},
+    {"id": "r1", "document": "report", "request": "What does the report say about water losses? Please quote the relevant sentences."},
+    {"id": "r2", "document": "report", "request": "Give me the three most important findings of this report, each with a supporting quote."},
+    {"id": "r3", "document": "report", "request": "Quelles recommandations fait le rapport ? cite les"},
+    {"id": "r4", "document": "report", "request": "quote what the report says about the boards position on the tarif increase"},
+    {"id": "r5", "document": "report", "request": "Summarize the finances section and quote the key sentence about the deficit"},
+    {"id": "l1", "document": "law", "request": "Was steht in Artikel 3 genau? Bitte wörtlich zitieren."},
+    {"id": "l2", "document": "law", "request": "Zitiere aus dem Dokument die Stelle zur Pressefreiheit."},
+    {"id": "l3", "document": "law", "request": "Que dit l'article 2 sur la liberté de la personne ? cite le texte allemand"},
+    {"id": "l4", "document": "law", "request": "Which article protects human dignity? Quote the exact sentence."},
+    {"id": "l5", "document": "law", "request": "Gibt es eine Regelung zur Kriegsdienstverweigerung? Mit Zitat bitte"},
+    {"id": "p1", "document": "long", "request": "Quels sont les trois piliers de la boussole ? Cite les passages du document."},
+    {"id": "p2", "document": "long", "request": "Que dit la Commission sur l'écart d'innovation avec les États-Unis ? Donne des citations exactes."},
+    {"id": "p3", "document": "long", "request": "What does the document say about simplification and the reporting burden? Quote it."},
+    {"id": "p4", "document": "long", "request": "cite moi 3 phrases du doc sur l'énergie et les prix de l'énergie"},
+    {"id": "p5", "document": "long", "request": "Le document parle t il des compétences ? Citation svp"}
+  ]
+}
