@@ -48,6 +48,11 @@ def _normalized(text: str) -> str:
 
 
 def produces_file(text: str, *, include_images: bool = True) -> bool:
+    from packages.closing_intent import polite_closing
+
+    # "merci pour le pdf !" thanks for a file: it asks for no new one.
+    if polite_closing(text):
+        return False
     text = _normalized(text)
     if include_images and re.search(r"\b(dessine\w*|zeichne\w*|dibuja\w*)\b", text):
         return True

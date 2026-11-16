@@ -32,7 +32,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from packages.artifact_intent import Intent
-from packages import linear_scan
+from packages import linear_scan, privacy
+from packages.closing_intent import polite_closing
 from packages.model_json import object_content, unique_object
 from packages.work_intent import manages_machine
 from packages.writing_intent import plain_writing
@@ -429,6 +430,8 @@ async def classify(
 
 # Kinds that take a turn out of the chat text: the app panel, a picture, Work.
 _NOT_TEXT = frozenset({"app", "drawing", "file"})
+# Kinds that rebuild, reopen or rerun something delivered earlier.
+_REDELIVER = _NOT_TEXT | {"run"}
 
 
 def settle(text: str, routed: Decision | None) -> Decision | None:
@@ -438,18 +441,30 @@ def settle(text: str, routed: Decision | None) -> Decision | None:
     alone said "noted" and removed nothing (staging 2026-11-14). A text to
     write that names no app, picture, code or file is answered in the chat: a
     short message routed to the app panel took 62 s to build an app instead
-    of five sentences (staging 2026-11-16). A change to something delivered
+    of five sentences (staging 2026-11-16). A thanks or a compliment that asks
+    for nothing is answered in the chat: "merci, c'est parfait !" after an app
+    rebuilt the app (staging 2026-11-16). A change to something delivered
     earlier keeps the model's kind.
     """
+    return _settle(text, routed)[0]
+
+
+def _settle(text: str, routed: Decision | None) -> tuple[Decision | None, str]:
+    """The settled decision and the code rule that changed it ("" when none)."""
     if routed is None:
-        return None
+        return None, ""
     if routed.kind != "remote" and manages_machine(text):
-        return Decision(kind="remote")
+        return Decision(kind="remote"), "machine"
+    if routed.kind in _REDELIVER and polite_closing(text):
+        return Decision(kind="answer"), "closing"
     if routed.kind in _NOT_TEXT and not routed.follow_up and plain_writing(text):
-        return routed.model_copy(
-            update={"kind": "answer", "file_format": None, "needs_research": False}
+        return (
+            routed.model_copy(
+                update={"kind": "answer", "file_format": None, "needs_research": False}
+            ),
+            "writing",
         )
-    return routed
+    return routed, ""
 
 
 async def route(request: ChatRequest) -> Decision | None:
@@ -468,13 +483,30 @@ async def route(request: ChatRequest) -> Decision | None:
         for message in request.conversation_messages[:-1]
     ]
     routed, milliseconds, cost, reason = await classify(request.user_text, history)
-    routed = settle(request.user_text, routed)
-    request.__dict__[DECISION_KEY] = routed
+    settled, rule = _settle(request.user_text, routed)
+    request.__dict__[DECISION_KEY] = settled
     request.__dict__[COST_KEY] = cost
-    log.info(
-        "request_router kind=%s format=%s follow_up=%s research=%s location=%s "
-        "ms=%.0f cost_eur=%s fallback=%s",
+    _log(settled, rule, milliseconds, cost, reason)
+    return settled
+
+
+def _log(
+    routed: Decision | None, rule: str, milliseconds: float, cost: Decimal, reason: str
+) -> None:
+    """One metadata line per routed turn, never the user's text.
+
+    WARNING so that it reaches the service journal, which keeps WARNING and
+    above: without it a wrong routing could not be told from a router timeout.
+    source is "model" (the model decided), "settle" (a code rule changed the
+    model decision, named by rule) or "lexical" (no decision: the lexical gates
+    decide, fallback says why).
+    """
+    log.warning(
+        "request_router kind=%s source=%s rule=%s format=%s follow_up=%s "
+        "research=%s location=%s ms=%.0f cost_eur=%s fallback=%s privacy=%s",
         routed.kind if routed else "none",
+        ("settle" if rule else "model") if routed else "lexical",
+        rule or "none",
         (routed.file_format or "none") if routed else "none",
         str(routed.follow_up).lower() if routed else "none",
         str(routed.needs_research).lower() if routed else "none",
@@ -487,8 +519,8 @@ async def route(request: ChatRequest) -> Decision | None:
         milliseconds,
         cost,
         reason or "none",
+        privacy.current(),
     )
-    return routed
 
 
 def capability_statement() -> str:
