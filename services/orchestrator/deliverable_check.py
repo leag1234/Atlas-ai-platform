@@ -143,8 +143,42 @@ def planned_gaps(tools: Any, content: Any) -> list[str]:
                 + ", ".join(unplaced)
                 + " (place each with its ![label](reference) line)"
             )
+    from services.orchestrator.work_pictures import normal
+
+    text = normal(drawn_text(content))
+    earlier = getattr(tools, "pictures_earlier", None)
+    if isinstance(earlier, dict) and earlier:
+        # A picture drawn in an earlier turn for an item this file shows is
+        # placed again (staging -95: the follow-up file lost them).
+        dropped = [
+            str(label)
+            for reference, label in earlier.items()
+            if reference not in placed and normal(str(label)) in text
+        ]
+        if dropped:
+            gaps.append(
+                "pictures drawn earlier in this conversation for items of this "
+                "file are not placed: "
+                + ", ".join(dropped)
+                + " (place each with its ![label](reference) line)"
+            )
     plan = getattr(tools, "picture_plan", None)
     asked = getattr(plan, "pictures", None)
+    if isinstance(asked, list) and asked:
+        # Every planned item stays in the file, its picture drawn or to come
+        # (staging -95: the words not drawn yet were left out of the file).
+        absent = [
+            str(item.label)
+            for item in asked
+            if normal(str(getattr(item, "label", ""))) not in text
+        ]
+        if absent:
+            gaps.append(
+                "items of the request are missing from the file: "
+                + ", ".join(absent)
+                + " (keep each one, with a line saying its picture will come "
+                "when it is not drawn yet)"
+            )
     if (
         isinstance(asked, list)
         and asked

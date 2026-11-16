@@ -248,6 +248,95 @@ class SettledTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tools.selection.groups["documents"], ("make_pictures",))
 
 
+class FollowUpTests(unittest.IsolatedAsyncioTestCase):
+    """Staging -95: turn 2 planned only the missing items, drew them, and the
+    file lost the 5 pictures of turn 1; turn 1 had left the undrawn words
+    out of the file."""
+
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        patcher = mock.patch.dict(os.environ, {"ATLAS_WORK_PICTURE_DIR": folder.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        enabled = mock.patch.object(work_pictures, "enabled", return_value=True)
+        enabled.start()
+        self.addCleanup(enabled.stop)
+
+    @staticmethod
+    def plan(*labels: str) -> dict[str, Any]:
+        pictures = [{"label": label, "description": "a " + label} for label in labels]
+        return {
+            "text": json.dumps({"pictures": pictures, "style": ""}),
+            "cost_eur": "0",
+        }
+
+    async def test_a_follow_up_places_every_picture_of_the_conversation(self) -> None:
+        checks = [{"text": json.dumps({"met": [True, True]}), "cost_eur": "0"}] * 10
+        first = tools_for("subject|book2", "un imagier: voilier, radeau, pomme")
+        await work_pictures.prepare(
+            first,
+            first.request_text,
+            600,
+            server=FakeServer([0.0]),
+            call=AsyncMock(side_effect=[self.plan("voilier", "Radeau"), *checks]),
+        )
+        self.assertEqual(len(first.pictures_drawn), 2)
+        # The follow-up plans only what is missing, in other words.
+        later = tools_for("subject|book2", "il manque des images, tu peux finir ?")
+        server = FakeServer([0.0])
+        await work_pictures.prepare(
+            later,
+            later.request_text,
+            600,
+            server=server,
+            call=AsyncMock(side_effect=[self.plan("Pomme", "radeau !"), *checks]),
+        )
+        self.assertEqual(len(server.prompts), 1)  # only the apple is new
+        self.assertEqual(sorted(later.pictures_earlier.values()), ["voilier"])
+        self.assertIn("drawn earlier in this conversation", later.instructions)
+        earlier_ref = next(iter(later.pictures_earlier))
+        self.assertIn(earlier_ref, later.instructions)
+        # A file that shows "voilier" without its picture is refused by code.
+        content = Content.model_validate(
+            {
+                "title": "Imagier",
+                "sections": [
+                    {"heading": heading, "paragraphs": [heading]}
+                    for heading in ("Voilier", "Radeau", "Pomme")
+                ],
+            }
+        )
+        gaps = deliverable_check.planned_gaps(later, content)
+        self.assertTrue(
+            any("drawn earlier" in gap and "voilier" in gap for gap in gaps)
+        )
+
+    def test_every_planned_item_stays_in_the_file(self) -> None:
+        tools = tools_for("subject|items")
+        tools.picture_plan = work_pictures.Plan(
+            pictures=[
+                work_pictures.Item(label=label, description="x")
+                for label in ("Maison dans un arbre", "pomme")
+            ]
+        )
+        content = Content.model_validate(
+            {
+                "title": "Imagier",
+                "sections": [
+                    {"heading": "maison dans un arbre !", "paragraphs": ["x"]}
+                ],
+            }
+        )
+        gaps = deliverable_check.planned_gaps(tools, content)
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("pomme", gaps[0])
+        self.assertEqual(
+            work_pictures.normal("Maison  dans un ARBRE !"), "maison dans un arbre"
+        )
+        self.assertEqual(work_pictures.normal("Éléphant"), "elephant")
+
+
 class PlacedTests(unittest.TestCase):
     def content(self, text: str) -> Content:
         return Content.model_validate(

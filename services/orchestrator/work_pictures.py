@@ -36,6 +36,7 @@ from pathlib import Path
 import re
 import time
 from typing import Any
+import unicodedata
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -140,7 +141,13 @@ def declaration() -> dict[str, object]:
 
 
 def directory() -> Path:
-    return Path(os.environ.get("ATLAS_WORK_PICTURE_DIR", "BRAIN/work-pictures"))
+    """ATLAS_WORK_PICTURE_DIR, else the instance's data directory: under the
+    deployed tree's BRAIN/ the pictures of a conversation were lost at every
+    deployment, and a follow-up after one redrew them all."""
+    configured = os.environ.get("ATLAS_WORK_PICTURE_DIR", "").strip()
+    if configured:
+        return Path(configured)
+    return Path(os.environ.get("ATLAS_DATA_DIR", "BRAIN")) / "work-pictures"
 
 
 def conversation_dir(tools: Any) -> Path | None:
@@ -151,11 +158,23 @@ def conversation_dir(tools: Any) -> Path | None:
     return directory() / hashlib.sha256(key.encode()).hexdigest()[:32]
 
 
+def normal(label: str) -> str:
+    """A label as items are matched: case, accents, punctuation and spacing
+    set aside ("Maison dans un arbre !" and "maison dans un arbre")."""
+    letters = unicodedata.normalize("NFKD", label.casefold())
+    kept = "".join(
+        " " if unicodedata.category(c)[0] in {"P", "S", "Z"} else c
+        for c in letters
+        if not unicodedata.combining(c)
+    )
+    return " ".join(kept.split())
+
+
 def _item_key(item: Item, style: str) -> str:
     """One picture per item of a conversation: its label, whatever the words
     of its description (a follow-up plans the same items in other words and
     must reuse what was drawn, staging 2026-11-16)."""
-    return hashlib.sha256(" ".join(item.label.casefold().split()).encode()).hexdigest()
+    return hashlib.sha256(normal(item.label).encode()).hexdigest()
 
 
 def _index(folder: Path) -> dict[str, dict[str, str]]:
@@ -491,7 +510,7 @@ async def execute(
         )
     if notes:
         output["note"] = " ".join(notes)
-    logging.getLogger(__name__).info(
+    logging.getLogger(__name__).warning(
         json.dumps(
             {
                 "event": "work_pictures",
@@ -532,7 +551,8 @@ PLAN_SYSTEM = (
     "per item, word, dish, step, animal... as they ask), or when the kind of "
     "file they ask for cannot do without them as they describe it. A follow-up "
     "that says pictures are missing or asks to finish needs the pictures of "
-    "the whole file again: the ones already drawn are reused. Most files "
+    "the whole file again, every item including those already drawn: they "
+    "are reused. Most files "
     "(reports, letters, tables, plain slides) need none: return an empty list. "
     "Emoji or symbols are not pictures: set emoji_requested true only when the "
     "person asks for emoji or symbols themselves. Each picture has a label "
@@ -696,7 +716,14 @@ PLACE = (
     "of its item as its own Markdown line ![label](reference) (for slides: in "
     "the slide's images). Do not replace a picture with an emoji or a symbol. "
     "Write the items as the person gave them and add nothing the request did "
-    "not ask for (no exercises, annotations, variants or extra lines)."
+    "not ask for (no exercises, annotations, variants or extra lines). Every "
+    "item of the request stays in the file, in its place: an item whose "
+    "picture is not drawn yet keeps its section, with one short line saying "
+    "that its picture will come."
+)
+EARLIER = (
+    " Pictures drawn earlier in this conversation, for items of the same "
+    "file: {pictures}. Place each one too, in the section of its item."
 )
 NO_PLAN = (
     "\n\nThe pictures this file needs could not be planned before you started. "
@@ -706,8 +733,9 @@ NO_PLAN = (
 )
 LEFT = (
     " These pictures could not be drawn in this turn: {labels} (about {seconds} "
-    "s more are needed). Write their sections without a picture; the answer "
-    "must say they are missing and offer to continue, which draws only those."
+    "s more are needed). Keep their sections, with their item and a short "
+    "line saying the picture will come; the answer must say they are missing "
+    "and offer to continue, which draws only those."
 )
 
 
@@ -782,6 +810,20 @@ async def _prepare(
     text = PLACE.format(
         pictures="; ".join(f"{p['label']} -> {p['reference']}" for p in drawn) or "none"
     )
+    # Every picture this conversation already has, whatever this plan listed:
+    # a follow-up planned only the missing items and the file lost the
+    # pictures of the turn before (staging -95).
+    current = {str(p["reference"]) for p in drawn}
+    earlier = {
+        reference: entry["label"]
+        for reference, entry in described(tools).items()
+        if reference not in current
+    }
+    if earlier:
+        text += EARLIER.format(
+            pictures="; ".join(f"{label} -> {ref}" for ref, label in earlier.items())
+        )
+    tools.pictures_earlier = earlier
     if result.get("not_drawn"):
         text += LEFT.format(
             labels=", ".join(result["not_drawn"]),
