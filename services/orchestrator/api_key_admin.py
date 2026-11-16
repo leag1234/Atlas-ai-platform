@@ -23,6 +23,10 @@ from services.orchestrator.dev_auth import Store as DeveloperStore
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
+def every_scope() -> list[Literal["assistant", "model"]]:
+    return ["assistant", "model"]
+
+
 class CreateKey(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     org_id: str = Field(default="stable", min_length=1, max_length=320)
@@ -33,7 +37,7 @@ class CreateKey(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     # Every scope unless the operator restricts the key explicitly (generic keys).
     scopes: list[Literal["assistant", "model"]] = Field(
-        default_factory=lambda: ["assistant", "model"], min_length=1
+        default_factory=every_scope, min_length=1
     )
     lifetime_days: int = Field(default=90, ge=1, le=365)
     daily_requests: int | None = Field(default=None, ge=1)
