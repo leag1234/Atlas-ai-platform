@@ -314,6 +314,19 @@ class Turn:
                 values[quantity.kind].append(quantity.value)
         return values
 
+    def owned_values(self, answer: str) -> str:
+        """The travel values of ``answer``, written as the travel check reads them.
+
+        The unsourced details review runs first and treats this text as the
+        person's own words, so a travel value is checked (and rewritten) once,
+        here, never by both reviews.
+        """
+        parts: list[str] = []
+        for quantity in quantities(answer):
+            parts.append(quantity.text)
+            parts.extend(re.findall(r"\d+(?:[.,]\d+)?", quantity.text))
+        return " ".join(parts)
+
     def check(self, answer: str, language: str) -> str:
         """Remove unsourced durations and distances, mark unsourced clock times."""
         if not self.active or not answer.strip():

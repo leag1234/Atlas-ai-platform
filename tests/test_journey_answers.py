@@ -322,6 +322,19 @@ class TravelClaimsTests(unittest.TestCase):
         )
         self.assertEqual(turn.check(answer, "fr"), answer)
 
+    def test_travel_values_are_left_to_the_travel_check(self) -> None:
+        from services.orchestrator import unsourced_details
+
+        answer = (
+            "La gare est à environ 10 minutes à pied. Le train part à 10h05 "
+            "et arrive à 12h00, soit 1 h 55 min de trajet sur 230 km."
+        )
+        turn = turn_with()
+        own = unsourced_details.Evidence.of([turn.owned_values(answer)])
+        nothing = unsourced_details.Evidence.of([])
+        left = unsourced_details.unsupported(answer, nothing, own)
+        self.assertEqual(left, [], [d.text for d in left])
+
     def test_inactive_turn_changes_nothing(self) -> None:
         turn = travel_claims.Turn()
         self.assertEqual(turn.check("Cuire 10 minutes.", "fr"), "Cuire 10 minutes.")

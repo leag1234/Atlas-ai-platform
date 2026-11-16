@@ -352,8 +352,22 @@ async def chat(request: Request) -> Response:
             ):
                 raise BudgetRefusal("maintenance", 0, 0, lang)
             user, ledger = user_from_headers(request.headers), DailyLedger()
+            aliases: tuple[str, ...] = ()
             if payload._project_subject:
-                user = payload._project_subject
+                from services.orchestrator.budget_identity import person_bucket
+
+                # The person's one bucket, shared with their chat and API keys.
+                user = await person_bucket(payload._project_subject, ledger)
+                aliases = (payload._project_subject,)
+            elif (
+                authenticated_key is None
+                and request.headers.get("x-openwebui-user-id", "").strip()
+            ):
+                # The interface asserts the account id and email together: the
+                # person's project and scheduled spend then joins this bucket.
+                ledger.remember_alias(
+                    request.headers.get("x-openwebui-user-email", ""), user
+                )
             from services.orchestrator.request_owners import record as record_owner
 
             artifact_owner = payload._project_subject or (
@@ -376,7 +390,7 @@ async def chat(request: Request) -> Response:
                 from services.orchestrator.code_mode import settings
 
                 reserve = settings().cost
-            reservation = ledger.reserve_cost(user, reserve, lang)
+            reservation = ledger.reserve_cost(user, reserve, lang, aliases=aliases)
             key_reservation = None
             if authenticated_key is not None:
                 try:

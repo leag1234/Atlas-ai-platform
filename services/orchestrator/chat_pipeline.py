@@ -35,6 +35,7 @@ from services.orchestrator import (
     grounding,
     number_provenance,
     travel_claims,
+    unsourced_details,
 )
 from services.orchestrator.vision import process_vision
 from services.orchestrator.search_policy import required_research, corpus_allowed
@@ -824,7 +825,14 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     check = (
         grounding.Grounding()
         if os.environ.get("ATLAS_GROUNDING", "off") == "on"
-        and grounding.needs_grounding(request.user_text)
+        and (
+            grounding.needs_grounding(request.user_text)
+            or (
+                unsourced_details.wants_review(request.user_text)
+                and not request.has_attachments
+                and not request.project_id
+            )
+        )
         else None
     )
     checking = grounding.current.set(check)
@@ -923,20 +931,52 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # put in front of delivered documents, staging 2026-11-10). A nearby answer is
     # rendered by the service from map data; its verification searches only feed
     # the opening status (nearby_chat), they are not sources of its sentences.
-    if (
+    # Post-checks, in order: document quotes (above), unsourced details, travel
+    # values, grounding. Travel durations, distances and times belong to the
+    # travel check alone: the details review sees them as the person's own, so
+    # one value is never rewritten twice.
+    reviewable = (
         check is not None
-        and check.evidence
         and item.state == "done"
         and item.task_type not in {"work", "nearby"}
-    ):
-        item.reponse = check.check(item.reponse, asked, asked_language)
-    if (
+    )
+    travel_checked = (
         travel.active
         and (travel.held or sink is None)
         and item.state == "done"
         and item.task_type not in {"work", "nearby"}
+    )
+    if (
+        reviewable
+        and check is not None
+        and unsourced_details.mode() != "off"
+        and not request.has_attachments
+        and not request.project_id
     ):
+        # Precise details no retrieved text holds: looked up in the subject's
+        # encyclopedia article, then corrected or removed by one bounded call
+        # (unsourced_details.py). Grounding then checks the final text.
+        item.reponse, details_report = await unsourced_details.review(
+            item.reponse,
+            # The passages of the instance's own corpus are retrieved texts too.
+            check.evidence
+            + [str(chunk.get("text", "")) for chunk in item.chunks_recuperes],
+            # The conversation's own words (earlier answers included) are not
+            # added details; an attachment's or a project's files are never in
+            # the evidence read here, so such a turn is left to grounding alone.
+            [m.text for m in request.messages]
+            + ([travel.owned_values(item.reponse)] if travel_checked else []),
+            profile=request.model,
+            language=asked_language,
+            question=asked,
+            urls=item.retrieved_urls,
+        )
+        item.retrieved_urls.extend(details_report.reference_urls)
+        item.cout_eur = float(Decimal(str(item.cout_eur)) + details_report.cost_eur)
+    if travel_checked:
         item.reponse = travel.check(item.reponse, asked_language or travel.language)
+    if reviewable and check is not None and check.evidence:
+        item.reponse = check.check(item.reponse, asked, asked_language)
     if provenance is not None and item.state == "done" and item.task_type != "work":
         number_provenance.record(
             provenance,

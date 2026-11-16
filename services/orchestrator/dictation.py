@@ -599,6 +599,8 @@ async def stream_socket(socket: WebSocket) -> None:
     session: Session | None = None
     stream: Stream | None = None
     ledger, reservation = DailyLedger(), None
+    # The signed-in user's email and account id: one budget bucket (budget_identity.py).
+    ledger.remember_alias(identity.email, user)
     tasks: list[asyncio.Task[None]] = []
     registered = False
     try:

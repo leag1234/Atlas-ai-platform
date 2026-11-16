@@ -1,10 +1,12 @@
 """Minute scheduler in the service process; database claims coordinate replicas."""
 
 import asyncio
+import hashlib
 from contextlib import asynccontextmanager, suppress
 from decimal import Decimal
 import logging
 import os
+import time
 from typing import Any, AsyncIterator
 from uuid import uuid4
 
@@ -46,10 +48,26 @@ async def tick() -> dict[str, Any]:
             return await bounded_json(response)
 
 
+STARTUP_GRACE_SECONDS = 180.0
+NOT_READY_RETRY_SECONDS = 5.0
+
+
+def task_tag(identifier: str) -> str:
+    """A task's id in logs: a short hash, never the id, name or content."""
+    return hashlib.sha256(identifier.encode()).hexdigest()[:12]
+
+
 async def run_task(job: dict[str, Any]) -> None:
+    from services.orchestrator.budget_identity import person_bucket
     from services.orchestrator.code_mode import code_profile
 
     task = job["task"]
+    tag, started = task_tag(str(task["id"])), time.monotonic()
+    log = logging.getLogger(__name__)
+    # Metadata only (staging 2026-11-16: a successful run left no line at all).
+    log.warning(
+        "scheduled_run_started task=%s reserved_eur=%s", tag, job["reserved_eur"]
+    )
     broker = ScheduleBroker(job["subject"], task["org_id"], task["project_id"])
     ledger, reservation = DailyLedger(), None
     item = Interaction(request_id="chatcmpl-" + job["run_id"])
@@ -58,6 +76,7 @@ async def run_task(job: dict[str, Any]) -> None:
     record_owner(item.request_id, job["subject"])
     owner = asyncio.current_task()
     assert owner is not None
+    reason = ""
 
     async def heartbeat() -> None:
         try:
@@ -77,16 +96,16 @@ async def run_task(job: dict[str, Any]) -> None:
 
             if Path(os.environ["ATLAS_KILL_SWITCH_FILE"]).exists():
                 raise BudgetRefusal("maintenance", 0, 0, task["locale"])
+        # The creator's one daily bucket, as for their chat (budget_identity.py).
+        bucket = await person_bucket(job["subject"], ledger)
         reservation = ledger.reserve_cost(
-            job["subject"], Decimal(str(job["reserved_eur"])), task["locale"]
+            bucket,
+            Decimal(str(job["reserved_eur"])),
+            task["locale"],
+            aliases=(job["subject"],),
         )
-        instruction = task["instruction"]
-        if task["target_file"]:
-            instruction += (
-                "\n\nScheduled deliverable: publish the result to "
-                + task["target_file"]
-                + ". Update this file; retain its previous version."
-            )
+        # The instruction alone is the user's message: the deliverable note is
+        # model context (work_clock.py), never shown as the user's words.
         request = ChatRequest.model_validate(
             dict(
                 model=code_profile(),
@@ -96,7 +115,9 @@ async def run_task(job: dict[str, Any]) -> None:
                 work_session_id=job["session_id"],
                 project_action="work",
                 ui_locale=task["locale"],
-                messages=[dict(role="user", content=instruction)],
+                # The creator's zone: "today" in the run is their today.
+                ui_timezone=task["schedule"]["timezone"],
+                messages=[dict(role="user", content=task["instruction"])],
                 stream=False,
             )
         )
@@ -104,7 +125,11 @@ async def run_task(job: dict[str, Any]) -> None:
         request._scheduled_target = task["target_file"]
         request._project_subject = job["subject"]
         request._transcript_key = "scheduled:" + job["run_id"]
-        request.__dict__.update(daily_ledger=ledger, daily_user=job["subject"])
+        request.__dict__.update(
+            daily_ledger=ledger,
+            daily_user=bucket,
+            scheduled_target_exists=bool(job.get("target_exists")),
+        )
         await process_scoped_project(request, item)
     except (
         ProjectError,
@@ -113,7 +138,14 @@ async def run_task(job: dict[str, Any]) -> None:
         TimeoutError,
         ValueError,
     ) as exc:
-        logging.getLogger(__name__).warning(
+        reason = (
+            str(exc.body.get("error"))
+            if isinstance(exc, ProjectError)
+            else exc.category
+            if isinstance(exc, BudgetRefusal)
+            else "transport"
+        )
+        log.warning(
             "scheduled_work_failed kind=%s status=%s code=%s",
             type(exc).__name__,
             getattr(exc, "status", 0),
@@ -125,31 +157,64 @@ async def run_task(job: dict[str, Any]) -> None:
         renewal.cancel()
         with suppress(asyncio.CancelledError):
             await renewal
-        if reservation is not None:
-            ledger.settle_cost(
-                reservation,
-                Decimal(str(item.cout_eur))
-                if item.state == "done"
-                else Decimal(str(job["reserved_eur"])),
-            )
+        status = "completed" if item.state == "done" else "failed"
+        charged: Any = None
         try:
-            await broker.call(
+            finished = await broker.call(
                 "finish",
                 dict(
                     task_id=task["id"],
                     run_id=job["run_id"],
-                    status="completed" if item.state == "done" else "failed",
+                    status=status,
                     cost_eur=item.cout_eur,
                 ),
             )
+            last = finished.get("last_result") or {}
+            status = str(last.get("status") or status)
+            reason = str(last.get("reason") or reason)
+            charged = last.get("cost_eur")
         except ProjectError as exc:
-            logging.getLogger(__name__).warning(
-                "scheduled_finish_failed status=%s", exc.status
+            log.warning("scheduled_finish_failed status=%s", exc.status)
+        finally:
+            if reservation is not None:
+                # The cost the task was charged: measured, or the reservation
+                # only when the cost could not be known (project_schedules.py).
+                ledger.settle_cost(
+                    reservation,
+                    Decimal(str(charged))
+                    if charged is not None
+                    else Decimal(str(item.cout_eur))
+                    if item.state == "done"
+                    else Decimal(str(job["reserved_eur"])),
+                )
+            log.warning(
+                "scheduled_run_finished task=%s status=%s cost_eur=%s duration_s=%.1f reason=%s",
+                tag,
+                status,
+                charged if charged is not None else item.cout_eur,
+                time.monotonic() - started,
+                reason or "-",
             )
+
+
+def monotonic() -> float:
+    return time.monotonic()
+
+
+async def pause(seconds: float) -> None:
+    await asyncio.sleep(seconds)
+
+
+def not_ready(exc: BaseException) -> bool:
+    """Retrieval not listening yet, or answering that its database is not up."""
+    return isinstance(exc, aiohttp.ClientConnectorError) or (
+        isinstance(exc, ProjectError) and exc.status in {502, 503, 504}
+    )
 
 
 async def loop() -> None:
     active: set[asyncio.Task[None]] = set()
+    ready, began = False, monotonic()
 
     def finished(task: asyncio.Task[None]) -> None:
         active.discard(task)
@@ -165,6 +230,7 @@ async def loop() -> None:
                     worker = asyncio.create_task(run_task(job))
                     active.add(worker)
                     worker.add_done_callback(finished)
+                ready = True
             except (
                 ProjectError,
                 aiohttp.ClientError,
@@ -172,10 +238,20 @@ async def loop() -> None:
                 OSError,
                 ValueError,
             ) as exc:
+                # Both services start together: the first tick after a restart
+                # found retrieval not listening yet and logged a failure
+                # (staging 2026-11-16). Wait for it instead, within a bound.
+                if (
+                    not ready
+                    and not_ready(exc)
+                    and monotonic() - began < STARTUP_GRACE_SECONDS
+                ):
+                    await pause(NOT_READY_RETRY_SECONDS)
+                    continue
                 logging.getLogger(__name__).warning(
                     "scheduler_tick_failed kind=%s", type(exc).__name__
                 )
-            await asyncio.sleep(60)
+            await pause(60)
     finally:
         remaining = list(active)
         for worker in remaining:
