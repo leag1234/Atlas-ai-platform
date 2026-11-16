@@ -212,9 +212,12 @@ Retrieval owns metadata and blob publication; the orchestrator never opens its d
 ### 4.1.1 Plain-chat routing by the model (owner decision 2026-11-11)
 - A plain chat turn (no project, no attachment or image, not a continuation, not an
   interface task such as `### Task:` or the title request) is routed once by the model:
-  `services/orchestrator/request_router.py` asks the fast public profile of
-  `routing.yaml` (one `/agent/complete` call, JSON object output, no tools, 3 s hard
-  timeout, `ATLAS_MODEL_ROUTER_TIMEOUT` to change it) for a typed decision: `kind`
+  `services/orchestrator/request_router.py` asks the `request_router` profile of
+  `routing.yaml` (the fast public profile; one `/agent/complete` call, JSON object output,
+  no tools, reasoning off, 4 s bound by default, `ATLAS_MODEL_ROUTER_TIMEOUT` to change
+  it; when it has not answered by half the bound or failed sooner, the
+  `request_router_retry` profile is asked as well and the first decision wins) for a
+  typed decision: `kind`
   (`answer`, `research`, `drawing`, `app`, `file`, `run`, `remote`, `other`),
   `file_format`, `follow_up`, `needs_research`. The decision is stored on the request and
   every gate reads it first:
@@ -225,9 +228,13 @@ Retrieval owns metadata and blob publication; the orchestrator never opens its d
   - `file`, `run`, `remote` go to Work behind the chat (`ATLAS_CHAT_WORK=1`); `file` also
     sets the 300 s deadline, the file flags and the expected format;
   - everything else stays an ordinary chat answer.
-- Fallback: with `ATLAS_MODEL_ROUTER` unset (the default), or on a timeout, a gateway error
-  or an invalid output, the decision is absent and the lexical gates (`app_intent`,
-  `work_reason`, `produces_file`, `explicit_image_request`, ...) decide exactly as before.
+- Fallback: with `ATLAS_MODEL_ROUTER` unset (the default), or when no profile decided
+  (timeout, gateway error, invalid output), the decision is absent and the lexical gates
+  (`app_intent`, `work_reason`, `produces_file`, `explicit_image_request`, ...) decide
+  exactly as before, with one exception: a request that names a file format (an extension,
+  Word, Excel, PowerPoint, PDF, CSV, or a slide deck or spreadsheet noun in the five
+  interface languages) is routed to `file` by code (`source=code rule=deliverable`). A wrong
+  plain answer loses the requested file; a wrong file path still answers through Work.
   Each decision logs one line (`request_router kind=... ms=... fallback=...`), never the
   user's text. The person lookup, nearby places, links, QR codes and research grounding
   keep their lexical tests.

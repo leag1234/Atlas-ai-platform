@@ -6,8 +6,15 @@ foreseen went down the wrong path ("Je voudrais que tu me dessines ..." met an
 image-generation refusal although the app panel could draw it as SVG). Behind
 ATLAS_MODEL_ROUTER=1 (default off), one short call to the fast profile decides
 what the turn asks for, once per plain chat turn, and every gate reads that
-decision first. On a timeout, a gateway error or an invalid output the decision
-is None and the lexical gates decide exactly as before.
+decision first.
+
+The call is bounded (ATLAS_MODEL_ROUTER_TIMEOUT) and runs with reasoning off.
+When the first profile has not answered by half the bound, or failed sooner, a
+second declared profile is asked as well and the first valid decision wins: on
+staging -93 (2026-11-16) one routing call in sixteen got no first byte within
+8 s from its provider. When both fail, a request that names a file format is
+still routed to the file path (deliver_fallback); any other turn has no
+decision and the lexical gates decide exactly as before.
 
 A second rule comes with it: a capability that is absent falls back to the
 capability that can deliver. A drawing with image generation off is drawn as
@@ -23,6 +30,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -349,20 +357,45 @@ def parse(text: object) -> Decision:
 
 
 def profile() -> str:
-    """The fast public profile of the routing table: no model name here."""
-    routing = yaml.safe_load(Path("services/model-gateway/routing.yaml").read_text())
+    """The first profile of the routing call: the "request_router" role of the
+    routing table, else its fast public profile. No model name here."""
     override = os.environ.get("ATLAS_MODEL_ROUTER_PROFILE", "").strip()
     if override:
         return override
+    from packages.profiles import picture_profile
+
+    declared = picture_profile("request_router")
+    if declared:
+        return declared
+    routing = yaml.safe_load(Path("services/model-gateway/routing.yaml").read_text())
     return str(next(k for k, v in routing["public_profiles"].items() if v == "fast"))
 
 
+def profiles() -> tuple[str, ...]:
+    """The profiles asked in turn: the first one, then the "request_router_retry"
+    role when it is enabled here and differs from the first."""
+    from packages.profiles import picture_profile
+
+    first = profile()
+    second = picture_profile("request_router_retry")
+    return (first, second) if second and second != first else (first,)
+
+
 def timeout() -> float:
+    """The bound of the whole routing decision, both attempts included."""
     try:
         value = float(os.environ.get("ATLAS_MODEL_ROUTER_TIMEOUT", "4"))
     except ValueError:
         return 4.0
     return min(max(value, 0.5), 10.0)
+
+
+# Share of the bound after which the second profile is asked as well. Staging
+# 2026-11-16 (107 calls on the fast profile): median 0.9 s, 90th percentile
+# 4.3 s, and 6 calls without any first byte at the 8 s bound.
+HEDGE_SHARE = 0.5
+# A second attempt with less time than this left is not started.
+MIN_ATTEMPT_SECONDS = 0.5
 
 
 Complete = Callable[[dict[str, Any], float], Awaitable[dict[str, Any]]]
@@ -380,17 +413,127 @@ async def _gateway(payload: dict[str, Any], seconds: float) -> dict[str, Any]:
     )
 
 
-def payload(text: str, history: Sequence[Mapping[str, object]]) -> dict[str, Any]:
+def payload(
+    text: str,
+    history: Sequence[Mapping[str, object]],
+    profile_name: str | None = None,
+    seconds: float | None = None,
+) -> dict[str, Any]:
     return dict(
         messages=messages(text, history),
         tools=[],
         response_format={"type": "json_object"},
-        profile=profile(),
+        profile=profile_name or profile(),
         max_tokens=200,
-        timeout=timeout(),
+        timeout=timeout() if seconds is None else seconds,
         budget_eur="0.01",
         local_enabled=False,
+        # Reasoning off at the provider (the ceiling sends the lowest effort the
+        # model accepts), and one attempt: the retry on the second profile is
+        # made here, within the same bound.
+        reasoning_effort="none",
+        reasoning_ceiling="none",
+        reasoning_disabled=True,
+        single_attempt=True,
     )
+
+
+async def _attempt(
+    text: str,
+    history: Sequence[Mapping[str, object]],
+    name: str,
+    seconds: float,
+    complete: Complete | None,
+) -> tuple[Decision | None, Decimal, str]:
+    """One bounded call on one profile: (decision or None, cost, failure reason)."""
+    cost = Decimal(0)
+    try:
+        async with asyncio.timeout(seconds):
+            result = await (complete or _gateway)(
+                payload(text, history, name, seconds), seconds
+            )
+        try:
+            cost = Decimal(str(result.get("cost_eur") or 0))
+        except InvalidOperation:
+            cost = Decimal(0)
+        if result.get("calls"):
+            raise ValueError("router_tool_call")
+        return parse(result.get("text")), cost, ""
+    except TimeoutError:
+        return None, cost, "timeout"
+    except ValidationError:
+        return None, cost, "invalid_decision"
+    except ValueError as exc:
+        return (
+            None,
+            cost,
+            str(exc) if str(exc).startswith("router_") else "invalid_output",
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any failure leaves the fallbacks
+        return None, cost, "error_" + type(exc).__name__
+
+
+async def _classify(
+    text: str,
+    history: Sequence[Mapping[str, object]],
+    complete: Complete | None,
+) -> tuple[Decision | None, float, Decimal, str, int]:
+    """The decision of at most two profiles within one bound, with the attempt count.
+
+    The first profile is asked at once. When it has not answered by HEDGE_SHARE
+    of the bound, or failed sooner, the second profile is asked with the time
+    left while the first keeps running; the first valid decision wins and the
+    other call is cancelled.
+    """
+    started = time.monotonic()
+    bound = timeout()
+    waiting = list(profiles())
+    cost = Decimal(0)
+    reasons: list[str] = []
+    pending: set[asyncio.Task[tuple[Decision | None, Decimal, str]]] = set()
+    attempts = 0
+
+    def elapsed() -> float:
+        return time.monotonic() - started
+
+    def start() -> None:
+        nonlocal attempts
+        name = waiting.pop(0)
+        attempts += 1
+        pending.add(
+            asyncio.create_task(
+                _attempt(text, history, name, bound - elapsed(), complete)
+            )
+        )
+
+    start()
+    try:
+        while pending:
+            hedge = max(0.0, bound * HEDGE_SHARE - elapsed()) if waiting else None
+            done, still = await asyncio.wait(
+                pending, timeout=hedge, return_when=asyncio.FIRST_COMPLETED
+            )
+            pending = set(still)
+            for task in done:
+                routed, spent, reason = task.result()
+                cost += spent
+                if routed is not None:
+                    return routed, elapsed() * 1000, cost, "", attempts
+                reasons.append(reason)
+            if waiting:
+                # The first call is late or failed: ask the next profile.
+                if bound - elapsed() >= MIN_ATTEMPT_SECONDS:
+                    start()
+                else:
+                    waiting.clear()
+    finally:
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+    return None, elapsed() * 1000, cost, "+".join(reasons) or "timeout", attempts
 
 
 async def classify(
@@ -399,33 +542,86 @@ async def classify(
     *,
     complete: Complete | None = None,
 ) -> tuple[Decision | None, float, Decimal, str]:
-    """One bounded call: (decision or None, milliseconds, cost, fallback reason)."""
-    started = time.monotonic()
-    seconds = timeout()
-    cost = Decimal(0)
-    try:
-        async with asyncio.timeout(seconds):
-            result = await (complete or _gateway)(payload(text, history), seconds)
-        try:
-            cost = Decimal(str(result.get("cost_eur") or 0))
-        except InvalidOperation:
-            cost = Decimal(0)
-        if result.get("calls"):
-            raise ValueError("router_tool_call")
-        routed: Decision | None = parse(result.get("text"))
-        reason = ""
-    except TimeoutError:
-        routed, reason = None, "timeout"
-    except ValidationError:
-        routed, reason = None, "invalid_decision"
-    except ValueError as exc:
-        routed = None
-        reason = str(exc) if str(exc).startswith("router_") else "invalid_output"
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - any failure leaves the lexical gates
-        routed, reason = None, "error_" + type(exc).__name__
-    return routed, (time.monotonic() - started) * 1000, cost, reason
+    """The bounded decision: (decision or None, milliseconds, cost, fallback reason).
+
+    The reason names each failed attempt in order ("timeout+timeout"); it is
+    empty when a profile decided.
+    """
+    routed, milliseconds, cost, reason, _ = await _classify(text, history, complete)
+    return routed, milliseconds, cost, reason
+
+
+# A deliverable the request names, read only when no profile decided. A wrong
+# "answer" loses the file the person asked for, while a wrong "file" still
+# answers through Work: when the routing call failed, a request that names a
+# file format goes to the file path. File formats and extensions read the same
+# in every language; the few nouns for a word-processor document, a slide deck
+# and a spreadsheet are those of the five interface languages (fr, en, de, es,
+# it); a compound ("Excel-Tabelle", "PDF-Datei") names its format. A link is
+# not a request for its file ("summarise https://.../a.pdf").
+_DOCUMENT_NOUN = (
+    r"(?:document|dokument|documento|fichier|file|datei|archivo|format|formato)"
+)
+_NAMED_FORMATS = tuple(
+    (name, re.compile(r"(?<!\w)(?:" + pattern + r")(?!\w)"))
+    for name, pattern in (
+        (
+            "docx",
+            r"docx|odt|ms[- ]?word|word[- ]?" + _DOCUMENT_NOUN + r"s?"
+            r"|" + _DOCUMENT_NOUN + r"s?\s+(?:ms[- ]?)?word"
+            r"|(?:en|in|im|au format|in formato)\s+word",
+        ),
+        (
+            "xlsx",
+            r"xlsx?|ods|excel|spreadsheets?|tableurs?|tabellenkalkulation\w*"
+            r"|hojas? de calculo|foglio? (?:di calcolo|elettronic[oi])",
+        ),
+        (
+            "pptx",
+            r"pptx?|odp|power ?points?|slides?|slide ?decks?|diapos?|diapositiv\w*"
+            r"|folien|presentations?|presentacion\w*|presentazion\w*|prasentation\w*",
+        ),
+        ("pdf", r"pdf"),
+        ("csv", r"csv"),
+        ("md", r"\w+\.md"),
+    )
+)
+# The word processor's name, capitalised (lower case "word" is a common noun).
+_WORD = re.compile(r"(?<!\w)Word(?!\w)")
+
+
+def named_formats(text: str) -> tuple[str, ...]:
+    """The file formats a request names, in the order of the table, links excluded."""
+    text = " ".join(
+        word
+        for word in text.split()
+        if "://" not in word and not word.casefold().startswith("www.")
+    )
+    folded = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", text.casefold())
+        if not unicodedata.combining(character)
+    )
+    found = [name for name, pattern in _NAMED_FORMATS if pattern.search(folded)]
+    if "docx" not in found and _WORD.search(text):
+        found.insert(0, "docx")
+    return tuple(found)
+
+
+def deliver_fallback(text: str) -> Decision | None:
+    """The decision of a turn no profile decided: a file when it names a format.
+
+    None otherwise, and for a machine task or a code run, which the lexical
+    gates already send to Work: the lexical gates then decide as before.
+    """
+    from packages.work_intent import work_reason
+
+    found = named_formats(text)
+    if not found or work_reason(text) in ("remote", "run"):
+        return None
+    return Decision.model_validate(
+        {"kind": "file", "file_format": found[0] if len(found) == 1 else None}
+    )
 
 
 # Kinds that take a turn out of the chat text: the app panel, a picture, Work.
@@ -470,9 +666,9 @@ def _settle(text: str, routed: Decision | None) -> tuple[Decision | None, str]:
 async def route(request: ChatRequest) -> Decision | None:
     """Decide this plain chat turn once and store it on the request.
 
-    None when the flag is off, the turn is not a plain chat turn, or the call
-    failed: the lexical gates then decide, unchanged. Logs one line per
-    decision, never the user's text.
+    None when the flag is off, the turn is not a plain chat turn, or no profile
+    decided and the request names no file format: the lexical gates then
+    decide, unchanged. Logs one line per decision, never the user's text.
     """
     if not enabled() or not eligible(request):
         return None
@@ -482,30 +678,46 @@ async def route(request: ChatRequest) -> Decision | None:
         {"role": message.role, "content": message.text}
         for message in request.conversation_messages[:-1]
     ]
-    routed, milliseconds, cost, reason = await classify(request.user_text, history)
+    routed, milliseconds, cost, reason, attempts = await _classify(
+        request.user_text, history, None
+    )
     settled, rule = _settle(request.user_text, routed)
+    if routed is None:
+        settled = deliver_fallback(request.user_text)
+        rule = "deliverable" if settled is not None else ""
+        source = "code" if settled is not None else "lexical"
+    else:
+        source = "settle" if rule else "model"
     request.__dict__[DECISION_KEY] = settled
     request.__dict__[COST_KEY] = cost
-    _log(settled, rule, milliseconds, cost, reason)
+    _log(settled, source, rule, milliseconds, cost, reason, attempts)
     return settled
 
 
 def _log(
-    routed: Decision | None, rule: str, milliseconds: float, cost: Decimal, reason: str
+    routed: Decision | None,
+    source: str,
+    rule: str,
+    milliseconds: float,
+    cost: Decimal,
+    reason: str,
+    attempts: int,
 ) -> None:
     """One metadata line per routed turn, never the user's text.
 
     WARNING so that it reaches the service journal, which keeps WARNING and
     above: without it a wrong routing could not be told from a router timeout.
     source is "model" (the model decided), "settle" (a code rule changed the
-    model decision, named by rule) or "lexical" (no decision: the lexical gates
-    decide, fallback says why).
+    model decision, named by rule), "code" (no profile decided and the request
+    names a file format: rule "deliverable") or "lexical" (no decision: the
+    lexical gates decide, fallback says why). attempts counts the profiles asked.
     """
     log.warning(
         "request_router kind=%s source=%s rule=%s format=%s follow_up=%s "
-        "research=%s location=%s ms=%.0f cost_eur=%s fallback=%s privacy=%s",
+        "research=%s location=%s ms=%.0f cost_eur=%s fallback=%s privacy=%s "
+        "attempts=%d",
         routed.kind if routed else "none",
-        ("settle" if rule else "model") if routed else "lexical",
+        source,
         rule or "none",
         (routed.file_format or "none") if routed else "none",
         str(routed.follow_up).lower() if routed else "none",
@@ -520,6 +732,7 @@ def _log(
         cost,
         reason or "none",
         privacy.current(),
+        attempts,
     )
 
 
