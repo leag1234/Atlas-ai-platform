@@ -41,6 +41,7 @@ from services.orchestrator.loop import (
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.stream_client import sink_context
 from services.orchestrator.terminal_client import TerminalClient
+from services.orchestrator.work_plan import instruction as plan_instruction
 
 
 def code_profile() -> str:
@@ -422,7 +423,9 @@ async def execute_turn(
             if isinstance(tools, WorkTools)
             else ""
         )
-        + (tools.instructions if isinstance(tools, WorkTools) else ""),
+        + (tools.instructions if isinstance(tools, WorkTools) else "")
+        # The plan the person sees in the chat, if any (work_plan.py).
+        + (plan_instruction() if isinstance(tools, WorkTools) else ""),
         limits,
         history=history,
         references=references,

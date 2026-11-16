@@ -273,6 +273,21 @@ Retrieval owns metadata and blob publication; the orchestrator never opens its d
   a localized explanation (PR #219).
 - Identical consecutive `update_plan` calls are acknowledged without charge; a loop detector
   remains.
+- Plan shown in the chat (design note of 2026-11-16 on long tasks, lot 1; `work_plan.py`). A
+  chat turn handed to Work, or an app being built, shows a plan of 3 to 7 numbered steps under
+  the status line, updated live, and the final answer repeats it as a checked list. For Work,
+  a short call on the fast profile proposes the steps, each with a type from a closed list
+  (code, install, test, document, research, deliver), while the workspace is prepared; an app
+  has a plan the code defines (write, check, hand over). The code validates the plan (count,
+  length, plain words, language), tracks the states, and refuses "done" for a step without a
+  tool call since the previous step was done (the model is told why); delivery is only marked
+  done by the code at the end of the turn. The model reports progress with `update_plan`
+  (Atlas loop) or `todowrite` (code engine), steered by a service instruction, never by
+  `prompts/`. The estimate is a p50 to p90 range of whole turns of the same path and profile
+  (`work_estimates.py`: history without any content, seeded from staging corpus runs by
+  `tools/work_estimate_seed.py`, then each finished plan); below 20 measures the chat says "a
+  few minutes". The size class (small, medium, large) is computed and logged only; it does not
+  change the execution yet (lot 2 and 3).
 
 ### 4.4 Tools
 - Base tools: `list_dir`, `read_file`, `search`, `edit_file`, `write_file`, `run_command`,

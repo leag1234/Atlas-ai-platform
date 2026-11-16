@@ -661,3 +661,38 @@ html.dark .atlas-privacy-error { color:#ff8a80; }
   /* h3 about 1rem; its weight keeps it apart from body text. */
   :is(.chat-assistant,.user-message) .markdown-prose h3 { font-size:calc(var(--atlas-body-size) * 1.0625)!important; }
 }
+
+/* Plan of a long turn (work_plan.py), drawn by chat-ui.js under the status line of the answer being written. */
+.atlas-plan { margin:.25rem 0 .75rem; padding:.625rem .875rem; max-width:40rem; box-sizing:border-box; border:1px solid var(--atlas-border); border-radius:min(var(--atlas-radius),14px); background:var(--atlas-surface); color:var(--atlas-text); font-size:.875rem; line-height:1.4; }
+/* Title with the estimate: muted, one line on a phone where it fits. */
+.atlas-plan-title { margin:0 0 .375rem; font-weight:600; color:var(--atlas-muted); }
+/* The steps: no list markers, the state symbol leads each line. */
+.atlas-plan-steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.25rem; }
+/* One step: symbol column, then the text wrapping under itself. */
+.atlas-plan-steps li { display:flex; gap:.5rem; align-items:baseline; overflow-wrap:anywhere; }
+/* State symbol (○ ◉ ✓ ✗), fixed width so the texts align; circles drawn in CSS, the glyphs are tiny in some fonts. */
+.atlas-plan-steps .atlas-plan-mark { flex:0 0 1rem; display:inline-flex; justify-content:center; text-align:center; color:var(--atlas-muted); }
+/* To-do and in-progress marks: an outlined circle instead of the glyph. */
+.atlas-plan-steps li:is([data-status="pending"],[data-status="in_progress"]) .atlas-plan-mark { font-size:0; }
+/* The circle itself. */
+.atlas-plan-steps li:is([data-status="pending"],[data-status="in_progress"]) .atlas-plan-mark::before { content:""; width:.75rem; height:.75rem; box-sizing:border-box; border:1.5px solid currentColor; border-radius:50%; }
+/* In progress: the circle filled at its centre. */
+.atlas-plan-steps li[data-status="in_progress"] .atlas-plan-mark::before { background:radial-gradient(circle, currentColor 0 38%, transparent 42%); }
+/* State words, for screen readers only. */
+.atlas-plan-state { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+/* Done steps: accent check, text slightly muted. */
+.atlas-plan-steps li[data-status="completed"] .atlas-plan-mark { color:var(--atlas-accent); }
+/* Done step text. */
+.atlas-plan-steps li[data-status="completed"] .atlas-plan-text { color:var(--atlas-muted); }
+/* The step in progress stands out. */
+.atlas-plan-steps li[data-status="in_progress"] .atlas-plan-text { font-weight:600; }
+/* In-progress symbol pulses gently, unless the person asked for less motion. */
+.atlas-plan-steps li[data-status="in_progress"] .atlas-plan-mark { color:var(--atlas-accent); animation:atlas-plan-pulse 1.6s ease-in-out infinite; }
+/* Failed step. */
+.atlas-plan-steps li[data-status="failed"] .atlas-plan-mark { color:#c0392b; }
+/* Failed step in dark mode: lighter red for contrast. */
+html.dark .atlas-plan-steps li[data-status="failed"] .atlas-plan-mark { color:#ff8a80; }
+/* Pulse of the in-progress symbol. */
+@keyframes atlas-plan-pulse { 50% { opacity:.35; } }
+/* Reduced motion: no pulse. */
+@media (prefers-reduced-motion: reduce) { .atlas-plan-steps li[data-status="in_progress"] .atlas-plan-mark { animation:none; } }

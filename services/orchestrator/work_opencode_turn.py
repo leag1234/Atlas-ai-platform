@@ -121,6 +121,26 @@ def file_patches(patch: str) -> list[tuple[str, str]]:
     return sections
 
 
+def _todo_items(arguments: object) -> list[dict[str, str]]:
+    """The engine's todowrite list as plan items (text and status only)."""
+    todos = arguments.get("todos") if isinstance(arguments, dict) else None
+    if not isinstance(todos, list):
+        return []
+    statuses = {"pending", "in_progress", "completed"}
+    items = []
+    for todo in todos[:40]:
+        if not isinstance(todo, dict) or not str(todo.get("content") or "").strip():
+            continue
+        status = str(todo.get("status") or "pending")
+        items.append(
+            {
+                "text": str(todo["content"])[:500],
+                "status": status if status in statuses else "pending",
+            }
+        )
+    return items
+
+
 async def emit_changes(tools: WorkTools, workspace: Workspace) -> None:
     """Emit the turn's changes as diffs, one event per file, like the loop.
 
@@ -202,6 +222,18 @@ async def run_opencode_turn(
             tool_calls += 1
             if guard is not None:
                 guard.record((tool,))
+            if tool == "todowrite" and status == "completed":
+                # The engine's task list is the plan: the project view pins
+                # it, and the chat shows it checked (work_plan.py).
+                items = _todo_items(mapped.get("args"))
+                if items:
+                    await tools.emit(
+                        "plan",
+                        tool=tool,
+                        label="Plan updated",
+                        status="completed",
+                        output={"items": items},
+                    )
             await tools.emit(
                 "tool",
                 tool=tool,
@@ -236,8 +268,14 @@ async def run_opencode_turn(
         )
         # opencode's own prompt is English: without this line short French
         # messages were answered in English (owner test 2026-11-10).
+        from services.orchestrator.work_plan import instruction
+
         outcome = await driver.run(
-            "Answer in the language of the user's message.\n\n" + request.user_text
+            "Answer in the language of the user's message."
+            # The plan the person sees in the chat, if any (work_plan.py).
+            + instruction(engine=True)
+            + "\n\n"
+            + request.user_text
         )
     finally:
         await stop(engine.name)

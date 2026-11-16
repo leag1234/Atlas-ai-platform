@@ -42,6 +42,10 @@ from packages.configuration import (
 # this length is followed by the status the interface keeps hidden, so a turn
 # the service is still working on is never shown as interrupted.
 ANSWER_SILENCE_SECONDS = 15.0
+# The plan of the turn is sent with the status after each change, and again at
+# this interval, for a page opened while the turn runs. Not every second:
+# Open WebUI stores every status with the message.
+PLAN_REFRESH_SECONDS = 10.0
 # Atlas's own link to an attached PDF, sent before the model is called.
 OPENER_PHASE = "attachment_opener"
 
@@ -147,6 +151,50 @@ def response(
         from services.orchestrator.work_progress import WorkProgress
 
         work_progress = WorkProgress(language, routed_file_request)
+        from services.orchestrator import work_plan
+
+        # The plan of a turn handed to Work or of an app (work_plan.py): drawn
+        # under the status line, sent again when it changes.
+        chat_plan = (
+            work_plan.ChatPlan(language, str(payload.model or ""))
+            if relay_work
+            else None
+        )
+        plan_sent = (-1, 0.0)
+
+        def plan_data() -> dict[str, object] | None:
+            nonlocal plan_sent
+            if chat_plan is None or not chat_plan.shown:
+                return None
+            now = time.monotonic()
+            # Every status is stored with the message: the plan goes with the
+            # status that follows a change, then every PLAN_REFRESH_SECONDS.
+            if (
+                chat_plan.version == plan_sent[0]
+                and now - plan_sent[1] < PLAN_REFRESH_SECONDS
+            ):
+                return None
+            plan_sent = (chat_plan.version, now)
+            return chat_plan.payload()
+
+        def track_plan(project_event: dict[str, object]) -> None:
+            if chat_plan is None:
+                return
+            kind = project_event.get("type")
+            # update_plan was checked when it ran (code_tools.py); the code
+            # engine's own list (todowrite) is checked here.
+            if kind == "plan" and project_event.get("tool") != "update_plan":
+                output = project_event.get("output")
+                items = output.get("items") if isinstance(output, dict) else None
+                if isinstance(items, list):
+                    chat_plan.update([i for i in items if isinstance(i, dict)])
+            elif kind == "tool":
+                chat_plan.first_step()
+                chat_plan.tool(
+                    str(project_event.get("tool") or ""),
+                    str(project_event.get("status") or ""),
+                )
+
         base = {
             "id": item.request_id,
             "created": int(time.time()),
@@ -170,6 +218,7 @@ def response(
                 description = activity_label(language, "done" if done else activity)
             if activity_urls and not guest:
                 description += " — " + ", ".join(activity_urls)
+            plan = None if done else plan_data()
             return {
                 "type": "status",
                 "data": {
@@ -185,6 +234,7 @@ def response(
                     "action": "atlas_activity",
                     "hidden": done and answer_started,
                     "urls": activity_urls,
+                    **({} if plan is None else {"atlas_plan": plan}),
                 },
             }
 
@@ -385,6 +435,8 @@ def response(
                         )
                     )
                 elif relay_work:
+                    if chat_plan is not None:
+                        chat_plan.first_step()
                     await work_status(
                         {
                             "type": "tool",
@@ -403,7 +455,14 @@ def response(
             if isinstance(project_event, dict):
                 await queue.put(event)
                 if relay_work:
+                    track_plan(project_event)
                     await work_status(project_event)
+                    if chat_plan is not None and chat_plan.version != plan_sent[0]:
+                        # A step checked or added: shown now, not at the next
+                        # heartbeat (none comes while events keep arriving).
+                        await queue.put(
+                            {"atlas": {"phase": "work_plan"}, "event": status_event()}
+                        )
                 return
             if payload.code_mode and isinstance(event.get("code"), dict):
                 code = event["code"]
@@ -647,6 +706,7 @@ def response(
 
         async def produce() -> None:
             token = sink_context.set(sink)
+            plan_token = work_plan.current.set(chat_plan)
             try:
                 async with request_deadline(
                     max(0, payload.timeout_seconds - (time.monotonic() - started))
@@ -692,6 +752,16 @@ def response(
                         item.reponse = str(words["budget"])
                     elif item.state != "done" and not work_failed:
                         raise RuntimeError("request_stopped")
+                    # The checked plan ends the answer (work_plan.py); the
+                    # stored answer keeps it too.
+                    plan_text = (
+                        chat_plan.markdown()
+                        if chat_plan is not None
+                        and chat_plan.finished
+                        and chat_plan.shown
+                        else ""
+                    )
+                    item.reponse += plan_text
                     if not payload.atlas_ui and not payload.code_mode:
                         await content(item.reponse, final=True)
                     elif payload.code_mode:
@@ -702,7 +772,8 @@ def response(
                             if routed_file_request() or not received_content
                             else pending
                             + protocol.feed(narration.finish())
-                            + protocol.finish(),
+                            + protocol.finish()
+                            + plan_text,
                             final=True,
                         )
                     if (
@@ -848,6 +919,7 @@ def response(
                     }
                 )
             finally:
+                work_plan.current.reset(plan_token)
                 sink_context.reset(token)
             await queue.put(None)
 
@@ -986,8 +1058,12 @@ def response(
                     or event.get("finish")
                     or time.monotonic() - last_activity >= 1
                 ):
-                    output["event"] = event.get(
-                        "event", status_event(bool(event.get("finish")))
+                    # Built only when the event has none: building a status sends
+                    # the plan along (plan_data).
+                    output["event"] = (
+                        event["event"]
+                        if "event" in event
+                        else status_event(bool(event.get("finish")))
                     )
                     last_activity = time.monotonic()
                 last_sent = time.monotonic()
