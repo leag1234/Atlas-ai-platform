@@ -939,6 +939,12 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
         item.reponse = answer
         item.state, item.task_type, item.cout_eur = "done", "title", float(cost)
         return
+    # "Remind me tomorrow at 9 to ...": code reads the date and time and returns a
+    # calendar file with an alarm, without a model call (no routing call either).
+    from services.orchestrator.reminder_route import reminder_turn
+
+    if await reminder_turn(request, item):
+        return
     # The model decides what this plain chat turn asks for (ATLAS_MODEL_ROUTER=1),
     # once, before any gate reads it; None leaves the lexical gates unchanged.
     from services.orchestrator import request_router
