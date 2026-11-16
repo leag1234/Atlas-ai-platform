@@ -307,7 +307,9 @@ class TravelClaimsTests(unittest.TestCase):
             "Descendez à Gratte-Ciel (à 1 min à pied de la rue Fictive), puis "
             "prenez le bus 37 vers la gare. Le bus est indiqué sur le site du réseau."
         )
-        checked = self.note(turn_with().check(answer, "fr"))
+        # The stop and the line are sourced (route_facts); the walk is not.
+        turn = turn_with("Bus 37 : Gratte-Ciel, Mairie Fictive, Gare.")
+        checked = self.note(turn.check(answer, "fr"))
         self.assertTrue(
             checked.startswith(
                 "Descendez à Gratte-Ciel, puis prenez le bus 37 vers la gare."
@@ -318,7 +320,7 @@ class TravelClaimsTests(unittest.TestCase):
 
     def test_untouched_tables_keep_their_dashes(self) -> None:
         answer = "| Ligne | Note |\n|---|---|\n| Bus 37 | — |\n\nLe bus part à 10 h 05."
-        checked = turn_with().check(answer, "fr")
+        checked = turn_with("Ligne de bus 37, plan du réseau").check(answer, "fr")
         self.assertIn("| Bus 37 | — |", checked)
         self.assertNotIn("10 h 05", checked.rsplit("\n\n", 1)[0])
 
