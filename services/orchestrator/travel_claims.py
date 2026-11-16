@@ -96,7 +96,8 @@ _MARGIN = re.compile(
 _CLAUSE_END = re.compile(r"[,;:()]|\s[\u2013\u2014]\s|\s-\s")
 # What joins the two ends of a range ("08:30-09:30", "8 h 30 to 9 h 30").
 _RANGE_JOIN = re.compile(
-    r"^[ \u00a0\u202f]*(?:[-\u2013\u2014]|to|à|a|bis|al|y|e|et|and|und)?[ \u00a0\u202f]*$",
+    r"^[ \u00a0\u202f]*+"
+    r"(?:(?:[-\u2013\u2014]|to|à|a|bis|al|y|e|et|and|und)[ \u00a0\u202f]*+)?$",
     re.I,
 )
 
