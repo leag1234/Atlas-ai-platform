@@ -153,8 +153,15 @@ def work_reason(
 ) -> Reason | None:
     """Why this plain-chat turn needs Work, or None when the chat answers it."""
     normalized = _normalized(_ATTACHMENT_TAG.sub(" ", text))
-    if not normalized.strip() or _HOW_TO.search(normalized):
+    if not normalized.strip():
         return None
+    if how_to := _HOW_TO.search(normalized):
+        # A question about the subject stays in the chat ("how do I make a PDF?"),
+        # but a file asked for before the question words is a file request: "make
+        # a Word document explaining how to repot an orchid" got a plain chat
+        # answer and no file (staging 2026-11-16).
+        found = _FILE.search(normalized)
+        return "file" if found is not None and found.start() < how_to.start() else None
     if _REMOTE.search(normalized) or manages_machine(normalized):
         return "remote"
     if _RUN.search(normalized):

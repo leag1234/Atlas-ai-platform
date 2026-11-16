@@ -96,3 +96,9 @@ picture_roles:
   # A requested file (work_pictures.plan, deliverable_check): the pictures it needs and
   # its check against the request, short JSON calls, reasoning off.
   deliverable_plan: atlas-deepseek
+  # The routing decision of a plain chat turn (services/orchestrator/request_router.py):
+  # one short JSON call, reasoning off, on the fast profile; when it has not answered by
+  # half the bound (staging 2026-11-16: 6 of 107 calls got no first byte in 8 s), the
+  # retry profile is asked as well and the first decision wins.
+  request_router: atlas-deepseek
+  request_router_retry: atlas-qwen
