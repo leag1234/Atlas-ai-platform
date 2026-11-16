@@ -211,9 +211,14 @@ LEXICON = {
     """,
 }
 
+# Greetings said in every language are no evidence: "Hello" with a German
+# interface keeps German (its maintenance notice came back English), while
+# "Bonjour", "Merci" or "Thanks" still name their language.
+INTERNATIONAL_WORDS = frozenset({"hello", "hi", "hey", "ciao", "ok", "okay", "bye"})
+
 _WORD_LANGUAGES: dict[str, tuple[str, ...]] = {}
 for _language, _words in LEXICON.items():
-    for _word in _words.split():
+    for _word in set(_words.split()) - INTERNATIONAL_WORDS:
         _WORD_LANGUAGES[_word] = (*_WORD_LANGUAGES.get(_word, ()), _language)
 
 _PROFILES: tuple[tuple[str, ...], dict[str, tuple[float, ...]]] | None = None
@@ -413,11 +418,8 @@ def _previous_language(
 def _carries_evidence(text: str, history: str | None) -> bool:
     # A message of a few words keeps the conversation's language ("Describe
     # this image" in a French conversation); a first one without one frequent
-    # word ("Tesla stock price", "Caen") keeps the interface's, and so does a
-    # single word: "Hello", "Ciao" or "Merci" are said in every language (a
-    # German interface's maintenance notice came back English for "Hello").
-    words = word_count(text)
-    return words >= 5 or (history is None and words >= 2 and has_language_words(text))
+    # word ("Tesla stock price", "Caen") keeps the interface's.
+    return word_count(text) >= 5 or (history is None and has_language_words(text))
 
 
 def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> str:

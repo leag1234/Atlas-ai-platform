@@ -4754,27 +4754,35 @@
    ]
   },
   {
-   "kind": "neutral",
+   "kind": "short",
    "text": "Thanks",
-   "expected": "it",
+   "expected": "en",
    "locales": [
     "it"
    ]
   },
   {
-   "kind": "neutral",
+   "kind": "short",
    "text": "Merci",
-   "expected": "en",
+   "expected": "fr",
    "locales": [
     "en"
    ]
   },
   {
-   "kind": "neutral",
+   "kind": "short",
    "text": "Hola",
-   "expected": "fr",
+   "expected": "es",
    "locales": [
     "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "Bonjour",
+   "expected": "fr",
+   "locales": [
+    "en"
    ]
   }
  ]
