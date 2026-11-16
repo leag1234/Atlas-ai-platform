@@ -94,7 +94,7 @@ _MARGIN = re.compile(
 )
 # Where a clause ends inside a sentence.
 _CLAUSE_END = re.compile(r"[,;:()]|\s[\u2013\u2014]\s|\s-\s")
-# What joins the two ends of a range ("08:30-09:30", "8 h 30 à 9 h 30").
+# What joins the two ends of a range ("08:30-09:30", "8 h 30 to 9 h 30").
 _RANGE_JOIN = re.compile(
     r"^[ \u00a0\u202f]*(?:[-\u2013\u2014]|to|à|a|bis|al|y|e|et|and|und)?[ \u00a0\u202f]*$",
     re.I,
@@ -236,7 +236,7 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
 
 
 # --- The person's own times and dates, in words or figures. -----------------
-# Staging -94: "midi trente" and "by 2pm" came back as "12 h 30 (non sourcé)"
+# Staging -94: "midi trente" and "by 2pm" came back marked unsourced as "12 h 30"
 # and "2:00 (not sourced) pm". Times the person gave count as theirs whatever
 # the form; read on folded text (lower case, no accents), five languages.
 
@@ -282,7 +282,7 @@ _QUARTER = r"(?:et quart|quinze|fifteen|y cuarto|e un quarto|e quarto)"
 _LESS_QUARTER = (
     r"(?:moins le quart|moins quart|menos cuarto|meno un quarto|meno quarto)"
 )
-_SPOKEN = (
+_SPOKEN: tuple[tuple[re.Pattern[str], Callable[[re.Match[str]], int]], ...] = (
     (re.compile(rf"\b{_NOON}(?:\s+{_HALF})"), lambda m: 12 * 60 + 30),
     (re.compile(rf"\b{_NOON}(?:\s+{_QUARTER})"), lambda m: 12 * 60 + 15),
     (re.compile(rf"\b{_NOON}(?:\s+{_LESS_QUARTER})"), lambda m: 11 * 60 + 45),
