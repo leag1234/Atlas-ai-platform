@@ -847,6 +847,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # a turn is about travel is known after routing, before any answer text.
     travel = travel_claims.Turn(
         asked=[m.text for m in request.messages if m.role == "user"],
+        zone=request.ui_timezone,
         # The person's language, read before any service note joins the message.
         language=conversation_language(
             request.conversation_messages, request.ui_locale

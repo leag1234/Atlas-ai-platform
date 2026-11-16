@@ -10,13 +10,13 @@ the person's own words, or from code (the journey plan's time arithmetic, the
 straight-line distance between the device position and a geocoded place).
 
 On a travel turn (a position was used, the routing decision needs the position,
-or the journey plan tool was offered) the answer is held, then:
-
-- a duration or distance found in no source, in no computation and not in the
-  person's words is removed and replaced by a short "not verified" marker;
-- a clock time found nowhere is kept but marked "not sourced", because a
-  timetable row without its time is useless and the reader must know;
-- one note at the end of the answer says why, in the answer's language.
+or the journey plan tool was offered) the answer is held, then a duration, a
+distance or a clock time found in no source, in no computation and not in the
+person's own words (figures or words: "midi trente", "by 2pm", "half past
+twelve") is left out with the parenthesis or the whole sentence that states it;
+a table cell becomes a dash and a row or table left without values goes; one
+short note at the end, in the answer's language, lists what was left out
+(staging -94: markers after every value broke sentences).
 
 Units and duration forms are parsed by code for the five interface languages
 (km, m, mi, min, h, hours, heures, Stunden, horas, ore...), never by a list of
@@ -56,8 +56,12 @@ _HOURS_MINUTES = re.compile(
     rf"{_NUMBER}{_SPACE}{_HOURS}{_JOIN}(\d{{1,2}}){_SPACE}{_MINUTES}\.?{_END}",
     re.I,
 )
-# "12h30", "12 h 30", "12:30", "9.45" is not read (a decimal).
-_CLOCK = re.compile(r"(?<![\w.,:/])(\d{1,2})[   ]?(?:h|:)[   ]?(\d{2})(?!\d)", re.I)
+# "12h30", "12 h 30", "12:30", "2:00 pm"; "9.45" is not read (a decimal).
+_CLOCK = re.compile(
+    r"(?<![\w.,:/])(\d{1,2})[ \u00a0\u202f]?(?:h|:)[ \u00a0\u202f]?(\d{2})(?!\d)"
+    r"(?:[ \u00a0\u202f]?([ap])\.?m\b\.?)?",
+    re.I,
+)
 # "2 pm", "11am", "14 Uhr": hours of the day without minutes.
 _CLOCK_HOUR = re.compile(r"(?<![\w.,:/])(\d{1,2})[   ]?(am|pm|uhr)(?!\w)", re.I)
 _MINUTES_ONLY = re.compile(rf"{_NUMBER}{_SPACE}{_MINUTES}\.?{_END}", re.I)
@@ -81,10 +85,18 @@ _RANGE_START = re.compile(
     r"(?:[-\u2013\u2014]|\b(?:to|a|à|bis|al)\b)[ \u00a0\u202f]?$",
     re.I,
 )
-# A margin the person is advised to keep is advice, not a fact to source.
+# A margin the person is advised to keep is advice, not a fact to source. Read
+# in the value's own clause only: "17 minutes d'avance" is a computed claim, and
+# a margin word in the next sentence once hid a walking time (staging -94).
 _MARGIN = re.compile(
-    r"\b(?:marge|margin|buffer|puffer|margen|margine|avance|ahead|early|im voraus|"
-    r"antelaci[oó]n|anticipo|reserve|réserve|spare)\b",
+    r"\b(?:marge|margin|buffer|puffer|margen|margine|reserve|réserve|spare)\b",
+    re.I,
+)
+# Where a clause ends inside a sentence.
+_CLAUSE_END = re.compile(r"[,;:()]|\s[\u2013\u2014]\s|\s-\s")
+# What joins the two ends of a range ("08:30-09:30", "8 h 30 à 9 h 30").
+_RANGE_JOIN = re.compile(
+    r"^[ \u00a0\u202f]*(?:[-\u2013\u2014]|to|à|a|bis|al|y|e|et|and|und)?[ \u00a0\u202f]*$",
     re.I,
 )
 
@@ -141,6 +153,8 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
         hours, minutes = int(match[1]), int(match[2])
         if minutes >= 60:
             continue
+        if match[3] and hours <= 12:
+            hours = hours % 12 + (12 if match[3].lower() == "p" else 0)
         if hours <= 24:
             add(match, "clock", (hours % 24) * 60 + minutes)
         if generous:
@@ -211,45 +225,218 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
                 text[lower.start() : quantity.end],
             )
         widened.append(quantity)
-    return sorted(widened, key=lambda q: (q.start, q.kind))
+    # "4 hours." ends a sentence: its full stop is not part of the value.
+    trimmed = [
+        Quantity(q.start, q.end - 1, q.kind, q.value, q.text[:-1])
+        if q.text.endswith(".") and plain[q.end : q.end + 1] in {"", " ", "\n"}
+        else q
+        for q in widened
+    ]
+    return sorted(trimmed, key=lambda q: (q.start, q.kind))
+
+
+# --- The person's own times and dates, in words or figures. -----------------
+# Staging -94: "midi trente" and "by 2pm" came back as "12 h 30 (non sourcé)"
+# and "2:00 (not sourced) pm". Times the person gave count as theirs whatever
+# the form; read on folded text (lower case, no accents), five languages.
+
+_NUMBER_WORDS = {
+    word: value
+    for value, words in enumerate(
+        (
+            "zero zero null cero zero",
+            "one un une eins uno una",
+            "two deux zwei dos due",
+            "three trois drei tres tre",
+            "four quatre vier cuatro quattro",
+            "five cinq funf cinco cinque",
+            "six six sechs seis sei",
+            "seven sept sieben siete sette",
+            "eight huit acht ocho otto",
+            "nine neuf neun nueve nove",
+            "ten dix zehn diez dieci",
+            "eleven onze elf once undici",
+            "twelve douze zwolf doce dodici",
+            "thirteen treize dreizehn trece tredici",
+            "fourteen quatorze vierzehn catorce quattordici",
+            "fifteen quinze funfzehn quince quindici",
+            "sixteen seize sechzehn dieciseis sedici",
+            "seventeen dix-sept siebzehn diecisiete diciassette",
+            "eighteen dix-huit achtzehn dieciocho diciotto",
+            "nineteen dix-neuf neunzehn diecinueve diciannove",
+            "twenty vingt zwanzig veinte venti",
+            "twenty-one vingt-et-un einundzwanzig veintiuno ventuno",
+            "twenty-two vingt-deux zweiundzwanzig veintidos ventidue",
+            "twenty-three vingt-trois dreiundzwanzig veintitres ventitre",
+        )
+    )
+    for word in words.split()
+}
+_NOON = r"(?:midi|noon|midday|mittag|mediodia|mezzogiorno)"
+_MIDNIGHT = r"(?:minuit|midnight|mitternacht|medianoche|mezzanotte)"
+_HOUR_WORD = (
+    r"(\d{1,2}|" + "|".join(sorted(_NUMBER_WORDS, key=len, reverse=True)) + r")"
+)
+_HALF = r"(?:et demie?|trente|thirty|half|und halb|y media|e mezz[ao])"
+_QUARTER = r"(?:et quart|quinze|fifteen|y cuarto|e un quarto|e quarto)"
+_LESS_QUARTER = (
+    r"(?:moins le quart|moins quart|menos cuarto|meno un quarto|meno quarto)"
+)
+_SPOKEN = (
+    (re.compile(rf"\b{_NOON}(?:\s+{_HALF})"), lambda m: 12 * 60 + 30),
+    (re.compile(rf"\b{_NOON}(?:\s+{_QUARTER})"), lambda m: 12 * 60 + 15),
+    (re.compile(rf"\b{_NOON}(?:\s+{_LESS_QUARTER})"), lambda m: 11 * 60 + 45),
+    (
+        re.compile(rf"\b{_NOON}\s+(?:et\s+)?(\d{{1,2}})\b(?!\s*h)"),
+        lambda m: 12 * 60 + int(m[1]),
+    ),
+    (re.compile(rf"\b{_NOON}\b"), lambda m: 12 * 60),
+    (re.compile(rf"\b{_MIDNIGHT}(?:\s+{_HALF})"), lambda m: 30),
+    (re.compile(rf"\b{_MIDNIGHT}\b"), lambda m: 0),
+    (re.compile(rf"\bhalf past {_HOUR_WORD}\b"), lambda m: _hour(m[1]) * 60 + 30),
+    (re.compile(rf"\bquarter past {_HOUR_WORD}\b"), lambda m: _hour(m[1]) * 60 + 15),
+    (
+        re.compile(rf"\bquarter to {_HOUR_WORD}\b"),
+        lambda m: (_hour(m[1]) - 1) * 60 + 45,
+    ),
+    (re.compile(rf"\bhalb {_HOUR_WORD}\b"), lambda m: (_hour(m[1]) - 1) * 60 + 30),
+    (re.compile(rf"\bviertel nach {_HOUR_WORD}\b"), lambda m: _hour(m[1]) * 60 + 15),
+    (
+        re.compile(rf"\bviertel vor {_HOUR_WORD}\b"),
+        lambda m: (_hour(m[1]) - 1) * 60 + 45,
+    ),
+    (
+        re.compile(rf"\b{_HOUR_WORD}\s+(?:heures?|uhr|o.?clock)\s+{_HALF}"),
+        lambda m: _hour(m[1]) * 60 + 30,
+    ),
+    (
+        re.compile(rf"\b{_HOUR_WORD}\s+(?:heures?|uhr)\s+{_QUARTER}"),
+        lambda m: _hour(m[1]) * 60 + 15,
+    ),
+    (
+        re.compile(rf"\b{_HOUR_WORD}\s+(?:heures?)\s+{_LESS_QUARTER}"),
+        lambda m: (_hour(m[1]) - 1) * 60 + 45,
+    ),
+    (
+        re.compile(rf"\b{_HOUR_WORD}\s+(?:heures?|uhr)\s+(\d{{1,2}})\b"),
+        lambda m: _hour(m[1]) * 60 + int(m[2]),
+    ),
+    (
+        re.compile(rf"\b{_HOUR_WORD}\s+(?:heures?|uhr|o.?clock)\b"),
+        lambda m: _hour(m[1]) * 60,
+    ),
+    (
+        re.compile(rf"\b(?:las|la|le|alle|ore)\s+{_HOUR_WORD}\s+{_HALF}"),
+        lambda m: _hour(m[1]) * 60 + 30,
+    ),
+    (
+        re.compile(rf"\b(?:las|la|le|alle|ore)\s+{_HOUR_WORD}\s+{_QUARTER}"),
+        lambda m: _hour(m[1]) * 60 + 15,
+    ),
+    (
+        re.compile(rf"\b(?:las|la|le|alle|ore)\s+{_HOUR_WORD}\s+{_LESS_QUARTER}"),
+        lambda m: (_hour(m[1]) - 1) * 60 + 45,
+    ),
+    (re.compile(rf"\b{_HOUR_WORD}\s+thirty\b"), lambda m: _hour(m[1]) * 60 + 30),
+)
+
+
+def _hour(word: str) -> int:
+    return int(word) if word.isdigit() else _NUMBER_WORDS[word]
+
+
+def _folded(text: str) -> str:
+    import unicodedata
+
+    value = unicodedata.normalize("NFKD", text.lower().replace("’", "'"))
+    return " ".join("".join(c for c in value if not unicodedata.combining(c)).split())
+
+
+def spoken_times(text: str) -> list[float]:
+    """Times of day the text gives in words ("midi trente", "half past twelve")."""
+    folded = _folded(text)
+    found: list[float] = []
+    taken: list[tuple[int, int]] = []
+    # Longer forms are listed first: "midi trente" is not also "midi".
+    for pattern, value in _SPOKEN:
+        for match in pattern.finditer(folded):
+            if any(match.start() < b and a < match.end() for a, b in taken):
+                continue
+            try:
+                minutes = value(match)
+            except (KeyError, ValueError):
+                continue
+            if 0 <= minutes < 24 * 60:
+                taken.append((match.start(), match.end()))
+                found.append(float(minutes))
+    return found
+
+
+_RELATIVE_DAYS = (
+    (
+        re.compile(
+            r"\b(?:apres.demain|day after tomorrow|ubermorgen|pasado manana|dopodomani)\b"
+        ),
+        2,
+    ),
+    (re.compile(r"\b(?:demain|tomorrow|morgen|manana|domani)\b"), 1),
+    (
+        re.compile(
+            r"\b(?:aujourd.hui|today|tonight|ce soir|ce matin|heute|hoy|oggi|stasera)\b"
+        ),
+        0,
+    ),
+)
+_WEEKDAYS = (
+    "lundi monday montag lunes lunedi",
+    "mardi tuesday dienstag martes martedi",
+    "mercredi wednesday mittwoch miercoles mercoledi",
+    "jeudi thursday donnerstag jueves giovedi",
+    "vendredi friday freitag viernes venerdi",
+    "samedi saturday samstag sabado sabato",
+    "dimanche sunday sonntag domingo domenica",
+)
+
+
+def user_dates(texts: list[str], zone: str = "UTC") -> list[str]:
+    """ISO dates the person's words name relative to today, in their zone."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        today = datetime.now(ZoneInfo(zone)).date()
+    except (ZoneInfoNotFoundError, ValueError):
+        today = datetime.now(ZoneInfo("UTC")).date()
+    days: set[int] = set()
+    for text in texts:
+        folded = _folded(text)
+        for pattern, offset in _RELATIVE_DAYS:
+            if pattern.search(folded):
+                days.add(offset)
+        for weekday, words in enumerate(_WEEKDAYS):
+            if re.search(r"\b(?:" + "|".join(words.split()) + r")\b", folded):
+                ahead = (weekday - today.weekday()) % 7
+                days.update({ahead, ahead + 7} if ahead == 0 else {ahead})
+    return [(today + timedelta(days=offset)).isoformat() for offset in sorted(days)]
 
 
 def _same(kind: Kind, claimed: float, known: float) -> bool:
     if kind == "clock":
-        return abs(claimed - known) < 0.5
+        # "2:00 pm" and "14:00", or a "2 pm" written as "2:00": the same time.
+        gap = abs(claimed - known) % 720
+        return min(gap, 720 - gap) < 0.5
     if kind == "duration":
         return abs(claimed - known) <= max(0.5, 0.05 * known)
     return abs(claimed - known) <= max(25.0, 0.03 * known)
 
 
 WORDING: dict[str, dict[str, str]] = {
-    "duration": {
-        "en": "(duration not verified)",
-        "fr": "(durée non vérifiée)",
-        "de": "(Dauer nicht überprüft)",
-        "es": "(duración sin verificar)",
-        "it": "(durata non verificata)",
-    },
-    "distance": {
-        "en": "(distance not verified)",
-        "fr": "(distance non vérifiée)",
-        "de": "(Entfernung nicht überprüft)",
-        "es": "(distancia sin verificar)",
-        "it": "(distanza non verificata)",
-    },
-    "clock": {
-        "en": "(not sourced)",
-        "fr": "(non sourcé)",
-        "de": "(ohne Quelle)",
-        "es": "(sin fuente)",
-        "it": "(senza fonte)",
-    },
     "note": {
-        "en": "Not verified: the values marked above come from no source read for this answer, no computation and nothing you wrote. Atlas does not compute routes or travel times yet: check them with the transport operator.",
-        "fr": "Non vérifié : les valeurs marquées ci-dessus ne viennent d’aucune source consultée pour cette réponse, d’aucun calcul ni de votre message. Atlas ne calcule pas encore d’itinéraire ni de temps de trajet : vérifiez-les auprès du transporteur.",
-        "de": "Nicht überprüft: Die oben markierten Werte stammen aus keiner für diese Antwort gelesenen Quelle, keiner Berechnung und nicht aus Ihrer Nachricht. Atlas berechnet noch keine Routen oder Reisezeiten: Prüfen Sie sie beim Verkehrsunternehmen.",
-        "es": "Sin verificar: los valores marcados arriba no proceden de ninguna fuente consultada para esta respuesta, de ningún cálculo ni de su mensaje. Atlas aún no calcula rutas ni tiempos de viaje: compruébelos con el transportista.",
-        "it": "Non verificato: i valori segnati sopra non provengono da alcuna fonte consultata per questa risposta, da alcun calcolo né dal suo messaggio. Atlas non calcola ancora itinerari né tempi di viaggio: li verifichi presso il vettore.",
+        "en": "Not verified, so left out: {values}. No page read for this answer gives them, and Atlas does not compute routes yet.",
+        "fr": "Non vérifié, donc retiré : {values}. Aucune page consultée pour cette réponse ne le donne, et Atlas ne calcule pas encore d’itinéraire.",
+        "de": "Nicht überprüft und daher weggelassen: {values}. Keine für diese Antwort gelesene Seite nennt es, und Atlas berechnet noch keine Routen.",
+        "es": "Sin verificar, por eso se omite: {values}. Ninguna página consultada para esta respuesta lo indica, y Atlas aún no calcula rutas.",
+        "it": "Non verificato, quindi omesso: {values}. Nessuna pagina consultata per questa risposta lo indica, e Atlas non calcola ancora gli itinerari.",
     },
 }
 
@@ -263,6 +450,180 @@ def _line_bounds(text: str, index: int) -> tuple[int, int]:
     start = text.rfind("\n", 0, index) + 1
     end = text.find("\n", index)
     return start, len(text) if end < 0 else end
+
+
+# --- Leaving out what no source states. -------------------------------------
+# Staging -94: markers after every value broke sentences ("environ (duree non
+# verifiee) jusqu'au quai", "08:30 (not sourced)-09:30 (not sourced)"). The
+# clause stating an unsourced value is left out whole (its parentheses, its
+# part of the sentence, or the sentence); a table cell becomes a dash and a
+# row without any remaining value goes; one short note lists what was left out.
+
+
+@dataclass(frozen=True)
+class _Range(Quantity):
+    low: float = 0.0
+
+
+# A table cell emptied here (shown as a dash): rows and tables that lost every
+# value go, other tables are left as they are.
+_LEFT_OUT = "\u2060\u2014\u2060"
+
+
+def _ranges(text: str, found: list[Quantity]) -> list[Quantity]:
+    """Two values of one kind joined as a range ("08:30-09:30") are one claim."""
+    merged: list[Quantity] = []
+    for quantity in found:
+        if merged:
+            last = merged[-1]
+            between = text[last.end : quantity.start]
+            if last.kind == quantity.kind and _RANGE_JOIN.match(between):
+                merged[-1] = _Range(
+                    last.start,
+                    quantity.end,
+                    quantity.kind,
+                    quantity.value,
+                    text[last.start : quantity.end],
+                    low=last.value if not isinstance(last, _Range) else last.low,
+                )
+                continue
+        merged.append(quantity)
+    return merged
+
+
+def _range_values(claim: Quantity) -> tuple[float, ...]:
+    return (claim.low, claim.value) if isinstance(claim, _Range) else (claim.value,)
+
+
+def _sentence(text: str, start: int, end: int) -> tuple[int, int]:
+    line_start, line_end = _line_bounds(text, start)
+    left = line_start
+    for match in re.finditer(r"[.!?](?=\s)", text[line_start:start]):
+        left = line_start + match.end()
+    right = line_end
+    found = re.search(r"[.!?](?=\s|$)", text[end:line_end])
+    if found:
+        right = end + found.end()
+    return left, right
+
+
+def _clause(text: str, start: int, end: int) -> tuple[int, int]:
+    """The part of the sentence around a value, between clause marks."""
+    left, right = _sentence(text, start, end)
+    marks = [m for m in _CLAUSE_END.finditer(text, left, right)]
+    before = [m for m in marks if m.end() <= start]
+    after = [m for m in marks if m.start() >= end]
+    clause_start = before[-1].end() if before else left
+    if after:
+        clause_end = after[0].start()
+    else:
+        clause_end = right - 1 if right > end and text[right - 1] in ".!?" else right
+    return clause_start, clause_end
+
+
+def _span_to_remove(text: str, claim: Quantity) -> tuple[int, int]:
+    """The parenthesis holding the value, else its whole sentence.
+
+    Commas inside addresses and lists make clauses unreliable ("Votre
+    position, 12 rue ..., est a 10 minutes" lost its predicate and kept a
+    fragment): a sentence goes whole, so no broken phrase is left.
+    """
+    left, right = _sentence(text, claim.start, claim.end)
+    opening = text.rfind("(", left, claim.start)
+    closing = text.find(")", claim.end, right)
+    if (
+        opening >= 0
+        and closing >= 0
+        and ")" not in text[opening : claim.start]
+        and "(" not in text[claim.end : closing]
+    ):
+        start = opening - 1 if opening > 0 and text[opening - 1] == " " else opening
+        return start, closing + 1
+    return left, right
+
+
+def _cell_bounds(text: str, index: int) -> tuple[int, int]:
+    line_start, line_end = _line_bounds(text, index)
+    left = text.rfind("|", line_start, index)
+    right = text.find("|", index, line_end)
+    return left + 1, (right if right >= 0 else line_end)
+
+
+def _leave_out(text: str, flagged: list[Quantity]) -> str:
+    spans: list[tuple[int, int, str]] = []
+    for claim in flagged:
+        line_start, _ = _line_bounds(text, claim.start)
+        if text[line_start:].lstrip().startswith("|"):
+            start, end = _cell_bounds(text, claim.start)
+            spans.append((start, end, " " + _LEFT_OUT + " "))
+        else:
+            start, end = _span_to_remove(text, claim)
+            spans.append((start, end, ""))
+    # Overlapping spans: the widest wins.
+    spans.sort(key=lambda span: (span[0], -span[1]))
+    kept: list[tuple[int, int, str]] = []
+    for span in spans:
+        if kept and span[0] < kept[-1][1]:
+            if span[1] > kept[-1][1]:
+                kept[-1] = (kept[-1][0], span[1], kept[-1][2])
+            continue
+        kept.append(span)
+    for start, end, replacement in reversed(kept):
+        following = text[end:]
+        if not replacement and (start == 0 or text[start - 1] == "\n"):
+            # A sentence that opened its line: the next one opens it now.
+            following = following.lstrip(" ")
+        text = text[:start] + replacement + following
+        # A sentence that lost its opening clause starts with a capital again.
+        before = text[:start].rstrip(" *_")
+        if not replacement and (not before or before[-1] in ".!?\n"):
+            after = len(text[start:]) - len(text[start:].lstrip(" *_"))
+            index = start + after
+            if index < len(text) and text[index].islower():
+                text = text[:index] + text[index].upper() + text[index + 1 :]
+    return _tidy(text)
+
+
+def _tidy(text: str) -> str:
+    lines: list[str] = []
+    table: list[str] = []
+
+    def flush() -> None:
+        rows = [row for row in table if not _empty_row(row)]
+        data = [row for row in rows if not re.fullmatch(r"\s*\|[\s:|-]*\|?\s*", row)]
+        touched = any(_LEFT_OUT in row for row in table)
+        if len(data) > 1 or not touched:  # a header and at least one row
+            lines.extend(row.replace(_LEFT_OUT, "—") for row in rows)
+        table.clear()
+
+    for line in text.split("\n"):
+        if line.lstrip().startswith("|"):
+            table.append(line)
+            continue
+        if table:
+            flush()
+        cleaned = re.sub(r"[ \t]{2,}", " ", line)
+        # Two clauses of one sentence left out together keep one final mark.
+        cleaned = re.sub(r"(?<!\.)([.!?])\s*\.(?!\.)", r"\1", cleaned)
+        cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
+        cleaned = re.sub(r"([,;:])\s*([.!?])", r"\2", cleaned)
+        cleaned = re.sub(r"\*\*\s*\*\*|__\s*__|\(\s*\)", "", cleaned).rstrip()
+        bare = re.sub(r"^\s*(?:[-*+>]|\d{1,3}[.)])\s*", "", cleaned)
+        if line.strip() and not bare.strip(" *_:,;.!?"):
+            continue
+        lines.append(cleaned)
+    if table:
+        flush()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
+
+
+def _empty_row(row: str) -> bool:
+    """A row that lost values here and keeps at most its label."""
+    cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+    if _LEFT_OUT not in cells:
+        return False
+    filled = [cell for cell in cells if cell not in {"", "—", "-", _LEFT_OUT}]
+    return len(filled) <= 1
 
 
 @dataclass
@@ -279,6 +640,7 @@ class Turn:
     # The URLs read in this turn (D7) and the answer language, set by the pipeline.
     retrieved: Callable[[], list[str]] = field(default=lambda: [], repr=False)
     language: str = "en"
+    zone: str = "UTC"
     journey_offered: bool = False
     journey_called: bool = False
     results: int = 0
@@ -318,6 +680,8 @@ class Turn:
         for text in (*self.evidence.evidence, *self.computed, *self.asked):
             for quantity in quantities(text, generous=True):
                 values[quantity.kind].append(quantity.value)
+        for text in self.asked:
+            values["clock"].extend(spoken_times(text))
         return values
 
     def owned_values(self, answer: str) -> str:
@@ -331,16 +695,20 @@ class Turn:
         for quantity in quantities(answer):
             parts.append(quantity.text)
             parts.extend(re.findall(r"\d+(?:[.,]\d+)?", quantity.text))
+        # "demain", "tomorrow", "Freitag": the dates the person named are theirs.
+        parts.extend(user_dates(self.asked, self.zone))
         return " ".join(parts)
 
     def check(self, answer: str, language: str) -> str:
-        """Remove unsourced durations and distances, mark unsourced clock times."""
+        """Leave out the clauses that state unsourced travel values; one note."""
         if not self.active or not answer.strip():
             return answer
+        body, fold, footer = answer.partition("<details>")
+        claims = _ranges(body, quantities(body))
         claims = [
-            q
-            for q in quantities(answer)
-            if not _MARGIN.search(answer[max(0, q.start - 40) : q.end + 40])
+            claim
+            for claim in claims
+            if not _MARGIN.search(body[slice(*_clause(body, claim.start, claim.end))])
         ]
         if not claims:
             return answer
@@ -348,18 +716,20 @@ class Turn:
         sourced_clocks = known["clock"]
 
         def supported(claim: Quantity) -> bool:
-            if any(
-                _same(claim.kind, claim.value, value) for value in known[claim.kind]
+            values = _range_values(claim)
+            if all(
+                any(_same(claim.kind, value, item) for item in known[claim.kind])
+                for value in values
             ):
                 return True
             if claim.kind != "duration":
                 return False
             # A duration between two sourced times of the same line ("10:05 to
             # 12:00, 1 h 55 min") is arithmetic on sourced values.
-            start, end = _line_bounds(answer, claim.start)
+            start, end = _line_bounds(body, claim.start)
             times = [
                 q.value
-                for q in quantities(answer[start:end])
+                for q in quantities(body[start:end])
                 if q.kind == "clock"
                 and any(_same("clock", q.value, value) for value in sourced_clocks)
             ]
@@ -374,21 +744,13 @@ class Turn:
         if not flagged:
             return answer
         self.marked = len(flagged)
-        edits: list[tuple[int, int, str]] = []
-        for claim in flagged:
-            if claim.kind == "clock":
-                edits.append((claim.end, claim.end, " " + wording("clock", language)))
-            else:
-                edits.append((claim.start, claim.end, wording(claim.kind, language)))
-        for start, end, replacement in sorted(edits, reverse=True):
-            answer = answer[:start] + replacement + answer[end:]
-        # One note, after the answer and before its folded source list.
-        note = wording("note", language)
-        fold = answer.rfind("<details>")
-        if fold > 0:
-            answer = answer[:fold].rstrip() + "\n\n" + note + "\n\n" + answer[fold:]
-        else:
-            answer = answer.rstrip() + "\n\n" + note
+        body = _leave_out(body, flagged)
+        values = list(dict.fromkeys(" ".join(c.text.split()) for c in flagged))
+        listed = ", ".join(values[:6]) + (", …" if len(values) > 6 else "")
+        note = wording("note", language).format(values=listed)
+        answer = body.rstrip() + "\n\n" + note
+        if fold:
+            answer += "\n\n" + fold + footer
         return answer.rstrip()
 
     def metadata(self) -> dict[str, Any]:
