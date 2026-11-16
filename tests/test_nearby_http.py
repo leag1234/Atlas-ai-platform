@@ -154,7 +154,7 @@ class NearbyHTTPTests(unittest.TestCase):
                         self.assertNotRegex(visible, r"https?://")
                         if record["language"] == "fr":
                             self.assertIn(
-                                "Position approximative, utilisée pour cette demande uniquement",
+                                "Position approximative, utilisée pour cette conversation uniquement",
                                 answer,
                             )
                             self.assertEqual(answer.count("à vol d’oiseau"), 1)

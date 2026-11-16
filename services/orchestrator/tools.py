@@ -6,6 +6,7 @@ from packages.ports import atlas_ports
 
 import asyncio
 import json
+from urllib.parse import urlsplit
 import logging
 import os
 import re
@@ -224,6 +225,67 @@ SCHEMAS: dict[str, type[Arguments]] = {
 }
 
 
+# Pages that rarely state a fact a search was made for: social network posts,
+# login walls and machine-translation front ends (owner test 2026-11-16: the
+# first search of a timetable question returned an Instagram post, a Facebook
+# page and a translation page). Dropped from a live result unless the query
+# names that service, and only while other results remain.
+LOW_VALUE_HOSTS: dict[str, tuple[str, ...]] = {
+    "instagram.com": ("instagram",),
+    "facebook.com": ("facebook",),
+    "fb.com": ("facebook",),
+    "tiktok.com": ("tiktok",),
+    "pinterest": ("pinterest",),
+    "x.com": ("twitter", "x.com", "tweet"),
+    "twitter.com": ("twitter", "tweet"),
+    "threads.net": ("threads",),
+    "threads.com": ("threads",),
+    "snapchat.com": ("snapchat",),
+    "translate.google": ("google translate", "traduction google", "translate"),
+    "translate.goog": ("google translate", "translate"),
+    "deepl.com": ("deepl",),
+    "reverso.net": ("reverso",),
+    "linguee": ("linguee",),
+}
+
+
+def low_value_host(link: str, query: str) -> bool:
+    host = urlsplit(link).netloc.lower().split("@")[-1].split(":")[0]
+    labels = host.split(".")
+    asked = query.casefold()
+    for domain, names in LOW_VALUE_HOSTS.items():
+        if "." in domain:
+            matched = host == domain or host.endswith("." + domain)
+            if domain == "translate.google":
+                matched = ".".join(labels[:2]) == domain or host.startswith(
+                    domain + "."
+                )
+        else:
+            # A brand on any country domain (pinterest.fr, linguee.de).
+            matched = domain in labels
+        if matched:
+            return not any(name in asked for name in names)
+    return False
+
+
+def drop_low_value(result: Message, query: str) -> Message:
+    rows = result.get("results")
+    if not isinstance(rows, list):
+        return result
+    kept = [
+        row
+        for row in rows
+        if not (
+            isinstance(row, dict)
+            and isinstance(row.get("link"), str)
+            and low_value_host(row["link"], query)
+        )
+    ]
+    if not kept or len(kept) == len(rows):
+        return result
+    return {**result, "results": kept}
+
+
 def declarations() -> list[Message]:
     descriptions = json.loads(Path("prompts/tools.json").read_text())
     if set(descriptions) != set(SCHEMAS) or not all(
@@ -331,7 +393,7 @@ class Runtime:
                 if not replay.live_on_miss:
                     attempts = [{"provider": "replay", "outcome": "replay_miss"}]
                     raise ValueError("search_replay_miss")
-            result = await self._search(request, timeout)
+            result = drop_low_value(await self._search(request, timeout), request.query)
             attempts = result.get("attempts")
             if scope.test:
                 try:
@@ -861,8 +923,10 @@ class Runtime:
             if os.environ.get("ATLAS_MCP_CONNECTORS") == "1":
                 return {"error": "legacy_connector_disabled"}
             return await mcp_client.execute(call.arguments, timeout)
-        from services.orchestrator import exact_tools
+        from services.orchestrator import exact_tools, journey
 
+        if call.name == journey.NAME:
+            return await journey.execute(call.arguments, timeout)
         if call.name in exact_tools.SCHEMAS:
             return await exact_tools.execute(
                 call.name, call.arguments, timeout, self.home_zone
