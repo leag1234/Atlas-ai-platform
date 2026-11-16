@@ -1,0 +1,4789 @@
+{
+ "description": "Language of the answer for realistic messages: short, unaccented, typos, SMS style, code-switching, town names, long messages and genuine other languages. Each case runs once per interface locale. Cases of split 'check' were written after the parameters were tuned on the others and are never tuned on. Measured by tools/language_eval.py.",
+ "cases": [
+  {
+   "kind": "short",
+   "text": "il fera beau demain a caen?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quel temps a brest ce week end",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "c koi la capitale de l australie",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "jsp quoi faire ce soir, une idee?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tkt mais tu peux me resumer ca",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cb de temps pour cuire des pates",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "pk le ciel est bleu",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "slt tu va bien",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "bjr je cherche un resto a lyon",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "a quelle heure ferme la poste",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "combien coute un billet paris marseille",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "c est quoi un etf",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tu peux m aider a ecrire une lettre de motivation",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ya til des greves demain a la sncf",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quelle est la difference entre un pacs et un mariage",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "comment on fait une pate a crepe",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "jai mal a la tete depuis 3 jours",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ou est ce que je peux garer ma voiture a rennes",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "donne moi une recette facile avec des courgettes",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "c quand les soldes",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il fait combien de degres a nice",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ca prend combien de temps pour aller a bordeaux en train",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "jveux apprendre le python par ou commencer",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mdr t trop fort, et sinon c koi un llm",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "qui a gagne le match hier soir",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "les impots c quand cette annee",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "faut il un visa pour aller au canada",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "comment desactiver les notifs sur iphone",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quel est le meilleur moment pour planter des tomates",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ecris un poeme sur la mer",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "explique moi la relativite simplement",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "on mange quoi ce soir",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il pleut a nantes?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "horaires piscine villeurbanne",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "demain il neige a grenoble ?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "rappelle moi d appeler le dentiste",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "jsuis perdu avec excel, comment faire une somme",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "sa marche pas mon wifi",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "kel heure il est a montreal",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "stp fais moi un resume de la revolution francaise",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "c koi la diff entre wifi 6 et wifi 7",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ma machine a laver fuit, je fais quoi",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "peut on congeler du fromage",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "jai besoin d idees pour un anniversaire",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "le train pour lille est en retard?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "comment calculer un pourcentage",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quelle heure est il a tokyo",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il y a quoi a voir a colmar",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "je voudrais un mail pour annuler mon abonnement",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "coucou, tu peux maider",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "g pa compri ta reponse",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "c bon pr les chats le chocolat?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "comment on dit merci en japonais",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il faut combien d oeufs pour un gateau",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "bon plan resto pas cher a toulouse",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "aide moi a reviser les fractions",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "vs pouvez m expliquer le bitcoin",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "trop bien merci",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "la meme chose mais plus court",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "qui est le president du senat",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "combien de calories dans une banane",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "donne moi 5 idees de cadeaux pour ma mere",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "pourquoi mon chat vomit",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cest normal que mon telephone chauffe",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "faire un cv en ligne gratuit",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "jcomprend pas les impots fonciers",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ya des bouchons sur l a7",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "comment aller a la gare de saint brieuc",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quel film regarder ce soir",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tu connais un bon livre de sf",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "j ai rate mon bus, le prochain c quand",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "Il fera beau demain à Caen ?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quel temps fait il a quimper",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "meteo lorient samedi",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il ya du vent a dieppe demain",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "will it rain tomorrow in leeds",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "whats the weather like in york this weekend",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hw do i reset my router",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "can u help me write a cover letter",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "best pizza place in brooklyn",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "idk what to cook tonight any ideas",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tbh i dont get recursion",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "pls summarize this article",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how long to boil an egg",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "whos the ceo of nvidia",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "what time is it in sydney",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "convert 5 miles to km",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "is it safe to eat raw cookie dough",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "recommend a good sci fi book",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "why is the sky blue",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how do i make pancakes",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "explain blockchain like im five",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "whats a good name for a cat",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how many ounces in a cup",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "fix my python code pls",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "write a haiku about autumn",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "when does the train to manchester leave",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hey how r u",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "thx that helped",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "any good hikes near denver",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how to get rid of fruit flies",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "what does lol mean",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "can dogs eat grapes",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tell me a joke",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "what is the capital of canada",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how much is a flight to lisbon",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "i need a gift idea for my dad",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "difference between affect and effect",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how do i center a div",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "whats the best laptop for students",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how to lower my blood pressure naturally",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "good movies on netflix rn",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "help me plan a trip to scotland",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "is the museum open on monday",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "my phone wont charge",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "what should i name my startup",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how far is bristol from london",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "calc 15% tip on 80 dollars",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wat r the symptoms of flu",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "y is my wifi so slow",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "same but shorter",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "make it funnier",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "give me 3 dinner ideas",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how do taxes work in the uk",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "weather nyc tmrw",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cheap hotels in dublin",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hows the traffic on the m25",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "can you explain inflation",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "who won the game last night",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "what are good stretches for back pain",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "remind me to call mom at 6",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "is coffee bad for you",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "whats the meaning of life lol",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how 2 bake bread at home",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "need help with my essay on climate change",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "what year did the berlin wall fall",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "list some fun things to do in austin",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "does the bank open saturday",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "how many legs does a spider have",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "write an email to my landlord about the heating",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "u there?",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "can i freeze cooked rice",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "whats trending online today",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "will it be sunny in caen tomorrow",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "is it gonna snow in aberdeen",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wird es morgen in koeln regnen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie wird das wetter am wochenende in muenchen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was kostet ein ticket nach hamburg",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "kannst du mir helfen eine bewerbung zu schreiben",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie lange muss ich nudeln kochen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "warum ist der himmel blau",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "gibts heute stau auf der a9",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was ist ein etf",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ich brauche ein rezept mit kartoffeln",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wann faehrt der naechste zug nach berlin",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "erklaer mir quantenphysik einfach",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was soll ich heute abend kochen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie spaet ist es in new york",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "schreib ein gedicht uber den herbst",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hallo wie gehts",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "danke dir",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was heisst hallo auf japanisch",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wo kann man in leipzig gut essen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mein handy ladt nicht mehr",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie viel kalorien hat ein apfel",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "kann ich reis einfrieren",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hast du tipps gegen kopfschmerzen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was ist der unterschied zwischen gmbh und ag",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie mache ich pfannkuchen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wer hat gestern gewonnen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "lohnt sich ein e auto",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ich versteh das nicht, kannst du das nochmal erklaeren",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "gib mir drei ideen fuer ein geschenk",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie hoch ist die inflation gerade",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hat die apotheke sonntags offen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie komme ich zum bahnhof in dresden",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was kann man in freiburg unternehmen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hilfe mein wlan geht nicht",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie berechne ich prozent",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "brauch ich ein visum fuer kanada",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was bedeutet eigentlich lol",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "empfiehl mir ein gutes buch",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ist kaffee ungesund",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie lange dauert ein flug nach mallorca",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "schreib mir eine mail an meinen vermieter wegen der heizung",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wieviel uhr ist es",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mach es lustiger",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "das gleiche aber kuerzer",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "regnet es in stuttgart",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "gute serien auf netflix",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wann ist die steuererklaerung faellig",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wo ist die naechste tankstelle",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "kannst du das zusammenfassen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie funktioniert bitcoin",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ich hab hunger was soll ich essen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "was ist die hauptstadt von australien",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "duerfen hunde trauben essen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wie schnell waechst bambus",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "moin, alles klar?",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wetter bremen morgen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "bitte hilf mir bei mathe",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "zeig mir wie man python lernt",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "wird es morgen in caen schoen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "va a llover manana en sevilla",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "que tiempo hace en bilbao este finde",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "q hora es en mexico",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cuanto cuesta un billete a madrid",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "me ayudas a escribir una carta de presentacion",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como se hace una tortilla de patatas",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "por que el cielo es azul",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cuanto tiempo hay que hervir un huevo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "xq no funciona mi wifi",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hola q tal",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "gracias tio",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "que es un etf",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "recomiendame un libro de ciencia ficcion",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "donde puedo comer bien en valencia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "necesito ideas para un regalo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "explicame la relatividad facil",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quien gano el partido ayer",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como se dice gracias en japones",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mi movil no carga",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "se puede congelar arroz cocido",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "dame tres ideas para cenar",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cuanto tarda un vuelo a canarias",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "a que hora cierra el super",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "q significa lol",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tengo dolor de cabeza desde ayer",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "escribe un poema sobre el mar",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "lo mismo pero mas corto",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hazlo mas gracioso",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como calculo un porcentaje",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "necesito un visado para ir a canada",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "que puedo ver en granada",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hay atasco en la m30",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como llego a la estacion de atocha",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cual es la capital de australia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "el cafe es malo para la salud",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ayudame con mis deberes de mates",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "que peli veo esta noche",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como funciona el bitcoin",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hace frio en burgos hoy",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quiero aprender python por donde empiezo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "buenas, me puedes ayudar",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cuantas calorias tiene un platano",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tqm gracias por todo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "q tal el tiempo en malaga",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "haz un resumen de la revolucion francesa",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "es seguro comer huevo crudo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cuando son las rebajas",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mi perro puede comer uvas",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "dime un chiste",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "que significa la palabra resiliencia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "busco piso barato en zaragoza",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como quitar las moscas de la fruta",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "a cuanto esta el euro hoy",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "no entiendo nada de impuestos",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cuantos dias faltan para navidad",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "como reinicio el router",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "que hago si me roban la cartera",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "pon una alarma a las 7",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "hara sol manana en caen",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "domani piove a bologna?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "che tempo fa a torino nel weekend",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quanto costa un biglietto per napoli",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mi aiuti a scrivere una lettera di presentazione",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come si fa la carbonara",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "perche il cielo e blu",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quanto tempo per cuocere la pasta",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ciao come stai",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "grazie mille",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cos e un etf",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "consigliami un libro di fantascienza",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "dove si mangia bene a firenze",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ho bisogno di idee per un regalo",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "spiegami la relativita in modo semplice",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "chi ha vinto la partita ieri sera",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come si dice grazie in giapponese",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il mio telefono non si carica",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "si puo congelare il riso cotto",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "dammi tre idee per cena",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "a che ora chiude la farmacia",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cosa vuol dire lol",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "ho mal di testa da due giorni",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "scrivi una poesia sul mare",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "la stessa cosa ma piu corta",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "rendilo piu divertente",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come calcolo una percentuale",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "serve il visto per andare in canada",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cosa vedere a verona",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "c e traffico sulla a1",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come arrivo alla stazione di milano centrale",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "qual e la capitale dell australia",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il caffe fa male",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "aiutami con i compiti di matematica",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "che film guardo stasera",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come funziona il bitcoin",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "fa freddo a trento oggi",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "voglio imparare python da dove inizio",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quante calorie ha una banana",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "riassumi la rivoluzione francese",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "il mio cane puo mangiare l uva",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "raccontami una barzelletta",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "cerco casa in affitto a padova",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come si eliminano i moscerini",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quanti giorni mancano a natale",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come riavvio il modem",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "che faccio se mi rubano il portafoglio",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "nn ho capito niente",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "xke il mio wifi e lento",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "tvb grazie di tutto",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "qnd sono i saldi",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "dove posso parcheggiare a roma",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quanto dura il volo per palermo",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "buongiorno, mi puoi aiutare",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "mi serve una ricetta con le zucchine",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "come scrivo una mail al mio capo",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "e sicuro mangiare uova crude",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "quando scade il bollo auto",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "che ore sono a new york",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "domani fa bel tempo a caen?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "tu peux me faire un recap du meeting de ce matin",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "c quoi le best framework frontend en 2026",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "jai un bug dans mon code python, ca crash au startup",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "fais moi un email pour mon boss stp",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "le wifi bug encore, je fais un reset?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "je cherche un job de data analyst a paris",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "check mon cv stp et dis moi ce qui va pas",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "whats the best croissant in paris",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "how do i say bon appetit properly",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "recipe for coq au vin please",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "is the deja vu thing real",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "kannst du mir das meeting summary schreiben",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "mein laptop ist super slow, was tun",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "wie funktioniert machine learning",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "como hago un deploy en la nube",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "mi laptop va super lento que hago",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "necesito un email para mi jefe",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "come faccio il backup del telefono",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "mi serve un recap della call di oggi",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "mixed",
+   "text": "il mio pc e lentissimo, che faccio",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "ok",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "ok",
+   "expected": "en",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Caen",
+   "expected": "en",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Caen",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "iphone 17 pro",
+   "expected": "de",
+   "locales": [
+    "de"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Tesla stock price",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Meteo Paris demain",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "bom dia",
+   "expected": "de",
+   "locales": [
+    "de"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "2+2",
+   "expected": "it",
+   "locales": [
+    "it"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Nantes Rennes",
+   "expected": "es",
+   "locales": [
+    "es"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Je voudrais organiser un week-end en Bretagne avec mes enfants au mois de mai. Peux-tu me proposer un itinéraire de trois jours avec des activités adaptées et des idées de restaurants ?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "salut, je dois ecrire un discours pour le mariage de mon frere samedi prochain, il faut que ce soit drole mais pas trop, et que ca dure environ trois minutes. tu peux m aider ?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "mon proprietaire refuse de me rendre ma caution alors que j ai rendu l appartement propre, quels sont mes recours et comment je lui ecris une lettre recommandee",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Explique-moi la différence entre l'inflation sous-jacente et l'inflation totale, avec un exemple chiffré et les conséquences pour les taux d'intérêt de la banque centrale.",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "je suis prof de maths en college et je cherche des idees d activites pour faire comprendre les fractions a des eleves de sixieme qui ont du mal, avec du materiel simple",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "I'm planning a road trip from Seattle to San Francisco next month and I'd like to know which stops are worth it along the coast, and how many days I should budget for the whole drive.",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "so my landlord says i have to pay for the broken boiler even tho it was old when i moved in, is that legal in england and what should i write back to him",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Can you explain how a transformer neural network processes a sentence, step by step, without assuming I know linear algebra beyond the basics?",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "my daughter has a science project due friday about volcanoes and we need an experiment we can do at home with stuff from the kitchen, any ideas that wont make a huge mess",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Ich plane eine Radtour entlang der Donau von Passau nach Wien und möchte wissen, wie viele Tage ich einplanen sollte und wo man unterwegs gut übernachten kann.",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "mein vermieter will die miete um zwanzig prozent erhoehen, ist das ueberhaupt erlaubt und was kann ich dagegen tun, ich wohne seit acht jahren in der wohnung",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Kannst du mir erklären, wie eine Wärmepumpe funktioniert und ob sie sich für ein altes Haus mit Heizkörpern lohnt, oder ob man besser eine Fußbodenheizung einbaut?",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Estoy preparando una entrevista de trabajo para un puesto de analista de datos y me gustaría practicar las preguntas más habituales. ¿Puedes hacerme de entrevistador?",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "mi casero no me quiere devolver la fianza aunque deje el piso limpio, que puedo hacer y como le escribo un burofax para reclamarla",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Quiero aprender a tocar la guitarra por mi cuenta pero solo tengo media hora al día, ¿qué plan de estudio me recomiendas para los primeros tres meses?",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Vorrei organizzare una settimana in Sicilia a giugno con due bambini piccoli. Quali zone mi consigli e come ci si sposta meglio senza macchina?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "il mio padrone di casa non mi vuole restituire la caparra anche se ho lasciato tutto pulito, cosa posso fare e come gli scrivo una raccomandata",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "long",
+   "text": "Mi spieghi come funziona il sistema elettorale italiano per la Camera e il Senato, con un esempio di come si assegnano i seggi?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "wat is het verschil tussen een hypotheek met vaste en variabele rente?",
+   "expected": "nl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "kun je me helpen een sollicitatiebrief te schrijven voor een baan als verpleegkundige",
+   "expected": "nl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "gaat het morgen regenen in utrecht? ik wil gaan fietsen met mijn kinderen",
+   "expected": "nl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "hoeveel kost een treinkaartje van amsterdam naar parijs ongeveer",
+   "expected": "nl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "qual é a melhor forma de aprender inglês sozinho em casa?",
+   "expected": "pt",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "vai chover amanha em lisboa? quero ir a praia com os meus filhos",
+   "expected": "pt",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "preciso de ajuda para escrever uma carta de reclamacao para o meu senhorio",
+   "expected": "pt",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "como faço para tirar o passaporte no brasil e quanto tempo demora",
+   "expected": "pt",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "jaka będzie pogoda jutro w krakowie? chcę iść w góry z rodziną",
+   "expected": "pl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "czy możesz mi pomóc napisać list motywacyjny do pracy w banku",
+   "expected": "pl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "ile kosztuje bilet na pociąg z warszawy do gdańska",
+   "expected": "pl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Beth fydd y tywydd yng Nghaerdydd yfory? Rydw i eisiau mynd am dro ar hyd yr afon gyda fy nheulu.",
+   "expected": "cy",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Allwch chi fy helpu i ysgrifennu llythyr at y cyngor am y sbwriel sydd heb ei gasglu ers pythefnos?",
+   "expected": "cy",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Rydw i'n dysgu Cymraeg ers blwyddyn ac rydw i eisiau ymarfer siarad am fy niwrnod yn y gwaith.",
+   "expected": "cy",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Cad é an aimsir a bheidh ann i nGaillimh amárach? Ba mhaith liom dul ag siúl cois farraige.",
+   "expected": "ga",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "An féidir leat cabhrú liom litir a scríobh chuig an gcomhairle faoin mbruscar nár bailíodh?",
+   "expected": "ga",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Tá mé ag foghlaim Gaeilge le bliain anuas agus ba mhaith liom cleachtadh a dhéanamh ar scríobh.",
+   "expected": "ga",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Hur lång tid tar det att köra från Stockholm till Göteborg med bil?",
+   "expected": "sv",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Kan du hjälpa mig att skriva ett personligt brev till en ansökan som lärare?",
+   "expected": "sv",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Cum pot să învăț să gătesc mâncare tradițională românească acasă?",
+   "expected": "ro",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Jak dlouho trvá cesta vlakem z Prahy do Brna a kolik stojí jízdenka?",
+   "expected": "cs",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Yarın İstanbul'da hava nasıl olacak, şemsiye almalı mıyım?",
+   "expected": "tr",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Quin temps farà demà a Barcelona? Vull anar a la platja amb els nens.",
+   "expected": "ca",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Hvor lang tid tager det at køre fra København til Aarhus i bil?",
+   "expected": "da",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Kuinka kauan kestää ajaa Helsingistä Tampereelle autolla?",
+   "expected": "fi",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Mennyi ideig tart vonattal eljutni Budapestről Debrecenbe?",
+   "expected": "hu",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Πόσο καιρό χρειάζεται για να πάει κανείς από την Αθήνα στη Θεσσαλονίκη με τρένο;",
+   "expected": "el",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Какая погода будет завтра в Москве? Нужен ли зонт?",
+   "expected": "ru",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "Яка погода буде завтра у Києві? Чи потрібна парасолька?",
+   "expected": "uk",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "ما هو أفضل وقت لزيارة المغرب وما هي المدن التي تنصح بها؟",
+   "expected": "ar",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "明天北京的天气怎么样？需要带伞吗？",
+   "expected": "zh-cn",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "text": "明日の東京の天気はどうですか？傘は必要ですか？",
+   "expected": "ja",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "il fera beau demain a caen?",
+    "Demain à Caen : éclaircies, 14 °C."
+   ],
+   "text": "et samedi?",
+   "expected": "fr",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "quel temps a brest ce week end",
+    "Pluie samedi, éclaircies dimanche."
+   ],
+   "text": "ok et a lorient",
+   "expected": "fr",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "whats the weather in leeds tomorrow",
+    "Cloudy, 11 °C."
+   ],
+   "text": "and saturday?",
+   "expected": "en",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "wie wird das wetter in koeln",
+    "Morgen regnet es, 9 °C."
+   ],
+   "text": "und am sonntag?",
+   "expected": "de",
+   "locales": [
+    "en",
+    "de"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "que tiempo hace en bilbao",
+    "Mañana llueve, 15 °C."
+   ],
+   "text": "y el domingo?",
+   "expected": "es",
+   "locales": [
+    "en",
+    "es"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "che tempo fa a torino",
+    "Domani sole, 18 °C."
+   ],
+   "text": "e domenica?",
+   "expected": "it",
+   "locales": [
+    "en",
+    "it"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "wat is het verschil tussen arabica en robusta koffie?",
+    "Arabica is zachter."
+   ],
+   "text": "en de prijs?",
+   "expected": "nl",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "qual é a melhor forma de aprender inglês sozinho em casa?",
+    "Ver séries com legendas."
+   ],
+   "text": "e para falar?",
+   "expected": "pt",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "Beth fydd y tywydd yng Nghaerdydd yfory?",
+    "Bydd hi'n braf yfory."
+   ],
+   "text": "a beth am ddydd Sul?",
+   "expected": "cy",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "whats the weather in leeds tomorrow",
+    "Cloudy, 11 °C."
+   ],
+   "text": "il fera beau demain a caen?",
+   "expected": "fr",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "il fera beau demain a caen?",
+    "Demain à Caen : éclaircies, 14 °C."
+   ],
+   "text": "Can you write the same forecast in a short English paragraph for my colleague?",
+   "expected": "en",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "history",
+   "history": [
+    "c koi un etf",
+    "Un ETF est un fonds indiciel coté."
+   ],
+   "text": "merci, et un pea?",
+   "expected": "fr",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "y aura du soleil a la rochelle dimanche",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "c ouvert le dimanche ikea?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "tu px me dire cmt faire un virement",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "jarrive pas a dormir, des conseils",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "quest ce qu on peut faire a annecy quand il pleut",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "mon fils a de la fievre, je dois m inquieter?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "cmb ca coute un passeport",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "je sais pas quoi offrir a ma copine",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "ecrit moi un sms pour souhaiter bon anniv a mon pote",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "faut combien de temps pour faire un marathon",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "les meilleures plages pres de biarritz",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "pourkoi les feuilles tombent en automne",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "est ce que les champignons crus c dangereux",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "fait il froid a strasbourg en ce moment",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "resume moi le dernier chapitre stp",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "on peut aller a pied de la gare au centre de chartres?",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "je me suis fait mal au genou en courant",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "ya un truc a faire ce soir a dijon",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "c est loin perpignan de montpellier",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "merci bcp t genial",
+   "expected": "fr",
+   "locales": [
+    "fr",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "is the pharmacy open on sunday",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "whats a good gift for a 10 yr old",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "cn u explain how mortgages work",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "gonna be cold in boston tmrw?",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "need a quick recipe w chicken and rice",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "how do i block spam calls",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "whats the diff between a virus and bacteria",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "is it worth upgrading to the new iphone",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "my knee hurts after running what do i do",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "any tips for a job interview tomorrow",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "how many hours of sleep do teens need",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "best way to learn spanish fast",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "can u make this sound more professional",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "what time does the sun set in oslo",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "r there any good podcasts about history",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "where can i watch the game tonight",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "how long does it take to drive to cardiff",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "summarise the main points pls",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "did it rain in seattle yesterday",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "wanna help me plan a birthday party",
+   "expected": "en",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "hat ikea am sonntag offen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "wie mach ich eine ueberweisung",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "ich kann nicht schlafen, hast du tipps",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "was kann man in hannover bei regen machen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "mein sohn hat fieber, muss ich mir sorgen machen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "was kostet ein reisepass",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "weiss nicht was ich meiner freundin schenken soll",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "schreib mir eine nachricht zum geburtstag fuer meinen kumpel",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "wie lange trainiert man fuer einen marathon",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "warum fallen im herbst die blaetter",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "ist es kalt in rostock gerade",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "fass mir das letzte kapitel zusammen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "mein knie tut weh nach dem laufen",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "gibts heute abend was los in nuernberg",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "wie weit ist es von kiel nach luebeck",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "danke vielmals, super",
+   "expected": "de",
+   "locales": [
+    "de",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "hara sol en cadiz el domingo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "esta abierto ikea los domingos",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "como hago una transferencia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "no puedo dormir, algun consejo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "que se puede hacer en santander cuando llueve",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "mi hijo tiene fiebre, me preocupo?",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "cuanto cuesta sacarse el pasaporte",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "no se que regalarle a mi novia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "escribeme un mensaje de cumple para mi amigo",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "por que se caen las hojas en otono",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "hace frio en leon ahora",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "resumeme el ultimo capitulo porfa",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "me duele la rodilla despues de correr",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "hay algo que hacer esta noche en murcia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "esta lejos alicante de valencia",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "muchas gracias eres un crack",
+   "expected": "es",
+   "locales": [
+    "es",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "ci sara il sole a rimini domenica",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "ikea e aperto la domenica?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "come faccio un bonifico",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "non riesco a dormire, consigli?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "cosa si puo fare a trieste quando piove",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "mio figlio ha la febbre, devo preoccuparmi?",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "quanto costa fare il passaporto",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "non so cosa regalare alla mia ragazza",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "scrivimi un messaggio di auguri per il mio amico",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "perche le foglie cadono in autunno",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "fa freddo a bolzano adesso",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "riassumimi l ultimo capitolo per favore",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "mi fa male il ginocchio dopo la corsa",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "c e qualcosa da fare stasera a lecce",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "e lontano bari da napoli",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "split": "check",
+   "text": "grazie mille sei un grande",
+   "expected": "it",
+   "locales": [
+    "it",
+    "en"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "is het museum op zondag open en hoeveel kost een kaartje",
+   "expected": "nl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "ik kan niet slapen, heb je tips voor een betere nachtrust",
+   "expected": "nl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "o museu está aberto ao domingo e quanto custa a entrada",
+   "expected": "pt",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "não consigo dormir, tens alguma dica para descansar melhor",
+   "expected": "pt",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "czy muzeum jest otwarte w niedzielę i ile kosztuje bilet",
+   "expected": "pl",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "Ydy'r amgueddfa ar agor ddydd Sul a faint yw pris tocyn mynediad?",
+   "expected": "cy",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "Är museet öppet på söndag och hur mycket kostar en biljett?",
+   "expected": "sv",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "Er museet åbent om søndagen, og hvad koster en billet?",
+   "expected": "da",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "Je muzeum otevřené v neděli a kolik stojí vstupenka?",
+   "expected": "cs",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "other",
+   "split": "check",
+   "text": "Müze pazar günü açık mı ve bilet ne kadar?",
+   "expected": "tr",
+   "locales": [
+    "en",
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Hello",
+   "expected": "de",
+   "locales": [
+    "de"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Hi!",
+   "expected": "fr",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "neutral",
+   "text": "Ciao",
+   "expected": "de",
+   "locales": [
+    "de"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "Thanks",
+   "expected": "en",
+   "locales": [
+    "it"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "Merci",
+   "expected": "fr",
+   "locales": [
+    "en"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "Hola",
+   "expected": "es",
+   "locales": [
+    "fr"
+   ]
+  },
+  {
+   "kind": "short",
+   "text": "Bonjour",
+   "expected": "fr",
+   "locales": [
+    "en"
+   ]
+  }
+ ]
+}
