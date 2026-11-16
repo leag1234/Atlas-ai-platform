@@ -34,6 +34,14 @@ empty cell in XLSX, read by formulas as Excel reads it (0 in arithmetic, skipped
 by SUM, MIN, MAX, COUNT and AVERAGE). A table needs at least one column name.
 The caller owns output paths and asset permissions.
 
+Emoji (`emoji.py`) are drawn from the system's colour emoji font (Noto Color
+Emoji, SIL OFL 1.1, Debian `fonts-noto-color-emoji`): a PDF page draws each one
+as a picture at the size of its text (a paragraph of emoji alone at 48 pt), the
+Office formats keep the character for their viewer's emoji font, and
+`preview.first_page` draws the first page from the same layout for the
+deliverable check. Without that font an emoji is left out and
+`glyphs.left_out` names it, so that a delivery never claims it.
+
 Table cells are read as typed (`cells.py`). Inline Markdown is never shown:
 `**TOTAL**` is a bold cell in XLSX and a bold run in DOCX, and is plain text in
 PDF and PPTX; backticks are dropped and a link keeps its text (and its address

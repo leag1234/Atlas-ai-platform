@@ -52,11 +52,25 @@ def published(tool: str, output: object) -> dict[str, Any] | None:
     return receipt if isinstance(receipt, dict) else None
 
 
-def closing_instruction(receipts: Sequence[dict[str, Any]]) -> str:
+# A file published with gaps a check found against the request
+# (deliverable_check.py): the short closing must not claim what it lacks.
+GAPS_INSTRUCTION = (
+    " A check of the file against the request found that it lacks: {gaps}. "
+    "Say so plainly in your reply, in the language of the request, and do not "
+    "claim that the file has it."
+)
+
+
+def closing_instruction(
+    receipts: Sequence[dict[str, Any]], gaps: Sequence[str] = ()
+) -> str:
     names = [str(receipt.get("relative_path") or "") for receipt in receipts]
-    return CLOSING_INSTRUCTION.format(
+    text = CLOSING_INSTRUCTION.format(
         files=", ".join(name for name in names if name) or "one file"
     )
+    if gaps:
+        text += GAPS_INSTRUCTION.format(gaps="; ".join(gaps))
+    return text
 
 
 def closing_step(
@@ -79,4 +93,10 @@ def closing_step(
     pending = getattr(getattr(tools, "selection", None), "deliverable_pending", None)
     if callable(pending) and pending():
         return None
-    return closing_instruction(receipts)
+    gaps = [
+        str(gap)
+        for tool, output in executed
+        if published(tool, output) is not None and isinstance(output, dict)
+        for gap in output.get("gaps") or ()
+    ]
+    return closing_instruction(receipts, gaps)

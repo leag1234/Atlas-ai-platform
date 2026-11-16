@@ -278,11 +278,56 @@ class DocumentRenderTests(unittest.TestCase):
                 )
 
     def test_unsupported_glyph_and_huge_heading_fail(self) -> None:
-        # A script the face does not cover is refused when laid out; an emoji
-        # is dropped, so a title made of one only is blank and refused.
+        # A script the face does not cover is refused when laid out; without
+        # an emoji font an emoji is dropped, so a title made of one only is
+        # blank and refused.
         for title in ("\u4e2d\u6587", "x" * 4000):
             content = Content(title=title, sections=self.content.sections)
             with self.assertRaises(ValueError):
                 render(content, self.root / "reject.pdf", image_root=self.root)
-        with self.assertRaises(ValueError):
-            Content(title=chr(0x1F680), sections=self.content.sections)
+        from unittest import mock
+
+        from packages.doc_render import emoji
+
+        try:
+            with mock.patch.dict(os.environ, {"ATLAS_EMOJI_FONT": ""}):
+                emoji.reset()
+                with self.assertRaises(ValueError):
+                    Content(title=chr(0x1F680), sections=self.content.sections)
+        finally:
+            emoji.reset()
+
+    def test_emoji_are_drawn_as_pictures_in_a_pdf(self) -> None:
+        # Staging 2026-11-16: a picture book asked with one emoji per word was
+        # delivered without a single emoji.
+        from packages.doc_render import emoji
+        from pypdf import PdfReader
+
+        if emoji.font_path() is None:
+            self.skipTest("no colour emoji font on this system")
+        content = Content.model_validate(
+            {
+                "title": "Picture book",
+                "sections": [
+                    {"heading": "\U0001f414 Hen", "paragraphs": ["\U0001f414", "hen"]},
+                    {
+                        "heading": "\U0001f34e Apple",
+                        "paragraphs": ["\U0001f34e", "apple"],
+                    },
+                ],
+            }
+        )
+        path = self.root / "pictures.pdf"
+        result = render(content, path, image_root=self.root)
+        self.assertEqual(result.unit, "page")
+        page = PdfReader(path).pages[0]
+        images = page["/Resources"]["/XObject"]
+        self.assertEqual(len(images), 2)  # one picture per distinct emoji
+        text = page.extract_text()
+        self.assertIn("Hen", text)
+        self.assertNotIn("\U0001f414", text)
+        for suffix in (".docx", ".pptx"):
+            other = render(
+                content, self.root / f"pictures{suffix}", image_root=self.root
+            )
+            self.assertIn("\U0001f414", "".join(other.text))

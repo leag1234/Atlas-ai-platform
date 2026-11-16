@@ -20,8 +20,11 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from pptx import Presentation
 from pptx.util import Pt
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen.canvas import Canvas
 
+from . import emoji
 from .cells import (
     PAGE_COLUMNS,
     SHEET_COLUMNS,
@@ -142,6 +145,34 @@ def build_slides(content: Content, path: Path, root: Path) -> None:
     deck.save(str(path))
 
 
+def draw_line(canvas: Canvas, x: float, y: float, line: str, size: float) -> None:
+    """A line at its baseline: text in the face, each emoji as its picture.
+
+    The picture has the emoji font's own ascent and descent around the
+    baseline, at the size of the text (emoji.py).
+    """
+    run = ""
+    for token in [*emoji.tokens(line), ""]:
+        drawn = emoji.picture(token) if token and emoji.is_emoji(token) else None
+        if drawn is None and token:
+            run += token
+            continue
+        if run:
+            canvas.drawString(x, y, run)
+            x += pdfmetrics.stringWidth(run, FONT, size)
+            run = ""
+        if drawn is not None:
+            canvas.drawImage(
+                ImageReader(BytesIO(drawn.png)),
+                x,
+                y - (drawn.height - drawn.ascent) * size,
+                width=drawn.advance * size,
+                height=drawn.height * size,
+                mask="auto",
+            )
+            x += drawn.advance * size
+
+
 def build_pdf(
     content: Content, path: Path, root: Path, geometry: Geometry | None = None
 ) -> None:
@@ -183,8 +214,12 @@ def build_pdf(
                 x += block.pad if block.table else (16 if block.bullet else 0)
                 for line_index, line in enumerate(lines):
                     leading = block.leading if block.table else block.size * 1.35
-                    canvas.drawString(
-                        x, g.height - top - block.size - 3 - line_index * leading, line
+                    draw_line(
+                        canvas,
+                        x,
+                        g.height - top - block.size - 3 - line_index * leading,
+                        line,
+                        block.size,
                     )
         canvas.showPage()
     canvas.save()
@@ -226,7 +261,11 @@ def build_document(content: Content, path: Path, root: Path) -> None:
         if index or not content.repeats_title():
             write_runs(document.add_heading("", 1), section.heading, weight=False)
         for text in section.paragraphs:
-            write_runs(document.add_paragraph(), text)
+            paragraph = document.add_paragraph()
+            write_runs(paragraph, text)
+            if emoji.pictures_only(shown(text)):
+                for run in paragraph.runs:
+                    run.font.size = DocPt(emoji.PICTURE_SIZE)
         for text in section.bullets:
             write_runs(document.add_paragraph(style="List Bullet"), text)
         for table in section.tables:
