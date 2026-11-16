@@ -67,21 +67,22 @@ SYSTEM = (
     "the conversation, which may add to it or correct it), facts that code "
     "measured on the produced file, the file's text, and sometimes a picture of "
     "its first page. Facts measured by code are true: trust them over the text. "
-    "List only what the request explicitly or clearly asks for that the file "
-    "lacks or gets wrong: requested items, pictures, emoji or images that are "
-    "missing; a number of columns, rows, items, slides or pages that differs "
-    "from the one asked; characters the file could not draw and left out when "
-    "the request needs them; placeholder or empty content; content cut off; the "
-    "wrong language. Do not judge style, wording or layout taste, do not ask "
-    "for more than the request asks, do not invent requirements. Judge "
-    "presence and counts, not choices: which picture or emoji stands for an "
-    "item is never a gap. An item that is present but imperfect (a close "
-    "picture for a word without an exact one, a phrasing you would improve) "
-    "is not a gap: list it under "
-    '"approximations", which changes nothing. Reply with JSON only: '
-    '{"gaps": ["..."], "approximations": ["..."]}, at most five short gaps in '
+    "Judge whether the file does what the person wants, as a careful person "
+    "would read the request, not only its words. List what the file lacks or "
+    "gets wrong against that intent: requested items, pictures or data that "
+    "are missing; a picture that does not show its item (an unrelated or "
+    "merely approximate picture, or an emoji or symbol standing in for a "
+    "requested picture, illustration or photo, unless the person asked for "
+    "emoji or symbols); a number of columns, rows, items, slides or pages that "
+    "differs from the one asked; characters the file could not draw and left "
+    "out when the request needs them; placeholder, invented or empty content; "
+    "content cut off; the wrong language or format. Acceptable variants are "
+    "not gaps: style, colours, layout and wording choices that still do what "
+    'was asked; list them under "variants", which changes nothing. Do not '
+    "invent requirements the person did not ask for. Reply with JSON only: "
+    '{"gaps": ["..."], "variants": ["..."]}, at most five short gaps in '
     "English, each naming what is missing or wrong and what was asked; an "
-    "empty gaps list when the file has what the request asks for."
+    "empty gaps list when the file does what the request asks."
 )
 
 REFUSAL = (
@@ -184,9 +185,21 @@ def _units(raw: bytes, suffix: str) -> int | None:
 
 
 def facts(
-    suffix: str, content: Any, raw: bytes, preview: bytes, missing: list[str]
+    suffix: str,
+    content: Any,
+    raw: bytes,
+    preview: bytes,
+    missing: list[str],
+    names: dict[str, dict[str, str]] | None = None,
+    pending: list[str] | None = None,
 ) -> dict[str, Any]:
-    """What code measures on the built file (no model involved)."""
+    """What code measures on the built file (no model involved).
+
+    names gives each picture placed (work_pictures.py) its item and the
+    verdict of its own check; pending, the items whose picture this turn
+    could not draw in its time.
+    """
+    names = names or {}
     measured: dict[str, Any] = {
         "format": suffix.lstrip("."),
         "size_bytes": len(raw),
@@ -228,20 +241,64 @@ def facts(
                     "emoji_drawn": [
                         e for text in texts + cells for e in _pictures(text)
                     ][:20],
-                    "images": len(section.images),
+                    "pictures": [
+                        picture_fact(names.get(image.removesuffix(".jpg")))
+                        for image in section.images
+                    ],
                 }
             )
         measured["title"] = shown(content.title)[:200]
         measured["sections"] = sections[:60]
         measured["emoji_drawn_in_file"] = len(_pictures(drawn_text(content)))
-        measured["images"] = sum(section["images"] for section in sections)
+        measured["pictures_placed"] = sum(
+            len(section.images) for section in content.sections
+        )
     if missing:
         measured["left_out_characters"] = missing
+    if pending:
+        measured["pictures_not_drawn_in_time"] = pending[:20]
     text = preview.decode("utf-8", errors="replace")
     measured["text_characters"] = len(text)
     if not text.strip():
         measured["empty_text"] = True
     return measured
+
+
+def picture_fact(entry: dict[str, str] | None) -> dict[str, str]:
+    """A placed picture as the check reads it: drawn for this item, and what
+    its own vision check said when it found a mismatch (a check that could
+    not run says nothing about the picture)."""
+    if entry is None:
+        return {"drawn_for": "unknown item"}
+    fact = {"drawn_for": entry.get("label", "")}
+    if entry.get("check") == "does_not_match":
+        fact["own_check"] = "does not clearly show its item"
+    return fact
+
+
+def picture_names(tools: Any) -> dict[str, dict[str, str]]:
+    """reference -> {label, check} of this conversation's pictures."""
+    from services.orchestrator import work_pictures
+
+    try:
+        return work_pictures.described(tools)
+    except OSError:
+        return {}
+
+
+def page_with_pictures(
+    content: Any, suffix: str, pictures: dict[str, bytes]
+) -> bytes | None:
+    """The first page drawn from the layout, with the pictures it places."""
+    import tempfile
+    from pathlib import Path
+
+    from packages.doc_render.preview import first_page
+
+    with tempfile.TemporaryDirectory(prefix="atlas-check-") as directory:
+        for name, data in pictures.items():
+            (Path(directory) / name).write_bytes(data)
+        return first_page(content, suffix, Path(directory))
 
 
 def _data_url(png: bytes) -> str:
@@ -321,6 +378,7 @@ async def review(
     preview: bytes,
     missing: list[str],
     *,
+    pictures: dict[str, bytes] | None = None,
     seconds: float = CHECK_SECONDS,
     complete: Any = None,
 ) -> Outcome:
@@ -351,13 +409,19 @@ async def review(
         return outcome
     tools.deliverable_checks = count + 1
     strict = bool(getattr(model, "strict", False))
-    measured = facts(suffix, content, raw, preview, missing)
+    listed = getattr(tools, "pictures_pending", None)
+    pending = [
+        label
+        for label in (listed if isinstance(listed, list) else [])
+        if isinstance(label, str)
+    ]
+    measured = facts(
+        suffix, content, raw, preview, missing, picture_names(tools), pending
+    )
     page: bytes | None = None
     if content is not None and not strict:
         try:
-            from packages.doc_render.preview import first_page
-
-            page = first_page(content, suffix)
+            page = page_with_pictures(content, suffix, pictures or {})
         except Exception:  # noqa: BLE001 - the text and facts are still checked
             page = None
     earlier = [
@@ -452,7 +516,15 @@ def decide(tools: Any, outcome: Outcome) -> str:
     """
     if not outcome.gaps:
         return ""
-    if outcome.checked and getattr(tools, "deliverable_refused", True) is False:
+    # Pictures this turn had no time to draw cannot be repaired in it: the
+    # file is published and the answer says what is missing.
+    pending = getattr(tools, "pictures_pending", None)
+    repairable = not (isinstance(pending, list) and pending)
+    if (
+        outcome.checked
+        and repairable
+        and getattr(tools, "deliverable_refused", True) is False
+    ):
         tools.deliverable_refused = True
         raise ValueError(REFUSAL.format(gaps=joined(outcome.gaps)))
     return NOTE.format(gaps=joined(outcome.gaps))

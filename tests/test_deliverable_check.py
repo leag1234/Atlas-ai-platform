@@ -10,6 +10,7 @@ privacy, workbooks): tests/fixtures/deliverable_check_replies.json.
 from __future__ import annotations
 
 from decimal import Decimal
+import io
 import json
 import os
 from pathlib import Path
@@ -33,7 +34,7 @@ from services.orchestrator.work_closing import closing_step
 RECORDED = json.loads(
     (Path(__file__).parent / "fixtures/deliverable_check_replies.json").read_text()
 )["cases"]
-WITH_GAPS = {"imagier_without_pictures", "docx_three_of_five_columns"}
+WITH_GAPS = {"pictures_asked_emoji_given", "table_three_of_five_columns"}
 
 
 def content_of(case: dict[str, Any]) -> Content:
@@ -41,12 +42,33 @@ def content_of(case: dict[str, Any]) -> Content:
     return Content.model_validate(value["content"])
 
 
-def built(case: dict[str, Any]) -> tuple[Content, Any]:
+def jpeg(seed: int) -> bytes:
+    from PIL import Image
+
+    output = io.BytesIO()
+    Image.new("RGB", (96, 96), (seed * 40 % 256, 120, 200)).save(output, "JPEG")
+    return output.getvalue()
+
+
+def built(case: dict[str, Any]) -> tuple[Content, Any, dict[str, bytes]]:
+    """The case's file; its pictures are stand-ins (the replies are recorded)."""
     content = content_of(case)
+    value = content.model_dump(mode="json")
+    pictures: dict[str, bytes] = {}
+    for section in value["sections"]:
+        section["images"] = [image + ".jpg" for image in section["images"]]
+        for image in section["images"]:
+            pictures[image] = jpeg(len(pictures))
+    content = Content.model_validate(value)
     document = build_project_document(
-        content, case["suffix"], [], max_bytes=16 * 1024 * 1024, timeout=30
+        content,
+        case["suffix"],
+        [],
+        max_bytes=16 * 1024 * 1024,
+        timeout=30,
+        pictures=pictures,
     )
-    return content, document
+    return content, document, pictures
 
 
 def turn_tools(request: str) -> SimpleNamespace:
@@ -68,8 +90,8 @@ def replay(*replies: dict[str, Any]) -> AsyncMock:
 
 class FactsTests(unittest.TestCase):
     def test_a_table_is_measured_with_its_columns_and_rows(self) -> None:
-        case = RECORDED["docx_three_of_five_columns"]
-        content, document = built(case)
+        case = RECORDED["table_three_of_five_columns"]
+        content, document, pictures = built(case)
         facts = deliverable_check.facts(
             ".docx", content, document.content, document.preview, []
         )
@@ -82,12 +104,12 @@ class FactsTests(unittest.TestCase):
     def test_drawn_emoji_and_pages_are_counted(self) -> None:
         if emoji.font_path() is None:
             self.skipTest("no colour emoji font on this system")
-        content, document = built(RECORDED["imagier_with_pictures"])
+        content, document, _ = built(RECORDED["pictures_asked_emoji_given"])
         facts = deliverable_check.facts(
             ".pdf", content, document.content, document.preview, []
         )
-        self.assertEqual(facts["emoji_drawn_in_file"], 12)
-        self.assertGreaterEqual(facts["pages"], 2)
+        self.assertEqual(facts["emoji_drawn_in_file"], 6)
+        self.assertGreaterEqual(facts["pages"], 1)
         # The check reads what was drawn: the emoji are in its text although
         # the PDF's text layer has none (they are pictures).
         self.assertIn("\U0001f414", deliverable_check.drawn_text(content))
@@ -115,7 +137,7 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
         for name, case in RECORDED.items():
             for route in ("page", "text"):
                 with self.subTest(case=name, route=route):
-                    content, document = built(case)
+                    content, document, pictures = built(case)
                     tools = turn_tools(case["request"])
                     complete = replay(case["replies"][route])
                     page = (
@@ -132,7 +154,8 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
                             content,
                             document.content,
                             document.preview,
-                            case["left_out"],
+                            [],
+                            pictures=pictures,
                             complete=complete,
                         )
                     self.assertTrue(outcome.checked)
@@ -161,8 +184,8 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(tools.deliverable_checks, 1)
 
     async def test_no_call_without_the_turn_model_or_past_the_bound(self) -> None:
-        case = RECORDED["docx_three_of_five_columns"]
-        content, document = built(case)
+        case = RECORDED["table_three_of_five_columns"]
+        content, document, pictures = built(case)
         complete = replay(case["replies"]["page"])
         for tools in (
             SimpleNamespace(request_text=case["request"]),
@@ -195,8 +218,8 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
         complete.assert_not_awaited()
 
     async def test_a_failed_call_keeps_the_measured_gaps(self) -> None:
-        case = RECORDED["imagier_without_pictures"]
-        content, document = built(case)
+        case = RECORDED["pictures_asked_emoji_given"]
+        content, document, pictures = built(case)
         tools = turn_tools(case["request"])
         outcome = await deliverable_check.review(
             tools,
@@ -214,6 +237,25 @@ class ReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("must say so", deliverable_check.decide(tools, outcome))
         for reply in ("not json", '{"gaps": "none"}'):
             self.assertIsNone(deliverable_check.gaps_of(reply))
+
+
+class PendingPictureTests(unittest.TestCase):
+    def test_pictures_the_turn_could_not_draw_are_said_not_refused(self) -> None:
+        # No repair is possible in this turn: the file is published and the
+        # answer says what is missing (work_pictures.py names the items).
+        tools = dict_tools(
+            turn_tools("a document with one picture per item"),
+            pictures_pending=["item 4", "item 5"],
+        )
+        outcome = deliverable_check.Outcome(gaps=["two pictures missing"], checked=True)
+        self.assertIn("must say so", deliverable_check.decide(tools, outcome))
+        self.assertFalse(tools.deliverable_refused)
+        case = RECORDED["table_five_columns"]
+        content, document, _ = built(case)
+        facts = deliverable_check.facts(
+            ".docx", content, document.content, document.preview, [], {}, ["item 4"]
+        )
+        self.assertEqual(facts["pictures_not_drawn_in_time"], ["item 4"])
 
 
 def dict_tools(tools: SimpleNamespace, **values: Any) -> SimpleNamespace:
@@ -271,8 +313,8 @@ class RepairFlowTests(unittest.IsolatedAsyncioTestCase):
                 self.written = write.await_count
 
     async def test_gaps_are_refused_once_then_the_repair_is_published(self) -> None:
-        short = RECORDED["docx_three_of_five_columns"]
-        full = RECORDED["docx_five_columns"]
+        short = RECORDED["table_three_of_five_columns"]
+        full = RECORDED["table_five_columns"]
         tools = publishing_tools(short["request"])
         replies = replay(short["replies"]["page"], full["replies"]["page"])
         with self.assertRaisesRegex(ValueError, "deliverable_check: .*3 columns"):
@@ -287,7 +329,7 @@ class RepairFlowTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_a_gap_left_after_the_repair_is_said_in_the_answer(self) -> None:
-        short = RECORDED["docx_three_of_five_columns"]
+        short = RECORDED["table_three_of_five_columns"]
         tools = publishing_tools(short["request"])
         replies = replay(short["replies"]["page"], short["replies"]["text"])
         with self.assertRaises(ValueError):

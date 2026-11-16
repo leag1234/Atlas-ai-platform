@@ -873,6 +873,7 @@ async def process_work(
     tools.earlier_requests = [
         message.text for message in request.messages[:-1] if message.role == "user"
     ]
+    tools.picture_scope = f"{subject}|{request.conversation_id}"
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,

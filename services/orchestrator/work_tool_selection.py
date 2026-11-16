@@ -213,6 +213,12 @@ class WorkToolSelection:
                 "machine_connect",
                 "remote_write_file",
             )
+        from services.orchestrator.work_pictures import enabled as pictures_enabled
+
+        if pictures_enabled():
+            # A document that shows pictures draws them first (work_pictures.py).
+            for name in ("documents", "presentations"):
+                self.groups[name] = (*self.groups[name], "make_pictures")
         self.remote_enabled = group == "remote"
         # Web tools join only when the Work turn has web access (never in strict privacy).
         self.research_enabled = group == "research"

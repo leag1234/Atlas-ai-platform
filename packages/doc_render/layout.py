@@ -158,6 +158,27 @@ def image_path(root: Path, value: str) -> Path:
     return path
 
 
+def picture_opening(
+    section: object, image_root: Path, g: Geometry, heading: float
+) -> float:
+    """Height of a section up to its first picture (0 without a picture or
+    with a table, which keeps the former breaks)."""
+    from .schema import Section
+
+    if not isinstance(section, Section) or not section.images or section.tables:
+        return 0.0
+    height = heading
+    for text in section.paragraphs:
+        plain = shown(text)
+        size = emoji.PICTURE_SIZE if emoji.pictures_only(plain) else 12
+        height += text_block(plain, size, body=g.body).height
+    for text in section.bullets:
+        height += text_block(shown(text), bullet=True, body=g.body).height
+    with Image.open(image_path(image_root, section.images[0])) as image:
+        scale = min(g.body / image.width, g.image_height / image.height)
+        return height + image.height * scale + 8
+
+
 def pages(
     content: Content,
     image_root: Path,
@@ -185,8 +206,17 @@ def pages(
                 raise ValueError("title_exceeds_layout")
             current.append(Placed(title, top))
             top += title.height
-        elif not g.flow or g.height - g.margin - top < heading.height + 2 * 16 + 8:
-            # A slide per section; on a report page, a heading never ends a page.
+        elif (
+            not g.flow
+            or g.height - g.margin - top < heading.height + 2 * 16 + 8
+            or g.height - g.margin - top
+            < picture_opening(section, image_root, g, heading.height)
+            <= g.height - 2 * g.margin
+        ):
+            # A slide per section; on a report page, a heading never ends a
+            # page, and a section's text before its first picture stays on
+            # the page of that picture (a picture book put a word at the foot
+            # of a page and its picture on the next, 2026-11-16).
             result.append(tuple(current))
             current, top = [], g.margin
         else:
