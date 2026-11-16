@@ -285,7 +285,10 @@ Retrieval owns metadata and blob publication; the orchestrator never opens its d
   the status line, updated live, and the final answer repeats it as a checked list. For Work,
   a short call on the fast profile proposes the steps, each with a type from a closed list
   (code, install, test, document, research, deliver), while the workspace is prepared; an app
-  has a plan the code defines (write, check, hand over). The code validates the plan (count,
+  has a plan the code defines (write, check, hand over). When the model's plan is late (5 s) or invalid, the plan of the path
+  (code to run, file) is shown, and a valid model plan arriving before any step started replaces it.
+  Tool calls move the plan only to the very next step, and only until the model reports its own
+  progress. The code validates the plan (count,
   length, plain words, language), tracks the states, and refuses "done" for a step without a
   tool call since the previous step was done (the model is told why); delivery is only marked
   done by the code at the end of the turn. The model reports progress with `update_plan`

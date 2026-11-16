@@ -337,6 +337,110 @@ class PictureStepTests(Isolated):
             work_plan.current.reset(token)
 
 
+class FollowUpTests(Isolated):
+    """Staging acceptance of 2026-11-16 (plan battery, run -96)."""
+
+    def plan(self, kinds: list[str]) -> ChatPlan:
+        plan = ChatPlan("en", "atlas-test", route="work-run")
+        texts = [
+            "Write the sort function",
+            "Write the tests",
+            "Run the tests",
+            "Hand you the code",
+        ]
+        plan.propose(list(zip(texts, kinds)), source="model")
+        return plan
+
+    def test_a_command_while_writing_code_never_skips_a_step(self) -> None:
+        # fr-js-tests-en-ui: a command during "write the function" jumped to
+        # "run the tests", then the model's own report sent it back.
+        plan = self.plan(["code", "code", "test", "deliver"])
+        plan.tool("write_file", "completed")
+        plan.tool("bash", "completed")
+        self.assertEqual(
+            [s.status for s in plan.steps],
+            ["in_progress", "pending", "pending", "pending"],
+        )
+
+    def test_the_model_report_drives_the_plan_afterwards(self) -> None:
+        plan = self.plan(["code", "test", "test", "deliver"])
+        plan.tool("write_file", "completed")
+        plan.update(
+            [{"text": "a", "status": "in_progress"}]
+            + [{"text": "b", "status": "pending"}] * 3
+        )
+        plan.tool("bash", "completed")
+        self.assertEqual(plan.steps[0].status, "in_progress")
+        self.assertEqual(plan.steps[0].calls, 2)
+
+    def test_script_requests_reach_work_without_the_router(self) -> None:
+        # fr-script-run: the router timed out and the lexical gate missed
+        # "et l-execute" (French pronoun first), so the chat answered "I cannot run code".
+        from packages.work_intent import work_reason
+
+        for text in (
+            "Peux-tu écrire un petit programme en Python qui génère 1000 nombres "
+            "aléatoires, calcule leur moyenne et l'exécuter pour me montrer le résultat ?",
+            "écris un script qui renomme mes fichiers puis le lancer sur un exemple",
+            "fais un programme python qui compte les mots et l’exécuter",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(work_reason(text), "run")
+        self.assertIsNone(work_reason("comment exécuter un script python ?"))
+
+
+class FallbackPlanTests(Isolated, unittest.IsolatedAsyncioTestCase):
+    async def run_planner(self, delay: float, text: str) -> tuple[ChatPlan, list[str]]:
+        import asyncio
+
+        plan = ChatPlan("fr", "atlas-test", route="work-run")
+        seen: list[str] = []
+
+        async def slow(payload: Any, seconds: float) -> dict[str, Any]:
+            await asyncio.sleep(delay)
+            seen.append(plan.source)
+            return {"text": text, "cost_eur": "0"}
+
+        with (
+            patch("services.orchestrator.request_router._gateway", slow),
+            patch.object(work_plan, "FALLBACK_SECONDS", 0.05),
+            patch.object(work_plan, "TIMEOUT_SECONDS", 0.5),
+        ):
+            await work_plan.propose(plan, "écris un script et lance-le", [])
+        return plan, seen
+
+    async def test_a_late_model_plan_replaces_the_path_plan(self) -> None:
+        steps = [
+            {"text": "Écrire le script de tri", "type": "code"},
+            {"text": "Lancer le script sur des exemples", "type": "test"},
+            {"text": "Vous donner le résultat", "type": "deliver"},
+        ]
+        plan, seen = await self.run_planner(0.2, json.dumps({"steps": steps}))
+        self.assertEqual(seen, ["code"])
+        self.assertEqual(plan.source, "model")
+        self.assertEqual(plan.steps[0].text, "Écrire le script de tri")
+
+    async def test_a_timeout_leaves_the_path_plan(self) -> None:
+        plan, _ = await self.run_planner(1.0, "{}")
+        self.assertEqual(plan.source, "code")
+        self.assertEqual(
+            [s.text for s in plan.steps],
+            [
+                "Écrire le programme",
+                "Le lancer et vérifier le résultat",
+                "Vous donner le résultat",
+            ],
+        )
+
+    async def test_an_invalid_plan_shows_the_path_plan_at_once(self) -> None:
+        plan, _ = await self.run_planner(0.0, '{"steps": []}')
+        self.assertEqual(plan.source, "code")
+        for language in PLAN_LABELS:
+            for route in ("work-run", "work-file"):
+                steps = work_plan.path_steps(language, route)
+                validate([{"text": t, "type": k} for t, k in steps], language)
+
+
 class DisplayTests(unittest.TestCase):
     def test_ranges(self) -> None:
         self.assertEqual(duration_range("en", 130, 230), "2 to 4 min")
@@ -395,9 +499,11 @@ class ProposalTests(Isolated):
         plan, _ = asyncio.run(
             self._propose('{"steps": [{"text": "All", "type": "code"}]}')
         )
-        self.assertFalse(plan.shown)
+        # An invalid plan is never shown: the plan of the path is.
+        self.assertEqual(plan.source, "code")
         plan, _ = asyncio.run(self._propose("not json"))
-        self.assertFalse(plan.shown)
+        self.assertEqual(plan.source, "code")
+        self.assertEqual(plan.steps[0].text, "Write the program")
 
     def test_the_request_is_data(self) -> None:
         messages = work_plan.messages(
