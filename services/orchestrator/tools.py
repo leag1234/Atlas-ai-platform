@@ -10,6 +10,9 @@ import logging
 import os
 import re
 import sys
+from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -24,7 +27,7 @@ from packages.validation import describe_validation
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from services.orchestrator import mcp_client, search_freshness
+from services.orchestrator import mcp_client, search_freshness, search_guard
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.calculator import calculate
@@ -45,26 +48,90 @@ from services.orchestrator.web import (
 class SearchQuotaError(ValueError):
     """Provider quota response without retaining credentials or response bodies."""
 
-    def __init__(self, status: int, code: str = "quota_exceeded") -> None:
+    def __init__(
+        self, status: int, code: str = "quota_exceeded", retry_after: float = 0
+    ) -> None:
         self.status = status
+        self.retry_after = retry_after
         super().__init__(code)
 
 
 SEARCH_PROVIDERS = frozenset({"serpapi", "tavily", "searxng"})
 SHORT_COOLDOWN_SECONDS = 5
-# No time is kept for a provider that refused for its quota this recently:
-# SearXNG then has the whole search budget to wait for an engine slot
-# (staging 2026-11-15: SearXNG got 8 of 15 s while Tavily and SerpAPI were
-# exhausted, and searches failed with quota_exceeded).
-EXHAUSTED_SECONDS = 300
-_EXHAUSTED: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, float]] = (
+# Circuit breaker per provider. After a quota or rate refusal the provider is
+# not asked again for its Retry-After window, or for these defaults: a used-up
+# quota is checked again hourly (the owner may add credits), a rate limit
+# after a minute. While open, no time is kept for the provider, so SearXNG has
+# the whole search budget (staging 2026-11-15), and its refusal is still the
+# reported cause (D5). Until 2026-11-16 an exhausted provider was asked again
+# on every search.
+QUOTA_BREAK_SECONDS = 3600
+RATE_BREAK_SECONDS = 60
+MAX_BREAK_SECONDS = 86400
+
+
+@dataclass(frozen=True)
+class Breaker:
+    until: float
+    code: str
+    status: int  # Provider HTTP status; 0 for a local reservation limit.
+    used: int = 0
+    limit: int = 0
+
+    def refusal(self) -> "SearchQuotaError | LimitError":
+        if self.status:
+            return SearchQuotaError(self.status, self.code)
+        return LimitError(self.code, self.used, self.limit, "monthly search credits")
+
+
+_BREAKERS: WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, Breaker]] = (
     WeakKeyDictionary()
+)
+# Searches of paid providers in flight, shared by one serving event loop.
+_FLIGHTS: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, dict[str, "asyncio.Task[Message]"]
+] = WeakKeyDictionary()
+# One logical search counts once against the caps, whatever the chain asks.
+_ADMITTED: ContextVar[list[bool] | None] = ContextVar(
+    "atlas_search_admitted", default=None
 )
 
 
-def exhausted_providers() -> dict[str, float]:
-    """Quota refusal expiry per provider, shared by one serving event loop."""
-    return _EXHAUSTED.setdefault(asyncio.get_running_loop(), {})
+def provider_breakers() -> dict[str, Breaker]:
+    """Open circuit breakers per provider, shared by one serving event loop."""
+    return _BREAKERS.setdefault(asyncio.get_running_loop(), {})
+
+
+def break_seconds(code: str, retry_after: float = 0) -> float:
+    if retry_after > 0:
+        return min(retry_after, MAX_BREAK_SECONDS)
+    return RATE_BREAK_SECONDS if code == "search_rate_limited" else QUOTA_BREAK_SECONDS
+
+
+async def shared_flight(
+    key: str,
+    work: Callable[[], Awaitable[Message]],
+    timeout: float,
+    start: Callable[[], None],
+) -> Message:
+    """Identical paid searches arriving together share one upstream call.
+
+    ``start`` (caps and credit reservations) runs in the caller that starts
+    the call, so a refusal of that caller never reaches the others. A
+    cancelled waiter does not cancel the others; the call keeps its own
+    provider timeout."""
+    flights = _FLIGHTS.setdefault(asyncio.get_running_loop(), {})
+    if key not in flights:
+        start()
+        task = asyncio.ensure_future(work())
+        flights[key] = task
+        task.add_done_callback(lambda done: flights.pop(key, None))
+    else:
+        logging.getLogger(__name__).warning(
+            "search_cache %s", json.dumps({"result": "shared"})
+        )
+    async with asyncio.timeout(max(0.001, timeout)):
+        return await asyncio.shield(flights[key])
 
 
 def search_providers(value: str | None = None) -> tuple[str, ...]:
@@ -107,6 +174,21 @@ def paid_search_ttl(request: "Search") -> int:
     return search_freshness.cache_ttl(
         bound=search_freshness.time_bound(request.query, request.news),
         degraded=False,
+    )
+
+
+def paid_search_key(cache: Cache, tag: str, request: "Search") -> str:
+    """Cache and flight identity of a paid search: near-identical queries of
+    one language (case, accents, punctuation, stop words) share the entry,
+    as SearXNG's do (search_freshness.normalized_query)."""
+    return cache.key(
+        [
+            tag,
+            search_freshness.normalized_query(request.query, request.lang),
+            request.lang,
+            request.n,
+            request.news,
+        ]
     )
 
 
@@ -178,10 +260,38 @@ class Runtime:
         self.question = question
         self.connectors: Selection | None = None
         self._last_search_attempts: list[Message] = []
+        # Breakers this search opened: provider -> seconds (search_chain log).
+        self._last_search_breakers: dict[str, int] = {}
         self.daily_lang = "en"
         self.search_language: str | None = None
         # The person's own zone: "here" and "today" for the date_time tool.
         self.home_zone = DEFAULT_ZONE
+        # Who searches, for the search caps and test traffic (search_guard):
+        # the request's other identities and its interface conversation.
+        self.search_identities: tuple[str, ...] = ()
+        self.search_conversation = ""
+
+    def search_scope(self) -> search_guard.Scope:
+        return search_guard.scope(
+            str(getattr(self, "daily_user", "unknown")),
+            self.search_conversation,
+            self.search_identities,
+        )
+
+    def _admit_upstream(self) -> None:
+        """Count this logical search against its caps before upstream work."""
+        admitted = _ADMITTED.get()
+        if admitted is not None and admitted[0]:
+            return
+        search_guard.admit(
+            getattr(self, "daily_ledger", None), self.search_scope(), self.daily_lang
+        )
+        if admitted is not None:
+            admitted[0] = True
+
+    def _admitted_reserve(self, provider: str) -> None:
+        self._admit_upstream()
+        self._reserve_search(provider)
 
     def estimate(self, call: Call) -> Reservation:
         provider = next(
@@ -207,14 +317,47 @@ class Runtime:
         require_shared("web_search")  # strict privacy: no web search (packages.privacy)
         started = asyncio.get_running_loop().time()
         self._last_search_attempts = []
+        self._last_search_breakers = {}
         attempts: object = None
+        scope = self.search_scope()
+        token = _ADMITTED.set([False])
         try:
+            replay = search_guard.replay(scope.test)
+            if replay is not None:
+                found = replay.lookup(request.query, request.lang, request.news)
+                if found is not None:
+                    attempts = [{"provider": "replay", "outcome": "ok"}]
+                    return found
+                if not replay.live_on_miss:
+                    attempts = [{"provider": "replay", "outcome": "replay_miss"}]
+                    raise ValueError("search_replay_miss")
             result = await self._search(request, timeout)
             attempts = result.get("attempts")
+            if scope.test:
+                try:
+                    search_guard.record(
+                        request.query, request.lang, request.news, result
+                    )
+                except OSError:
+                    logging.getLogger(__name__).warning("search_record_failed")
             return result
         finally:
+            _ADMITTED.reset(token)
             attempts = attempts or self._last_search_attempts
-            if isinstance(attempts, list) and len(attempts) > 1:
+            if isinstance(attempts, list) and (
+                len(attempts) > 1
+                or scope.test
+                or self._last_search_breakers
+                or any(
+                    isinstance(attempt, dict)
+                    and (
+                        "breaker" in attempt
+                        or attempt.get("provider") == "replay"
+                        or str(attempt.get("outcome", "")).endswith("daily_search")
+                    )
+                    for attempt in attempts
+                )
+            ):
                 # Provider names and outcome codes only, never the query.
                 logging.getLogger(__name__).warning(
                     json.dumps(
@@ -224,6 +367,12 @@ class Runtime:
                             "seconds": round(
                                 asyncio.get_running_loop().time() - started, 2
                             ),
+                            **({"test": True} if scope.test else {}),
+                            **(
+                                {"breakers_opened": self._last_search_breakers}
+                                if self._last_search_breakers
+                                else {}
+                            ),
                         }
                     )
                 )
@@ -231,6 +380,9 @@ class Runtime:
     async def _search(self, request: Search, timeout: float) -> Message:
         require_shared("web_search")  # strict privacy: no web search (packages.privacy)
         providers = search_providers()
+        if self.search_scope().test:
+            # Test traffic leaves the metered providers to real users.
+            providers = search_guard.test_providers(providers)
         available = tuple(
             provider
             for provider in providers
@@ -250,21 +402,57 @@ class Runtime:
         last_searxng_result: Message | None = None
         clock = asyncio.get_running_loop().time
         deadline = clock() + timeout
-        exhausted = exhausted_providers()
+        breakers = provider_breakers()
+
+        def open_breaker(provider: str) -> Breaker | None:
+            breaker = breakers.get(provider)
+            if breaker is not None and breaker.until <= clock():
+                breakers.pop(provider, None)
+                return None
+            return breaker
 
         def can_serve(provider: str) -> bool:
-            # A provider still runs when its turn comes (its refusal is the
-            # reported cause, D5); this only decides whether time is kept.
-            return exhausted.get(provider, 0.0) <= clock() and (
+            # Decides whether time is kept for a later provider.
+            return open_breaker(provider) is None and (
                 self.cache.search_credits_left(
                     provider, credits=2 if provider == "tavily" else 1
                 )
             )
 
+        def trip(provider: str, exc: SearchQuotaError | LimitError) -> None:
+            if isinstance(exc, SearchQuotaError):
+                seconds = break_seconds(str(exc), exc.retry_after)
+                breaker = Breaker(clock() + seconds, str(exc), exc.status)
+            else:
+                seconds = break_seconds(exc.code)
+                breaker = Breaker(
+                    clock() + seconds, exc.code, 0, exc.measured, exc.limit
+                )
+            breakers[provider] = breaker
+            self._last_search_breakers[provider] = round(seconds)
+
         for index, provider in enumerate(available):
             remaining = deadline - clock()
             if remaining <= 0:
                 break
+            breaker = open_breaker(provider)
+            if breaker is not None:
+                # Skipped until its window ends; its refusal stays the
+                # reported cause when no other provider serves (D5).
+                attempts.append(
+                    {
+                        "provider": provider,
+                        "outcome": breaker.code,
+                        "breaker": "open",
+                        "retry_in": round(breaker.until - clock()),
+                    }
+                )
+                refusal = breaker.refusal()
+                if isinstance(refusal, SearchQuotaError):
+                    last_quota = refusal
+                else:
+                    last_limit = refusal
+                continue
             # A later provider keeps enough time to answer: a paid provider takes 3
             # to 5 s, while slow SearXNG engines used to take all but 2 s of the
             # budget and the whole turn failed on the timeout (staging 2026-11-12).
@@ -305,6 +493,7 @@ class Runtime:
                 }:
                     continue
                 self._last_search_provider = provider
+                self._last_search_attempts = attempts
                 # Record attempts only when a fallback happened; a first-provider
                 # success keeps the model-visible tool output unchanged.
                 return {**result, "attempts": attempts} if len(attempts) > 1 else result
@@ -314,8 +503,13 @@ class Runtime:
                 # provider served (D5: never as an outage).
                 last_quota = exc
                 attempts.append({"provider": provider, "outcome": str(exc)})
-                if str(exc) == "quota_exceeded":
-                    exhausted[provider] = clock() + EXHAUSTED_SECONDS
+                trip(provider, exc)
+            except search_guard.SearchCapRefusal as exc:
+                # A cap of this person, conversation or test traffic: no other
+                # provider may answer either.
+                attempts.append({"provider": provider, "outcome": exc.category})
+                self._last_search_attempts = attempts
+                raise
             except BudgetRefusal as exc:
                 # The allowance of this provider is used up, not the search
                 # itself: the next provider may still answer. Stopping here
@@ -331,7 +525,7 @@ class Runtime:
                     # The local monthly reservation of this provider is full:
                     # like its own quota, the next provider may still answer.
                     last_limit = exc
-                    exhausted[provider] = clock() + EXHAUSTED_SECONDS
+                    trip(provider, exc)
                     continue
                 self._last_search_attempts = attempts
                 raise
@@ -363,11 +557,22 @@ class Runtime:
         self.cache.reserve_search(provider, credits=2 if provider == "tavily" else 1)
 
     async def serpapi(self, request: Search, timeout: float) -> Message:
-        key = self.cache.key(["serpapi-search-v1", 4096, request.model_dump()])
+        key = paid_search_key(self.cache, "serpapi-search-v2", request)
         cached = self.cache.get(key)
         if cached is not None:
             return cached
-        self._reserve_search("serpapi")
+        return await shared_flight(
+            key,
+            lambda: self._serpapi_upstream(request, timeout, key),
+            timeout,
+            lambda: self._admitted_reserve("serpapi"),
+        )
+
+    async def _serpapi_upstream(
+        self, request: Search, timeout: float, key: str
+    ) -> Message:
+        from services.orchestrator.searxng import retry_after
+
         country, domain = {
             "fr": ("fr", "google.fr"),
             "de": ("de", "google.de"),
@@ -412,7 +617,11 @@ class Runtime:
                         if "run out of searches" in error
                         else "search_rate_limited"
                     )
-                    raise SearchQuotaError(response.status, code)
+                    raise SearchQuotaError(
+                        response.status,
+                        code,
+                        retry_after(response.headers.get("Retry-After")),
+                    )
         if not isinstance(data, dict) or data.get("error"):
             raise ValueError("search_unavailable")
         results = data.get("news_results" if request.news else "organic_results", [])
@@ -454,12 +663,11 @@ class Runtime:
             request.n,
             request.news,
             timeout,
+            self._admit_upstream,
         )
 
     async def tavily(self, request: Search, timeout: float) -> Message:
-        key = self.cache.key(
-            ["tavily-advanced-contextual-excerpts", request.model_dump()]
-        )
+        key = paid_search_key(self.cache, "tavily-advanced-contextual-v2", request)
         cached = self.cache.get(key)
         if cached is not None:
             return cached
@@ -474,7 +682,26 @@ class Runtime:
             validate_url("https://" + domain)
         if not query:
             raise ValueError("invalid_search_query")
-        self._reserve_search("tavily")
+        return await shared_flight(
+            key,
+            lambda: self._tavily_upstream(
+                request, timeout, key, credential, query, domains
+            ),
+            timeout,
+            lambda: self._admitted_reserve("tavily"),
+        )
+
+    async def _tavily_upstream(
+        self,
+        request: Search,
+        timeout: float,
+        key: str,
+        credential: str,
+        query: str,
+        domains: list[str],
+    ) -> Message:
+        from services.orchestrator.searxng import retry_after
+
         async with aiohttp.ClientSession(
             timeout=http_timeout(timeout, SEARCH_TIMEOUT), trust_env=False
         ) as session:
@@ -491,7 +718,10 @@ class Runtime:
                 allow_redirects=False,
             ) as response:
                 if response.status in (429, 432):
-                    raise SearchQuotaError(response.status)
+                    raise SearchQuotaError(
+                        response.status,
+                        retry_after=retry_after(response.headers.get("Retry-After")),
+                    )
                 if response.status != 200:
                     raise ValueError("search_unavailable")
                 body = bytearray()
@@ -669,7 +899,7 @@ class Runtime:
                             visual,
                             self.web,
                             self.cache,
-                            self._reserve_search,
+                            self._admitted_reserve,
                             search_providers()[0],
                             timeout,
                             self.daily_lang,

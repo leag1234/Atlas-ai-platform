@@ -431,11 +431,10 @@ class ChatTools(Runtime):
             try:
                 output = await super().execute(call, timeout)
             except BudgetRefusal as exc:
-                period = "this month" if "monthly" in exc.category else "today"
-                return {
-                    "error": "daily_search_limit",
-                    "message": f"search limit reached {period} ({exc.used} of {exc.limit})",
-                }
+                from services.orchestrator.search_guard import refusal_text
+
+                # A limit stays a limit for the model and the user (D5).
+                return {"error": "daily_search_limit", "message": refusal_text(exc)}
             data = output.get("data")
             if call.name in {"web_images", "make_qr"} and isinstance(data, dict):
                 images = data.get("images", [data] if call.name == "make_qr" else [])
@@ -1407,6 +1406,8 @@ async def _process(
         tools = ChatTools(item, request.user_text, allow_image=False)
         tools.daily_ledger = getattr(request, "daily_ledger", None)
         tools.daily_user = getattr(request, "daily_user", "unknown")
+        tools.search_identities = getattr(request, "search_identities", ())
+        tools.search_conversation = getattr(request, "native_chat_id", "")
         tools.daily_lang = request.lang
         await lookup(request, item, tools, name)
         return
@@ -1857,6 +1858,8 @@ async def _process(
     )
     tools.daily_ledger = getattr(request, "daily_ledger", None)
     tools.daily_user = getattr(request, "daily_user", "unknown")
+    tools.search_identities = getattr(request, "search_identities", ())
+    tools.search_conversation = getattr(request, "native_chat_id", "")
     tools.daily_lang = request.lang
     if request.ui_timezone != "UTC":
         tools.home_zone = request.ui_timezone

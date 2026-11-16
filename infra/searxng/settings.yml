@@ -22,14 +22,18 @@ search:
   autocomplete: ""
   ban_time_on_fail: 60
   max_ban_time_on_fail: 3600
-  # Short sidecar cooldowns; the client owns the three-block quarantine.
+  # SearXNG's default suspensions
+  # (https://docs.searxng.org/admin/settings/settings_search.html). An engine
+  # that refused this server is not asked again before the block can lift:
+  # 60 s suspensions asked blocking engines again every minute and the blocks
+  # lasted (2026-11-16). The client waits as long (searxng.SUSPENDED_SECONDS).
   suspended_times:
-    SearxEngineAccessDenied: 60
-    SearxEngineCaptcha: 60
-    SearxEngineTooManyRequests: 60
-    cf_SearxEngineCaptcha: 60
-    cf_SearxEngineAccessDenied: 60
-    recaptcha_SearxEngineCaptcha: 60
+    SearxEngineAccessDenied: 86400
+    SearxEngineCaptcha: 86400
+    SearxEngineTooManyRequests: 3600
+    cf_SearxEngineCaptcha: 1296000
+    cf_SearxEngineAccessDenied: 86400
+    recaptcha_SearxEngineCaptcha: 604800
   formats:
     - html
     - json
