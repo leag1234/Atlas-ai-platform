@@ -65,7 +65,7 @@
     loadLocationStyle();
     const id = await locationIdentity();
     const french = locationFrench();
-    const words = french ? ['Partager votre position approximative ?', 'Cette fois seulement', 'Toujours partager', 'Refuser', 'Indiquez un lieu (par exemple près de la place Bellecour)', 'Utiliser ce lieu', 'Annuler', 'Seule la permission est mémorisée. Révocable dans les paramètres. La position approximative est utilisée pour cette demande uniquement.'] : ['Share your approximate location?', 'Share this time only', 'Always share', 'Refuse', 'Enter a place (for example near Bellecour square)', 'Use this place', 'Cancel', 'Only permission is remembered. Revoke it in settings. Approximate location is used for this request only.'];
+    const words = french ? ['Partager votre position approximative ?', 'Cette fois seulement', 'Toujours partager', 'Refuser', 'Indiquez un lieu (par exemple près de la place Bellecour)', 'Utiliser ce lieu', 'Annuler', 'Seule la permission est mémorisée. Révocable dans les paramètres. La position approximative sert à cette conversation pendant une heure au plus, sans être enregistrée.'] : ['Share your approximate location?', 'Share this time only', 'Always share', 'Refuse', 'Enter a place (for example near Bellecour square)', 'Use this place', 'Cancel', 'Only permission is remembered. Revoke it in settings. Approximate location is used for this conversation for up to one hour and is not stored.'];
     // Why no position came, shown above the place field and sent to Atlas, which then says it
     // precisely instead of "cannot access your location" (owner report 2026-11-15).
     const failures = french
@@ -131,6 +131,11 @@
   const LOCATION_REQUEST = '#atlas-location-request';
   let pendingLocation = null, lastChatSend = 0, lastSendLocated = false, locationFlow = null;
   const autoLocation = new Set();
+  // A position shared in a conversation answers its follow-ups for up to an hour: Atlas keeps it
+  // in memory for that conversation (services/orchestrator/location_memory.py), so the shop
+  // pre-check below does not ask again; the server still asks when it no longer has it.
+  const sharedChats = new Map();
+  const chatKey = body => String(body.chat_id || (location.pathname.match(/\/c\/([\w-]+)/) || [])[1] || '');
   const regenerateControl = message => message.closest('[id^="message-"]')?.querySelector('.regenerate-response-button') || null;
   async function shareLocationFor(link) {
     if (locationFlow) return locationFlow;
@@ -214,7 +219,9 @@
       const pending = pendingLocation && pendingLocation.expires > Date.now() ? pendingLocation : null;
       pendingLocation = null; lastSendLocated = Boolean(pending || body.location || body.location_ref);
       // The keyword pre-check only saves a round trip for shop questions; the server decides.
-      if (!body.location && !body.code_mode && (pending || nearbyIntent(text))) {
+      const chat = chatKey(body);
+      const sharedHere = chat && (sharedChats.get(chat) || 0) > Date.now() - 3600000;
+      if (!body.location && !body.code_mode && (pending || (!sharedHere && nearbyIntent(text)))) {
         const location = pending ? pending.location : await requestLocation(options.signal);
         if (options.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         if (url.pathname.startsWith('/api/')) {
@@ -228,6 +235,7 @@
           body.location = location;
         }
         lastSendLocated = true;
+        if (chat && (location.position || location.place)) sharedChats.set(chat, Date.now());
         options = { ...options, body: JSON.stringify(body) };
       }
     }

@@ -30,7 +30,12 @@ from services.orchestrator.loop import Call, Limits, Message, Query, run
 from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.tools import Rag, Runtime, search_providers
 from services.orchestrator.stream_client import Sink, sink_context
-from services.orchestrator import document_quotes, grounding, number_provenance
+from services.orchestrator import (
+    document_quotes,
+    grounding,
+    number_provenance,
+    travel_claims,
+)
 from services.orchestrator.vision import process_vision
 from services.orchestrator.search_policy import required_research, corpus_allowed
 from services.orchestrator.followup import (
@@ -436,6 +441,23 @@ class ChatTools(Runtime):
                 # A limit stays a limit for the model and the user (D5).
                 return {"error": "daily_search_limit", "message": refusal_text(exc)}
             data = output.get("data")
+            if (
+                call.name == "journey_plan"
+                and self.model is not None
+                and self.model.required_file_tool == call.name
+            ):
+                # The plan is made (or refused with a reason): the model is free.
+                self.model.required_file_tool = None
+            if (
+                call.name == "journey_plan"
+                and self.model is not None
+                and isinstance(data, dict)
+                and data.get("rendered")
+            ):
+                # A plan is the answer's core: the next call writes the answer.
+                # Live on the branch (2026-11-16) a search after the plan left the
+                # answer too little time and the turn timed out.
+                self.model.answer_only = True
             if call.name in {"web_images", "make_qr"} and isinstance(data, dict):
                 images = data.get("images", [data] if call.name == "make_qr" else [])
                 if isinstance(images, list):
@@ -516,10 +538,31 @@ class ChatTools(Runtime):
                     check.collect(
                         {"text": json.dumps(data, ensure_ascii=False)[:20_000]}
                     )
+                travel_claims.collect_tool_output(call.name, data)
             if call.name in {"web_search", "web_fetch"} and "error" not in output:
                 self.item.retrieved_urls.extend(urls)
                 if (check := grounding.current.get()) is not None:
                     check.collect(data)
+                travel_claims.collect_tool_output(call.name, data)
+                travel = travel_claims.current.get()
+                if (
+                    travel is not None
+                    and travel.journey_offered
+                    and not travel.journey_called
+                ):
+                    from services.orchestrator.journey import NAME, NEXT_STEP
+
+                    output = {**output, "next_step": NEXT_STEP}
+                    travel.results += 1
+                    # Research alone answered with guessed timetables (owner test
+                    # 2026-11-16, and live again on the branch): after two results
+                    # the next model call is the plan, then the model is free again.
+                    if (
+                        travel.results >= 2
+                        and self.model is not None
+                        and not self.model.required_file_tool
+                    ):
+                        self.model.required_file_tool = NAME
                 if call.name == "web_search" and isinstance(data, dict):
                     for row in data.get("results", []):
                         if isinstance(row, dict) and isinstance(row.get("link"), str):
@@ -798,7 +841,21 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     provenance = number_provenance.Provenance() if number_provenance.enabled() else None
     tracking = number_provenance.current.set(provenance)
     sink = sink_context.get()
-    held = sink_context.set(_HeldAnswer(sink)) if check and sink else None
+    # Travel durations, distances and times come from a source or from code
+    # (travel_claims): a travel turn is held like a checked factual one. Whether
+    # a turn is about travel is known after routing, before any answer text.
+    travel = travel_claims.Turn(
+        asked=[m.text for m in request.messages if m.role == "user"],
+        # The person's language, read before any service note joins the message.
+        language=conversation_language(
+            request.conversation_messages, request.ui_locale
+        ),
+    )
+    traveling = travel_claims.current.set(travel)
+    holder = _HeldAnswer(sink, holding=bool(check)) if sink else None
+    held = sink_context.set(holder) if holder is not None else None
+    if holder is not None:
+        travel.hold = holder.hold
     # Quotations attributed to the turn's documents are checked word for word
     # (document_quotes): the gate holds an open quotation until it can be checked.
     quotes = document_quotes.Sources() if document_quotes.mode() != "off" else None
@@ -845,6 +902,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         if held is not None:
             sink_context.reset(held)
         grounding.current.reset(checking)
+        travel_claims.current.reset(traveling)
         number_provenance.current.reset(tracking)
         context_usage.parts.reset(components)
         context_usage.samples.reset(capture)
@@ -872,6 +930,13 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         and item.task_type not in {"work", "nearby"}
     ):
         item.reponse = check.check(item.reponse, asked, asked_language)
+    if (
+        travel.active
+        and (travel.held or sink is None)
+        and item.state == "done"
+        and item.task_type not in {"work", "nearby"}
+    ):
+        item.reponse = travel.check(item.reponse, asked_language or travel.language)
     if provenance is not None and item.state == "done" and item.task_type != "work":
         number_provenance.record(
             provenance,
@@ -897,15 +962,34 @@ async def process(request: ChatRequest, item: Interaction) -> None:
 
 
 class _HeldAnswer:
-    """Withhold answer text while a factual turn is checked; pass every other event."""
+    """Withhold answer text while a turn is checked; pass every other event.
 
-    def __init__(self, sink: Sink) -> None:
+    A factual turn is held from the start. A travel turn is known only after
+    routing: ``hold`` starts holding then, and succeeds only while no answer
+    text has gone out yet.
+    """
+
+    def __init__(self, sink: Sink, *, holding: bool = True) -> None:
         self.sink = sink
+        self.holding = holding
+        self.passed = False
+
+    def hold(self) -> bool:
+        if not self.passed:
+            self.holding = True
+        return self.holding
 
     async def __call__(self, event: dict[str, object]) -> None:
         delta = event.get("delta")
         if isinstance(delta, dict) and isinstance(delta.get("content"), str):
-            return
+            if self.holding:
+                # The text waits for the check; a phase it carries still goes.
+                rest = {key: value for key, value in event.items() if key != "delta"}
+                if rest:
+                    await self.sink(rest)
+                return
+            if delta["content"]:
+                self.passed = True
         await self.sink(event)
 
 
@@ -1608,9 +1692,11 @@ async def _process(
         item.task_type = "followup"
     iteration = image_iteration(request.messages)
     images_in_history = any(message.images for message in request.messages)
+    from services.orchestrator.location_route import asked_text
+
     discovery = (
         required_research(
-            request.user_text,
+            asked_text(request),
             request.lang,
             device_timings="tavily" in search_providers(),
             history=tuple(m.text for m in request.messages[:-1]) if links else (),
@@ -1731,6 +1817,28 @@ async def _process(
     )
     if exact_subjects:
         model.tools.extend(exact_tools.declarations(exact_subjects))
+    from services.orchestrator import journey
+
+    # A trip from one place to another: a door-to-door plan whose times code
+    # computes (journey), and every travel value checked (travel_claims).
+    travel = travel_claims.current.get()
+    routed_decision = request_router.decision(request)
+    trip = journey.relevant(
+        asked_text(request),
+        earlier[-1] if earlier else "",
+        located=bool(travel is not None and travel.place),
+    )
+    if travel is not None and (
+        trip
+        or travel.place
+        or (routed_decision is not None and routed_decision.needs_location)
+    ):
+        travel.retrieved = lambda: list(item.retrieved_urls)
+        travel.activate()
+    if trip and privacy.tool_allowed("web_search"):
+        model.tools.append(journey.declaration())
+        if travel is not None:
+            travel.journey_offered = True
     # Specialized public sources (encyclopedia, news feeds, Eurostat, French
     # communes) before a general search (T8). Offered on the turns about them
     # only: other turns keep their recorded requests; web_search stays offered.

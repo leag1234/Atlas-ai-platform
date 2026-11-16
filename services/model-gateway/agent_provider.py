@@ -166,7 +166,13 @@ class AgentRequest(BaseModel):
                 or not isinstance(function, dict)
                 or set(function) != {"name"}
                 or function.get("name")
-                not in {"terminal_command", "publish_document", "create_artifact"}
+                not in {
+                    "terminal_command",
+                    "publish_document",
+                    "create_artifact",
+                    # The door-to-door plan after a trip's research (journey.py).
+                    "journey_plan",
+                }
                 or not any(
                     declared.get("name") == function["name"]
                     for tool in self.tools

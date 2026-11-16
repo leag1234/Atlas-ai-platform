@@ -55,7 +55,7 @@ class NearbyPresentationTests(unittest.TestCase):
             "≈ 2,5 km",
             "Ouverts maintenant",
             "Ouverture plus tard",
-            "Position approximative, utilisée pour cette demande uniquement",
+            "Position approximative, utilisée pour cette conversation uniquement",
             "Données © contributeurs OpenStreetMap (ODbL)",
             "Téléphone : +33 1 43 31 40 66",
         ):
@@ -80,7 +80,7 @@ class NearbyPresentationTests(unittest.TestCase):
         self.assertIn("open, closes at 6:30 pm", answer)
         self.assertIn("closed, opens tomorrow at 7:00 am", answer)
         self.assertIn("≈ 2.5 km", answer)
-        self.assertIn("Approximate location, used for this request only", answer)
+        self.assertIn("Approximate location, used for this conversation only", answer)
         result["evaluated_at"] = "2026-10-26T02:00:00+00:00"
         hours = result["places"][0]["opening"]
         hours.update(
