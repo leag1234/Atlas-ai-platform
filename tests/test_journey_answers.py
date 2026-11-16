@@ -246,7 +246,14 @@ class TravelClaimsTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(travel_claims.quantities(text), [])
 
-    def test_owner_defect_invented_walk_is_removed(self) -> None:
+    def note(self, checked: str, language: str = "fr") -> str:
+        """The single closing note, whose fixed wording follows the values."""
+        tail = travel_claims.wording("note", language).split("{values}")[1]
+        self.assertTrue(checked.endswith(tail), checked)
+        self.assertEqual(checked.count(tail), 1)
+        return checked
+
+    def test_owner_defect_invented_walk_is_left_out_whole(self) -> None:
         answer = (
             f"Votre position, {STREET}, est à environ 10 minutes à pied de la gare. "
             "Le TER 3105 part à 9h12 et arrive à 11h52."
@@ -255,49 +262,123 @@ class TravelClaimsTests(unittest.TestCase):
             "TER 3105 Caen 09:12 → Paris Saint-Lazare 11:52",
             asked="je dois être à la gare à 12h30",
         )
-        checked = turn.check(answer, "fr")
-        self.assertNotIn("10 minutes", checked)
-        self.assertIn("est à environ (durée non vérifiée) à pied de la gare", checked)
-        self.assertTrue(checked.endswith(travel_claims.wording("note", "fr")))
-        self.assertIn("9h12 et arrive à 11h52.", checked)  # sourced times kept
-        self.assertNotIn("non sourcé", checked)
+        checked = self.note(turn.check(answer, "fr"))
+        body = checked.split("\n\n")[0]
+        # The sentence goes whole: no fragment of an address, no marker.
+        self.assertEqual(body, "Le TER 3105 part à 9h12 et arrive à 11h52.")
+        self.assertIn("Non vérifié, donc retiré : 10 minutes.", checked)
+        self.assertNotIn("non vérifiée)", checked)
 
-    def test_invented_connection_times_are_marked(self) -> None:
+    def test_invented_rows_go_and_sourced_rows_stay(self) -> None:
         answer = (
             "| Train | Départ | Arrivée |\n|---|---|---|\n"
-            "| TER 3105 | 09:12 | 11:52 |\n| Correspondance | 10h05 | 12h00 |\n\n"
+            "| TER 3105 | 09:12 | 11:52 |\n| Correspondance | ~10h05 | 12h00 |\n\n"
             "Bon voyage."
         )
         turn = turn_with("TER 3105 Caen 09:12 Paris Saint-Lazare 11:52")
-        checked = turn.check(answer, "fr")
-        self.assertIn("10h05 (non sourcé)", checked)
-        self.assertIn("12h00 (non sourcé)", checked)
+        checked = self.note(turn.check(answer, "fr"))
         self.assertIn("| TER 3105 | 09:12 | 11:52 |", checked)
-        # One note, at the end, never inside the table.
-        self.assertEqual(checked.count("Non vérifié"), 1)
-        self.assertTrue(checked.endswith(travel_claims.wording("note", "fr")))
-        self.assertIn(
-            "| Correspondance | 10h05 (non sourcé) | 12h00 (non sourcé) |", checked
-        )
+        self.assertNotIn("Correspondance", checked)
+        self.assertIn("Bon voyage.", checked)
+        self.assertIn("10h05, 12h00", checked)
 
-    def test_ranges_are_one_value(self) -> None:
-        turn = turn_with()
-        checked = turn.check("La gare est à 1,5-2 km, soit 20–25 min à pied.", "fr")
-        self.assertIn(
-            "à (distance non vérifiée), soit (durée non vérifiée) à pied", checked
+    def test_a_table_left_with_no_row_goes(self) -> None:
+        answer = (
+            "Voici les trains :\n\n| Départ | Arrivée |\n|---|---|\n"
+            "| ~8h00 | ~10h30 |\n| ~9h00 | ~11h30 |\n\nVérifiez sur le site du transporteur."
         )
-        self.assertNotIn("1,5", checked)
-        self.assertNotIn("20", checked.split("\n\n")[0])
+        checked = self.note(turn_with().check(answer, "fr"))
+        self.assertNotIn("|", checked)
+        self.assertIn("Vérifiez sur le site du transporteur.", checked)
+
+    def test_ranges_are_one_value_and_never_half_marked(self) -> None:
+        turn = turn_with()
+        for answer, values in (
+            ("La gare est à 1,5-2 km, soit 20–25 min à pied.", "1,5-2 km, 20–25 min"),
+            ("Departures 08:30–09:30 every day. Have a good trip.", "08:30–09:30"),
+        ):
+            with self.subTest(answer=answer):
+                checked = self.note(turn.check(answer, "fr"))
+                self.assertIn(values, checked)
+                self.assertNotIn("(", checked)
+
+    def test_parenthesis_holding_the_value_goes_alone(self) -> None:
+        answer = (
+            "Descendez à Gratte-Ciel (à 1 min à pied de la rue Fictive), puis "
+            "prenez le bus 37 vers la gare. Le bus est indiqué sur le site du réseau."
+        )
+        checked = self.note(turn_with().check(answer, "fr"))
+        self.assertTrue(
+            checked.startswith(
+                "Descendez à Gratte-Ciel, puis prenez le bus 37 vers la gare."
+            ),
+            checked,
+        )
+        self.assertIn("1 min", checked.split("\n\n")[-1])
+
+    def test_untouched_tables_keep_their_dashes(self) -> None:
+        answer = "| Ligne | Note |\n|---|---|\n| Bus 37 | — |\n\nLe bus part à 10 h 05."
+        checked = turn_with().check(answer, "fr")
+        self.assertIn("| Bus 37 | — |", checked)
+        self.assertNotIn("10 h 05", checked.rsplit("\n\n", 1)[0])
+
+    def test_a_margin_is_advice_only_in_its_own_clause(self) -> None:
+        turn = turn_with()
+        kept = "Prévoyez 15 min de marge à l'arrivée."
+        self.assertEqual(turn.check(kept, "fr"), kept)
+        # "d'avance" states a computed slack; a margin word elsewhere hides nothing.
+        checked = turn.check("Vous aurez 17 minutes d'avance. Gardez une marge.", "fr")
+        self.assertTrue(checked.startswith("Gardez une marge."), checked)
 
     def test_note_goes_before_the_folded_source_list(self) -> None:
-        answer = (
-            "La gare est à 2 km.\n\n<details>\n<summary>Sources</summary>\n</details>"
-        )
+        answer = "La gare est à 2 km. Bon voyage.\n\n<details>\n<summary>Sources</summary>\n</details>"
         checked = turn_with().check(answer, "fr")
-        self.assertIn("(distance non vérifiée)", checked)
         before, after = checked.split("<details>")
-        self.assertIn("Non vérifié", before)
+        self.assertTrue(before.startswith("Bon voyage."), before)
+        self.assertIn("Non vérifié, donc retiré : 2 km.", before)
         self.assertNotIn("Non vérifié", after)
+
+    def test_the_users_own_times_in_any_form_are_theirs(self) -> None:
+        cases = (
+            (
+                "demain j'ai un dejeuner a Gare de Lyon a midi trente",
+                "Arrivée prévue avant 12 h 30.",
+            ),
+            (
+                "I need to be at Berlin Hbf by 2pm tomorrow",
+                "You will be there by 2:00 pm.",
+            ),
+            ("I need to be there by 2pm", "Arrive before 14:00."),
+            ("rdv à quatorze heures trente", "Soyez là à 14h30."),
+            ("we meet at half past twelve", "Be there by 12:30."),
+            ("Treffen um halb drei", "Seien Sie um 14:30 dort."),
+            ("tengo que estar a las dos y media", "Llegue antes de las 14:30."),
+            ("devo essere li a mezzogiorno e mezza", "Arrivo alle 12:30."),
+            ("at noon", "Be there at 12:00."),
+        )
+        for asked, answer in cases:
+            with self.subTest(asked=asked):
+                turn = turn_with(asked=asked)
+                self.assertEqual(turn.check(answer, "fr"), answer)
+
+    def test_spoken_times(self) -> None:
+        self.assertEqual(travel_claims.spoken_times("à midi trente"), [750.0])
+        self.assertEqual(travel_claims.spoken_times("midi et quart"), [735.0])
+        self.assertEqual(travel_claims.spoken_times("quarter to nine"), [525.0])
+        self.assertEqual(travel_claims.spoken_times("viertel nach acht"), [495.0])
+        self.assertEqual(travel_claims.spoken_times("rien à voir"), [])
+
+    def test_the_users_relative_dates_are_theirs(self) -> None:
+        from datetime import date, timedelta
+
+        turn = turn_with(asked="demain midi trente, et vendredi aussi")
+        owned = turn.owned_values("x")
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        self.assertIn(tomorrow, owned)
+        self.assertEqual(
+            len(travel_claims.user_dates(["tomorrow"], "Pacific/Kiritimati")), 1
+        )
+        self.assertEqual(travel_claims.user_dates(["no date here"], "UTC"), [])
 
     def test_sourced_and_derived_values_pass(self) -> None:
         turn = turn_with(
@@ -348,7 +429,7 @@ class TravelClaimsTests(unittest.TestCase):
             ("it", "Non verificato"),
         ):
             with self.subTest(language=language):
-                self.assertIn(word, turn.check("It is 3 km away.", language))
+                self.assertIn(word, turn.check("It is 3 km away. Fine.", language))
 
 
 RETRIEVED = [
