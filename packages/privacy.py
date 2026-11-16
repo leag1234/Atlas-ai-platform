@@ -325,13 +325,14 @@ def tool_capability(name: str) -> str | None:
     return TOOL_CAPABILITIES.get(name)
 
 
+def tool_allowed(name: str) -> bool:
+    """Whether a tool may run at the current level (the same rule as its offer)."""
+    capability = tool_capability(name)
+    return current() == STANDARD or capability is None or allows(capability)
+
+
 def allowed_tools(tools: Iterable[Any]) -> list[Any]:
     """The tool declarations a turn may offer at the current level."""
     if current() == STANDARD:
         return list(tools)
-    return [
-        tool
-        for tool in tools
-        if (capability := tool_capability(tool_name(tool))) is None
-        or allows(capability)
-    ]
+    return [tool for tool in tools if tool_allowed(tool_name(tool))]

@@ -338,6 +338,18 @@ class ChatTools(Runtime):
                 return dict(await self.skills.execute(call, timeout))
             if self.skills.blocks(call.name):
                 return {"error": "skill_action_not_permitted"}
+        if not privacy.tool_allowed(call.name):
+            # A tool the level does not offer can still be named by a model that
+            # knows it (an owned model calling web_search in a strict turn, staging
+            # 2026-11-16). It never runs and never ends the turn: the model is told
+            # to answer with what it has, like for any unavailable tool.
+            self.item.erreurs.append("tool_not_offered_at_privacy_level")
+            return {
+                "error": "tool_unavailable",
+                "message": f"{call.name} is not available at the {privacy.current()} "
+                "privacy level. Answer with the tools offered and say what could not "
+                "be checked.",
+            }
         sink = sink_context.get()
         urls: list[str] = []
         try:
@@ -1565,7 +1577,9 @@ async def _process(
     )
     # The original question still drives policy classification, but a UI retry is
     # only completing already-started prose: it must not begin another route.
-    if request.continuation or appearance:
+    # Research cannot be required where the level does not offer web search
+    # (Strict): the turn answers from the tools it has, never a search refusal.
+    if request.continuation or appearance or not privacy.tool_allowed("web_search"):
         discovery = ()
     image_context: str | None = None
     image_cost = Decimal(0)

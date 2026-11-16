@@ -546,6 +546,48 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(names & (privacy.STRICT_EXCLUDED_TOOLS | {"mcp_ticket_list"}))
         self.assertIn("calculator", names)
 
+    def test_strict_turn_never_runs_a_tool_it_does_not_offer(self) -> None:
+        # An owned model may still name web_search in a strict turn (staging
+        # 2026-11-16): the call is answered as unavailable, without any network
+        # access, and the turn goes on (no search_unavailable refusal).
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Call
+
+        async def run() -> list[dict[str, Any]]:
+            runtime = ChatTools(Interaction())
+            return [
+                dict(await runtime.execute(Call("a", name, arguments), 10))
+                for name, arguments in (
+                    ("web_search", '{"query": "Eiffel Tower height"}'),
+                    ("web_fetch", '{"url": "https://example.invalid/"}'),
+                )
+            ]
+
+        with no_network() as trap, strict():
+            results = asyncio.run(run())
+        self.assertEqual(trap.calls, [])
+        for result in results:
+            self.assertEqual(result["error"], "tool_unavailable")
+            self.assertIn("strict privacy level", str(result["message"]))
+
+    def test_research_is_never_required_where_search_is_not_offered(self) -> None:
+        # chat_pipeline drops the required research call when web_search is not
+        # allowed at the level: a strict question never starts with a search.
+        env = {"ATLAS_KIWIX_URL": "http://127.0.0.1:8390", "ATLAS_KIWIX_BOOKS": "fr=a"}
+        with patch.dict(os.environ, env):
+            self.assertTrue(privacy.tool_allowed("web_search"))
+            with strict():
+                self.assertFalse(privacy.tool_allowed("web_search"))
+                self.assertFalse(privacy.tool_allowed("web_fetch"))
+                self.assertTrue(privacy.tool_allowed("encyclopedia"))
+                self.assertTrue(privacy.tool_allowed("calculator"))
+        source = Path("services/orchestrator/chat_pipeline.py").read_text()
+        self.assertIn(
+            'if request.continuation or appearance or not privacy.tool_allowed("web_search"):',
+            source,
+        )
+
     def test_strict_work_turns_keep_atlas_loop(self) -> None:
         from services.orchestrator.work_opencode_turn import engine_turn_selected
 
