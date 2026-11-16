@@ -31,7 +31,9 @@ from serverless import ServerlessPolicy
 from serverless_support import environment
 from test_streaming_decoder import end, frame
 
-QUESTION = [{"role": "user", "content": "Will it be sunny tomorrow in a coastal town?"}]
+QUESTION: list[dict[str, object]] = [
+    {"role": "user", "content": "Will it be sunny tomorrow in a coastal town?"}
+]
 REFUSAL = (
     b'{"error":{"type":"internal_server_error","code":"3800",'
     b'"message":"Service unavailable."}}'
@@ -221,9 +223,12 @@ class FailedAttemptChargeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failed[0]["attempt_charge"], "reservation")
         unaffordable = events("quality_recovery_unaffordable", logs.output)
         self.assertEqual(len(unaffordable), 1)
-        self.assertGreater(
-            unaffordable[0]["measured_microeur"], unaffordable[0]["limit_microeur"]
+        measured, limit = (
+            unaffordable[0]["measured_microeur"],
+            unaffordable[0]["limit_microeur"],
         )
+        assert isinstance(measured, int) and isinstance(limit, int)
+        self.assertGreater(measured, limit)
 
     async def test_unaffordable_recovery_after_timeout_stays_a_timeout(self) -> None:
         async def upstream(
