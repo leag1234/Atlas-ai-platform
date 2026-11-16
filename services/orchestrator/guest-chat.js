@@ -29,6 +29,7 @@
     const { type, data } = event.data || {};
     if (type === 'status' || type === 'chat:completion' || type === 'response:completion' || type === 'chat:message:delta') {
       turn.last = Date.now();
+      turn.closedAt = 0;
       if (data?.error) interrupt(turn);
       else if (data?.done && type !== 'status' && !turn.interrupted) { turn.done = true; turn.interrupted = false; }
     }
@@ -80,7 +81,9 @@
           if (name === 'events') { keepTitle(payload); eventReceived(payload); }
         } catch { /* Other Engine.IO frames are owned by the native client. */ }
       });
-      this.addEventListener('close', () => turns.forEach(interrupt));
+      // A closed socket is not a lost answer: Socket.IO reconnects by itself and the
+      // answer keeps running as a server task. The turn is checked after a grace period.
+      this.addEventListener('close', () => turns.forEach(turn => { turn.closedAt ||= Date.now(); }));
     }
   };
   const fetchNative = window.fetch.bind(window);
@@ -118,7 +121,50 @@
   document.addEventListener('click', event => {
     if (event.target.closest?.('#stop-response-button')) turns.forEach(turn => { if (!turn.interrupted) turn.done = true; });
   }, true);
-  setInterval(() => { turns.forEach(turn => { if (Date.now() - turn.last >= 45000) interrupt(turn); }); }, 1000);
+  // A silent stream or a closed socket only makes a turn suspect. Open WebUI runs the
+  // answer as a server task and saves it, whatever the page does; a phone switching
+  // between Wi-Fi and mobile data closes its socket for a second. Stopping the task
+  // there discarded answers that were still being written (staging 2026-11-16: the
+  // phone's socket closed, this script clicked Stop, the server stopped the turn).
+  // So the server is asked first: a running task is waited for, an answer saved
+  // complete is kept, and only a turn the server no longer runs or holds is shown as
+  // interrupted (its Stop then has no task left to end).
+  const SILENCE_MS = 45000, RECONNECT_GRACE_MS = 15000;
+  async function serverTurn(turn) {
+    if (!turn.chat) return 'lost';
+    const headers = {};
+    const token = localStorage.getItem('token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const chat = encodeURIComponent(turn.chat);
+    try {
+      const tasks = await fetchNative('/api/tasks/chat/' + chat, { credentials: 'same-origin', headers });
+      if (!tasks.ok) return 'unknown';
+      if (((await tasks.json())?.task_ids || []).length) return 'running';
+      const stored = await fetchNative('/api/v1/chats/' + chat, { credentials: 'same-origin', headers });
+      if (!stored.ok) return 'unknown';
+      const message = (await stored.json())?.chat?.history?.messages?.[turn.id];
+      return message?.done && !message.error ? 'saved' : 'lost';
+    } catch {
+      return 'unknown'; // Still offline: ask again after the next silence period.
+    }
+  }
+  async function check(turn) {
+    turn.checking = true;
+    const state = await serverTurn(turn);
+    turn.checking = false;
+    turn.closedAt = 0;
+    if (turn.done || turn.interrupted) return;
+    if (state === 'lost') interrupt(turn);
+    else if (state === 'saved') { turn.done = true; refresh(); }
+    else turn.last = Date.now();
+  }
+  setInterval(() => {
+    const now = Date.now();
+    turns.forEach(turn => {
+      if (turn.done || turn.interrupted || turn.checking) return;
+      if (now - turn.last >= SILENCE_MS || (turn.closedAt && now - turn.closedAt >= RECONNECT_GRACE_MS)) check(turn);
+    });
+  }, 1000);
 
   async function retry(turn, button) {
     button.disabled = true;
