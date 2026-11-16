@@ -1283,6 +1283,14 @@ async def process_work(
                     retrieved=lambda: tools.retrieved_urls,
                     report=tools.sink,
                 )
+            if file_requested and selection.group in {"documents", "presentations"}:
+                # The pictures the file needs are planned and drawn by code
+                # before the agent writes (work_pictures.prepare).
+                from services.orchestrator.work_pictures import prepare
+
+                await prepare(
+                    tools, request.user_text, left(WORK_CLOSING_SECONDS).wall_clock
+                )
             result = await execute_turn(
                 request,
                 model,

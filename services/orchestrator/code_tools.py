@@ -548,6 +548,11 @@ class WorkTools(CodeTools):
         # they belong to, and the items this turn had no time to draw.
         self.picture_scope = ""
         self.pictures_pending: list[str] = []
+        # The pictures the file needs, planned by code before the agent writes,
+        # and those drawn for it (reference -> item): the publication checks
+        # that they are placed.
+        self.picture_plan: Any = None
+        self.pictures_drawn: dict[str, str] = {}
         self.remote_references: Any = None
         # Conversation language, for the sentences of the machine tools.
         self.lang = "en"

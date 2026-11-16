@@ -44,6 +44,9 @@ REFERENCE = re.compile(r"picture-[0-9a-f]{12}")
 # The turn keeps this much time after the pictures: the document, its check
 # and the closing answer.
 CLOSING_RESERVE_SECONDS = 75.0
+# Pictures drawn before the agent writes leave this for writing the document,
+# publishing and checking it (the turn's closing is kept apart).
+WRITING_RESERVE_SECONDS = 70.0
 # Per picture, beyond the server's own drawing time: transfer and the check.
 CHECK_SECONDS = 4.0
 # The vision check of all the pictures of a call, at most.
@@ -120,9 +123,10 @@ def conversation_dir(tools: Any) -> Path | None:
 
 
 def _item_key(item: Item, style: str) -> str:
-    return hashlib.sha256(
-        json.dumps([item.label, item.description, style]).encode()
-    ).hexdigest()
+    """One picture per item of a conversation: its label, whatever the words
+    of its description (a follow-up plans the same items in other words and
+    must reuse what was drawn, staging 2026-11-16)."""
+    return hashlib.sha256(" ".join(item.label.casefold().split()).encode()).hexdigest()
 
 
 def _index(folder: Path) -> dict[str, dict[str, str]]:
@@ -387,6 +391,8 @@ async def execute(
             label=item.label, reference=reference, checked=verdict, reused=False
         )
         drawn += 1
+        if drawn == len(todo):
+            continue  # the next status is the document's own
         await _status(
             tools,
             drawn,
@@ -443,3 +449,175 @@ async def execute(
         )
     )
     return output
+
+
+# ---------------------------------------------------------------------------
+# The plan, done by code before the agent writes (T8: code plans and checks,
+# the model decides the content). On staging -87 (2026-11-16) the agent left
+# make_pictures aside and wrote a picture book with emoji, a poster asked
+# "with a big illustration" had none, and a follow-up "pictures are missing"
+# multiplied the emoji. For every file turn, one small JSON call reads the
+# request and the conversation and lists the pictures the deliverable needs
+# (none for most files); code then draws them, tells the agent where they are,
+# and the publication checks that they are placed.
+
+PLAN_SECONDS = 45.0
+PLAN_BUDGET_EUR = Decimal("0.01")
+PLAN_TOKENS = 1200
+PLAN_SYSTEM = (
+    "You plan the pictures a requested file needs before it is written. You "
+    "receive the person's latest message, their earlier messages and the "
+    "assistant's last answer. List the pictures the file must show: when the "
+    "person asks for pictures, images, illustrations, drawings or photos (one "
+    "per item, word, dish, step, animal... as they ask), or when the kind of "
+    "file they ask for cannot do without them as they describe it. A follow-up "
+    "that says pictures are missing or asks to finish needs the pictures of "
+    "the whole file again: the ones already drawn are reused. Most files "
+    "(reports, letters, tables, plain slides) need none: return an empty list. "
+    "Emoji or symbols are not pictures: set emoji_requested true only when the "
+    "person asks for emoji or symbols themselves. Each picture has a label "
+    "(the word or name as the file shows it, in the person's language) and a "
+    "description in English of what it shows, concrete and visual, in at "
+    "most 25 words. Reply with "
+    'JSON only: {"pictures": [{"label": "...", "description": "..."}], '
+    '"style": "one shared look in English, or empty", "emoji_requested": false}'
+    ", at most 16 pictures."
+)
+
+
+class Plan(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    pictures: list[Item] = Field(default_factory=list, max_length=16)
+    style: str = Field(default="", max_length=300)
+    emoji_requested: bool = False
+
+
+def plan_messages(
+    request: str, earlier: list[str], answer: str
+) -> list[dict[str, Any]]:
+    data = {
+        "latest_message": request[:4000],
+        "earlier_messages": [text[:1500] for text in earlier[-3:]],
+        "assistant_last_answer": answer[:1500],
+    }
+    return [
+        {"role": "system", "content": PLAN_SYSTEM},
+        {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
+    ]
+
+
+def parse_plan(reply: str) -> Plan | None:
+    from packages.model_json import object_content
+
+    try:
+        return Plan.model_validate(object_content(reply))
+    except ValueError:
+        return None
+
+
+async def plan(tools: Any, request: str, *, call: Any = None) -> Plan | None:
+    """The pictures the requested file needs; None when the plan could not run."""
+    from services.orchestrator.deliverable_check import _complete
+
+    model = getattr(tools, "check_model", None)
+    profile = getattr(model, "profile", None)
+    if not isinstance(profile, str) or not request.strip():
+        return None
+    earlier = [
+        text
+        for text in (getattr(tools, "earlier_requests", None) or [])
+        if isinstance(text, str)
+    ]
+    answers = getattr(tools, "earlier_answers", None) or []
+    payload: dict[str, Any] = {
+        "messages": plan_messages(
+            request, earlier, str(answers[-1]) if answers else ""
+        ),
+        "tools": [],
+        "response_format": {"type": "json_object"},
+        "profile": profile,
+        "max_tokens": PLAN_TOKENS,
+        "timeout": PLAN_SECONDS,
+        "budget_eur": str(PLAN_BUDGET_EUR),
+        "reasoning_effort": "none",
+        "sampling_temperature": 0.0,
+        "single_attempt": True,
+        "local_enabled": False,
+    }
+    if getattr(model, "strict", False):
+        payload["privacy"] = "strict"
+    try:
+        reply = await (call or _complete)(payload, PLAN_SECONDS + 5)
+    except Exception as error:  # noqa: BLE001 - the agent still has make_pictures
+        logging.getLogger(__name__).warning(
+            json.dumps({"event": "picture_plan_failed", "error": type(error).__name__})
+        )
+        return None
+    try:
+        cost = Decimal(str(reply.get("cost_eur") or 0))
+    except ArithmeticError:
+        cost = Decimal(0)
+    if (
+        model is not None
+        and cost.is_finite()
+        and cost > 0
+        and isinstance(getattr(model, "spent", None), Decimal)
+    ):
+        model.spent += cost
+    return parse_plan(str(reply.get("text") or ""))
+
+
+PLACE = (
+    "\n\nPictures for this file were drawn before you started (make_pictures, "
+    "checked against their items): {pictures}. Place each one in the section "
+    "of its item as its own Markdown line ![label](reference) (for slides: in "
+    "the slide's images). Do not replace a picture with an emoji or a symbol."
+)
+LEFT = (
+    " These pictures could not be drawn in this turn: {labels} (about {seconds} "
+    "s more are needed). Write their sections without a picture; the answer "
+    "must say they are missing and offer to continue, which draws only those."
+)
+
+
+async def prepare(
+    tools: Any, request: str, seconds: float, *, server: Any = None, call: Any = None
+) -> Plan | None:
+    """Plan the pictures of a file turn, draw them, tell the agent where they are."""
+    if not enabled() or conversation_dir(tools) is None:
+        return None
+    planned = await plan(tools, request, call=call)
+    if planned is None or not planned.pictures:
+        if planned is not None:
+            tools.picture_plan = planned
+        return planned
+    tools.picture_plan = planned
+    budget = seconds - WRITING_RESERVE_SECONDS
+    arguments = json.dumps(
+        {
+            "items": [item.model_dump() for item in planned.pictures],
+            "style": planned.style,
+        }
+    )
+    try:
+        result = await execute(
+            tools, arguments, max(0.0, budget), server=server, call=call
+        )
+    except ValueError as error:
+        tools.instructions = (getattr(tools, "instructions", "") or "") + (
+            "\n\nThe file needs pictures and none could be drawn: " + str(error)
+        )
+        return planned
+    drawn = result.get("pictures") or []
+    text = PLACE.format(
+        pictures="; ".join(f"{p['label']} -> {p['reference']}" for p in drawn) or "none"
+    )
+    if result.get("not_drawn"):
+        text += LEFT.format(
+            labels=", ".join(result["not_drawn"]),
+            seconds=result.get("seconds_needed_for_the_rest", 0),
+        )
+    tools.instructions = (getattr(tools, "instructions", "") or "") + text
+    tools.pictures_drawn = {str(p["reference"]): str(p["label"]) for p in drawn}
+    return planned

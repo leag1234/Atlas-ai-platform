@@ -109,6 +109,51 @@ class Outcome:
     seconds: float = 0.0
     cost_eur: Decimal = Decimal(0)
     image: bool = False
+    # Gaps code is sure of (pictures drawn for the file and not placed, emoji
+    # standing in for planned pictures): refused once like a judged gap.
+    certain: list[str] = field(default_factory=list)
+
+
+def planned_gaps(tools: Any, content: Any) -> list[str]:
+    """What code knows the file lacks against the pictures planned for it.
+
+    The plan (work_pictures.prepare) is the model's reading of the request;
+    whether the file carries its pictures is measured here, not judged: on
+    staging -87 a picture book was published with emoji and the judged check
+    let it pass.
+    """
+    if content is None:
+        return []
+    placed = {
+        image.removesuffix(".jpg")
+        for section in content.sections
+        for image in section.images
+    }
+    gaps: list[str] = []
+    drawn = getattr(tools, "pictures_drawn", None)
+    if isinstance(drawn, dict) and drawn:
+        unplaced = [
+            str(label) for reference, label in drawn.items() if reference not in placed
+        ]
+        if unplaced:
+            gaps.append(
+                "pictures drawn for this file are not placed: "
+                + ", ".join(unplaced)
+                + " (place each with its ![label](reference) line)"
+            )
+    plan = getattr(tools, "picture_plan", None)
+    asked = getattr(plan, "pictures", None)
+    if (
+        isinstance(asked, list)
+        and asked
+        and getattr(plan, "emoji_requested", True) is False
+        and _pictures(drawn_text(content))
+    ):
+        gaps.append(
+            "emoji stand in for the pictures the request asks for: remove them "
+            "and place the drawn pictures"
+        )
+    return gaps
 
 
 def _texts(value: Any) -> list[str]:
@@ -192,6 +237,7 @@ def facts(
     missing: list[str],
     names: dict[str, dict[str, str]] | None = None,
     pending: list[str] | None = None,
+    requested: list[str] | None = None,
 ) -> dict[str, Any]:
     """What code measures on the built file (no model involved).
 
@@ -257,6 +303,8 @@ def facts(
         measured["left_out_characters"] = missing
     if pending:
         measured["pictures_not_drawn_in_time"] = pending[:20]
+    if requested:
+        measured["pictures_the_request_needs"] = requested[:20]
     text = preview.decode("utf-8", errors="replace")
     measured["text_characters"] = len(text)
     if not text.strip():
@@ -390,7 +438,11 @@ async def review(
     seconds = min(CHECK_SECONDS, seconds)
     started = time.monotonic()
     outcome = Outcome()
-    deterministic = [LEFT_OUT.format(characters=" ".join(missing))] if missing else []
+    certain = planned_gaps(tools, content)
+    outcome.certain = certain
+    deterministic = certain + (
+        [LEFT_OUT.format(characters=" ".join(missing))] if missing else []
+    )
     model = getattr(tools, "check_model", None)
     request = getattr(tools, "request_text", "")
     count = getattr(tools, "deliverable_checks", 0)
@@ -415,8 +467,19 @@ async def review(
         for label in (listed if isinstance(listed, list) else [])
         if isinstance(label, str)
     ]
+    plan = getattr(tools, "picture_plan", None)
+    asked = getattr(plan, "pictures", None)
     measured = facts(
-        suffix, content, raw, preview, missing, picture_names(tools), pending
+        suffix,
+        content,
+        raw,
+        preview,
+        missing,
+        picture_names(tools),
+        pending,
+        [str(getattr(item, "label", "")) for item in asked]
+        if isinstance(asked, list)
+        else None,
     )
     page: bytes | None = None
     if content is not None and not strict:
@@ -488,7 +551,7 @@ async def review(
     outcome.checked = True
     # The model judges the left-out characters against the request: an
     # emoji decoration of a report is not a gap, a picture book's are.
-    outcome.gaps = found
+    outcome.gaps = certain + found
     logging.getLogger(__name__).info(
         json.dumps(
             {
@@ -520,10 +583,8 @@ def decide(tools: Any, outcome: Outcome) -> str:
     # file is published and the answer says what is missing.
     pending = getattr(tools, "pictures_pending", None)
     repairable = not (isinstance(pending, list) and pending)
-    if (
-        outcome.checked
-        and repairable
-        and getattr(tools, "deliverable_refused", True) is False
+    if getattr(tools, "deliverable_refused", True) is False and (
+        outcome.certain or (outcome.checked and repairable)
     ):
         tools.deliverable_refused = True
         raise ValueError(REFUSAL.format(gaps=joined(outcome.gaps)))
