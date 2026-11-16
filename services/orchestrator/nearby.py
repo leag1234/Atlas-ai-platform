@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import fcntl
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -32,6 +33,19 @@ from services.orchestrator.location import (
 # space of a long run was quadratic).
 PLACE_JOINER = re.compile(
     r"(?<!\s)\s++(?:à|a|au|aux|in|at|near|bei|en|a la|in der)\s++", re.IGNORECASE
+)
+
+
+# Failures of a public map service that a second try may not meet.
+TRANSIENT = frozenset(
+    {
+        "osm_unavailable",
+        "osm_http_429",
+        "osm_http_500",
+        "osm_http_502",
+        "osm_http_503",
+        "osm_http_504",
+    }
 )
 
 
@@ -323,6 +337,74 @@ class OSM:
             raise NearbyError("place_not_found") from None
 
     async def reverse(self, position: Position) -> str:
+        """The street and locality around a device position, any country.
+
+        A public service can fail for a moment (staging 2026-11-16: a position
+        in Munich got "the map service could not turn it into a place" while the
+        same point resolved a minute later; Berlin failed once in five lookups).
+        A transient failure is retried once, then the second open service
+        (Photon, OSM data) answers; the failure code is logged, never the
+        position.
+        """
+        last: NearbyError | None = None
+        for attempt in range(2):
+            try:
+                return await self.nominatim_reverse(position)
+            except NearbyError as exc:
+                last = exc
+                if str(exc) not in TRANSIENT or attempt:
+                    break
+                await asyncio.sleep(1.5)
+        logging.getLogger(__name__).warning(
+            "location_reverse_failed %s",
+            json.dumps({"service": "nominatim", "code": str(last)}),
+        )
+        endpoint = os.environ.get(
+            "ATLAS_PHOTON_REVERSE_URL", "https://photon.komoot.io/reverse"
+        ).strip()
+        if not endpoint:
+            raise last or NearbyError("place_not_found")
+        try:
+            return await self.photon_reverse(position, endpoint)
+        except NearbyError as exc:
+            logging.getLogger(__name__).warning(
+                "location_reverse_failed %s",
+                json.dumps({"service": "photon", "code": str(exc)}),
+            )
+            raise last or exc from None
+
+    async def photon_reverse(self, position: Position, endpoint: str) -> str:
+        data = await self.request(
+            "geocode",
+            {"lat": f"{position.latitude:.3f}", "lon": f"{position.longitude:.4f}"},
+            endpoint,
+        )
+        try:
+            properties = data["features"][0]["properties"]
+        except (KeyError, IndexError, TypeError):
+            raise NearbyError("place_not_found") from None
+        if not isinstance(properties, dict):
+            raise NearbyError("place_not_found")
+
+        def value(key: str) -> str:
+            item = properties.get(key)
+            return str(item)[:100] if isinstance(item, str) else ""
+
+        street = value("street") or (value("name") if value("type") == "street" else "")
+        district = value("district") or value("locality")
+        locality = value("city") or value("town") or value("village")
+        if not locality and not district:
+            raise NearbyError("place_not_found")
+        self.area = locality or district
+        parts = [
+            street,
+            district if district != locality else "",
+            " ".join(filter(None, (value("postcode"), locality))),
+            value("country"),
+        ]
+        return ", ".join(part for part in parts if part)
+
+    async def nominatim_reverse(self, position: Position) -> str:
         """The street and locality around a consented device position.
 
         Used when a position-dependent answer is not a nearby-places search

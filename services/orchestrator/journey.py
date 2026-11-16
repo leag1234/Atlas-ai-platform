@@ -94,8 +94,36 @@ DESCRIPTION = (
 # research alone answered with a table of guessed times (owner test 2026-11-16).
 NEXT_STEP = (
     "When your research for this trip is done, call journey_plan with the legs in "
-    "travel order (null for any value no page you read gives) before you answer."
+    "travel order (null for any value no page you read gives), then answer briefly: "
+    "the plan, then at most five short lines."
 )
+WRITE_NOW = (
+    "Research for this trip is closed. Write the answer now from what you read: "
+    "the legs you found with their sources, the legs not found said as such, at "
+    "most five short lines after any table. Never estimate a time, a duration or "
+    "a distance."
+)
+# Measured on staging 2026-11-15/16 (journal): a model round with tool calls
+# p50 1.2 s, p90 3.9 s; a final answer p50 5 s, p90 18 s, but a long trip answer
+# took 40 to 80 s; a search 1 to 6 s; the routing call p50 0.9 s, p90 4.3 s
+# (8 s on timeout). Research stops after this many results or seconds into the
+# turn, so the answer keeps more than half of the 120 s chat deadline.
+RESEARCH_RESULTS = 4
+
+
+def research_seconds() -> float:
+    import os
+
+    try:
+        value = float(os.environ.get("ATLAS_TRIP_RESEARCH_SECONDS", "40"))
+    except ValueError:
+        value = 40.0
+    return max(10.0, min(80.0, value))
+
+
+def research_closed(results: int, elapsed: float) -> bool:
+    """A trip's research is over: enough results, or its share of the deadline."""
+    return results >= RESEARCH_RESULTS or elapsed >= research_seconds()
 
 
 def declaration() -> Message:

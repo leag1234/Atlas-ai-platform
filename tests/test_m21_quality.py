@@ -173,31 +173,40 @@ class QualityTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("content", event["choices"][0]["delta"])
 
     async def test_provider_failure_has_measured_public_and_journal_error(self) -> None:
+        # API callers read the measured diagnostic; the chat interface reads one
+        # sentence in the person's language and the measures stay in the record
+        # (staging 2026-11-16: the diagnostic reached a French conversation).
         async def fail(payload: ChatRequest, item: Interaction) -> None:
             item.cout_eur = 0.02
             raise RuntimeError("private provider body")
 
-        payload = ChatRequest.model_validate(
-            {
-                "atlas_ui": True,
-                "stream": True,
-                "messages": [{"role": "user", "content": "Explain"}],
-            }
-        )
-        item = Interaction()
-        with (
-            tempfile.TemporaryDirectory() as root,
-            patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
-        ):
-            rows = [
-                str(row)
-                async for row in response(
-                    payload, item, time.monotonic(), fail
-                ).body_iterator
-            ]
-        text = "".join(rows)
-        self.assertIn("0.020000 EUR", text)
-        self.assertIn("limit 0.10 EUR", text)
-        self.assertIn("limit 120s", text)
-        self.assertNotIn("private provider body", text)
-        self.assertIn("0.020000 EUR", item.rejection["message"])
+        for atlas_ui in (False, True):
+            with self.subTest(atlas_ui=atlas_ui):
+                payload = ChatRequest.model_validate(
+                    {
+                        "atlas_ui": atlas_ui,
+                        "stream": True,
+                        "messages": [{"role": "user", "content": "Explain"}],
+                    }
+                )
+                item = Interaction()
+                with (
+                    tempfile.TemporaryDirectory() as root,
+                    patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
+                ):
+                    rows = [
+                        str(row)
+                        async for row in response(
+                            payload, item, time.monotonic(), fail
+                        ).body_iterator
+                    ]
+                text = "".join(rows)
+                self.assertNotIn("private provider body", text)
+                if atlas_ui:
+                    self.assertNotIn("EUR", text)
+                    self.assertNotIn("RuntimeError", text)
+                else:
+                    self.assertIn("0.020000 EUR", text)
+                    self.assertIn("limit 0.10 EUR", text)
+                    self.assertIn("limit 120s", text)
+                self.assertIn("0.020000 EUR", item.rejection["message"])
