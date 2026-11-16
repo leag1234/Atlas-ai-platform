@@ -18,6 +18,7 @@ from services.orchestrator.chat_pipeline import (
     retrieval_url,
     select_passages,
 )
+from services.orchestrator import document_quotes
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
 from services.orchestrator.vision import process_vision
 from packages.language import conversation_language, language_instruction
@@ -79,6 +80,8 @@ class ProjectTools(ChatTools):
             )
             passages = [p.model_dump() for p in result.passages]
             self.item.chunks_recuperes.extend(passages)
+            for passage in result.passages:
+                document_quotes.add_document(passage.text)
             return {
                 "trust": "untrusted",
                 "data": {"passages": select_passages(result.passages, request.query)},

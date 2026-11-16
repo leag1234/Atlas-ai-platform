@@ -14,6 +14,7 @@ from packages.language import language_instruction
 from services.orchestrator.chat_schema import ChatRequest
 from packages.attachment_reader import DOCUMENT_CONTEXT_BYTES
 from services.orchestrator.content import hierarchical_summary
+from services.orchestrator import document_quotes
 from services.orchestrator.documents import DocumentError
 from services.orchestrator.interactions import Interaction
 from services.orchestrator.model import GatewayError, GatewayModel
@@ -69,6 +70,7 @@ async def process_documents(request: ChatRequest, item: Interaction) -> None:
                 remaining_cost=Decimal("0.30") - Decimal(str(item.cout_eur)),
             )
             item.cout_eur += float(ocr_cost)
+            document_quotes.add_document(document.text, document.filename)
         except DocumentError as exc:
             item.documents.append(
                 {
