@@ -93,3 +93,6 @@ picture_roles:
   # Pictures on CPU (ATLAS_PICTURES_CPU=1): one JSON call turns the request into the fixed
   # illustration prompt; the label anchors of a diagram use this profile with vision_role "locate".
   picture_rewrite: atlas-deepseek
+  # A requested file (work_pictures.plan, deliverable_check): the pictures it needs and
+  # its check against the request, short JSON calls, reasoning off.
+  deliverable_plan: atlas-deepseek

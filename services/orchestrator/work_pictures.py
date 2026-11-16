@@ -46,7 +46,7 @@ REFERENCE = re.compile(r"picture-[0-9a-f]{12}")
 CLOSING_RESERVE_SECONDS = 75.0
 # Pictures drawn before the agent writes leave this for writing the document,
 # publishing and checking it (the turn's closing is kept apart).
-WRITING_RESERVE_SECONDS = 70.0
+WRITING_RESERVE_SECONDS = 90.0
 # Per picture, beyond the server's own drawing time: transfer and the check.
 CHECK_SECONDS = 4.0
 # The vision check of all the pictures of a call, at most.
@@ -461,7 +461,9 @@ async def execute(
 # (none for most files); code then draws them, tells the agent where they are,
 # and the publication checks that they are placed.
 
-PLAN_SECONDS = 45.0
+PLAN_SECONDS = 40.0
+# The fast profile, reasoning off (p90 measured on staging: see the PR).
+FAST_PLAN_SECONDS = 20.0
 PLAN_BUDGET_EUR = Decimal("0.01")
 PLAN_TOKENS = 1200
 PLAN_SYSTEM = (
@@ -516,13 +518,102 @@ def parse_plan(reply: str) -> Plan | None:
         return None
 
 
-async def plan(tools: Any, request: str, *, call: Any = None) -> Plan | None:
-    """The pictures the requested file needs; None when the plan could not run."""
+def plan_profiles(tools: Any) -> list[tuple[str, float]]:
+    """The profiles a plan (or a check) is asked on, in order, with their time.
+
+    First the fast profile of the "deliverable_plan" role, reasoning off: on
+    the turn's own profile with reasoning a plan took 5 to 31 s and timed out
+    at 45 s on staging -91, and the picture book was written without pictures.
+    Then, once, the turn's own profile.
+    """
+    from packages.profiles import picture_profile
+
+    model = getattr(tools, "check_model", None)
+    turn = getattr(model, "profile", None)
+    found: list[tuple[str, float]] = []
+    fast = picture_profile("deliverable_plan")
+    if isinstance(fast, str):
+        found.append((fast, FAST_PLAN_SECONDS))
+    if isinstance(turn, str) and turn not in {name for name, _ in found}:
+        found.append((turn, PLAN_SECONDS))
+    return found
+
+
+async def ask(
+    tools: Any,
+    messages: list[dict[str, Any]],
+    tokens: int,
+    event: str,
+    call: Any,
+    read: Any,
+) -> Any:
+    """One small JSON call on the plan profiles, the next one after a failure
+    or a reply `read` cannot use; its cost is added to the turn. None when
+    every profile failed."""
     from services.orchestrator.deliverable_check import _complete
 
     model = getattr(tools, "check_model", None)
-    profile = getattr(model, "profile", None)
-    if not isinstance(profile, str) or not request.strip():
+    for profile, seconds in plan_profiles(tools):
+        payload: dict[str, Any] = {
+            "messages": messages,
+            "tools": [],
+            "response_format": {"type": "json_object"},
+            "profile": profile,
+            "max_tokens": tokens,
+            "timeout": seconds,
+            "budget_eur": str(PLAN_BUDGET_EUR),
+            "reasoning_effort": "none",
+            "reasoning_disabled": True,
+            "sampling_temperature": 0.0,
+            "single_attempt": True,
+            "local_enabled": False,
+        }
+        if getattr(model, "strict", False):
+            payload["privacy"] = "strict"
+        started = time.monotonic()
+        try:
+            reply = await (call or _complete)(payload, seconds + 5)
+        except Exception as error:  # noqa: BLE001 - the next profile is asked
+            logging.getLogger(__name__).warning(
+                json.dumps(
+                    {
+                        "event": event + "_failed",
+                        "error": type(error).__name__,
+                        "seconds": round(time.monotonic() - started, 1),
+                    }
+                )
+            )
+            continue
+        try:
+            cost = Decimal(str(reply.get("cost_eur") or 0))
+        except ArithmeticError:
+            cost = Decimal(0)
+        if (
+            model is not None
+            and cost.is_finite()
+            and cost > 0
+            and isinstance(getattr(model, "spent", None), Decimal)
+        ):
+            model.spent += cost
+        value = read(str(reply.get("text") or ""))
+        logging.getLogger(__name__).warning(
+            json.dumps(
+                {
+                    "event": event if value is not None else event + "_unreadable",
+                    "seconds": round(time.monotonic() - started, 1),
+                    "cost_eur": str(cost),
+                }
+            )
+        )
+        if value is not None:
+            return value
+    return None
+
+
+async def plan(tools: Any, request: str, *, call: Any = None) -> Plan | None:
+    """The pictures the requested file needs; None when no plan could be made
+    (the turn then remembers it: tools.picture_plan_failed)."""
+    if not request.strip():
         return None
     earlier = [
         text
@@ -530,42 +621,12 @@ async def plan(tools: Any, request: str, *, call: Any = None) -> Plan | None:
         if isinstance(text, str)
     ]
     answers = getattr(tools, "earlier_answers", None) or []
-    payload: dict[str, Any] = {
-        "messages": plan_messages(
-            request, earlier, str(answers[-1]) if answers else ""
-        ),
-        "tools": [],
-        "response_format": {"type": "json_object"},
-        "profile": profile,
-        "max_tokens": PLAN_TOKENS,
-        "timeout": PLAN_SECONDS,
-        "budget_eur": str(PLAN_BUDGET_EUR),
-        "reasoning_effort": "none",
-        "sampling_temperature": 0.0,
-        "single_attempt": True,
-        "local_enabled": False,
-    }
-    if getattr(model, "strict", False):
-        payload["privacy"] = "strict"
-    try:
-        reply = await (call or _complete)(payload, PLAN_SECONDS + 5)
-    except Exception as error:  # noqa: BLE001 - the agent still has make_pictures
-        logging.getLogger(__name__).warning(
-            json.dumps({"event": "picture_plan_failed", "error": type(error).__name__})
-        )
-        return None
-    try:
-        cost = Decimal(str(reply.get("cost_eur") or 0))
-    except ArithmeticError:
-        cost = Decimal(0)
-    if (
-        model is not None
-        and cost.is_finite()
-        and cost > 0
-        and isinstance(getattr(model, "spent", None), Decimal)
-    ):
-        model.spent += cost
-    return parse_plan(str(reply.get("text") or ""))
+    messages = plan_messages(request, earlier, str(answers[-1]) if answers else "")
+    planned = await ask(tools, messages, PLAN_TOKENS, "picture_plan", call, parse_plan)
+    if isinstance(planned, Plan):
+        return planned
+    tools.picture_plan_failed = True
+    return None
 
 
 PLACE = (
@@ -573,6 +634,12 @@ PLACE = (
     "checked against their items): {pictures}. Place each one in the section "
     "of its item as its own Markdown line ![label](reference) (for slides: in "
     "the slide's images). Do not replace a picture with an emoji or a symbol."
+)
+NO_PLAN = (
+    "\n\nThe pictures this file needs could not be planned before you started. "
+    "If the request asks for pictures, images, illustrations or photos, draw "
+    "them first with make_pictures and place each one; never replace them "
+    "with emoji or symbols unless the person asked for emoji."
 )
 LEFT = (
     " These pictures could not be drawn in this turn: {labels} (about {seconds} "
@@ -587,10 +654,17 @@ async def prepare(
     """Plan the pictures of a file turn, draw them, tell the agent where they are."""
     if not enabled() or conversation_dir(tools) is None:
         return None
+    started = time.monotonic()
     planned = await plan(tools, request, call=call)
-    if planned is None or not planned.pictures:
-        if planned is not None:
-            tools.picture_plan = planned
+    seconds -= time.monotonic() - started
+    if planned is None:
+        # No plan: the guarantee is not dropped in silence. The agent is told
+        # to draw the pictures a request asks for itself, and the check of the
+        # file judges them from the request (deliverable_check).
+        tools.instructions = (getattr(tools, "instructions", "") or "") + NO_PLAN
+        return None
+    if not planned.pictures:
+        tools.picture_plan = planned
         return planned
     tools.picture_plan = planned
     budget = seconds - WRITING_RESERVE_SECONDS

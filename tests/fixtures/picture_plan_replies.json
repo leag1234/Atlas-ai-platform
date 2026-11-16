@@ -1,5 +1,5 @@
 {
- "recorded": "2026-11-16, staging gateway: the picture plan (work_pictures.plan) of varied requests on two profiles",
+ "recorded": "2026-11-16, staging gateway: the picture plan (work_pictures.plan) of varied requests on two profiles; the deliverable_plan role (fast profile, reasoning off), 2026-11-16 after staging -91",
  "profiles": {
   "atlas-mistral": {
    "picture_book_fr": {
@@ -146,6 +146,80 @@
     "reply": {
      "text": "{\n  \"pictures\": [],\n  \"style\": \"\",\n  \"emoji_requested\": true\n}",
      "cost_eur": "0.0002598"
+    }
+   }
+  },
+  "deliverable_plan role": {
+   "picture_book_fr": {
+    "request": "fait moi un imagier en pdf pour mon fils de 3 ans avc une image par mot : voilier, radeau, banane, tambour, radis, poule, masque et tuba, petit robot, bonbon, toboggan, maison dans un arbre, pomme",
+    "earlier": [],
+    "answer": "",
+    "expected_pictures": 12,
+    "reply": {
+     "text": "{\"pictures\": [{\"label\": \"voilier\", \"description\": \"A colorful sailboat with white sails on blue water, sunny sky.\"}, {\"label\": \"radeau\", \"description\": \"A simple wooden raft floating on calm water, with logs tied together.\"}, {\"label\": \"banane\", \"description\": \"A bright yellow banana with brown tips, slightly curved.\"}, {\"label\": \"tambour\", \"description\": \"A red drum with white drumheads and two wooden sticks.\"}, {\"label\": \"radis\", \"description\": \"A round red radish with green leaves, on white background.\"}, {\"label\": \"poule\", \"description\": \"A white hen with red comb, standing in a farmyard.\"}, {\"label\": \"masque et tuba\", \"description\": \"A blue snorkeling mask and a yellow snorkel tube together.\"}, {\"label\": \"petit robot\", \"description\": \"A small cute robot with round eyes and antenna, metallic gray.\"}, {\"label\": \"bonbon\", \"description\": \"A wrapped candy with red and white swirls, twisted ends.\"}, {\"label\": \"toboggan\", \"description\": \"A colorful playground slide with a ladder, red and yellow.\"}, {\"label\": \"maison dans un arbre\", \"description\": \"A wooden treehouse with a rope ladder, built in a big green tree.\"}, {\"label\": \"pomme\", \"description\": \"A shiny red apple with a small green leaf and stem.\"}], \"style\": \"bright, simple, cartoon style for toddlers\", \"emoji_requested\": false}",
+     "cost_eur": "0.0004108"
+    }
+   },
+   "follow_up_missing_pictures_fr": {
+    "request": "merci ! il manque des images, tu peux finir stp ?",
+    "earlier": [
+     "fait moi un imagier en pdf pour mon fils de 3 ans avc une image par mot : voilier, radeau, banane, tambour, radis, poule, masque et tuba, petit robot, bonbon, toboggan, maison dans un arbre, pomme"
+    ],
+    "answer": "Voici l'imagier PDF avec les 12 mots. [Télécharger imagier.pdf](...)",
+    "expected_pictures": 12,
+    "reply": {
+     "text": "{\"pictures\": [{\"label\": \"voilier\", \"description\": \"A colorful sailboat with white sails on blue water.\"}, {\"label\": \"radeau\", \"description\": \"A wooden raft with logs tied together floating on water.\"}, {\"label\": \"banane\", \"description\": \"A yellow banana with brown tips on a white background.\"}, {\"label\": \"tambour\", \"description\": \"A red drum with two drumsticks beside it.\"}, {\"label\": \"radis\", \"description\": \"A red radish with green leaves on a white background.\"}, {\"label\": \"poule\", \"description\": \"A white hen with red comb standing in a farmyard.\"}, {\"label\": \"masque et tuba\", \"description\": \"A blue diving mask and snorkel on a sandy beach.\"}, {\"label\": \"petit robot\", \"description\": \"A small cute silver robot with glowing eyes and antenna.\"}, {\"label\": \"bonbon\", \"description\": \"A wrapped candy with red and white swirls on a white background.\"}, {\"label\": \"toboggan\", \"description\": \"A colorful playground slide with a child sliding down.\"}, {\"label\": \"maison dans un arbre\", \"description\": \"A wooden treehouse with a ladder built in a big green tree.\"}, {\"label\": \"pomme\", \"description\": \"A shiny red apple with a green leaf on a white background.\"}], \"style\": \"bright, simple, child-friendly cartoon style\", \"emoji_requested\": false}",
+     "cost_eur": "0.0004156"
+    }
+   },
+   "poster_en": {
+    "request": "make an A4 poster as a PDF for our neighbourhood bike repair workshop, saturday 10am at the community hall, free, with a big illustration of a bicycle",
+    "earlier": [],
+    "answer": "",
+    "expected_pictures": 1,
+    "reply": {
+     "text": "{\"pictures\": [{\"label\": \"Bicycle\", \"description\": \"A large, detailed illustration of a classic bicycle with wheels, frame, handlebars, and pedals, centered on the poster.\"}], \"style\": \"Clean, friendly, community-oriented, with bold colors and simple shapes\", \"emoji_requested\": false}",
+     "cost_eur": "0.0001828"
+    }
+   },
+   "slides_animals_en": {
+    "request": "can you make me a slide deck presenting 5 savanna animals, one slide per animal with a picture and two short facts",
+    "earlier": [],
+    "answer": "",
+    "expected_pictures": 5,
+    "reply": {
+     "text": "{\"pictures\": [{\"label\": \"Lion\", \"description\": \"Male lion with thick mane standing on savanna grass, golden light.\"}, {\"label\": \"Elephant\", \"description\": \"African elephant with large ears and trunk raised, dust around feet.\"}, {\"label\": \"Giraffe\", \"description\": \"Tall giraffe with long neck and spotted coat, eating leaves from acacia tree.\"}, {\"label\": \"Zebra\", \"description\": \"Black and white striped zebra standing in dry grass, head turned sideways.\"}, {\"label\": \"Cheetah\", \"description\": \"Cheetah with black tear marks, sprinting across open savanna, motion blur.\"}], \"style\": \"realistic wildlife photography, warm natural tones\", \"emoji_requested\": false}",
+     "cost_eur": "0.0002556"
+    }
+   },
+   "report_no_pictures_fr": {
+    "request": "Rédige-moi un rapport Word de deux pages sur la gestion des déchets dans une petite commune",
+    "earlier": [],
+    "answer": "",
+    "expected_pictures": 0,
+    "reply": {
+     "text": "{\"pictures\": [], \"style\": \"\", \"emoji_requested\": false}",
+     "cost_eur": "0.0001348"
+    }
+   },
+   "table_no_pictures_fr": {
+    "request": "Fais moi un doc word qui compare 4 langages de programmation dans un tableau avec les colonnes nom, année de création, typage, usage principal",
+    "earlier": [],
+    "answer": "",
+    "expected_pictures": 0,
+    "reply": {
+     "text": "{\"pictures\": [], \"style\": \"\", \"emoji_requested\": false}",
+     "cost_eur": "0.0001396"
+    }
+   },
+   "emoji_asked_en": {
+    "request": "make me a one-page PDF checklist for packing a beach bag, with an emoji next to each item",
+    "earlier": [],
+    "answer": "",
+    "expected_pictures": 0,
+    "reply": {
+     "text": "{\"pictures\": [], \"style\": \"\", \"emoji_requested\": true}",
+     "cost_eur": "0.0001348"
     }
    }
   }

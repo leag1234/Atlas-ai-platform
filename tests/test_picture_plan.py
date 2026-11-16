@@ -153,6 +153,58 @@ class PlanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(later.pictures_drawn), 12)
 
 
+class PlanFallbackTests(unittest.IsolatedAsyncioTestCase):
+    """Staging -91: the plan timed out at 45 s on the slow turn profile, the
+    turn went on without pictures and nothing said so."""
+
+    async def test_the_fast_profile_comes_first_then_the_turn_profile(self) -> None:
+        tools = tools_for("subject|z", "a poster with a big illustration")
+        case = RECORDED["deliverable_plan role"]["poster_en"]
+        replies = AsyncMock(side_effect=[TimeoutError(), dict(case["reply"])])
+        plan = await work_pictures.plan(tools, case["request"], call=replies)
+        assert plan is not None
+        self.assertEqual(len(plan.pictures), 1)
+        first, second = (c.args[0] for c in replies.await_args_list)
+        self.assertNotEqual(first["profile"], second["profile"])
+        self.assertEqual(second["profile"], "atlas-qwen")  # the turn's own
+        self.assertLessEqual(first["timeout"], work_pictures.FAST_PLAN_SECONDS)
+        self.assertTrue(first["reasoning_disabled"])
+
+    async def test_no_plan_keeps_the_guarantee(self) -> None:
+        tools = tools_for("subject|w", "un imagier avec une image par mot")
+        with mock.patch.object(work_pictures, "enabled", return_value=True):
+            planned = await work_pictures.prepare(
+                tools,
+                tools.request_text,
+                280,
+                server=FakeServer([0.0]),
+                call=AsyncMock(side_effect=[TimeoutError(), {"text": "not json"}]),
+            )
+        self.assertIsNone(planned)
+        self.assertTrue(tools.picture_plan_failed)
+        self.assertIn("draw them first with make_pictures", tools.instructions)
+        # The check of the file still judges the pictures from the request;
+        # when it cannot run either, the answer must not claim the file whole.
+        content = Content.model_validate(
+            {
+                "title": "Imagier",
+                "sections": [{"heading": "Poule", "paragraphs": ["poule"]}],
+            }
+        )
+        outcome = await deliverable_check.review(
+            tools,
+            ".pdf",
+            content,
+            b"%PDF",
+            b"poule",
+            [],
+            complete=AsyncMock(side_effect=TimeoutError()),
+        )
+        self.assertFalse(outcome.checked)
+        self.assertIn("could not be checked against the request", outcome.gaps[0])
+        self.assertIn("must say so", deliverable_check.decide(tools, outcome))
+
+
 class PlacedTests(unittest.TestCase):
     def content(self, text: str) -> Content:
         return Content.model_validate(
