@@ -261,8 +261,38 @@ def without_unretrieved(text: str, retrieved: set[str]) -> str:
     if text != original:
         from services.orchestrator.citation_cleanup import cleanup
 
-        text = cleanup(text)
+        text = cleanup(citation_separators(text))
     return text
+
+
+# Separators and brackets a removed citation leaves in its list: "([1](a), , )."
+# and "Sources: [1](a),, " (staging 2026-11-16), "beau , [1](a)" when the first
+# one went, "beau ()." when all did. Space runs are entered at their first
+# character only, so every expression stays linear.
+_SEPARATOR_REPAIRS = (
+    (re.compile(r"([,;])(?:[ \t]*[,;])+"), r"\1"),
+    (re.compile(r"\([ \t]*[,;][ \t]*"), "("),
+    (re.compile(r"(?<![ \t])[ \t]*[,;][ \t]*(?=\))"), ""),
+    (re.compile(r"(?<![ \t\n])[ \t]+[,;][ \t]*(?=\[)"), " "),
+    # A function call such as print() has no space before its parentheses.
+    (re.compile(r"(?<![ \t])[ \t]+\([ \t]*\)|^\([ \t]*\)[ \t]*", re.M), ""),
+    (re.compile(r"(?<=\))[ \t]*[,;][ \t]*$", re.M), ""),
+)
+
+
+def citation_separators(text: str) -> str:
+    """Repair the citation lists of a text some citations were removed from."""
+    from services.orchestrator.citation_fragments import split_code
+
+    def repair(value: str) -> str:
+        for pattern, replacement in _SEPARATOR_REPAIRS:
+            value = pattern.sub(replacement, value)
+        return value
+
+    return "".join(
+        part if index % 2 else repair(part)
+        for index, part in enumerate(split_code(text))
+    )
 
 
 def clean_citation_residue(text: str) -> str:

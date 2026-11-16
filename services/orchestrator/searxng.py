@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
-import importlib
 import logging
 import os
 import re
@@ -18,7 +17,7 @@ from typing import cast
 import aiohttp
 
 from packages.images import VisionMessage
-from packages.language import user_prose
+from packages.language import identified_language, user_prose, word_count
 from services.orchestrator import search_freshness
 from services.orchestrator.cache import Cache
 from services.orchestrator.loop import Message
@@ -93,24 +92,20 @@ NOTICES = {
 
 def search_language(messages: Sequence[VisionMessage], locale: str) -> str:
     """Short follow-ups inherit history; ambiguous text uses an explicit UI locale."""
-    detector = importlib.import_module("langdetect")
-
     language = locale.lower().replace("_", "-").split("-")[0]
     if language not in LANGUAGES:
         language = "en"
-    detector.DetectorFactory.seed = 0
     for message in messages:
         if message.role != "user":
             continue
         prose = user_prose(message.text)
-        if len(re.findall(r"\b[\w'-]+\b", prose)) < 5:
+        if word_count(prose) < 5:
             continue
-        try:
-            scores = detector.detect_langs(prose.lower())
-        except detector.lang_detect_exception.LangDetectException:
-            continue
-        if scores[0].prob >= 0.8 and scores[0].lang in LANGUAGES:
-            language = str(scores[0].lang)
+        # The answer's own detection: unaccented French came back Welsh from
+        # langdetect alone and searched in the interface's language.
+        found = identified_language(prose, (language,), language)
+        if found in LANGUAGES:
+            language = str(found)
     return language
 
 
