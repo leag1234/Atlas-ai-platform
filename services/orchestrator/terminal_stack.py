@@ -699,9 +699,10 @@ def adapter_socket(port: int) -> socket.socket:
 
 @contextmanager
 def terminal(name: str, binding: str) -> Iterator[None]:
-    from services.orchestrator.serving import wait_http
+    from services.orchestrator.serving import service_oom_options, wait_http
 
     ports = atlas_ports()
+    oom = service_oom_options()
     network = ports.name(NETWORK)
     name = ports.name(name)
     if not os.environ.get("OPEN_TERMINAL_API_KEY", "").strip():
@@ -765,6 +766,7 @@ def terminal(name: str, binding: str) -> Iterator[None]:
             "2",
             "--pids-limit",
             "128",
+            *oom,
             "--tmpfs",
             "/tmp:rw,nosuid,nodev,size=128m,uid=1000,gid=1000",
             "-v",
