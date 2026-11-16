@@ -523,7 +523,9 @@ def build(
     for index, row in enumerate(legs):
         origin = start if index == 0 and journey.from_device_position else row["origin"]
         label = f"{index + 1}. {origin} → {row['destination']} ({words['modes'][row['mode']]}"
-        label += f", {row['service']})" if row["service"] else ")"
+        # A line or train of a leg no page gave is not written (route_facts).
+        sourced_service = row["service"] and row["status"] == "sourced"
+        label += f", {row['service']})" if sourced_service else ")"
         if row["status"] != "sourced":
             depart_text = arrive_text = duration_text = "—"
             source = words["not_found"]

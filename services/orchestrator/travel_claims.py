@@ -33,13 +33,16 @@ import re
 import time
 from collections.abc import Callable
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
+from services.orchestrator import route_facts
 from services.orchestrator.grounding import Grounding
 from services.orchestrator.location import Position
 
-Kind = Literal["duration", "distance", "clock"]
+# "route" is a sentence, a parenthesis or a table cell stating an unsourced
+# route fact (route_facts.py): it is left out like a value.
+Kind = Literal["duration", "distance", "clock", "route"]
 
 _SPACE = r"[   ]?"
 _NUMBER = r"(?<![\w.,:/])(\d{1,5}(?:[.,]\d{1,2})?)"
@@ -56,9 +59,10 @@ _HOURS_MINUTES = re.compile(
     rf"{_NUMBER}{_SPACE}{_HOURS}{_JOIN}(\d{{1,2}}){_SPACE}{_MINUTES}\.?{_END}",
     re.I,
 )
-# "12h30", "12 h 30", "12:30", "2:00 pm"; "9.45" is not read (a decimal).
+# "12h30", "12 h 30", "12:30", "2:00 pm"; "9.45" is not read (a decimal), nor
+# "Platform 4: 08:15" (a colon with a space after it ends a label).
 _CLOCK = re.compile(
-    r"(?<![\w.,:/])(\d{1,2})[ \u00a0\u202f]?(?:h|:)[ \u00a0\u202f]?(\d{2})(?!\d)"
+    r"(?<![\w.,:/])(\d{1,2})(?:[ \u00a0\u202f]?h[ \u00a0\u202f]?|:)(\d{2})(?!\d)"
     r"(?:[ \u00a0\u202f]?([ap])\.?m\b\.?)?",
     re.I,
 )
@@ -209,8 +213,10 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
         for match in pattern.finditer(plain):
             if free(match.start(), match.end()):
                 add(match, "distance", _number(match[1]) * factor)
-    # "20-25 min", "1,5 to 2 km": the lower bound of a range goes with the value.
-    widened = []
+    # "20-25 min", "1,5 to 2 km": the lower bound of a range goes with the
+    # value, and is checked too (staging -98: "20–25 min" was kept because a
+    # source said "25 min" about something else, its "20" was never read).
+    widened: list[Quantity] = []
     for quantity in found:
         lower = _RANGE_START.search(plain, 0, quantity.start)
         if (
@@ -218,17 +224,26 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
             and lower.end() == quantity.start
             and quantity.kind != "clock"
         ):
-            quantity = Quantity(
+            numbers = re.findall(r"\d+(?:[.,]\d+)?", quantity.text)
+            upper = _number(numbers[0]) if len(numbers) == 1 else 0.0
+            start_number = re.match(r"\d+(?:[.,]\d+)?", lower[0])
+            low = (
+                _number(start_number[0]) * quantity.value / upper
+                if upper and start_number
+                else None
+            )
+            quantity = _Range(
                 lower.start(),
                 quantity.end,
                 quantity.kind,
                 quantity.value,
                 text[lower.start() : quantity.end],
+                low=quantity.value if low is None else low,
             )
         widened.append(quantity)
     # "4 hours." ends a sentence: its full stop is not part of the value.
     trimmed = [
-        Quantity(q.start, q.end - 1, q.kind, q.value, q.text[:-1])
+        replace(q, end=q.end - 1, text=q.text[:-1])
         if q.text.endswith(".") and plain[q.end : q.end + 1] in {"", " ", "\n"}
         else q
         for q in widened
@@ -439,6 +454,15 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Sin verificar, por eso se omite: {values}. Ninguna página consultada para esta respuesta lo indica, y Atlas aún no calcula rutas.",
         "it": "Non verificato, quindi omesso: {values}. Nessuna pagina consultata per questa risposta lo indica, e Atlas non calcola ancora gli itinerari.",
     },
+    # The same note when a line, a stop, a direction or a direct service was
+    # left out: it says where to check them instead.
+    "route": {
+        "en": "Not verified, so left out: {values}. No page read for this answer confirms them, and Atlas does not compute routes yet: check lines, stops and connections in the operator’s journey planner.",
+        "fr": "Non vérifié, donc retiré : {values}. Aucune page consultée pour cette réponse ne le confirme, et Atlas ne calcule pas encore d’itinéraire : vérifiez lignes, arrêts et correspondances dans le calculateur d’itinéraire de l’exploitant.",
+        "de": "Nicht überprüft und daher weggelassen: {values}. Keine für diese Antwort gelesene Seite bestätigt es, und Atlas berechnet noch keine Routen: Prüfen Sie Linien, Haltestellen und Umstiege in der Fahrplanauskunft des Verkehrsbetriebs.",
+        "es": "Sin verificar, por eso se omite: {values}. Ninguna página consultada para esta respuesta lo confirma, y Atlas aún no calcula rutas: compruebe líneas, paradas y transbordos en el planificador de viajes del operador.",
+        "it": "Non verificato, quindi omesso: {values}. Nessuna pagina consultata per questa risposta lo conferma, e Atlas non calcola ancora gli itinerari: controlli linee, fermate e coincidenze nel pianificatore di viaggio dell’operatore.",
+    },
 }
 
 
@@ -550,6 +574,14 @@ def _cell_bounds(text: str, index: int) -> tuple[int, int]:
     return left + 1, (right if right >= 0 else line_end)
 
 
+def _removal(text: str, claim: Quantity) -> tuple[int, int]:
+    """What leaving ``claim`` out removes: its table cell, else its clause."""
+    line_start, _ = _line_bounds(text, claim.start)
+    if text[line_start:].lstrip().startswith("|"):
+        return _cell_bounds(text, claim.start)
+    return _span_to_remove(text, claim)
+
+
 def _leave_out(text: str, flagged: list[Quantity]) -> str:
     spans: list[tuple[int, int, str]] = []
     for claim in flagged:
@@ -618,6 +650,132 @@ def _tidy(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
 
 
+# --- The structure around what was left out. --------------------------------
+# Staging -98: "The plan, in three legs:" stayed above the one leg left. When
+# content goes, a count that announced it goes, a numbered list is numbered
+# again, and an introduction or a heading left with nothing under it goes.
+
+_ITEM = re.compile(r"^(\s*)(?:(\d{1,3})([.)])|[-*+])\s+")
+_INTRO = re.compile(r":[\s*_]*$")
+
+
+def _list_after(lines: list[str], index: int) -> list[int]:
+    """The top-level items of the list that follows line ``index``."""
+    items: list[int] = []
+    base: int | None = None
+    for position in range(index + 1, len(lines)):
+        line = lines[position]
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        if _ITEM.match(line) and (base is None or indent <= base):
+            base = indent if base is None else base
+            items.append(position)
+            continue
+        if base is not None and indent > base:
+            continue
+        break
+    return items
+
+
+def _next_line(lines: list[str], index: int) -> str:
+    return next((line for line in lines[index + 1 :] if line.strip()), "")
+
+
+def _without_count(line: str, count: int) -> str:
+    """A count of removed items goes: "The plan, in three legs:" -> "The plan:"."""
+    words = [word for word, value in _NUMBER_WORDS.items() if value == count]
+    numbers = "|".join(
+        sorted(map(re.escape, [str(count), *words]), key=len, reverse=True)
+    )
+    folded = route_facts.fold(line)
+    found = re.search(
+        rf"(?:,\s*|\s*)\b(?:in|en|em|auf|a)\s+(?:{numbers})\s+[^\W\d_][\w-]*",
+        folded,
+    ) or re.search(rf"\b(?:{numbers})\s+(?=[^\W\d_])", folded)
+    if found is None:
+        return line
+    line = re.sub(r"(?<=\S)[ \t]{2,}", " ", line[: found.start()] + line[found.end() :])
+    marker = re.match(r"^[\s#>*_]*", line)
+    index = marker.end() if marker else 0
+    if index < len(line) and line[index].islower():
+        line = line[:index] + line[index].upper() + line[index + 1 :]
+    return line
+
+
+def _renumber(lines: list[str], first: int) -> list[str]:
+    """Numbered lists that lost items count 1, 2, 3 again."""
+    result = list(lines)
+    position = 0
+    run_index = 0
+    while position < len(result):
+        match = _ITEM.match(result[position])
+        if not match or not match[2]:
+            position += 1
+            continue
+        indent = len(match[1])
+        run = [position]
+        cursor = position + 1
+        while cursor < len(result):
+            line = result[cursor]
+            item = _ITEM.match(line)
+            depth = len(line) - len(line.lstrip())
+            if item and item[2] and depth == indent:
+                run.append(cursor)
+            elif line.strip() and depth <= indent:
+                break
+            cursor += 1
+        numbers = [int(_ITEM.match(result[i])[2]) for i in run]  # type: ignore[index]
+        start = first if run_index == 0 else numbers[0]
+        if numbers != list(range(start, start + len(run))):
+            for offset, line_index in enumerate(run):
+                line = result[line_index]
+                item = _ITEM.match(line)
+                assert item is not None
+                result[line_index] = (
+                    line[: item.start(2)] + str(start + offset) + line[item.end(2) :]
+                )
+        run_index += 1
+        position = cursor
+    return result
+
+
+def _restructure(original: str, body: str) -> str:
+    """Counts, numbers and headings that referred to what was left out."""
+    old = original.split("\n")
+    lines = body.split("\n")
+    first_number = next(
+        (int(m[2]) for line in old if (m := _ITEM.match(line)) and m[2]), 1
+    )
+    drop: set[int] = set()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or _ITEM.match(line) or stripped.startswith("|"):
+            continue
+        heading = stripped.startswith("#")
+        if not (heading or _INTRO.search(stripped)) or line not in old:
+            continue
+        old_index = old.index(line)
+        following = _next_line(lines, index)
+        if not following.strip() or following.lstrip().startswith("#"):
+            # Nothing left under it.
+            if _next_line(old, old_index) != following:
+                drop.add(index)
+            continue
+        if heading:
+            continue
+        before = _list_after(old, old_index)
+        after = _list_after(lines, index)
+        if not before or len(after) >= len(before):
+            continue
+        if not after:
+            drop.add(index)
+            continue
+        lines[index] = _without_count(line, len(before))
+    lines = [line for index, line in enumerate(lines) if index not in drop]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(_renumber(lines, first_number)))
+
+
 def _empty_row(row: str) -> bool:
     """A row that lost values here and keeps at most its label."""
     cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
@@ -681,6 +839,8 @@ class Turn:
         for text in (*self.evidence.evidence, *self.computed, *self.asked):
             for quantity in quantities(text, generous=True):
                 values[quantity.kind].append(quantity.value)
+                if isinstance(quantity, _Range):
+                    values[quantity.kind].append(quantity.low)
         for text in self.asked:
             values["clock"].extend(spoken_times(text))
         return values
@@ -698,6 +858,8 @@ class Turn:
             parts.extend(re.findall(r"\d+(?:[.,]\d+)?", quantity.text))
         # "demain", "tomorrow", "Freitag": the dates the person named are theirs.
         parts.extend(user_dates(self.asked, self.zone))
+        # Lines and stops of route sentences: checked here, together.
+        parts.extend(route_facts.mentions(answer, _masked(answer)))
         return " ".join(parts)
 
     def check(self, answer: str, language: str) -> str:
@@ -705,14 +867,13 @@ class Turn:
         if not self.active or not answer.strip():
             return answer
         body, fold, footer = answer.partition("<details>")
-        claims = _ranges(body, quantities(body))
+        read = quantities(body)
+        claims = _ranges(body, read)
         claims = [
             claim
             for claim in claims
             if not _MARGIN.search(body[slice(*_clause(body, claim.start, claim.end))])
         ]
-        if not claims:
-            return answer
         known = self.known()
         sourced_clocks = known["clock"]
 
@@ -742,14 +903,51 @@ class Turn:
             )
 
         flagged = [claim for claim in claims if not supported(claim)]
-        if not flagged:
+        # Lines, stops, directions, transfers and "direct" claims: together in
+        # one passage of a source read this turn (route_facts.py).
+        owned_clocks = [
+            q.value
+            for text in (*self.asked, *self.computed)
+            for q in quantities(text, generous=True)
+            if q.kind == "clock"
+        ] + [value for text in self.asked for value in spoken_times(text)]
+        route = route_facts.review(
+            body,
+            _masked(body),
+            [(q.start, q.end, q.value) for q in read if q.kind == "clock"],
+            self.evidence.evidence,
+            [*self.asked, self.place],
+            self.computed,
+            owned_clocks,
+        )
+        # A sentence the values check already leaves out needs no second reason.
+        taken = [_removal(body, claim) for claim in flagged]
+        route.spans = [
+            span
+            for span in route.spans
+            if not any(a <= span[0] and span[1] <= b for a, b in taken)
+        ]
+        if not flagged and not route.spans:
             return answer
-        self.marked = len(flagged)
-        body = _leave_out(body, flagged)
-        values = list(dict.fromkeys(" ".join(c.text.split()) for c in flagged))
+        self.marked = len(flagged) + len(route.spans)
+        removed = [
+            *flagged,
+            *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in route.spans),
+        ]
+        body = _restructure(body, _leave_out(body, removed))
+        values = list(
+            dict.fromkeys(
+                " ".join(text.split())
+                for text in (*(c.text for c in flagged), *route.labels)
+            )
+        )
         listed = ", ".join(values[:6]) + (", …" if len(values) > 6 else "")
-        note = wording("note", language).format(values=listed)
-        answer = body.rstrip() + "\n\n" + note
+        note = wording("route" if route.route else "note", language)
+        answer = "\n\n".join(
+            part
+            for part in (body.strip("\n").rstrip(), note.format(values=listed))
+            if part
+        )
         if fold:
             answer += "\n\n" + fold + footer
         return answer.rstrip()
