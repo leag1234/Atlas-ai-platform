@@ -29,6 +29,7 @@ sourced value is not mistaken for an invented one.
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from collections.abc import Callable
@@ -65,6 +66,9 @@ _CLOCK = re.compile(
     r"(?<![\w.,:/])(\d{1,2})(?:[ \u00a0\u202f]?h[ \u00a0\u202f]?|:)(\d{2})(?!\d)"
     r"(?:[ \u00a0\u202f]?([ap])\.?m\b\.?)?",
     re.I,
+)
+_PLACEHOLDER = re.compile(
+    r"(?<![\w.,:/])\d{1,2}[ \u00a0\u202f]?(?:h|:)[ \u00a0\u202f]?\d?[xX?]{1,2}(?![\w?])"
 )
 # "2 pm", "11am", "14 Uhr": hours of the day without minutes.
 _CLOCK_HOUR = re.compile(r"(?<![\w.,:/])(\d{1,2})[   ]?(am|pm|uhr)(?!\w)", re.I)
@@ -152,6 +156,10 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
 
     for match in _HOURS_MINUTES.finditer(plain):
         add(match, "duration", _number(match[1]) * 60 + int(match[2]))
+    if not generous:
+        # "vers 12 h 2x": a placeholder written for a time no source gave.
+        for match in _PLACEHOLDER.finditer(plain):
+            add(match, "clock", math.nan)
     for match in _CLOCK.finditer(plain):
         if not free(match.start(), match.end()):
             continue
@@ -436,6 +444,11 @@ def user_dates(texts: list[str], zone: str = "UTC") -> list[str]:
     return [(today + timedelta(days=offset)).isoformat() for offset in sorted(days)]
 
 
+def _rounded(claimed: float, known: float) -> bool:
+    """A trip duration rounded to the half hour ("about 4 h" for 4 h 02 min)."""
+    return claimed >= 60 and claimed % 30 == 0 and abs(claimed - known) <= 15
+
+
 def _same(kind: Kind, claimed: float, known: float) -> bool:
     if kind == "clock":
         # "2:00 pm" and "14:00", or a "2 pm" written as "2:00": the same time.
@@ -678,6 +691,24 @@ def _list_after(lines: list[str], index: int) -> list[int]:
     return items
 
 
+def _heading(line: str) -> bool:
+    """A markdown heading, or a line that is only bold ("**2. Train**")."""
+    return line.startswith("#") or bool(re.fullmatch(r"\*\*[^*]+\*\*\s*:?", line))
+
+
+def _old_index(old: list[str], line: str) -> int:
+    """Where a line was before removals; a heading that lost a parenthesis
+    ("**1. Walk (10 min)**") is found by its opening words."""
+    if line in old:
+        return old.index(line)
+    opening = line.strip()[:12]
+    if _heading(line.strip()) and len(opening) == 12:
+        for index, candidate in enumerate(old):
+            if candidate.strip().startswith(opening):
+                return index
+    return -1
+
+
 def _next_line(lines: list[str], index: int) -> str:
     return next((line for line in lines[index + 1 :] if line.strip()), "")
 
@@ -752,12 +783,12 @@ def _restructure(original: str, body: str) -> str:
         stripped = line.strip()
         if not stripped or _ITEM.match(line) or stripped.startswith("|"):
             continue
-        heading = stripped.startswith("#")
-        if not (heading or _INTRO.search(stripped)) or line not in old:
+        heading = _heading(stripped)
+        old_index = _old_index(old, line)
+        if not (heading or _INTRO.search(stripped)) or old_index < 0:
             continue
-        old_index = old.index(line)
         following = _next_line(lines, index)
-        if not following.strip() or following.lstrip().startswith("#"):
+        if not following.strip() or _heading(following.strip()):
             # Nothing left under it.
             if _next_line(old, old_index) != following:
                 drop.add(index)
@@ -774,6 +805,66 @@ def _restructure(original: str, body: str) -> str:
         lines[index] = _without_count(line, len(before))
     lines = [line for index, line in enumerate(lines) if index not in drop]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(_renumber(lines, first_number)))
+
+
+# Markdown left by removals: "**1." with its title gone (staging -100), a
+# list item with nothing in it. A line keeps its emphasis marks in pairs, and
+# a line with no word left goes.
+
+
+def wellformed(text: str) -> str:
+    """No unpaired ``**``, ``__`` or backtick on a line, no empty list item."""
+    lines: list[str] = []
+    fenced = False
+    for line in text.split("\n"):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            lines.append(line)
+            continue
+        if fenced or line.lstrip().startswith("|"):
+            lines.append(line)
+            continue
+        for mark in ("**", "__", "`"):
+            if line.count(mark) % 2:
+                line = line.replace(mark, "")
+        content = re.sub(r"^\s*(?:[-*+>]|\d{1,3}[.)])\s+", "", line)
+        if line.strip() and not re.search(
+            r"[^\W_]", re.sub(r"^\W*\d{1,3}[.)]", "", content)
+        ):
+            continue
+        lines.append(line.rstrip())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n")
+
+
+@dataclass
+class Findings:
+    """What a travel answer states that no source, computation or person gave."""
+
+    values: list[Quantity]
+    route: route_facts.Finding
+
+    def __bool__(self) -> bool:
+        return bool(self.values or self.route.spans)
+
+    def __len__(self) -> int:
+        return len(self.values) + len(self.route.spans)
+
+    def labels(self) -> list[str]:
+        return list(
+            dict.fromkeys(
+                " ".join(text.split())
+                for text in (*(c.text for c in self.values), *self.route.labels)
+            )
+        )
+
+    def note(self, language: str) -> str:
+        """The one closing note: what was left out, and where to check."""
+        key = "route" if self.route.route else "note"
+        return wording(key, language).format(values=self.listed()).replace("….", "…")
+
+    def listed(self) -> str:
+        values = self.labels()
+        return ", ".join(values[:6]) + (", …" if len(values) > 6 else "")
 
 
 def _empty_row(row: str) -> bool:
@@ -806,6 +897,8 @@ class Turn:
     started: float = field(default_factory=time.monotonic, repr=False)
     held: bool = False
     marked: int = 0
+    # The texts read, each with the page it came from (travel_rebuild).
+    linked: list[tuple[str, str]] = field(default_factory=list, repr=False)
 
     def elapsed(self) -> float:
         """Seconds since the turn started (its checks were set up)."""
@@ -825,6 +918,29 @@ class Turn:
     def collect(self, value: object) -> None:
         if self.active:
             self.evidence.collect(value)
+            self._link(value, "")
+
+    def _link(self, value: object, url: str) -> None:
+        """Source texts with their page, the same fields grounding reads."""
+        if isinstance(value, dict):
+            if value.get("error"):
+                return
+            found = value.get("link") or value.get("url")
+            url = found if isinstance(found, str) else url
+            text = "\n".join(
+                item
+                for key, item in value.items()
+                if key in {"title", "snippet", "text", "content"}
+                and isinstance(item, str)
+            )
+            if text.strip() and sum(len(t) for _, t in self.linked) < 128_000:
+                self.linked.append((url, text[:20_000]))
+            for key in ("data", "results", "passages"):
+                if key in value:
+                    self._link(value[key], url)
+        elif isinstance(value, list):
+            for row in value:
+                self._link(row, url)
 
     def collect_text(self, text: str) -> None:
         if self.active:
@@ -845,6 +961,20 @@ class Turn:
             values["clock"].extend(spoken_times(text))
         return values
 
+    def stated_durations(self) -> list[float]:
+        """Durations the sources write as durations ("4 h 02 min", "Fahrzeit 4h29"),
+        not clock times read as durations too."""
+        values: list[float] = []
+        for text in (*self.evidence.evidence, *self.computed, *self.asked):
+            found = quantities(text, generous=True)
+            clocks = {(q.start, q.end) for q in found if q.kind == "clock"}
+            values += [
+                q.value
+                for q in found
+                if q.kind == "duration" and (q.start, q.end) not in clocks
+            ]
+        return values
+
     def owned_values(self, answer: str) -> str:
         """The travel values of ``answer``, written as the travel check reads them.
 
@@ -862,11 +992,8 @@ class Turn:
         parts.extend(route_facts.mentions(answer, _masked(answer)))
         return " ".join(parts)
 
-    def check(self, answer: str, language: str) -> str:
-        """Leave out the clauses that state unsourced travel values; one note."""
-        if not self.active or not answer.strip():
-            return answer
-        body, fold, footer = answer.partition("<details>")
+    def findings(self, body: str) -> Findings:
+        """The unsourced travel values and route facts of an answer body."""
         read = quantities(body)
         claims = _ranges(body, read)
         claims = [
@@ -876,13 +1003,23 @@ class Turn:
         ]
         known = self.known()
         sourced_clocks = known["clock"]
+        stated = self.stated_durations()
+
+        def matches(kind: Kind, value: float) -> bool:
+            if value != value:  # a placeholder ("12 h 2x") states no time
+                return False
+            if any(_same(kind, value, item) for item in known[kind]):
+                return True
+            if kind == "distance":
+                return False
+            # One fact, two spellings: "4h30" written for a trip a source
+            # gives as "4 h 30 min"; "about 4 h" for "4 h 02 min".
+            if kind == "clock" and any(abs(value - item) < 0.5 for item in stated):
+                return True
+            return any(_rounded(value, item) for item in stated)
 
         def supported(claim: Quantity) -> bool:
-            values = _range_values(claim)
-            if all(
-                any(_same(claim.kind, value, item) for item in known[claim.kind])
-                for value in values
-            ):
+            if all(matches(claim.kind, value) for value in _range_values(claim)):
                 return True
             if claim.kind != "duration":
                 return False
@@ -914,7 +1051,11 @@ class Turn:
         route = route_facts.review(
             body,
             _masked(body),
-            [(q.start, q.end, q.value) for q in read if q.kind == "clock"],
+            [
+                (q.start, q.end, q.value)
+                for q in read
+                if q.kind == "clock" and q.value == q.value
+            ],
             self.evidence.evidence,
             [*self.asked, self.place],
             self.computed,
@@ -927,27 +1068,32 @@ class Turn:
             for span in route.spans
             if not any(a <= span[0] and span[1] <= b for a, b in taken)
         ]
-        if not flagged and not route.spans:
-            return answer
-        self.marked = len(flagged) + len(route.spans)
+        return Findings(flagged, route)
+
+    def kept(self, body: str, found: Findings) -> str:
+        """The body without what ``found`` holds, well formed."""
         removed = [
-            *flagged,
-            *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in route.spans),
+            *found.values,
+            *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in found.route.spans),
         ]
-        body = _restructure(body, _leave_out(body, removed))
-        values = list(
-            dict.fromkeys(
-                " ".join(text.split())
-                for text in (*(c.text for c in flagged), *route.labels)
-            )
+        return wellformed(_restructure(body, _leave_out(body, removed))).rstrip()
+
+    def left_out(self, body: str, found: Findings, language: str) -> str:
+        """The body without what ``found`` holds, and one note."""
+        return "\n\n".join(
+            part for part in (self.kept(body, found), found.note(language)) if part
         )
-        listed = ", ".join(values[:6]) + (", …" if len(values) > 6 else "")
-        note = wording("route" if route.route else "note", language)
-        answer = "\n\n".join(
-            part
-            for part in (body.strip("\n").rstrip(), note.format(values=listed))
-            if part
-        )
+
+    def check(self, answer: str, language: str) -> str:
+        """Leave out the clauses that state unsourced travel values; one note."""
+        if not self.active or not answer.strip():
+            return answer
+        body, fold, footer = answer.partition("<details>")
+        found = self.findings(body)
+        if not found:
+            return answer
+        self.marked = len(found)
+        answer = self.left_out(body, found, language)
         if fold:
             answer += "\n\n" + fold + footer
         return answer.rstrip()
