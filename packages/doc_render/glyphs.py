@@ -9,8 +9,12 @@ adapted when it is validated, so every format shows the same characters:
   Latin letter by its base letter);
 - an arrow becomes ->, <-, ^ or v by its direction, a square, triangle or
   circle used as a bullet becomes a dash;
-- an emoji, a pictograph or any other symbol or mark is dropped, with the
-  space it leaves;
+- an emoji is kept when the colour emoji font draws it (emoji.py): a PDF
+  page shows it as a picture, the Office formats keep the character;
+- an emoji the font cannot draw, a pictograph or any other symbol or mark is
+  dropped, with the space it leaves, and left_out() names it: the delivery
+  says what the file lacks instead of claiming it (staging 2026-11-16, a
+  picture book delivered without its pictures);
 - only letters are kept, and the layout still refuses a script the face does
   not cover (a document written in Chinese, for example).
 """
@@ -22,6 +26,8 @@ import unicodedata
 
 import reportlab
 from reportlab.pdfbase.ttfonts import TTFont
+
+from . import emoji
 
 FONT_FILE = Path(reportlab.__file__).parent / "fonts" / "Vera.ttf"
 
@@ -140,12 +146,52 @@ def _character(character: str, face: frozenset[int]) -> str:
     return character
 
 
+def _token(token: str, face: frozenset[int]) -> str:
+    """One token of emoji.tokens: an emoji kept when drawable, else adapted."""
+    if emoji.drawable(token):
+        return token
+    if len(token) == 1:
+        return _character(token, face)
+    return "".join(_character(character, face) for character in token)
+
+
+def drawable(token: str) -> bool:
+    """Whether a token of emoji.tokens is drawn: by the face or as an emoji."""
+    face = covered()
+    return all(ord(character) in face for character in token) or emoji.drawable(token)
+
+
 def adapt(text: str) -> str:
     """The text with the characters the face lacks replaced or dropped."""
     face = covered()
     if all(ord(character) in face for character in text):
         return text
-    adapted = "".join(_character(character, face) for character in text)
+    adapted = "".join(_token(token, face) for token in emoji.tokens(text))
     # A dropped pictograph leaves no double space and no leading space.
     adapted = re.sub(r"(?<=\S) {2,}(?=\S)", " ", adapted)
     return adapted.strip(" ") if adapted.strip(" ") else adapted
+
+
+# Format characters a text may carry that show nothing: never "left out".
+_INVISIBLE = frozenset("\u200b\u200c\u200d\u2060\ufe0e\ufe0f\u00ad")
+
+
+def left_out(text: str) -> list[str]:
+    """The characters adapt() drops without an equivalent, once each.
+
+    A dropped emoji or symbol changes what the file shows: the publication
+    reports it (project_document_tools), so that the answer never claims it.
+    """
+    face = covered()
+    if all(ord(character) in face for character in text):
+        return []
+    found: dict[str, None] = {}
+    for token in emoji.tokens(text):
+        if len(token) == 1 and (ord(token) in face or token in _INVISIBLE):
+            continue
+        if _token(token, face):
+            continue
+        shown = "".join(c for c in token if c not in _INVISIBLE)
+        if shown.strip():
+            found[shown] = None
+    return list(found)

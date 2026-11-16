@@ -870,6 +870,9 @@ async def process_work(
     )
     tools.requested_suffix = "." + named_format if named_format else None
     tools.request_text = request.user_text
+    tools.earlier_requests = [
+        message.text for message in request.messages[:-1] if message.role == "user"
+    ]
     ceiling = execution.session["effective_limits"]
     limits = replace(
         limits,
@@ -981,6 +984,7 @@ async def process_work(
                 raise RuntimeError("Invalid Work model client")
             model = connected
             configure_work_model(model, request)
+            tools.check_model = model
             model.dispatch_hook = dispatch.publish if dispatch is not None else None
             model.session_context = (
                 dispatch.session_context if dispatch is not None else None

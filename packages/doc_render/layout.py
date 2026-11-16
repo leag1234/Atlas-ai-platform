@@ -8,7 +8,9 @@ from PIL import Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
+from . import emoji
 from .cells import shown
+from .glyphs import drawable
 from .schema import Content
 
 FONT = "AtlasContentVera"
@@ -80,12 +82,27 @@ def font() -> TTFont:
     return registered
 
 
+def width_of(text: str, size: float) -> float:
+    """The drawn width of a line: its text in the face, its emoji as pictures."""
+    total, run = 0.0, ""
+    for token in emoji.tokens(text):
+        if emoji.is_emoji(token) and emoji.drawable(token):
+            total += (
+                pdfmetrics.stringWidth(run, FONT, size) + emoji.advance(token) * size
+            )
+            run = ""
+        else:
+            run += token
+    return total + pdfmetrics.stringWidth(run, FONT, size)
+
+
 def wrap(text: str, width: float, size: float) -> tuple[str, ...]:
     # Character wrapping preserves supplied whitespace and long unbroken values.
+    # An emoji sequence (a family joined by U+200D) is never cut.
     lines: list[str] = []
     current = ""
-    for character in text:
-        if pdfmetrics.stringWidth(current + character, FONT, size) > width:
+    for character in emoji.tokens(text):
+        if width_of(current + character, size) > width:
             if not current:
                 raise ValueError("glyph_exceeds_line_width")
             lines.append(current)
@@ -150,9 +167,9 @@ def pages(
 ) -> tuple[tuple[Placed, ...], ...]:
     """Lay the content out on pages; a workbook has none for its tables."""
     g = geometry
-    registered = font()
+    font()
     for text in content.texts():
-        if any(ord(c) not in registered.face.charToGlyph for c in text):
+        if not all(drawable(token) for token in emoji.tokens(text)):
             raise ValueError("unsupported_font_character")
     result: list[tuple[Placed, ...]] = []
     current: list[Placed] = []
@@ -182,7 +199,9 @@ def pages(
         # Inline markers are read, never laid out: a page and a slide show
         # the text in one face.
         for text in section.paragraphs:
-            body.append(text_block(shown(text), body=g.body))
+            plain = shown(text)
+            size = emoji.PICTURE_SIZE if emoji.pictures_only(plain) else 12
+            body.append(text_block(plain, size, body=g.body))
         for text in section.bullets:
             body.append(text_block(shown(text), bullet=True, body=g.body))
         for table in section.tables if tables else ():

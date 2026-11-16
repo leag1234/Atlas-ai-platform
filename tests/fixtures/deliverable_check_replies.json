@@ -1,0 +1,72 @@
+{
+ "recorded": "2026-11-16, staging gateway, vision role (first page shown) and text route (no page)",
+ "cases": {
+  "imagier_without_pictures": {
+   "request": "fais moi un imagier en pdf pour mon fils de 3 ans, un emoji par mot : voilier, radeau, banane, tambour, radis, poule, masque et tuba, petit robot, bonbon, toboggan, maison dans un arbre, pomme",
+   "suffix": ".pdf",
+   "markdown": "# Imagier\n\n## Voilier\n\nvoilier\n\n## Radeau\n\nradeau\n\n## Banane\n\nbanane\n\n## Tambour\n\ntambour\n\n## Radis\n\nradis\n\n## Poule\n\npoule\n\n## Masque et tuba\n\nmasque et tuba\n\n## Petit robot\n\npetit robot\n\n## Bonbon\n\nbonbon\n\n## Toboggan\n\ntoboggan\n\n## Maison dans un arbre\n\nmaison dans un arbre\n\n## Pomme\n\npomme",
+   "left_out": [
+    "🐔",
+    "🍎"
+   ],
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": [\"emojis for all requested words\"], \"approximations\": []}",
+     "cost_eur": "0.00033275"
+    },
+    "text": {
+     "text": "{\"gaps\": [\"Missing emojis for all 12 words (request asked for one emoji per word)\", \"Missing image or emoji for 'poule' (character 🐔 left out)\", \"Missing image or emoji for 'pomme' (character 🍎 left out)\"]}",
+     "cost_eur": "0.000828"
+    }
+   }
+  },
+  "imagier_with_pictures": {
+   "request": "make me a PDF picture dictionary with one emoji per word for my 3 year old: voilier, radeau, banane, tambour, radis, poule, masque et tuba, petit robot, bonbon, toboggan, maison dans un arbre, pomme",
+   "suffix": ".pdf",
+   "markdown": "# Imagier\n\n## Voilier\n\n⛵\n\nvoilier\n\n## Radeau\n\n🛶\n\nradeau\n\n## Banane\n\n🍌\n\nbanane\n\n## Tambour\n\n🥁\n\ntambour\n\n## Radis\n\n🌱\n\nradis\n\n## Poule\n\n🐔\n\npoule\n\n## Masque et tuba\n\n🤿\n\nmasque et tuba\n\n## Petit robot\n\n🤖\n\npetit robot\n\n## Bonbon\n\n🍬\n\nbonbon\n\n## Toboggan\n\n🛝\n\ntoboggan\n\n## Maison dans un arbre\n\n🌳\n\nmaison dans un arbre\n\n## Pomme\n\n🍎\n\npomme",
+   "left_out": [],
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": [], \"approximations\": [\"radis emoji (🌱 instead of 🥗/🥕)\", \"maison dans un arbre emoji (🌳 instead of 🏠🌳)\", \"radeau emoji (🛶 instead of 🪵)\"]}",
+     "cost_eur": "0.0003625"
+    },
+    "text": {
+     "text": "{\n  \"gaps\": [],\n  \"approximations\": [\n    \"The emoji for 'radeau' (raft) is a canoe (🛶) instead of a raft.\",\n    \"The emoji for 'radis' (radish) is a seedling (🌱) instead of a radish.\",\n    \"The emoji for 'maison dans un arbre' (treehouse) is a tree (🌳) instead of a treehouse.\"\n  ]\n}",
+     "cost_eur": "0.0010488"
+    }
+   }
+  },
+  "docx_three_of_five_columns": {
+   "request": "Fais-moi un document Word avec un tableau de 5 colonnes : prénom, nom, ville, âge, métier, pour 3 personnes fictives.",
+   "suffix": ".docx",
+   "markdown": "# Personnes\n\n| Prénom | Nom | Ville |\n|---|---|---|\n| Lina | Morvan | Brest |\n| Paul | Ternier | Lyon |\n| Sacha | Belloc | Nancy |\n",
+   "left_out": [],
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": [\"The table has 3 columns instead of 5 (missing 'âge' and 'métier')\", \"The table is missing the 'âge' column\", \"The table is missing the 'métier' column\"]}",
+     "cost_eur": "0.00022675"
+    },
+    "text": {
+     "text": "{\"gaps\": [\"Table has 3 columns instead of the requested 5 (missing 'âge' and 'métier')\"], \"approximations\": []}",
+     "cost_eur": "0.000432"
+    }
+   }
+  },
+  "docx_five_columns": {
+   "request": "Fais-moi un document Word avec un tableau de 5 colonnes : prénom, nom, ville, âge, métier, pour 3 personnes fictives.",
+   "suffix": ".docx",
+   "markdown": "# Personnes\n\n| Prénom | Nom | Ville | Âge | Métier |\n|---|---|---|---|---|\n| Lina | Morvan | Brest | 34 | Infirmière |\n| Paul | Ternier | Lyon | 51 | Boulanger |\n| Sacha | Belloc | Nancy | 27 | Graphiste |\n",
+   "left_out": [],
+   "replies": {
+    "page": {
+     "text": "{\"gaps\": []}",
+     "cost_eur": "0.000215"
+    },
+    "text": {
+     "text": "{\"gaps\": [], \"approximations\": []}",
+     "cost_eur": "0.0003756"
+    }
+   }
+  }
+ }
+}

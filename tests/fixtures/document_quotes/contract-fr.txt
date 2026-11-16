@@ -1,0 +1,35 @@
+CONTRAT DE PRESTATION DE SERVICES (document fictif)
+
+Entre la société Ateliers Morvanel SAS, dont le siège est situé 14 rue des Tanneurs à Vireville, ci-après « le Client », et la société Brisque Numérique SARL, dont le siège est situé 3 allée des Saules à Pontargue, ci-après « le Prestataire ».
+
+Article 1 – Objet
+Le présent contrat a pour objet la refonte du site internet du Client et la maintenance de ce site pendant une durée de vingt-quatre mois à compter de sa mise en ligne. Le détail des prestations figure à l'annexe 1.
+
+Article 2 – Durée
+Le contrat prend effet à la date de sa signature par les deux parties. Il est conclu pour une durée ferme de vingt-quatre mois. À son terme, il se renouvelle tacitement par périodes successives de douze mois, sauf dénonciation par l'une des parties par lettre recommandée avec accusé de réception adressée au moins trois mois avant l'échéance.
+
+Article 3 – Prix et modalités de paiement
+Le prix de la refonte est fixé à 18 400 euros hors taxes. La maintenance est facturée 450 euros hors taxes par mois. Les factures sont payables à trente jours fin de mois à compter de leur date d'émission. Tout retard de paiement entraîne de plein droit l'application de pénalités égales à trois fois le taux d'intérêt légal, ainsi qu'une indemnité forfaitaire pour frais de recouvrement de 40 euros.
+
+Article 4 – Obligations du Prestataire
+Le Prestataire s'engage à exécuter les prestations avec soin, conformément aux règles de l'art. Il est tenu d'une obligation de moyens. Il informe sans délai le Client de toute difficulté susceptible de retarder la mise en ligne du site.
+
+Article 5 – Sous-traitance
+Le Prestataire ne peut sous-traiter tout ou partie des prestations qu'avec l'accord préalable et écrit du Client. En cas de sous-traitance autorisée, le Prestataire demeure seul responsable envers le Client de la bonne exécution des prestations.
+
+Article 6 – Confidentialité
+Chaque partie s'engage à garder strictement confidentielles les informations de toute nature communiquées par l'autre partie à l'occasion de l'exécution du contrat. Cette obligation demeure en vigueur pendant cinq ans après la fin du contrat, quelle qu'en soit la cause.
+
+Article 7 – Propriété intellectuelle
+Le Client devient propriétaire des développements spécifiques réalisés pour son compte à compter du paiement intégral du prix de la refonte. Les outils et bibliothèques préexistants du Prestataire restent sa propriété exclusive.
+
+Article 8 – Responsabilité
+La responsabilité du Prestataire est limitée aux dommages directs. Elle ne saurait en aucun cas excéder le montant total hors taxes payé par le Client au titre des douze derniers mois.
+
+Article 9 – Résiliation
+En cas de manquement grave de l'une des parties à ses obligations, non réparé dans un délai de trente jours suivant la réception d'une mise en demeure adressée par lettre recommandée avec accusé de réception, l'autre partie pourra résilier le contrat de plein droit, sans préjudice des dommages et intérêts auxquels elle pourrait prétendre. Le Client peut en outre résilier le contrat sans motif à l'issue de la période ferme, moyennant un préavis de trois mois.
+
+Article 10 – Litiges
+Le contrat est soumis au droit français. Les parties s'efforceront de régler à l'amiable tout différend. À défaut d'accord dans un délai de soixante jours, le litige sera porté devant le tribunal de commerce de Vireville.
+
+Fait à Vireville, en deux exemplaires originaux.
