@@ -163,7 +163,8 @@ class KeyResponsesTests(unittest.TestCase):
                     event["type"] == "response.function_call_arguments.delta"
                     for event in events
                 ),
-                2,
+                # A call leaves in one piece once complete and checked (2026-11-16).
+                1,
             )
         else:
             self.assertIn("response.output_text.delta", reply.text)

@@ -163,8 +163,10 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class StreamingKeptTests(unittest.TestCase):
-    def test_other_calls_still_stream_their_arguments(self) -> None:
+class CompleteCallTests(unittest.TestCase):
+    def test_every_call_arrives_complete_and_checked(self) -> None:
+        # Since 2026-11-16 every call is held until complete: its arguments are
+        # checked as one JSON object before the client sees them.
         frames = [
             call_frame(0, id="w", name="get_weather", arguments='{"ci'),
             call_frame(0, arguments='ty": "Lyon"}'),
@@ -188,4 +190,4 @@ class StreamingKeptTests(unittest.TestCase):
             for f in out
             if f["choices"] and f["choices"][0]["delta"].get("tool_calls")
         ]
-        self.assertEqual(pieces, ['{"ci', 'ty": "Lyon"}'])
+        self.assertEqual(pieces, ['{"city": "Lyon"}'])

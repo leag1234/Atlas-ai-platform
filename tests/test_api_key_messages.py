@@ -208,7 +208,7 @@ class MessagesTests(unittest.TestCase):
             [
                 "message_start",
                 "content_block_start",
-                "content_block_delta",
+                # The call leaves in one piece once complete and checked.
                 "content_block_delta",
                 "content_block_stop",
                 "message_delta",

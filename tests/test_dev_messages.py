@@ -57,7 +57,8 @@ class DevMessagesTests(unittest.TestCase):
             for e in events
             if e["type"] == "content_block_delta"
         ]
-        self.assertGreater(len(changes), 1)
+        # The call leaves in one piece once complete and checked (2026-11-16).
+        self.assertEqual(len(changes), 1)
         self.assertEqual(json.loads("".join(changes)), {"value": 7})
         self.assertEqual(sum(e["type"] == "content_block_start" for e in events), 1)
         self.assertEqual(sum(e["type"] == "content_block_stop" for e in events), 1)

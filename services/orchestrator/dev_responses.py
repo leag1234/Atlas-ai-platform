@@ -284,16 +284,13 @@ class Wire:
                 self.event("response.output_item.done", output_index=index, item=item),
             ]
         if "error" in chunk:
-            code = (
-                chunk["error"].get("type", "server_error")
-                if chunk["error"].get("type") == "invalid_response_format"
-                else "server_error"
+            # Output checks keep their own code and message; other failures stay generic.
+            named = chunk["error"].get("type") in (
+                "invalid_response_format",
+                "invalid_tool_arguments",
             )
-            message = (
-                chunk["error"].get("message", "invalid_response_format")
-                if chunk["error"].get("type") == "invalid_response_format"
-                else "provider_error"
-            )
+            code = chunk["error"]["type"] if named else "server_error"
+            message = chunk["error"].get("message", code) if named else "provider_error"
             # Clients such as Codex wait for a terminal response event; without one an
             # error mid-stream looks like a dropped connection (reported 2026-10-31).
             failed = self.result("failed") | {

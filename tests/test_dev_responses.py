@@ -175,7 +175,8 @@ class DevResponsesTests(unittest.TestCase):
                 self.assertEqual(
                     [e["sequence_number"] for e in frames], list(range(len(frames)))
                 )
-                self.assertGreater(
+                # The call leaves in one piece once complete and checked (2026-11-16).
+                self.assertEqual(
                     sum(
                         e["type"] == "response.function_call_arguments.delta"
                         for e in frames
