@@ -352,12 +352,31 @@ class Sources:
             ]
         return self._hits[key]
 
+    def _positions(self, anchor: Anchor, index: int) -> list[list[int]] | None:
+        """Where the anchor's words are in a passage, None when it is absent.
+
+        A name of three words or more is found without one of its words but
+        the last (staging -106: "Madrid Puerta de Atocha" is written "Madrid
+        Atocha" on a timetable and was listed as not verified).
+        """
+        hits = [self.hits(p)[index] for p in anchor.patterns]
+        missing = [i for i, found in enumerate(hits) if not found]
+        if not missing:
+            return hits
+        if (
+            anchor.kind == "name"
+            and len(hits) >= 3
+            and len(missing) == 1
+            and missing[0] != len(hits) - 1
+        ):
+            return [found for found in hits if found]
+        return None
+
     def together(self, anchors: list[Anchor]) -> bool:
         """All anchors within one window of one passage (no anchor: true)."""
         patterns = [p for a in anchors for p in a.patterns]
         if not patterns:
             return True
-        found = [self.hits(p) for p in patterns]
         lines = [p for a in anchors if a.kind == "line" for p in a.patterns]
         lead = (
             bool(lines)
@@ -366,7 +385,10 @@ class Sources:
         )
         line_hits = [self.hits(p) for p in lines]
         for index in range(len(self.passages)):
-            positions = [hits[index] for hits in found]
+            located = [self._positions(a, index) for a in anchors]
+            positions = [h for found in located if found is not None for h in found]
+            if any(found is None for found in located):
+                positions = [[]]
             if all(positions) and _window(positions):
                 return True
             # A page about the line (it names the line in its opening) lists

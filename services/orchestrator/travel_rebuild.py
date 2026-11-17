@@ -257,14 +257,19 @@ def _substantial(sentence: str) -> bool:
 
 
 def excerpts(
-    turn: travel_claims.Turn, question: str, limit: int = EXCERPT_CHARACTERS
+    turn: travel_claims.Turn,
+    question: str,
+    limit: int = EXCERPT_CHARACTERS,
+    answer: str = "",
 ) -> list[Excerpt]:
     """Source sentences about this trip that give travel values or route words,
-    most relevant first."""
+    most relevant first; never from a page about another trip."""
     wanted = trip_words(turn, question)
+    elsewhere = off_route(turn, question, answer)
     pages: dict[str, list[str]] = {}
     for url, text in turn.linked:
-        pages.setdefault(url, []).append(text)
+        if url not in elsewhere:
+            pages.setdefault(url, []).append(text)
     shared = {
         url: len(wanted & _page_words(url, "\n".join(texts)))
         for url, texts in pages.items()
@@ -596,6 +601,68 @@ def _with_connection(turn: travel_claims.Turn, answer: str, language: str) -> st
     return body.rstrip() + "\n\n" + note + ("\n\n" + fold + footer if fold else "")
 
 
+# Staging -106: a Madrid-Barcelona answer linked a Madrid-Sevilla timetable as
+# its source. A page whose address names a trip between two places (a
+# hyphenated pair, "madrid-sevilla", or its last two path segments,
+# "muenchen/berlin") is about another trip when one of the two is a place of
+# the question or the starting point and the other appears neither there nor
+# in the answer; when another page read names this trip's pair, such a page is
+# no source for this answer.
+_LINK = re.compile(
+    r"[ \t]*+\(\[[^\]\n]++\]\((https?://[^)\s]++)\)\)|\[([^\]\n]++)\]\((https?://[^)\s]++)\)"
+)
+
+
+def _url_pairs(url: str) -> list[tuple[str, str]]:
+    path = unquote(urlsplit(url).path).lower().strip("/")
+    segments = [re.sub(r"\.[a-z0-9]{2,5}$", "", s) for s in path.split("/") if s]
+    pairs: list[tuple[str, str]] = []
+    for segment in segments:
+        words = [w for w in segment.split("-") if _place_words(w)]
+        keys = [_key(normalized(w)) for w in words]
+        pairs += list(zip(keys, keys[1:], strict=False))
+    tail = segments[-2:]
+    if len(tail) == 2 and all(re.fullmatch(r"[a-z]{4,}", s) for s in tail):
+        if all(_place_words(s) for s in tail):
+            pairs.append((_key(tail[0]), _key(tail[1])))
+    return pairs
+
+
+def off_route(turn: travel_claims.Turn, question: str, answer: str) -> set[str]:
+    """The pages read that are about another trip than this one."""
+    wanted = trip_words(turn, question)
+    known = wanted | _place_words(answer)
+    urls = {url for url, _ in turn.linked if url}
+    pairs = {url: _url_pairs(url) for url in urls}
+    if not any(a in known and b in known for found in pairs.values() for a, b in found):
+        return set()
+    return {
+        url
+        for url, found in pairs.items()
+        if any(
+            (a in wanted) != (b in wanted) and not (a in known and b in known)
+            for a, b in found
+        )
+        and not any(a in known and b in known for a, b in found)
+    }
+
+
+def _without(answer: str, urls: set[str]) -> str:
+    """The answer without its links to the pages in ``urls``."""
+    if not urls:
+        return answer
+    gone = {_link_key(url) for url in urls}
+
+    def keep(match: re.Match[str]) -> str:
+        url = match[1] or match[3]
+        if _link_key(url) not in gone:
+            return match[0]
+        return "" if match[1] else match[2]
+
+    body, fold, footer = answer.partition("<details>")
+    return _LINK.sub(keep, body) + fold + footer
+
+
 async def review(
     turn: travel_claims.Turn,
     answer: str,
@@ -605,10 +672,12 @@ async def review(
     profile: str,
 ) -> tuple[str, Report]:
     """The travel answer with nothing unsourced (rewritten, or built by code),
-    and the connection the pages give when it does not say it."""
+    no link to a page about another trip, and the connection the pages give
+    when it does not say it."""
     final, report = await _review(
         turn, answer, language, question=question, profile=profile
     )
+    final = _without(final, off_route(turn, question, final.partition("<details>")[0]))
     return _with_connection(turn, final, language), report
 
 
@@ -630,7 +699,7 @@ async def _review(
         return answer, report
     turn.marked = report.marked = len(found)
     kept = turn.kept(body, found)
-    chosen = excerpts(turn, question)
+    chosen = excerpts(turn, question, answer=body)
     final = ""
     if enabled():
         text = await _rewrite(
