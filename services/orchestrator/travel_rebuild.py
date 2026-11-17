@@ -111,6 +111,21 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Compruebe el viaje completo y los horarios de su día en el planificador de viajes del operador.",
         "it": "Controlli il viaggio completo e gli orari del suo giorno nel pianificatore di viaggio dell’operatore.",
     },
+    # A connection the pages give for the times the answer uses.
+    "connection": {
+        "en": "According to the pages read, this trip includes a connection{at}: allow for it and check it in the operator’s journey planner.",
+        "fr": "D’après les pages consultées, ce trajet comprend une correspondance{at} : prévoyez-la et vérifiez-la dans le calculateur d’itinéraire de l’exploitant.",
+        "de": "Laut den gelesenen Seiten enthält diese Reise einen Umstieg{at}: Planen Sie ihn ein und prüfen Sie ihn in der Fahrplanauskunft des Verkehrsbetriebs.",
+        "es": "Según las páginas consultadas, este viaje incluye un transbordo{at}: téngalo en cuenta y compruébelo en el planificador de viajes del operador.",
+        "it": "Secondo le pagine consultate, questo viaggio comprende un cambio{at}: ne tenga conto e lo controlli nel pianificatore di viaggio dell’operatore.",
+    },
+    "connection_at": {
+        "en": " at {place}",
+        "fr": " à {place}",
+        "de": " in {place}",
+        "es": " en {place}",
+        "it": " a {place}",
+    },
     "other_day": {
         "en": "times of {day}, not of the day asked",
         "fr": "horaires du {day}, pas du jour demandé",
@@ -462,7 +477,20 @@ def _linked(text: str, chosen: list[Excerpt]) -> str:
     # The same page twice in a row is linked once; links stay apart.
     text = re.sub(r"(\(\[[^\]]+\]\([^)]+\)\))(?:\s*\1)+", r"\1", text)
     text = re.sub(r"\)\)\(\[", ")) ([", text)
-    return re.sub(r"(?<=\S)[ \t]{2,}(?=\()", " ", text)
+    text = re.sub(r"(?<=\S)[ \t]{2,}(?=\()", " ", text)
+    return unwrapped(text)
+
+
+_WRAPPED = re.compile(r"\([ \t]*+(\(\[[^\]\n]++\]\([^)\s]++\)\))[ \t]*+\)")
+
+
+def unwrapped(text: str) -> str:
+    """A link the rewrite had already put in parentheses is not wrapped twice
+    (staging -104: "(([content.amtrak.com](...)))" after every fact)."""
+    previous = None
+    while previous != text:
+        previous, text = text, _WRAPPED.sub(r"\1", text)
+    return text
 
 
 def _accepted(
@@ -500,6 +528,74 @@ def _log(report: Report, started: float) -> None:
     LOGGER.warning("travel_rebuild %s", json.dumps(report.metadata()))
 
 
+# Staging -104: Caen-Paris trains reach Paris Saint-Lazare; the answer gave
+# their times as arrivals "at Gare de Lyon" without the change of station the
+# page gave. A connection a source states next to the times the answer uses is
+# said, with its station when the source names it. Transit vocabulary of the
+# five interface languages, never places.
+_TRANSFER = re.compile(
+    r"(?<![\w-])(?:correspondances?|changements?|connections?|connecting|"
+    r"transfers?|change (?:at|in)|umstieg\w*+|umsteig\w*+|transbordos?|"
+    r"coincidencias?|cambio (?:a|in)|cambi di treno)(?![\w-])"
+)
+_NO_TRANSFER = re.compile(
+    r"(?:sans|without|no|ohne|sin|senza|zero|aucune?|kein\w*+|0)[ \t]++(?:\w++[ \t]++)?$"
+)
+_TRANSFER_PLACE = re.compile(
+    r"^[ \t]*+(?:[a-z]++[ \t]++)?(?:a|à|at|in|en|via|au)[ \t]++"
+    r"((?:[A-ZÀ-Ý][\w'’-]*+)(?:[ \t]++(?:[A-ZÀ-Ý][\w'’-]*+|de|du|la|le|del))*+)"
+)
+CONNECTION_WINDOW = 300
+
+
+def connection_note(turn: travel_claims.Turn, answer: str, language: str) -> str:
+    """One line when the pages give a connection the answer does not state."""
+    if not turn.active or not answer.strip():
+        return ""
+    body = answer.partition("<details>")[0]
+    used = [
+        q.value
+        for q in travel_claims.quantities(body)
+        if q.kind == "clock" and q.value == q.value
+    ]
+    if not used:
+        return ""
+    stated = bool(_TRANSFER.search(route_facts.fold(body)))
+    folded_body = normalized(body)
+    for _, text in turn.linked:
+        folded = route_facts.fold(text)
+        for q in travel_claims.quantities(text, generous=True):
+            if q.kind != "clock" or not any(abs(q.value - v) < 0.5 for v in used):
+                continue
+            start = max(0, q.start - CONNECTION_WINDOW)
+            for match in _TRANSFER.finditer(folded, start, q.end + CONNECTION_WINDOW):
+                if _NO_TRANSFER.search(
+                    folded[max(0, match.start() - 20) : match.start()]
+                ):
+                    continue
+                place = _TRANSFER_PLACE.match(text[match.end() : match.end() + 80])
+                name = place[1].strip() if place else ""
+                if name and normalized(name) in folded_body:
+                    continue
+                if not name and stated:
+                    continue
+                at = (
+                    _wording("connection_at", language).format(place=name)
+                    if name
+                    else ""
+                )
+                return _wording("connection", language).format(at=at)
+    return ""
+
+
+def _with_connection(turn: travel_claims.Turn, answer: str, language: str) -> str:
+    note = connection_note(turn, answer, language)
+    if not note:
+        return answer
+    body, fold, footer = answer.partition("<details>")
+    return body.rstrip() + "\n\n" + note + ("\n\n" + fold + footer if fold else "")
+
+
 async def review(
     turn: travel_claims.Turn,
     answer: str,
@@ -508,7 +604,22 @@ async def review(
     question: str,
     profile: str,
 ) -> tuple[str, Report]:
-    """The travel answer with nothing unsourced: rewritten, or built by code."""
+    """The travel answer with nothing unsourced (rewritten, or built by code),
+    and the connection the pages give when it does not say it."""
+    final, report = await _review(
+        turn, answer, language, question=question, profile=profile
+    )
+    return _with_connection(turn, final, language), report
+
+
+async def _review(
+    turn: travel_claims.Turn,
+    answer: str,
+    language: str,
+    *,
+    question: str,
+    profile: str,
+) -> tuple[str, Report]:
     report = Report()
     started = time.monotonic()
     if not turn.active or not answer.strip():
@@ -577,4 +688,4 @@ async def recover(
             + _wording("planner", language)
         )
     _log(report, started)
-    return final.rstrip(), report
+    return _with_connection(turn, final.rstrip(), language), report
