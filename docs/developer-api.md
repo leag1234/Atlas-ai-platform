@@ -457,6 +457,7 @@ is one euro) and the limits that apply to your key.
 |---|---|
 | Rate | 600 requests per minute per key (burst 200), and 1800 per minute per client address (burst 400). Everyone behind one office or VPN address shares the second limit: start parallel workers a few seconds apart. |
 | Request size | up to 8 MiB, up to 4096 messages of history |
+| Tools | up to 128 tools per request and 128 tool calls per message; a tool description may hold up to 200,000 characters (the request size limit still applies) |
 | Output | 16384 tokens by default, at most 32768 |
 
 ## 8. Errors

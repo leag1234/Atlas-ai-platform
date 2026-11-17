@@ -6,6 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from packages.dev_format import check_schema
 
 
+# Client agents (coding assistants with many connected tool servers) send long
+# tool descriptions and many tools; the whole request stays bounded by the
+# request size limit of the edge. OpenAI accepts 128 tools per request.
+MAX_TOOLS = 128
+TOOL_DESCRIPTION_CHARS = 200_000
+
+
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -37,7 +44,7 @@ class ResponseFormat(Strict):
 
 class Function(Strict):
     name: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,64}$")
-    description: str = Field(default="", max_length=16000)
+    description: str = Field(default="", max_length=TOOL_DESCRIPTION_CHARS)
     parameters: dict[str, Any]
     strict: bool = False
 
@@ -61,7 +68,7 @@ class Call(Strict):
 class Message(Strict):
     role: Literal["system", "user", "assistant", "tool"]
     content: str | None = None
-    tool_calls: list[Call] = Field(default_factory=list, max_length=64)
+    tool_calls: list[Call] = Field(default_factory=list, max_length=MAX_TOOLS)
     tool_call_id: str | None = None
     name: str | None = Field(default=None, max_length=64)
 
@@ -94,7 +101,7 @@ class Request(Sampling):
         return self.response_format.type != "text" or self.tool_choice == "none"
 
     messages: list[Message] = Field(min_length=1, max_length=4096)
-    tools: list[Tool] = Field(default_factory=list, max_length=64)
+    tools: list[Tool] = Field(default_factory=list, max_length=MAX_TOOLS)
     max_tokens: int = Field(default=4096, ge=1, le=32768)
     temperature: float = Field(default=0, ge=0, le=2)
     tool_choice: str | dict[str, Any] = "auto"
