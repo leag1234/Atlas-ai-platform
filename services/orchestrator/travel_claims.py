@@ -899,7 +899,7 @@ def _renumber(lines: list[str], first: int) -> list[str]:
 
 
 _NUMBERED_HEADING = re.compile(
-    r"^(\s*(?:#{1,6}\s+)?(?:\*\*|__)?\s*)(\d{1,3})([.)])(?=\s)"
+    r"^([ \t]*+(?:#{1,6}[ \t]++)?(?:\*\*|__)?[ \t]*+)(\d{1,3})([.)])(?=\s)"
 )
 
 

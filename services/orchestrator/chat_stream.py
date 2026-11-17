@@ -755,8 +755,11 @@ def response(
 
                         # A model answer that failed is said as such (D5),
                         # not as an unexpected error (staging 2026-11-17).
+                        # A Work turn keeps its outage wording
+                        # (test_work_failure_message); a chat turn says the
+                        # model answer failed.
                         failed = [e for e in item.erreurs if e in PROVIDER_FAILURES]
-                        if failed:
+                        if failed and payload.project_action != "work":
                             raise GatewayError(
                                 failed[-1], 502, item.reponse.strip() or failed[-1]
                             )
