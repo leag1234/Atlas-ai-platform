@@ -621,6 +621,17 @@ def _has_visible_content(frame: dict[str, Any]) -> bool:
     )
 
 
+def _cut_by_length(frames: list[dict[str, Any]]) -> bool:
+    """Every choice of the attempt ended because the output budget ran out."""
+    reasons = [
+        choice.get("finish_reason")
+        for frame in frames
+        for choice in frame.get("choices", [])
+        if isinstance(choice, dict) and choice.get("finish_reason") is not None
+    ]
+    return bool(reasons) and all(reason == "length" for reason in reasons)
+
+
 def _settle(
     frame: dict[str, Any], attempts: list[tuple[Plan, Usage]]
 ) -> dict[str, Any]:
@@ -673,6 +684,17 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
             usage = Usage.model_validate(terminal["usage"])
             if usage.completion_tokens == 0:
                 raise ValueError("empty_completion")
+            if _cut_by_length(held):
+                # The caller's max_tokens ran out while the model was still
+                # reasoning. The same request would run out the same way: return
+                # the outcome as it is (finish_reason "length", the reasoning and
+                # the usage), never a retry or a provider failure.
+                for held_frame in held:
+                    if "cost_micro_eur" in held_frame:
+                        _settle(held_frame, attempts)
+                    emitted = True
+                    yield held_frame
+                return
             attempts.append((current, usage))
             logging.getLogger(__name__).warning(
                 "devapi_retry",

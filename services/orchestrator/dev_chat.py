@@ -389,6 +389,10 @@ class Output:
     def validation_error(self) -> str | None:
         fmt = self.request.response_format
         for st in self.choices.values():
+            if st.reason == "length":
+                # Cut by the caller's max_tokens: returned as written, with its
+                # finish_reason. A corrected attempt would be cut the same way.
+                continue
             if fmt.type != "text":
                 problem = validate_json(
                     st.text, fmt.json_schema.schema_ if fmt.json_schema else None
