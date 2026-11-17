@@ -5,6 +5,52 @@ import re
 import unicodedata
 from collections.abc import Sequence
 
+# A message this long whose middle is made of long paragraphs carries a pasted
+# document (an article, a source to check, passages): the routing words are read
+# in the person's own lines around it, never in the document (pilot 2026-11-17).
+# Sizes are UTF-8 bytes, so that a dense script (Japanese, Chinese) counts as
+# much text as its Latin translation.
+DOCUMENT_BYTES = 1000
+DOCUMENT_PARAGRAPH_BYTES = 200
+
+
+def own_request(text: str) -> str:
+    """The person's own lines of a message, without a long document pasted in it.
+
+    The document is the block from the first to the last long paragraph. When no
+    short line is left around it, the whole message is the request.
+    """
+    if len(text.encode()) < DOCUMENT_BYTES:
+        return text
+    paragraphs = [p for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
+    long = [
+        index
+        for index, paragraph in enumerate(paragraphs)
+        if len(paragraph.encode()) > DOCUMENT_PARAGRAPH_BYTES
+    ]
+    if not long:
+        return text
+    kept = paragraphs[: long[0]] + paragraphs[long[-1] + 1 :]
+    return "\n\n".join(kept) if kept else text
+
+
+# "Link" and "lien" also name a relation ("the link between sleep and memory",
+# "le lien entre"), and English "links" is also a verb ("the tunnel links two
+# countries", "the facts it links"). Neither asks for web pages.
+_RELATION = re.compile(
+    r"\b(?:liens?|links?)\s+(?:\w+\s+){0,2}?(?:between|entre|zwischen|tra|fra)\b",
+    re.IGNORECASE,
+)
+_VERB = re.compile(
+    r"(?i:\b(?:it|that|which|this|who|he|she)\s+links\b)"
+    r"|(?<=\w\s)links\s+(?:[A-Z]|(?:the|a|an|both|two|them|it|us)\b)"
+)
+
+
+def _asks_for_links(question: str) -> bool:
+    plain = _VERB.sub(" ", _RELATION.sub(" ", question))
+    return bool(re.search(r"(?i)\b(liens?|links?|urls?)\b", plain))
+
 
 def link_request(question: str, *, prices: bool = False) -> bool:
     # Upload transport metadata is not a request for URLs or product prices.
@@ -31,10 +77,14 @@ def link_request(question: str, *, prices: bool = False) -> bool:
             text,
         )
     )
+    if _asks_for_links(question):
+        return True
     return price_request or bool(
         re.search(
-            r"\b(liens?|links?|urls?|shopping|acheter|buy|kaufen)\b"
-            r"|\b(ou|where|wo)\b.{0,35}\b(achet\w*|trouv\w*|buy|get|purchase|kauf\w*|bekomm\w*)\b"
+            r"\b(shopping|acheter|buy|kaufen)\b"
+            # The French "where is X" phrasing asks where X is, not where to buy it.
+            r"|\b(ou|where|wo)\b(?!\s+s(?:e\s+|['’]\s*)trouv)"
+            r".{0,35}\b(achet\w*|trouv\w*|buy|get|purchase|kauf\w*|bekomm\w*)\b"
             r"|\b(product|produit|produkt)\s*(pages?|seiten?)\b"
             r"|\b(pages?|fiches?)\s+(?:de\s+)?produit\w*\b"
             r"|\b(show|montre\w*|affiche\w*|zeig\w*)\b.{0,35}\b(pages?|seiten?)\b",
@@ -44,6 +94,7 @@ def link_request(question: str, *, prices: bool = False) -> bool:
 
 
 def page_request(question: str, history: Sequence[str] = ()) -> bool:
+    question = own_request(question)
     if link_request(question):
         return True
     # A price-only question inherits shopping intent only from the active thread.
