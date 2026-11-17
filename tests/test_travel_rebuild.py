@@ -112,19 +112,18 @@ class RewriteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(BERLIN_URL, prompt)
         self.assertEqual(awaited.args[0]["reasoning_effort"], "none")
 
-    async def test_an_invented_rewrite_falls_back_to_sourced_excerpts(self) -> None:
+    async def test_an_invented_rewrite_falls_back_to_the_pages(self) -> None:
         turn = berlin()
         with patch(COMPLETE, model("Take ICE 1010 at 10:00, arriving 14:00.")):
             final, report = await travel_rebuild.review(
                 turn, BERLIN_ANSWER, "en", question=turn.asked[0], profile="p"
             )
         self.assertEqual(report.rebuilt, "rejected:unsourced")
-        self.assertEqual(report.built, "code+excerpts")
+        self.assertEqual(report.built, "code+pages")
         self.assertNotIn("ICE 1010", final)
-        # The person gets the sourced facts, with their page.
-        self.assertIn("4 h 02 min", final)
-        self.assertIn("ICE 1006 München Hbf 08:55 - Berlin Hbf 13:24", final)
+        # Staging -110: the page is linked in one sentence, never its raw snippet.
         self.assertIn(f"[rail.example.test]({BERLIN_URL})", final)
+        self.assertNotIn("What the pages read", final)
         self.assertIn("journey planner", final)
         well_formed(self, final.rsplit("\n\n", 1)[0])
 
@@ -138,7 +137,7 @@ class RewriteTests(unittest.IsolatedAsyncioTestCase):
         body = final.rsplit("\n\n", 1)[0]
         self.assertNotIn("Genève Aéroport", body)
         well_formed(self, body)
-        self.assertIn("06:38 → Genève 08:43", final)
+        self.assertIn(f"[rail.example.test]({GENEVA_URL})", final)
 
     async def test_lyon_geneva_rewrite_naming_the_airport_is_rejected(self) -> None:
         turn = geneva()
@@ -175,17 +174,19 @@ class RewriteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(final, rewritten)
         self.assertNotRegex(final, r"\d\s?h\s?\d?x")
 
-    async def test_links_to_pages_not_read_are_rejected(self) -> None:
+    async def test_links_to_pages_not_read_lose_their_address(self) -> None:
         turn = paris()
         text = (
             "Le TER 3105 part de Caen à 9h12 "
             "([ailleurs](https://elsewhere.example.test/tt))."
         )
         with patch(COMPLETE, model(text)):
-            _, report = await travel_rebuild.review(
+            final, report = await travel_rebuild.review(
                 turn, PARIS_ANSWER, "fr", question=turn.asked[0], profile="p"
             )
-        self.assertEqual(report.rebuilt, "rejected:links")
+        # The words stay, the address of a page not read goes (staging -110).
+        self.assertEqual(report.rebuilt, "kept")
+        self.assertNotIn("elsewhere.example.test", final)
 
     async def test_a_sourced_answer_makes_no_call(self) -> None:
         turn = paris()
@@ -408,7 +409,8 @@ class StagingSecondDayTests(unittest.IsolatedAsyncioTestCase):
             )
         assert outcome is not None
         self.assertIn("le modèle n’a pas renvoyé de texte utilisable", outcome[0])
-        self.assertIn("TER 3105 Caen 09:12", outcome[0])
+        self.assertIn(f"[rail.example.test]({PARIS_URL})", outcome[0])
+        self.assertNotIn("TER 3105 Caen 09:12", outcome[0])
         self.assertIn("calculateur d’itinéraire", outcome[0])
         empty = travel_claims.Turn(asked=["Caen Paris demain"])
         empty.activate()

@@ -51,7 +51,7 @@ from services.orchestrator.dictation_cleanup import fast_profile
 from services.orchestrator.grounding import normalized
 
 LOGGER = logging.getLogger(__name__)
-DEADLINE_SECONDS = 10.0
+DEADLINE_SECONDS = 15.0
 CALL_BUDGET_EUR = Decimal("0.02")
 MAX_TOKENS = 900
 EXCERPT_CHARACTERS = 3500
@@ -59,6 +59,8 @@ QUESTION_CHARACTERS = 1500
 # A rewrite whose unsourced clauses are left out is kept when this share of it
 # remains; below, the code builds the answer.
 KEPT_SHARE = 0.6
+# A trimmed rewrite this long still answers better than code (staging -110).
+MIN_TRIMMED = 160
 _URL = re.compile(r"https?://[^\s)>\]\"']+")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+|\n+")
 
@@ -89,20 +91,22 @@ INSTRUCTION = (
 )
 
 WORDING: dict[str, dict[str, str]] = {
-    "read": {
-        "en": "What the pages read for this answer give:",
-        "fr": "Ce que donnent les pages consultées pour cette réponse :",
-        "de": "Was die für diese Antwort gelesenen Seiten angeben:",
-        "es": "Lo que indican las páginas consultadas para esta respuesta:",
-        "it": "Cosa indicano le pagine consultate per questa risposta:",
-    },
     # The answer itself failed after pages were read (D5: said as it is).
     "failed": {
-        "en": "The answer could not be written this time: the model returned no usable text. What the pages read for this request give:",
-        "fr": "La réponse n’a pas pu être rédigée cette fois : le modèle n’a pas renvoyé de texte utilisable. Ce que donnent les pages consultées pour cette demande :",
-        "de": "Die Antwort konnte diesmal nicht verfasst werden: Das Modell hat keinen verwendbaren Text geliefert. Was die für diese Anfrage gelesenen Seiten angeben:",
-        "es": "Esta vez no se pudo redactar la respuesta: el modelo no devolvió un texto utilizable. Lo que indican las páginas consultadas para esta solicitud:",
-        "it": "Questa volta non è stato possibile scrivere la risposta: il modello non ha restituito un testo utilizzabile. Cosa indicano le pagine consultate per questa richiesta:",
+        "en": "The answer could not be written this time: the model returned no usable text.",
+        "fr": "La réponse n’a pas pu être rédigée cette fois : le modèle n’a pas renvoyé de texte utilisable.",
+        "de": "Die Antwort konnte diesmal nicht verfasst werden: Das Modell hat keinen verwendbaren Text geliefert.",
+        "es": "Esta vez no se pudo redactar la respuesta: el modelo no devolvió un texto utilizable.",
+        "it": "Questa volta non è stato possibile scrivere la risposta: il modello non ha restituito un testo utilizzabile.",
+    },
+    # The pages about this trip, as links: never their raw snippets (staging
+    # -110: a list of snippets, some in another language than the answer).
+    "pages": {
+        "en": "The pages read about this trip give its timetable: {links}. Check the times for your day there.",
+        "fr": "Les pages consultées sur ce trajet en donnent les horaires : {links}. Vérifiez-y les horaires de votre jour.",
+        "de": "Die gelesenen Seiten zu dieser Reise geben ihren Fahrplan an: {links}. Prüfen Sie dort die Zeiten Ihres Tages.",
+        "es": "Las páginas consultadas sobre este viaje dan sus horarios: {links}. Compruebe allí los horarios de su día.",
+        "it": "Le pagine consultate su questo viaggio ne danno gli orari: {links}. Controlli lì gli orari del suo giorno.",
     },
     "planner": {
         "en": "Check the full journey and the times for your day in the operator’s journey planner.",
@@ -419,23 +423,15 @@ def rejected(
     return ""
 
 
-def _excerpt_line(excerpt: Excerpt, language: str) -> str:
-    text = excerpt.sentence
-    if excerpt.day:
-        text += f" ({_wording('other_day', language).format(day=_day(excerpt.day, language))})"
-    if excerpt.url:
-        site = urlsplit(excerpt.url).netloc.removeprefix("www.")
-        return f"- {text} ([{site}]({excerpt.url}))"
-    return f"- {text}"
-
-
-def _listed(chosen: list[Excerpt], language: str, heading: str) -> str:
-    # Rows of the trip day first; rows of another day say so.
-    about = [excerpt for excerpt in chosen if excerpt.about]
-    ordered = sorted(about, key=lambda excerpt: bool(excerpt.day))[:4]
-    return travel_claims.wellformed(
-        heading + "\n" + "\n".join(_excerpt_line(e, language) for e in ordered)
+def _pointer(chosen: list[Excerpt], language: str) -> str:
+    """One sentence linking the pages about this trip, at most three."""
+    urls = list(dict.fromkeys(e.url for e in chosen if e.about and e.url))[:3]
+    if not urls:
+        return ""
+    links = ", ".join(
+        f"[{urlsplit(url).netloc.removeprefix('www.')}]({url})" for url in urls
     )
+    return _wording("pages", language).format(links=links)
 
 
 def _code_built(
@@ -447,12 +443,14 @@ def _code_built(
     chosen: list[Excerpt],
     report: Report,
 ) -> str:
-    """The sentences that held, the sourced excerpts when little held, one note."""
+    """The sentences that held, the pages about the trip when little held, one
+    note."""
     parts = [kept] if kept else []
     report.built = "code"
-    if any(e.about for e in chosen) and len(kept) < 0.5 * len(body.strip()):
-        parts.append(_listed(chosen, language, _wording("read", language)))
-        report.built = "code+excerpts"
+    pointer = _pointer(chosen, language)
+    if pointer and len(kept) < 0.5 * len(body.strip()):
+        parts.append(pointer)
+        report.built = "code+pages"
     parts.append(found.note(language))
     return "\n\n".join(parts)
 
@@ -501,6 +499,24 @@ def unwrapped(text: str) -> str:
     return text
 
 
+_ANY_LINK = re.compile(r"\[([^\]\n]++)\]\((https?://[^)\s]++)\)")
+
+
+def _read_links_only(text: str, allowed: list[str], original: str) -> str:
+    """A link to a page not read in this turn keeps its words, not its address
+    (staging -110: whole rewrites were dropped for one operator link)."""
+    known = {_link_key(url) for url in [*allowed, *_URL.findall(original)]}
+
+    def keep(match: re.Match[str]) -> str:
+        return match[0] if _link_key(match[2]) in known else match[1]
+
+    text = _ANY_LINK.sub(keep, text)
+    bare = [url for url in _URL.findall(text) if _link_key(url) not in known]
+    for url in bare:
+        text = text.replace(url, "")
+    return unwrapped(re.sub(r"\(\s*\)", "", text))
+
+
 def _accepted(
     turn: travel_claims.Turn,
     text: str,
@@ -512,7 +528,9 @@ def _accepted(
     bounded: bool = True,
 ) -> str:
     """The rewrite as it can be given, or empty (``report.rebuilt`` says why)."""
-    text = travel_claims.wellformed(_linked(text, chosen))
+    text = travel_claims.wellformed(
+        _read_links_only(_linked(text, chosen), turn.retrieved(), original)
+    )
     reason = rejected(turn, text, original, turn.retrieved(), bounded=bounded)
     if reason == "unsourced":
         # A good rewrite with one unsourced clause is still the better answer:
@@ -520,7 +538,9 @@ def _accepted(
         # were dropped for one detail and the person got a list of excerpts).
         again = turn.findings(text)
         trimmed = turn.kept(text, again)
-        if trimmed and len(trimmed) >= KEPT_SHARE * len(text):
+        if trimmed and (
+            len(trimmed) >= KEPT_SHARE * len(text) or len(trimmed) >= MIN_TRIMMED
+        ):
             report.rebuilt, report.built = "kept:left_out", "model"
             return trimmed + "\n\n" + again.note(language)
     report.rebuilt = "rejected:" + reason if reason else "kept"
@@ -755,11 +775,15 @@ async def recover(
         if not any(e.about for e in chosen):
             _log(report, started)
             return None
-        report.built = "code+excerpts"
-        final = (
-            _listed(chosen, language, _wording("failed", language))
-            + "\n\n"
-            + _wording("planner", language)
+        report.built = "code+pages"
+        final = "\n\n".join(
+            part
+            for part in (
+                _wording("failed", language),
+                _pointer(chosen, language),
+                _wording("planner", language),
+            )
+            if part
         )
     _log(report, started)
     return _with_connection(turn, final.rstrip(), language), report
