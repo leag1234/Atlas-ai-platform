@@ -224,10 +224,8 @@ WATCH = """() => {
 
 STATUS = {
     "local": {code: value[3] for code, value in LANGUAGES.items()},
-    "fallback": {
-        "fr": "Moteur Atlas occupé : transcrit par un service externe",
-        "en": "Atlas engine busy: transcribed by an external service",
-    },
+    # The busy note, then where audio and text go (a partner service, never named).
+    "fallback": {"fr": "Moteur Atlas occupé", "en": "Atlas engine busy"},
 }
 
 
@@ -310,6 +308,18 @@ def dictate(
                 page.keyboard.press("Escape")
             else:
                 page.click(".atlas-dictation-stop")
+        else:
+            # "Insert when I pause": the piece is written at the pause and the dictation
+            # goes on (the microphone stays open) until the user stops.
+            page.wait_for_function(
+                "() => window.__mutations.inserts >= 1", timeout=40000
+            )
+            page.wait_for_timeout(800)
+            going_on = page.evaluate(
+                "() => !document.querySelector('.atlas-dictation-panel').hidden"
+            )
+            check(f"{name} dictation goes on after the piece", going_on)
+            page.click(".atlas-dictation-stop")
         page.wait_for_selector(".atlas-dictation-panel", state="hidden", timeout=40000)
         inserted = round(time.monotonic() - started, 2)
         page.wait_for_timeout(500)

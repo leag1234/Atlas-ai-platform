@@ -1496,15 +1496,18 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
 // nodes into Open WebUI's trees and nothing in the composer changes while the user speaks
 // (#334 and #335 froze the page twice). The text written is the server's final pass over the
 // whole recording ("transcript"); the live text is written only when that pass failed.
+// With "Insert when I pause", each end of turn closes a piece (``commit``): the server's
+// final pass of that piece is written once at the cursor and the dictation goes on until the
+// user stops; nothing already written is changed and no piece is dropped.
 (() => {
   "use strict";
   const WORDS = {
-    en: { dictate: "Dictate", stop: "Stop dictation", panel: "Dictation", starting: "Starting the microphone…", listening: "Listening", finishing: "Finishing…", local: "Transcribed on Atlas servers", cloud: "Transcribed by an external service", fallback: "Atlas engine busy: transcribed by an external service", strict: "Strict privacy: audio stays in Atlas", enhanced: "Enhanced privacy: audio stays in Atlas", stopButton: "Stop", insert: "Insert the text", close: "Close", autoInsert: "Insert when I pause", limit: "Maximum dictation length reached.", permission: "Microphone access was refused. Allow it in the browser's site settings, then try again.", noMic: "No microphone was found on this device.", micBusy: "The microphone is used by another application.", insecure: "This browser cannot record here: dictation needs a secure connection and a recent browser.", busy: "The dictation engine is busy. Try again in a moment.", strictBusy: "The dictation engine is busy, and strict privacy keeps audio in Atlas. Try again in a moment.", sessionOpen: "A dictation is already running in another tab or window.", budget: "Your usage limit is reached, so dictation is not available for now.", provider: "The transcription service has reached its usage limit. Try again later.", network: "The connection to Atlas was lost. Check the network and try again.", idle: "No sound came from the microphone.", noComposer: "The message box is not available here: open a conversation, then insert the text.", unavailable: "Dictation is not available right now." },
-    fr: { dictate: "Dicter", stop: "Arrêter la dictée", panel: "Dictée", starting: "Démarrage du micro…", listening: "À l’écoute", finishing: "Finalisation…", local: "Transcrit sur les serveurs Atlas", cloud: "Transcrit par un service externe", fallback: "Moteur Atlas occupé : transcrit par un service externe", strict: "Confidentialité stricte : l’audio reste dans Atlas", enhanced: "Confidentialité renforcée : l’audio reste dans Atlas", stopButton: "Arrêter", insert: "Insérer le texte", close: "Fermer", autoInsert: "Insérer à chaque pause", limit: "Durée maximale de dictée atteinte.", permission: "L’accès au micro a été refusé. Autorisez-le dans les réglages du site du navigateur, puis réessayez.", noMic: "Aucun micro n’a été trouvé sur cet appareil.", micBusy: "Le micro est utilisé par une autre application.", insecure: "Ce navigateur ne peut pas enregistrer ici : la dictée demande une connexion sécurisée et un navigateur récent.", busy: "Le moteur de dictée est occupé. Réessayez dans un instant.", strictBusy: "Le moteur de dictée est occupé, et la confidentialité stricte garde l’audio dans Atlas. Réessayez dans un instant.", sessionOpen: "Une dictée est déjà en cours dans un autre onglet ou une autre fenêtre.", budget: "Votre limite d’usage est atteinte : la dictée n’est pas disponible pour le moment.", provider: "Le service de transcription a atteint sa limite d’usage. Réessayez plus tard.", network: "La connexion à Atlas a été perdue. Vérifiez le réseau et réessayez.", idle: "Aucun son n’est venu du micro.", noComposer: "La zone de message n’est pas disponible ici : ouvrez une conversation, puis insérez le texte.", unavailable: "La dictée n’est pas disponible pour le moment." },
-    de: { dictate: "Diktieren", stop: "Diktat stoppen", panel: "Diktat", starting: "Mikrofon wird gestartet…", listening: "Hört zu", finishing: "Wird abgeschlossen…", local: "Auf Atlas-Servern transkribiert", cloud: "Von einem externen Dienst transkribiert", fallback: "Atlas-Engine ausgelastet: von einem externen Dienst transkribiert", strict: "Strikter Datenschutz: Audio bleibt in Atlas", enhanced: "Erweiterter Datenschutz: Audio bleibt in Atlas", stopButton: "Stoppen", insert: "Text einfügen", close: "Schließen", autoInsert: "Bei jeder Pause einfügen", limit: "Maximale Diktatdauer erreicht.", permission: "Der Mikrofonzugriff wurde verweigert. Erlauben Sie ihn in den Website-Einstellungen des Browsers und versuchen Sie es erneut.", noMic: "Auf diesem Gerät wurde kein Mikrofon gefunden.", micBusy: "Das Mikrofon wird von einer anderen Anwendung verwendet.", insecure: "Dieser Browser kann hier nicht aufnehmen: Das Diktat braucht eine sichere Verbindung und einen aktuellen Browser.", busy: "Die Diktat-Engine ist ausgelastet. Versuchen Sie es gleich noch einmal.", strictBusy: "Die Diktat-Engine ist ausgelastet, und strikter Datenschutz hält Audio in Atlas. Versuchen Sie es gleich noch einmal.", sessionOpen: "In einem anderen Tab oder Fenster läuft bereits ein Diktat.", budget: "Ihr Nutzungslimit ist erreicht, das Diktat ist vorerst nicht verfügbar.", provider: "Der Transkriptionsdienst hat sein Nutzungslimit erreicht. Versuchen Sie es später erneut.", network: "Die Verbindung zu Atlas wurde unterbrochen. Prüfen Sie das Netzwerk und versuchen Sie es erneut.", idle: "Vom Mikrofon kam kein Ton.", noComposer: "Das Nachrichtenfeld ist hier nicht verfügbar: Öffnen Sie eine Unterhaltung und fügen Sie den Text dann ein.", unavailable: "Das Diktat ist gerade nicht verfügbar." },
-    es: { dictate: "Dictar", stop: "Detener el dictado", panel: "Dictado", starting: "Iniciando el micrófono…", listening: "Escuchando", finishing: "Finalizando…", local: "Transcrito en los servidores de Atlas", cloud: "Transcrito por un servicio externo", fallback: "Motor de Atlas ocupado: transcrito por un servicio externo", strict: "Privacidad estricta: el audio se queda en Atlas", enhanced: "Privacidad reforzada: el audio se queda en Atlas", stopButton: "Detener", insert: "Insertar el texto", close: "Cerrar", autoInsert: "Insertar en cada pausa", limit: "Se alcanzó la duración máxima del dictado.", permission: "Se denegó el acceso al micrófono. Permítalo en los ajustes del sitio del navegador y vuelva a intentarlo.", noMic: "No se encontró ningún micrófono en este dispositivo.", micBusy: "Otra aplicación está usando el micrófono.", insecure: "Este navegador no puede grabar aquí: el dictado necesita una conexión segura y un navegador reciente.", busy: "El motor de dictado está ocupado. Vuelva a intentarlo en un momento.", strictBusy: "El motor de dictado está ocupado y la privacidad estricta mantiene el audio en Atlas. Vuelva a intentarlo en un momento.", sessionOpen: "Ya hay un dictado en curso en otra pestaña o ventana.", budget: "Se alcanzó su límite de uso: el dictado no está disponible por ahora.", provider: "El servicio de transcripción alcanzó su límite de uso. Vuelva a intentarlo más tarde.", network: "Se perdió la conexión con Atlas. Compruebe la red y vuelva a intentarlo.", idle: "No llegó ningún sonido del micrófono.", noComposer: "El cuadro de mensaje no está disponible aquí: abra una conversación y luego inserte el texto.", unavailable: "El dictado no está disponible en este momento." },
-    it: { dictate: "Detta", stop: "Ferma la dettatura", panel: "Dettatura", starting: "Avvio del microfono…", listening: "In ascolto", finishing: "Completamento…", local: "Trascritto sui server di Atlas", cloud: "Trascritto da un servizio esterno", fallback: "Motore di Atlas occupato: trascritto da un servizio esterno", strict: "Privacy rigorosa: l’audio resta in Atlas", enhanced: "Privacy rafforzata: l’audio resta in Atlas", stopButton: "Ferma", insert: "Inserisci il testo", close: "Chiudi", autoInsert: "Inserisci a ogni pausa", limit: "Durata massima della dettatura raggiunta.", permission: "L’accesso al microfono è stato negato. Consentilo nelle impostazioni del sito del browser, poi riprova.", noMic: "Nessun microfono trovato su questo dispositivo.", micBusy: "Il microfono è usato da un’altra applicazione.", insecure: "Questo browser non può registrare qui: la dettatura richiede una connessione sicura e un browser recente.", busy: "Il motore di dettatura è occupato. Riprova tra un momento.", strictBusy: "Il motore di dettatura è occupato e la privacy rigorosa mantiene l’audio in Atlas. Riprova tra un momento.", sessionOpen: "Una dettatura è già in corso in un’altra scheda o finestra.", budget: "Il tuo limite di utilizzo è stato raggiunto: la dettatura non è disponibile per ora.", provider: "Il servizio di trascrizione ha raggiunto il suo limite di utilizzo. Riprova più tardi.", network: "La connessione ad Atlas si è interrotta. Controlla la rete e riprova.", idle: "Dal microfono non è arrivato alcun suono.", noComposer: "La casella del messaggio non è disponibile qui: apri una conversazione, poi inserisci il testo.", unavailable: "La dettatura non è disponibile in questo momento." },
-    nl: { dictate: "Dicteren", stop: "Dicteren stoppen", panel: "Dicteren", starting: "Microfoon wordt gestart…", listening: "Luistert", finishing: "Wordt afgerond…", local: "Getranscribeerd op Atlas-servers", cloud: "Getranscribeerd door een externe dienst", fallback: "Atlas-engine bezet: getranscribeerd door een externe dienst", strict: "Strikte privacy: audio blijft in Atlas", enhanced: "Verscherpte privacy: audio blijft in Atlas", stopButton: "Stoppen", insert: "Tekst invoegen", close: "Sluiten", autoInsert: "Invoegen bij elke pauze", limit: "Maximale dicteerduur bereikt.", permission: "Toegang tot de microfoon is geweigerd. Sta die toe in de site-instellingen van de browser en probeer het opnieuw.", noMic: "Er is geen microfoon gevonden op dit apparaat.", micBusy: "De microfoon wordt door een andere toepassing gebruikt.", insecure: "Deze browser kan hier niet opnemen: dicteren vereist een beveiligde verbinding en een recente browser.", busy: "De dicteerengine is bezet. Probeer het zo meteen opnieuw.", strictBusy: "De dicteerengine is bezet en strikte privacy houdt audio in Atlas. Probeer het zo meteen opnieuw.", sessionOpen: "Er loopt al een dictaat in een ander tabblad of venster.", budget: "Uw gebruikslimiet is bereikt: dicteren is voorlopig niet beschikbaar.", provider: "De transcriptiedienst heeft zijn gebruikslimiet bereikt. Probeer het later opnieuw.", network: "De verbinding met Atlas is verbroken. Controleer het netwerk en probeer het opnieuw.", idle: "Er kwam geen geluid van de microfoon.", noComposer: "Het berichtvak is hier niet beschikbaar: open een gesprek en voeg de tekst daarna in.", unavailable: "Dicteren is op dit moment niet beschikbaar." }
+    en: { dictate: "Dictate", stop: "Stop dictation", panel: "Dictation", starting: "Starting the microphone…", listening: "Listening", finishing: "Finishing…", local: "Transcribed on Atlas servers", partner: "Transcribed by a partner speech recognition service", partnerText: "Transcribed and corrected by partner services", localText: "Transcribed on Atlas servers, corrected by a partner service", fallback: "Atlas engine busy", strict: "Strict privacy: audio stays in Atlas", enhanced: "Enhanced privacy: audio stays in Atlas", stopButton: "Stop", insert: "Insert the text", close: "Close", autoInsert: "Insert when I pause", limit: "Maximum dictation length reached.", permission: "Microphone access was refused. Allow it in the browser's site settings, then try again.", noMic: "No microphone was found on this device.", micBusy: "The microphone is used by another application.", insecure: "This browser cannot record here: dictation needs a secure connection and a recent browser.", busy: "The dictation engine is busy. Try again in a moment.", strictBusy: "The dictation engine is busy, and strict privacy keeps audio in Atlas. Try again in a moment.", sessionOpen: "A dictation is already running in another tab or window.", budget: "Your usage limit is reached, so dictation is not available for now.", provider: "The transcription service has reached its usage limit. Try again later.", network: "The connection to Atlas was lost. Check the network and try again.", idle: "No sound came from the microphone.", noComposer: "The message box is not available here: open a conversation, then insert the text.", unavailable: "Dictation is not available right now." },
+    fr: { dictate: "Dicter", stop: "Arrêter la dictée", panel: "Dictée", starting: "Démarrage du micro…", listening: "À l’écoute", finishing: "Finalisation…", local: "Transcrit sur les serveurs Atlas", partner: "Transcrit par un service de reconnaissance vocale partenaire", partnerText: "Transcrit et corrigé par des services partenaires", localText: "Transcrit sur les serveurs Atlas, corrigé par un service partenaire", fallback: "Moteur Atlas occupé", strict: "Confidentialité stricte : l’audio reste dans Atlas", enhanced: "Confidentialité renforcée : l’audio reste dans Atlas", stopButton: "Arrêter", insert: "Insérer le texte", close: "Fermer", autoInsert: "Insérer à chaque pause", limit: "Durée maximale de dictée atteinte.", permission: "L’accès au micro a été refusé. Autorisez-le dans les réglages du site du navigateur, puis réessayez.", noMic: "Aucun micro n’a été trouvé sur cet appareil.", micBusy: "Le micro est utilisé par une autre application.", insecure: "Ce navigateur ne peut pas enregistrer ici : la dictée demande une connexion sécurisée et un navigateur récent.", busy: "Le moteur de dictée est occupé. Réessayez dans un instant.", strictBusy: "Le moteur de dictée est occupé, et la confidentialité stricte garde l’audio dans Atlas. Réessayez dans un instant.", sessionOpen: "Une dictée est déjà en cours dans un autre onglet ou une autre fenêtre.", budget: "Votre limite d’usage est atteinte : la dictée n’est pas disponible pour le moment.", provider: "Le service de transcription a atteint sa limite d’usage. Réessayez plus tard.", network: "La connexion à Atlas a été perdue. Vérifiez le réseau et réessayez.", idle: "Aucun son n’est venu du micro.", noComposer: "La zone de message n’est pas disponible ici : ouvrez une conversation, puis insérez le texte.", unavailable: "La dictée n’est pas disponible pour le moment." },
+    de: { dictate: "Diktieren", stop: "Diktat stoppen", panel: "Diktat", starting: "Mikrofon wird gestartet…", listening: "Hört zu", finishing: "Wird abgeschlossen…", local: "Auf Atlas-Servern transkribiert", partner: "Von einem Partnerdienst für Spracherkennung transkribiert", partnerText: "Von Partnerdiensten transkribiert und korrigiert", localText: "Auf Atlas-Servern transkribiert, von einem Partnerdienst korrigiert", fallback: "Atlas-Engine ausgelastet", strict: "Strikter Datenschutz: Audio bleibt in Atlas", enhanced: "Erweiterter Datenschutz: Audio bleibt in Atlas", stopButton: "Stoppen", insert: "Text einfügen", close: "Schließen", autoInsert: "Bei jeder Pause einfügen", limit: "Maximale Diktatdauer erreicht.", permission: "Der Mikrofonzugriff wurde verweigert. Erlauben Sie ihn in den Website-Einstellungen des Browsers und versuchen Sie es erneut.", noMic: "Auf diesem Gerät wurde kein Mikrofon gefunden.", micBusy: "Das Mikrofon wird von einer anderen Anwendung verwendet.", insecure: "Dieser Browser kann hier nicht aufnehmen: Das Diktat braucht eine sichere Verbindung und einen aktuellen Browser.", busy: "Die Diktat-Engine ist ausgelastet. Versuchen Sie es gleich noch einmal.", strictBusy: "Die Diktat-Engine ist ausgelastet, und strikter Datenschutz hält Audio in Atlas. Versuchen Sie es gleich noch einmal.", sessionOpen: "In einem anderen Tab oder Fenster läuft bereits ein Diktat.", budget: "Ihr Nutzungslimit ist erreicht, das Diktat ist vorerst nicht verfügbar.", provider: "Der Transkriptionsdienst hat sein Nutzungslimit erreicht. Versuchen Sie es später erneut.", network: "Die Verbindung zu Atlas wurde unterbrochen. Prüfen Sie das Netzwerk und versuchen Sie es erneut.", idle: "Vom Mikrofon kam kein Ton.", noComposer: "Das Nachrichtenfeld ist hier nicht verfügbar: Öffnen Sie eine Unterhaltung und fügen Sie den Text dann ein.", unavailable: "Das Diktat ist gerade nicht verfügbar." },
+    es: { dictate: "Dictar", stop: "Detener el dictado", panel: "Dictado", starting: "Iniciando el micrófono…", listening: "Escuchando", finishing: "Finalizando…", local: "Transcrito en los servidores de Atlas", partner: "Transcrito por un servicio de reconocimiento de voz asociado", partnerText: "Transcrito y corregido por servicios asociados", localText: "Transcrito en los servidores de Atlas, corregido por un servicio asociado", fallback: "Motor de Atlas ocupado", strict: "Privacidad estricta: el audio se queda en Atlas", enhanced: "Privacidad reforzada: el audio se queda en Atlas", stopButton: "Detener", insert: "Insertar el texto", close: "Cerrar", autoInsert: "Insertar en cada pausa", limit: "Se alcanzó la duración máxima del dictado.", permission: "Se denegó el acceso al micrófono. Permítalo en los ajustes del sitio del navegador y vuelva a intentarlo.", noMic: "No se encontró ningún micrófono en este dispositivo.", micBusy: "Otra aplicación está usando el micrófono.", insecure: "Este navegador no puede grabar aquí: el dictado necesita una conexión segura y un navegador reciente.", busy: "El motor de dictado está ocupado. Vuelva a intentarlo en un momento.", strictBusy: "El motor de dictado está ocupado y la privacidad estricta mantiene el audio en Atlas. Vuelva a intentarlo en un momento.", sessionOpen: "Ya hay un dictado en curso en otra pestaña o ventana.", budget: "Se alcanzó su límite de uso: el dictado no está disponible por ahora.", provider: "El servicio de transcripción alcanzó su límite de uso. Vuelva a intentarlo más tarde.", network: "Se perdió la conexión con Atlas. Compruebe la red y vuelva a intentarlo.", idle: "No llegó ningún sonido del micrófono.", noComposer: "El cuadro de mensaje no está disponible aquí: abra una conversación y luego inserte el texto.", unavailable: "El dictado no está disponible en este momento." },
+    it: { dictate: "Detta", stop: "Ferma la dettatura", panel: "Dettatura", starting: "Avvio del microfono…", listening: "In ascolto", finishing: "Completamento…", local: "Trascritto sui server di Atlas", partner: "Trascritto da un servizio di riconoscimento vocale partner", partnerText: "Trascritto e corretto da servizi partner", localText: "Trascritto sui server di Atlas, corretto da un servizio partner", fallback: "Motore di Atlas occupato", strict: "Privacy rigorosa: l’audio resta in Atlas", enhanced: "Privacy rafforzata: l’audio resta in Atlas", stopButton: "Ferma", insert: "Inserisci il testo", close: "Chiudi", autoInsert: "Inserisci a ogni pausa", limit: "Durata massima della dettatura raggiunta.", permission: "L’accesso al microfono è stato negato. Consentilo nelle impostazioni del sito del browser, poi riprova.", noMic: "Nessun microfono trovato su questo dispositivo.", micBusy: "Il microfono è usato da un’altra applicazione.", insecure: "Questo browser non può registrare qui: la dettatura richiede una connessione sicura e un browser recente.", busy: "Il motore di dettatura è occupato. Riprova tra un momento.", strictBusy: "Il motore di dettatura è occupato e la privacy rigorosa mantiene l’audio in Atlas. Riprova tra un momento.", sessionOpen: "Una dettatura è già in corso in un’altra scheda o finestra.", budget: "Il tuo limite di utilizzo è stato raggiunto: la dettatura non è disponibile per ora.", provider: "Il servizio di trascrizione ha raggiunto il suo limite di utilizzo. Riprova più tardi.", network: "La connessione ad Atlas si è interrotta. Controlla la rete e riprova.", idle: "Dal microfono non è arrivato alcun suono.", noComposer: "La casella del messaggio non è disponibile qui: apri una conversazione, poi inserisci il testo.", unavailable: "La dettatura non è disponibile in questo momento." },
+    nl: { dictate: "Dicteren", stop: "Dicteren stoppen", panel: "Dicteren", starting: "Microfoon wordt gestart…", listening: "Luistert", finishing: "Wordt afgerond…", local: "Getranscribeerd op Atlas-servers", partner: "Getranscribeerd door een partnerdienst voor spraakherkenning", partnerText: "Getranscribeerd en gecorrigeerd door partnerdiensten", localText: "Getranscribeerd op Atlas-servers, gecorrigeerd door een partnerdienst", fallback: "Atlas-engine bezet", strict: "Strikte privacy: audio blijft in Atlas", enhanced: "Verscherpte privacy: audio blijft in Atlas", stopButton: "Stoppen", insert: "Tekst invoegen", close: "Sluiten", autoInsert: "Invoegen bij elke pauze", limit: "Maximale dicteerduur bereikt.", permission: "Toegang tot de microfoon is geweigerd. Sta die toe in de site-instellingen van de browser en probeer het opnieuw.", noMic: "Er is geen microfoon gevonden op dit apparaat.", micBusy: "De microfoon wordt door een andere toepassing gebruikt.", insecure: "Deze browser kan hier niet opnemen: dicteren vereist een beveiligde verbinding en een recente browser.", busy: "De dicteerengine is bezet. Probeer het zo meteen opnieuw.", strictBusy: "De dicteerengine is bezet en strikte privacy houdt audio in Atlas. Probeer het zo meteen opnieuw.", sessionOpen: "Er loopt al een dictaat in een ander tabblad of venster.", budget: "Uw gebruikslimiet is bereikt: dicteren is voorlopig niet beschikbaar.", provider: "De transcriptiedienst heeft zijn gebruikslimiet bereikt. Probeer het later opnieuw.", network: "De verbinding met Atlas is verbroken. Controleer het netwerk en probeer het opnieuw.", idle: "Er kwam geen geluid van de microfoon.", noComposer: "Het berichtvak is hier niet beschikbaar: open een gesprek en voeg de tekst daarna in.", unavailable: "Dicteren is op dit moment niet beschikbaar." }
   };
   const locale = () => {
     let stored = "";
@@ -1532,28 +1535,31 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   const make = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; };
 
   let button = null, panel = null, ui = null, observed = null, resize = null, queued = false, lastPlace = "", config = null, nextConfig = 0;
-  const fresh = () => ({ state: "idle", socket: null, audio: null, stream: null, finals: [], partial: "", closed: [], live: null, transcript: "", started: 0, ticker: 0, finishing: 0, engine: "", fallback: false, privacy: "standard", error: "", note: "", cursor: null, ready: false });
+  const fresh = () => ({ state: "idle", socket: null, audio: null, stream: null, finals: [], partial: "", closed: [], live: null, transcript: "", started: 0, ticker: 0, finishing: 0, engine: "", fallback: false, privacy: "standard", audioOut: false, textOut: false, error: "", note: "", cursor: null, ready: false, base: 0, carry: "" });
   let s = fresh();
 
   // --- text: stable (cleaned or final) in normal colour, the open utterance in grey ---
-  const pieces = () => {
-    const stable = []; let open = ""; let i = 0;
-    while (i < s.finals.length) {
+  // From s.base: the finals before it belong to pieces already written into the composer.
+  const pieces = (to = s.finals.length, withOpen = true) => {
+    const stable = []; let open = ""; let i = s.base;
+    while (i < to) {
       const closed = s.closed.find(range => range.from === i && range.to > i);
-      if (closed) { stable.push(closed.text); i = closed.to; continue; }
+      if (closed && closed.to <= to) { stable.push(closed.text); i = closed.to; continue; }
       const live = s.live;
-      if (live && live.from === i && live.to === s.finals.length) {
+      if (withOpen && live && live.from === i && live.to === s.finals.length) {
         if (!live.partial) { stable.push(live.text); i = live.to; continue; }
         if (s.partial) { open = live.text; i = live.to; break; }
       }
       stable.push(s.finals[i] || ""); i += 1;
     }
-    if (!open && s.partial) open = s.live && s.live.partial && s.live.from === s.finals.length ? s.live.text : s.partial;
+    if (withOpen && !open && s.partial) open = s.live && s.live.partial && s.live.from === s.finals.length ? s.live.text : s.partial;
     return { stable: stable.filter(Boolean).join(" "), open };
   };
-  const liveText = () => { const { stable, open } = pieces(); return [stable, open].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); };
-  // The final pass's text when the server sent one, else the live text.
-  const finalText = () => s.transcript || liveText();
+  const clean = text => text.replace(/\s+/g, " ").trim();
+  const liveText = () => { const { stable, open } = pieces(); return clean([stable, open].filter(Boolean).join(" ")); };
+  // The final pass's text when the server sent one, else the live text; a piece that found
+  // no composer to go into (carry) is kept in front of it.
+  const finalText = () => clean([s.carry, s.transcript || liveText()].filter(Boolean).join(" "));
 
   // --- placement: over the native microphone, which keeps its layout box ---
   const composer = mic => mic.closest("#message-input-container") || mic.parentElement;
@@ -1628,6 +1634,12 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     const value = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
     if (ui.time.textContent !== value) ui.time.textContent = value;
   };
+  // Where audio and text are processed, as the server reported it for this session.
+  const where = () => {
+    if (s.privacy === "strict" || s.privacy === "enhanced") return [t(s.privacy)];
+    const place = s.audioOut ? t(s.textOut ? "partnerText" : "partner") : t(s.textOut ? "localText" : "local");
+    return s.fallback ? [t("fallback"), place] : [place];
+  };
   const render = () => {
     const active = s.state !== "idle";
     button.setAttribute("aria-pressed", String(s.state === "starting" || s.state === "live"));
@@ -1646,7 +1658,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     const message = s.error || s.note;
     ui.message.textContent = message; ui.message.hidden = !message;
     ui.message.dataset.kind = s.error ? "error" : "note";
-    ui.status.textContent = s.state === "starting" ? t("starting") : s.state === "finishing" ? t("finishing") : s.state === "live" ? [t("listening"), s.privacy === "strict" ? t("strict") : s.privacy === "enhanced" ? t("enhanced") : s.fallback ? t("fallback") : t(s.engine === "cloud" ? "cloud" : "local")].join(" · ") : "";
+    ui.status.textContent = s.state === "starting" ? t("starting") : s.state === "finishing" ? t("finishing") : s.state === "live" ? [t("listening"), ...where()].join(" · ") : "";
     ui.autoText.textContent = t("autoInsert"); ui.auto.checked = autoInsert();
     // A failed session shows its sentence and actions only.
     for (const node of [ui.dot, ui.time, ui.auto.parentElement]) node.hidden = s.state === "error";
@@ -1695,7 +1707,23 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       }
       done = grew();
     }
+    // The next piece goes right after this one.
+    if (done) {
+      if (textarea) s.cursor = { start: editor.selectionEnd, end: editor.selectionEnd };
+      else { const selection = getSelection(); s.cursor = selection.rangeCount && editor.contains(selection.anchorNode) ? { range: selection.getRangeAt(0).cloneRange() } : null; }
+    }
     return done;
+  };
+  // One piece of an "Insert when I pause" dictation, written once; the session goes on.
+  const insertPiece = (text, to) => {
+    const upto = Number.isInteger(to) ? Math.max(s.base, Math.min(to, s.finals.length)) : s.finals.length;
+    const { stable } = pieces(upto, false);
+    const value = clean(text || stable);
+    s.base = upto; s.closed = s.closed.filter(range => range.to > s.base);
+    if (s.live && s.live.from < s.base) s.live = null;
+    if (!value) return;
+    // Without a composer the piece waits in the panel, in front of the rest: never dropped.
+    if (s.carry || !write(value)) s.carry = clean(s.carry + " " + value);
   };
 
   // --- session ---
@@ -1707,6 +1735,19 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   const closeSocket = () => {
     const socket = s.socket; s.socket = null;
     if (socket) { socket.onmessage = socket.onclose = socket.onerror = null; try { socket.close(); } catch { /* already closed */ } }
+  };
+  // A session whose text is written lets the server finish (metering, done) in the
+  // background; a new dictation waits for it (one session per user).
+  let draining = null;
+  const detach = () => {
+    const socket = s.socket; s.socket = null;
+    if (!socket) return;
+    draining = new Promise(resolve => {
+      const end = () => { clearTimeout(timer); try { socket.close(); } catch { /* already closed */ } resolve(); };
+      const timer = setTimeout(end, 15000);
+      socket.onmessage = event => { try { const data = JSON.parse(event.data); if (data.type === "done" || data.type === "error") end(); } catch { end(); } };
+      socket.onclose = socket.onerror = () => { clearTimeout(timer); resolve(); };
+    }).then(() => { draining = null; });
   };
   const reset = () => {
     release(); closeSocket(); clearInterval(s.ticker); clearTimeout(s.finishing);
@@ -1743,6 +1784,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     try { data = JSON.parse(event.data); } catch { return; }
     if (data.type === "ready") {
       s.ready = true; s.engine = data.engine; s.fallback = Boolean(data.fallback); s.privacy = data.privacy === "strict" || data.privacy === "enhanced" ? data.privacy : "standard";
+      // Unknown means it may leave: an older server did not say.
+      s.audioOut = data.audio_out !== false; s.textOut = data.text_out !== false && Boolean(data.cleanup);
       if (s.state === "starting") s.state = "live";
     } else if (data.type === "partial") s.partial = data.text || "";
     else if (data.type === "final") {
@@ -1751,9 +1794,18 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     } else if (data.type === "cleaned") {
       if (data.final) { s.closed.push(data); s.live = null; } else s.live = data;
     } else if (data.type === "transcript") {
-      s.transcript = typeof data.text === "string" ? data.text.replace(/\s+/g, " ").trim() : "";
+      const text = typeof data.text === "string" ? clean(data.text) : "";
+      if (data.last === false) insertPiece(text, data.to);
+      else {
+        s.transcript = text;
+        // The text to write is here: written now, without waiting for the server's end.
+        if (text && s.state === "finishing") { detach(); deliver(); return; }
+      }
     } else if (data.type === "turn" && data.event === "end") {
-      if (s.state === "live" && autoInsert() && finalText()) { setTimeout(finish, 0); }
+      // "Insert when I pause": this turn becomes a piece; the microphone stays open.
+      if (s.state === "live" && autoInsert() && liveText() && s.socket && s.socket.readyState === WebSocket.OPEN) {
+        try { s.socket.send(JSON.stringify({ type: "commit" })); } catch { /* the close handler reports it */ }
+      }
     } else if (data.type === "limit") s.note = t("limit");
     else if (data.type === "error") { fail((data.code === "local_busy" && data.privacy === "strict") ? "strictBusy" : ERRORS[data.code] || "unavailable"); return; }
     else if (data.type === "done") { complete(); return; }
@@ -1798,6 +1850,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       capture = new AudioWorkletNode(s.audio, "dictation-capture");
       s.audio.createMediaStreamSource(stream).connect(capture);
     } catch { if (s === current) fail("unavailable"); return; }
+    if (draining) { await draining; if (s !== current) return; }
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/atlas/dictation/stream`);
     socket.binaryType = "arraybuffer"; s.socket = socket;
     socket.onmessage = onMessage;
@@ -1811,7 +1864,11 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       const code = /^[a-z]{2}$/.test(chosen) ? chosen : null;
       // The conversation id lets the server apply the level chosen for this conversation.
       const chat = (location.pathname.match(/^\/c\/([A-Za-z0-9:_-]{1,120})$/) || [])[1] || "";
-      socket.send(JSON.stringify({ type: "start", engine: "auto", dictation_language: code, scope: scope(), chat, cleanup: true }));
+      // The level the privacy selector shows: the server never goes below it (a new
+      // conversation has no id yet; its level is the pending choice).
+      const shown = document.documentElement.dataset.atlasPrivacy;
+      const privacy = shown === "strict" || shown === "enhanced" || shown === "standard" ? shown : null;
+      socket.send(JSON.stringify({ type: "start", engine: "auto", dictation_language: code, scope: scope(), chat, privacy, cleanup: true }));
       // Audio is sent from the start: the server reads it once its engine is ready.
       capture.port.onmessage = ({ data }) => { if (s === current && (s.state === "starting" || s.state === "live") && socket.readyState === WebSocket.OPEN) socket.send(data.pcm); };
     };
@@ -1941,6 +1998,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   const render = () => {
     if (!pill || !state) return;
     pill.dataset.level = state.level;
+    // Read by the voice button: dictation never runs below the level shown here.
+    document.documentElement.dataset.atlasPrivacy = state.level;
     const name = t(state.level);
     pill.querySelector(".atlas-privacy-pill-text").textContent = name;
     pill.setAttribute("aria-label", t("label") + (locale() === "fr" ? " : " : ": ") + name);

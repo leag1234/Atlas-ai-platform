@@ -361,6 +361,135 @@ class DictationTests(unittest.TestCase):
         self.assertIn("dictation_final_pass_failed", logged.output[0])
         self.assertNotIn("bonjour", "".join(logged.output))
 
+    def session(self, steps: list[object], **fields: object) -> list[dict[str, Any]]:
+        """A session driven step by step: bytes are audio, dicts are control messages."""
+        self.client.cookies.set("token", "good")
+        with (
+            patch("services.orchestrator.dictation.token_user", signed_in),
+            patch.object(realtime_transcription, "ProviderStream", FakeProvider),
+        ):
+            with self.client.websocket_connect(
+                "/api/atlas/dictation/stream", headers=ORIGIN
+            ) as socket:
+                socket.send_text(json.dumps({"type": "start"} | fields))
+                first = json.loads(socket.receive_text())
+                if first["type"] != "ready":
+                    return [first]
+                for step in steps:
+                    if isinstance(step, bytes):
+                        for offset in range(0, len(step), 16000):
+                            socket.send_bytes(step[offset : offset + 16000])
+                    else:
+                        socket.send_text(json.dumps(step))
+                return [first] + messages(socket)
+
+    def test_each_paused_piece_is_written_once_and_the_dictation_goes_on(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [
+            P("turn_start", time_s=0.1),
+            P("delta", "Premier"),
+            P("turn_end", time_s=1.0),
+            P("done", seconds=2.0),
+        ]
+        calls: list[int] = []
+
+        async def batch(audio: bytes, **options: Any) -> dict[str, Any]:
+            calls.append(len(audio) - 44)
+            text = "Premier." if len(calls) == 1 else "Second."
+            return {"text": text, "language": "fr", "duration": 1.0, "cost_micro": 67}
+
+        second = b"\1\0" * 16000
+        with (
+            patch.dict(os.environ, {"ATLAS_DICTATION_FINAL_PASS": "on"}),
+            patch.object(transcription, "transcribe", batch),
+        ):
+            result = self.session(
+                [b"\0\0" * 16000, {"type": "commit"}, second, {"type": "stop"}],
+                engine="cloud",
+            )
+        pieces = [message for message in result if message["type"] == "transcript"]
+        # Both sentences, in order, each once: the pause no longer ends the session.
+        self.assertEqual(
+            [(m["piece"], m["last"], m["text"]) for m in pieces],
+            [(0, False, "Premier."), (1, True, "Second.")],
+        )
+        self.assertEqual(calls, [32000, 32000])
+        self.assertEqual(result[-1]["type"], "done")
+        self.assertEqual(
+            result[-1]["cost_eur"], str(Decimal("0.000334") + Decimal("0.000134"))
+        )
+
+    def test_a_commit_without_new_speech_makes_no_piece(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [P("done", seconds=1.0)]
+        result = self.session(
+            [{"type": "commit"}, b"\0\0" * 16000, {"type": "stop"}], engine="cloud"
+        )
+        self.assertNotIn("transcript", [message["type"] for message in result])
+        self.assertEqual(result[-1]["type"], "done")
+
+    def test_no_last_cleanup_when_the_final_pass_replaces_the_live_text(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [P("delta", "bonjour"), P("done", seconds=1.0)]
+        cleaned: list[str] = []
+
+        async def clean(self: Any, context: str, raw: str, **options: Any) -> Any:
+            cleaned.append(raw)
+            return dictation_cleanup.Outcome(raw, "accepted")
+
+        async def batch(audio: bytes, **options: Any) -> dict[str, Any]:
+            return {"text": "Bonjour.", "language": "fr", "duration": 1.0}
+
+        async def broken(audio: bytes, **options: Any) -> dict[str, Any]:
+            raise transcription.ProviderUnavailable()
+
+        environment = {
+            "ATLAS_DICTATION_FINAL_PASS": "on",
+            "ATLAS_DICTATION_CLEANUP": "1",
+        }
+        with (
+            patch.dict(os.environ, environment),
+            patch.object(dictation_cleanup.Cleaner, "clean", clean),
+        ):
+            with patch.object(transcription, "transcribe", batch):
+                self.start(audio=b"\0\0" * 16000, engine="cloud", cleanup=True)
+            self.assertEqual(cleaned, [])
+            # The final pass failed: the live text is written, so it is cleaned up.
+            with patch.object(transcription, "transcribe", broken):
+                result = self.start(audio=b"\0\0" * 16000, engine="cloud", cleanup=True)
+        self.assertEqual(cleaned, ["bonjour"])
+        kinds = [message["type"] for message in result]
+        self.assertLess(kinds.index("cleaned"), kinds.index("done"))
+
+    def test_ready_says_where_audio_and_text_go(self) -> None:
+        FakeProvider.script = [realtime_transcription.ProviderEvent("done")]
+        with patch.dict(os.environ, {"ATLAS_DICTATION_CLEANUP": "1"}):
+            ready = self.start(engine="cloud", cleanup=True)[0]
+        self.assertEqual((ready["audio_out"], ready["text_out"]), (True, True))
+        with (
+            patch.dict(os.environ, {"ATLAS_DICTATION_FINAL_PASS": "on"}),
+            patch.object(dictation, "local_installed", lambda: True),
+            patch.object(dictation, "batch_configured", lambda: True),
+        ):
+            self.assertEqual(dictation.final_pass_engine("standard"), "batch")
+            self.assertEqual(dictation.final_pass_engine("strict"), "local")
+
+    def test_each_session_leaves_one_journal_line_without_text(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [P("delta", "bonjour secret"), P("done", seconds=1.0)]
+        with self.assertLogs("atlas.dictation", "WARNING") as logged:
+            self.start(audio=b"\0\0" * 16000, engine="cloud")
+        lines = [line for line in logged.output if "dictation_session" in line]
+        self.assertEqual(len(lines), 1)
+        record = json.loads(lines[0].split(":", 2)[2])
+        self.assertEqual(
+            {k: record[k] for k in ("outcome", "privacy", "engine", "pieces")},
+            {"outcome": "done", "privacy": "standard", "engine": "cloud", "pieces": 1},
+        )
+        self.assertIsNotNone(record["drain_seconds"])
+        self.assertNotIn("bonjour", lines[0])
+        self.assertNotIn("user-1", lines[0])
+
     def test_config_reports_the_flag_to_signed_in_users(self) -> None:
         async def user(request: object) -> str:
             return "user-1"
@@ -468,6 +597,18 @@ class LanguageTests(unittest.TestCase):
 class PrivacyTests(unittest.TestCase):
     user = dictation.SocketUser("user-1", "member@example.test")
 
+    def setUp(self) -> None:
+        root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_CONVERSATION_PRIVACY_DB": str(Path(root) / "levels.sqlite"),
+                    "ATLAS_PRIVACY_MINIMUM": "",
+                },
+            )
+        )
+
     def privacy(self, start: dict[str, object], setting: object) -> str:
         async def read(email: str, org: str, project: str) -> str:
             if isinstance(setting, Exception):
@@ -486,6 +627,39 @@ class PrivacyTests(unittest.TestCase):
             self.privacy({"scope": scope, "privacy": "standard"}, "strict"), "strict"
         )
         self.assertEqual(self.privacy({"scope": scope}, "standard"), "standard")
+
+    def test_a_new_conversation_follows_the_level_chosen_before_its_first_message(
+        self,
+    ) -> None:
+        from services.orchestrator import conversation_privacy
+
+        with conversation_privacy.connection() as db:
+            db.execute(
+                "INSERT INTO conversation_privacy VALUES (?,?,?,0,0)",
+                (self.user.subject, "", "strict"),
+            )
+        # The browser sends no id on a new conversation (staging 2026-11-17: it ran as
+        # Standard), or an id Atlas has not seen yet: both show the pending choice.
+        for chat in ("", None, "chat-not-seen-yet"):
+            with self.subTest(chat=chat):
+                start: dict[str, object] = {"type": "start", "chat": chat}
+                self.assertEqual(self.privacy(start, "standard"), "strict")
+        self.assertEqual(
+            self.privacy({"type": "start", "chat": "../x"}, "standard"), "strict"
+        )
+        # The level the selector shows raises it too, even before the store has it.
+        with conversation_privacy.connection() as db:
+            db.execute("DELETE FROM conversation_privacy")
+        self.assertEqual(self.privacy({"chat": ""}, "standard"), "standard")
+        self.assertEqual(
+            self.privacy({"chat": "", "privacy": "strict"}, "standard"), "strict"
+        )
+
+    def test_an_unreadable_conversation_store_counts_as_strict(self) -> None:
+        with patch.dict(
+            os.environ, {"ATLAS_CONVERSATION_PRIVACY_DB": "/proc/atlas/levels.sqlite"}
+        ):
+            self.assertEqual(self.privacy({"chat": ""}, "standard"), "strict")
 
     def test_an_unreadable_project_counts_as_strict(self) -> None:
         scope = {"org": str(uuid4()), "project": str(uuid4())}

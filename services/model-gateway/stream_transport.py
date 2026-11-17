@@ -511,7 +511,7 @@ async def attempt(
         raise
     except aiohttp.ClientError as exc:
         diagnostic("transport")
-        if request.privacy == "strict" and decoder.total == 0:
+        if request.privacy == "strict" and decoder.total == 0 and request.start_owned:
             # The owned server may be powered off between uses: its starter is
             # asked to power it on and the request gets the starter's answer.
             await owned_start.ensure()

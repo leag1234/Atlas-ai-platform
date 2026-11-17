@@ -258,6 +258,10 @@ class Cleaner:
         }
         if self.privacy != "standard":
             payload["privacy"] = "strict"
+            # A clean-up only polishes the live text: it never powers the on-demand
+            # owned server on (staging 2026-11-17: four clean-ups of one strict
+            # dictation asked for four GPU starts).
+            payload["start_owned"] = False
         self.calls += 1
         url = os.environ.get("ATLAS_GATEWAY_URL", atlas_ports().url("gateway"))
         try:

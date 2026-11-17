@@ -102,6 +102,9 @@ class AgentRequest(BaseModel):
     privacy: Literal["standard", "strict"] = Field(
         default="standard", exclude_if=lambda value: value == "standard"
     )
+    # False for auxiliary calls (a dictation clean-up): a silent on-demand owned server
+    # is then reported as unavailable, never asked to power on (owned_start.py).
+    start_owned: bool = Field(default=True, exclude_if=lambda value: value is True)
     observe: bool = False
     profile: str | None = Field(default=None, exclude_if=lambda value: value is None)
     max_tokens: int = Field(
@@ -362,7 +365,7 @@ class AgentProvider:
                     request, endpoint, model, key, request.timeout
                 )
         except RuntimeError as exc:
-            if str(exc) == "provider_error":
+            if str(exc) == "provider_error" and request.start_owned:
                 # A silent owned server may be powered off: ask its starter.
                 import owned_start
 

@@ -12,19 +12,28 @@ them to the selected engine and sends partial and final text back:
   Atlas (audio cannot be pseudonymised; owner decision 2026-11-14).
 
 The privacy level is decided here, not by the browser: the highest of the organisation
-minimum, the conversation's own level (``chat``, stored by Atlas) and, for a session started
-from a project (``scope`` names its organization and project), the project's setting, read
-with the signed-in user's membership; a project that cannot be read counts as strict. The
-browser may only raise the level, never lift it.
+minimum, the level the user sees for the conversation (``chat``; a new conversation has no
+id yet and shows the pending choice, see conversation_privacy.effective_level) and, for a
+session started from a project (``scope`` names its organization and project), the
+project's setting, read with the signed-in user's membership. Whatever cannot be read
+counts as strict. The browser sends the level its selector shows (``privacy``): it may only
+raise the level, never lift it.
 
 Client messages: one JSON ``start`` ({"type": "start", "engine" ("auto" by default),
 "dictation_language", "scope", "chat", "privacy", "cleanup"}), then binary PCM s16le frames,
-then {"type": "stop"}. Server messages: ``ready`` (engine, and ``fallback`` when the cloud
-engine replaced a busy local one), ``turn``, ``partial`` (text of the open utterance,
-replaced each time), ``final`` (a closed segment, by index), ``cleaned`` (a model-cleaned
-view of segments, see dictation_cleanup.py), ``transcript`` (the text to write, from the
-final pass), ``done`` (seconds, cost and the final pass outcome) and ``error`` (a public
-code; a provider quota or rate refusal is ``provider_limit``, never an outage).
+``commit`` messages, then {"type": "stop"}. Server messages: ``ready`` (engine, and
+``fallback`` when the cloud engine replaced a busy local one), ``turn``, ``partial`` (text
+of the open utterance, replaced each time), ``final`` (a closed segment, by index),
+``cleaned`` (a model-cleaned view of segments, see dictation_cleanup.py), ``transcript``
+(the text to write for one piece, from the final pass), ``done`` (seconds, cost and the
+final pass outcome) and ``error`` (a public code; a provider quota or rate refusal is
+``provider_limit``, never an outage).
+
+Pieces ("Insert when I pause"): the browser sends ``commit`` at the end of a turn. The
+recording up to that turn's end is one piece: its final pass runs while the user goes on
+speaking, and its ``transcript`` (``piece``, ``to``: the live segments it covers) is written
+once into the composer; the session goes on until the user stops. ``stop`` closes the last
+piece (``last``: true). Pieces reach the browser in order, each written once, never changed.
 
 Language: ``dictation_language`` is a language the user chose for dictation. Without one the
 engines detect the spoken language. The interface language is never used: an English
@@ -32,8 +41,11 @@ interface pinned French speech to English, and the provider then returned nothin
 pilot, 2026-11-17).
 
 Final pass (owner decision 2026-11-17): the live text is only shown in the voice panel. At
-stop, the whole recording, kept in memory for the session only, is transcribed once more
-and that text is written once into the composer. At the Standard level the gateway's batch
+stop (or at each committed piece), the recording, kept in memory for the session only, is
+transcribed once more and that text is written once into the composer. The batch pass
+starts as soon as the user stops, while the live engine drains, and the model clean-up of
+the live text is skipped at stop when a final pass replaces it (stop-to-text time, staging
+2026-11-17: the drain, the last clean-up and the batch call ran one after the other). At the Standard level the gateway's batch
 transcription provider does it (pilot word error rate: French 4.0 %, French with thinking
 pauses 5.3 %, English 7.0 %, against 5.4 %, 35.6 % and 12.1 % live); at the Strict and
 Enhanced levels the owned engine decodes the recording in long windows, so no audio leaves
@@ -42,7 +54,10 @@ browser then writes the live text.
 
 Limits: session length, idle time, frame size, audio pace, one session per user, a
 global session cap and a local engine cap. Cost is reserved in the daily ledger at start
-and settled at the end. Audio and text are never stored or logged.
+and settled at the end. Audio and text are never stored or logged: each session leaves one
+``dictation_session`` line in the service journal (level, engines, durations, outcome,
+cost), written at WARNING like the other operational lines, so that it reaches the journal
+without a logging configuration.
 """
 
 import asyncio
@@ -225,15 +240,21 @@ async def project_privacy(email: str, org: str, project: str) -> str:
 
 
 async def session_privacy(start: dict[str, Any], user: SocketUser) -> str:
-    """The session's level: organisation minimum, conversation, project and the browser's
-    own ask, the highest wins; fail closed when the project cannot be read."""
+    """The session's level: organisation minimum, the level the user sees for the
+    conversation (a new one included), project and the browser's own ask, the highest
+    wins; fail closed when the conversation or the project cannot be read."""
     from packages.privacy import highest, minimum
-    from services.orchestrator.conversation_privacy import conversation_level
+    from services.orchestrator.conversation_privacy import PENDING, effective_level
 
-    asked = highest(start.get("privacy"), minimum())
     chat = start.get("chat")
-    if isinstance(chat, str) and chat:
-        asked = highest(asked, conversation_level(user.subject, chat))
+    # No id: a new conversation, whose level is the user's pending choice.
+    chat = PENDING if chat is None or chat == "" else chat
+    seen = (
+        await asyncio.to_thread(effective_level, user.subject, chat)
+        if isinstance(chat, str)
+        else "strict"
+    )
+    asked = highest(start.get("privacy"), minimum(), seen)
     scope = start.get("scope")
     if not isinstance(scope, dict) or scope.get("project") is None:
         return asked
@@ -565,8 +586,13 @@ class CloudSegments:
                 upcoming.cancel()
 
 
+VAD_BYTES = (
+    1024  # bytes of audio per speech probability of the local engine (512 samples)
+)
+
+
 class Session:
-    """One browser dictation session: relay, segments, clean-up and metering."""
+    """One browser dictation session: relay, segments, clean-up, pieces and metering."""
 
     def __init__(
         self,
@@ -603,7 +629,19 @@ class Session:
         self.closing: list[asyncio.Task[None]] = []
         self.closing_lock = asyncio.Lock()
         self.audio = bytearray()  # the recording, in memory for the final pass only
-        self.final: FinalPass | None = None
+        # The local engine's speech probabilities: growing while it runs (``live``),
+        # complete once it drained (``speech``); the local final pass reuses them.
+        self.live_speech: list[float] | None = None
+        self.speech: list[float] | None = None
+        self.final: FinalPass | None = None  # the last piece's final pass
+        self.passes: list[FinalPass] = []  # every piece's final pass, for cost and logs
+        self.committed = 0  # bytes of the recording already given to a piece
+        self.turn_end = 0  # bytes of the recording at the latest end of turn
+        self.pieces: list[asyncio.Task[None]] = []
+        self.final_task: asyncio.Task[None] | None = None
+        self.stopped: float | None = None  # monotonic time of the user's stop
+        self.drained: float | None = None  # the live engine's last event after stop
+        self.text_sent: float | None = None  # the last piece's transcript
 
     async def emit(self, message: dict[str, object]) -> None:
         async with self.sending:
@@ -628,6 +666,7 @@ class Session:
                     )
                 seconds = (stream.sent_bytes + len(data)) / BYTES_PER_SECOND
                 if seconds > self.limits.max_seconds:
+                    self.stopped = time.monotonic()
                     await stream.finish()
                     await self.emit({"type": "limit", "code": "session_length"})
                     return
@@ -639,7 +678,12 @@ class Session:
             text = message.get("text")
             if text is not None:
                 control = json.loads(text)
-                if isinstance(control, dict) and control.get("type") == "stop":
+                if not isinstance(control, dict):
+                    continue
+                if control.get("type") == "commit":
+                    self.commit()
+                elif control.get("type") == "stop":
+                    self.stopped = time.monotonic()
                     await stream.finish()
                     return
 
@@ -664,6 +708,10 @@ class Session:
                         }
                     )
             elif event.kind in {"turn_start", "turn_end"}:
+                if event.kind == "turn_end" and event.time_s is not None:
+                    # Where the next piece starts when the browser commits this turn.
+                    at = int(event.time_s * BYTES_PER_SECOND)
+                    self.turn_end = max(self.turn_end, at - at % 2)
                 await self.emit(
                     {"type": "turn", "event": event.kind[5:], "time_s": event.time_s}
                 )
@@ -672,29 +720,87 @@ class Session:
                     self.closing.append(asyncio.create_task(self.close_turn()))
             elif event.kind == "done":
                 self.provider_seconds = event.seconds
-                await self.close_turn(last=True)
+                self.drained = time.monotonic()
+                speech = getattr(stream, "speech", None)
+                self.speech = speech if isinstance(speech, list) else None
+                if final_pass_engine(self.privacy) is None:
+                    # No final pass replaces the live text: it gets its last clean-up.
+                    await self.close_turn(last=True)
                 return
 
-    async def finish_text(self, stream: Stream) -> None:
-        """The final pass over the whole recording, sent as the text to write."""
-        speech = getattr(stream, "speech", None)
-        self.final = await final_pass(
-            bytes(self.audio),
-            self.privacy,
-            self.language,
-            speech if isinstance(speech, list) else None,
+    def commit(self) -> None:
+        """Close a piece at the latest end of turn; its final pass runs meanwhile."""
+        cut = self.turn_end if self.committed < self.turn_end else len(self.audio)
+        cut = min(cut, len(self.audio))
+        if cut - self.committed < BYTES_PER_SECOND // 5:
+            return  # nothing new was said since the last piece
+        begin, self.committed = self.committed, cut
+        self.add_piece(begin, cut, len(self.finals), last=False)
+
+    def start_final(self) -> None:
+        """The last piece: the rest of the recording, at stop."""
+        if self.final_task is None:
+            self.final_task = self.add_piece(
+                self.committed, len(self.audio), None, last=True
+            )
+
+    def add_piece(
+        self, begin: int, end: int, upto: int | None, *, last: bool
+    ) -> asyncio.Task[None]:
+        index, previous = len(self.pieces), self.pieces[-1] if self.pieces else None
+        task = asyncio.create_task(
+            self.piece(index, begin, end, upto, previous, last=last)
         )
-        self.audio = bytearray()
-        if self.final.outcome == "skipped":
-            return
+        self.pieces.append(task)
+        return task
+
+    async def piece(
+        self,
+        index: int,
+        begin: int,
+        end: int,
+        upto: int | None,
+        previous: asyncio.Task[None] | None,
+        *,
+        last: bool,
+    ) -> None:
+        """One piece's final pass, sent after the previous piece (pieces keep their order)."""
+        speech = self.speech if self.speech is not None else self.live_speech
+        if last and self.speech is None:
+            speech = None  # an undrained stream misses the last frames: VAD again
+        window = (
+            speech[begin // VAD_BYTES : -(-end // VAD_BYTES)]
+            if speech is not None
+            else None
+        )
+        result = await final_pass(
+            bytes(self.audio[begin:end]), self.privacy, self.language, window
+        )
+        if previous is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.shield(previous)
+        self.passes.append(result)
+        if last:
+            self.final = result
+            self.audio = bytearray()
+            if result.outcome != "done" and self.cleaner is not None:
+                # The live text is written instead: it gets its last clean-up.
+                await self.close_turn(last=True)
+            if result.outcome == "skipped":
+                return
         await self.emit(
             {
                 "type": "transcript",
-                "text": self.final.text,
-                "outcome": self.final.outcome,
-                "seconds": round(self.final.seconds, 2),
+                "piece": index,
+                "to": upto,
+                "last": last,
+                "text": result.text,
+                "outcome": result.outcome,
+                "seconds": round(result.seconds, 2),
             }
         )
+        if last:
+            self.text_sent = time.monotonic()
 
     async def close_turn(self, *, last: bool = False) -> None:
         async with self.closing_lock:
@@ -729,9 +835,9 @@ class Session:
     async def tick(self) -> None:
         """Clean the open text every interval while it changes (never queues calls)."""
         interval = _number("ATLAS_DICTATION_CLEANUP_INTERVAL_S", 2.5)
-        while self.cleaner is not None:
+        while self.cleaner is not None and self.stopped is None:
             await asyncio.sleep(interval)
-            if not self.changed:
+            if not self.changed or self.stopped is not None:
                 continue
             self.changed = False
             start, end = self.cleaned_upto, len(self.finals)
@@ -754,6 +860,47 @@ class Session:
                 }
             )
 
+    def record(self, stream: Stream | None, spent: Decimal, outcome: str) -> str:
+        """The journal line of the session: no text, no audio, no identity."""
+        final = self.final
+
+        def since_stop(moment: float | None) -> float | None:
+            if moment is None or self.stopped is None:
+                return None
+            return round(moment - self.stopped, 2)
+
+        return json.dumps(
+            {
+                "event": "dictation_session",
+                "outcome": outcome,
+                "privacy": self.privacy,
+                "engine": self.engine,
+                "audio_seconds": round(
+                    (stream.sent_bytes if stream else 0) / BYTES_PER_SECOND, 2
+                ),
+                "pieces": len(self.passes),
+                "cleanup_calls": self.cleaner.calls if self.cleaner else 0,
+                "final_pass": final.engine if final else None,
+                "final_outcome": final.outcome if final else None,
+                "final_seconds": round(final.seconds, 2) if final else None,
+                "drain_seconds": since_stop(self.drained),
+                "stop_to_text_seconds": since_stop(self.text_sent),
+                "cost_eur": str(spent),
+            }
+        )
+
+
+async def wait_tasks(
+    tasks: set[asyncio.Task[None]], when: str
+) -> set[asyncio.Task[None]]:
+    """Wait as asyncio.wait does; a task that failed raises its exception."""
+    done, _ = await asyncio.wait(tasks, return_when=when)
+    for task in done:
+        failure = task.exception()
+        if failure is not None:
+            raise failure
+    return done
+
 
 @router.websocket("/api/atlas/dictation/stream")
 async def stream_socket(socket: WebSocket) -> None:
@@ -775,6 +922,7 @@ async def stream_socket(socket: WebSocket) -> None:
     ledger.remember_alias(identity.email, user)
     tasks: list[asyncio.Task[None]] = []
     registered = False
+    outcome = "disconnected"
     try:
         start = json.loads(await asyncio.wait_for(socket.receive_text(), 10))
         if not isinstance(start, dict) or start.get("type") != "start":
@@ -820,6 +968,9 @@ async def stream_socket(socket: WebSocket) -> None:
             session.language if session.language in cloud_languages() else None,
             limits.delay_ms,
         )
+        live_speech = getattr(stream, "speech", None)
+        if isinstance(live_speech, list):
+            session.live_speech = live_speech
         await session.emit(
             {
                 "type": "ready",
@@ -828,22 +979,30 @@ async def stream_socket(socket: WebSocket) -> None:
                 "privacy": session.privacy,
                 "max_seconds": limits.max_seconds,
                 "cleanup": session.cleaner is not None,
+                # Where audio and text go, for the panel's label (never a provider name):
+                # the live engine or the final pass at a partner provider, and the
+                # clean-up at a shared model (Strict and Enhanced use owned ones only).
+                "audio_out": session.engine == "cloud"
+                or final_pass_engine(session.privacy) == "batch",
+                "text_out": session.cleaner is not None
+                and session.privacy == "standard",
             }
         )
-        tasks = [
-            asyncio.create_task(session.receive(stream)),
-            asyncio.create_task(session.relay(stream)),
-        ]
+        receive = asyncio.create_task(session.receive(stream))
+        relay = asyncio.create_task(session.relay(stream))
+        tasks = [receive, relay]
         if session.cleaner is not None:
             tasks.append(asyncio.create_task(session.tick()))
-        relay = tasks[1]
-        await asyncio.wait({tasks[0], relay}, return_when=asyncio.FIRST_EXCEPTION)
-        for task in (tasks[0], relay):
-            failure = task.exception() if task.done() else None
-            if failure is not None:
-                raise failure
+        done = await wait_tasks({receive, relay}, asyncio.FIRST_COMPLETED)
+        if receive in done and final_pass_engine(session.privacy) == "batch":
+            # The batch pass needs only the recording: it starts at stop, while the
+            # live engine drains (the owned engine's pass reuses the drained VAD).
+            session.start_final()
+        await wait_tasks({receive, relay}, asyncio.FIRST_EXCEPTION)
         await asyncio.wait_for(relay, limits.idle_seconds + 10)
-        await session.finish_text(stream)
+        session.start_final()
+        assert session.final_task is not None
+        await session.final_task
         await session.emit(
             {
                 "type": "done",
@@ -854,12 +1013,21 @@ async def stream_socket(socket: WebSocket) -> None:
                 "final_pass": session.final.outcome if session.final else None,
             }
         )
+        outcome = "done"
     except Refusal as exc:
+        outcome = str(exc.body.get("code"))
         with contextlib.suppress(Exception):
             await socket.send_text(json.dumps(exc.body))
-    except (WebSocketDisconnect, TimeoutError, ValueError, RuntimeError):
-        pass
+    except (WebSocketDisconnect, TimeoutError, ValueError, RuntimeError) as exc:
+        outcome = (
+            "disconnected"
+            if isinstance(exc, WebSocketDisconnect)
+            else "timeout"
+            if isinstance(exc, TimeoutError)
+            else "invalid"
+        )
     except Exception as exc:  # noqa: BLE001 - an engine failure must still close cleanly
+        outcome = "engine_failed"
         log.warning("dictation_engine_failed error_type=%s", type(exc).__name__)
         with contextlib.suppress(Exception):
             await socket.send_text(
@@ -876,35 +1044,24 @@ async def stream_socket(socket: WebSocket) -> None:
             # Released first: closing the provider socket may take a moment.
             _active.discard(user)
             _local.discard(user)
-        for task in tasks + (session.closing if session is not None else []):
+        pending = tasks + (
+            session.closing + session.pieces if session is not None else []
+        )
+        for task in pending:
             task.cancel()
         if stream is not None:
             await stream.aclose()
-        if reservation is not None and session is not None:
-            spent = cost(session, stream) if stream is not None else Decimal(0)
+        spent = (
+            cost(session, stream)
+            if session is not None and stream is not None
+            else Decimal(0)
+        )
+        if reservation is not None:
             ledger.settle_cost(reservation, spent)
-            log.info(
-                json.dumps(
-                    {
-                        "event": "dictation_session",
-                        "engine": session.engine,
-                        "audio_seconds": round(
-                            (stream.sent_bytes if stream else 0) / BYTES_PER_SECOND, 2
-                        ),
-                        "cost_eur": str(spent),
-                        "cleanup_calls": session.cleaner.calls
-                        if session.cleaner
-                        else 0,
-                        "final_pass": session.final.engine if session.final else None,
-                        "final_outcome": session.final.outcome
-                        if session.final
-                        else None,
-                        "final_seconds": round(session.final.seconds, 2)
-                        if session.final
-                        else None,
-                    }
-                )
-            )
+        if session is not None:
+            log.warning(session.record(stream, spent, outcome))
+        else:
+            log.warning(json.dumps({"event": "dictation_session", "outcome": outcome}))
         with contextlib.suppress(Exception):
             await socket.close()
 
@@ -913,8 +1070,8 @@ def cost(session: Session, stream: Stream) -> Decimal:
     """Billed audio is the larger of streamed and provider-reported seconds."""
     seconds = max(stream.sent_bytes / BYTES_PER_SECOND, session.provider_seconds or 0.0)
     total = Decimal(price_micro(session.engine, seconds)) / 1_000_000
-    if session.final is not None:
-        total += Decimal(session.final.cost_micro) / 1_000_000
+    for done in session.passes:
+        total += Decimal(done.cost_micro) / 1_000_000
     if session.cleaner is not None:
         total += session.cleaner.cost_eur
     return total
