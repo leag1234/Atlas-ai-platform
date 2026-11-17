@@ -160,7 +160,15 @@ class MessagesTests(unittest.TestCase):
         value = reply.json()
         self.assertEqual(value["stop_reason"], "tool_use")
         self.assertEqual(value["served_by"], "mistral/fictional-model")
-        self.assertEqual(value["usage"], {"input_tokens": 10, "output_tokens": 2})
+        self.assertEqual(
+            value["usage"],
+            {
+                "input_tokens": 10,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 2,
+            },
+        )
         self.assertEqual(
             value["content"],
             [
@@ -640,7 +648,13 @@ class MessagesTests(unittest.TestCase):
         self.assertEqual(reply.status_code, 200, reply.text)
         self.assertEqual(reply.json()["content"][0]["input"], {"value": 7})
         self.assertEqual(
-            reply.json()["usage"], {"input_tokens": 166, "output_tokens": 7}
+            reply.json()["usage"],
+            {
+                "input_tokens": 166,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 7,
+            },
         )
         sent = json.loads(plans[0].body)
         self.assertEqual(

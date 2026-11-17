@@ -3,8 +3,9 @@
 from packages.limits import LimitError
 
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, ROUND_CEILING
+import math
 import json
 import os
 import logging
@@ -41,6 +42,9 @@ class Plan:
     fallback: "Plan | None" = None
     attempt_bound: int = 0
     privacy: str = "shared"
+    # Records every provider attempt of the call, so an outcome without a usage
+    # frame is settled on what was really sent and streamed (see Meter).
+    meter: "Meter | None" = field(default=None, compare=False, repr=False)
 
     def charge(self, incoming: int, outgoing: int, cached: int = 0) -> int:
         cached = min(max(cached, 0), incoming)
@@ -59,6 +63,84 @@ class Plan:
                 incoming * self.input_rate + outgoing * self.output_rate
             ).to_integral_value(rounding=ROUND_CEILING)
         )
+
+
+# Unmeasured attempts count one token per 3 bytes, of the request body sent and of
+# the text streamed back. Measured bodies (JSON with code and tool schemas) run
+# above 3.5 bytes per token: the estimate stays on the high side without charging
+# the max_tokens reservation.
+ESTIMATE_BYTES_PER_TOKEN = 3
+
+
+@dataclass
+class Attempt:
+    """One provider call: measured when its usage frame arrived, else estimated."""
+
+    plan: Plan
+    output_bytes: int = 0
+    cost: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    # The provider refused the call with an HTTP status before any answer:
+    # nothing was processed, nothing is billed.
+    refused: bool = False
+
+    def estimate(self) -> tuple[int, int, int]:
+        """(micro-EUR, input tokens, output tokens) of an attempt without usage."""
+        if self.refused:
+            return 0, 0, 0
+        try:
+            body = json.loads(self.plan.body)
+        except ValueError:
+            body = {}
+        incoming = math.ceil(len(self.plan.body.encode()) / ESTIMATE_BYTES_PER_TOKEN)
+        outgoing = math.ceil(self.output_bytes / ESTIMATE_BYTES_PER_TOKEN)
+        bound = body.get("max_tokens")
+        if isinstance(bound, int):
+            outgoing = min(outgoing, bound * int(body.get("n", 1) or 1))
+        # No cache discount is assumed for tokens nobody measured.
+        return self.plan.charge(incoming, outgoing), incoming, outgoing
+
+
+class Meter:
+    """The attempts of one API call, in order (primary, retries, fallback)."""
+
+    def __init__(self) -> None:
+        self.attempts: list[Attempt] = []
+
+    def begin(self, plan: Plan) -> Attempt:
+        attempt = Attempt(plan)
+        self.attempts.append(attempt)
+        return attempt
+
+    def summary(self) -> dict[str, int]:
+        """Measured cost where usage arrived, an estimate elsewhere (micro-EUR)."""
+        total = {"charged": 0, "estimated": 0, "input_tokens": 0, "output_tokens": 0}
+        for attempt in self.attempts:
+            if attempt.cost is not None:
+                total["charged"] += attempt.cost
+                total["input_tokens"] += attempt.input_tokens or 0
+                total["output_tokens"] += attempt.output_tokens or 0
+                continue
+            cost, incoming, outgoing = attempt.estimate()
+            total["charged"] += cost
+            total["estimated"] += cost
+            total["input_tokens"] += incoming
+            total["output_tokens"] += outgoing
+        return total
+
+
+def metered(plan: Plan, meter: Meter) -> Plan:
+    """``plan`` and its fallbacks recording their attempts in ``meter``."""
+    return replace(
+        plan,
+        meter=meter,
+        fallback=metered(plan.fallback, meter) if plan.fallback else None,
+    )
+
+
+class ProviderRejection(RuntimeError):
+    """The provider answered the call with an error status: nothing to bill."""
 
 
 def _cache_key(api_key_id: str, body: dict[str, Any]) -> str:
@@ -502,7 +584,7 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
                             retry_after=response.headers.get("Retry-After"),
                             refusal=refusal,
                         )
-                    raise RuntimeError("provider_error")
+                    raise ProviderRejection("provider_error")
                 with upstream.abort_if_abandoned(response):
                     async for piece in response.content.iter_chunked(16384):
                         started = True
@@ -520,11 +602,35 @@ async def transport(plan: Plan) -> AsyncGenerator[bytes, None]:
         ) from None
 
 
-async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
+async def attempt_events(
+    plan: Plan, meter: Meter | None = None
+) -> AsyncGenerator[dict[str, Any], None]:
+    """One provider call, recorded in the meter (measured, refused or estimated)."""
+    from contextlib import aclosing
+
+    wanted = int(json.loads(plan.body).get("n", 1))
+    attempt = (meter or plan.meter or Meter()).begin(plan)
+    try:
+        async with aclosing(_attempt_frames(plan, attempt, wanted)) as frames:
+            async for frame in frames:
+                yield frame
+    except (TransientProviderError, ProviderRejection) as exc:
+        # The provider refused the call or failed before sending one byte of an
+        # answer: like the fallback policy, nothing is billed for it.
+        if attempt.output_bytes == 0 and (
+            isinstance(exc, ProviderRejection)
+            or (isinstance(exc, TransientProviderError) and not exc.started)
+        ):
+            attempt.refused = True
+        raise
+
+
+async def _attempt_frames(
+    plan: Plan, attempt: Attempt, wanted: int
+) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
     buffer, total, done = b"", 0, False
-    wanted = int(json.loads(plan.body).get("n", 1))
     finished: set[int] = set()
     usage: Usage | None = None
     async with aclosing(transport(plan)) as chunks:
@@ -588,6 +694,8 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                         choice.delta["reasoning_content"] = str(
                             choice.delta.get("reasoning_content") or ""
                         ) + str(choice.delta.pop("reasoning"))
+                for choice in frame.choices:
+                    attempt.output_bytes += _streamed_bytes(choice.delta)
                 if frame.choices:
                     yield {
                         "choices": [
@@ -598,17 +706,35 @@ async def attempt_events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
                     }
     if buffer.strip() or not done or len(finished) != wanted or usage is None:
         raise ValueError("incomplete_provider_stream")
+    attempt.cost = plan.charge(
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        (usage.prompt_tokens_details or {}).get("cached_tokens", 0),
+    )
+    attempt.input_tokens = usage.prompt_tokens
+    attempt.output_tokens = usage.completion_tokens
     yield {
         "choices": [],
         "usage": usage.model_dump(exclude_none=True),
-        "cost_micro_eur": plan.charge(
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            (usage.prompt_tokens_details or {}).get("cached_tokens", 0),
-        ),
+        "cost_micro_eur": attempt.cost,
         "served_by": plan.provider + "/" + plan.model if plan.provider else None,
         "privacy": plan.privacy,
     }
+
+
+def _streamed_bytes(delta: dict[str, Any]) -> int:
+    """UTF-8 bytes of the text, reasoning and tool calls a provider delta carries."""
+    size = 0
+    for key in ("content", "reasoning_content"):
+        if isinstance(delta.get(key), str):
+            size += len(delta[key].encode())
+    for call in delta.get("tool_calls") or []:
+        function = call.get("function") if isinstance(call, dict) else None
+        if isinstance(function, dict):
+            for key in ("name", "arguments"):
+                if isinstance(function.get(key), str):
+                    size += len(function[key].encode())
+    return size
 
 
 def _has_visible_content(frame: dict[str, Any]) -> bool:
@@ -655,6 +781,8 @@ def _settle(
 async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
+    meter = plan.meter or Meter()
+    first = len(meter.attempts)
     attempts: list[tuple[Plan, Usage]] = []
     emitted = False
     held: list[dict[str, Any]] = []
@@ -662,7 +790,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
         for current in (plan, plan):
             held = []
             visible = False
-            async with aclosing(attempt_events(current)) as attempt:
+            async with aclosing(attempt_events(current, meter)) as attempt:
                 async for frame in attempt:
                     if visible:
                         if "cost_micro_eur" in frame:
@@ -704,7 +832,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
             raise ValueError("reasoning_only_answer")
         held = []
         visible = False
-        async with aclosing(attempt_events(plan.fallback)) as attempt:
+        async with aclosing(attempt_events(plan.fallback, meter)) as attempt:
             async for frame in attempt:
                 if visible:
                     if "cost_micro_eur" in frame:
@@ -754,11 +882,21 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
         failed_primary_started,
         fallback_refusal.fields(),
     )
-    async with aclosing(attempt_events(plan.fallback)) as attempt:
+    async with aclosing(attempt_events(plan.fallback, meter)) as attempt:
         async for frame in attempt:
             if "cost_micro_eur" in frame:
-                if failed_primary_started:
-                    # Failed primary usage is unknown: keep its conservative bound.
-                    frame["cost_micro_eur"] += plan.attempt_bound
+                # The failed primary sent no usage: it is charged an estimate from
+                # the request sent and the text it streamed (nothing when the
+                # provider refused it), never its max_tokens bound.
+                estimated = sum(
+                    failed.estimate()[0]
+                    for failed in meter.attempts[first:]
+                    if failed.cost is None
+                )
+                if estimated:
+                    frame["cost_micro_eur"] += estimated
+                    frame["estimated_micro_eur"] = (
+                        frame.get("estimated_micro_eur", 0) + estimated
+                    )
                 _settle(frame, attempts)
             yield frame

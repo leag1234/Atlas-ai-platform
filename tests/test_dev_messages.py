@@ -24,7 +24,15 @@ class DevMessagesTests(unittest.TestCase):
         self.assertEqual(result["stop_reason"], "tool_use")
         block = result["content"][0]
         self.assertEqual(block["input"], {"value": 7})
-        self.assertEqual(result["usage"], {"input_tokens": 166, "output_tokens": 7})
+        self.assertEqual(
+            result["usage"],
+            {
+                "input_tokens": 166,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": 7,
+            },
+        )
         conversation = PAYLOAD["messages"] + [
             {"role": "assistant", "content": result["content"]},
             {
@@ -200,7 +208,13 @@ class DevMessagesTests(unittest.TestCase):
             if reason == "length":
                 self.assertEqual(wire.result()["content"][1]["input"], {"value": 7})
             self.assertEqual(
-                wire.result()["usage"], {"input_tokens": 2, "output_tokens": 3}
+                wire.result()["usage"],
+                {
+                    "input_tokens": 2,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "output_tokens": 3,
+                },
             )
             failure = wire.feed({"error": {"message": "private provider content"}})
             self.assertEqual(

@@ -153,8 +153,13 @@ Prices per million tokens, in euros excluding tax:
 The assistant usually costs more than a direct model for the same question: it uses a larger model and
 its own instructions and tools add tokens.
 
-Mistral caches the repeated start of a prompt and bills cached tokens at the cached rate; Atlas passes
-this through (`usage.prompt_tokens_details.cached_tokens`). Measured with a 10,162-token prompt repeated
+Mistral caches the repeated start of a prompt and bills cached tokens at the cached rate; Atlas bills
+the same rate and reports the cached count in each format: `usage.prompt_tokens_details.cached_tokens`
+on Chat Completions, `usage.input_tokens_details.cached_tokens` on Responses, and
+`usage.cache_read_input_tokens` on Messages. On Messages, as with Anthropic, `input_tokens` counts only
+the prompt tokens not read from the cache (the whole prompt is `input_tokens + cache_read_input_tokens`),
+and `cache_creation_input_tokens` is always 0: writing to the cache costs nothing extra. Targets without
+a cached rate in the price table above bill every prompt token at the input rate. Measured with a 10,162-token prompt repeated
 five times: GLM 5.3 charged 0.0121 EUR for the first call and 0.0013 EUR (about 89% less) from the
 second; GLM 5.3 Flash charged 0.0013 EUR, or 0.0005 EUR when the cache hit, which happened on 2 of 5
 calls. Keep the beginning of your prompts identical from one request to the next (system prompt, tool
@@ -452,6 +457,17 @@ curl -s -H "Authorization: Bearer $ATLAS_API_KEY" https://atlas.eu.com/api/atlas
 
 The reply gives the day and week counters (`requests`, `charged_micro_eur`; one million micro-euros
 is one euro) and the limits that apply to your key.
+
+Each call is charged what the provider measured (its usage frame, cache reads at the cached rate).
+Before the call, Atlas reserves its bound (the whole request plus `max_tokens`) against your budget;
+at the end it charges the measured cost instead. When a call ends without the provider's usage (the
+stream was cut, the client disconnected, a timeout), Atlas charges an estimate, never the reservation:
+one token per 3 bytes of the request sent and of the text streamed back, at the uncached input rate.
+A call the provider refused, or that failed before the first byte of an answer, costs nothing. Two
+counters keep this visible: `unknown_micro_eur` is the charge of calls that ended without a
+measurement, and `estimated_micro_eur` is the part of `charged_micro_eur` that no provider measured
+(estimates, plus calls still running). The usage reported in such a failed call's response is absent;
+use `GET /usage` to see what it cost.
 
 | Limit | Value |
 |---|---|
