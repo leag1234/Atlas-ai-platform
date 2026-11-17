@@ -234,7 +234,15 @@ class AssistantBridgeTests(unittest.TestCase):
             self.assertEqual(
                 (answer["stop_reason"], answer["stop_sequence"]), (reason, sequence)
             )
-            self.assertEqual(answer["usage"], {"input_tokens": 12, "output_tokens": 4})
+            self.assertEqual(
+                answer["usage"],
+                {
+                    "input_tokens": 12,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 0,
+                    "output_tokens": 4,
+                },
+            )
         streamed = self.client.post(
             "/api/atlas/v1/messages",
             headers=headers,
