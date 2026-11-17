@@ -10,7 +10,11 @@ of these answers instead of a provider error:
 - ``owned_server_budget`` (429): the starter refused because a budget cap is reached
   (daily hours or monthly euros), with the measured value and the limit (D5: a budget
   refusal is never reported as an outage);
-- ``owned_server_start_limit`` (429, ``Retry-After``): too many starts in the last hour.
+- ``owned_server_start_limit`` (429, ``Retry-After``): too many starts in the last hour;
+- ``owned_server_unavailable`` (503, ``Retry-After``): the start was tried and failed, with
+  its ``reason``: ``capacity`` (the hosting provider has no machine of that type free right
+  now) or ``start_failed`` (any other failure). Never reported as "starting" (D5: the user
+  reads the real outcome, staging 2026-11-17: "starting" was shown after the start failed).
 
 The gateway marks these answers with the ``X-Atlas-Owned-Server`` response header (value:
 the code) so that its clients name them without guessing from the status.
@@ -21,8 +25,11 @@ from typing import Any
 STARTING = "owned_server_starting"
 BUDGET = "owned_server_budget"
 START_LIMIT = "owned_server_start_limit"
-CODES = frozenset({STARTING, BUDGET, START_LIMIT})
-STATUS = {STARTING: 503, BUDGET: 429, START_LIMIT: 429}
+UNAVAILABLE = "owned_server_unavailable"
+CODES = frozenset({STARTING, BUDGET, START_LIMIT, UNAVAILABLE})
+STATUS = {STARTING: 503, BUDGET: 429, START_LIMIT: 429, UNAVAILABLE: 503}
+# Why a start failed: no machine of that type free at the hosting provider, or else.
+REASONS = frozenset({"capacity", "start_failed"})
 HEADER = "X-Atlas-Owned-Server"
 # Units of a measured cap: hours used today, euros spent this month, starts this hour.
 UNITS = frozenset({"hours", "EUR", "starts"})
@@ -60,6 +67,7 @@ class OwnedServerUnavailable(RuntimeError):
         limit: float | None = None,
         unit: str | None = None,
         period: str | None = None,
+        reason: str | None = None,
     ) -> None:
         if code not in CODES:
             raise ValueError("invalid_owned_server_code")
@@ -69,6 +77,11 @@ class OwnedServerUnavailable(RuntimeError):
         self.measured, self.limit = measured, limit
         self.unit = unit if unit in UNITS else None
         self.period = period if period in PERIODS else None
+        self.reason = (
+            (reason if reason in REASONS else "start_failed")
+            if code == UNAVAILABLE
+            else None
+        )
 
     @property
     def status(self) -> int:
@@ -82,6 +95,7 @@ class OwnedServerUnavailable(RuntimeError):
             "limit": self.limit,
             "unit": self.unit,
             "period": self.period,
+            "reason": self.reason,
         }
         return {"code": self.code} | {k: v for k, v in values.items() if v is not None}
 
@@ -96,6 +110,16 @@ class OwnedServerUnavailable(RuntimeError):
             return (
                 "The owned inference server for strict privacy is starting. Nothing "
                 "was sent to any other provider." + wait
+            )
+        if self.code == UNAVAILABLE:
+            why = (
+                "the hosting provider has no machine of its type available right now"
+                if self.reason == "capacity"
+                else "its start failed"
+            )
+            return (
+                f"The owned inference server for strict privacy cannot start: {why}. "
+                "Nothing was sent to any other provider." + wait
             )
         used = (
             f": {_show(self.measured)} {self.unit} used of {_show(self.limit)} "
@@ -122,6 +146,7 @@ def parse(value: object) -> OwnedServerUnavailable | None:
         return None
     retry = _number(value.get("retry_after"))
     unit, period = value.get("unit"), value.get("period")
+    reason = value.get("reason")
     return OwnedServerUnavailable(
         str(value["code"]),
         retry_after=int(retry) if retry is not None else None,
@@ -129,4 +154,5 @@ def parse(value: object) -> OwnedServerUnavailable | None:
         limit=_number(value.get("limit")),
         unit=unit if isinstance(unit, str) else None,
         period=period if isinstance(period, str) else None,
+        reason=reason if isinstance(reason, str) else None,
     )

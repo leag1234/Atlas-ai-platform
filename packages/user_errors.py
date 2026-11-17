@@ -78,6 +78,24 @@ _OWNED_START_LIMIT = {
     "es": "El servidor privado ya se ha iniciado {used} veces en la última hora (límite {limit}). Su mensaje no se ha enviado a ningún otro sitio.",
     "it": "Il server privato è già stato avviato {used} volte nell'ultima ora (limite {limit}). Il messaggio non è stato inviato altrove.",
 }
+# The start was tried and failed (D5: never "starting" after a failed start). The
+# hosting provider is not named on user screens.
+_OWNED_UNAVAILABLE = {
+    "capacity": {
+        "fr": "Le serveur privé ne peut pas démarrer pour le moment : l'hébergeur n'a plus de machine de ce type disponible. Votre message n'a été envoyé nulle part ailleurs. Réessayez plus tard, ou ouvrez une nouvelle conversation en mode Standard si son contenu le permet.",
+        "en": "The private server cannot start right now: the hosting provider has no machine of this type available. Your message was not sent anywhere else. Try again later, or open a new conversation in Standard mode if its content allows it.",
+        "de": "Der private Server kann gerade nicht starten: Der Hoster hat keine Maschine dieses Typs frei. Ihre Nachricht wurde nirgendwo anders hin gesendet. Versuchen Sie es später erneut oder beginnen Sie ein neues Gespräch im Standardmodus, wenn der Inhalt es erlaubt.",
+        "es": "El servidor privado no puede iniciarse ahora: el proveedor de alojamiento no tiene ninguna máquina de este tipo disponible. Su mensaje no se ha enviado a ningún otro sitio. Inténtelo más tarde o abra una nueva conversación en modo Estándar si su contenido lo permite.",
+        "it": "Il server privato non può avviarsi ora: il fornitore di hosting non ha macchine di questo tipo disponibili. Il messaggio non è stato inviato altrove. Riprova più tardi, oppure apri una nuova conversazione in modalità Standard se il contenuto lo consente.",
+    },
+    "start_failed": {
+        "fr": "Le serveur privé n'a pas pu démarrer. Votre message n'a été envoyé nulle part ailleurs. Réessayez plus tard, ou ouvrez une nouvelle conversation en mode Standard si son contenu le permet.",
+        "en": "The private server could not start. Your message was not sent anywhere else. Try again later, or open a new conversation in Standard mode if its content allows it.",
+        "de": "Der private Server konnte nicht starten. Ihre Nachricht wurde nirgendwo anders hin gesendet. Versuchen Sie es später erneut oder beginnen Sie ein neues Gespräch im Standardmodus, wenn der Inhalt es erlaubt.",
+        "es": "El servidor privado no pudo iniciarse. Su mensaje no se ha enviado a ningún otro sitio. Inténtelo más tarde o abra una nueva conversación en modo Estándar si su contenido lo permite.",
+        "it": "Il server privato non è riuscito ad avviarsi. Il messaggio non è stato inviato altrove. Riprova più tardi, oppure apri una nuova conversazione in modalità Standard se il contenuto lo consente.",
+    },
+}
 _OWNED_RETRY = {
     "fr": " Réessayez dans environ {wait}.",
     "en": " Try again in about {wait}.",
@@ -105,7 +123,13 @@ def owned_server_sentence(
 ) -> str | None:
     """The readable sentence of an on-demand owned server answer (starting, or a
     starter refusal with its measured values: D5), else None."""
-    from packages.owned_server import BUDGET, START_LIMIT, STARTING, wait_text
+    from packages.owned_server import (
+        BUDGET,
+        START_LIMIT,
+        STARTING,
+        UNAVAILABLE,
+        wait_text,
+    )
 
     lang = language if language in _OWNED_STARTING else "en"
     retry = values.get("retry_after")
@@ -114,6 +138,13 @@ def owned_server_sentence(
     )
     if code == STARTING:
         return _OWNED_STARTING[lang].format(wait=wait or "2 min")
+    if code == UNAVAILABLE:
+        reason = values.get("reason")
+        labels = _OWNED_UNAVAILABLE.get(
+            reason if isinstance(reason, str) else "",
+            _OWNED_UNAVAILABLE["start_failed"],
+        )
+        return labels[lang]
     if code not in (BUDGET, START_LIMIT):
         return None
     labels = _OWNED_BUDGET if code == BUDGET else _OWNED_START_LIMIT

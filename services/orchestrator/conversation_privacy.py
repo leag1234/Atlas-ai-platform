@@ -95,6 +95,35 @@ def conversation_level(user: str, chat: str) -> privacy.Level | None:
     return privacy.highest(row[0]) if row else None
 
 
+def _shown(db: sqlite3.Connection, user: str, chat: str) -> tuple[str, int] | None:
+    """The row whose level the interface shows for ``chat``: its own, else (a new
+    conversation, or one Atlas has not seen yet) the pending choice, which its first
+    message will take (bind)."""
+    row = _row(db, user, chat)
+    if row is None and chat != PENDING:
+        pending = _row(db, user, PENDING)
+        row = (pending[0], 0) if pending else None
+    return row
+
+
+def effective_level(user: str, chat: str) -> privacy.Level:
+    """The level the user sees for a conversation, with the organisation minimum.
+
+    Every feature that sends audio or text out of a conversation outside its chat
+    request (dictation) decides with this, never with the stored row alone: a new
+    conversation has no id yet, and its level is the pending choice. Fails closed:
+    an unknown user, an invalid id or an unreadable store counts as strict.
+    """
+    if not valid_user(user) or not valid_chat(chat):
+        return privacy.STRICT
+    try:
+        with connection() as db:
+            row = _shown(db, user, chat)
+    except (OSError, sqlite3.Error):
+        return privacy.STRICT
+    return privacy.highest(row[0] if row else privacy.STANDARD, privacy.minimum())
+
+
 def bind(user: str, chat: str) -> privacy.Level:
     """The level of a conversation request; marks the conversation as used.
 
@@ -144,12 +173,7 @@ def availability(level: str) -> str | None:
 
 def state(user: str, chat: str) -> dict[str, object]:
     with connection() as db:
-        row = _row(db, user, chat)
-        if row is None and chat != PENDING:
-            # A conversation Atlas has not seen yet takes the pending choice on its
-            # first message (bind): show that level.
-            row = _row(db, user, PENDING)
-            row = (row[0], 0) if row else None
+        row = _shown(db, user, chat)
     stored = privacy.highest(row[0]) if row else privacy.STANDARD
     locked = bool(row and row[1])
     level = privacy.highest(stored, privacy.minimum())

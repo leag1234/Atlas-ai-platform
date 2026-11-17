@@ -24,6 +24,7 @@ from packages.owned_server import (
     BUDGET,
     START_LIMIT,
     STARTING,
+    UNAVAILABLE,
     OwnedServerUnavailable,
     parse,
 )
@@ -49,10 +50,18 @@ def strict() -> Iterator[None]:
 
 
 class FakeStarter:
-    """Consumes request files and answers with a fixed status, like the root starter."""
+    """Consumes request files and answers with a fixed status, like the root starter;
+    ``then`` is a second status written ``after`` seconds later (a start that fails)."""
 
-    def __init__(self, folder: Path, status: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        folder: Path,
+        status: dict[str, Any],
+        then: dict[str, Any] | None = None,
+        after: float = 0.1,
+    ) -> None:
         self.folder, self.status, self.requests = folder, status, 0
+        self.then, self.after = then, after
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
@@ -67,9 +76,15 @@ class FakeStarter:
                 status = {"updated": now} | self.status
                 if status.get("state") == "starting":
                     status.setdefault("since", now)
-                (self.folder / "status.json.tmp").write_text(json.dumps(status))
-                (self.folder / "status.json.tmp").replace(self.folder / "status.json")
+                self.write(status)
+                if self.then is not None:
+                    time.sleep(self.after)
+                    self.write({"updated": time.time()} | self.then)
             time.sleep(0.02)
+
+    def write(self, status: dict[str, Any]) -> None:
+        (self.folder / "status.json.tmp").write_text(json.dumps(status))
+        (self.folder / "status.json.tmp").replace(self.folder / "status.json")
 
     def close(self) -> None:
         self.stop.set()
@@ -104,9 +119,12 @@ class StarterCase(unittest.IsolatedAsyncioTestCase):
         )
         os.environ.pop("ATLAS_PROVIDER", None)
         self.enterContext(patch("owned_start.ANSWER_SECONDS", 1.0))
+        self.enterContext(patch("owned_start.CONFIRM_SECONDS", 0.5))
 
-    def starter(self, status: dict[str, Any]) -> FakeStarter:
-        starter = FakeStarter(self.folder, status)
+    def starter(
+        self, status: dict[str, Any], then: dict[str, Any] | None = None
+    ) -> FakeStarter:
+        starter = FakeStarter(self.folder, status, then)
         self.addCleanup(starter.close)
         return starter
 
@@ -216,14 +234,55 @@ class EnsureTests(StarterCase):
         self.assertIn("owned_server_starter_silent", logs.output[0])
         self.assertTrue((self.folder / "request").exists())
 
-    async def test_a_ready_or_failed_answer_leaves_the_usual_error(self) -> None:
+    async def test_a_ready_answer_leaves_the_usual_error(self) -> None:
         import owned_start
 
-        for state in ("ready", "failed"):
-            with self.subTest(state=state):
-                starter = self.starter({"state": state})
-                await owned_start.ensure()
-                starter.close()
+        starter = self.starter({"state": "ready"})
+        await owned_start.ensure()
+        starter.close()
+
+    async def test_a_start_that_fails_is_never_reported_as_starting(self) -> None:
+        import owned_start
+
+        # The starter says "starting", then the cloud refuses for lack of stock.
+        starter = self.starter(
+            STARTING_STATUS, {"state": "failed", "exit_code": 1, "reason": "capacity"}
+        )
+        with self.assertRaises(OwnedServerUnavailable) as raised:
+            await owned_start.ensure()
+        answer = raised.exception
+        self.assertEqual((answer.code, answer.status), (UNAVAILABLE, 503))
+        self.assertEqual(answer.fields()["reason"], "capacity")
+        self.assertNotIn("starting", answer.message)
+        sentence = ui_failure(answer.code, "fr", answer.fields()) or ""
+        self.assertIn("ne peut pas démarrer", sentence)
+        self.assertNotIn("démarre (", sentence)
+        # The failure is held: the next request reads it and asks for no new start.
+        with self.assertRaises(OwnedServerUnavailable) as again:
+            await owned_start.ensure()
+        self.assertEqual(again.exception.code, UNAVAILABLE)
+        self.assertEqual(starter.requests, 1)
+
+    async def test_an_old_failure_lets_a_new_start_be_tried(self) -> None:
+        import owned_start
+
+        old = time.time() - owned_start.FAILED_HOLD_SECONDS - 5
+        (self.folder / "status.json").write_text(
+            json.dumps({"state": "failed", "updated": old, "exit_code": 1})
+        )
+        starter = self.starter(STARTING_STATUS)
+        with self.assertRaises(OwnedServerUnavailable) as raised:
+            await owned_start.ensure()
+        self.assertEqual(raised.exception.code, STARTING)
+        self.assertEqual(starter.requests, 1)
+
+    async def test_a_failure_without_reason_is_a_failed_start(self) -> None:
+        import owned_start
+
+        self.starter({"state": "failed", "exit_code": 1})
+        with self.assertRaises(OwnedServerUnavailable) as raised:
+            await owned_start.ensure()
+        self.assertEqual(raised.exception.fields()["reason"], "start_failed")
 
     def test_a_pending_request_is_not_rewritten(self) -> None:
         import owned_start
@@ -267,6 +326,32 @@ class GatewayTests(StarterCase):
                 _ = [event async for event in attempt(request, "owned-vllm-model", 5)]
         self.assertEqual(raised.exception.code, STARTING)
         self.assertEqual(starter.requests, 1)
+
+    async def test_an_auxiliary_call_never_powers_the_server_on(self) -> None:
+        from agent_provider import AgentProvider, AgentRequest
+        from stream_transport import attempt
+
+        starter = self.starter(STARTING_STATUS)
+        with strict():
+            request = AgentRequest(
+                messages=[{"role": "user", "content": "Bonjour"}],
+                tools=[],
+                timeout=5,
+                start_owned=False,
+            )
+            with self.assertRaises(Exception) as raised:
+                _ = [event async for event in attempt(request, "owned-vllm-model", 5)]
+            self.assertNotIsInstance(raised.exception, OwnedServerUnavailable)
+            with self.assertRaises(Exception) as raised:
+                await AgentProvider().owned_complete(request)
+            self.assertNotIsInstance(raised.exception, OwnedServerUnavailable)
+        self.assertEqual(starter.requests, 0)
+        # The default (a chat call may power the server on) stays off the wire.
+        usual = AgentRequest(
+            messages=[{"role": "user", "content": "Bonjour"}], tools=[], timeout=5
+        )
+        self.assertTrue(usual.start_owned)
+        self.assertNotIn("start_owned", usual.model_dump())
 
     async def test_standard_call_never_reaches_the_starter(self) -> None:
         from agent_provider import AgentRequest
@@ -449,6 +534,8 @@ class WireTests(unittest.TestCase):
                 (STARTING, {"retry_after": 115}),
                 (BUDGET, BUDGET_STATUS),
                 (START_LIMIT, {"measured": 4, "limit": 4, "retry_after": 600}),
+                (UNAVAILABLE, {"reason": "capacity", "retry_after": 300}),
+                (UNAVAILABLE, {"reason": "start_failed"}),
             ):
                 with self.subTest(language=language, code=code):
                     sentence = ui_failure(code, language, values)
