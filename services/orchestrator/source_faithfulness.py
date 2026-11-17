@@ -96,7 +96,8 @@ REQUEST_CHARACTERS = 1_500
 # An answer of fewer words states nothing to check.
 MIN_WORDS = 4
 JUDGE_SECONDS = 60.0
-JUDGE_TOKENS = 8_000
+# The assistant path refuses more than 6,000 output tokens (output_budget).
+JUDGE_TOKENS = 6_000
 JUDGE_BUDGET_EUR = Decimal("0.04")
 REWRITE_SECONDS = 45.0
 REWRITE_TOKENS = 4_000
@@ -182,6 +183,14 @@ _NUMBER = re.compile(
     r"(?<![A-Za-z\d.,])(?:\d{1,3}(?:[ \u00a0\u202f.,]\d{3})+|\d+)(?:[.,]\d+)?"
     r"(?![A-Za-z\d])"
 )
+# The number of a numbered list item ("1. ", "2) ", "**3.** "): structure, not a fact.
+_ORDINAL = re.compile(r"[ \t]*+(?:[*_]{1,2})?\d{1,3}[.)]")
+
+
+def _line_start(text: str, index: int) -> int:
+    return text.rfind("\n", 0, index) + 1
+
+
 # How a number is named in a note: with its percent sign or the word after it.
 _SHOWN = re.compile(
     r"(?:\d{1,3}(?:[ \u00a0\u202f.,]\d{3})+|\d+)(?:[.,]\d+)?"
@@ -440,6 +449,9 @@ def hints(answer: str, source: Source) -> list[str]:
     body = answer.split("<details>", 1)[0]
     kept: list[str] = []
     for match in _NUMBER.finditer(body):
+        ordinal = _ORDINAL.match(body, _line_start(body, match.start()))
+        if ordinal is not None and ordinal.end() == match.end() + 1:
+            continue
         shown = _SHOWN.match(body, match.start())
         text = shown[0].strip() if shown else match[0]
         parsed = _number_value(body[match.start() : match.end() + 16])

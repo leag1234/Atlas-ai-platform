@@ -70,6 +70,7 @@ from services.orchestrator.image_truth import (
     wants_generation,
 )
 from packages.language import (
+    detected_language,
     conversation_language,
     language_instruction,
     requested_language,
@@ -991,7 +992,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             provided,
             request=request.user_text,
             profile=request.model,
-            language=quote_language,
+            # The note follows the answer's language, not the pasted
+            # document's.
+            language=detected_language(item.reponse) or quote_language,
             streamed=streamed,
             seconds=time_left(),
         )
