@@ -263,6 +263,32 @@ class EnsureTests(StarterCase):
         self.assertEqual(again.exception.code, UNAVAILABLE)
         self.assertEqual(starter.requests, 1)
 
+    async def test_a_start_in_flight_is_confirmed_before_starting_is_said(
+        self,
+    ) -> None:
+        import owned_start
+
+        # Another strict call of the same turn asked for the start a moment ago; the
+        # cloud then refuses it. This call must read the refusal, not "starting".
+        now = time.time()
+        (self.folder / "status.json").write_text(
+            json.dumps({"state": "starting", "since": now, "updated": now})
+        )
+
+        def refuse() -> None:
+            time.sleep(0.2)
+            (self.folder / "status.json").write_text(
+                json.dumps(
+                    {"state": "failed", "updated": time.time(), "reason": "capacity"}
+                )
+            )
+
+        threading.Thread(target=refuse, daemon=True).start()
+        with self.assertRaises(OwnedServerUnavailable) as raised:
+            await owned_start.ensure()
+        self.assertEqual(raised.exception.code, UNAVAILABLE)
+        self.assertFalse((self.folder / "request").exists())
+
     async def test_an_old_failure_lets_a_new_start_be_tried(self) -> None:
         import owned_start
 

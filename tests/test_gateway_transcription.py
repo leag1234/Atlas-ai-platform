@@ -114,6 +114,8 @@ class GatewayTranscriptionTests(unittest.TestCase):
     def test_statuses_are_named(self) -> None:
         cases: list[tuple[int, type[Exception]]] = [
             (429, transcription.ProviderLimit),
+            # An empty provider wallet is a billing refusal, named like a quota.
+            (402, transcription.ProviderLimit),
             (422, transcription.AudioRefused),
             (500, RuntimeError),
             (503, RuntimeError),

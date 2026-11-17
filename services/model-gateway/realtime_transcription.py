@@ -34,7 +34,8 @@ ALLOWED_DELAYS = frozenset(range(80, 1201, 80)) | {2400}
 
 
 class ProviderLimit(Exception):
-    """The provider refused for quota or rate (HTTP 429): never reported as an outage."""
+    """The provider refused for quota, rate or billing (HTTP 429 or 402): never reported
+    as an outage."""
 
     def __init__(self, status: int) -> None:
         super().__init__("provider_limit")
@@ -185,7 +186,7 @@ class ProviderStream:
             )
         except aiohttp.WSServerHandshakeError as exc:
             await self.aclose()
-            if exc.status == 429:
+            if exc.status in (402, 429):
                 raise ProviderLimit(exc.status) from None
             raise ProviderUnavailable() from None
         except (OSError, TimeoutError, aiohttp.ClientError):
