@@ -914,7 +914,14 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         )
     )
     try:
-        await _process_request(request, item)
+        try:
+            await _process_request(request, item)
+        except GatewayError as exc:
+            if not await _recover_trip(request, item, travel, asked, exc.code):
+                raise
+        else:
+            if item.state != "done" and item.erreurs:
+                await _recover_trip(request, item, travel, asked, item.erreurs[-1])
         if quote_gate is not None:
             await quote_gate.flush()
         if date_gate is not None:
@@ -1082,6 +1089,59 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse = notices.get(language, notices["en"])
         if sink := sink_context.get():
             await sink({"delta": {"content": item.reponse}})
+
+
+# Failures of the model's answer itself, not refusals: budget, quota, privacy
+# and deadline refusals keep their own explanation (D5).
+_ANSWER_FAILURES = frozenset(
+    {
+        "provider_error",
+        "empty_completion",
+        "empty_content_after_retry",
+        "incomplete_provider_answer",
+        "promise_only_final_answer",
+        "malformed_tool_call",
+        "unexpected_tool_history_answer",
+    }
+)
+
+
+async def _recover_trip(
+    request: ChatRequest,
+    item: Interaction,
+    travel: travel_claims.Turn,
+    asked: str,
+    reason: str,
+) -> bool:
+    """A trip answer that failed after pages were read is written from them.
+
+    Staging -102: the answer model wrote its source record instead of an
+    answer (9453 characters, cut at the output cap), its recovery attempt
+    failed the same way, and the person read "an unexpected error" although
+    the pages read gave the trains. True when the answer was recovered.
+    """
+    if (
+        reason not in _ANSWER_FAILURES
+        or not travel.active
+        or item.task_type in {"work", "nearby"}
+    ):
+        return False
+    from services.orchestrator import travel_rebuild
+
+    outcome = await travel_rebuild.recover(
+        travel,
+        travel.language,
+        question=asked,
+        profile=request.model,
+    )
+    if outcome is None:
+        return False
+    item.reponse, report = outcome
+    item.state = "done"
+    if reason not in item.erreurs:
+        item.erreurs.append(reason)
+    item.cout_eur = float(Decimal(str(item.cout_eur)) + report.cost_eur)
+    return True
 
 
 class _HeldAnswer:

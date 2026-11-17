@@ -751,6 +751,18 @@ def response(
                         words = WORK_FAILURE.get(language, WORK_FAILURE["en"])
                         item.reponse = str(words["budget"])
                     elif item.state != "done" and not work_failed:
+                        from packages.user_errors import PROVIDER_FAILURES
+
+                        # A model answer that failed is said as such (D5),
+                        # not as an unexpected error (staging 2026-11-17).
+                        # A Work turn keeps its outage wording
+                        # (test_work_failure_message); a chat turn says the
+                        # model answer failed.
+                        failed = [e for e in item.erreurs if e in PROVIDER_FAILURES]
+                        if failed and payload.project_action != "work":
+                            raise GatewayError(
+                                failed[-1], 502, item.reponse.strip() or failed[-1]
+                            )
                         raise RuntimeError("request_stopped")
                     # The checked plan ends the answer (work_plan.py); the
                     # stored answer keeps it too.

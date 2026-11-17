@@ -1000,7 +1000,13 @@ async def stream_quality(
             if index or answer_started:
                 if malformed_name is not None:
                     raise MalformedToolCall(malformed_name.measured, index)
-                raise RuntimeError("unexpected_tool_history_answer")
+                # A named provider failure, never an opaque one (D5; staging
+                # 2026-11-17: the person read "an unexpected error").
+                raise ProviderFailure(
+                    "unexpected_tool_history_answer",
+                    str(result.get("finish_reason")),
+                    index,
+                )
         future_action = (
             terminal_failed
             and not calls
