@@ -4,6 +4,7 @@ from packages.limits import LimitError
 
 import json
 import logging
+import re
 from typing import Any
 from services.orchestrator.dev_chat import ChatInput
 
@@ -706,12 +707,53 @@ def text_blocks(value: Any) -> str:
     return "\n".join(parts)
 
 
+# A system block holding only an HTTP-style header line ("x-...-header: ...") is client
+# transport metadata (version, entry point, sometimes a value that changes on every
+# request), not an instruction. It comes first in the system prompt, so it would make the
+# whole prompt prefix differ between requests and defeat the provider's prompt cache.
+CLIENT_HEADER = re.compile(r"x-[a-z0-9-]+-header:[^\n]*\n?")
+
+
+def client_header(block: Any) -> bool:
+    return (
+        isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+        and CLIENT_HEADER.fullmatch(block["text"]) is not None
+    )
+
+
+def context_edits(value: Any) -> None:
+    """Accept the context edits Atlas already applies; refuse the others by name.
+
+    Atlas never sends the reasoning of earlier turns to the model (the routed models
+    cannot use it), so clearing thinking blocks changes nothing. Clearing tool results
+    is not implemented and is refused rather than silently ignored."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ValueError("invalid_context_management")
+    fields(value, "edits")
+    edits = value.get("edits", [])
+    if not isinstance(edits, list):
+        raise ValueError("invalid_context_management")
+    for edit in edits:
+        kind = edit.get("type") if isinstance(edit, dict) else None
+        if not isinstance(kind, str) or not kind.startswith("clear_thinking_"):
+            raise SemanticFieldError(
+                "unsupported context_management edit: "
+                + str(kind)[:64]
+                + " (only clear_thinking edits are supported)"
+            )
+
+
 def messages_body(value: dict[str, Any]) -> dict[str, Any]:
     fields(
         value,
         "model messages system max_tokens tools tool_choice stream temperature metadata thinking output_config"
-        " stop_sequences top_p top_k cache_control service_tier",
+        " stop_sequences top_p top_k cache_control service_tier context_management",
     )
+    context_edits(value.get("context_management"))
     thinking = value.get("thinking", {"type": "disabled"})
     fields(thinking, "type budget_tokens display")
     effort = "none"
@@ -749,7 +791,11 @@ def messages_body(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("invalid_metadata")
     converted: list[dict[str, Any]] = []
     if "system" in value:
-        converted.append({"role": "system", "content": text_blocks(value["system"])})
+        system = value["system"]
+        if isinstance(system, list):
+            system = [block for block in system if not client_header(block)]
+        if system != []:
+            converted.append({"role": "system", "content": text_blocks(system)})
     for message in value["messages"]:
         fields(message, "role content")
         role, content = message["role"], message["content"]

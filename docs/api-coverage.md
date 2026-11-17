@@ -96,7 +96,7 @@ text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
 | State | Parameters |
 |---|---|
 | Applied | `model`, `messages`, `system`, `max_tokens`, `temperature`, `top_p`, `top_k`, `stop_sequences`, `tools`, `tool_choice`, `stream`, `output_config.effort` (sets the reasoning effort), `thinking` (`enabled` with `budget_tokens` from 1024 to below `max_tokens`: up to 4096 low, up to 16384 medium, above high; `adaptive`: medium; `output_config.effort` wins), `metadata.user_id` |
-| Accepted, no effect | `cache_control` (Atlas caches repeated prompt starts by itself), `service_tier` |
+| Accepted, no effect | `cache_control` (Atlas caches repeated prompt starts by itself), `service_tier`, `context_management` edits of type `clear_thinking_*` (earlier thinking is never sent to the model; other edit types are refused by name), a system block holding only a client header line (`x-...-header: ...`, not sent to the model) |
 | Refused | `container`, `inference_geo`, `speed` |
 
 | Block or tool | State |
