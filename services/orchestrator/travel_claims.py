@@ -999,6 +999,88 @@ def _paired_parentheses(line: str) -> str:
     return text
 
 
+# --- What only referred to removed content. ---------------------------------
+# Staging -110: after the timed trains were left out of a Tokyo-Kyoto answer,
+# "Kodama: too slow — skip it" stayed alone under its heading, and "the
+# departure-time window above is the reliable filter" pointed at nothing.
+
+# Words that point back at content above ("the times above", "ci-dessus"),
+# five languages.
+_BACK = re.compile(
+    r"(?<![\w-])(?:above|ci-dessus|plus haut|oben|obige\w*+|arriba|anteriores?|"
+    r"sopra|precedent[ei]|mentioned earlier|listed earlier)(?![\w-])",
+    re.I,
+)
+_CLAUSE_SPLIT = re.compile(
+    r"\s[\u2013\u2014-]\s|;\s|,\s(?=(?:but|mais|aber|pero|ma)\b)"
+)
+
+
+def _runs(lines: list[str]) -> list[list[int]]:
+    """Consecutive list items (blank lines between them allowed)."""
+    runs: list[list[int]] = []
+    current: list[int] = []
+    for index, line in enumerate(lines):
+        if _ITEM.match(line):
+            current.append(index)
+        elif line.strip():
+            if current:
+                runs.append(current)
+            current = []
+    if current:
+        runs.append(current)
+    return runs
+
+
+def without_orphans(original: str, text: str) -> str:
+    """Leave out what only referred to removed content.
+
+    A list that lost every item with a figure or a link keeps no item without
+    one (they compared or ranked what went); a clause that points back at
+    content above ("the window above") goes when content was left out.
+    """
+    old = original.split("\n")
+    new = text.split("\n")
+    factual = re.compile(r"\d|\]\(")
+    drop: set[int] = set()
+    for run in _runs(new):
+        items = [new[i].strip() for i in run]
+        source = next(
+            (
+                r
+                for r in _runs(old)
+                if all(any(old[i].strip() == item for i in r) for item in items)
+            ),
+            None,
+        )
+        if source is None or len(source) <= len(run):
+            continue
+        had = any(factual.search(old[i]) for i in source)
+        has = any(factual.search(item) for item in items)
+        if had and not has:
+            drop.update(run)
+    lines = [line for index, line in enumerate(new) if index not in drop]
+    kept: list[str] = []
+    for line in lines:
+        if not _BACK.search(line):
+            kept.append(line)
+            continue
+        sentences = re.split(r"(?<=[.!?])\s+", line)
+        rebuilt: list[str] = []
+        for sentence in sentences:
+            if not _BACK.search(sentence):
+                rebuilt.append(sentence)
+                continue
+            parts = _CLAUSE_SPLIT.split(sentence)
+            if len(parts) > 1:
+                rest = [p for p in parts if not _BACK.search(p)]
+                if rest:
+                    clause = " — ".join(rest).rstrip(" ,;:")
+                    rebuilt.append(clause if clause[-1:] in ".!?" else clause + ".")
+        kept.append(" ".join(rebuilt))
+    return _restructure(text, "\n".join(kept))
+
+
 def wellformed(text: str) -> str:
     """No unpaired ``**``, ``__`` or backtick on a line, no empty list item."""
     lines: list[str] = []
@@ -1356,7 +1438,12 @@ class Turn:
             *found.values,
             *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in found.route.spans),
         ]
-        return wellformed(_restructure(body, _leave_out(body, removed))).rstrip()
+        text = wellformed(_restructure(body, _leave_out(body, removed)))
+        return (
+            wellformed(without_orphans(body, text)).rstrip()
+            if removed
+            else text.rstrip()
+        )
 
     def left_out(self, body: str, found: Findings, language: str) -> str:
         """The body without what ``found`` holds, and one note."""

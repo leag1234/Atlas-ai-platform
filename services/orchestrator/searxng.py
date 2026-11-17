@@ -16,6 +16,7 @@ from typing import cast
 
 import aiohttp
 
+from services.orchestrator.redirects import resolved
 from packages.images import VisionMessage
 from packages.language import identified_language, user_prose, word_count
 from services.orchestrator import search_freshness
@@ -492,10 +493,14 @@ def parse_results(data: object, engine: str) -> Message:
             continue
         if not row["url"].startswith(("https://", "http://")):
             continue
+        # A search-engine redirect is never a source (redirects.py).
+        link = resolved(row["url"])
+        if link is None:
+            continue
         items.append(
             {
                 "title": str(row.get("title", ""))[:300],
-                "link": row["url"][:4096],
+                "link": link[:4096],
                 "snippet": str(row.get("content", ""))[:300],
                 "date": str(row.get("publishedDate", ""))[:100],
                 "engine": engine,
