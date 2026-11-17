@@ -43,6 +43,8 @@ from services.orchestrator.unsourced_details import (
 
 # Characters of normalized source text that one claim may span.
 WINDOW = 500
+# The opening of a passage: a page naming a line there is about that line.
+LEAD = 400
 
 # Transit vocabulary, folded (lower case, no accents), five languages.
 TRANSIT_WORDS = frozenset(
@@ -356,9 +358,25 @@ class Sources:
         if not patterns:
             return True
         found = [self.hits(p) for p in patterns]
+        lines = [p for a in anchors if a.kind == "line" for p in a.patterns]
+        lead = (
+            bool(lines)
+            and all(a.kind in {"line", "name"} for a in anchors)
+            and any(a.kind == "name" for a in anchors)
+        )
+        line_hits = [self.hits(p) for p in lines]
         for index in range(len(self.passages)):
             positions = [hits[index] for hits in found]
             if all(positions) and _window(positions):
+                return True
+            # A page about the line (it names the line in its opening) lists
+            # its stops anywhere (staging -104: the T8 article named both
+            # airport stations far below its lead).
+            if (
+                lead
+                and all(positions)
+                and all(any(h < LEAD for h in hits[index]) for hits in line_hits)
+            ):
                 return True
         return False
 

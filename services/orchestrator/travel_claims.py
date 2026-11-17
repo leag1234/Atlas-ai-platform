@@ -67,13 +67,18 @@ _CLOCK = re.compile(
     r"(?:[ \u00a0\u202f]?([ap])\.?m\b\.?)?",
     re.I,
 )
+# "vers 12 h 2x", and a time cut short ("arrivée ~12h...", staging -104).
 _PLACEHOLDER = re.compile(
-    r"(?<![\w.,:/])\d{1,2}[ \u00a0\u202f]?(?:h|:)[ \u00a0\u202f]?\d?[xX?]{1,2}(?![\w?])"
+    r"(?<![\w.,:/])\d{1,2}[ \u00a0\u202f]?(?:h|:)[ \u00a0\u202f]?"
+    r"(?:\d?[xX?]{1,2}(?![\w?])|\d?(?:\.{2,3}|…))"
 )
 # "2 pm", "11am", "14 Uhr": hours of the day without minutes.
 _CLOCK_HOUR = re.compile(r"(?<![\w.,:/])(\d{1,2})[   ]?(am|pm|uhr)(?!\w)", re.I)
-_MINUTES_ONLY = re.compile(rf"{_NUMBER}{_SPACE}{_MINUTES}\.?{_END}", re.I)
-_HOURS_ONLY = re.compile(rf"{_NUMBER}{_SPACE}{_HOURS}\.?(?![\w²³/:])(?![   ]?\d)", re.I)
+# "4+ hours" (staging -104) is a duration claim like "4 hours".
+_MINUTES_ONLY = re.compile(rf"{_NUMBER}\+?{_SPACE}{_MINUTES}\.?{_END}", re.I)
+_HOURS_ONLY = re.compile(
+    rf"{_NUMBER}\+?{_SPACE}{_HOURS}\.?(?![\w²³/:])(?![   ]?\d)", re.I
+)
 _KM = re.compile(rf"{_NUMBER}{_SPACE}{_KILOMETRES}{_END}", re.I)
 _M_WORD = re.compile(rf"{_NUMBER}{_SPACE}{_METRES}{_END}", re.I)
 # A bare lower-case "m" only: "12 M" is a million.
