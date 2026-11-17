@@ -1110,9 +1110,23 @@ class ModelAccounting:
         return identifier
 
     def finish(
-        self, request_id: str, charged: int | None, incoming: int = 0, outgoing: int = 0
+        self,
+        request_id: str,
+        charged: int | None,
+        incoming: int = 0,
+        outgoing: int = 0,
+        *,
+        estimated: int = 0,
+        measured: bool = True,
     ) -> None:
-        self.store.finish(request_id, charged, incoming, outgoing)
+        self.store.finish(
+            request_id,
+            charged,
+            incoming,
+            outgoing,
+            estimated=estimated,
+            measured=measured,
+        )
         reservation = self.reservations.pop(request_id)
         self.ledger.settle_cost(
             reservation,

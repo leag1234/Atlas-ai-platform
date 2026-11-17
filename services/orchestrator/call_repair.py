@@ -451,6 +451,10 @@ def _with_usage(frame: dict[str, Any], prior: list[dict[str, Any]]) -> dict[str,
             old.get("cost_micro_eur"), int
         ):
             frame["cost_micro_eur"] += old["cost_micro_eur"]
+        if old.get("estimated_micro_eur"):
+            frame["estimated_micro_eur"] = int(
+                frame.get("estimated_micro_eur", 0)
+            ) + int(old["estimated_micro_eur"])
     frame["usage"] = usage
     return frame
 

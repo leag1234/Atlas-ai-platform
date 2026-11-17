@@ -32,6 +32,13 @@ class Principal:
     privacy: str = "standard"
 
 
+# Micro-EUR no provider measured: calls still in flight (their reservation) and
+# the estimated part of settled ones (an attempt cut before its usage arrived).
+ESTIMATED_SUM = (
+    "COALESCE(SUM(CASE WHEN state='reserved' THEN charged ELSE estimated END),0)"
+)
+
+
 class KeyQuotaError(QuotaError):
     def __init__(self, values: dict[str, object]) -> None:
         self.values = values
@@ -124,6 +131,16 @@ class Store(DeveloperStore):
         if "code_executions" not in requests:
             db.execute(
                 "ALTER TABLE api_key_requests ADD COLUMN code_executions INTEGER NOT NULL DEFAULT 0 CHECK(code_executions >= 0)"
+            )
+        if "estimated" not in requests:
+            # The part of `charged` that is an estimate, not a provider measurement.
+            db.execute(
+                "ALTER TABLE api_key_requests ADD COLUMN estimated INTEGER NOT NULL DEFAULT 0 CHECK(estimated >= 0)"
+            )
+            # Calls settled before the column existed without a measurement kept
+            # their whole reservation: all of it is an estimate.
+            db.execute(
+                "UPDATE api_key_requests SET estimated=charged WHERE state='unknown'"
             )
         db.execute(
             "CREATE INDEX IF NOT EXISTS api_key_daily ON api_key_requests(key_id, day)"
@@ -430,13 +447,15 @@ class Store(DeveloperStore):
         with self.connection() as db:
             row = db.execute(
                 "SELECT COUNT(*) requests, COALESCE(SUM(charged),0) charged_micro_eur, "
-                "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) unknown_micro_eur "
+                "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) unknown_micro_eur, "
+                f"{ESTIMATED_SUM} estimated_micro_eur "
                 "FROM api_key_requests WHERE key_id=? AND day=?",
                 (developer, self.day()),
             ).fetchone()
             weekly = db.execute(
                 "SELECT COUNT(*) requests, COALESCE(SUM(charged),0) charged_micro_eur, "
-                "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) unknown_micro_eur "
+                "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) unknown_micro_eur, "
+                f"{ESTIMATED_SUM} estimated_micro_eur "
                 "FROM api_key_requests WHERE key_id=? AND week=?",
                 (developer, week),
             ).fetchone()
@@ -553,10 +572,26 @@ class Store(DeveloperStore):
                 raise ValueError("unknown_request")
 
     def finish(
-        self, request_id: str, charged: int | None, incoming: int = 0, outgoing: int = 0
+        self,
+        request_id: str,
+        charged: int | None,
+        incoming: int = 0,
+        outgoing: int = 0,
+        *,
+        estimated: int = 0,
+        measured: bool = True,
     ) -> None:
-        if any(type(v) is not int or v < 0 for v in (incoming, outgoing)) or (
-            charged is not None and (type(charged) is not int or charged < 0)
+        """Settle a reservation.
+
+        ``charged`` is the cost in micro-EUR, of which ``estimated`` is an estimate.
+        ``measured=False`` records a call whose outcome the provider never measured
+        (state 'unknown'): its tokens are the estimated counts. ``charged=None``
+        keeps the whole reservation (legacy callers without any estimate).
+        """
+        if (
+            any(type(v) is not int or v < 0 for v in (incoming, outgoing, estimated))
+            or (charged is not None and (type(charged) is not int or charged < 0))
+            or (charged is not None and estimated > charged)
         ):
             raise ValueError("invalid_usage")
         with self.connection() as db:
@@ -564,12 +599,15 @@ class Store(DeveloperStore):
                 "SELECT key_id,day FROM api_key_requests WHERE id=?", (request_id,)
             ).fetchone()
             cursor = db.execute(
-                "UPDATE api_key_requests SET charged=COALESCE(?,charged),input_tokens=?,output_tokens=?,state=? WHERE id=? AND state='reserved'",
+                "UPDATE api_key_requests SET charged=COALESCE(?,charged),input_tokens=?,output_tokens=?,state=?,"
+                "estimated=CASE WHEN ? IS NULL THEN charged ELSE ? END WHERE id=? AND state='reserved'",
                 (
                     charged,
                     incoming if charged is not None else None,
                     outgoing if charged is not None else None,
-                    "unknown" if charged is None else "complete",
+                    "complete" if charged is not None and measured else "unknown",
+                    charged,
+                    estimated,
                     request_id,
                 ),
             )

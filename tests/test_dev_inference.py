@@ -86,7 +86,7 @@ class DevInferenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage["charged_micro_eur"], usage["unknown_micro_eur"])
         self.assertEqual(len(self.env.inputs), 1)
 
-    async def test_generator_close_preserves_reserve_and_closes_transport(self) -> None:
+    async def test_generator_close_settles_estimate_and_closes_transport(self) -> None:
         request = ChatInput.model_validate(BODY)
         plan = gateway.prepare(request)
         request_id = self.env.store.reserve("alice", plan.reserved)
@@ -101,9 +101,12 @@ class DevInferenceTests(unittest.IsolatedAsyncioTestCase):
         await frames.__anext__()
         await frames.aclose()
         self.assertTrue(self.env.closed)
-        self.assertEqual(
-            self.env.store.usage("alice")["unknown_micro_eur"], plan.reserved
-        )
+        # The client left before the usage frame: an estimate from the body sent
+        # and the text streamed, far below the max_tokens reservation.
+        usage = self.env.store.usage("alice")
+        self.assertGreater(int(str(usage["unknown_micro_eur"])), 0)
+        self.assertLess(int(str(usage["unknown_micro_eur"])), plan.reserved / 4)
+        self.assertEqual(usage["estimated_micro_eur"], usage["unknown_micro_eur"])
 
     async def test_expired_deadline_and_known_cost_above_reserve(self) -> None:
         from dataclasses import replace

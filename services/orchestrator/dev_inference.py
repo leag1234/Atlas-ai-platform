@@ -66,8 +66,10 @@ async def validated_drive(
 ) -> AsyncGenerator[dict[str, Any], None]:
     request = output.request
     streaming = isinstance(request, ChatInput) and request.stream
-    current, charged, incoming, outgoing = plan, 0, 0, 0
-    settled, known = False, False
+    meter = gateway.Meter()
+    plan = gateway.metered(plan, meter)
+    current, charged, incoming, outgoing, estimated = plan, 0, 0, 0, 0
+    settled, known, failure = False, False, "closed"
     attempts, started = 0, monotonic()
     try:
         async with asyncio.timeout(max(0, deadline - monotonic())):
@@ -91,6 +93,7 @@ async def validated_drive(
                         chunk = candidate.feed(frame)
                         if "usage" in frame:
                             charged += frame["cost_micro_eur"]
+                            estimated += int(frame.get("estimated_micro_eur", 0))
                             incoming += frame["usage"]["prompt_tokens"]
                             outgoing += frame["usage"]["completion_tokens"]
                             known = True
@@ -138,13 +141,17 @@ async def validated_drive(
                     for chunk in pending:
                         if "usage" in chunk:
                             chunk["usage"] = output.usage
-                    store.finish(request_id, charged, incoming, outgoing)
+                    store.finish(
+                        request_id, charged, incoming, outgoing, estimated=estimated
+                    )
                     settled = True
                     for chunk in pending:
                         yield chunk
                     return
                 if attempt or emitted:
-                    store.finish(request_id, charged, incoming, outgoing)
+                    store.finish(
+                        request_id, charged, incoming, outgoing, estimated=estimated
+                    )
                     settled = True
                     yield {
                         "error": {
@@ -155,6 +162,7 @@ async def validated_drive(
                     return
                 current = gateway.retry(plan, problem, plan.reserved - charged)
     except LimitError as exc:
+        failure = exc.code
         yield {"error": {"type": exc.code, "message": exc.detail}}
     except (
         ValueError,
@@ -164,16 +172,12 @@ async def validated_drive(
         KeyError,
         TypeError,
     ) as exc:
+        failure = type(exc).__name__
         yield provider_failure(exc)
     finally:
         if not settled:
             # attempts == 0: the deadline passed before the first provider call.
-            store.finish(
-                request_id,
-                charged if known or attempts == 0 else None,
-                incoming,
-                outgoing,
-            )
+            settle_unmeasured(store, request_id, meter, plan, failure, attempts > 0)
         logging.getLogger("uvicorn.error").info(
             json.dumps(
                 {
@@ -193,6 +197,63 @@ async def validated_drive(
                 }
             )
         )
+
+
+def cached_count(usage: dict[str, Any] | None) -> int:
+    """Prompt tokens the provider served from its cache (0 when it reports none)."""
+    details = (usage or {}).get("prompt_tokens_details")
+    value = details.get("cached_tokens") if isinstance(details, dict) else None
+    return value if isinstance(value, int) and value > 0 else 0
+
+
+def settle_unmeasured(
+    store: Store,
+    request_id: str,
+    meter: gateway.Meter,
+    plan: gateway.Plan,
+    failure: str,
+    called: bool,
+) -> None:
+    """Settle a call that ended without a usage frame, on what really happened.
+
+    Attempts with a usage frame keep their measured cost; an attempt the provider
+    refused, or that failed before one byte of answer, costs nothing; any other
+    attempt (cut stream, client gone) is estimated from the request body sent and
+    the text streamed back, never from the max_tokens reservation. The estimated
+    part stays visible in GET /usage (D5). Only a call that went to the provider
+    without any recorded attempt keeps its reservation: nothing is known of it.
+    """
+    total = meter.summary()
+    if not called:
+        store.finish(request_id, 0)
+    elif not meter.attempts:
+        store.finish(request_id, None)
+        total["charged"] = total["estimated"] = plan.reserved
+    else:
+        store.finish(
+            request_id,
+            total["charged"],
+            total["input_tokens"],
+            total["output_tokens"],
+            estimated=total["estimated"],
+            measured=total["estimated"] == 0,
+        )
+    # A warning, so the operator log shows every call settled without usage: the
+    # cause class only, never the request or the answer.
+    logging.getLogger("atlas.api").warning(
+        json.dumps(
+            {
+                "event": "devapi_settled_without_usage",
+                "request": request_id,
+                "reason": failure,
+                "attempts": len(meter.attempts),
+                "refused": sum(1 for a in meter.attempts if a.refused),
+                "charged_micro_eur": total["charged"],
+                "estimated_micro_eur": total["estimated"],
+                "reserved_micro_eur": plan.reserved,
+            }
+        )
+    )
 
 
 def request_target(plan: gateway.Plan) -> str | None:
@@ -285,7 +346,9 @@ async def drive(
                 yield chunk
         return
     settled, charged, started = False, None, monotonic()
-    called = False
+    called, failure = False, "closed"
+    meter = gateway.Meter()
+    plan = gateway.metered(plan, meter)
     try:
         if deadline <= monotonic():
             raise TimeoutError("timeout")
@@ -311,6 +374,7 @@ async def drive(
                         charged,
                         frame["usage"]["prompt_tokens"],
                         frame["usage"]["completion_tokens"],
+                        estimated=int(frame.get("estimated_micro_eur", 0)),
                     )
                     settled = True
                     if charged > plan.reserved:
@@ -319,6 +383,7 @@ async def drive(
                         )
                 yield chunk
     except LimitError as exc:
+        failure = exc.code
         yield {"error": {"type": exc.code, "message": exc.detail}}
     except (
         ValueError,
@@ -328,11 +393,12 @@ async def drive(
         KeyError,
         TypeError,
     ) as exc:
+        failure = type(exc).__name__
         yield provider_failure(exc)
     finally:
         if not settled:
             # Nothing was sent when the deadline passed before the provider call.
-            store.finish(request_id, None if called else 0)
+            settle_unmeasured(store, request_id, meter, plan, failure, called)
         logging.getLogger("uvicorn.error").info(
             json.dumps(
                 {
@@ -398,7 +464,7 @@ async def hosted_drive(
         ensure_ascii=False,
     )
     original_request_id = request_id
-    prompt_tokens = completion_tokens = 0
+    prompt_tokens = completion_tokens = cached_tokens = 0
     for turn in range(MAX_ROUNDS):
         candidate = Output(request_id, request, str(output.base["model"]))
         kept: list[dict[str, Any]] = []
@@ -413,6 +479,7 @@ async def hosted_drive(
         if candidate.usage:
             prompt_tokens += int(candidate.usage.get("prompt_tokens", 0))
             completion_tokens += int(candidate.usage.get("completion_tokens", 0))
+            cached_tokens += cached_count(candidate.usage)
         calls = list(candidate.calls.values())
         hosted_calls = [c for c in calls if c["function"]["name"] in HOSTED_NAMES]
         if (
@@ -427,6 +494,8 @@ async def hosted_drive(
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "total_tokens": prompt_tokens + completion_tokens,
+                # Cached prompt tokens of every turn, as the provider counted them.
+                "prompt_tokens_details": {"cached_tokens": cached_tokens},
             }
             for chunk in kept:
                 if "usage" in chunk:

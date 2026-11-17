@@ -72,7 +72,9 @@ class Store:
             row = db.execute(
                 "SELECT COUNT(*) requests, COALESCE(SUM(charged),0) charged_micro_eur, "
                 "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) "
-                "unknown_micro_eur FROM requests WHERE developer=? AND day=?",
+                "unknown_micro_eur, "
+                "COALESCE(SUM(CASE WHEN state!='complete' THEN charged ELSE 0 END),0) "
+                "estimated_micro_eur FROM requests WHERE developer=? AND day=?",
                 (developer, day),
             ).fetchone()
         return {"developer": developer, "day": day, **dict(row)}
@@ -104,10 +106,20 @@ class Store:
         return request_id
 
     def finish(
-        self, request_id: str, charged: int | None, incoming: int = 0, outgoing: int = 0
+        self,
+        request_id: str,
+        charged: int | None,
+        incoming: int = 0,
+        outgoing: int = 0,
+        *,
+        estimated: int = 0,
+        measured: bool = True,
     ) -> None:
-        if any(type(v) is not int or v < 0 for v in (incoming, outgoing)) or (
-            charged is not None and (type(charged) is not int or charged < 0)
+        """Settle a reservation; ``measured=False`` records an estimated outcome."""
+        if (
+            any(type(v) is not int or v < 0 for v in (incoming, outgoing, estimated))
+            or (charged is not None and (type(charged) is not int or charged < 0))
+            or (charged is not None and estimated > charged)
         ):
             raise ValueError("invalid_usage")
         with self.connection() as db:
@@ -118,7 +130,7 @@ class Store:
                     charged,
                     incoming if charged is not None else None,
                     outgoing if charged is not None else None,
-                    "unknown" if charged is None else "complete",
+                    "complete" if charged is not None and measured else "unknown",
                     request_id,
                 ),
             )

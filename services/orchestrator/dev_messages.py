@@ -214,6 +214,9 @@ class Wire:
                     }
                 )
         usage = self.output.usage or {"prompt_tokens": 0, "completion_tokens": 0}
+        details = usage.get("prompt_tokens_details")
+        cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        cached = min(cached, usage["prompt_tokens"]) if isinstance(cached, int) else 0
         result = {
             "id": "msg_" + str(self.output.base["id"]),
             "type": "message",
@@ -229,7 +232,12 @@ class Wire:
             }.get(self.output.reason or ""),
             "stop_sequence": self.output.stop_sequence,
             "usage": {
-                "input_tokens": usage["prompt_tokens"],
+                # Messages counts cache reads apart from input_tokens; the total
+                # prompt is input_tokens + cache_read_input_tokens. The provider
+                # bills no cache write, so cache_creation_input_tokens stays 0.
+                "input_tokens": usage["prompt_tokens"] - max(cached, 0),
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": max(cached, 0),
                 "output_tokens": usage["completion_tokens"],
                 **(
                     {

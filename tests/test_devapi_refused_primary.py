@@ -96,7 +96,7 @@ class RefusedPrimaryTests(unittest.IsolatedAsyncioTestCase):
         frames = await self._run(transport)
         self.assertEqual(frames[-1]["cost_micro_eur"], 188)
 
-    async def test_primary_failing_after_streaming_still_adds_bound(self) -> None:
+    async def test_primary_failing_after_streaming_adds_its_estimate(self) -> None:
         async def transport(plan: gateway.Plan) -> AsyncIterator[bytes]:
             if plan.fallback is not None:
                 yield _stream_bytes()[:10]
@@ -105,8 +105,10 @@ class RefusedPrimaryTests(unittest.IsolatedAsyncioTestCase):
                 yield chunk
 
         frames = await self._run(transport)
-        # 188 fallback cost + 5000 primary attempt bound.
-        self.assertEqual(frames[-1]["cost_micro_eur"], 188 + 5000)
+        # 188 fallback cost + the primary's estimate, never its 5000 bound: its
+        # 48-byte body at 3 bytes per token (16 tokens at rate 1), no text streamed.
+        self.assertEqual(frames[-1]["cost_micro_eur"], 188 + 16)
+        self.assertEqual(frames[-1]["estimated_micro_eur"], 16)
 
     async def test_credit_refusal_is_logged(self) -> None:
         plan = _plan()
