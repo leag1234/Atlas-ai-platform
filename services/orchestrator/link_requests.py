@@ -82,7 +82,7 @@ def link_request(question: str, *, prices: bool = False) -> bool:
     return price_request or bool(
         re.search(
             r"\b(shopping|acheter|buy|kaufen)\b"
-            # "Où se trouve X" asks where X is, not where to find it for sale.
+            # The French "where is X" phrasing asks where X is, not where to buy it.
             r"|\b(ou|where|wo)\b(?!\s+s(?:e\s+|['’]\s*)trouv)"
             r".{0,35}\b(achet\w*|trouv\w*|buy|get|purchase|kauf\w*|bekomm\w*)\b"
             r"|\b(product|produit|produkt)\s*(pages?|seiten?)\b"
