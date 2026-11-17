@@ -660,7 +660,7 @@ class ChatTools(Runtime):
             passages = [p.model_dump() for p in result.passages]
             self.item.chunks_recuperes.extend(passages)
             for passage in result.passages:
-                document_quotes.add_document(passage.text)
+                document_quotes.add_document(passage.text, retrieved=True)
             return {
                 "trust": "untrusted",
                 "data": {
@@ -960,7 +960,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # what remains is noted. A project turn's own path reads retrieved
     # passages, not a provided source (a file uploaded in a project comes here
     # through project_chat's scoped request); a Work file is checked by
-    # deliverable_check.
+    # deliverable_check. A turn that shows a picture is not checked: the answer
+    # reads the picture, which the text the judge receives does not hold, so
+    # every fact taken from it would be called unsupported.
     if (
         quotes is not None
         and source_faithfulness.enabled()
@@ -968,6 +970,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         and item.task_type not in {"work", "nearby"}
         and not request.project_id
         and not request.code_mode
+        and not any(message.images for message in request.messages)
         and (provided := source_faithfulness.provided(quotes)) is not None
     ):
         from services.orchestrator.deadline import remaining as time_left

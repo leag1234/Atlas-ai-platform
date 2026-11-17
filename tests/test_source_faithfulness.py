@@ -111,6 +111,20 @@ class SourceTests(unittest.TestCase):
         self.assertIsNone(faith.provided(sources))
         self.assertIsNone(faith.provided(None))
 
+    def test_passages_a_search_retrieved_are_not_a_provided_source(self) -> None:
+        # A corpus search turn quotes its passages (document_quotes) but did not
+        # restate a document the person gave: it is not checked here.
+        sources = document_quotes.Sources()
+        sources.add_document(SOURCE, retrieved=True)
+        sources.add_conversation(QUESTION)
+        self.assertTrue(sources.active())
+        self.assertIsNone(faith.provided(sources))
+        sources.add_document("The deck is made of oak.", "deck.txt")
+        found = faith.provided(sources)
+        assert found is not None
+        self.assertIn("[Document 1: deck.txt]", found.text)
+        self.assertNotIn(SOURCE, found.text)
+
     def test_a_pasted_text_is_a_source_and_short_messages_are_the_person_own(
         self,
     ) -> None:
@@ -349,6 +363,19 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(text, CAUSAL)
         self.assertEqual(report.rewrite, "rejected:links")
         self.assertIn(FLAGGED, addition)
+
+    def test_a_json_answer_is_not_checked(self) -> None:
+        # A note or a rewrite would break what the client parses.
+        for answer in (
+            '{"deck": "steel", "opened": 2020, "cause": "flood of May 2020"}',
+            '```json\n{"deck": "steel", "opened": 2020}\n```',
+        ):
+            calls = Calls()
+            text, addition, report = review(answer, calls)
+            self.assertEqual((text, addition), (answer, ""))
+            self.assertEqual(report.outcome, "skipped:structured")
+            self.assertEqual(calls.payloads, [])
+        self.assertFalse(faith.structured("The deck {is} steel."))
 
     def test_a_failed_judge_delivers_the_answer_and_names_the_failure(self) -> None:
         calls = Calls(GatewayError("cost_budget", 429, "limit"))

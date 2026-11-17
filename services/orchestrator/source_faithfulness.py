@@ -9,9 +9,9 @@ person provided: a summary, a synthesis, a report, a rewrite or translation, an
 answer about an attached or pasted document.
 
 When it runs: the turn holds a provided source (an attached document, or a
-pasted message of at least document_quotes.PASTED_MINIMUM characters, see
-document_quotes.Sources.active) and the answer is a finished chat or API answer
-(not a project, Work or nearby turn; Work files go through
+pasted message of at least document_quotes.PASTED_MINIMUM characters; passages
+a search retrieved from an indexed corpus are not one) and the answer is a
+finished chat or API answer (not a project, Work or nearby turn; Work files go through
 deliverable_check.review, which calls ``judge`` here). No keyword of a
 deliverable type is read: whether the answer presents content as the source's
 is decided by the judge, which is given the request.
@@ -217,12 +217,19 @@ def provided(sources: Any) -> Source | None:
     """The source a turn holds (document_quotes.Sources), or None without one."""
     from services.orchestrator.document_quotes import PASTED_MINIMUM
 
-    if sources is None or not sources.active():
+    if sources is None:
+        return None
+    # Passages a search retrieved from an indexed corpus are not a provided
+    # source: the answer was not written from them as a whole, and checking
+    # them was neither asked nor measured.
+    documents = getattr(sources, "provided", [])
+    if not documents and not any(
+        len(text) >= PASTED_MINIMUM for text in sources.conversation
+    ):
         return None
     parts: list[str] = []
     passages: list[str] = []
-    for index, text in enumerate(sources.documents, start=1):
-        name = sources.names[index - 1] if index <= len(sources.names) else ""
+    for index, (text, name) in enumerate(documents, start=1):
         parts.append(f"[Document {index}{': ' + name if name else ''}]\n{text}")
         passages.append(text)
     own: list[str] = []
@@ -750,6 +757,21 @@ def note(items: list[str], language: str, *, judged: bool = True) -> str:
     return "*" + template.format(items=quoted) + "*"
 
 
+def structured(body: str) -> bool:
+    """True when the answer is one JSON object or array, fenced or not."""
+    text = body.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0] if text.rstrip().endswith("```") else text
+        text = text.strip()
+    if not text.startswith(("{", "[")):
+        return False
+    try:
+        return isinstance(json.loads(text), (dict, list))
+    except ValueError:
+        return False
+
+
 def joined(answer: str, addition: str) -> str:
     """The answer followed by its note, as streamed (a blank line between)."""
     return answer + "\n\n" + addition if addition else answer
@@ -808,6 +830,10 @@ async def review(
         return answer, "", report
     if len(body.split()) < MIN_WORDS and not _NO_SPACES.search(body):
         return done("skipped:short")
+    if structured(body):
+        # A machine-readable answer (JSON asked by the person or a client): a
+        # note or a rewritten sentence would break what the reader parses.
+        return done("skipped:structured")
     found = hints(body, source)
     report.hints = len(found)
     judge_profile, rewrite_profile = profiles(profile)

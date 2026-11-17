@@ -352,6 +352,10 @@ class Sources:
     def __init__(self) -> None:
         self.documents: list[str] = []
         self.names: list[str] = []
+        # Documents the person provided (attachments, files of the turn) with
+        # their names, apart from passages a search retrieved: only these are a
+        # source an answer restates (source_faithfulness.provided).
+        self.provided: list[tuple[str, str]] = []
         self.conversation: list[str] = []
         self.evidence: list[str] = []
         self.characters = 0
@@ -360,7 +364,9 @@ class Sources:
         self._evidence: list[str] | None = None
         self._names: str | None = None
 
-    def add_document(self, text: object, name: object = "") -> None:
+    def add_document(
+        self, text: object, name: object = "", *, retrieved: bool = False
+    ) -> None:
         if not isinstance(text, str) or not text.strip():
             return
         text = text[: max(0, SOURCE_LIMIT - self.characters)]
@@ -370,6 +376,8 @@ class Sources:
         self.documents.append(text)
         if isinstance(name, str) and name:
             self.names.append(name)
+        if not retrieved:
+            self.provided.append((text, name if isinstance(name, str) else ""))
         self._texts = None
         self._names = None
 
@@ -818,10 +826,14 @@ def _without_reference(content: str) -> str:
 current: ContextVar[Sources | None] = ContextVar("document_quotes", default=None)
 
 
-def add_document(text: object, name: object = "") -> None:
-    """Record a document text the turn's answer may quote."""
+def add_document(text: object, name: object = "", *, retrieved: bool = False) -> None:
+    """Record a document text the turn's answer may quote.
+
+    retrieved: a passage a search found in an indexed corpus, not a document the
+    person provided in the conversation.
+    """
     if (sources := current.get()) is not None:
-        sources.add_document(text, name)
+        sources.add_document(text, name, retrieved=retrieved)
 
 
 def observe(output: dict[str, object]) -> dict[str, object]:
