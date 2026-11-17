@@ -432,6 +432,7 @@ def user_dates(texts: list[str], zone: str = "UTC") -> list[str]:
     except (ZoneInfoNotFoundError, ValueError):
         today = datetime.now(ZoneInfo("UTC")).date()
     days: set[int] = set()
+    named: set[str] = set()
     for text in texts:
         folded = _folded(text)
         for pattern, offset in _RELATIVE_DAYS:
@@ -441,7 +442,113 @@ def user_dates(texts: list[str], zone: str = "UTC") -> list[str]:
             if re.search(r"\b(?:" + "|".join(words.split()) + r")\b", folded):
                 ahead = (weekday - today.weekday()) % 7
                 days.update({ahead, ahead + 7} if ahead == 0 else {ahead})
-    return [(today + timedelta(days=offset)).isoformat() for offset in sorted(days)]
+        named |= named_dates(text, today.isoformat())
+    relative = {(today + timedelta(days=offset)).isoformat() for offset in days}
+    return sorted(relative | named)
+
+
+# --- Dates written in a text ("23.11.26", "18 novembre", "Nov 18, 2026"). ---
+# Staging -102: a timetable page gave the times of 23.11.26 for a trip asked
+# for tomorrow (18.11.26), and the answer listed them as if they were
+# tomorrow's. A time read next to another date is a fact about that date.
+
+_MONTHS = (
+    "janvier january januar enero gennaio jan janv ene",
+    "fevrier february februar febrero febbraio feb fev fevr",
+    "mars march marz marzo",
+    "avril april abril aprile apr avr",
+    "mai may mayo maggio",
+    "juin june juni junio giugno jun giu",
+    "juillet july juli julio luglio jul juil lug",
+    "aout august agosto aug",
+    "septembre september septiembre settembre sep sept",
+    "octobre october oktober octubre ottobre oct okt ott",
+    "novembre november noviembre nov",
+    "decembre december dezember diciembre dicembre dec dez dic",
+)
+_MONTH_NUMBER = {
+    word: number for number, words in enumerate(_MONTHS, 1) for word in words.split()
+}
+_MONTH = r"(" + "|".join(sorted(_MONTH_NUMBER, key=len, reverse=True)) + r")"
+_ISO_DATE = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)")
+_NUMERIC_DATE = re.compile(
+    r"(?<![\d.:/])(\d{1,2})([./-])(\d{1,2})\2(\d{4}|\d{2})(?![\d:])"
+)
+_DAY_MONTH = re.compile(
+    rf"(?<![\w:])(\d{{1,2}})(?:er|st|nd|rd|th|\.)?\s+(?:de\s+)?{_MONTH}\.?"
+    r"(?:\s+(?:de\s+)?(\d{4}))?(?!\w)"
+)
+_MONTH_DAY = re.compile(
+    rf"(?<!\w){_MONTH}\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,?\s+(\d{{4}}))?(?![\w:])"
+)
+
+
+def named_dates(text: str, today: str) -> set[str]:
+    """ISO dates the text writes as a day and a month (any order, five languages).
+
+    A numeric date that reads both ways ("05/11/2026") gives both; a date
+    without a year is the one nearest ``today``.
+    """
+    from datetime import date
+
+    base = date.fromisoformat(today)
+    found: set[str] = set()
+
+    def add(year: int | None, month: int, day: int) -> None:
+        years = (
+            [year] if year is not None else [base.year - 1, base.year, base.year + 1]
+        )
+        candidates: list[date] = []
+        for value in years:
+            try:
+                candidates.append(date(value, month, day))
+            except ValueError:
+                continue
+        if candidates:
+            nearest = min(candidates, key=lambda d: abs((d - base).days))
+            found.add(nearest.isoformat())
+
+    def full(year: str | None) -> int | None:
+        if not year:
+            return None
+        number = int(year)
+        return number + 2000 if number < 100 else number
+
+    folded = _folded(text)
+    for match in _ISO_DATE.finditer(folded):
+        add(int(match[1]), int(match[2]), int(match[3]))
+    for match in _NUMERIC_DATE.finditer(folded):
+        first, second, year = int(match[1]), int(match[3]), full(match[4])
+        if 1 <= second <= 12:
+            add(year, second, first)  # day first
+        if 1 <= first <= 12 and first != second:
+            add(year, first, second)  # month first
+    for match in _DAY_MONTH.finditer(folded):
+        add(full(match[3]), _MONTH_NUMBER[match[2]], int(match[1]))
+    for match in _MONTH_DAY.finditer(folded):
+        add(full(match[3]), _MONTH_NUMBER[match[1]], int(match[2]))
+    return found
+
+
+_EVIDENCE_SENTENCE = re.compile(r"(?<=[.!?;])\s+|\n+")
+# Days a timetable row may stand for instead of the trip's: a date further
+# away is a validity date ("valid from 14.12.2025"), not a row's day.
+NEAR_DAYS = 45
+
+
+def other_dates(sentence: str, asked: set[str]) -> set[str]:
+    """The days near the trip a sentence gives, when none is a trip day."""
+    from datetime import date
+
+    if not asked:
+        return set()
+    trip = [date.fromisoformat(day) for day in asked]
+    dates = {
+        day
+        for day in named_dates(sentence, min(asked))
+        if min(abs((date.fromisoformat(day) - t).days) for t in trip) <= NEAR_DAYS
+    }
+    return set() if dates & asked else dates
 
 
 def _rounded(claimed: float, known: float) -> bool:
@@ -535,13 +642,18 @@ def _range_values(claim: Quantity) -> tuple[float, ...]:
 
 def _sentence(text: str, start: int, end: int) -> tuple[int, int]:
     line_start, line_end = _line_bounds(text, start)
+    line = text[line_start:line_end]
     left = line_start
-    for match in re.finditer(r"[.!?](?=\s)", text[line_start:start]):
-        left = line_start + match.end()
     right = line_end
-    found = re.search(r"[.!?](?=\s|$)", text[end:line_end])
-    if found:
-        right = end + found.end()
+    for match in route_facts.sentence_marks(line):
+        if (
+            line_start + match.end() <= start
+            and text[line_start + match.end() : line_start + match.end() + 1].isspace()
+        ):
+            left = line_start + match.end()
+        elif line_start + match.start() >= end:
+            right = line_start + match.end()
+            break
     return left, right
 
 
@@ -615,10 +727,25 @@ def _leave_out(text: str, flagged: list[Quantity]) -> str:
             continue
         kept.append(span)
     for start, end, replacement in reversed(kept):
+        if not replacement and (start == 0 or text[start - 1] == "\n"):
+            # A list item that keeps a sentence keeps its marker (staging
+            # -102: the item's last sentence lost its "- ").
+            marker = _ITEM.match(text[start:end])
+            line_end = text.find("\n", end)
+            rest = text[end : len(text) if line_end < 0 else line_end]
+            if marker and rest.strip():
+                start += marker.end()
         following = text[end:]
         if not replacement and (start == 0 or text[start - 1] == "\n"):
             # A sentence that opened its line: the next one opens it now.
             following = following.lstrip(" ")
+        ending = text[start:end].rstrip()[-1:]
+        if not replacement and ending in {".", "!", "?"}:
+            # "X; Y." without "Y.": X ends the sentence now.
+            before = text[:start].rstrip()
+            if before.endswith(";"):
+                cut = len(before) - 1
+                text = text[:cut] + ending + text[cut + 1 :]
         text = text[:start] + replacement + following
         # A sentence that lost its opening clause starts with a capital again.
         before = text[:start].rstrip(" *_")
@@ -771,6 +898,43 @@ def _renumber(lines: list[str], first: int) -> list[str]:
     return result
 
 
+_NUMBERED_HEADING = re.compile(
+    r"^(\s*(?:#{1,6}\s+)?(?:\*\*|__)?\s*)(\d{1,3})([.)])(?=\s)"
+)
+
+
+def _heading_number(line: str) -> re.Match[str] | None:
+    """The step number of a heading ("**3. Geneva Cornavin**", "### 2) Train")."""
+    match = _NUMBERED_HEADING.match(line)
+    if (
+        match is None
+        or not _heading(line.strip())
+        and not line.lstrip().startswith("#")
+    ):
+        return None
+    return match
+
+
+def _renumber_headings(old: list[str], lines: list[str]) -> list[str]:
+    """Numbered step headings that lost steps count 1, 2, 3 again (staging
+    -102: the answer started at "**3. Geneva Cornavin -> Geneva Airport**")."""
+    before = [int(m[2]) for line in old if (m := _heading_number(line))]
+    found = [(i, m) for i, line in enumerate(lines) if (m := _heading_number(line))]
+    if not before or not found:
+        return lines
+    start = before[0]
+    numbers = [int(m[2]) for _, m in found]
+    if numbers == list(range(start, start + len(found))):
+        return lines
+    result = list(lines)
+    for offset, (index, match) in enumerate(found):
+        line = result[index]
+        result[index] = (
+            line[: match.start(2)] + str(start + offset) + line[match.end(2) :]
+        )
+    return result
+
+
 def _restructure(original: str, body: str) -> str:
     """Counts, numbers and headings that referred to what was left out."""
     old = original.split("\n")
@@ -804,12 +968,30 @@ def _restructure(original: str, body: str) -> str:
             continue
         lines[index] = _without_count(line, len(before))
     lines = [line for index, line in enumerate(lines) if index not in drop]
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(_renumber(lines, first_number)))
+    lines = _renumber_headings(old, _renumber(lines, first_number))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
 
 
 # Markdown left by removals: "**1." with its title gone (staging -100), a
 # list item with nothing in it. A line keeps its emphasis marks in pairs, and
 # a line with no word left goes.
+
+
+def _paired_parentheses(line: str) -> str:
+    """A parenthesis a removal left open is closed where the line ends
+    (staging -102: "(source : lemanexpress.com")."""
+    depth = 0
+    for character in line:
+        if character == "(":
+            depth += 1
+        elif character == ")" and depth:
+            depth -= 1
+    text = line
+    if depth:
+        end = re.search(r"[\s.!?:;,]*$", text)
+        cut = end.start() if end else len(text)
+        text = text[:cut] + ")" * depth + text[cut:]
+    return text
 
 
 def wellformed(text: str) -> str:
@@ -827,6 +1009,7 @@ def wellformed(text: str) -> str:
         for mark in ("**", "__", "`"):
             if line.count(mark) % 2:
                 line = line.replace(mark, "")
+        line = _paired_parentheses(line)
         content = re.sub(r"^\s*(?:[-*+>]|\d{1,3}[.)])\s+", "", line)
         if line.strip() and not re.search(
             r"[^\W_]", re.sub(r"^\W*\d{1,3}[.)]", "", content)
@@ -842,6 +1025,8 @@ class Findings:
 
     values: list[Quantity]
     route: route_facts.Finding
+    # Times the sources give for another day: the start of the claim, the day.
+    dated: dict[int, str] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         return bool(self.values or self.route.spans)
@@ -853,7 +1038,14 @@ class Findings:
         return list(
             dict.fromkeys(
                 " ".join(text.split())
-                for text in (*(c.text for c in self.values), *self.route.labels)
+                for text in (
+                    *(
+                        c.text
+                        + (f" ({self.dated[c.start]})" if c.start in self.dated else "")
+                        for c in self.values
+                    ),
+                    *self.route.labels,
+                )
             )
         )
 
@@ -950,7 +1142,42 @@ class Turn:
         """Values written by code this turn (journey plan, straight-line distance)."""
         self.computed.append(text)
 
-    def known(self) -> dict[Kind, list[float]]:
+    def trip_dates(self) -> list[str]:
+        """The days the person named for the trip (ISO), in their zone."""
+        return user_dates(self.asked, self.zone)
+
+    def other_days(self) -> dict[float, set[str]]:
+        """Clock times the sources give only next to another date than the trip's.
+
+        Read per sentence of a source (a timetable row): a time in a sentence
+        that names dates, none of them a day the person named, is a time of
+        those dates (staging -102: times of 23.11.26 for a trip tomorrow).
+        """
+        asked = set(self.trip_dates())
+        if not asked:
+            return {}
+        other: dict[float, set[str]] = {}
+        same: set[float] = set()
+        for text in self.evidence.evidence:
+            for sentence in _EVIDENCE_SENTENCE.split(text):
+                clocks = [
+                    q.value
+                    for q in quantities(sentence, generous=True)
+                    if q.kind == "clock"
+                ]
+                if not clocks:
+                    continue
+                dates = other_dates(sentence, asked)
+                if dates:
+                    for value in clocks:
+                        other.setdefault(value, set()).update(dates)
+                else:
+                    same.update(clocks)
+        return {value: dates for value, dates in other.items() if value not in same}
+
+    def known(
+        self, other: dict[float, set[str]] | None = None
+    ) -> dict[Kind, list[float]]:
         values: dict[Kind, list[float]] = {"duration": [], "distance": [], "clock": []}
         for text in (*self.evidence.evidence, *self.computed, *self.asked):
             for quantity in quantities(text, generous=True):
@@ -959,6 +1186,21 @@ class Turn:
                     values[quantity.kind].append(quantity.low)
         for text in self.asked:
             values["clock"].extend(spoken_times(text))
+        other = self.other_days() if other is None else other
+        if other:
+            # A time the sources give only for another day is not known for
+            # the trip's day; the answer may still give it with its date.
+            owned = {
+                q.value
+                for text in (*self.computed, *self.asked)
+                for q in quantities(text, generous=True)
+                if q.kind == "clock"
+            }
+            values["clock"] = [
+                value
+                for value in values["clock"]
+                if value in owned or not any(_same("clock", value, o) for o in other)
+            ]
         return values
 
     def stated_durations(self) -> list[float]:
@@ -1001,9 +1243,31 @@ class Turn:
             for claim in claims
             if not _MARGIN.search(body[slice(*_clause(body, claim.start, claim.end))])
         ]
-        known = self.known()
+        other = self.other_days()
+        known = self.known(other)
         sourced_clocks = known["clock"]
         stated = self.stated_durations()
+        today = min(self.trip_dates(), default="")
+        dated: dict[int, str] = {}
+
+        def other_day(claim: Quantity) -> bool:
+            """A time the sources give for another day, written with that day."""
+            if claim.kind != "clock" or not other:
+                return False
+            start, end = _line_bounds(body, claim.start)
+            written = named_dates(body[start:end], today)
+            days = [
+                dates
+                for value in _range_values(claim)
+                for item, dates in other.items()
+                if _same("clock", value, item)
+            ]
+            if len(days) < len(_range_values(claim)):
+                return False
+            if all(dates & written for dates in days):
+                return True
+            dated[claim.start] = min(days[0])
+            return False
 
         def matches(kind: Kind, value: float) -> bool:
             if value != value:  # a placeholder ("12 h 2x") states no time
@@ -1020,6 +1284,8 @@ class Turn:
 
         def supported(claim: Quantity) -> bool:
             if all(matches(claim.kind, value) for value in _range_values(claim)):
+                return True
+            if other_day(claim):
                 return True
             if claim.kind != "duration":
                 return False
@@ -1060,6 +1326,7 @@ class Turn:
             [*self.asked, self.place],
             self.computed,
             owned_clocks,
+            given=[self.place],
         )
         # A sentence the values check already leaves out needs no second reason.
         taken = [_removal(body, claim) for claim in flagged]
@@ -1068,7 +1335,15 @@ class Turn:
             for span in route.spans
             if not any(a <= span[0] and span[1] <= b for a, b in taken)
         ]
-        return Findings(flagged, route)
+        return Findings(
+            flagged,
+            route,
+            {
+                start: day
+                for start, day in dated.items()
+                if any(c.start == start for c in flagged)
+            },
+        )
 
     def kept(self, body: str, found: Findings) -> str:
         """The body without what ``found`` holds, well formed."""

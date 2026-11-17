@@ -8,6 +8,7 @@ are written the way the model wrote them; every address is fictional.
 """
 
 import unittest
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
 from services.orchestrator import travel_claims, travel_rebuild
@@ -259,6 +260,201 @@ class WellFormedTests(unittest.TestCase):
         # Headings whose content went, go with it.
         for heading in ("Rejoindre", "Train Lyon", "Arrivée"):
             self.assertNotIn(heading, checked)
+
+
+class StagingSecondDayTests(unittest.IsolatedAsyncioTestCase):
+    """Staging -102 (2026-11-17): the rewrite did not know where "here" was,
+    off-topic pages and another day's timetable reached the person, the
+    person's own stop was "not verified", and a failed answer became an
+    unexpected error. Streets are fictional."""
+
+    BAHN = "https://rail.example.test/verbindung/muenchen/berlin"
+    BUS = "https://bus.example.test/train-amsterdam-berlin"
+    QUESTION = "I need to be at Berlin Hauptbahnhof tomorrow by 2pm, how do I get there from here by train?"
+
+    def munich(self) -> travel_claims.Turn:
+        turn = travel_claims.Turn(asked=[self.QUESTION], zone="Europe/Berlin")
+        turn.located(place="Lindenweg, Neuhausen, 80634 München, Deutschland")
+        turn.retrieved = lambda: [self.BAHN, self.BUS]
+        tomorrow = turn.trip_dates()[0]
+        other = date.fromisoformat(tomorrow) + timedelta(days=5)
+        self.other = other.isoformat()
+        stamp = other.strftime("%d.%m.%y")
+        turn.collect(
+            {
+                "link": self.BUS,
+                "snippet": "Trains from Amsterdam Centraal to Berlin Hbf depart at "
+                "06:00 and 08:00, journey 6 h 20 min.",
+            }
+        )
+        turn.collect(
+            {
+                "link": self.BAHN,
+                "snippet": f"München Hbf {stamp} 06:34, Berlin Hbf {stamp} 11:23, "
+                "4:49, 0, ICE. Die schnellste Verbindung von München nach Berlin "
+                "dauert 3:57 Stunden.",
+            }
+        )
+        return turn
+
+    def test_excerpts_are_about_this_trip_and_say_their_day(self) -> None:
+        turn = self.munich()
+        chosen = travel_rebuild.excerpts(turn, self.QUESTION)
+        self.assertTrue(chosen)
+        # The trip's page first; a page about another trip is never listed.
+        self.assertEqual(chosen[0].url, self.BAHN)
+        self.assertEqual({e.url for e in chosen if e.about}, {self.BAHN})
+        dated = [e for e in chosen if "06:34" in e.sentence]
+        self.assertEqual([e.day for e in dated], [self.other])
+
+    async def test_the_prompt_gives_the_starting_point_and_the_trip_day(self) -> None:
+        turn = self.munich()
+        call = model("Take an ICE from München Hbf to Berlin Hbf.")
+        with patch(COMPLETE, call):
+            await travel_rebuild.review(
+                turn,
+                "Take the ICE at 08:34, arriving 13:10.",
+                "en",
+                question=self.QUESTION,
+                profile="p",
+            )
+        awaited = call.await_args
+        assert awaited is not None
+        prompt = awaited.args[0]["messages"][1]["content"]
+        self.assertIn("STARTING POINT:\nLindenweg, Neuhausen", prompt)
+        self.assertIn(turn.trip_dates()[0], prompt)
+        self.assertIn("another day than the trip", prompt)
+        self.assertLess(prompt.index("München Hbf"), prompt.find("Amsterdam") % 10**6)
+
+    def test_another_days_time_needs_its_day(self) -> None:
+        turn = self.munich()
+        found = turn.findings("Tomorrow an ICE leaves München Hbf at 06:34.")
+        self.assertIn(f"06:34 ({self.other})", found.labels())
+        day = date.fromisoformat(self.other).strftime("%d.%m.%Y")
+        self.assertFalse(
+            turn.findings(
+                f"On {day} an ICE left München Hbf at 06:34; check tomorrow's."
+            )
+        )
+
+    def test_the_persons_place_and_a_gap_sentence_are_not_claims(self) -> None:
+        turn = travel_claims.Turn(
+            asked=["je dois etre a l'aeroport de geneve demain a 9h"]
+        )
+        turn.located(place="Rue des Tilleuls, Gratte-Ciel, 69100 Villeurbanne, France")
+        turn.collect(
+            {
+                "link": GENEVA_URL,
+                "snippet": "Station Gratte-Ciel, rue Jean Moulin. TER Lyon Part-Dieu "
+                "06:38 → Genève 08:43.",
+            }
+        )
+        answer = (
+            "Depuis la Rue des Tilleuls, rejoignez la gare de Lyon Part-Dieu. "
+            "Le trajet entre Gratte-Ciel et Lyon Part-Dieu n'est pas précisé par "
+            "les sources : vérifiez-le dans le calculateur de l'exploitant."
+        )
+        found = turn.findings(answer)
+        for label in found.labels():
+            self.assertNotIn("Tilleuls", label)
+            self.assertNotEqual("Gratte-Ciel", label)
+        # The sentence saying what is missing stays.
+        self.assertIn("n'est pas précisé", turn.kept(answer, found))
+
+    async def test_one_unsourced_clause_leaves_the_rewrite_standing(self) -> None:
+        turn = berlin()
+        rewritten = (
+            "ICE 1006 leaves München Hbf at 08:55 and reaches Berlin Hbf at 13:24 "
+            f"([rail.example.test]({BERLIN_URL})). The fastest ICE takes 4 h 02 min "
+            f"([rail.example.test]({BERLIN_URL})); the walk to the station takes "
+            "12 minutes. Check the first leg in the operator's journey planner."
+        )
+        with patch(COMPLETE, model(rewritten)):
+            final, report = await travel_rebuild.review(
+                turn, BERLIN_ANSWER, "en", question=turn.asked[0], profile="p"
+            )
+        self.assertEqual((report.rebuilt, report.built), ("kept:left_out", "model"))
+        self.assertIn("ICE 1006 leaves München Hbf at 08:55", final)
+        self.assertIn("4 h 02 min", final)
+        self.assertNotIn("12 minutes.", final.split("Not verified")[0])
+        self.assertIn("Not verified, so left out: 12 minutes", final)
+
+    async def test_excerpt_numbers_become_links(self) -> None:
+        turn = paris()
+        with patch(COMPLETE, model("Le TER 3105 part de Caen à 9h12 [1].")):
+            final, report = await travel_rebuild.review(
+                turn, PARIS_ANSWER, "fr", question=turn.asked[0], profile="p"
+            )
+        self.assertEqual(report.rebuilt, "kept")
+        self.assertIn(f"([rail.example.test]({PARIS_URL}))", final)
+        self.assertNotIn("[1]", final)
+
+    async def test_a_failed_answer_is_written_from_the_pages(self) -> None:
+        turn = paris()
+        text = (
+            "Le TER 3105 part de Caen à 9h12 et arrive à Paris Saint-Lazare à 11h52 "
+            f"([rail.example.test]({PARIS_URL}))."
+        )
+        with patch(COMPLETE, model(text)):
+            outcome = await travel_rebuild.recover(
+                turn, "fr", question=turn.asked[0], profile="p"
+            )
+        assert outcome is not None
+        self.assertEqual(outcome[0], text)
+        self.assertTrue(outcome[1].recovered)
+        with patch(COMPLETE, AsyncMock(return_value=None)):
+            outcome = await travel_rebuild.recover(
+                turn, "fr", question=turn.asked[0], profile="p"
+            )
+        assert outcome is not None
+        self.assertIn("le modèle n’a pas renvoyé de texte utilisable", outcome[0])
+        self.assertIn("TER 3105 Caen 09:12", outcome[0])
+        self.assertIn("calculateur d’itinéraire", outcome[0])
+        empty = travel_claims.Turn(asked=["Caen Paris demain"])
+        empty.activate()
+        self.assertIsNone(
+            await travel_rebuild.recover(
+                empty, "fr", question="Caen Paris", profile="p"
+            )
+        )
+
+
+class StructureTests(unittest.TestCase):
+    def test_step_headings_count_again_after_removals(self) -> None:
+        turn = geneva()
+        answer = (
+            "**1. Rejoindre Part-Dieu**\nPrenez le tram T9 jusqu'à Part-Dieu (12 min).\n\n"
+            "**2. Train**\nLe TER part de Lyon Part-Dieu à 6h38 et arrive à Genève à 8h43.\n\n"
+            "**3. Arrivée**\nÀ Genève, suivez la signalétique (source : rail.example.test."
+        )
+        kept = turn.kept(answer, turn.findings(answer))
+        self.assertTrue(kept.startswith("**1. Train**"), kept)
+        self.assertIn("**2. Arrivée**", kept)
+        self.assertIn("(source: rail.example.test).", kept)
+
+    def test_a_list_item_keeps_its_marker(self) -> None:
+        turn = geneva()
+        answer = (
+            "- Prenez le tram T9 jusqu'à Part-Dieu. Le TER part de Lyon Part-Dieu à "
+            "6h38 et arrive à Genève à 8h43.\n- Bon voyage."
+        )
+        kept = turn.kept(answer, turn.findings(answer))
+        self.assertTrue(kept.startswith("- Le TER part"), kept)
+
+    def test_dates_in_figures_and_words(self) -> None:
+        today = "2026-11-17"
+        cases = {
+            "München Hbf 23.11.26 06:34": {"2026-11-23"},
+            "le 18 novembre 2026": {"2026-11-18"},
+            "Nov 18, 2026": {"2026-11-18"},
+            "am 18. November": {"2026-11-18"},
+            "11/18/2026": {"2026-11-18"},
+            "05/11/2026": {"2026-11-05", "2026-05-11"},
+            "at 12:30 on platform 4": set(),
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(travel_claims.named_dates(text, today), expected)
 
 
 if __name__ == "__main__":

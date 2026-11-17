@@ -30,6 +30,7 @@ class ProviderFailure(RuntimeError):
                 "malformed_tool_call",
                 "promise_only_final_answer",
                 "missing_file_failure",
+                "unexpected_tool_history_answer",
             }
             else "provider_error"
         )

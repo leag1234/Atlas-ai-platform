@@ -135,6 +135,41 @@ _DISCLAIMER = re.compile(
     r"nicht (?:uberpruft|verifiziert)|conocimiento general|de memoria|"
     r"sin verificar|conoscenz\w* general\w*|a memoria|non verificat\w*"
 )
+# A sentence that names a gap ("The connections between A and B are not given
+# by the sources", "check it in the operator's planner") states no route: the
+# places it names are what is missing, not a claim (staging -102: a rewrite
+# saying so was rejected for naming the person's own stop).
+_NEGATION = re.compile(
+    r"(?<![\w-])(?:not|no|none|cannot|never|\w+n['’]t|n|ne|pas|aucune?|jamais|"
+    r"kein\w*|nicht|nie|ningun\w*|nunca|nessun\w*|non)(?![\w-])"
+)
+_SOURCE_WORDS = re.compile(
+    r"(?<![\w-])(?:sources?|pages?|quellen?|seiten?|fuentes?|paginas?|fonti|"
+    r"pagine|precis\w*|indiqu\w*|given|stated|listed|shown|confirm\w*|"
+    r"verifi\w*|uberpruf\w*|bestatig\w*|angegeben\w*|genannt\w*|indica\w*|"
+    r"specifica\w*|detail\w*)(?![\w-])"
+)
+_CHECK = re.compile(
+    r"(?<![\w-])(?:check|verify|confirm|look up|verifiez|verifier|consultez|"
+    r"consulter|prufen|uberprufen|compruebe|comprueba|consulte|verifique|"
+    r"verifica|controlli|controlla|consulta)(?![\w-])"
+)
+_PLANNER = re.compile(
+    r"(?<![\w-])(?:planner|planificateur|calculateur|journey|itinerair\w*|"
+    r"fahrplan\w*|reiseauskunft|auskunft|planificador|pianificatore|app|"
+    r"application|site|website|operator\w*|exploitant\w*|transporteur\w*|"
+    r"verkehrsbetrieb\w*|betreiber\w*|operador\w*|operatore)(?![\w-])"
+)
+
+
+def gap(folded: str) -> bool:
+    """Whether a sentence says what could not be found or where to check it."""
+    return bool(
+        (_NEGATION.search(folded) and _SOURCE_WORDS.search(folded))
+        or (_CHECK.search(folded) and _PLANNER.search(folded))
+    )
+
+
 # A line, train or platform identifier after its word ("ligne B", "RER A",
 # "TER 3105", "Gleis 12"), or a code alone ("S8", "U3", "M14").
 _LINE_WORD = re.compile(
@@ -151,8 +186,27 @@ _CODE = re.compile(r"(?<![\w-])([A-Z]{1,3})(\d{1,4})[a-z]?(?![\w-])")
 _TOKEN = re.compile(r"[^\W\d_]+(?:[-‐][^\W\d_]+)*")
 _MARKERS = re.compile(r"[\s\-*+>#|.)\d_]*")
 
+# Prepositions, question words and the verbs of a trip request, five
+# languages: they open sentences ("From Landshuter Allee, take ...") and tie no
+# page to a trip (staging -102).
+FUNCTION_WORDS = frozenset(
+    (
+        "from into onto over under near next via toward towards until till need "
+        "needs want would could should will must have going get getting go come "
+        "back home where when what which how there here then "
+        "depuis vers chez jusqu dois doit devons veux voudrais faut aller venir "
+        "rentrer comment quand quel quelle quels quelles avec sans dans sous pres "
+        "von vom aus bei mit ohne uber unter neben nach zum zur bis wie wann wo "
+        "welche muss mochte will fahren kommen "
+        "desde hacia hasta para con sin cerca donde cuando cual quiero "
+        "necesito tengo debo voy llegar "
+        "dal dalla dallo verso fino con senza vicino dove quando come quale voglio "
+        "devo vado andare arrivare"
+    ).split()
+)
 _GENERIC = (
-    COMMON
+    FUNCTION_WORDS
+    | COMMON
     | STOP
     | TITLES
     | frozenset(normalized(w) for w in TRANSIT_WORDS)
@@ -202,6 +256,7 @@ class Unit:
     route: bool = False
     flavour: bool = False  # transit words or a frequency, whatever the anchors
     disclaimer: bool = False
+    gap: bool = False
     parentheses: list[tuple[int, int, list[Anchor]]] = field(default_factory=list)
     cells: list[tuple[int, list[Anchor]]] = field(default_factory=list)
     computed: bool = False
@@ -274,10 +329,17 @@ _FREQUENCY_N = re.compile(
 class Sources:
     """The turn's texts, normalized once: passages, their words, anchor hits."""
 
-    def __init__(self, passages: Iterable[str], own: Iterable[str]) -> None:
+    def __init__(
+        self,
+        passages: Iterable[str],
+        own: Iterable[str],
+        given: Iterable[str] = (),
+    ) -> None:
         self.passages = [p for p in (normalized(t) for t in passages) if p]
         self.words = frozenset(" ".join(self.passages).split())
-        self.own = frozenset(normalized(" ".join(own)).split())
+        # The starting point the person typed or their device gave: known.
+        self.given = frozenset(normalized(" ".join(given)).split())
+        self.own = frozenset(normalized(" ".join(own)).split()) | self.given
         self._hits: dict[str, list[list[int]]] = {}
 
     def hits(self, pattern: re.Pattern[str]) -> list[list[int]]:
@@ -321,6 +383,20 @@ def _window(positions: list[list[int]]) -> bool:
     return False
 
 
+def sentence_marks(line: str) -> list[re.Match[str]]:
+    """Where sentences end in a line: a full stop, or a semicolon outside
+    parentheses (two clauses: staging -102 lost "the fastest connection takes
+    3:57 hours" with an unsourced "direct" before its semicolon)."""
+    marks: list[re.Match[str]] = []
+    for match in re.finditer(r"[.!?;](?=\s|$)", line):
+        if match[0] == ";" and line.count("(", 0, match.start()) > line.count(
+            ")", 0, match.start()
+        ):
+            continue
+        marks.append(match)
+    return marks
+
+
 def _units(body: str) -> list[Unit]:
     """Sentences (split as the travel check splits them) and table rows."""
     units: list[Unit] = []
@@ -330,7 +406,7 @@ def _units(body: str) -> list[Unit]:
             units.append(Unit(offset, offset + len(line), row=True))
         else:
             start = 0
-            for match in re.finditer(r"[.!?](?=\s|$)", line):
+            for match in sentence_marks(line):
                 text = line[start : match.start()]
                 if text.strip():
                     lead = len(text) - len(text.lstrip())
@@ -444,7 +520,8 @@ def _lines(plain: str, folded: str, start: int, end: int) -> list[Anchor]:
     found: dict[str, Anchor] = {}
     for match in _LINE_WORD.finditer(folded, start, end):
         identifier = _LINE_ID.match(plain, match.end(), end)
-        if identifier is None:
+        # "train TER": a transit word after another is no line identifier.
+        if identifier is None or fold(identifier[1]) in TRANSIT_WORDS:
             continue
         key = normalized(identifier[1]).replace(" ", "")
         text = plain[match.start() : identifier.end()]
@@ -476,12 +553,17 @@ def _read(
     names = [
         name
         for name in names
-        # A name of the person's own that no source writes (their street, a
+        # The starting point the person or their device gave is known (staging
+        # -102: "Gratte-Ciel" and the person's street were listed as not
+        # verified). Another name of the person's own that no source writes (a
         # place in another language) is theirs; written by a source, it must
         # sit with the rest of the claim.
         if not (
-            all(w in sources.own for w in name.key.split())
-            and not any(w in sources.words for w in name.key.split())
+            all(w in sources.given for w in name.key.split())
+            or (
+                all(w in sources.own for w in name.key.split())
+                and not any(w in sources.words for w in name.key.split())
+            )
         )
     ]
     route_words = bool(_ROUTE.search(text))
@@ -524,6 +606,11 @@ def _read(
     )
     unit.flavour = transit or bool(frequency)
     unit.disclaimer = bool(_DISCLAIMER.search(text))
+    # A sentence naming what is missing, with no line, time or service of its
+    # own, states no route.
+    unit.gap = gap(text) and not (lines or direct or frequency or timed)
+    if unit.gap:
+        unit.route = False
     unit.anchors = anchors
     if not unit.route:
         return
@@ -593,12 +680,32 @@ def _failing(sources: Sources, anchors: list[Anchor]) -> list[list[Anchor]]:
     return [part for part in _segments(anchors) if not sources.together(part)]
 
 
+def _mine(anchor: Anchor, sources: Sources) -> bool:
+    """A name the person gave (the question, the conversation, the device)."""
+    return anchor.kind == "name" and all(w in sources.own for w in anchor.key.split())
+
+
 def _labels(anchors: list[Anchor], sources: Sources) -> list[str]:
-    """What the note lists: the claims of the parts no passage holds."""
+    """What the note lists: the claims of the parts no passage holds.
+
+    A name no page writes is listed; a name the person gave never is (staging
+    -102 listed the person's own stop as not verified). When every name is
+    known on its own, what is not verified is the connection: its names, then
+    its times ("Lyon Part-Dieu – Genève Aéroport (8h43)").
+    """
     failing = _failing(sources, anchors) or [anchors]
     stated = [a for part in failing for a in part if a.kind != "clock"]
-    alone = [a.text for a in stated if not sources.together([a])]
-    return alone or [a.text for a in stated]
+    alone = [
+        a.text for a in stated if not _mine(a, sources) and not sources.together([a])
+    ]
+    if alone:
+        return alone
+    joined = [a for part in failing for a in sorted(part, key=lambda a: a.position)]
+    names = list(dict.fromkeys(a.text for a in joined if a.kind != "clock"))
+    times = list(dict.fromkeys(a.text for a in joined if a.kind == "clock"))
+    if not names:
+        return times
+    return [" – ".join(names) + (f" ({', '.join(times)})" if times else "")]
 
 
 def review(
@@ -609,13 +716,14 @@ def review(
     own: Iterable[str],
     computed: Iterable[str],
     owned_clocks: list[float],
+    given: Iterable[str] = (),
 ) -> Finding:
     """The route units no source of the turn supports, and what follows them.
 
     ``plain`` is ``body`` with code and link targets blanked (same offsets);
     ``clocks`` are the clock times read in ``body`` (start, end, minutes).
     """
-    sources = Sources(passages, own)
+    sources = Sources(passages, own, given)
     folded = fold(plain)
     computed_text = "\n".join(computed)
     finding = Finding()
@@ -670,7 +778,14 @@ def review(
     # sentence saying its content is unsourced is replaced by the note.
     previous_removed = False
     for unit, gone in zip(units, removed, strict=True):
-        heading = body[unit.start : unit.end].lstrip().startswith("#")
+        # A heading, markdown or bold-only ("**2. Train**"), heads what
+        # follows; it never continues the sentence before it.
+        line_start = body.rfind("\n", 0, unit.start) + 1
+        line_end = body.find("\n", unit.start)
+        line = body[line_start : len(body) if line_end < 0 else line_end].strip()
+        heading = line.startswith("#") or bool(
+            re.fullmatch(r"(\*\*|__)[^*_]+(\*\*|__)\s*:?", line)
+        )
         if gone:
             previous_removed = True
             continue
@@ -679,9 +794,18 @@ def review(
             continue
         if not body[unit.start : unit.end].strip(" \n*_-.0123456789)"):
             continue
-        own_facts = any(a.kind in {"line", "name"} for a in unit.anchors)
+        # Its own lines, places or times: a sentence of its own, not a
+        # continuation (staging -102: sourced ICE times went with a removed
+        # "direct" before them).
+        own_facts = any(a.kind in {"line", "name"} for a in unit.anchors) or any(
+            unit.start <= start < unit.end for start, _, _ in clocks
+        )
         if unit.disclaimer or (
-            previous_removed and not heading and unit.flavour and not own_facts
+            previous_removed
+            and not heading
+            and unit.flavour
+            and not own_facts
+            and not unit.gap
         ):
             finding.spans.append((unit.start, unit.end, []))
             previous_removed = True
