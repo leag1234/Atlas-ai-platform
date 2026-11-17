@@ -262,6 +262,10 @@ def main() -> None:
             os.environ,
             {
                 **({} if live else environment()),
+                # The recorded journeys predate the provided-source check: its judge call
+                # is not in the recordings, so replay runs without it (its own
+                # tests and the live staging measure cover it).
+                **({} if live else {"ATLAS_SOURCE_FAITHFULNESS": "off"}),
                 "ATLAS_IMAGE_DIR": directory + "/images",
                 "ATLAS_WEB_CACHE": directory + "/web.sqlite",
                 "ATLAS_SEARCH_PROVIDER": "tavily",

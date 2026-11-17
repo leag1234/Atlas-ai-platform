@@ -230,6 +230,10 @@ def main() -> None:
                 os.environ,
                 {
                     **({} if live or refresh else environment()),
+                    # The recorded journeys predate the provided-source check: its judge call
+                    # is not in the recordings, so replay runs without it (its own
+                    # tests and the live staging measure cover it).
+                    **({} if live or refresh else {"ATLAS_SOURCE_FAITHFULNESS": "off"}),
                     "GPU_LOCAL": "0",
                     # This suite injects SerpApi failures; M24 covers Tavily.
                     **(
