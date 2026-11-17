@@ -128,7 +128,13 @@ class OwnerDefectTests(unittest.TestCase):
             body,
             "Nehmen Sie am Marienplatz die S8 Richtung Flughafen München. Gute Reise!",
         )
-        self.assertTrue(note.startswith("Nicht überprüft und daher weggelassen: U5"))
+        # Notes quote the claim, never a word cut from it (staging -112).
+        self.assertTrue(
+            note.startswith(
+                "Nicht überprüft und daher weggelassen: "
+                "“Steigen Sie am Ostbahnhof in die U5”"
+            )
+        )
         self.assertIn("Fahrplanauskunft", note)
 
     def test_a_range_is_read_whole_wherever_a_value_appears(self) -> None:
@@ -257,7 +263,7 @@ class AnchorTests(unittest.TestCase):
             body,
             "Your train leaves from platform 4 at 08:15 and calls at Stoke-on-Trent.",
         )
-        self.assertTrue(note.startswith("Not verified, so left out: Platform 9."))
+        self.assertTrue(note.startswith("Not verified, so left out: “Platform 9”."))
 
 
 class StructureTests(unittest.TestCase):

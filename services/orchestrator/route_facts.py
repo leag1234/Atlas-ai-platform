@@ -271,6 +271,8 @@ class Finding:
     # (start, end, what it stated); a sentence that only continued a removed
     # one states nothing of its own.
     spans: list[tuple[int, int, list[str]]] = field(default_factory=list)
+    # Spans left out because the pages read name another line for the route.
+    disputed: int = 0
 
     @property
     def route(self) -> bool:
@@ -399,6 +401,78 @@ class Sources:
                 and all(positions)
                 and all(any(h < LEAD for h in hits[index]) for hits in line_hits)
             ):
+                return True
+        return False
+
+
+class Sites:
+    """The pages read, grouped by site, to weigh a line number they disagree on.
+
+    Staging -112: "The Airport Link T2 Line connects the airport to Central
+    Station" came from a job-fair directions page; the operator's page and
+    the airport's guide both give the T8 for those stations. A line stated
+    with a route (the line and two of its places together) is kept unless
+    more sites give another line of the same kind next to one of those places
+    than give this one with them; a site naming both lines is no vote (a
+    station page listing every line).
+    """
+
+    def __init__(
+        self,
+        pages: Iterable[tuple[str, str]],
+        own: Iterable[str],
+        given: Iterable[str] = (),
+    ) -> None:
+        grouped: dict[str, list[str]] = {}
+        for url, text in pages:
+            host = re.sub(r"^www\.", "", re.sub(r"^[a-z]+://", "", url.lower())).split(
+                "/"
+            )[0]
+            if host and text.strip():
+                grouped.setdefault(host, []).append(text)
+        self._texts = grouped
+        self._own = list(own)
+        self._given = list(given)
+        self._sources: dict[str, Sources] = {}
+
+    def _of(self, host: str) -> Sources:
+        if host not in self._sources:
+            self._sources[host] = Sources(self._texts[host], self._own, self._given)
+        return self._sources[host]
+
+    def disputed(self, anchors: list[Anchor]) -> bool:
+        if len(self._texts) < 2:
+            return False
+        for part in _segments(anchors):
+            lines = [a for a in part if a.kind == "line"]
+            names = [a for a in part if a.kind == "name"]
+            if len(lines) != 1 or len(names) < 2:
+                continue
+            line = lines[0]
+            code = re.fullmatch(r"([a-z]{1,3})(\d{1,4})", line.key)
+            if not code:
+                continue
+            other = re.compile(rf"(?<!\w){code[1]} ?(\d{{1,4}})(?!\w)")
+            support = 0
+            rivals: dict[str, int] = {}
+            for host in self._texts:
+                sources = self._of(host)
+                if any(found for p in line.patterns for found in sources.hits(p)):
+                    support += sources.together([line, *names])
+                    continue
+                numbers = {
+                    match[1].lstrip("0")
+                    for passage in sources.passages
+                    for match in other.finditer(passage)
+                } - {code[2].lstrip("0")}
+                for number in numbers:
+                    key = f"{code[1]}{number}"
+                    rival = Anchor("line", key, key, _line_patterns(key), line.position)
+                    # One of the route's places with the other line is a
+                    # vote: the operator's page names its own stations.
+                    if any(sources.together([name, rival]) for name in names):
+                        rivals[key] = rivals.get(key, 0) + 1
+            if any(count > support for count in rivals.values()):
                 return True
         return False
 
@@ -538,8 +612,18 @@ def _names(plain: str, folded: str, start: int, end: int) -> list[Anchor]:
 
 
 def _shaped(word: str) -> bool:
-    """A hyphenated name or an inner capital ("Part-Dieu", "McAllister")."""
-    return not word.isupper() and ("-" in word or any(c.isupper() for c in word[1:]))
+    """A hyphenated name or an inner capital ("Part-Dieu", "McAllister").
+
+    A hyphenated word whose last part is lower case is a locution, not a name
+    (staging -112: a French locution for "beyond" opening a sentence was
+    listed as an unverified stop).
+    """
+    if word.isupper():
+        return False
+    if "-" in word or "‐" in word:
+        last = re.split(r"[-‐]", word)[-1]
+        return bool(last[:1].isupper())
+    return any(c.isupper() for c in word[1:])
 
 
 def _breaks(tokens: list[re.Match[str]], index: int, plain: str) -> bool:
@@ -755,9 +839,10 @@ def _labels(
     body: str = "",
     span: tuple[int, int] = (0, 0),
 ) -> list[str]:
-    """What the note lists: the claims of the parts no passage holds.
+    """What the note lists: the claims of the parts no passage holds, quoted
+    from the sentence when it is known.
 
-    A name no page writes is listed; a name the person gave never is (staging
+    Without the sentence, a name no page writes is listed; a name the person gave never is (staging
     -102 listed the person's own stop as not verified). When every name is
     known on its own, what is not verified is the connection the sentence
     states: the note quotes it (staging -109 listed "Barcelona Sants – Madrid
@@ -766,16 +851,18 @@ def _labels(
     names then its times are joined.
     """
     failing = _failing(sources, anchors) or [anchors]
+    if body and span[1] > span[0]:
+        # The note quotes claims, never a lone word cut from one (staging
+        # -112 listed a locution after a quoted claim).
+        part = [a for p in failing for a in p]
+        if claim := quoted(_claim(body, span[0], span[1], part)):
+            return [claim]
     stated = [a for part in failing for a in part if a.kind != "clock"]
     alone = [
         a.text for a in stated if not _mine(a, sources) and not sources.together([a])
     ]
     if alone:
         return alone
-    if body and span[1] > span[0]:
-        part = [a for p in failing for a in p]
-        if claim := quoted(_claim(body, span[0], span[1], part)):
-            return [claim]
     joined = [a for part in failing for a in sorted(part, key=lambda a: a.position)]
     names = list(dict.fromkeys(a.text for a in joined if a.kind != "clock"))
     times = list(dict.fromkeys(a.text for a in joined if a.kind == "clock"))
@@ -793,13 +880,16 @@ def review(
     computed: Iterable[str],
     owned_clocks: list[float],
     given: Iterable[str] = (),
+    pages: Iterable[tuple[str, str]] = (),
 ) -> Finding:
     """The route units no source of the turn supports, and what follows them.
 
     ``plain`` is ``body`` with code and link targets blanked (same offsets);
-    ``clocks`` are the clock times read in ``body`` (start, end, minutes).
+    ``clocks`` are the clock times read in ``body`` (start, end, minutes);
+    ``pages`` are the texts read with their address (``Sites``).
     """
     sources = Sources(passages, own, given)
+    sites = Sites(pages, own, given)
     folded = fold(plain)
     computed_text = "\n".join(computed)
     finding = Finding()
@@ -815,12 +905,22 @@ def review(
             removed.append(False)
             continue
         _read(unit, plain, folded, clocks, sources, owned_clocks)
-        if (
-            not unit.route
-            or not a_route(unit.anchors)
-            or not _failing(sources, unit.anchors)
-        ):
+        if not unit.route or not a_route(unit.anchors):
             removed.append(False)
+            continue
+        if not _failing(sources, unit.anchors):
+            if unit.row or not sites.disputed(unit.anchors):
+                removed.append(False)
+                continue
+            finding.disputed += 1
+            finding.spans.append(
+                (
+                    unit.start,
+                    unit.end,
+                    [quoted(body[unit.start : unit.end])],
+                )
+            )
+            removed.append(True)
             continue
         if unit.row:
             labels = _labels(unit.anchors, sources, body, (unit.start, unit.end))

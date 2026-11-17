@@ -46,7 +46,12 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import unquote, urlsplit
 
 from packages import privacy
-from services.orchestrator import route_facts, travel_claims, unsourced_details
+from services.orchestrator import (
+    redirects,
+    route_facts,
+    travel_claims,
+    unsourced_details,
+)
 from services.orchestrator.dictation_cleanup import fast_profile
 from services.orchestrator.grounding import normalized
 
@@ -499,6 +504,33 @@ def unwrapped(text: str) -> str:
     return text
 
 
+_ONE = r"\(\[([^\]\n]++)\]\([^)\s]++\)\)"
+# The same site cited again right after itself, with or without a separator.
+_REPEATED = re.compile(rf"({_ONE})(?:[ \t]*+[,;]?[ \t]*+\(\[\2\]\([^)\s]++\)\))++")
+# Separators left doubled or dangling when a link between them was removed.
+_DOUBLED = re.compile(r"(?<=\S)[ \t]*+[,;][ \t]*+(?:[,;][ \t]*+)++")
+_DANGLING = re.compile(r"[ \t]*+[,;][ \t]*+(?=[.!?)](?:\s|$))")
+_OPENING = re.compile(r"\([ \t]*+[,;][ \t]*+")
+
+
+def citations(text: str) -> str:
+    """Citations joined once (staging -112: "(bahn.de),, (sncf-connect.com)"
+    after a link between them went, "(amtrak.com) (amtrak.com)"): no doubled
+    or dangling separator, one citation of a site where it follows itself."""
+    lines: list[str] = []
+    fenced = False
+    for line in text.split("\n"):
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        if not fenced and not line.lstrip().startswith("|"):
+            line = _REPEATED.sub(r"\1", line)
+            line = _DOUBLED.sub(", ", line)
+            line = _DANGLING.sub("", line)
+            line = _OPENING.sub("(", line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
 _ANY_LINK = re.compile(r"\[([^\]\n]++)\]\((https?://[^)\s]++)\)")
 
 
@@ -702,7 +734,7 @@ async def review(
     )
     final = _without(final, off_route(turn, question, final.partition("<details>")[0]))
     body, fold, footer = final.partition("<details>")
-    final = unwrapped(body) + fold + footer
+    final = citations(redirects.cited(unwrapped(body))) + fold + footer
     return _with_connection(turn, final, language), report
 
 
@@ -786,4 +818,5 @@ async def recover(
             if part
         )
     _log(report, started)
-    return _with_connection(turn, final.rstrip(), language), report
+    final = citations(redirects.cited(final.rstrip()))
+    return _with_connection(turn, final, language), report
