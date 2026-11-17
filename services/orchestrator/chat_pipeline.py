@@ -1170,10 +1170,15 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
 
     if not request.continuation and await location_turn(request, item):
         return
+    from services.orchestrator.link_requests import own_words
+
+    # The classifying words are read in the person's own words, never in a
+    # pasted document; the hard limits then read the whole message (owner
+    # ruling 2026-11-17).
     if (
         extended_enabled()
         and not request.has_attachments
-        and extended_request(request.user_text)
+        and extended_request(own_words(request.user_text))
     ):
         if category := text_limit(request.user_text):
             item.reponse = text_refusal(category, request.lang)
@@ -1181,8 +1186,14 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             if sink := sink_context.get():
                 await sink({"delta": {"content": item.reponse}})
             return
-        profiles = tuple(
-            profile for profile in extended_profiles() if profile in PROFILES
+        # An API caller named its model: that model answers, never another one
+        # chosen for the content of the request.
+        profiles = (
+            ()
+            if request._api_key_request
+            else tuple(
+                profile for profile in extended_profiles() if profile in PROFILES
+            )
         )
         if profiles:
             request = request.model_copy(update={"model": profiles[0]})

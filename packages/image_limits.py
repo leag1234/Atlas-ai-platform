@@ -20,6 +20,38 @@ _RULES = tuple(
     Rule.model_validate(rule)
     for rule in json.loads(Path(__file__).with_suffix(".json").read_text())
 )
+# Named word lists shared by the rules: a rule pattern writes <<people>> for the
+# alternatives of the "people" list (owner-editable, like the rules).
+_WORDS: dict[str, list[str]] = json.loads(
+    Path(__file__).with_name("image_limit_words.json").read_text()
+)
+_MARKER = re.compile(r"<<(\w+)>>")
+
+
+def _expand(pattern: str, words: dict[str, list[str]], depth: int = 0) -> str:
+    if depth > 4:
+        raise ValueError("image limit word lists nest too deeply")
+    return _MARKER.sub(
+        lambda found: _expand("|".join(words[found[1]]), words, depth + 1), pattern
+    )
+
+
+Compiled = tuple[tuple[str, tuple[re.Pattern[str], ...]], ...]
+
+
+def compile_rules(words: dict[str, list[str]] | None = None) -> Compiled:
+    """The rules with their word lists; ``words`` replaces some lists (tests)."""
+    lists = {**_WORDS, **(words or {})}
+    return tuple(
+        (
+            rule.category,
+            tuple(re.compile(_expand(pattern, lists)) for pattern in rule.all_of),
+        )
+        for rule in _RULES
+    )
+
+
+_COMPILED = compile_rules()
 
 
 def configured_policy() -> ImagePolicy:
@@ -27,14 +59,16 @@ def configured_policy() -> ImagePolicy:
     return POLICY
 
 
-def image_limit(text: str, policy: ImagePolicy | None = None) -> str | None:
+def image_limit(
+    text: str, policy: ImagePolicy | None = None, rules: Compiled | None = None
+) -> str | None:
     """Each category requires the conjunction of its owner-editable patterns."""
     normalized = "".join(
         c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
     ).replace("’", "'")
-    for rule in _RULES:
-        if all(re.search(pattern, normalized) for pattern in rule.all_of):
-            return rule.category
+    for category, patterns in rules or _COMPILED:
+        if all(pattern.search(normalized) for pattern in patterns):
+            return category
     if (policy or POLICY).image_safety_level == "strict":
         for category, pattern in _STRICT_PATTERNS.items():
             if re.search(pattern, normalized, re.IGNORECASE):
