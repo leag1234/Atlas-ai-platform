@@ -6,7 +6,11 @@ import unicodedata
 from urllib.parse import urlsplit
 
 from services.orchestrator.loop import Call
-from services.orchestrator.link_requests import page_request, product_queries
+from services.orchestrator.link_requests import (
+    own_request,
+    page_request,
+    product_queries,
+)
 
 
 def corpus_allowed(question: str) -> bool:
@@ -36,6 +40,9 @@ def required_research(
     device_timings: bool = False,
     history: tuple[str, ...] = (),
 ) -> tuple[Call, ...]:
+    # Words of a pasted document (an article to summarise or check) never make
+    # research mandatory: only the person's own lines around it do.
+    question = own_request(question)
     normalized = "".join(
         c
         for c in unicodedata.normalize("NFD", question.casefold())
@@ -125,6 +132,7 @@ def required_research(
 
 def requested_page_read(question: str, history: tuple[str, ...] = ()) -> bool:
     """An explicit source-reading request must survive snippet-only discovery."""
+    question = own_request(question)
     text = question.casefold()
     return page_request(question, history) or bool(
         re.search(
