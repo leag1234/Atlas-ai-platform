@@ -227,15 +227,27 @@
         if (url.pathname.startsWith('/api/')) {
           // The host expects a background-task response and persists its body.
           // It receives only an opaque capability, never location metadata.
-          const saved = await nativeFetch('/api/atlas/nearby-location', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(location), signal: options.signal});
-          if (!saved.ok) throw new Error('Location service unavailable');
-          body.location_ref = (await saved.json()).location_ref;
-          options.signal?.addEventListener('abort', () => { nativeFetch('/api/atlas/nearby-location/' + body.location_ref, {method: 'DELETE', credentials: 'same-origin'}).catch(() => {}); }, {once: true});
+          // A position that cannot be handed over never stops the answer: the
+          // message goes without it and the server asks in text (staging
+          // 2026-11-17: an English "Location service unavailable" and an
+          // interrupted answer).
+          let saved = null;
+          try {
+            saved = await nativeFetch('/api/atlas/nearby-location', {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(location), signal: options.signal});
+          } catch (error) {
+            if (options.signal?.aborted) throw error;
+          }
+          const ticket = saved?.ok ? (await saved.json().catch(() => ({}))).location_ref : null;
+          if (ticket) {
+            body.location_ref = ticket;
+            options.signal?.addEventListener('abort', () => { nativeFetch('/api/atlas/nearby-location/' + ticket, {method: 'DELETE', credentials: 'same-origin'}).catch(() => {}); }, {once: true});
+          }
+          lastSendLocated = Boolean(ticket);
         } else {
           body.location = location;
+          lastSendLocated = true;
         }
-        lastSendLocated = true;
-        if (chat && (location.position || location.place)) sharedChats.set(chat, Date.now());
+        if (lastSendLocated && chat && (location.position || location.place)) sharedChats.set(chat, Date.now());
         options = { ...options, body: JSON.stringify(body) };
       }
     }

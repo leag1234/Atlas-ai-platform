@@ -486,12 +486,15 @@ def _linked(text: str, chosen: list[Excerpt]) -> str:
     return unwrapped(text)
 
 
-_WRAPPED = re.compile(r"\([ \t]*+(\(\[[^\]\n]++\]\([^)\s]++\)\))[ \t]*+\)")
+_CITED = r"\(\[[^\]\n]++\]\([^)\s]++\)\)"
+# One link, or a group of links joined by commas, in parentheses again.
+_WRAPPED = re.compile(rf"\([ \t]*+({_CITED}(?:[ \t]*+[,;][ \t]*+{_CITED})*+)[ \t]*+\)")
 
 
 def unwrapped(text: str) -> str:
     """A link the rewrite had already put in parentheses is not wrapped twice
-    (staging -104: "(([content.amtrak.com](...)))" after every fact)."""
+    (staging -104: "(([content.amtrak.com](...)))" after every fact), nor a
+    group of links (staging -109: "(([renfe.com](...)), ([ouigo.com](...)))")."""
     previous = None
     while previous != text:
         previous, text = text, _WRAPPED.sub(r"\1", text)
@@ -678,6 +681,8 @@ async def review(
         turn, answer, language, question=question, profile=profile
     )
     final = _without(final, off_route(turn, question, final.partition("<details>")[0]))
+    body, fold, footer = final.partition("<details>")
+    final = unwrapped(body) + fold + footer
     return _with_connection(turn, final, language), report
 
 
