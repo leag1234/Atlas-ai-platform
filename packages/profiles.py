@@ -221,6 +221,8 @@ PICTURE_ROLES = (
     "deliverable_plan",
     "request_router",
     "request_router_retry",
+    "source_faithfulness",
+    "source_faithfulness_rewrite",
 )
 
 

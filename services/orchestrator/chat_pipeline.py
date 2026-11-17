@@ -34,6 +34,7 @@ from services.orchestrator import (
     document_quotes,
     grounding,
     number_provenance,
+    source_faithfulness,
     travel_claims,
     unsourced_details,
 )
@@ -878,7 +879,13 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         dating = sink_context.set(date_gate)
     # Quotations attributed to the turn's documents are checked word for word
     # (document_quotes): the gate holds an open quotation until it can be checked.
-    quotes = document_quotes.Sources() if document_quotes.mode() != "off" else None
+    # The same collected sources feed the faithfulness check (source_faithfulness).
+    quote_mode = document_quotes.mode()
+    quotes = (
+        document_quotes.Sources()
+        if quote_mode != "off" or source_faithfulness.enabled()
+        else None
+    )
     quoting = document_quotes.current.set(quotes)
     quote_gate: document_quotes.Gate | None = None
     gating = None
@@ -890,7 +897,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         quote_language = conversation_language(
             request.conversation_messages, request.ui_locale
         )
-        if (current_sink := sink_context.get()) is not None:
+        if quote_mode != "off" and (current_sink := sink_context.get()) is not None:
             quote_gate = document_quotes.Gate(
                 current_sink,
                 document_quotes.rewriter(quotes, quote_language, request.user_text),
@@ -937,11 +944,52 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse,
         {str(image["reference"]) for image in item.images if "reference" in image},
     )
-    if quotes is not None and quotes.active() and item.state == "done":
+    if (
+        quotes is not None
+        and quote_mode != "off"
+        and quotes.active()
+        and item.state == "done"
+    ):
         item.reponse, quote_counts = document_quotes.checked(
             quotes, item.reponse, quote_language, request.user_text
         )
         document_quotes.log(quote_counts, quotes, item.task_type)
+    # An answer that restates a provided source (an attached document, a pasted
+    # text) is checked against it (source_faithfulness.py): unsupported
+    # statements are rewritten once when the answer has not been sent yet, and
+    # what remains is noted. A project turn's own path reads retrieved
+    # passages, not a provided source (a file uploaded in a project comes here
+    # through project_chat's scoped request); a Work file is checked by
+    # deliverable_check.
+    if (
+        quotes is not None
+        and source_faithfulness.enabled()
+        and item.state == "done"
+        and item.task_type not in {"work", "nearby"}
+        and not request.project_id
+        and not request.code_mode
+        and (provided := source_faithfulness.provided(quotes)) is not None
+    ):
+        from services.orchestrator.deadline import remaining as time_left
+
+        # Text already sent to the interface cannot be replaced: only a note
+        # can follow it. A held answer, an API answer and a JSON answer are
+        # sent after the checks.
+        streamed = bool(request.atlas_ui and holder is not None and holder.passed)
+        checked_answer, addition, faith_report = await source_faithfulness.review(
+            item.reponse,
+            provided,
+            request=request.user_text,
+            profile=request.model,
+            language=quote_language,
+            streamed=streamed,
+            seconds=time_left(),
+        )
+        item.reponse = source_faithfulness.joined(checked_answer, addition)
+        if addition and streamed and (current_sink := sink_context.get()):
+            await current_sink({"delta": {"content": "\n\n" + addition}})
+        item.cout_eur = float(Decimal(str(item.cout_eur)) + faith_report.cost_eur)
+        item.steps.append({"phase": "source_check", **faith_report.metadata()})
     # A Work answer describes the file it delivered: its sentences are not factual
     # claims to match against the pages read ("no source mentions this entity" was
     # put in front of delivered documents, staging 2026-11-10). A nearby answer is

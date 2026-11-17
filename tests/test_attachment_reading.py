@@ -384,7 +384,15 @@ class DirectAttachmentTests(unittest.IsolatedAsyncioTestCase):
                     ],
                 )
                 with (
-                    patch.dict(os.environ, {"ATLAS_TERMINAL_ENABLED": "1"}),
+                    # The last gateway call read here is the vision call; the check of
+                    # the answer against the files (source_faithfulness) is tested apart.
+                    patch.dict(
+                        os.environ,
+                        {
+                            "ATLAS_TERMINAL_ENABLED": "1",
+                            "ATLAS_SOURCE_FAITHFULNESS": "off",
+                        },
+                    ),
                     patch.object(
                         GatewayModel, "connect", AsyncMock(return_value=model)
                     ),

@@ -102,3 +102,12 @@ picture_roles:
   # retry profile is asked as well and the first decision wins.
   request_router: atlas-deepseek
   request_router_retry: atlas-qwen
+  # An answer or a file derived from a provided source, checked against it
+  # (services/orchestrator/source_faithfulness.py). The judge reads the whole source;
+  # faithfulness pilot of 2026-11-17 on this profile's model (routing default reasoning):
+  # 42/42 injected faults found, 0/72 false alarms, p50 27 s. The rewrite of the flagged
+  # sentences runs on the same profile: on the fast profile it returned an added causal
+  # link unchanged, on this one the link was removed and the re-check passed (staging
+  # smoke 2026-11-17). A profile not enabled here falls back to the turn's own profile.
+  source_faithfulness: atlas-mistral
+  source_faithfulness_rewrite: atlas-mistral
