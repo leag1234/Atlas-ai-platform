@@ -1494,7 +1494,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
 // shown in a floating panel, and the Svelte composer is only read (positions) until the
 // final text is written into it once, through its own editing path. No observer inserts
 // nodes into Open WebUI's trees and nothing in the composer changes while the user speaks
-// (#334 and #335 froze the page twice).
+// (#334 and #335 froze the page twice). The text written is the server's final pass over the
+// whole recording ("transcript"); the live text is written only when that pass failed.
 (() => {
   "use strict";
   const WORDS = {
@@ -1531,7 +1532,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
   const make = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text) node.textContent = text; return node; };
 
   let button = null, panel = null, ui = null, observed = null, resize = null, queued = false, lastPlace = "", config = null, nextConfig = 0;
-  const fresh = () => ({ state: "idle", socket: null, audio: null, stream: null, finals: [], partial: "", closed: [], live: null, started: 0, ticker: 0, finishing: 0, engine: "", fallback: false, privacy: "standard", error: "", note: "", cursor: null, ready: false });
+  const fresh = () => ({ state: "idle", socket: null, audio: null, stream: null, finals: [], partial: "", closed: [], live: null, transcript: "", started: 0, ticker: 0, finishing: 0, engine: "", fallback: false, privacy: "standard", error: "", note: "", cursor: null, ready: false });
   let s = fresh();
 
   // --- text: stable (cleaned or final) in normal colour, the open utterance in grey ---
@@ -1550,7 +1551,9 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     if (!open && s.partial) open = s.live && s.live.partial && s.live.from === s.finals.length ? s.live.text : s.partial;
     return { stable: stable.filter(Boolean).join(" "), open };
   };
-  const finalText = () => { const { stable, open } = pieces(); return [stable, open].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); };
+  const liveText = () => { const { stable, open } = pieces(); return [stable, open].filter(Boolean).join(" ").replace(/\s+/g, " ").trim(); };
+  // The final pass's text when the server sent one, else the live text.
+  const finalText = () => s.transcript || liveText();
 
   // --- placement: over the native microphone, which keeps its layout box ---
   const composer = mic => mic.closest("#message-input-container") || mic.parentElement;
@@ -1731,8 +1734,9 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     s.state = "finishing"; render();
     try { s.socket.send(JSON.stringify({ type: "stop" })); } catch { /* the close handler completes */ }
     release();
-    // The server sends the last final and clean-up, then done; never wait forever for it.
-    s.finishing = setTimeout(complete, 12000);
+    // The server sends the last final, the final pass (30 s at most), then done; never wait
+    // forever for it.
+    s.finishing = setTimeout(complete, 40000);
   };
   const onMessage = event => {
     let data;
@@ -1746,6 +1750,8 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       if (s.live && !s.live.final) s.live = null;
     } else if (data.type === "cleaned") {
       if (data.final) { s.closed.push(data); s.live = null; } else s.live = data;
+    } else if (data.type === "transcript") {
+      s.transcript = typeof data.text === "string" ? data.text.replace(/\s+/g, " ").trim() : "";
     } else if (data.type === "turn" && data.event === "end") {
       if (s.state === "live" && autoInsert() && finalText()) { setTimeout(finish, 0); }
     } else if (data.type === "limit") s.note = t("limit");
@@ -1798,12 +1804,14 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     socket.onclose = () => { if (s !== current) return; if (s.state === "finishing") complete(); else fail(s.ready ? "network" : "unavailable"); };
     socket.onopen = () => {
       if (s !== current) return;
-      // The interface language, whatever it is: the server maps it to each engine (pinned,
-      // detected, or another engine for a language the local one lacks).
-      const code = /^[a-z]{2}$/.test(locale()) ? locale() : null;
+      // A dictation language only when the user chose one; never the interface language
+      // (English interface, French speech: the provider returned nothing). Else detected.
+      let chosen = "";
+      try { chosen = localStorage.getItem("atlas-dictation-language") || ""; } catch { chosen = ""; }
+      const code = /^[a-z]{2}$/.test(chosen) ? chosen : null;
       // The conversation id lets the server apply the level chosen for this conversation.
       const chat = (location.pathname.match(/^\/c\/([A-Za-z0-9:_-]{1,120})$/) || [])[1] || "";
-      socket.send(JSON.stringify({ type: "start", engine: "auto", language: code, scope: scope(), chat, cleanup: true }));
+      socket.send(JSON.stringify({ type: "start", engine: "auto", dictation_language: code, scope: scope(), chat, cleanup: true }));
       // Audio is sent from the start: the server reads it once its engine is ready.
       capture.port.onmessage = ({ data }) => { if (s === current && (s.state === "starting" || s.state === "live") && socket.readyState === WebSocket.OPEN) socket.send(data.pcm); };
     };

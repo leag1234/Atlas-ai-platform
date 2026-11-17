@@ -18,12 +18,27 @@ with the signed-in user's membership; a project that cannot be read counts as st
 browser may only raise the level, never lift it.
 
 Client messages: one JSON ``start`` ({"type": "start", "engine" ("auto" by default),
-"language", "scope", "chat", "privacy", "cleanup"}), then binary PCM s16le frames, then
-{"type": "stop"}. Server messages: ``ready`` (engine, and ``fallback`` when the cloud
+"dictation_language", "scope", "chat", "privacy", "cleanup"}), then binary PCM s16le frames,
+then {"type": "stop"}. Server messages: ``ready`` (engine, and ``fallback`` when the cloud
 engine replaced a busy local one), ``turn``, ``partial`` (text of the open utterance,
 replaced each time), ``final`` (a closed segment, by index), ``cleaned`` (a model-cleaned
-view of segments, see dictation_cleanup.py), ``done`` (seconds and cost) and ``error`` (a
-public code; a provider quota or rate refusal is ``provider_limit``, never an outage).
+view of segments, see dictation_cleanup.py), ``transcript`` (the text to write, from the
+final pass), ``done`` (seconds, cost and the final pass outcome) and ``error`` (a public
+code; a provider quota or rate refusal is ``provider_limit``, never an outage).
+
+Language: ``dictation_language`` is a language the user chose for dictation. Without one the
+engines detect the spoken language. The interface language is never used: an English
+interface pinned French speech to English, and the provider then returned nothing (dictation
+pilot, 2026-11-17).
+
+Final pass (owner decision 2026-11-17): the live text is only shown in the voice panel. At
+stop, the whole recording, kept in memory for the session only, is transcribed once more
+and that text is written once into the composer. At the Standard level the gateway's batch
+transcription provider does it (pilot word error rate: French 4.0 %, French with thinking
+pauses 5.3 %, English 7.0 %, against 5.4 %, 35.6 % and 12.1 % live); at the Strict and
+Enhanced levels the owned engine decodes the recording in long windows, so no audio leaves
+Atlas. A failed or late final pass is logged and reported as such in ``transcript``; the
+browser then writes the live text.
 
 Limits: session length, idle time, frame size, audio pace, one session per user, a
 global session cap and a local engine cap. Cost is reserved in the daily ledger at start
@@ -43,6 +58,9 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+import io
+import wave
+
 import aiohttp
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -50,6 +68,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from services.orchestrator.daily_budget import BudgetRefusal, DailyLedger
 from services.orchestrator.dictation_cleanup import Cleaner
 from services.orchestrator.dictation_cleanup import enabled as cleanup_enabled
+from services.orchestrator.dictation_text import guess_language, remove_hesitations
 from services.orchestrator.project_ui import public_error
 from services.orchestrator.user_memory_ui import browser_user, token_user
 from services.retrieval.project_identity import ProjectError
@@ -73,7 +92,7 @@ def cloud_languages() -> frozenset[str]:
 
 
 def spoken_language(value: object) -> str | None:
-    """An ISO 639-1 code from the browser (interface or chosen language), else None."""
+    """An ISO 639-1 code the user chose for dictation, else None (detected)."""
     if isinstance(value, str):
         code = value.strip().lower().split("-")[0]
         if len(code) == 2 and code.isascii() and code.isalpha():
@@ -118,7 +137,9 @@ class Limits:
             _number("ATLAS_DICTATION_IDLE_SECONDS", 20),
             int(_number("ATLAS_DICTATION_MAX_FRAME_BYTES", 16000)),
             int(_number("ATLAS_DICTATION_MAX_SESSIONS", 4)),
-            int(_number("ATLAS_DICTATION_DELAY_MS", 480)),
+            # 1200 ms, not 480: fewer invented sentence starts; French pilot word error
+            # rate 8.5 % to 6.1 % for 0.26 s more to the final text (2026-11-17).
+            int(_number("ATLAS_DICTATION_DELAY_MS", 1200)),
             # About one CPU core per local stream (measured 2026-11-11 on the 4-core VM).
             int(_number("ATLAS_DICTATION_LOCAL_MAX_SESSIONS", 2)),
         )
@@ -300,6 +321,130 @@ def price_micro(engine: str, seconds: float) -> int:
     return realtime_transcription.price_micro(seconds)
 
 
+def final_price_micro(privacy: str, seconds: float) -> int:
+    """Reserved cost of the final pass: the batch provider's price, nothing on owned CPU."""
+    if final_pass_engine(privacy) != "batch":
+        return 0
+    import transcription
+
+    return int(transcription.price_micro(seconds))
+
+
+def batch_configured() -> bool:
+    import transcription
+
+    return bool(transcription.configured())
+
+
+def final_pass_engine(privacy: str) -> str | None:
+    """Which engine transcribes the whole recording at stop: the batch provider at the
+    Standard level, the owned engine otherwise (or when no provider is configured)."""
+    if os.environ.get("ATLAS_DICTATION_FINAL_PASS", "on") == "off":
+        return None
+    if privacy == "standard" and batch_configured():
+        return "batch"
+    if "local" in engines() and local_installed():
+        return "local"
+    return None
+
+
+def final_pass_deadline(seconds: float) -> float:
+    """Seconds allowed to the final pass of a recording: measured 1.25 s for 45 s by the
+    provider and about 0.05 s per audio second on the owned CPU engine, with margin."""
+    return min(
+        _number("ATLAS_DICTATION_FINAL_PASS_MAX_S", 30),
+        5 + 0.15 * seconds,
+    )
+
+
+def wav(pcm: bytes) -> bytes:
+    """16 kHz mono 16-bit PCM in a WAV container, in memory."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(16000)
+        writer.writeframes(pcm)
+    return buffer.getvalue()
+
+
+@dataclass(frozen=True)
+class FinalPass:
+    text: str | None  # None when the pass failed: the live text is written
+    engine: str | None
+    outcome: str  # done, failed, late, provider_limit, skipped
+    seconds: float = 0.0
+    cost_micro: int = 0
+    language: str | None = None
+
+
+async def final_pass(
+    pcm: bytes, privacy: str, language: str | None, speech: list[float] | None
+) -> FinalPass:
+    """The whole recording transcribed once more; never raises."""
+    engine = final_pass_engine(privacy)
+    audio_seconds = len(pcm) / BYTES_PER_SECOND
+    if engine is None or audio_seconds < 0.3:
+        return FinalPass(None, engine, "skipped")
+    deadline = final_pass_deadline(audio_seconds)
+    started = time.monotonic()
+    try:
+        if engine == "batch":
+            import transcription
+
+            result = await asyncio.wait_for(
+                transcription.transcribe(
+                    wav(pcm),
+                    filename="dictation.wav",
+                    content_type="audio/wav",
+                    language=language if language in cloud_languages() else None,
+                    temperature=None,
+                    segments=False,
+                    timeout=deadline,
+                ),
+                deadline + 1,
+            )
+            detected = result.get("language")
+            cost_micro = result.get("cost_micro") or transcription.price_micro(
+                audio_seconds
+            )
+            text = str(result["text"])
+            spoken = language or (detected if isinstance(detected, str) else None)
+        else:
+            from services.stt import streaming
+
+            text = await asyncio.wait_for(
+                streaming.transcribe_windows(pcm, speech), deadline
+            )
+            cost_micro, spoken = 0, language
+    except Exception as exc:  # noqa: BLE001 - the live text is written instead
+        outcome = (
+            "late"
+            if isinstance(exc, TimeoutError)
+            else "provider_limit"
+            if type(exc).__name__ == "ProviderLimit"
+            else "failed"
+        )
+        log.warning(
+            "dictation_final_pass_failed engine=%s outcome=%s error_type=%s "
+            "audio_seconds=%.1f",
+            engine,
+            outcome,
+            type(exc).__name__,
+            audio_seconds,
+        )
+        return FinalPass(None, engine, outcome, time.monotonic() - started)
+    spoken = spoken or guess_language(text)
+    return FinalPass(
+        remove_hesitations(text.strip(), spoken),
+        engine,
+        "done",
+        time.monotonic() - started,
+        int(cost_micro),
+        spoken,
+    )
+
+
 async def open_stream(engine: str, language: str | None, delay_ms: int) -> Stream:
     if engine == "local":
         from services.stt import streaming
@@ -435,7 +580,8 @@ class Session:
     ) -> None:
         self.socket, self.user, self.limits = socket, user, limits
         self.engine = engine
-        self.language = spoken_language(start.get("language"))
+        # The language the user chose for dictation; the interface language is not one.
+        self.language = spoken_language(start.get("dictation_language"))
         self.privacy = privacy
         self.cleaner: Cleaner | None = None
         # Strict privacy cleans up only on an owned model; without one it stays off.
@@ -456,6 +602,8 @@ class Session:
         self.started = time.monotonic()
         self.closing: list[asyncio.Task[None]] = []
         self.closing_lock = asyncio.Lock()
+        self.audio = bytearray()  # the recording, in memory for the final pass only
+        self.final: FinalPass | None = None
 
     async def emit(self, message: dict[str, object]) -> None:
         async with self.sending:
@@ -485,6 +633,7 @@ class Session:
                     return
                 if seconds > 2 * (time.monotonic() - self.started) + 5:
                     raise Refusal("audio_too_fast", "Audio must be streamed live.")
+                self.audio.extend(data)
                 await stream.send(data)
                 continue
             text = message.get("text")
@@ -498,18 +647,20 @@ class Session:
         """Engine to browser; final clean-up at each end of turn."""
         async for event in stream.events():
             if event.kind == "partial":
-                self.partial, self.changed = event.text, True
-                await self.emit({"type": "partial", "text": event.text})
+                text = remove_hesitations(event.text, self.language)
+                self.partial, self.changed = text, True
+                await self.emit({"type": "partial", "text": text})
             elif event.kind == "final":
                 self.partial = ""
-                if event.text:
-                    self.finals.append(event.text)
+                text = remove_hesitations(event.text, self.language)
+                if text:
+                    self.finals.append(text)
                     self.changed = True
                     await self.emit(
                         {
                             "type": "final",
                             "index": len(self.finals) - 1,
-                            "text": event.text,
+                            "text": text,
                         }
                     )
             elif event.kind in {"turn_start", "turn_end"}:
@@ -523,6 +674,27 @@ class Session:
                 self.provider_seconds = event.seconds
                 await self.close_turn(last=True)
                 return
+
+    async def finish_text(self, stream: Stream) -> None:
+        """The final pass over the whole recording, sent as the text to write."""
+        speech = getattr(stream, "speech", None)
+        self.final = await final_pass(
+            bytes(self.audio),
+            self.privacy,
+            self.language,
+            speech if isinstance(speech, list) else None,
+        )
+        self.audio = bytearray()
+        if self.final.outcome == "skipped":
+            return
+        await self.emit(
+            {
+                "type": "transcript",
+                "text": self.final.text,
+                "outcome": self.final.outcome,
+                "seconds": round(self.final.seconds, 2),
+            }
+        )
 
     async def close_turn(self, *, last: bool = False) -> None:
         async with self.closing_lock:
@@ -620,7 +792,10 @@ async def stream_socket(socket: WebSocket) -> None:
             raise Refusal("busy", "Too many dictation sessions right now.")
         # No await between the choice and the registration: the local cap holds.
         engine, fallback = choose_engine(
-            start.get("engine"), privacy, limits, spoken_language(start.get("language"))
+            start.get("engine"),
+            privacy,
+            limits,
+            spoken_language(start.get("dictation_language")),
         )
         if privacy != "standard" and engine != "local":
             raise cloud_refusal(privacy)
@@ -633,6 +808,8 @@ async def stream_socket(socket: WebSocket) -> None:
             reservation = ledger.reserve_cost(
                 user,
                 Decimal(price_micro(session.engine, limits.max_seconds)) / 1_000_000
+                + Decimal(final_price_micro(session.privacy, limits.max_seconds))
+                / 1_000_000
                 + (Decimal("0.05") if session.cleaner else Decimal(0)),
                 session.language or "en",
             )
@@ -666,6 +843,7 @@ async def stream_socket(socket: WebSocket) -> None:
             if failure is not None:
                 raise failure
         await asyncio.wait_for(relay, limits.idle_seconds + 10)
+        await session.finish_text(stream)
         await session.emit(
             {
                 "type": "done",
@@ -673,6 +851,7 @@ async def stream_socket(socket: WebSocket) -> None:
                 "provider_seconds": session.provider_seconds,
                 "cost_eur": str(cost(session, stream)),
                 "cleanup": session.cleaner.summary() if session.cleaner else None,
+                "final_pass": session.final.outcome if session.final else None,
             }
         )
     except Refusal as exc:
@@ -716,6 +895,13 @@ async def stream_socket(socket: WebSocket) -> None:
                         "cleanup_calls": session.cleaner.calls
                         if session.cleaner
                         else 0,
+                        "final_pass": session.final.engine if session.final else None,
+                        "final_outcome": session.final.outcome
+                        if session.final
+                        else None,
+                        "final_seconds": round(session.final.seconds, 2)
+                        if session.final
+                        else None,
                     }
                 )
             )
@@ -727,6 +913,8 @@ def cost(session: Session, stream: Stream) -> Decimal:
     """Billed audio is the larger of streamed and provider-reported seconds."""
     seconds = max(stream.sent_bytes / BYTES_PER_SECOND, session.provider_seconds or 0.0)
     total = Decimal(price_micro(session.engine, seconds)) / 1_000_000
+    if session.final is not None:
+        total += Decimal(session.final.cost_micro) / 1_000_000
     if session.cleaner is not None:
         total += session.cleaner.cost_eur
     return total
