@@ -34,6 +34,35 @@ def own_request(text: str) -> str:
     return "\n\n".join(kept) if kept else text
 
 
+def own_words(text: str) -> str:
+    """The person's own words, for the words that classify a request.
+
+    As own_request, from a shorter message on (a pasted passage of a few hundred
+    bytes is still a pasted text), without attached file blocks, and also when a
+    single line break ("Summarize the following:" then the text) or a colon on
+    the same line ("Résume ce texte : ...") is all that separates the request
+    from the pasted text (owner ruling 2026-11-17: a pasted text never
+    classifies the request).
+    """
+    text = attached_blocks.BLOCKS_ANY_CASE.sub("", text)
+    if len(text.encode()) < 2 * DOCUMENT_PARAGRAPH_BYTES:
+        return text
+    for separator, joiner in ((r"\n[ \t]*\n", "\n\n"), (r"\n", "\n")):
+        parts = [part for part in re.split(separator, text) if part.strip()]
+        long = [
+            index
+            for index, part in enumerate(parts)
+            if len(part.encode()) > DOCUMENT_PARAGRAPH_BYTES
+        ]
+        if not long:
+            return text
+        kept = parts[: long[0]] + parts[long[-1] + 1 :]
+        if kept:
+            return joiner.join(kept)
+    lead = re.match(r"[^\n:]{1,200}:", text)
+    return lead.group(0) if lead else text
+
+
 # "Link" and "lien" also name a relation ("the link between sleep and memory",
 # "le lien entre"), and English "links" is also a verb ("the tunnel links two
 # countries", "the facts it links"). Neither asks for web pages.

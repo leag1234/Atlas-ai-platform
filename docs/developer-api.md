@@ -99,6 +99,9 @@ Measured on the hosted service on 2026-11-02:
   direct models. The assistant runs its own tools: a request that gives it client tools (functions,
   custom, shell…) answers `400 assistant_runs_its_own_tools`; use `atlas-dev` or `atlas-chat` for your
   own tools. The hosted `web_search` tool is accepted, since the assistant searches by itself.
+- The model you name answers. Atlas never moves a request to another model because of what it
+  contains, and a pasted document never changes how a request is classified. A request in a category
+  that Atlas never writes receives a short refusal as the answer, from no model.
 - A name that Atlas does not know is served as `atlas-dev` on the direct formats: `gpt-5-codex`,
   `claude-sonnet-5-5` or a typo all reach `atlas-dev`. Set the name explicitly and check `model` and
   `served_by` in the first responses.
