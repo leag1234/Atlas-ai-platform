@@ -21,7 +21,7 @@
   const first = document.getElementById('first');
   const last = document.getElementById('last');
   const LOUD = 0.02;
-  const state = { finals: [], partial: '', closed: [], live: null, log: [] };
+  const state = { finals: [], partial: '', closed: [], live: null, transcript: '', log: [] };
   window.__dictation = state;
   let socket = null;
   let audio = null;
@@ -36,6 +36,7 @@
 
   function render() {
     box.textContent = '';
+    if (state.transcript) { box.append(document.createTextNode(state.transcript)); return; }
     const parts = [];
     let i = 0;
     let partialCovered = false;
@@ -77,6 +78,8 @@
       lastFinalAt = at;
     } else if (data.type === 'cleaned') {
       if (data.final) { state.closed.push(data); state.live = null; } else { state.live = data; }
+    } else if (data.type === 'transcript') {
+      state.transcript = typeof data.text === 'string' ? data.text : '';
     } else if (data.type === 'turn' && data.event === 'start') {
       waitingFirst = true;
     } else if (data.type === 'error') {
@@ -88,7 +91,7 @@
   }
 
   async function start() {
-    state.finals = []; state.partial = ''; state.closed = []; state.live = null; state.log = [];
+    state.finals = []; state.partial = ''; state.closed = []; state.live = null; state.transcript = ''; state.log = [];
     first.textContent = '-'; last.textContent = '-'; status.textContent = '';
     speechStart = null; lastLoud = null; lastFinalAt = 0; waitingFirst = true;
     render();
@@ -106,7 +109,8 @@
       socket.send(JSON.stringify({
         type: 'start',
         engine: document.getElementById('engine').value,
-        language: STRINGS[lang] ? lang : null,
+        // Detected by the engines: the interface language is not the spoken one.
+        dictation_language: null,
         privacy: document.getElementById('strict').checked ? 'strict' : 'standard',
         cleanup: document.getElementById('cleanup').checked,
       }));

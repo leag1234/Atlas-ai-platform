@@ -9,6 +9,7 @@ import unittest
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -17,7 +18,8 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import realtime_transcription
-from services.orchestrator import dictation, dictation_cleanup
+import transcription
+from services.orchestrator import dictation, dictation_cleanup, dictation_text
 from services.orchestrator.chat_api import app
 from services.orchestrator.daily_budget import DailyLedger
 from services.orchestrator.terminal_stack import dictation_upgrade
@@ -88,6 +90,8 @@ class DictationTests(unittest.TestCase):
                 "ATLAS_DATA_DIR": self.directory.name,
                 "ATLAS_USER_DAILY_EUR": "5",
                 "MISTRAL_API_KEY": "test-key",
+                # Tests that exercise the final pass turn it on with a fake provider.
+                "ATLAS_DICTATION_FINAL_PASS": "off",
             },
         )
         self.environment.start()
@@ -126,7 +130,9 @@ class DictationTests(unittest.TestCase):
                         ) as socket:
                             socket.receive_text()
 
-    def start(self, **fields: object) -> list[dict[str, Any]]:
+    def start(
+        self, audio: bytes = b"\0\0" * 1600, **fields: object
+    ) -> list[dict[str, Any]]:
         self.client.cookies.set("token", "good")
         with (
             patch("services.orchestrator.dictation.token_user", signed_in),
@@ -139,7 +145,8 @@ class DictationTests(unittest.TestCase):
                 first = json.loads(socket.receive_text())
                 if first["type"] != "ready":
                     return [first]
-                socket.send_bytes(b"\0\0" * 1600)
+                for offset in range(0, len(audio), 16000):
+                    socket.send_bytes(audio[offset : offset + 16000])
                 socket.send_text(json.dumps({"type": "stop"}))
                 return [first] + messages(socket)
 
@@ -273,9 +280,86 @@ class DictationTests(unittest.TestCase):
         for code, pinned in (("nl", "nl"), ("de", "de"), ("ja", None), ("xx", None)):
             FakeProvider.instances = []
             FakeProvider.script = [P("done", seconds=0.1)]
-            result = self.start(engine="cloud", language=code)
+            result = self.start(engine="cloud", dictation_language=code)
             self.assertEqual(result[0]["type"], "ready")
             self.assertEqual(FakeProvider.instances[0].options["language"], pinned)
+
+    def test_the_interface_language_never_pins_the_engine(self) -> None:
+        # An English interface pinned French speech to English: the provider returned
+        # nothing (dictation pilot, 2026-11-17). Only a chosen dictation language pins.
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [P("done", seconds=0.1)]
+        result = self.start(engine="cloud", language="en")
+        self.assertEqual(result[0]["type"], "ready")
+        self.assertIsNone(FakeProvider.instances[0].options["language"])
+
+    def test_the_cloud_engine_waits_1200_ms_by_default(self) -> None:
+        os.environ.pop("ATLAS_DICTATION_DELAY_MS", None)
+        self.assertEqual(dictation.Limits.current().delay_ms, 1200)
+
+    def test_the_final_pass_text_is_sent_once_at_stop_and_billed(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [
+            P("turn_start", time_s=0.1),
+            P("delta", "Euh bonjour à tous"),
+            P("turn_end", time_s=1.0),
+            P("done", seconds=2.0),
+        ]
+        calls: list[dict[str, Any]] = []
+
+        async def batch(audio: bytes, **options: Any) -> dict[str, Any]:
+            calls.append({"audio": audio} | options)
+            return {
+                "text": "Euh, bonjour à tous.",
+                "language": "fr",
+                "duration": 2.0,
+                "cost_micro": 134,
+            }
+
+        with (
+            patch.dict(os.environ, {"ATLAS_DICTATION_FINAL_PASS": "on"}),
+            patch.object(transcription, "transcribe", batch),
+        ):
+            result = self.start(audio=b"\0\0" * 32000, engine="cloud")
+        kinds = [message["type"] for message in result]
+        # Live text for the panel (hesitation removed by rule), then one final text.
+        self.assertIn({"type": "final", "index": 0, "text": "Bonjour à tous"}, result)
+        transcript = [message for message in result if message["type"] == "transcript"]
+        self.assertEqual(len(transcript), 1)
+        self.assertEqual(transcript[0]["text"], "Bonjour à tous.")
+        self.assertEqual(transcript[0]["outcome"], "done")
+        self.assertLess(kinds.index("transcript"), kinds.index("done"))
+        self.assertEqual(result[-1]["final_pass"], "done")
+        # The whole recording, as WAV, language detected (none chosen).
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0]["audio"].startswith(b"RIFF"))
+        self.assertEqual(len(calls[0]["audio"]), 44 + 64000)
+        self.assertIsNone(calls[0]["language"])
+        # Realtime 2 s (0.000334 EUR, rounded up) plus the final pass (0.000134 EUR).
+        self.assertEqual(
+            result[-1]["cost_eur"], str(Decimal("0.000334") + Decimal("0.000134"))
+        )
+
+    def test_a_failed_final_pass_is_logged_and_never_hidden(self) -> None:
+        P = realtime_transcription.ProviderEvent
+        FakeProvider.script = [P("delta", "bonjour"), P("done", seconds=1.0)]
+
+        async def broken(audio: bytes, **options: Any) -> dict[str, Any]:
+            raise transcription.ProviderUnavailable()
+
+        with (
+            patch.dict(os.environ, {"ATLAS_DICTATION_FINAL_PASS": "on"}),
+            patch.object(transcription, "transcribe", broken),
+            self.assertLogs("atlas.dictation", "WARNING") as logged,
+        ):
+            result = self.start(audio=b"\0\0" * 16000, engine="cloud")
+        transcript = [message for message in result if message["type"] == "transcript"]
+        self.assertEqual(transcript, [transcript[0]])
+        self.assertIsNone(transcript[0]["text"])
+        self.assertEqual(transcript[0]["outcome"], "failed")
+        self.assertEqual(result[-1]["final_pass"], "failed")
+        self.assertIn("dictation_final_pass_failed", logged.output[0])
+        self.assertNotIn("bonjour", "".join(logged.output))
 
     def test_config_reports_the_flag_to_signed_in_users(self) -> None:
         async def user(request: object) -> str:
@@ -538,6 +622,212 @@ class CloudSegmentTests(unittest.TestCase):
         self.assertEqual(result[-2:], [("final", "Trois"), ("done", "")])
 
 
+class FinalPassTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.environment = patch.dict(
+            os.environ,
+            {
+                "ATLAS_DICTATION_ENGINES": "local,cloud",
+                "MISTRAL_API_KEY": "test-key",
+                "ATLAS_DICTATION_FINAL_PASS": "on",
+            },
+        )
+        self.environment.start()
+
+    def tearDown(self) -> None:
+        self.environment.stop()
+
+    def test_strict_and_enhanced_keep_the_final_pass_on_the_owned_engine(self) -> None:
+        windows: list[int] = []
+
+        async def owned(pcm: bytes, speech: object = None) -> str:
+            windows.append(len(pcm))
+            return "Hum, le rapport est prêt."
+
+        async def trap(*args: object, **options: object) -> dict[str, Any]:
+            raise AssertionError("audio left Atlas")
+
+        with (
+            patch.object(dictation, "local_installed", lambda: True),
+            patch.object(streaming, "transcribe_windows", owned),
+            patch.object(transcription, "transcribe", trap),
+        ):
+            for level in ("strict", "enhanced"):
+                result = asyncio.run(
+                    dictation.final_pass(b"\0\0" * 16000, level, "fr", None)
+                )
+                self.assertEqual(
+                    (result.engine, result.outcome, result.text, result.cost_micro),
+                    ("local", "done", "Le rapport est prêt.", 0),
+                )
+        self.assertEqual(windows, [32000, 32000])
+
+    def test_standard_uses_the_batch_provider_and_pins_only_a_chosen_language(
+        self,
+    ) -> None:
+        seen: list[object] = []
+
+        async def batch(audio: bytes, **options: Any) -> dict[str, Any]:
+            seen.append(options["language"])
+            return {"text": "Um, the report is ready.", "language": "en"}
+
+        with patch.object(transcription, "transcribe", batch):
+            result = asyncio.run(
+                dictation.final_pass(b"\0\0" * 16000, "standard", None, None)
+            )
+            asyncio.run(dictation.final_pass(b"\0\0" * 16000, "standard", "de", None))
+        self.assertEqual(
+            (result.engine, result.text), ("batch", "The report is ready.")
+        )
+        self.assertEqual(result.cost_micro, transcription.price_micro(1.0))
+        self.assertEqual(seen, [None, "de"])
+
+    def test_late_final_pass_is_reported_as_late(self) -> None:
+        async def slow(audio: bytes, **options: Any) -> dict[str, Any]:
+            await asyncio.sleep(5)
+            return {"text": "trop tard"}
+
+        with (
+            patch.dict(os.environ, {"ATLAS_DICTATION_FINAL_PASS_MAX_S": "0.05"}),
+            patch.object(transcription, "transcribe", slow),
+            patch.object(dictation, "final_pass_deadline", lambda seconds: 0.05),
+            self.assertLogs("atlas.dictation", "WARNING"),
+        ):
+            result = asyncio.run(
+                dictation.final_pass(b"\0\0" * 16000, "standard", None, None)
+            )
+        self.assertEqual((result.text, result.outcome), (None, "late"))
+
+    def test_short_or_disabled_recordings_skip_the_final_pass(self) -> None:
+        self.assertEqual(
+            asyncio.run(
+                dictation.final_pass(b"\0\0" * 100, "standard", None, None)
+            ).outcome,
+            "skipped",
+        )
+        with patch.dict(os.environ, {"ATLAS_DICTATION_FINAL_PASS": "off"}):
+            self.assertIsNone(dictation.final_pass_engine("standard"))
+
+
+class WindowTests(unittest.TestCase):
+    hop = streaming.VAD_HOP
+
+    def test_windows_cut_at_the_longest_pause_and_skip_silence(self) -> None:
+        speech = [0.9] * 400 + [0.0] * 40 + [0.9] * 400 + [0.0] * 10 + [0.9] * 300
+        windows = streaming.plan_windows(speech, len(speech) * self.hop)
+        self.assertEqual(len(windows), 3)
+        # The first cut falls in the 40-frame pause, not in speech.
+        self.assertTrue(
+            400 * self.hop <= windows[0][1] <= windows[1][0] <= 440 * self.hop
+        )
+        for begin, end in windows:
+            self.assertLessEqual(
+                end - begin, streaming.WINDOW_MAX * streaming.SAMPLE_RATE
+            )
+        self.assertEqual(streaming.plan_windows([0.0] * 100, 100 * self.hop), [])
+
+    def test_speech_without_pause_is_cut_at_the_window_limit(self) -> None:
+        windows = streaming.plan_windows([0.9] * 1000, 1000 * self.hop)
+        limit = int(streaming.WINDOW_MAX * streaming.SAMPLE_RATE) // self.hop * self.hop
+        self.assertEqual(windows, [(0, limit), (limit, 1000 * self.hop)])
+
+    def test_windows_are_decoded_and_joined_in_order(self) -> None:
+        speech = [0.9] * 400 + [0.0] * 40 + [0.9] * 400
+        pcm = bytes(len(speech) * self.hop * 2)
+        decoded: list[int] = []
+
+        def decode(samples: Any) -> str:
+            decoded.append(len(samples))
+            return f"part{len(decoded)} "
+
+        text = asyncio.run(streaming.transcribe_windows(pcm, speech, decode))
+        self.assertEqual(sorted(text.split()), ["part1", "part2"])
+        self.assertEqual(len(decoded), 2)
+
+    def test_an_empty_window_with_speech_is_split_and_decoded_again(self) -> None:
+        speech = [0.9] * 200 + [0.0] * 30 + [0.9] * 200
+        pcm = bytes(len(speech) * self.hop * 2)
+        lengths: list[int] = []
+
+        def decode(samples: Any) -> str:
+            lengths.append(len(samples))
+            return "" if len(lengths) == 1 else "half"
+
+        text = asyncio.run(streaming.transcribe_windows(pcm, speech, decode))
+        self.assertEqual(text, "half half")
+        self.assertEqual(len(lengths), 3)
+        self.assertEqual(lengths[1] + lengths[2], lengths[0])
+
+    def test_an_utterance_closes_after_1_2_s_of_silence_by_default(self) -> None:
+        os.environ.pop("ATLAS_DICTATION_LOCAL_END_SILENCE_S", None)
+        import importlib
+
+        fresh = importlib.reload(streaming)
+        self.assertEqual(fresh.END_SILENCE, 1.2)
+
+
+class HesitationTests(unittest.TestCase):
+    def test_each_language_loses_its_hesitations_and_keeps_its_words(self) -> None:
+        cases = [
+            ("Euh, je pense que, euh, c'est bon.", None, "Je pense que, c'est bon."),
+            (
+                "Bonjour, heu, je voudrais une table.",
+                "fr",
+                "Bonjour, je voudrais une table.",
+            ),
+            (
+                "Hum. On commence quand vous voulez.",
+                "fr",
+                "On commence quand vous voulez.",
+            ),
+            (
+                "So, um, I think the meeting is at noon and we are late.",
+                None,
+                "So, I think the meeting is at noon and we are late.",
+            ),
+            (
+                "Ähm, ich glaube das ist nicht gut.",
+                None,
+                "Ich glaube das ist nicht gut.",
+            ),
+            ("Ehm, allora, eh, va bene così.", "it", "Allora, va bene così."),
+            ("Pues, eh, no sé.", "es", "Pues, no sé."),
+            ("je pense euuuh.", None, "je pense."),
+        ]
+        for text, language, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(
+                    dictation_text.remove_hesitations(text, language), expected
+                )
+
+    def test_words_of_other_languages_are_never_taken_for_hesitations(self) -> None:
+        for text, language in (
+            ("Eu tenho um carro e uma casa.", "pt"),
+            ("Ele mora em Lisboa.", "pt"),
+            ("Eh bien, je pense que oui.", "fr"),
+            ("The hum of the engine is loud.", "en"),
+            ("La pièce mesure 5 mm.", "fr"),
+            ("Er kommt morgen.", "de"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    dictation_text.remove_hesitations(text, language), text
+                )
+        # Without a known language only universal sounds go.
+        self.assertEqual(dictation_text.remove_hesitations("um", None), "um")
+
+    def test_the_language_is_guessed_only_with_evidence(self) -> None:
+        self.assertEqual(
+            dictation_text.guess_language("je pense que le rapport est dans la boîte"),
+            "fr",
+        )
+        self.assertEqual(
+            dictation_text.guess_language("the report is in the box and it is ready"),
+            "en",
+        )
+        self.assertIsNone(dictation_text.guess_language("Atlas"))
+
+
 class LocalStreamTests(unittest.TestCase):
     def test_vad_segments_give_partials_and_one_final_per_utterance(self) -> None:
         decoded: list[int] = []
@@ -625,6 +915,46 @@ class CleanupGuardTests(unittest.TestCase):
         self.assertEqual(
             dictation_cleanup.with_last_word("Envoie le rapport.", "envoie le raport"),
             "Envoie le raport.",
+        )
+
+    def test_guard_rejects_a_deleted_word_but_not_a_hesitation(self) -> None:
+        self.assertFalse(
+            dictation_cleanup.accepted(
+                "il a parlé de la vertu du travail bien fait",
+                "Il a parlé de la du travail bien fait.",
+            )
+        )
+        self.assertTrue(
+            dictation_cleanup.accepted(
+                "il a parlé euh de la vertu du travail bien fait",
+                "Il a parlé de la vertu du travail bien fait.",
+            )
+        )
+
+    def test_guard_allows_restoring_a_dropped_word_inside_the_text(self) -> None:
+        raw = "merci d envoyer le colis à avant midi demain matin sans faute"
+        self.assertTrue(
+            dictation_cleanup.accepted(
+                raw,
+                "Merci d'envoyer le colis à l'adresse avant midi demain matin sans faute.",
+            )
+        )
+        # Never at either end, where inventions happen ("Bonjour, ...", "... complet").
+        self.assertFalse(
+            dictation_cleanup.accepted(
+                raw,
+                "Bonjour, merci d'envoyer le colis à avant midi demain matin sans faute.",
+            )
+        )
+
+    def test_alignment_lists_operations_in_order(self) -> None:
+        self.assertEqual(
+            dictation_cleanup.alignment(["a", "b", "c"], ["a", "c"]),
+            [("same", 0, 0), ("del", 1, -1), ("same", 2, 1)],
+        )
+        self.assertEqual(
+            dictation_cleanup.alignment(["a", "c"], ["a", "x", "c"]),
+            [("same", 0, 0), ("ins", -1, 1), ("same", 1, 2)],
         )
 
     def test_edit_counts(self) -> None:
