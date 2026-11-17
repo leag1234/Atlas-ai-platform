@@ -90,7 +90,7 @@ _GENERIC_LABEL = re.compile(
     r"(?i)^(?:source|sources|link|lien|page|fuente|fuentes|enlace|quelle|"
     r"quellen|fonte|fonti|\d{1,2})$"
 )
-_DOMAIN = re.compile(r"(?i)^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+$")
+_DOMAIN = re.compile(r"(?i)^[a-z0-9-]++(?:\.[a-z0-9-]++)++$")
 
 
 def cited(text: str) -> str:

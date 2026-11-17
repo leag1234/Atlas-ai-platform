@@ -130,9 +130,9 @@ def wording(key: str, language: str) -> str:
 
 
 _HEADING = re.compile(
-    r"^[ \t]*(?:#{1,6}[ \t]|(?:\*\*|__)[^*_\n]+(?:\*\*|__)[ \t]*:?[ \t]*$)"
+    r"^[ \t]*+(?:#{1,6}+[ \t]|(?:\*\*|__)[^*_\n]++(?:\*\*|__)[ \t]*+:?+[ \t]*+$)"
 )
-_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]+")
+_ITEM = re.compile(r"^[ \t]*+(?:[-*+]|\d{1,3}+[.)])[ \t]++")
 
 
 def _section(text: str, position: int) -> int:
