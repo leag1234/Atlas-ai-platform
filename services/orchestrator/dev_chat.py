@@ -7,7 +7,15 @@ import logging
 import time
 from typing import Any, Literal
 from pydantic import Field, model_validator
-from packages.dev_request import Call, Request, ResponseFormat, Sampling, Strict, Tool
+from packages.dev_request import (
+    MAX_TOOLS,
+    Call,
+    Request,
+    ResponseFormat,
+    Sampling,
+    Strict,
+    Tool,
+)
 from packages.dev_format import validate_json
 
 
@@ -55,7 +63,7 @@ class RawMessage(Strict):
 
     role: Literal["system", "user", "assistant", "tool", "developer"]
     content: Any = None
-    tool_calls: list[Call] = Field(default_factory=list, max_length=64)
+    tool_calls: list[Call] = Field(default_factory=list, max_length=MAX_TOOLS)
     tool_call_id: str | None = None
     name: str | None = Field(default=None, max_length=64)
 
@@ -81,7 +89,7 @@ class RawChatInput(Sampling):
 
     model: str = Field(pattern=r"^raw/.+$")
     messages: list[RawMessage] = Field(min_length=1, max_length=4096)
-    tools: list[Tool] = Field(default_factory=list, max_length=64)
+    tools: list[Tool] = Field(default_factory=list, max_length=MAX_TOOLS)
     response_format: ResponseFormat = Field(
         default_factory=lambda: ResponseFormat(type="text")
     )
