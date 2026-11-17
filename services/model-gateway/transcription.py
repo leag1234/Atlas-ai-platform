@@ -23,7 +23,8 @@ ESTIMATE_BYTES_PER_SECOND = 16000
 
 
 class ProviderLimit(Exception):
-    """The provider refused for quota or rate (HTTP 429): never reported as an outage."""
+    """The provider refused for quota, rate or billing (HTTP 429 or 402): never reported
+    as an outage."""
 
     def __init__(self, status: int) -> None:
         super().__init__("provider_limit")
@@ -116,7 +117,8 @@ async def transcribe(
                 },
                 allow_redirects=False,
             ) as response:
-                if response.status == 429:
+                if response.status in (402, 429):
+                    # Quota, rate or billing (wallet empty: 402): named, never an outage.
                     raise ProviderLimit(response.status)
                 if response.status in {400, 413, 415, 422}:
                     raise AudioRefused()

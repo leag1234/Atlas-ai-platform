@@ -16,8 +16,10 @@ status.json: ``state`` (``starting``, ``ready``, ``refused``, ``failed`` or ``st
 ``reason`` (``capacity`` when the hosting provider had no machine of that type free,
 else absent or ``start_failed``).
 
-D5: the user reads the real outcome. A start the cloud refuses fails within seconds, so a
-new request watches the starter for CONFIRM_SECONDS before it answers "starting"; a failed
+D5: the user reads the real outcome. A start the cloud refuses fails within seconds, so
+"starting" is answered only for a start at least CONFIRM_SECONDS old, whether this request
+asked for it or found it in flight (one chat turn makes several strict calls: the second
+read "starting" while the first was still watching, staging 2026-11-17); a failed
 start is answered as such (``owned_server_unavailable``) for FAILED_HOLD_SECONDS, without
 asking for another start, which would fail the same way and use up the hourly starts
 (staging 2026-11-17: four strict requests in 15 s asked for four starts, each refused by
@@ -133,6 +135,23 @@ def failure(status: dict[str, Any], now: float) -> OwnedServerUnavailable | None
     )
 
 
+async def confirmed(
+    folder: Path, found: OwnedServerUnavailable | None, since: float
+) -> OwnedServerUnavailable | None:
+    """A "starting" answer for a start younger than CONFIRM_SECONDS is held back while
+    the status is watched: a quick refusal (or the server being ready) replaces it."""
+    while (
+        found is not None
+        and found.code == STARTING
+        and time.time() - since < CONFIRM_SECONDS
+    ):
+        await asyncio.sleep(0.1)
+        status = read_status(folder)
+        if status is not None:
+            found = answer(status, time.time())
+    return found
+
+
 def answer(status: dict[str, Any], now: float) -> OwnedServerUnavailable | None:
     """The answer a status gives, or None (ready, stopped, unreadable, or a failure
     older than FAILED_HOLD_SECONDS)."""
@@ -174,45 +193,42 @@ async def ensure() -> None:
     if status is not None and status.get("state") in ("starting", "failed"):
         found = answer(status, time.time())
         if found is not None:
+            since = _number(status.get("since")) or _number(status.get("updated"))
+            found = await confirmed(folder, found, since or time.time())
+            if found is None:
+                return  # the server became ready meanwhile
             log.info(json.dumps({"event": found.code, **found.fields()}))
             raise found
     requested = request_start(folder)
     if requested is None:
         return
-    started = time.monotonic()
-    deadline = started + ANSWER_SECONDS
-    found = None
+    deadline = time.monotonic() + ANSWER_SECONDS
     while True:
         status = read_status(folder)
         updated = _number(status.get("updated")) if status is not None else None
         if status is not None and updated is not None and updated >= requested - 1:
-            found = answer(status, time.time())
             # "Starting" is answered only once the start survived its first seconds:
             # a refusal by the cloud provider comes back within them.
-            waiting = (
-                found is not None
-                and found.code == STARTING
-                and time.monotonic() - started < CONFIRM_SECONDS
-            )
-            if not waiting:
-                log.info(
-                    json.dumps(
-                        {
-                            "event": "owned_server_start_requested",
-                            "state": str(status.get("state"))[:20],
-                            **(found.fields() if found is not None else {}),
-                        }
-                    )
+            found = await confirmed(folder, answer(status, time.time()), requested)
+            state = (read_status(folder) or status).get("state")
+            log.info(
+                json.dumps(
+                    {
+                        "event": "owned_server_start_requested",
+                        "state": str(state)[:20],
+                        **(found.fields() if found is not None else {}),
+                    }
                 )
-                if found is not None:
-                    raise found
-                if status.get("state") == "failed":
-                    # An older starter without a hold: still the real outcome.
-                    raise OwnedServerUnavailable(
-                        UNAVAILABLE, retry_after=FAILED_HOLD_SECONDS
-                    )
-                return
-        if time.monotonic() >= deadline and found is None:
+            )
+            if found is not None:
+                raise found
+            if state == "failed":
+                # An older starter without a hold: still the real outcome.
+                raise OwnedServerUnavailable(
+                    UNAVAILABLE, retry_after=FAILED_HOLD_SECONDS
+                )
+            return
+        if time.monotonic() >= deadline:
             log.warning(json.dumps({"event": "owned_server_starter_silent"}))
             return
         await asyncio.sleep(0.1)
