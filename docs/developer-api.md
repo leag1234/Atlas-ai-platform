@@ -138,6 +138,24 @@ kept read-only:
 
 Start at `none`; move a task to `low` when `none` does not get there; keep `high` for hard diagnosis.
 
+#### Effort on Messages (`/v1/messages`)
+
+Messages has no `reasoning_effort` field. Atlas reads the effort from the Messages fields, in this order:
+
+| Request | Effort | Model on `atlas-code` / `atlas-dev` |
+|---|---|---|
+| `output_config.effort` set (`low`, `medium` or `high`) | that value, whatever `thinking` says | GLM 5.3 |
+| `thinking: {"type": "enabled", "budget_tokens": N}` | `low` up to 4096, `medium` up to 16384, `high` above | GLM 5.3 |
+| `thinking: {"type": "adaptive"}` | `medium` | GLM 5.3 |
+| no `thinking` (or `disabled`) and no `output_config.effort` | `none` | GLM 5.3 Flash |
+
+`output_config.effort` values `xhigh` and `max` are refused (HTTP 400). Claude Code 2.1.312 (measured
+2026-11-17) sends `output_config.effort` on every request, `high` by default, also when thinking is
+disabled (`MAX_THINKING_TOKENS=0` or `CLAUDE_CODE_DISABLE_THINKING=1`): its requests therefore run on
+GLM 5.3, never on GLM 5.3 Flash. `CLAUDE_CODE_EFFORT_LEVEL=low` (or `/effort low`) keeps GLM 5.3 with a
+shorter reasoning. On the code benchmark of 2026-11-05 (20 tasks, Codex CLI), effort `none` (GLM 5.3
+Flash) passed 15 tasks for 0.111 EUR and effort `high` (GLM 5.3) passed 19 for 0.819 EUR.
+
 ### What it costs
 
 Prices per million tokens, in euros excluding tax:
@@ -164,6 +182,40 @@ five times: GLM 5.3 charged 0.0121 EUR for the first call and 0.0013 EUR (about 
 second; GLM 5.3 Flash charged 0.0013 EUR, or 0.0005 EUR when the cache hit, which happened on 2 of 5
 calls. Keep the beginning of your prompts identical from one request to the next (system prompt, tool
 definitions, earlier turns) and put what changes at the end.
+
+#### Getting cache hits with coding agents
+
+The provider caches a prompt by its start: a request is served from the cache up to the first byte that
+differs from an earlier request. Atlas keeps that start stable:
+
+- Earlier turns are converted the same way on every request, and reasoning blocks of earlier turns are
+  never sent, so an agent that appends turns sends a body whose start does not change.
+- `cache_control` markers are accepted and dropped: moving them between turns changes nothing.
+- A system block that holds only a client header line (for example a billing or attribution line
+  starting with `x-` and ending in `-header:`) is not sent to the model. Some clients put a value that
+  changes on every request there; at the very start of the prompt it would defeat the cache for the
+  whole request.
+- Atlas sends one cache key per conversation, derived from your API key and the opening messages (system
+  prompt and first user message). Measured on 2026-11-17 with 12 agent sessions in parallel on one API key
+  (16 turns each, about 20,000 prompt tokens): 81% of the prompt tokens came from the cache with one key
+  per conversation, 71% with one key per system prompt.
+
+What your client should do:
+
+- Never put a date, time, request id, counter or random value in the system prompt, the tool
+  definitions or the first message. Put such values in the newest message.
+- Do not change the tool list during a session (adding or removing an MCP server, switching tool
+  search on or off). Each change makes the next request start differently.
+- Keep one long session instead of restarting it: the first request of a session is never cached.
+- Rewrite earlier turns only when you must (context compaction); the next request then starts a new
+  cache.
+- Read `cache_read_input_tokens` (Messages) or `cached_tokens` (Chat Completions, Responses) to check.
+
+Measured on 2026-11-17, replaying a 16-turn Claude Code session (2.1.312, 23 tools, about 20,000 prompt
+tokens per turn) through `/v1/messages` on GLM 5.3: 15 of 15 later turns hit the cache, 93% of the
+prompt tokens were cached, 0.0041 EUR per turn. On GLM 5.3 Flash (effort `none`), hits are less
+regular: on the same replay, 10 to 13 of 15 later turns hit and 57 to 78% of the prompt tokens were
+cached, 0.0010 to 0.0018 EUR per turn.
 
 ### `max_tokens`
 
@@ -387,11 +439,18 @@ export CLAUDE_CODE_SUBAGENT_MODEL=atlas-dev
 export CLAUDE_CODE_DISABLE_THINKING=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=8192
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_ATTRIBUTION_HEADER=0
 export ENABLE_TOOL_SEARCH=false
 claude --model atlas-dev
 ```
 
 Extended thinking and hosted tools (web search, code execution) are not available through Atlas.
+`CLAUDE_CODE_ATTRIBUTION_HEADER=0` removes the client's billing line from the system prompt (Atlas also
+drops it), and `ENABLE_TOOL_SEARCH=false` keeps the tool list fixed during a session: both keep the
+start of each request identical, which the prompt cache needs. Claude Code still sends an effort level
+on every request (see "Effort on Messages"), so it runs on GLM 5.3 at the level you choose with
+`CLAUDE_CODE_EFFORT_LEVEL` or `/effort`. Thinking blocks of earlier turns are not sent back to the model,
+so `context_management` edits of type `clear_thinking_*` are accepted; other context edits are refused.
 
 ### Running agents cost-effectively
 
