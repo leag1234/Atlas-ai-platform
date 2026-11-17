@@ -284,7 +284,7 @@ class HintTests(unittest.TestCase):
 
 
 # The judge alone: the fast screen in front of it has its own tests (ScreenTests).
-WITHOUT_SCREEN = patch.object(faith, "screen_profile", return_value=None)
+WITHOUT_SCREEN = patch.object(faith, "screen_profile", new=lambda turn: None)
 
 
 @WITHOUT_SCREEN
@@ -648,7 +648,7 @@ class ScreenTests(unittest.TestCase):
     def test_no_screen_in_strict_privacy_or_on_the_judge_profile(self) -> None:
         with patch("packages.profiles.picture_profile", side_effect=self.roles.get):
             self.assertEqual(faith.screen_profile("atlas-qwen"), "atlas-fast")
-            with patch.object(faith.privacy, "owned_only", return_value=True):
+            with patch("packages.privacy.owned_only", return_value=True):
                 self.assertIsNone(faith.screen_profile("atlas-qwen"))
         same = {**self.roles, "source_faithfulness_screen": "atlas-judge"}
         with patch("packages.profiles.picture_profile", side_effect=same.get):
