@@ -725,13 +725,45 @@ def _mine(anchor: Anchor, sources: Sources) -> bool:
     return anchor.kind == "name" and all(w in sources.own for w in anchor.key.split())
 
 
-def _labels(anchors: list[Anchor], sources: Sources) -> list[str]:
+_QUOTED_CHARACTERS = 90
+
+
+def quoted(text: str) -> str:
+    """A removed claim as the note quotes it: plain words, cut at a word."""
+    plain = re.sub(r"\[([^\]\n]*+)\]\([^)\s]*+\)", r"\1", text)
+    plain = " ".join(re.sub(r"[*_`#>|]+", " ", plain).split()).strip(" -–,;:")
+    if len(plain) > _QUOTED_CHARACTERS:
+        plain = plain[:_QUOTED_CHARACTERS].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    return f"“{plain}”" if plain else ""
+
+
+def _claim(body: str, start: int, end: int, part: list[Anchor]) -> str:
+    """The words of a sentence that state a failing part: from the clause
+    before its first anchor to its last anchor."""
+    placed = [a for a in part if a.position >= 0 and a.text]
+    if not placed:
+        return body[start:end]
+    first = min(a.position for a in placed)
+    last = max(a.position + len(a.text) for a in placed)
+    marks = [m.end() for m in re.finditer(r"[,;:(]\s*", body[start:first])]
+    return body[start + (marks[-1] if marks else 0) : max(last, first)]
+
+
+def _labels(
+    anchors: list[Anchor],
+    sources: Sources,
+    body: str = "",
+    span: tuple[int, int] = (0, 0),
+) -> list[str]:
     """What the note lists: the claims of the parts no passage holds.
 
     A name no page writes is listed; a name the person gave never is (staging
     -102 listed the person's own stop as not verified). When every name is
-    known on its own, what is not verified is the connection: its names, then
-    its times ("Lyon Part-Dieu – Genève Aéroport (8h43)").
+    known on its own, what is not verified is the connection the sentence
+    states: the note quotes it (staging -109 listed "Barcelona Sants – Madrid
+    Puerta de Atocha – Almudena Grandes – Cercanías", stations the pages do
+    name, as if they were the unverified claim). Without the sentence, its
+    names then its times are joined.
     """
     failing = _failing(sources, anchors) or [anchors]
     stated = [a for part in failing for a in part if a.kind != "clock"]
@@ -740,6 +772,10 @@ def _labels(anchors: list[Anchor], sources: Sources) -> list[str]:
     ]
     if alone:
         return alone
+    if body and span[1] > span[0]:
+        part = [a for p in failing for a in p]
+        if claim := quoted(_claim(body, span[0], span[1], part)):
+            return [claim]
     joined = [a for part in failing for a in sorted(part, key=lambda a: a.position)]
     names = list(dict.fromkeys(a.text for a in joined if a.kind != "clock"))
     times = list(dict.fromkeys(a.text for a in joined if a.kind == "clock"))
@@ -787,7 +823,7 @@ def review(
             removed.append(False)
             continue
         if unit.row:
-            labels = _labels(unit.anchors, sources)
+            labels = _labels(unit.anchors, sources, body, (unit.start, unit.end))
             for cell_start, _ in unit.cells:
                 finding.spans.append((cell_start, cell_start + 1, labels))
                 labels = []
@@ -806,10 +842,22 @@ def review(
         if alone and (not a_route(outside) or not _failing(sources, outside)):
             # The rest of the sentence holds: only its unsourced parentheses go.
             for inner_start, inner_end, inside in alone:
-                finding.spans.append((inner_start, inner_end, _labels(inside, sources)))
+                finding.spans.append(
+                    (
+                        inner_start,
+                        inner_end,
+                        _labels(inside, sources, body, (inner_start, inner_end)),
+                    )
+                )
             removed.append(False)
             continue
-        finding.spans.append((unit.start, unit.end, _labels(unit.anchors, sources)))
+        finding.spans.append(
+            (
+                unit.start,
+                unit.end,
+                _labels(unit.anchors, sources, body, (unit.start, unit.end)),
+            )
+        )
         removed.append(True)
     if not finding.spans:
         return finding
