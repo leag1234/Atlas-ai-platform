@@ -160,8 +160,12 @@ definitions, earlier turns) and put what changes at the end.
 ### `max_tokens`
 
 Reasoning tokens count toward `max_tokens`. If the budget is too small, the model spends all of it
-thinking and returns no answer; Atlas retries and then answers `503 key_service_unavailable`. With any
-effort above `none`, set `max_tokens` to at least 1000 (or leave it out). When `max_tokens` is omitted,
+thinking and returns no answer: the response is a normal length outcome (`finish_reason: "length"`,
+`status: "incomplete"` on Responses, `stop_reason: "max_tokens"` on Messages) with an empty content and
+the usage you pay for. Atlas does not send the same request again, since it would run out the same way,
+and never reports it as a provider failure. An answer cut by `max_tokens` is likewise returned as
+written, also with `response_format`. With any effort above `none`, set `max_tokens` to at least 1000
+(or leave it out). When `max_tokens` is omitted,
 the default is 16384 and the maximum is 32768.
 
 ## 4. Images and documents
@@ -532,7 +536,7 @@ without a restriction (or ask your administrator), then send the same request.
 | 502 | `provider_error` | The model provider failed in another way | Retry once, then report it |
 | 503 | `provider_unavailable` (`provider_status`) | The model provider is unavailable | Retry later |
 | 503 | `owned_server_starting` (`Retry-After`) | Strict privacy: the owned server is starting for this request (about 2 minutes) | Retry after `Retry-After` seconds |
-| 503 | `key_service_unavailable`, `unavailable`, `tts_unavailable`, `transcription_unavailable` | A component of Atlas is unavailable; a common cause on direct models is a `max_tokens` too small for the reasoning effort | See section 3, then retry |
+| 503 | `key_service_unavailable`, `unavailable`, `tts_unavailable`, `transcription_unavailable` | A component of Atlas is unavailable | Retry later |
 | 504 | `provider_timeout` | The model provider did not answer in time | Retry, with a shorter output if possible |
 | 502 or 503 (no JSON) | | The service is restarting for a deployment (usually under a minute) | Wait and retry |
 
