@@ -283,6 +283,11 @@ class HintTests(unittest.TestCase):
         )
 
 
+# The judge alone: the fast screen in front of it has its own tests (ScreenTests).
+WITHOUT_SCREEN = patch.object(faith, "screen_profile", return_value=None)
+
+
+@WITHOUT_SCREEN
 class ReviewTests(unittest.TestCase):
     def test_a_faithful_answer_is_unchanged_after_one_call(self) -> None:
         calls = Calls(CLEAN)
@@ -439,6 +444,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(calls.payloads[0]["privacy"], "strict")
 
 
+@WITHOUT_SCREEN
 class PipelineTests(unittest.IsolatedAsyncioTestCase):
     """The chat and API paths share chat_pipeline.process."""
 
@@ -515,6 +521,7 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls.payloads, [])
 
 
+@WITHOUT_SCREEN
 class DeliverableTests(unittest.IsolatedAsyncioTestCase):
     """A Work file derived from a provided source: unsupported statements are gaps."""
 
@@ -574,6 +581,80 @@ class DeliverableTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class ScreenTests(unittest.TestCase):
+    """The fast screen first; the judge decides what it flags."""
+
+    roles = {
+        "source_faithfulness": "atlas-judge",
+        "source_faithfulness_screen": "atlas-fast",
+        "source_faithfulness_rewrite": "atlas-judge",
+    }
+
+    def run_review(self, answer: str, calls: Calls) -> tuple[str, str, faith.Report]:
+        with patch("packages.profiles.picture_profile", side_effect=self.roles.get):
+            return review(answer, calls)
+
+    def test_an_answer_the_screen_finds_clean_is_done_after_one_call(self) -> None:
+        calls = Calls(CLEAN)
+        text, addition, report = self.run_review(FAITHFUL, calls)
+        self.assertEqual((text, addition, report.outcome), (FAITHFUL, "", "clean"))
+        self.assertEqual([p["profile"] for p in calls.payloads], ["atlas-fast"])
+        self.assertEqual(report.screen, ["clean"])
+        self.assertEqual(report.cost_eur, Decimal("0.006"))
+
+    def test_what_the_screen_flags_is_decided_by_the_judge(self) -> None:
+        # A false alarm of the screen: the judge finds the answer faithful.
+        calls = Calls(CAUGHT, CLEAN)
+        text, addition, report = self.run_review(CAUSAL, calls)
+        self.assertEqual((text, addition, report.outcome), (CAUSAL, "", "clean"))
+        self.assertEqual(
+            [p["profile"] for p in calls.payloads], ["atlas-fast", "atlas-judge"]
+        )
+        # Both read the same measured prompt.
+        screened, judged_by = (p["messages"][0]["content"] for p in calls.payloads)
+        self.assertEqual(screened, judged_by)
+        self.assertEqual(report.screen, ["flagged"])
+        self.assertEqual(report.cost_eur, Decimal("0.012"))
+        self.assertEqual(report.calls, 1)
+
+    def test_a_confirmed_finding_is_rewritten_and_the_rewrite_screened(self) -> None:
+        fixed = (
+            "The town council chose a steel deck because it weighed less than concrete."
+        )
+        calls = Calls(
+            CAUGHT,
+            CAUGHT,
+            {"text": json.dumps({"1": fixed}), "cost_eur": "0.001"},
+            CLEAN,
+        )
+        text, addition, report = self.run_review(CAUSAL, calls)
+        self.assertEqual(text, CAUSAL.replace(FLAGGED, fixed))
+        self.assertEqual((addition, report.outcome), ("", "revised"))
+        self.assertEqual(
+            [p["profile"] for p in calls.payloads],
+            ["atlas-fast", "atlas-judge", "atlas-judge", "atlas-fast"],
+        )
+        self.assertEqual(report.screen, ["flagged", "clean"])
+
+    def test_a_failed_screen_leaves_the_decision_to_the_judge(self) -> None:
+        calls = Calls(TimeoutError(), CAUGHT, TimeoutError())
+        text, addition, report = self.run_review(CAUSAL, calls)
+        self.assertEqual(report.screen[0], "failed:timeout")
+        self.assertIn(FLAGGED, text + addition)
+        self.assertEqual(
+            [p["profile"] for p in calls.payloads][:2], ["atlas-fast", "atlas-judge"]
+        )
+
+    def test_no_screen_in_strict_privacy_or_on_the_judge_profile(self) -> None:
+        with patch("packages.profiles.picture_profile", side_effect=self.roles.get):
+            self.assertEqual(faith.screen_profile("atlas-qwen"), "atlas-fast")
+            with patch.object(faith.privacy, "owned_only", return_value=True):
+                self.assertIsNone(faith.screen_profile("atlas-qwen"))
+        same = {**self.roles, "source_faithfulness_screen": "atlas-judge"}
+        with patch("packages.profiles.picture_profile", side_effect=same.get):
+            self.assertIsNone(faith.screen_profile("atlas-qwen"))
+
+
 class RoleTests(unittest.TestCase):
     def test_both_roles_name_a_declared_profile(self) -> None:
         from pathlib import Path
@@ -585,7 +666,11 @@ class RoleTests(unittest.TestCase):
         roles = yaml.safe_load(Path("services/model-gateway/routing.yaml").read_text())[
             "picture_roles"
         ]
-        for role in ("source_faithfulness", "source_faithfulness_rewrite"):
+        for role in (
+            "source_faithfulness",
+            "source_faithfulness_screen",
+            "source_faithfulness_rewrite",
+        ):
             self.assertIn(role, PICTURE_ROLES)
             self.assertIn(roles[role], (*PROFILES, *HIDDEN_PROFILES))
 

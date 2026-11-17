@@ -27,7 +27,12 @@ What it does (T8, code checks, the model decides):
 2. one judge call reads the whole source, the request and the answer, lists every
    link the answer states through a connector (cause, temporal order, condition,
    negation, contrast, quantity, attribution) with whether the source states it,
-   then every unsupported statement;
+   then every unsupported statement. It runs first on the fast screen profile
+   (role "source_faithfulness_screen", no reasoning): an answer it finds clean is
+   done; what it flags is judged again, same prompt, on the profile of the
+   "source_faithfulness" role, whose verdict alone is used (a cascade: cheap
+   screen, precise confirmation; FrugalGPT, Chen et al. 2023). A screen that
+   fails or is not enabled leaves the decision to that judge alone;
 3. code checks every quotation the judge returns against the answer: a statement
    whose words are not in the answer is located by word overlap or dropped (it
    cannot be a defect of this answer), and a link the judge calls stated whose
@@ -53,14 +58,24 @@ Related work: FActScore (Min et al. 2023), SummaC (Laban et al. 2022), AlignScor
 et al. 2024: critique is reliable when grounded in tool output).
 
 Latency: no call on a turn without a provided source. With one, the judge
-adds p50 25 s, p95 34 to 41 s, about 0.006 EUR for a source of 1 000 words
-(input grows with the source, bounded by SOURCE_LIMIT and JUDGE_BUDGET_EUR); a
-repair and its re-check add 20 to 45 s more. In the interface the answer
-streams as before; the stream closes after the check (keepalive frames
-meanwhile) and a note may follow. API answers and held streams wait for the
-check. A whole-answer judge cannot run while the answer is still being
-written; checking paragraph by paragraph during the stream would multiply
-calls and was not measured.
+alone added p50 25 s, p95 34 to 41 s, about 0.006 EUR for a source of 1 000
+words (input grows with the source, bounded by SOURCE_LIMIT and
+JUDGE_BUDGET_EUR): its model cannot turn reasoning off (lowest effort "low",
+2 000 to 3 700 output tokens, nearly all reasoning). Latency measurement of
+2026-11-17 (pilot, 66 outputs; 98 of the 264 outputs of the larger set): the
+screen alone answers in p50 1 to 1.5 s, p95 2 to 3 s, but flagged 5 of 56
+faithful readings of the pilot and 3 of 56 of the larger set. Screen then
+judge: 0 false alarm (0/24, 0/56); faults found 41 to 42 of 42 on the pilot,
+39 of 42 on the larger set where the judge alone finds 40 (an added cause
+carried by a participle clause passes the screen); faithful answers are
+checked in p50 1.0 to 1.6 s, p95 2 to 26 s, flagged ones in p50 26 to 35 s;
+about 0.004 to 0.006 EUR per clean answer, 0.01 per flagged one. A repair and
+its re-check add 20 to 45 s more. In the interface the answer streams as
+before; the stream closes after the check (keepalive frames meanwhile) and a
+note may follow. API answers and held streams wait for the check. A
+whole-answer judge cannot run while the answer is still being written;
+checking paragraph by paragraph during the stream would multiply calls and was
+not measured.
 
 Never blocking, never disguised (D5): a judge that fails, times out or is
 refused by a limit leaves the answer as it is; the failure and its code are
@@ -96,6 +111,9 @@ REQUEST_CHARACTERS = 1_500
 # An answer of fewer words states nothing to check.
 MIN_WORDS = 4
 JUDGE_SECONDS = 60.0
+# The screen answers in p50 1.5 s, p95 3 s (2026-11-17): past this it is
+# abandoned for the judge.
+SCREEN_SECONDS = 20.0
 JUDGE_TOKENS = 8_000
 JUDGE_BUDGET_EUR = Decimal("0.04")
 REWRITE_SECONDS = 45.0
@@ -270,6 +288,8 @@ class Verdict:
     not_confirmed: int = 0
     cost_eur: Decimal = Decimal(0)
     seconds: float = 0.0
+    # The fast screen: clean, flagged, failed:<code>, or empty when it did not run.
+    screen: str = ""
 
 
 @dataclass
@@ -285,6 +305,7 @@ class Report:
     unlocated: int = 0
     not_confirmed: int = 0
     rewrite: str = ""  # kept, rejected:<reason>, failed:<code>, skipped:<reason>
+    screen: list[str] = field(default_factory=list)  # one per check (Verdict.screen)
     calls: int = 0
     cost_eur: Decimal = Decimal(0)
     seconds: float = 0.0
@@ -302,6 +323,7 @@ class Report:
             "unlocated": self.unlocated,
             "not_confirmed": self.not_confirmed,
             "rewrite": self.rewrite,
+            "screen": self.screen,
             "calls": self.calls,
             "cost_eur": str(self.cost_eur),
             "seconds": round(self.seconds, 2),
@@ -569,6 +591,21 @@ def profiles(turn: str | None) -> tuple[str | None, str | None]:
     return judge, rewrite
 
 
+def screen_profile(turn: str | None) -> str | None:
+    """The fast screen's profile (role source_faithfulness_screen), or None.
+
+    None in strict privacy (the judge already runs on the turn's own profile)
+    and when the role's profile is not enabled here or is the judge's own.
+    """
+    if privacy.owned_only():
+        return None
+    from packages.profiles import picture_profile
+
+    screen = picture_profile("source_faithfulness_screen")
+    judge_profile, _ = profiles(turn)
+    return screen if screen is not None and screen != judge_profile else None
+
+
 def _payload(
     messages: list[dict[str, str]],
     profile: str,
@@ -634,6 +671,62 @@ async def judge(
         raise JudgeFailure("unreadable", cost)
     verdict.cost_eur = cost
     verdict.seconds = time.monotonic() - started
+    return verdict
+
+
+async def checked(
+    request: str,
+    source: Source,
+    answer: str,
+    profile: str,
+    screen: str | None,
+    seconds: float,
+    *,
+    complete: Complete | None = None,
+) -> Verdict:
+    """The screen first; what it flags is judged on ``profile``, whose verdict is used.
+
+    Raises JudgeFailure when the judge has to decide and gives no usable verdict
+    (the screen's cost is carried by the failure).
+    """
+    started = time.monotonic()
+    spent = Decimal(0)
+    outcome = ""
+    if screen is not None:
+        try:
+            first = await judge(
+                request,
+                source,
+                answer,
+                screen,
+                min(SCREEN_SECONDS, seconds),
+                complete=complete,
+            )
+        except JudgeFailure as failure:
+            spent, outcome = failure.cost_eur, "failed:" + failure.code
+        else:
+            if not first.findings:
+                first.screen = "clean"
+                return first
+            spent, outcome = first.cost_eur, "flagged"
+    left = seconds - (time.monotonic() - started)
+    if left < MIN_SECONDS:
+        raise JudgeFailure("deadline", spent)
+    try:
+        verdict = await judge(
+            request,
+            source,
+            answer,
+            profile,
+            min(JUDGE_SECONDS, left),
+            complete=complete,
+        )
+    except JudgeFailure as failure:
+        failure.cost_eur += spent
+        raise
+    verdict.cost_eur += spent
+    verdict.seconds = time.monotonic() - started
+    verdict.screen = outcome
     return verdict
 
 
@@ -847,13 +940,15 @@ async def review(
             "no_profile" if judge_profile is None else "deadline"
         )
         return done("")
+    screen = screen_profile(profile)
     report.calls += 1
     try:
-        verdict = await judge(
+        verdict = await checked(
             request,
             source,
             body,
             judge_profile,
+            screen,
             min(JUDGE_SECONDS, _left(deadline)),
             complete=complete,
         )
@@ -866,6 +961,7 @@ async def review(
         return done("")
     report.cost_eur += verdict.cost_eur
     report.judge_seconds.append(verdict.seconds)
+    report.screen.append(verdict.screen)
     report.links = verdict.links
     report.unlocated = verdict.unlocated
     report.not_confirmed = verdict.not_confirmed
@@ -894,11 +990,12 @@ async def review(
             # The rewrite is checked like the answer; unchecked, it is not kept.
             report.calls += 1
             try:
-                after = await judge(
+                after = await checked(
                     request,
                     source,
                     revised,
                     judge_profile,
+                    screen,
                     min(JUDGE_SECONDS, _left(deadline)),
                     complete=complete,
                 )
@@ -908,6 +1005,7 @@ async def review(
             else:
                 report.cost_eur += after.cost_eur
                 report.judge_seconds.append(after.seconds)
+                report.screen.append(after.screen)
                 text, remaining = revised, after.findings
                 report.findings_after = len(remaining)
     elif not streamed:
