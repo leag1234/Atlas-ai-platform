@@ -14,6 +14,9 @@ T8 (code does and checks, the model decides):
   pages, a picture of the first page (vision role, not in strict privacy) with
   the request and the conversation's earlier messages, and lists what the file
   lacks against it (language-neutral: no keyword list, the model judges);
+- when the turn holds a source the person provided (an attached document, a
+  pasted text), the file's text is also checked against that source, in
+  parallel (source_faithfulness.py): statements it does not support are gaps;
 - the first time gaps are found in a turn, the file is not published and the
   agent gets them to repair (one repair attempt); a file published with gaps
   still open carries them, and the closing instruction makes the answer say
@@ -36,6 +39,7 @@ out never blocks the delivery: the deterministic facts still add their notes.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from dataclasses import dataclass, field
 from decimal import ROUND_FLOOR, Decimal
@@ -114,6 +118,87 @@ class Outcome:
     # Gaps code is sure of (pictures drawn for the file and not placed, emoji
     # standing in for planned pictures): refused once like a judged gap.
     certain: list[str] = field(default_factory=list)
+    # Statements of a file derived from a provided source that the source does
+    # not support (source_faithfulness.py): refused once like a judged gap.
+    unsupported: list[str] = field(default_factory=list)
+
+
+UNSUPPORTED = (
+    "statements not supported by the source document the person provided: "
+    "{statements} (state only what the source states: correct each one from the "
+    "source or remove it)"
+)
+
+
+def source_check(
+    tools: Any,
+    request: str,
+    text: str,
+    profile: str,
+    seconds: float,
+    call: Any,
+) -> asyncio.Task[tuple[str, Decimal]] | None:
+    """The file against the provided source the turn holds, started now.
+
+    The task gives the unsupported statements (quoted, joined) and the cost; a
+    failed judge gives none and is logged with its code (D5), never blocking.
+    None when the turn holds no provided source or the check cannot run.
+    """
+    from services.orchestrator import document_quotes
+    from services.orchestrator import source_faithfulness as faith
+
+    if not faith.enabled():
+        return None
+    source = faith.provided(document_quotes.current.get())
+    if (
+        source is None
+        or len(source.text) > faith.SOURCE_LIMIT
+        or len(text.split()) < faith.MIN_WORDS
+    ):
+        return None
+    judge_profile, _ = faith.profiles(profile)
+    if judge_profile is None or seconds < MIN_SECONDS:
+        return None
+    log = logging.getLogger(__name__)
+
+    async def run() -> tuple[str, Decimal]:
+        try:
+            verdict = await faith.judge(
+                request,
+                source,
+                text,
+                judge_profile,
+                min(faith.JUDGE_SECONDS, seconds),
+                complete=call,
+            )
+        except faith.JudgeFailure as failure:
+            log.warning(
+                json.dumps(
+                    {"event": "deliverable_source_check_failed", "code": failure.code}
+                )
+            )
+            return "", failure.cost_eur
+        log.warning(
+            json.dumps(
+                {
+                    "event": "deliverable_source_check",
+                    "findings": len(verdict.findings),
+                    "links": verdict.links,
+                    "unlocated": verdict.unlocated,
+                    "seconds": round(verdict.seconds, 2),
+                    "cost_eur": str(verdict.cost_eur),
+                    "mode": faith.mode(),
+                }
+            )
+        )
+        if faith.mode() != "on" or not verdict.findings:
+            return "", verdict.cost_eur
+        quoted = "; ".join(
+            "“" + faith.statement(text, finding) + "”" for finding in verdict.findings
+        )
+        return quoted, verdict.cost_eur
+
+    return asyncio.create_task(run())
 
 
 def planned_gaps(tools: Any, content: Any) -> list[str]:
@@ -541,16 +626,18 @@ async def review(
         return outcome
     from services.orchestrator.work_pictures import plan_profiles
 
-    body = messages(
-        request,
-        earlier,
-        measured,
+    file_text = (
         drawn_text(content)
         if content is not None
-        else preview.decode("utf-8", "replace"),
-        page,
+        else preview.decode("utf-8", "replace")
     )
+    body = messages(request, earlier, measured, file_text, page)
     call = complete or _complete
+    # A file derived from a provided source is also checked against that source
+    # (source_faithfulness.py), in parallel with the check against the request.
+    against_source = source_check(
+        tools, request, file_text, profile, seconds - (time.monotonic() - started), call
+    )
     found: list[str] | None = None
     cost = Decimal(0)
     # The fast profile first (reasoning off), then the turn's own profile: a
@@ -598,14 +685,25 @@ async def review(
         found = gaps_of(str(reply.get("text") or ""))
         if found is not None:
             break
+    if against_source is not None:
+        unsupported, source_cost = await against_source
+        cost += source_cost
+        if (
+            source_cost > 0
+            and model is not None
+            and isinstance(getattr(model, "spent", None), Decimal)
+        ):
+            model.spent += source_cost
+        if unsupported:
+            outcome.unsupported = [UNSUPPORTED.format(statements=unsupported)]
     outcome.cost_eur = cost
     outcome.seconds = time.monotonic() - started
     outcome.image = page is not None
     if found is None:
-        outcome.gaps = deterministic + unchecked(tools)
+        outcome.gaps = deterministic + outcome.unsupported + unchecked(tools)
         return outcome
     outcome.checked = True
-    outcome.gaps = certain + found
+    outcome.gaps = certain + outcome.unsupported + found
     logging.getLogger(__name__).warning(
         json.dumps(
             {
@@ -650,7 +748,9 @@ def decide(tools: Any, outcome: Outcome) -> str:
     pending = getattr(tools, "pictures_pending", None)
     repairable = not (isinstance(pending, list) and pending)
     if getattr(tools, "deliverable_refused", True) is False and (
-        outcome.certain or (outcome.checked and repairable)
+        outcome.certain
+        or (outcome.unsupported and repairable)
+        or (outcome.checked and repairable)
     ):
         tools.deliverable_refused = True
         raise ValueError(REFUSAL.format(gaps=joined(outcome.gaps)))

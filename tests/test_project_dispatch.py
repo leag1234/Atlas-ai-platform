@@ -158,7 +158,12 @@ class ProjectDocumentDispatchTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as root,
-            patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
+            # The scoping of the turn is tested here; the check of the answer
+            # against the uploaded file (source_faithfulness) has its own tests.
+            patch.dict(
+                os.environ,
+                {"ATLAS_INTERACTION_DIR": root, "ATLAS_SOURCE_FAITHFULNESS": "off"},
+            ),
             patch.object(GatewayModel, "post", side_effect=post),
             patch.object(GatewayModel, "connect", AsyncMock(return_value=model)),
             patch.object(model, "complete", AsyncMock(side_effect=complete)),

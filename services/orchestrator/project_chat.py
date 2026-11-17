@@ -81,7 +81,7 @@ class ProjectTools(ChatTools):
             passages = [p.model_dump() for p in result.passages]
             self.item.chunks_recuperes.extend(passages)
             for passage in result.passages:
-                document_quotes.add_document(passage.text)
+                document_quotes.add_document(passage.text, retrieved=True)
             return {
                 "trust": "untrusted",
                 "data": {"passages": select_passages(result.passages, request.query)},
