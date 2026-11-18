@@ -390,7 +390,7 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
         from services.orchestrator.nearby import OSM, NearbyError
 
         try:
-            place = await OSM().reverse(position)
+            place = await OSM().reverse(position, request.lang)
         except NearbyError:
             await ask(
                 item,

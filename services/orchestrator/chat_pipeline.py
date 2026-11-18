@@ -1086,6 +1086,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             profile=request.model,
         )
         item.cout_eur = float(Decimal(str(item.cout_eur)) + rebuild_report.cost_eur)
+        item.off_trip_urls = sorted(
+            travel_rebuild.unrelated(travel, asked, item.reponse)
+        )
     # A relative date or weekday that disagrees with the calendar (relative_dates).
     item.reponse = relative_dates.repair(
         item.reponse, answer_language, today, asked=asked_days
@@ -1491,13 +1494,17 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
                 request.user_text, tuple(m.text for m in request.messages[:-1])
             ),
         )
+        # A trip answer lists the pages about its trip and the pages it cites,
+        # not every search hit (travel_rebuild.unrelated).
+        hidden = set(item.off_trip_urls)
+        listed = [url for url in sources if url not in hidden or url in item.reponse]
         if request.atlas_ui:
-            item.reponse += source_footer(sources, request.lang)
+            item.reponse += source_footer(listed, request.lang)
         elif sources and not any(url in item.reponse for url in sources):
             # An API answer whose citations were all removed as unretrieved kept
             # no source at all (staging battery 2026-11-12): the pages actually
             # consulted are listed instead.
-            item.reponse += source_footer(sources, request.lang)
+            item.reponse += source_footer(listed or sources, request.lang)
 
 
 # The ceiling of a simple drawing turn (the ordinary chat ceiling).

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import time
+import unicodedata
 from zoneinfo import ZoneInfo
 from typing import Any
 
@@ -213,6 +214,32 @@ def rank(
     return sorted(chosen, key=key)
 
 
+# Languages Photon names places in (its "lang" parameter).
+PHOTON_LANGUAGES = frozenset({"en", "de", "fr", "it"})
+# Interface languages written in the Latin script.
+LATIN_LANGUAGES = frozenset({"en", "fr", "de", "es", "it"})
+
+
+def _latin(text: str) -> bool:
+    """No letter of another script than the Latin one."""
+    return all(
+        not character.isalpha() or unicodedata.name(character, "").startswith("LATIN")
+        for character in text
+    )
+
+
+def place_in_script(parts: list[str], language: str) -> str:
+    """The parts of a place, joined; for a person writing in a Latin-script
+    language, a part written in another script goes when another part with
+    letters stays (the answer names places in its own script)."""
+    present = [part for part in parts if part]
+    if language[:2] in LATIN_LANGUAGES:
+        latin = [part for part in present if _latin(part)]
+        if any(any(c.isalpha() for c in part) for part in latin):
+            present = latin
+    return ", ".join(present)
+
+
 class OSM:
     def __init__(self) -> None:
         self.root = Path(os.environ.get("ATLAS_OSM_STATE", "BRAIN/osm"))
@@ -336,8 +363,13 @@ class OSM:
         except (KeyError, IndexError, TypeError, ValueError):
             raise NearbyError("place_not_found") from None
 
-    async def reverse(self, position: Position) -> str:
+    async def reverse(self, position: Position, language: str = "") -> str:
         """The street and locality around a device position, any country.
+
+        ``language`` is the person's: the map services name the place in it
+        where the map has that name, and a part written only in another
+        script is left out (staging -116: "JR東京駅" opened an English
+        answer from a position at Tokyo station).
 
         A public service can fail for a moment (staging 2026-11-16: a position
         in Munich got "the map service could not turn it into a place" while the
@@ -349,7 +381,7 @@ class OSM:
         last: NearbyError | None = None
         for attempt in range(2):
             try:
-                return await self.nominatim_reverse(position)
+                return await self.nominatim_reverse(position, language)
             except NearbyError as exc:
                 last = exc
                 if str(exc) not in TRANSIENT or attempt:
@@ -365,7 +397,7 @@ class OSM:
         if not endpoint:
             raise last or NearbyError("place_not_found")
         try:
-            return await self.photon_reverse(position, endpoint)
+            return await self.photon_reverse(position, endpoint, language)
         except NearbyError as exc:
             logging.getLogger(__name__).warning(
                 "location_reverse_failed %s",
@@ -373,12 +405,16 @@ class OSM:
             )
             raise last or exc from None
 
-    async def photon_reverse(self, position: Position, endpoint: str) -> str:
-        data = await self.request(
-            "geocode",
-            {"lat": f"{position.latitude:.3f}", "lon": f"{position.longitude:.4f}"},
-            endpoint,
-        )
+    async def photon_reverse(
+        self, position: Position, endpoint: str, language: str = ""
+    ) -> str:
+        parameters = {
+            "lat": f"{position.latitude:.3f}",
+            "lon": f"{position.longitude:.4f}",
+        }
+        if language[:2] in PHOTON_LANGUAGES:
+            parameters["lang"] = language[:2]
+        data = await self.request("geocode", parameters, endpoint)
         try:
             properties = data["features"][0]["properties"]
         except (KeyError, IndexError, TypeError):
@@ -402,9 +438,9 @@ class OSM:
             " ".join(filter(None, (value("postcode"), locality))),
             value("country"),
         ]
-        return ", ".join(part for part in parts if part)
+        return place_in_script(parts, language)
 
-    async def nominatim_reverse(self, position: Position) -> str:
+    async def nominatim_reverse(self, position: Position, language: str = "") -> str:
         """The street and locality around a consented device position.
 
         Used when a position-dependent answer is not a nearby-places search
@@ -428,6 +464,7 @@ class OSM:
                 "format": "jsonv2",
                 "zoom": "17",
                 "addressdetails": "1",
+                **({"accept-language": language[:2]} if language[:2].isalpha() else {}),
             },
             endpoint,
         )
@@ -459,7 +496,7 @@ class OSM:
             " ".join(filter(None, (postcode, locality))),
             country,
         ]
-        return ", ".join(part for part in parts if part)
+        return place_in_script(parts, language)
 
     async def candidates(
         self,

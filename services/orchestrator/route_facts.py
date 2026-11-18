@@ -14,7 +14,8 @@ the sentence holds without it). Its route anchors (line identifiers, place
 names in route positions, "direct", a frequency, its clock times) must appear
 together in one passage of one source, within ``WINDOW`` characters: one page
 naming the line and another naming the stop do not source the transfer. A unit
-that fails is left out whole by the travel check (travel_claims), a sentence
+that fails is left out whole by the travel check (travel_claims), unless only
+a qualifier ("direct") or its closing clauses fail (``_cuts``); a sentence
 that only continues it ("Trains run every few minutes.") goes with it, and the
 closing note says the route details could not be verified and where to check.
 
@@ -280,6 +281,9 @@ class Finding:
     # clauses in the body, their words, whether what follows states a route).
     leads: list[tuple[int, str, bool]] = field(default_factory=list)
     lead_start: int = -1
+    # Spans that are a part of a sentence (a qualifier, a closing clause):
+    # removed as they are, the rest of the sentence kept (``_cuts``).
+    exact: set[tuple[int, int]] = field(default_factory=set)
 
     @property
     def route(self) -> bool:
@@ -306,6 +310,12 @@ def _line_patterns(identifier: str) -> tuple[re.Pattern[str], ...]:
     if code:
         return (re.compile(rf"(?<!\w){code[1]} ?{code[2]}(?!\w)"),)
     escaped = re.escape(value)
+    if value.isalpha() and len(value) >= 3:
+        # A service name of three capitals ("tren AVE") is written alone or
+        # with its train number by the pages ("AVE 03183 ... Madrid Atocha -
+        # Barcelona Sants", staging -116); one or two letters ("ligne B")
+        # need their transit word.
+        return (re.compile(rf"(?<!\w){escaped}(?!\w)"),)
     forms = [
         rf"(?<!\w)(?:{_TRANSIT_N})(?: \w+)? {escaped}(?!\w)",
         rf"(?<!\w){escaped} (?:{_TRANSIT_N})(?!\w)",
@@ -961,6 +971,112 @@ def _restated(body: str, unit: Unit, sources: Sources) -> list[tuple[int, str, b
     return found
 
 
+# Verbs of being, five languages, folded: a "direct" after one is what its
+# sentence states ("suelen ser directos"), never a qualifier that goes alone.
+_COPULA = frozenset(
+    (
+        "is are was were be been being est sont etait etaient etre ist sind war "
+        "waren sein es son era eran ser sera seran sono erano essere"
+    ).split()
+)
+
+
+def _qualifier(body: str, unit: Unit, anchor: Anchor) -> tuple[int, int] | None:
+    """The span of a "direct" that only qualifies its sentence ("which runs
+    directly to the airport", "un tren directo a Sants"), with one space;
+    None for a predicate ("son directos") or a word closing its clause."""
+    start = anchor.position
+    end = start + len(anchor.text)
+    if anchor.kind != "direct" or start < unit.start or end >= unit.end:
+        return None
+    following = re.match(r"\s++([^\W\d_]++)", body[end : unit.end])
+    if following is None:
+        return None
+    before = re.findall(r"[^\W\d_]++", fold(body[unit.start : start]))
+    previous = before[-1] if before else ""
+    if previous in _COPULA:
+        return None
+    if previous == "a" and fold(following[1][:1]) in "aeiou":
+        # "a direct AVE" would leave "a AVE".
+        return None
+    if start > unit.start and body[start - 1] == " ":
+        return start - 1, end
+    return start, end + len(following[0]) - len(following[0].lstrip())
+
+
+def _closings(body: str, unit: Unit) -> list[int]:
+    """The commas that open the closing clauses of a sentence, last first:
+    outside parentheses and links, followed by a space, after a first clause
+    of three words or more."""
+    commas: list[int] = []
+    depth = 0
+    for index in range(unit.start, unit.end):
+        character = body[index]
+        if character in "([":
+            depth += 1
+        elif character in ")]":
+            depth = max(0, depth - 1)
+        elif (
+            character == ","
+            and depth == 0
+            and body[index + 1 : index + 2].isspace()
+            and len(body[unit.start : index].split()) >= 3
+        ):
+            commas.append(index)
+    return commas[::-1]
+
+
+def _cuts(
+    body: str, unit: Unit, sources: Sources, sites: Sites
+) -> list[tuple[int, int]]:
+    """The fewest parts of a failing sentence whose removal leaves a route the
+    pages support: its "direct", a run of closing clauses, or both.
+
+    Staging -116: "Take the T8 Airport & South Line train, which runs
+    directly to Sydney Airport, stopping ..." went whole although the page
+    read named the T8 with Sydney Airport: no page wrote "direct" next to
+    them. Only such a part goes now; a sentence whose kept part would state
+    nothing but the request, or nothing a page holds, still goes whole.
+    """
+    if unit.row:
+        return []
+    words = [
+        span
+        for anchor in unit.anchors
+        if (span := _qualifier(body, unit, anchor)) is not None
+    ][:2]
+    # A closing clause naming a line is another leg (a transfer): never a
+    # detail, its sentence goes whole (a first leg alone misleads).
+    clauses = [
+        (comma, unit.end)
+        for comma in _closings(body, unit)
+        if not any(a.kind == "line" and a.position >= comma for a in unit.anchors)
+    ][:4]
+    options: list[list[tuple[int, int]]] = [[word] for word in words]
+    options += [[clause] for clause in clauses]
+    options += [
+        [word, clause]
+        for clause in clauses
+        for word in words
+        if not clause[0] <= word[0] < clause[1]
+    ]
+    # The least text removed first: "directly" and the last clause before
+    # every clause after the line.
+    options.sort(key=lambda option: sum(end - start for start, end in option))
+    for option in options:
+        kept = [
+            a
+            for a in unit.anchors
+            if not any(start <= a.position < end for start, end in option)
+        ]
+        if not any(a.kind != "clock" and not _asked(a, sources) for a in kept):
+            continue
+        if _failing(sources, kept) or sites.disputed(kept):
+            continue
+        return sorted(option)
+    return []
+
+
 def review(
     body: str,
     plain: str,
@@ -1042,6 +1158,15 @@ def review(
                         _labels(inside, sources, body, (inner_start, inner_end)),
                     )
                 )
+            removed.append(False)
+            continue
+        cuts = _cuts(body, unit, sources, sites)
+        if cuts:
+            # The rest of the sentence holds: only the parts no page gives go.
+            for cut_start, cut_end in cuts:
+                label = quoted(body[cut_start:cut_end])
+                finding.spans.append((cut_start, cut_end, [label] if label else []))
+                finding.exact.add((cut_start, cut_end))
             removed.append(False)
             continue
         finding.spans.append(
