@@ -204,3 +204,34 @@ class SectionLabelTests(unittest.TestCase):
             "see [1](https://rail.example.test/one) and the plan (KEPT in mind)."
         )
         self.assertEqual(travel_rebuild.unlabelled(text), text)
+
+
+class CitationFormTests(unittest.TestCase):
+    """Staging -120: Madrid cited "[fuente: url]"; New York listed one site twice."""
+
+    def test_worded_citations_become_links(self) -> None:
+        text = (
+            "El tren dura 2 horas [fuente: https://rail.example.test/madrid]. "
+            "Der Zug fährt stündlich (Quelle: https://bahn.example.test/plan)."
+        )
+        self.assertEqual(
+            travel_rebuild.citations(text),
+            "El tren dura 2 horas ([rail.example.test](https://rail.example.test/madrid)). "
+            "Der Zug fährt stündlich ([bahn.example.test](https://bahn.example.test/plan)).",
+        )
+
+    def test_one_link_per_site_in_a_group(self) -> None:
+        text = (
+            "Trains leave from Penn Station ([guide.example.test](https://guide.example.test/a), "
+            "[guide.example.test](https://guide.example.test/b), "
+            "[rail.example.test](https://rail.example.test/c))."
+        )
+        self.assertEqual(
+            travel_rebuild.citations(text),
+            "Trains leave from Penn Station ([guide.example.test](https://guide.example.test/a), "
+            "[rail.example.test](https://rail.example.test/c)).",
+        )
+
+    def test_a_markdown_link_is_left_alone(self) -> None:
+        text = "See [rail.example.test](https://rail.example.test/c) (platform 2)."
+        self.assertEqual(travel_rebuild.citations(text), text)

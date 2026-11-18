@@ -659,6 +659,34 @@ _DANGLING = re.compile(r"[ \t]*+[,;][ \t]*+(?=[.!?)](?:\s|$))")
 _OPENING = re.compile(r"\([ \t]*+[,;][ \t]*+")
 
 
+# A page written as "[source: url]" in any language ("[fuente: ...]",
+# "(Quelle: ...)"), or as a bare url in brackets.
+_WORDED = re.compile(
+    r"(?<!\])[\[(][ \t]*+(?:[^\W\d_]{2,12}+[ \t]*+:[ \t]*+)?(https?://[^\s\])]++)[ \t]*+[\])]"
+)
+# Links side by side inside one pair of parentheses.
+_GROUP = re.compile(
+    r"\((\[[^\]\n]++\]\([^)\s]++\)(?:[ \t]*+[,;][ \t]*+\[[^\]\n]++\]\([^)\s]++\))++)\)"
+)
+_IN_GROUP = re.compile(r"\[([^\]\n]++)\]\([^)\s]++\)")
+
+
+def _site(url: str) -> str:
+    return f"([{urlsplit(url).netloc.removeprefix('www.')}]({url}))"
+
+
+def _one_per_site(match: re.Match[str]) -> str:
+    """One link per site in a group: "(amtrakguide.com, amtrakguide.com)" on
+    staging -120 was two pages of one site."""
+    seen: set[str] = set()
+    links: list[str] = []
+    for link in _IN_GROUP.finditer(match[1]):
+        if link[1].lower() not in seen:
+            seen.add(link[1].lower())
+            links.append(link[0])
+    return "(" + ", ".join(links) + ")"
+
+
 def citations(text: str) -> str:
     """Citations joined once (staging -112: "(bahn.de),, (sncf-connect.com)"
     after a link between them went, "(amtrak.com) (amtrak.com)"): no doubled
@@ -669,6 +697,9 @@ def citations(text: str) -> str:
         if line.lstrip().startswith("```"):
             fenced = not fenced
         if not fenced and not line.lstrip().startswith("|"):
+            # Staging -120 (Madrid): "[fuente: https://...]" after each fact.
+            line = _WORDED.sub(lambda m: _site(m[1]), line)
+            line = _GROUP.sub(_one_per_site, line)
             line = _REPEATED.sub(r"\1", line)
             line = _DOUBLED.sub(", ", line)
             line = _DANGLING.sub("", line)
