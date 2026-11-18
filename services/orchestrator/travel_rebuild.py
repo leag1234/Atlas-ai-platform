@@ -266,14 +266,12 @@ def _substantial(sentence: str) -> bool:
     return len(words) >= 3
 
 
-def excerpts(
-    turn: travel_claims.Turn,
-    question: str,
-    limit: int = EXCERPT_CHARACTERS,
-    answer: str = "",
-) -> list[Excerpt]:
-    """Source sentences about this trip that give travel values or route words,
-    most relevant first; never from a page about another trip."""
+def _pages(
+    turn: travel_claims.Turn, question: str, answer: str
+) -> tuple[set[str], dict[str, list[str]], dict[str, int], int]:
+    """The trip's place words, the texts read by page (none about another
+    trip), how many of those words each page names, and how many a page about
+    this trip names."""
     wanted = trip_words(turn, question)
     elsewhere = off_route(turn, question, answer)
     pages: dict[str, list[str]] = {}
@@ -288,6 +286,37 @@ def excerpts(
     # page does; a page naming one is read by the rewrite after them (the
     # question may name a station, not its city), never listed by code.
     floor = min(2, max(shared.values(), default=0), len(wanted))
+    return wanted, pages, shared, floor
+
+
+def unrelated(turn: travel_claims.Turn, question: str, answer: str) -> set[str]:
+    """The pages read that are not about this trip: about another trip, or
+    naming fewer of its places than a page about it does (the rule by which
+    code lists pages, ``excerpts``).
+
+    Staging -116: the consulted-sources list under a Sydney airport trip held
+    a Gatwick shuttle, a Vienna airport train, a New Delhi station and flight
+    listings, every search hit of the turn. A trip answer's list leaves such
+    pages out unless the answer cites them; they stay in the turn's record.
+    """
+    if not turn.active:
+        return set()
+    wanted, pages, shared, floor = _pages(turn, question, answer)
+    if not wanted:
+        return set()
+    urls = {url for url, _ in turn.linked if url}
+    return (urls - set(pages)) | {url for url, count in shared.items() if count < floor}
+
+
+def excerpts(
+    turn: travel_claims.Turn,
+    question: str,
+    limit: int = EXCERPT_CHARACTERS,
+    answer: str = "",
+) -> list[Excerpt]:
+    """Source sentences about this trip that give travel values or route words,
+    most relevant first; never from a page about another trip."""
+    wanted, pages, shared, floor = _pages(turn, question, answer)
     asked = set(turn.trip_dates())
     scored: list[tuple[int, int, Excerpt]] = []
     seen: set[str] = set()

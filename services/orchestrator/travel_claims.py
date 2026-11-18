@@ -43,7 +43,8 @@ from services.orchestrator.location import Position
 
 # "route" is a sentence, a parenthesis or a table cell stating an unsourced
 # route fact (route_facts.py): it is left out like a value.
-Kind = Literal["duration", "distance", "clock", "route"]
+# "part": a part of a sentence removed as it is (route_facts._cuts).
+Kind = Literal["duration", "distance", "clock", "route", "part"]
 
 _SPACE = r"[   ]?"
 _NUMBER = r"(?<![\w.,:/])(\d{1,5}(?:[.,]\d{1,2})?)"
@@ -794,6 +795,8 @@ def _leave_out(text: str, flagged: list[Quantity]) -> str:
                 spans.extend((a, b, " " + _LEFT_OUT + " ") for a, b in cells)
             else:
                 spans.append((start, end, " " + _LEFT_OUT + " "))
+        elif claim.kind == "part":
+            spans.append((claim.start, claim.end, ""))
         else:
             start, end = _span_to_remove(text, claim)
             spans.append((start, end, ""))
@@ -1670,7 +1673,16 @@ class Turn:
         removed = [
             *found.values,
             *found.elsewhere,
-            *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in found.route.spans),
+            *(
+                Quantity(
+                    s,
+                    e,
+                    "part" if (s, e) in found.route.exact else "route",
+                    0.0,
+                    body[s:e],
+                )
+                for s, e, _ in found.route.spans
+            ),
         ]
         text = wellformed(_restructure(body, _leave_out(body, removed)))
         if not removed:
