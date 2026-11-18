@@ -635,7 +635,7 @@ class ScreenTests(unittest.TestCase):
                 return await super().__call__(payload, seconds)
 
         calls = Slow(CAUGHT, CLEAN)
-        with patch.object(faith.time, "monotonic", lambda: clock[0]):
+        with patch("time.monotonic", lambda: clock[0]):
             self.run_review(CAUSAL, calls)
         # The screen's 15 s are not taken from the judge.
         self.assertEqual(seen, [faith.SCREEN_SECONDS + 5, faith.JUDGE_SECONDS + 5])
