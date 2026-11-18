@@ -37,7 +37,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
-from services.orchestrator import route_facts
+from services.orchestrator import redirects, route_facts
 from services.orchestrator.grounding import Grounding
 from services.orchestrator.location import Position
 
@@ -1124,6 +1124,30 @@ _LEAD_BACK = re.compile(
 )
 
 
+def _opening(body: str, found: "Findings") -> str:
+    """The person's own words that open a first sentence left out whole.
+
+    Left out for a route fact, the clauses before the route (route_facts);
+    left out for a value (staging -114: "Pour être à l'heure à votre
+    déjeuner à Paris Gare de Lyon à 12 h 30, deux départs ..." went for an
+    unsourced time), the clauses before the first value left out, holding
+    none of them.
+    """
+    route = found.route
+    if route.opening or route.lead_start < 0 or not route.leads:
+        return route.opening
+    values = [*found.values, *found.elsewhere]
+    if not any(
+        _removal(body, claim)[0] <= route.lead_start < _removal(body, claim)[1]
+        for claim in values
+    ):
+        return ""
+    for end, text, _ in route.leads:
+        if not any(claim.start < end for claim in values):
+            return text
+    return ""
+
+
 def _opened(original: str, text: str, opening: str, language: str) -> str:
     """The kept answer opening as a reply, never mid-thought.
 
@@ -1145,6 +1169,62 @@ def _opened(original: str, text: str, opening: str, language: str) -> str:
     return text
 
 
+# Separators of a list of values ("4h 30m, 4h 45m, or 9h 15m"), five languages.
+_LIST_GAP = re.compile(
+    r"^[ \t]*+[,/;]?+[ \t]*+(?:(?:or|and|ou|et|oder|und|o|y|e|u)[ \t]++)?+$", re.I
+)
+OUTLIER = 1.75
+# Words that say the values of a line are journey times, five languages.
+_DURATION_CUE = re.compile(
+    r"(?<![\w-])(?:journey|journeys|travel|trip|ride|duration|takes?|took|"
+    r"dure\w*+|durée\w*+|trajets?|fahrzeit\w*+|reisezeit\w*+|dauer\w*+|"
+    r"duraci\w*+|tarda\w*+|viaje|durata|impiega\w*+|viaggio)(?![\w-])",
+    re.I,
+)
+_TRAILING_UNIT = re.compile(r"[ \t]?+(?:min\w*+|mn|m)(?![\w-])", re.I)
+
+
+def _durations(line: str) -> list[Quantity]:
+    """The journey times of a line: durations, and "4h 30" when the line
+    says it gives journey times."""
+    found = quantities(line, generous=bool(_DURATION_CUE.search(line)))
+    items: dict[int, Quantity] = {}
+    for q in found:
+        if q.kind == "duration":
+            unit = _TRAILING_UNIT.match(line, q.end)
+            end = unit.end() if unit else q.end
+            items.setdefault(q.start, Quantity(q.start, end, q.kind, q.value, q.text))
+    return [items[start] for start in sorted(items)]
+
+
+def outliers_left_out(text: str) -> str:
+    """A duration listed with others that is far longer than them goes.
+
+    Staging -114: "journey times around 4h 30m, 4h 45m, or 9h 15m" kept a
+    slow connection read in a snippet next to the route's usual times. In a
+    list of three durations or more, one longer than OUTLIER times the
+    middle of the others is no typical time and leaves the list.
+    """
+    lines: list[str] = []
+    for line in text.split("\n"):
+        found = _durations(line)
+        cuts: list[tuple[int, int]] = []
+        for index, item in enumerate(found):
+            others = sorted(q.value for q in found if q is not item)
+            if index == 0 or len(others) < 2:
+                continue
+            middle = others[len(others) // 2]
+            previous = found[index - 1]
+            if item.value > OUTLIER * middle and _LIST_GAP.match(
+                line[previous.end : item.start]
+            ):
+                cuts.append((previous.end, item.end))
+        for start, end in reversed(cuts):
+            line = line[:start] + line[end:]
+        lines.append(line)
+    return "\n".join(lines)
+
+
 @dataclass
 class Findings:
     """What a travel answer states that no source, computation or person gave."""
@@ -1153,12 +1233,15 @@ class Findings:
     route: route_facts.Finding
     # Times the sources give for another day: the start of the claim, the day.
     dated: dict[int, str] = field(default_factory=dict)
+    # Values a source gives for another day than the trip's, written with
+    # that day: sourced, but no use for this trip; left out without a note.
+    elsewhere: list[Quantity] = field(default_factory=list)
 
     def __bool__(self) -> bool:
-        return bool(self.values or self.route.spans)
+        return bool(self.values or self.route.spans or self.elsewhere)
 
     def __len__(self) -> int:
-        return len(self.values) + len(self.route.spans)
+        return len(self.values) + len(self.route.spans) + len(self.elsewhere)
 
     def labels(self) -> list[str]:
         return list(
@@ -1177,6 +1260,8 @@ class Findings:
 
     def note(self, language: str) -> str:
         """The one closing note: what was left out, and where to check."""
+        if not self.labels():
+            return ""
         key = "route" if self.route.route else "note"
         if (
             not self.values
@@ -1242,6 +1327,9 @@ class Turn:
 
     def collect(self, value: object) -> None:
         if self.active:
+            # A forum or social post is no source of a trip's facts (staging
+            # -114: "Acela runs Monday-Friday" from a Reddit thread).
+            value = redirects.without_forums(value)
             self.evidence.collect(value)
             self._link(value, "")
 
@@ -1438,6 +1526,18 @@ class Turn:
                 if later != earlier
             )
 
+        def another_day(claim: Quantity) -> bool:
+            """Written after a date of the sentence that is not the trip's
+            ("on 2026-11-16, a train took 10h 34m" for a trip on the 19th,
+            staging -114)."""
+            if not today:
+                return False
+            left, _ = _sentence(body, claim.start, claim.end)
+            before = named_dates(body[left : claim.start], today)
+            return bool(before) and not before & set(self.trip_dates())
+
+        elsewhere = [claim for claim in claims if another_day(claim)]
+        claims = [claim for claim in claims if claim not in elsewhere]
         flagged = [claim for claim in claims if not supported(claim)]
         # Lines, stops, directions, transfers and "direct" claims: together in
         # one passage of a source read this turn (route_facts.py).
@@ -1463,7 +1563,7 @@ class Turn:
             pages=self.linked,
         )
         # A sentence the values check already leaves out needs no second reason.
-        taken = [_removal(body, claim) for claim in flagged]
+        taken = [_removal(body, claim) for claim in (*flagged, *elsewhere)]
         route.spans = [
             span
             for span in route.spans
@@ -1477,19 +1577,21 @@ class Turn:
                 for start, day in dated.items()
                 if any(c.start == start for c in flagged)
             },
+            elsewhere,
         )
 
     def kept(self, body: str, found: Findings) -> str:
         """The body without what ``found`` holds, well formed."""
         removed = [
             *found.values,
+            *found.elsewhere,
             *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in found.route.spans),
         ]
         text = wellformed(_restructure(body, _leave_out(body, removed)))
         if not removed:
             return text.rstrip()
         text = wellformed(without_orphans(body, text)).rstrip()
-        return _opened(body, text, found.route.opening, self.language)
+        return _opened(body, text, _opening(body, found), self.language)
 
     def left_out(self, body: str, found: Findings, language: str) -> str:
         """The body without what ``found`` holds, and one note."""

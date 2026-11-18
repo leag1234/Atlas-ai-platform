@@ -457,7 +457,7 @@ def _code_built(
         parts.append(pointer)
         report.built = "code+pages"
     parts.append(found.note(language))
-    return "\n\n".join(parts)
+    return "\n\n".join(part for part in parts if part)
 
 
 _REFERENCE = re.compile(r"\[(\d{1,2})\](?!\()")
@@ -574,7 +574,7 @@ def _accepted(
             len(trimmed) >= KEPT_SHARE * len(text) or len(trimmed) >= MIN_TRIMMED
         ):
             report.rebuilt, report.built = "kept:left_out", "model"
-            return trimmed + "\n\n" + again.note(language)
+            return "\n\n".join(p for p in (trimmed, again.note(language)) if p)
     report.rebuilt = "rejected:" + reason if reason else "kept"
     if reason:
         return ""
@@ -734,7 +734,8 @@ async def review(
     )
     final = _without(final, off_route(turn, question, final.partition("<details>")[0]))
     body, fold, footer = final.partition("<details>")
-    final = citations(redirects.cited(unwrapped(body))) + fold + footer
+    body = travel_claims.outliers_left_out(redirects.forum_claims(unwrapped(body)))
+    final = citations(redirects.cited(body)) + fold + footer
     return _with_connection(turn, final, language), report
 
 
@@ -818,5 +819,5 @@ async def recover(
             if part
         )
     _log(report, started)
-    final = citations(redirects.cited(final.rstrip()))
+    final = citations(redirects.cited(redirects.forum_claims(final.rstrip())))
     return _with_connection(turn, final, language), report

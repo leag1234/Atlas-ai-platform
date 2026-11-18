@@ -276,6 +276,10 @@ class Finding:
     # The person's own words that opened a removed first sentence ("To be
     # at Geneva Airport tomorrow at 9:00"): the answer still opens with them.
     opening: str = ""
+    # Openings the first sentence could keep if it goes: (end of the kept
+    # clauses in the body, their words, whether what follows states a route).
+    leads: list[tuple[int, str, bool]] = field(default_factory=list)
+    lead_start: int = -1
 
     @property
     def route(self) -> bool:
@@ -812,6 +816,19 @@ def _mine(anchor: Anchor, sources: Sources) -> bool:
     return anchor.kind == "name" and all(w in sources.own for w in anchor.key.split())
 
 
+def _asked(anchor: Anchor, sources: Sources) -> bool:
+    """A place of the request: the person's own name, or a name the pages
+    write that holds a word of theirs ("Paris Gare de Lyon" for "Gare de
+    Lyon", staging -114)."""
+    if _mine(anchor, sources):
+        return True
+    return (
+        anchor.kind == "name"
+        and any(w in sources.own for w in anchor.key.split())
+        and sources.together([anchor])
+    )
+
+
 _QUOTED_CHARACTERS = 90
 
 
@@ -868,7 +885,7 @@ def _labels(
         # The claim starts at what is not the person's own: a sentence that
         # restates the request before an unverified leg is quoted from the
         # leg (staging -113 quoted "To be at Geneva Airport ... from").
-        theirs = [a for a in part if not _mine(a, sources)] or part
+        theirs = [a for a in part if not _asked(a, sources)] or part
         if claim := quoted(_claim(body, span[0], span[1], part, theirs)):
             return [claim]
     stated = [a for part in failing for a in part if a.kind != "clock"]
@@ -885,14 +902,16 @@ def _labels(
     return [" – ".join(names) + (f" ({', '.join(times)})" if times else "")]
 
 
-def _restated(body: str, unit: Unit, sources: Sources) -> str:
+def _restated(body: str, unit: Unit, sources: Sources) -> list[tuple[int, str, bool]]:
     """The opening clauses of a sentence that only restate the request.
 
     "Pour être à l'aéroport de Genève jeudi à 9h00 depuis le Gratte-Ciel,
-    prenez ..." (staging -113): the clauses before the comma hold only the
+    prenez ..." (staging -113): the clauses before a comma hold only the
     person's places, day and time; when the rest of the sentence goes, they
-    still open the answer, which never starts mid-thought. Empty when the
-    clauses state anything else (a line, a time no one gave, "direct").
+    still open the answer, which never starts mid-thought. None when the
+    clauses state anything else (a line, a time no one gave, "direct"); the
+    longest first, each with the end of its clauses in ``body`` and whether
+    the rest states a route.
     """
     text = body[unit.start : unit.end]
     depth = 0
@@ -902,6 +921,7 @@ def _restated(body: str, unit: Unit, sources: Sources) -> str:
         depth -= character == ")"
         if character == "," and depth == 0:
             commas.append(index)
+    found: list[tuple[int, str, bool]] = []
     for comma in reversed(commas):
         prefix = text[:comma]
         inside = [
@@ -910,13 +930,13 @@ def _restated(body: str, unit: Unit, sources: Sources) -> str:
         rest = [a for a in unit.anchors if a.position >= unit.start + comma]
         if (
             len(prefix.split()) >= 3
+            and len(text[comma:].split()) >= 2
             and (inside or re.search(r"\d", prefix))
-            and all(_mine(a, sources) for a in inside)
-            and a_route(rest)
+            and all(_asked(a, sources) for a in inside)
             and not re.search(r"[\[\]()*`|]", prefix)
         ):
-            return " ".join(prefix.split())
-    return ""
+            found.append((unit.start + comma, " ".join(prefix.split()), a_route(rest)))
+    return found
 
 
 def review(
@@ -953,6 +973,9 @@ def review(
             removed.append(False)
             continue
         _read(unit, plain, folded, clocks, sources, owned_clocks)
+        if unit.start == len(body) - len(body.lstrip()) and not unit.row:
+            finding.lead_start = unit.start
+            finding.leads = _restated(body, unit, sources)
         if not unit.route or not a_route(unit.anchors):
             removed.append(False)
             continue
@@ -1006,8 +1029,10 @@ def review(
                 _labels(unit.anchors, sources, body, (unit.start, unit.end)),
             )
         )
-        if unit.start == len(body) - len(body.lstrip()):
-            finding.opening = _restated(body, unit, sources)
+        if unit.start == finding.lead_start:
+            finding.opening = next(
+                (text for _, text, route in finding.leads if route), ""
+            )
         removed.append(True)
     if not finding.spans:
         return finding
