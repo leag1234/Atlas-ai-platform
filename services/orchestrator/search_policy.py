@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from services.orchestrator.loop import Call
 from services.orchestrator.link_requests import (
-    own_request,
+    own_words,
     page_request,
     product_queries,
 )
@@ -41,8 +41,12 @@ def required_research(
     history: tuple[str, ...] = (),
 ) -> tuple[Call, ...]:
     # Words of a pasted document (an article to summarise or check) never make
-    # research mandatory: only the person's own lines around it do.
-    question = own_request(question)
+    # research mandatory, and never become a search query: only the person's own
+    # words around it do, also when a single line break or a colon is all that
+    # separates them (staging 2026-11-18: "Summarize this text in three
+    # sentences:" then a pasted report on the next line sent the report to a web
+    # search because it said "current").
+    question = own_words(question)
     normalized = "".join(
         c
         for c in unicodedata.normalize("NFD", question.casefold())
@@ -132,7 +136,7 @@ def required_research(
 
 def requested_page_read(question: str, history: tuple[str, ...] = ()) -> bool:
     """An explicit source-reading request must survive snippet-only discovery."""
-    question = own_request(question)
+    question = own_words(question)
     text = question.casefold()
     return page_request(question, history) or bool(
         re.search(
