@@ -179,3 +179,59 @@ class UncitedAnswerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SectionLabelTests(unittest.TestCase):
+    """Staging -120: a Munich - Berlin rewrite cited "(KEPT)" in place of a page."""
+
+    def test_section_names_used_as_citations_go(self) -> None:
+        text = (
+            "From the main station, take a direct ICE to Berlin (KEPT). "
+            "Confirm the train on the operator's site (KEPT, PLAN). "
+            "The ride takes 4 hours [2] and the first train is early [SOURCE 3]."
+        )
+        self.assertEqual(
+            travel_rebuild.unlabelled(text),
+            "From the main station, take a direct ICE to Berlin. "
+            "Confirm the train on the operator's site. "
+            "The ride takes 4 hours [2] and the first train is early [3].",
+        )
+
+    def test_links_and_ordinary_parentheses_stay(self) -> None:
+        text = (
+            "Take line 8 (platform 3) to the airport "
+            "([rail.example.test](https://rail.example.test/airport)); "
+            "see [1](https://rail.example.test/one) and the plan (KEPT in mind)."
+        )
+        self.assertEqual(travel_rebuild.unlabelled(text), text)
+
+
+class CitationFormTests(unittest.TestCase):
+    """Staging -120: Madrid cited "[fuente: url]"; New York listed one site twice."""
+
+    def test_worded_citations_become_links(self) -> None:
+        text = (
+            "El tren dura 2 horas [fuente: https://rail.example.test/madrid]. "
+            "Der Zug fährt stündlich (Quelle: https://bahn.example.test/plan)."
+        )
+        self.assertEqual(
+            travel_rebuild.citations(text),
+            "El tren dura 2 horas ([rail.example.test](https://rail.example.test/madrid)). "
+            "Der Zug fährt stündlich ([bahn.example.test](https://bahn.example.test/plan)).",
+        )
+
+    def test_one_link_per_site_in_a_group(self) -> None:
+        text = (
+            "Trains leave from Penn Station ([guide.example.test](https://guide.example.test/a), "
+            "[guide.example.test](https://guide.example.test/b), "
+            "[rail.example.test](https://rail.example.test/c))."
+        )
+        self.assertEqual(
+            travel_rebuild.citations(text),
+            "Trains leave from Penn Station ([guide.example.test](https://guide.example.test/a), "
+            "[rail.example.test](https://rail.example.test/c)).",
+        )
+
+    def test_a_markdown_link_is_left_alone(self) -> None:
+        text = "See [rail.example.test](https://rail.example.test/c) (platform 2)."
+        self.assertEqual(travel_rebuild.citations(text), text)
