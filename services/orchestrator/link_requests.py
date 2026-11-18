@@ -44,23 +44,48 @@ def own_words(text: str) -> str:
     from the pasted text (owner ruling 2026-11-17: a pasted text never
     classifies the request).
     """
+    return split_pasted(text)[0]
+
+
+def pasted_parts(text: str) -> list[str]:
+    """What own_words leaves out: the pasted text and the attached file blocks."""
+    return split_pasted(text)[1]
+
+
+def split_pasted(text: str) -> tuple[str, list[str]]:
+    """The person's own words, and the pasted parts around which they are read."""
+    pasted = [found[0] for found in attached_blocks.BLOCKS_ANY_CASE.finditer(text)]
     text = attached_blocks.BLOCKS_ANY_CASE.sub("", text)
     if len(text.encode()) < 2 * DOCUMENT_PARAGRAPH_BYTES:
-        return text
-    for separator, joiner in ((r"\n[ \t]*\n", "\n\n"), (r"\n", "\n")):
-        parts = [part for part in re.split(separator, text) if part.strip()]
+        return text, pasted
+    for separator, joiner in ((r"\n[ \t]*+\n", "\n\n"), (r"\n", "\n")):
+        # Each part with its place in the text: the pasted block is cut out
+        # of the text as it was written.
+        spans: list[tuple[int, int]] = []
+        start = 0
+        for match in re.finditer(separator, text):
+            if text[start : match.start()].strip():
+                spans.append((start, match.start()))
+            start = match.end()
+        if text[start:].strip():
+            spans.append((start, len(text)))
         long = [
             index
-            for index, part in enumerate(parts)
-            if len(part.encode()) > DOCUMENT_PARAGRAPH_BYTES
+            for index, (begin, end) in enumerate(spans)
+            if len(text[begin:end].encode()) > DOCUMENT_PARAGRAPH_BYTES
         ]
         if not long:
-            return text
-        kept = parts[: long[0]] + parts[long[-1] + 1 :]
+            return text, pasted
+        kept = spans[: long[0]] + spans[long[-1] + 1 :]
         if kept:
-            return joiner.join(kept)
+            return joiner.join(text[begin:end] for begin, end in kept), [
+                *pasted,
+                text[spans[long[0]][0] : spans[long[-1]][1]],
+            ]
     lead = re.match(r"[^\n:]{1,200}:", text)
-    return lead.group(0) if lead else text
+    if lead is None:
+        return text, pasted
+    return lead.group(0), [*pasted, text[lead.end() :]]
 
 
 # "Link" and "lien" also name a relation ("the link between sleep and memory",
@@ -123,7 +148,7 @@ def link_request(question: str, *, prices: bool = False) -> bool:
 
 
 def page_request(question: str, history: Sequence[str] = ()) -> bool:
-    question = own_request(question)
+    question = own_words(question)
     if link_request(question):
         return True
     # A price-only question inherits shopping intent only from the active thread.

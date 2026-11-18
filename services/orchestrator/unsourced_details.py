@@ -53,6 +53,7 @@ from packages import privacy
 from packages.ports import atlas_ports
 from services.orchestrator import encyclopedia, reference_fetch
 from services.orchestrator.dictation_cleanup import fast_profile
+from services.orchestrator.link_requests import own_words
 from services.orchestrator.grounding import STOP as STOP_WORDS
 from services.orchestrator.grounding import (
     CREATIVE,
@@ -889,6 +890,9 @@ async def references(
     if encyclopedia.source_plan() not in {"live", "live_then_local"}:
         return []
     edition = encyclopedia.wiki_language(language)
+    # The subject is read in the person's own words: a pasted text or a file is
+    # what they gave, never a search query (owner rule 2026-11-18).
+    question = own_words(question)
 
     async def one(wiki: str, title: str) -> Article | None:
         other = "en" if wiki != "en" else (edition if edition != "en" else "fr")

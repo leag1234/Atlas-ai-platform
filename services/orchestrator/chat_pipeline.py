@@ -1091,7 +1091,17 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse, answer_language, today, asked=asked_days
     )
     if reviewable and check is not None and check.evidence:
-        item.reponse = check.check(item.reponse, asked, asked_language)
+        # What the person gave (their messages, the files of the turn) is a
+        # source of the answer, never a missing entity (grounding.provided).
+        item.reponse = check.check(
+            item.reponse,
+            asked,
+            asked_language,
+            messages=[m.text for m in request.messages if m.role == "user"],
+            documents=[text for text, _ in quotes.provided]
+            if quotes is not None
+            else [],
+        )
     if provenance is not None and item.state == "done" and item.task_type != "work":
         number_provenance.record(
             provenance,
@@ -2090,13 +2100,16 @@ async def _process(
     ):
         # A required current-events search reads the news feeds first; the
         # model may still search the web after reading them.
+        from services.orchestrator.link_requests import own_words
+
         discovery = (
             Call(
                 "required-news",
                 "news_headlines",
                 json.dumps(
                     {
-                        "topic": request.user_text[:200],
+                        # The person's own words, never a pasted text.
+                        "topic": own_words(request.user_text)[:200],
                         "language": search_language(
                             request.conversation_messages, request.ui_locale
                         ),

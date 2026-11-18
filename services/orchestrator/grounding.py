@@ -1,12 +1,15 @@
 """Deterministic checks for precise claims in same-conversation evidence."""
 
 from bisect import bisect_right
+from collections.abc import Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 import json
 import re
 import time
 import unicodedata
+
+from services.orchestrator.link_requests import own_words, split_pasted
 
 
 def normalized(text: str) -> str:
@@ -307,6 +310,84 @@ def question_entities(question: str) -> list[str]:
     return entities
 
 
+# What the person gave is a source of the answer (owner rule 2026-11-18): a
+# pasted text, an attached file, and what they say about themselves ("I'm at
+# 12 Harbour Road", "Estoy en la Calle de Alcala 20"). What they ask about is
+# not: a question or a request names the subject to check. A clause states
+# something about the person when it names them (first person) and neither
+# asks nor reports a belief to check ("I think it opened in 1925").
+FIRST_PERSON = frozenset(
+    "i im ive me my mine myself we our ours us "
+    "je j moi mon ma mes nous notre nos suis "
+    "ich mich mir mein meine meinem meinen meiner meines wir uns unser unsere "
+    "yo estoy estamos soy vivo vivimos mi mis nuestro nuestra nuestros nuestras "
+    "io sono siamo abito mio mia miei mie nostro nostra nostri nostre".split()
+)
+ASKING = re.compile(
+    r"\b(?:what|whats|why|how|hows|tell me|explain|describe|summari[sz]e|give me|"
+    r"show me|find|list|can you|could you|is it|is that|true|"
+    r"think|believe|heard|read that|guess|suppose|"
+    r"quoi|pourquoi|comment|dis moi|explique|decris|resume|donne moi|montre moi|"
+    r"trouve|peux tu|pouvez vous|est ce que|est ce|vrai|pense|crois|ai lu|entendu|"
+    r"warum|wie|was ist|was sind|sag mir|erklar\w*|beschreib\w*|zeig mir|gib mir|"
+    r"finde|kannst du|konnen sie|stimmt|glaube|denke|gelesen|gehort|"
+    r"que es|por que|como|dime|explica|dame|muestra|busca|puedes|verdad|creo|"
+    r"pienso|lei|oido|"
+    r"perche|come|cosa|dimmi|spiega|descrivi|riassumi|dammi|mostra|trova|puoi|"
+    r"vero|credo|penso|letto|sentito)\b"
+)
+_CLAUSE = re.compile(
+    r"([\u00bf\u00a1]?+)((?:[^.!?;:,\n\u00bf\u00a1]|[.,:](?=\S))*+)([.!?;:,\n]?+)"
+)
+
+
+def statements(text: str) -> list[str]:
+    """The clauses of the person's own words that state something about them.
+
+    A clause naming the person starts a statement; the clauses after it in the
+    same sentence continue it ("I'm at 5 Elm Street, Brennholm") until one asks.
+    """
+    found: list[str] = []
+    stating = False
+    for match in _CLAUSE.finditer(text):
+        opening, body, end = match[1], match[2], match[3]
+        plain = normalized(body)
+        if plain:
+            if (
+                opening == "\u00bf"
+                or end == "?"
+                or ASKING.search(plain)
+                or FACT_CUE.search(plain)
+            ):
+                stating = False
+            elif stating or FIRST_PERSON.intersection(plain.split()):
+                found.append(body)
+                stating = True
+        if end in {".", "!", "?", "\n"} or opening == "\u00bf":
+            stating = False
+    return found
+
+
+def provided(messages: Sequence[str], documents: Sequence[str] = ()) -> tuple[str, str]:
+    """What the person gave, normalized: (pasted texts and files, statements)."""
+    texts = list(documents)
+    stated: list[str] = []
+    for message in messages:
+        own, pasted = split_pasted(message)
+        texts.extend(pasted)
+        stated.extend(statements(own))
+    return (
+        normalized("\n".join(texts)[:400_000]),
+        normalized("\n".join(stated)[:20_000]),
+    )
+
+
+def _names(text: str, phrase: str) -> bool:
+    return (
+        bool(phrase) and re.search(r"\b" + re.escape(phrase) + r"\b", text) is not None
+    )
+
+
 # A name followed by its number names one item among others of its kind: a
 # train ("Nozomi 233", "ICE 597"), a flight, a line, a gate. Never a date
 # ("November 18"), a year, a clock time or a quantity.
@@ -499,7 +580,15 @@ class Grounding:
         """True when some entity named by the question appears in no fetched passage."""
         return bool(self.missing_entities(question))
 
-    def check(self, answer: str, question: str, language: str) -> str:
+    def check(
+        self,
+        answer: str,
+        question: str,
+        language: str,
+        *,
+        messages: Sequence[str] = (),
+        documents: Sequence[str] = (),
+    ) -> str:
         """Notes follow the claim they qualify, in ``language``; never a loose line.
 
         Staging 2026-11-15: "No retrieved source mentions this entity." was put on
@@ -509,8 +598,21 @@ class Grounding:
         about: a contradiction quotes a source sentence naming the claim's own
         entities, a missing-entity note follows the first claim naming that
         entity. Without such a claim there is no note.
+
+        What the person gave is a source (staging 2026-11-18: a summary of a
+        pasted council report got "No retrieved source mentions this entity."
+        after its first sentence, and a walking route the same note after the
+        address the person gave). ``messages`` are the person's messages (the
+        question alone by default), ``documents`` the files they provided. The
+        question's entities are read in the person's own words, never in a
+        pasted text; an entity a pasted text, a file or the person's statement
+        about themselves names is never missing; a claim whose precise values a
+        pasted text or a file holds restates it and is not checked against the
+        web.
         """
         started = time.monotonic()
+        given, stated = provided(messages or (question,), documents)
+        question = own_words(question)
         if CREATIVE.search(normalized(question)) or (
             small_talk(question) and not self.evidence
         ):
@@ -518,13 +620,19 @@ class Grounding:
         claims = extract_claims(answer)
         self.claims_checked = len(claims)
         notes: dict[int, list[str]] = {}
-        missing = self.missing_entities(question) if self.evidence else []
+        missing = [
+            entity
+            for entity in (self.missing_entities(question) if self.evidence else [])
+            if not _names(given, entity) and not _names(stated, entity)
+        ]
         # One contradiction note per section of the answer, and a source
         # sentence quoted once (staging -112 repeated one quote under twelve
         # trains of a list).
         quoted: set[str] = set()
         noted_sections: set[int] = set()
         for index, claim in enumerate(claims):
+            if claim.values and all(_names(given, value) for value in claim.values):
+                continue
             source_sentence = self.contradicted(claim)
             if source_sentence:
                 section = _section(answer, claim.start)
