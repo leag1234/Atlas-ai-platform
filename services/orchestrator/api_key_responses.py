@@ -38,6 +38,11 @@ async def respond(request: Request) -> Response:
 
     if (refused := body_privacy(request, raw)) is not None:
         return refused
+    from services.orchestrator.api_limits import refusal
+
+    # Hard content limits answer before any model, whatever the model name.
+    if (limited := refusal(raw, "responses", raw["model"])) is not None:
+        return limited
 
     if assistant_name(raw["model"]):
         from services.orchestrator import assistant_bridge

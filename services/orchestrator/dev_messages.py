@@ -229,6 +229,7 @@ class Wire:
                 "stop": "end_turn",
                 "tool_calls": "tool_use",
                 "length": "max_tokens",
+                "content_filter": "refusal",
             }.get(self.output.reason or ""),
             "stop_sequence": self.output.stop_sequence,
             "usage": {

@@ -39,13 +39,20 @@ def assistant_body(raw: dict[str, Any], protocol: str) -> dict[str, Any]:
         raise PermissionError(CLIENT_TOOLS_MESSAGE)
     normalize_chat(converted)
     name = str(raw["model"])
+    # No max_tokens: the assistant's internal calls (routing, tools, research) keep
+    # their own output budget; the caller's limit caps the answer (serve).
     return {
         "model": default_profile() if name == "atlas" else name,
         "messages": converted["messages"],
         "stream": True,
-        "max_tokens": min(int(converted.get("max_tokens") or 6000), 16000),
         "atlas_ui": False,
     }
+
+
+def output_limit(raw: dict[str, Any], protocol: str) -> int | None:
+    """The caller's output limit (Messages max_tokens, Responses max_output_tokens)."""
+    value = raw.get("max_output_tokens" if protocol == "responses" else "max_tokens")
+    return value if type(value) is int and value > 0 else None
 
 
 async def frames(response: Response) -> AsyncIterator[dict[str, Any]]:
@@ -140,6 +147,7 @@ async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Respons
     if missing is not None:
         return missing
     body = assistant_body(raw, protocol)
+    limit = output_limit(raw, protocol)
     request._body = json.dumps(body).encode()
     reply = await assistant_chat(request)
     if not isinstance(reply, StreamingResponse) or reply.status_code != 200:
@@ -162,7 +170,10 @@ async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Respons
 
     async def events() -> AsyncGenerator[dict[str, Any], None]:
         finished = False
-        async for frame in stop_at(frames(reply), stops):
+        from services.orchestrator.api_limits import OutputCap, cap_frames
+
+        cap = OutputCap(limit) if limit is not None else None
+        async for frame in cap_frames(stop_at(frames(reply), stops), cap):
             if "usage" in frame and not finished:
                 # The usage frame closes the answer: end the text before it.
                 for event in wire.feed(
