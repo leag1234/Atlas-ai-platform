@@ -60,6 +60,13 @@ _HOURS_MINUTES = re.compile(
     rf"{_NUMBER}{_SPACE}{_HOURS}{_JOIN}(\d{{1,2}}){_SPACE}{_MINUTES}\.?{_END}",
     re.I,
 )
+# "2h 45m", "1 h 5 m": a journey time, never the clock time "2h45" (staging
+# -115: a train's "2h 45m" between two sourced times was read as 02:45 and
+# left out of its table row).
+_HOURS_M = re.compile(
+    rf"{_NUMBER}{_SPACE}h{_SPACE}(\d{{1,2}}){_SPACE}m\.?{_END}",
+    re.I,
+)
 # "12h30", "12 h 30", "12:30", "2:00 pm"; "9.45" is not read (a decimal), nor
 # "Platform 4: 08:15" (a colon with a space after it ends a label).
 _CLOCK = re.compile(
@@ -161,6 +168,9 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
 
     for match in _HOURS_MINUTES.finditer(plain):
         add(match, "duration", _number(match[1]) * 60 + int(match[2]))
+    for match in _HOURS_M.finditer(plain):
+        if free(match.start(), match.end()) and int(match[2]) < 60:
+            add(match, "duration", _number(match[1]) * 60 + int(match[2]))
     if not generous:
         # "vers 12 h 2x": a placeholder written for a time no source gave.
         for match in _PLACEHOLDER.finditer(plain):
@@ -720,18 +730,46 @@ def _removal(text: str, claim: Quantity) -> tuple[int, int]:
     return _span_to_remove(text, claim)
 
 
-def _leave_out(text: str, flagged: list[Quantity]) -> str:
-    spans: list[tuple[int, int, str]] = []
-    for claim in flagged:
-        line_start, _ = _line_bounds(text, claim.start)
-        if text[line_start:].lstrip().startswith("|"):
-            start, end = _cell_bounds(text, claim.start)
-            spans.append((start, end, " " + _LEFT_OUT + " "))
-        else:
-            start, end = _span_to_remove(text, claim)
-            spans.append((start, end, ""))
-    # Overlapping spans: the widest wins.
-    spans.sort(key=lambda span: (span[0], -span[1]))
+def _row_cells(text: str, index: int) -> list[tuple[int, int]]:
+    """The cells of the table row at ``index``, first to last."""
+    line_start, line_end = _line_bounds(text, index)
+    bars = [i for i in range(line_start, line_end) if text[i] == "|"]
+    cells = list(zip(bars, bars[1:]))
+    if bars and text[bars[-1] + 1 : line_end].strip():
+        cells.append((bars[-1], line_end))
+    return [(left + 1, right) for left, right in cells]
+
+
+def _remainder(text: str, start: int, end: int) -> int:
+    """Where the rest of a sentence goes too when its first clause goes.
+
+    A sentence that loses its opening clause up to a semicolon keeps a
+    remainder that opens a sentence of its own. Staging -115: "El AVE ...
+    tarda unas 2 h 30 min a 3 h; de eso arriesgas llegar justo o tarde."
+    left "De eso arriesgas llegar justo o tarde." to open the answer. A
+    remainder that states no value, line or place of its own only went on
+    from the clause that went, and goes with it; one with its own facts
+    stays (staging -102: "the fastest connection takes 3:57 hours").
+    """
+    if text[start:end].rstrip()[-1:] != ";":
+        return end
+    line_start, line_end = _line_bounds(text, start)
+    before = _ITEM.sub("", text[line_start:start], count=1).strip(" \t*_")
+    if before and before[-1:] not in {".", "!", "?"}:
+        return end
+    stop = re.compile(r"[.!?](?=\s|$)").search(text, end, line_end)
+    close = stop.end() if stop else line_end
+    rest = text[end:close]
+    if not rest.strip() or quantities(rest):
+        return end
+    if route_facts.mentions(rest, _masked(rest)):
+        return end
+    return close
+
+
+def _merged(spans: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Overlapping spans: the widest wins."""
+    spans = sorted(spans, key=lambda span: (span[0], -span[1]))
     kept: list[tuple[int, int, str]] = []
     for span in spans:
         if kept and span[0] < kept[-1][1]:
@@ -739,6 +777,50 @@ def _leave_out(text: str, flagged: list[Quantity]) -> str:
                 kept[-1] = (kept[-1][0], span[1], kept[-1][2])
             continue
         kept.append(span)
+    return kept
+
+
+def _leave_out(text: str, flagged: list[Quantity]) -> str:
+    spans: list[tuple[int, int, str]] = []
+    for claim in flagged:
+        line_start, _ = _line_bounds(text, claim.start)
+        if text[line_start:].lstrip().startswith("|"):
+            cells = _row_cells(text, claim.start)
+            start, end = _cell_bounds(text, claim.start)
+            if cells and cells[0][0] == start:
+                # The row's first cell names it (a train, a line): a row that
+                # loses it goes whole (staging -115 kept "Hikari | 06:21 |
+                # 09:06 | —" without its train number).
+                spans.extend((a, b, " " + _LEFT_OUT + " ") for a, b in cells)
+            else:
+                spans.append((start, end, " " + _LEFT_OUT + " "))
+        else:
+            start, end = _span_to_remove(text, claim)
+            spans.append((start, end, ""))
+    kept = _merged(spans)
+    # Clauses of one sentence left out one after the other are one removal,
+    # and its remainder is read once all of them went.
+    joined: list[tuple[int, int, str]] = []
+    for span in kept:
+        if (
+            joined
+            and not span[2]
+            and not joined[-1][2]
+            and not text[joined[-1][1] : span[0]].strip(" \t")
+        ):
+            joined[-1] = (joined[-1][0], span[1], "")
+            continue
+        joined.append(span)
+    kept = _merged(
+        [
+            (
+                start,
+                _remainder(text, start, end) if not replacement else end,
+                replacement,
+            )
+            for start, end, replacement in joined
+        ]
+    )
     for start, end, replacement in reversed(kept):
         if not replacement and (start == 0 or text[start - 1] == "\n"):
             # A list item that keeps a sentence keeps its marker (staging
@@ -1463,6 +1545,9 @@ class Turn:
             claim
             for claim in claims
             if not _MARGIN.search(body[slice(*_clause(body, claim.start, claim.end))])
+            # A table's header row labels its columns ("Arrival (before
+            # 10:00)"): never a claim.
+            and not route_facts.table_header(body, claim.start)
         ]
         other = self.other_days()
         known = self.known(other)

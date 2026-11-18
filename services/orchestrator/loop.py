@@ -9,6 +9,7 @@ from services.orchestrator.closing import (
     time_closing_instruction,
 )
 from services.orchestrator.code_verification import VerificationStatus
+from services.orchestrator.deadline import recovery_seconds
 from services.orchestrator.tool_failures import (
     SAME_FAILURE_STOP,
     STOP_REASON,
@@ -186,6 +187,24 @@ class Stop(Exception):
     pass
 
 
+# The answer call after research keeps at most this share of the time left
+# for what follows it.
+RECOVERY_SHARE = 0.25
+
+
+def answer_share(left: float, recovery: float) -> float | None:
+    """The seconds a chat answer call written after research may take.
+
+    Staging -115: a trip's answer call ran 107 s, to the deadline, and the
+    person read "took too long" although the pages read gave the trains;
+    nothing was left for the checks or for writing the answer from those
+    pages. A turn with a recovery (``deadline.answer_recovery``) keeps its
+    seconds, at most a quarter of the time left; None without one.
+    """
+    keep = min(recovery, left * RECOVERY_SHARE)
+    return left - keep if keep > 0 else None
+
+
 class PublicFailure(RuntimeError):
     """A typed boundary failure whose user-facing detail must survive the loop."""
 
@@ -348,13 +367,29 @@ async def run(
         result.tokens += usage.tokens
         result.cost += usage.cost
 
-    async def invoke(operation: Awaitable[Turn] | Awaitable[Message]) -> Turn | Message:
+    async def invoke(
+        operation: Awaitable[Turn] | Awaitable[Message], limit: float | None = None
+    ) -> Turn | Message:
+        bounded = limit is not None and limit < remaining()
         try:
-            async with asyncio.timeout(remaining()):
+            async with asyncio.timeout(limit if bounded else remaining()):
                 value = await operation
             remaining()
             return value
         except TimeoutError:
+            if bounded and deadline - clock() > 0:
+                # The answer call ran past its share: the time kept for the
+                # checks and the recovery is still there (see answer_limit).
+                logging.getLogger(__name__).warning(
+                    json.dumps(
+                        {
+                            "event": "answer_call_cut",
+                            "seconds": round(float(limit or 0), 1),
+                            "remaining_seconds": round(deadline - clock(), 1),
+                        }
+                    )
+                )
+                raise Stop("answer_time") from None
             record_limit(
                 {
                     "kind": "wall_clock",
@@ -456,6 +491,11 @@ async def run(
                 if isinstance(result, CodeResult):
                     result.model_calls += 1
                 call_started = last_call_started = clock()
+                answer_limit = (
+                    answer_share(remaining(), recovery_seconds())
+                    if not limits.code_mode and result.tool_calls
+                    else None
+                )
                 received = await invoke(
                     model.complete(
                         messages,
@@ -468,8 +508,11 @@ async def run(
                             remaining(),
                         )
                         if limits.code_mode
-                        else remaining(),
-                    )
+                        else remaining()
+                        if answer_limit is None
+                        else answer_limit,
+                    ),
+                    answer_limit,
                 )
                 if not isinstance(received, Turn):
                     raise ValueError("invalid_model_response")
