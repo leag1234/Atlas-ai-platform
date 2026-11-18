@@ -1114,6 +1114,37 @@ def wellformed(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n")
 
 
+# Words that tie a sentence to the one before it ("De là, ...", "From there,
+# ..."), five languages: an answer never opens with them (staging -113).
+_LEAD_BACK = re.compile(
+    r"^(?:de là|à partir de là|ensuite|puis|from there|then|after that|"
+    r"von dort(?: aus)?|danach|dann|desde allí|desde alli|desde ahí|desde ahi|"
+    r"luego|después|despues|da lì|da li|poi|quindi)\b[ \t]*+,?[ \t]*+",
+    re.I,
+)
+
+
+def _opened(original: str, text: str, opening: str, language: str) -> str:
+    """The kept answer opening as a reply, never mid-thought.
+
+    When its first sentence went, the person's own words that opened it
+    lead (route_facts.Finding.opening); a sentence that only continued the
+    removed one loses its link word ("De là, les trains ..." opened an
+    answer whose metro leg was left out, staging -113).
+    """
+    first = original.lstrip().split("\n", 1)[0]
+    if not text or text.lstrip().startswith(first.strip()):
+        return text
+    lead = _LEAD_BACK.match(text)
+    if lead and text[lead.end() :][:1].isalpha():
+        rest = text[lead.end() :]
+        text = rest[0].upper() + rest[1:]
+    if opening and opening not in " ".join(text.split()):
+        colon = " :" if language == "fr" else ":"
+        text = opening[0].upper() + opening[1:] + colon + "\n\n" + text
+    return text
+
+
 @dataclass
 class Findings:
     """What a travel answer states that no source, computation or person gave."""
@@ -1455,11 +1486,10 @@ class Turn:
             *(Quantity(s, e, "route", 0.0, body[s:e]) for s, e, _ in found.route.spans),
         ]
         text = wellformed(_restructure(body, _leave_out(body, removed)))
-        return (
-            wellformed(without_orphans(body, text)).rstrip()
-            if removed
-            else text.rstrip()
-        )
+        if not removed:
+            return text.rstrip()
+        text = wellformed(without_orphans(body, text)).rstrip()
+        return _opened(body, text, found.route.opening, self.language)
 
     def left_out(self, body: str, found: Findings, language: str) -> str:
         """The body without what ``found`` holds, and one note."""

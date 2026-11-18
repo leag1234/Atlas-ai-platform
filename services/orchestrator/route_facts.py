@@ -273,6 +273,9 @@ class Finding:
     spans: list[tuple[int, int, list[str]]] = field(default_factory=list)
     # Spans left out because the pages read name another line for the route.
     disputed: int = 0
+    # The person's own words that opened a removed first sentence ("To be
+    # at Geneva Airport tomorrow at 9:00"): the answer still opens with them.
+    opening: str = ""
 
     @property
     def route(self) -> bool:
@@ -821,13 +824,20 @@ def quoted(text: str) -> str:
     return f"“{plain}”" if plain else ""
 
 
-def _claim(body: str, start: int, end: int, part: list[Anchor]) -> str:
+def _claim(
+    body: str,
+    start: int,
+    end: int,
+    part: list[Anchor],
+    opening: list[Anchor] | None = None,
+) -> str:
     """The words of a sentence that state a failing part: from the clause
-    before its first anchor to its last anchor."""
+    before its first anchor (of ``opening`` when given) to its last anchor."""
     placed = [a for a in part if a.position >= 0 and a.text]
     if not placed:
         return body[start:end]
-    first = min(a.position for a in placed)
+    leading = [a for a in opening or placed if a.position >= 0 and a.text]
+    first = min(a.position for a in leading or placed)
     last = max(a.position + len(a.text) for a in placed)
     marks = [m.end() for m in re.finditer(r"[,;:(]\s*", body[start:first])]
     return body[start + (marks[-1] if marks else 0) : max(last, first)]
@@ -855,7 +865,11 @@ def _labels(
         # The note quotes claims, never a lone word cut from one (staging
         # -112 listed a locution after a quoted claim).
         part = [a for p in failing for a in p]
-        if claim := quoted(_claim(body, span[0], span[1], part)):
+        # The claim starts at what is not the person's own: a sentence that
+        # restates the request before an unverified leg is quoted from the
+        # leg (staging -113 quoted "To be at Geneva Airport ... from").
+        theirs = [a for a in part if not _mine(a, sources)] or part
+        if claim := quoted(_claim(body, span[0], span[1], part, theirs)):
             return [claim]
     stated = [a for part in failing for a in part if a.kind != "clock"]
     alone = [
@@ -869,6 +883,40 @@ def _labels(
     if not names:
         return times
     return [" – ".join(names) + (f" ({', '.join(times)})" if times else "")]
+
+
+def _restated(body: str, unit: Unit, sources: Sources) -> str:
+    """The opening clauses of a sentence that only restate the request.
+
+    "Pour être à l'aéroport de Genève jeudi à 9h00 depuis le Gratte-Ciel,
+    prenez ..." (staging -113): the clauses before the comma hold only the
+    person's places, day and time; when the rest of the sentence goes, they
+    still open the answer, which never starts mid-thought. Empty when the
+    clauses state anything else (a line, a time no one gave, "direct").
+    """
+    text = body[unit.start : unit.end]
+    depth = 0
+    commas: list[int] = []
+    for index, character in enumerate(text):
+        depth += character == "("
+        depth -= character == ")"
+        if character == "," and depth == 0:
+            commas.append(index)
+    for comma in reversed(commas):
+        prefix = text[:comma]
+        inside = [
+            a for a in unit.anchors if unit.start <= a.position < unit.start + comma
+        ]
+        rest = [a for a in unit.anchors if a.position >= unit.start + comma]
+        if (
+            len(prefix.split()) >= 3
+            and (inside or re.search(r"\d", prefix))
+            and all(_mine(a, sources) for a in inside)
+            and a_route(rest)
+            and not re.search(r"[\[\]()*`|]", prefix)
+        ):
+            return " ".join(prefix.split())
+    return ""
 
 
 def review(
@@ -958,6 +1006,8 @@ def review(
                 _labels(unit.anchors, sources, body, (unit.start, unit.end)),
             )
         )
+        if unit.start == len(body) - len(body.lstrip()):
+            finding.opening = _restated(body, unit, sources)
         removed.append(True)
     if not finding.spans:
         return finding
