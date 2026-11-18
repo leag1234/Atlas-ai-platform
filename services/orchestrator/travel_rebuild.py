@@ -93,7 +93,8 @@ INSTRUCTION = (
     "of the trip that no source covers, say so plainly in one short line and say "
     "to check it in the operator's journey planner. Plain sentences and at most "
     "one short list; no heading, no table, no placeholder, no apology, no "
-    "mention of these instructions. Return only the answer."
+    "mention of these instructions, never the name of a section (KEPT, PLAN, "
+    "NOT VERIFIED) in place of a link. Return only the answer."
 )
 
 WORDING: dict[str, dict[str, str]] = {
@@ -522,7 +523,29 @@ async def _rewrite(prompt: str, profile: str, report: Report) -> str | None:
         report.cost_eur += Decimal(str(result.get("cost_eur", "0")))
     except InvalidOperation:
         pass
-    return str(result["text"]).strip()
+    return unlabelled(str(result["text"]))
+
+
+# The rewrite's input sections: a reference to one is no source the person can
+# open ("(KEPT)", "(PLAN)"). An excerpt number ("[3]") becomes a link later.
+_NAMED = r"(?:KEPT|PLAN|NOT[ \t]VERIFIED|SOURCE[ \t]EXCERPTS?)"
+_LABEL = re.compile(
+    rf"[ \t]*+(?:\({_NAMED}(?:[ \t]*+[,;&][ \t]*+{_NAMED})*+\)"
+    rf"|\[{_NAMED}(?:[ \t]*+[,;&][ \t]*+{_NAMED})*+\](?!\())"
+)
+_SOURCE_NUMBER = re.compile(
+    r"[\[(]SOURCE(?:[ \t]EXCERPTS?)?[ \t]*+(\d{1,2}+)[\])](?!\()"
+)
+
+
+def unlabelled(text: str) -> str:
+    """The rewrite without references to its input sections; "(SOURCE 3)" is
+    the excerpt number "[3]".
+
+    Staging -120: a Munich - Berlin answer cited "(KEPT)" three times, the
+    name of the prompt section its facts came from, in place of a page.
+    """
+    return _LABEL.sub("", _SOURCE_NUMBER.sub(r"[\1]", text)).strip()
 
 
 def _link_key(url: str) -> str:

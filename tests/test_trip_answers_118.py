@@ -179,3 +179,28 @@ class UncitedAnswerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SectionLabelTests(unittest.TestCase):
+    """Staging -120: a Munich - Berlin rewrite cited "(KEPT)" in place of a page."""
+
+    def test_section_names_used_as_citations_go(self) -> None:
+        text = (
+            "From the main station, take a direct ICE to Berlin (KEPT). "
+            "Confirm the train on the operator's site (KEPT, PLAN). "
+            "The ride takes 4 hours [2] and the first train is early [SOURCE 3]."
+        )
+        self.assertEqual(
+            travel_rebuild.unlabelled(text),
+            "From the main station, take a direct ICE to Berlin. "
+            "Confirm the train on the operator's site. "
+            "The ride takes 4 hours [2] and the first train is early [3].",
+        )
+
+    def test_links_and_ordinary_parentheses_stay(self) -> None:
+        text = (
+            "Take line 8 (platform 3) to the airport "
+            "([rail.example.test](https://rail.example.test/airport)); "
+            "see [1](https://rail.example.test/one) and the plan (KEPT in mind)."
+        )
+        self.assertEqual(travel_rebuild.unlabelled(text), text)
