@@ -416,6 +416,10 @@ async def chat(request: Request) -> Response:
         missing = require(request, "assistant")
         if missing is not None:
             return missing
+        from services.orchestrator.api_limits import capped_chat, chat_limit, refusal
+
+        if (limited := refusal(raw, "chat", name)) is not None:
+            return limited
         output_format = raw.get("response_format")
         if (
             isinstance(output_format, dict)
@@ -432,13 +436,20 @@ async def chat(request: Request) -> Response:
                 + name
                 + "; use atlas-chat, atlas-code or atlas-dev",
             )
+        try:
+            # The caller's limit caps the final answer; the assistant's internal
+            # calls (routing, tools, research) keep their own output budget.
+            limit = chat_limit(raw)
+        except ValueError as exc:
+            return error(400, "invalid_request", param=str(exc))
         if name == "atlas":
             raw["model"] = default_profile()
         raw["atlas_ui"] = False
         request._body = json.dumps(raw).encode()
         from services.orchestrator.chat_api import chat as assistant_chat
 
-        return await assistant_chat(request)
+        # The answer names the model the caller asked for, as GET /models lists it.
+        return capped_chat(await assistant_chat(request), name, limit)
     try:
         public_model = select_public_model(name)
     except ValueError:
@@ -446,6 +457,10 @@ async def chat(request: Request) -> Response:
     missing = require(request, "model")
     if missing is not None:
         return missing
+    from services.orchestrator.api_limits import refusal
+
+    if (limited := refusal(raw, "chat", name)) is not None:
+        return limited
     raw["model"] = "raw/public-routing"
     request._body = json.dumps(raw).encode()
     request.state.store = ModelAccounting(

@@ -89,19 +89,27 @@ Measured on the hosted service on 2026-11-02:
 | Image analysis (`image_url` parts) | yes | yes |
 | Attached documents (`file` parts: text, PDF, Word, Excel) | yes | yes, as extracted text |
 | Web search, with the retrieved sources cited | yes | yes, run by Atlas on request (section 5) |
-| Your own tools (function calling) | no (`tools` is ignored) | yes |
+| Your own tools (function calling) | no: ignored on Chat Completions, refused on Responses and Messages | yes |
 | Image generation | not available on the hosted service yet | no |
 
 ### The model name in a request
 
-- **Chat Completions**: `model` is optional. Without it, every key gets `atlas`.
+- **Chat Completions**: `model` is optional. Without it, every key gets `atlas`. `tools` given to
+  the assistant (`atlas` or a profile) are ignored: it answers with its own tools (measured on
+  2026-11-18).
 - **Responses and Messages**: `model` is required (400 without it). They serve the assistant and the
   direct models. The assistant runs its own tools: a request that gives it client tools (functions,
   custom, shell…) answers `400 assistant_runs_its_own_tools`; use `atlas-dev` or `atlas-chat` for your
   own tools. The hosted `web_search` tool is accepted, since the assistant searches by itself.
-- The model you name answers. Atlas never moves a request to another model because of what it
-  contains, and a pasted document never changes how a request is classified. A request in a category
-  that Atlas never writes receives a short refusal as the answer, from no model.
+- The model you name answers, and the response names it (`atlas`, a profile or a direct model, as
+  `GET /models` lists them). Atlas never moves a request to another model because of what it
+  contains, and a pasted document never changes how a request is classified.
+- A request in a category that Atlas never writes receives a short refusal as the answer, from no
+  model, on every route and every model. The hard limits read your own words in the last user message
+  (not the system prompt, earlier turns, tool results or a long pasted document). The refusal is a
+  normal answer that costs nothing: `finish_reason: "content_filter"` on Chat Completions,
+  `status: "incomplete"` with `incomplete_details.reason: "content_filter"` on Responses,
+  `stop_reason: "refusal"` on Messages.
 - A name that Atlas does not know is served as `atlas-dev` on the direct formats: `gpt-5-codex`,
   `claude-sonnet-5-5` or a typo all reach `atlas-dev`. Set the name explicitly and check `model` and
   `served_by` in the first responses.
@@ -227,6 +235,14 @@ and never reports it as a provider failure. An answer cut by `max_tokens` is lik
 written, also with `response_format`. With any effort above `none`, set `max_tokens` to at least 1000
 (or leave it out). When `max_tokens` is omitted,
 the default is 16384 and the maximum is 32768.
+
+On the assistant (`atlas` and its profiles), `max_tokens` or `max_completion_tokens` (Chat
+Completions), `max_output_tokens` (Responses) and `max_tokens` (Messages) cap its final answer,
+estimated at 4 bytes of UTF-8 text per token. A longer answer is cut there and ends with the same
+length outcome (`finish_reason: "length"`, `status: "incomplete"`, `stop_reason: "max_tokens"`). The
+assistant's internal calls (routing, search, tools) keep their own output budget, so a small limit
+never breaks a search; `usage` counts all of those calls, which is what you pay, and can therefore
+exceed the limit. Without a limit the assistant answers within its own budget (about 6000 tokens).
 
 ## 4. Images and documents
 
@@ -585,7 +601,7 @@ without a restriction (or ask your administrator), then send the same request.
 | 400 | `invalid_request` | The body is not JSON, a field is invalid (the message names it, for example `unknown field messages.2.foo`), or the history has more than 4096 messages | Fix the request |
 | 400 | `invalid_model` | `model` is not a string, or names nothing Atlas serves | Use a name from `GET /models` |
 | 400 | `unsupported_parameter` (`param` names it) | An option no hosted model applies, for example `response_format` with the assistant or `json_schema` strict on a route that cannot guarantee it | Remove the option or use another model |
-| 400 | `assistant_runs_its_own_tools` | Client tools were given to `atlas` or a profile | Use `atlas-dev` or `atlas-chat` for your own tools |
+| 400 | `assistant_runs_its_own_tools` | Client tools were given to `atlas` or a profile on Responses or Messages (Chat Completions ignores them) | Use `atlas-dev` or `atlas-chat` for your own tools |
 | 400 | `file_data_required`, `invalid_file_data`, `unreadable_file`, `unsupported_content` | An attached file is missing, not base64 or has no readable text, or a content type (`input_audio`) is not accepted | Check the file part |
 | 400 | `storage_not_supported` | `previous_response_id`, `conversation` or `background`: Atlas stores nothing | Send the full history |
 | 400 | `context_exceeded`, `input_limit` | The input is longer than the model accepts, or an embeddings request has too many inputs or bytes (`measured`, `limit`, `unit`) | Shorten or split the input |

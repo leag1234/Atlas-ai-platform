@@ -59,7 +59,9 @@ class Wire:
 
     def result(self, status: str | None = None) -> dict[str, Any]:
         status = status or (
-            "incomplete" if self.output.reason == "length" else "completed"
+            "incomplete"
+            if self.output.reason in ("length", "content_filter")
+            else "completed"
         )
         usage = self.output.usage
         result = {
@@ -70,7 +72,11 @@ class Wire:
             "status": status,
             "output": self.items,
             "error": None,
-            "incomplete_details": {"reason": "max_output_tokens"}
+            "incomplete_details": {
+                "reason": "content_filter"
+                if self.output.reason == "content_filter"
+                else "max_output_tokens"
+            }
             if status == "incomplete"
             else None,
             "instructions": self.request.get("instructions"),

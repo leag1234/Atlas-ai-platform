@@ -17,9 +17,16 @@ called.
 
 The parameter tables describe the direct models (`atlas-dev`, `atlas-chat`). The assistant (`atlas` and
 its profiles) runs its own tools and settings: it takes `model`, `messages` or `input`, `stream`,
-`max_tokens`, `reasoning_effort` and `seed` (measured on 2026-11-02), accepts the other fields, and
-refuses client tools with `assistant_runs_its_own_tools`. On Messages, `stop_sequences` end its final
-text at the first match, with `stop_reason: "stop_sequence"` and the sequence.
+`max_tokens`, `reasoning_effort` and `seed` (measured on 2026-11-02), accepts the other fields,
+ignores client tools on Chat Completions and refuses them on Responses and Messages with
+`assistant_runs_its_own_tools` (measured on 2026-11-18). Its output limit (`max_tokens`,
+`max_completion_tokens`, `max_output_tokens`) caps its final answer with the length outcome; its
+internal calls keep their own budget. On Messages, `stop_sequences` end its final text at the first
+match, with `stop_reason: "stop_sequence"` and the sequence.
+
+On every route and model, a request whose own words reach a hard content limit is answered with a
+short refusal from no model: `finish_reason: "content_filter"`, Responses `incomplete_details.reason:
+"content_filter"`, Messages `stop_reason: "refusal"` (developer-api.md, section 2).
 
 ## 1. Routes
 

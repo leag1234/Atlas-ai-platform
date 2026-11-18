@@ -128,6 +128,12 @@ async def messages(request: Request) -> Response:
                 missing_scope="project",
             )
             return scope_refusal("project")
+        if not request.url.path.endswith("/count_tokens"):
+            from services.orchestrator.api_limits import refusal
+
+            # Hard content limits answer before any model, whatever the model name.
+            if (limited := refusal(raw, "messages", raw["model"])) is not None:
+                return limited
 
         if assistant_name(raw["model"]) and not request.url.path.endswith(
             "/count_tokens"
