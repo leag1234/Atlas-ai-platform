@@ -332,11 +332,14 @@ class StagingSecondDayTests(unittest.IsolatedAsyncioTestCase):
         found = turn.findings("Tomorrow an ICE leaves München Hbf at 06:34.")
         self.assertIn(f"06:34 ({self.other})", found.labels())
         day = date.fromisoformat(self.other).strftime("%d.%m.%Y")
-        self.assertFalse(
-            turn.findings(
-                f"On {day} an ICE left München Hbf at 06:34; check tomorrow's."
-            )
+        # Written with its own day, it is sourced but of no use for this
+        # trip: left out without a note (staging -114).
+        dated = turn.findings(
+            f"On {day} an ICE left München Hbf at 06:34; check tomorrow's."
         )
+        self.assertEqual(dated.labels(), [])
+        self.assertEqual([q.text for q in dated.elsewhere], ["06:34"])
+        self.assertEqual(dated.note("en"), "")
 
     def test_the_persons_place_and_a_gap_sentence_are_not_claims(self) -> None:
         turn = travel_claims.Turn(

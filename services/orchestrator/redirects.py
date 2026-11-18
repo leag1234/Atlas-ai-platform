@@ -73,6 +73,17 @@ def results(result: dict[str, object]) -> dict[str, object]:
             changed = True
             row = {**row, "link": link}
         kept.append(row)
+    # Forum and social posts after the pages of operators, references and
+    # publishers (staging -114: a Reddit thread was the source of a train's
+    # running days).
+    ranked = sorted(
+        kept,
+        key=lambda row: isinstance(row, dict)
+        and isinstance(row.get("link"), str)
+        and forum(row["link"]),
+    )
+    if ranked != kept:
+        kept, changed = ranked, True
     return {**result, "results": kept} if changed else result
 
 
@@ -115,3 +126,75 @@ def cited(text: str) -> str:
         return f"{lead}([{shown}]({link}))" if wrapped else f"[{shown}]({link})"
 
     return _CITED.sub(fix, text)
+
+
+# Forums and social networks: people's posts, not an operator's, a
+# reference's or a publisher's page. Never the source of a trip's facts.
+_SOCIAL = re.compile(
+    r"(?:^|\.)(?:reddit\.com|redd\.it|quora\.com|facebook\.com|fb\.com|"
+    r"instagram\.com|tiktok\.com|x\.com|twitter\.com|threads\.net|"
+    r"threads\.com|pinterest\.[a-z.]{2,6}|snapchat\.com|linkedin\.com|"
+    r"youtube\.com|youtu\.be|discord\.com|telegram\.me|t\.me|vk\.com|"
+    r"stackexchange\.com|boards\.ie|flyertalk\.com)$"
+)
+_FORUM_HOST = re.compile(r"^(?:forums?|community|communaute|boards?|foro|foren)\.")
+_FORUM_PATH = re.compile(
+    r"(?i)/(?:forums?|foros?|foren|communaute|community|threads?|"
+    r"showtopic|viewtopic|topic|discussion|discussions)(?:[/._?-]|$)"
+)
+
+
+def forum(url: str) -> bool:
+    """A forum thread or a social network post."""
+    parts = urlsplit(url)
+    host = parts.netloc.lower().split("@")[-1].split(":")[0]
+    return bool(
+        _SOCIAL.search(host)
+        or _FORUM_HOST.match(host)
+        or _FORUM_PATH.search(parts.path)
+    )
+
+
+def without_forums(value: object) -> object:
+    """A tool output without its rows from forums or social networks."""
+    if isinstance(value, dict):
+        link = value.get("link") or value.get("url")
+        if isinstance(link, str) and forum(link):
+            return {}
+        rows = value.get("results")
+        if isinstance(rows, list):
+            return {**value, "results": [without_forums(row) for row in rows]}
+        return value
+    if isinstance(value, list):
+        return [without_forums(row) for row in value]
+    return value
+
+
+_ANY = re.compile(r"\[([^\]\n]++)\]\((https?://[^)\s]++)\)")
+
+
+def _unforum(match: re.Match[str]) -> str:
+    url = match[2] if match[1] is not None else match[4]
+    if not forum(url):
+        return match[0]
+    return "" if match[1] is not None else match[3]
+
+
+def forum_claims(text: str) -> str:
+    """Sentences of an answer whose only sources are forum posts go; a forum
+    citation next to another source goes alone."""
+    lines: list[str] = []
+    for line in text.split("\n"):
+        if "](" not in line or not any(forum(m[2]) for m in _ANY.finditer(line)):
+            lines.append(line)
+            continue
+        kept: list[str] = []
+        for sentence in re.split(r"(?<=[.!?])[ \t]++", line):
+            links = [m[2] for m in _ANY.finditer(sentence)]
+            if links and all(forum(url) for url in links):
+                continue
+            kept.append(_CITED.sub(_unforum, sentence))
+        line = " ".join(kept)
+        if re.sub(r"^[ \t]*+(?:[-*+]|\d{1,3}+[.)])?+", "", line).strip():
+            lines.append(line)
+    return "\n".join(lines)
