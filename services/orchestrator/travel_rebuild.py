@@ -87,7 +87,8 @@ INSTRUCTION = (
     "airport station). An excerpt marked as times of another day gives that "
     "day's times only: never present them as the TRIP DAY's; if you use them, "
     "write their day next to them and say to check the TRIP DAY's times. Leave "
-    "out excerpts about another trip. Give the steps in travel order, from the "
+    "out excerpts about another trip or the opposite direction. Give the steps "
+    "in travel order, from the "
     "STARTING POINT to the destination. After each fact from an excerpt, link "
     "its page as a markdown link [site](url) with the url given. For each part "
     "of the trip that no source covers, say so plainly in one short line and say "
@@ -419,6 +420,8 @@ def excerpts(
                     continue
                 seen.add(key)
                 if not _substantial(sentence):
+                    continue
+                if travel_claims.reverse_leg(sentence, turn.place):
                     continue
                 valued = bool(travel_claims.quantities(sentence, generous=True))
                 routed = bool(route_facts._TRANSIT.search(route_facts.fold(sentence)))
