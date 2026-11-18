@@ -16,6 +16,7 @@ listing) are no source either.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import re
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -173,27 +174,34 @@ def without_forums(value: object) -> object:
 _ANY = re.compile(r"\[([^\]\n]++)\]\((https?://[^)\s]++)\)")
 
 
-def _unforum(match: re.Match[str]) -> str:
-    url = match[2] if match[1] is not None else match[4]
-    if not forum(url):
-        return match[0]
-    return "" if match[1] is not None else match[3]
-
-
 def forum_claims(text: str) -> str:
     """Sentences of an answer whose only sources are forum posts go; a forum
     citation next to another source goes alone."""
+    return claims_without(text, forum)
+
+
+def claims_without(text: str, unfit: Callable[[str], bool]) -> str:
+    """Sentences of an answer whose only sources are pages ``unfit`` holds go
+    (a forum post, a page about another place); such a citation next to
+    another source goes alone."""
+
+    def uncite(match: re.Match[str]) -> str:
+        url = match[2] if match[1] is not None else match[4]
+        if not unfit(url):
+            return match[0]
+        return "" if match[1] is not None else match[3]
+
     lines: list[str] = []
     for line in text.split("\n"):
-        if "](" not in line or not any(forum(m[2]) for m in _ANY.finditer(line)):
+        if "](" not in line or not any(unfit(m[2]) for m in _ANY.finditer(line)):
             lines.append(line)
             continue
         kept: list[str] = []
         for sentence in re.split(r"(?<=[.!?])[ \t]++", line):
             links = [m[2] for m in _ANY.finditer(sentence)]
-            if links and all(forum(url) for url in links):
+            if links and all(unfit(url) for url in links):
                 continue
-            kept.append(_CITED.sub(_unforum, sentence))
+            kept.append(_CITED.sub(uncite, sentence))
         line = " ".join(kept)
         if re.sub(r"^[ \t]*+(?:[-*+]|\d{1,3}+[.)])?+", "", line).strip():
             lines.append(line)
