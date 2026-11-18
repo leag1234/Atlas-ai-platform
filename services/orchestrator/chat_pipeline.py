@@ -914,15 +914,37 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             for url in text_urls(message.text)
         )
     )
+    from services.orchestrator.deadline import answer_recovery
+
+    def trip_recovery() -> float:
+        # A trip that read pages can be answered from them when its answer
+        # call fails: that call leaves the time to do it (loop.answer_share).
+        recoverable = (
+            travel.active
+            and bool(travel.evidence.evidence)
+            and item.task_type not in {"work", "nearby"}
+        )
+        return TRIP_RECOVERY_SECONDS if recoverable else 0.0
+
     try:
         try:
-            await _process_request(request, item)
+            with answer_recovery(trip_recovery):
+                await _process_request(request, item)
         except GatewayError as exc:
             if not await _recover_trip(request, item, travel, asked, exc.code):
                 raise
         else:
-            if item.state != "done" and item.erreurs:
-                await _recover_trip(request, item, travel, asked, item.erreurs[-1])
+            if (
+                item.state != "done"
+                and item.erreurs
+                and not await _recover_trip(
+                    request, item, travel, asked, item.erreurs[-1]
+                )
+                and item.erreurs[-1] == "answer_time"
+            ):
+                # Not answered from the pages either: the person reads the
+                # deadline it ran into (D5).
+                item.erreurs.append("timeout")
         if quote_gate is not None:
             await quote_gate.flush()
         if date_gate is not None:
@@ -1105,8 +1127,14 @@ _ANSWER_FAILURES = frozenset(
         "promise_only_final_answer",
         "malformed_tool_call",
         "unexpected_tool_history_answer",
+        # The answer call ran past its share of the time (loop.answer_share);
+        # the turn's own deadline ("timeout") is a refusal, never recovered.
+        "answer_time",
     }
 )
+# What a trip's answer call leaves for the checks and, when it fails, for the
+# answer written from the pages read (measured: 1 to 3 s per rewrite).
+TRIP_RECOVERY_SECONDS = 20.0
 
 
 async def _recover_trip(

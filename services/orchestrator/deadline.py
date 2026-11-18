@@ -1,14 +1,36 @@
 """Inference deadline with a separately bounded infrastructure startup window."""
 
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Iterator
 import time
 
 _current: ContextVar[asyncio.Timeout | None] = ContextVar(
     "request_deadline", default=None
 )
+# The seconds a chat answer written after research leaves before the
+# deadline, for the checks that follow it and for an answer written again
+# from the pages read when it fails (a trip: travel_rebuild.recover). Read
+# when the answer call starts: a turn knows only then what it read.
+_recovery: ContextVar[Callable[[], float] | None] = ContextVar(
+    "answer_recovery", default=None
+)
+
+
+@contextmanager
+def answer_recovery(seconds: Callable[[], float]) -> Iterator[None]:
+    token = _recovery.set(seconds)
+    try:
+        yield
+    finally:
+        _recovery.reset(token)
+
+
+def recovery_seconds() -> float:
+    """What the current turn keeps after its answer call (0 without a recovery)."""
+    reserve = _recovery.get()
+    return max(0.0, reserve()) if reserve is not None else 0.0
 
 
 @asynccontextmanager

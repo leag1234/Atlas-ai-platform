@@ -47,6 +47,7 @@ from urllib.parse import unquote, urlsplit
 
 from packages import privacy
 from services.orchestrator import (
+    deadline,
     redirects,
     route_facts,
     travel_claims,
@@ -385,10 +386,16 @@ async def _rewrite(prompt: str, profile: str, report: Report) -> str | None:
     }
     if privacy.owned_only():
         payload["privacy"] = "strict"
+    # Never past the turn's own deadline: a rewrite cut by it would take the
+    # answer it improves with it.
+    left = deadline.remaining()
+    seconds = DEADLINE_SECONDS if left is None else min(DEADLINE_SECONDS, left - 1)
+    if seconds <= 1:
+        report.rebuilt = "late"
+        return None
+    payload["timeout"] = seconds
     try:
-        result = await asyncio.wait_for(
-            unsourced_details._complete(payload), DEADLINE_SECONDS
-        )
+        result = await asyncio.wait_for(unsourced_details._complete(payload), seconds)
     except TimeoutError:
         report.rebuilt = "late"
         return None

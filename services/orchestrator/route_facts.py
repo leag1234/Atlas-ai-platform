@@ -518,13 +518,35 @@ def sentence_marks(line: str) -> list[re.Match[str]]:
     return marks
 
 
+# The line under a table's header row ("|---|:---:|").
+_TABLE_RULE = re.compile(
+    r"[ \t]*+\|?(?:[ \t]*+:?-++:?[ \t]*+\|)++[ \t]*+(?::?-++:?)?+[ \t]*+"
+)
+
+
+def table_header(text: str, index: int) -> bool:
+    """True when ``index`` is in a table's header row: the row of labels
+    above its rule line. Labels are never claims (staging -115: "Depart
+    Tokyo" and "Arrive Kyoto" were left out as an unsourced route and the
+    header read "Train | — | — | Duration")."""
+    start = text.rfind("\n", 0, index) + 1
+    end = text.find("\n", index)
+    if end < 0 or not text[start:end].lstrip().startswith("|"):
+        return False
+    following = text.find("\n", end + 1)
+    rule = text[end + 1 : len(text) if following < 0 else following]
+    return bool(_TABLE_RULE.fullmatch(rule))
+
+
 def _units(body: str) -> list[Unit]:
-    """Sentences (split as the travel check splits them) and table rows."""
+    """Sentences (split as the travel check splits them) and table rows; a
+    table's header row states nothing and is no unit."""
     units: list[Unit] = []
     offset = 0
     for line in body.split("\n"):
         if line.lstrip().startswith("|"):
-            units.append(Unit(offset, offset + len(line), row=True))
+            if not table_header(body, offset):
+                units.append(Unit(offset, offset + len(line), row=True))
         else:
             start = 0
             for match in sentence_marks(line):
