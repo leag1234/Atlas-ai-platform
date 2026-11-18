@@ -202,7 +202,7 @@ async def authenticate(
 # What each scope serves, named in a refusal so the caller knows what to change.
 SCOPE_USES = {
     "assistant": "the Atlas assistant (model atlas and its profiles)",
-    "model": "direct models (atlas-dev, atlas-chat, the dated aliases and the "
+    "model": "direct models (atlas-dev, atlas-code-fast, atlas-chat, the dated aliases and the "
     "precise ids of GET /models), embeddings, speech and transcription",
 }
 

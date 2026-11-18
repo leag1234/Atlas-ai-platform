@@ -55,6 +55,7 @@ receive token usage in the final chunk before `[DONE]`. Responses report the mod
 | `atlas` | The Atlas assistant: Atlas instructions and tools around a large model (Qwen 3.5, 397B parameters, by default) | Questions, research with sources, questions on attached documents and images | All three |
 | `atlas-qwen`, `atlas-glm`, `atlas-deepseek` | The Atlas assistant with a chosen model: Qwen 3.5 397B, GLM 5.2 or DeepSeek V4 Flash | The same, when you need a given model | All three |
 | `atlas-dev` | A direct model, no Atlas layer: GLM 5.3 Flash at effort `none`, GLM 5.3 above; DeepSeek V4 Flash as fallback | Code, coding agents, your own tools (function calling) | All three |
+| `atlas-code-fast` | A direct model, no Atlas layer: always the effort `none` chain of `atlas-dev` (GLM 5.3 Flash, DeepSeek V4 Flash as fallback). `reasoning_effort`, `reasoning.effort`, `thinking` and `output_config.effort` are accepted and ignored | Low-cost coding agents, including clients that always send an effort level (Claude Code) | All three |
 | `atlas-chat` | A direct model, no Atlas layer: the same models as `atlas-dev`; GLM 5.2 as fallback | Volume processing: summaries, translation, classification, extraction | All three |
 
 `atlas-code` (the former name of `atlas-dev`) and the dated aliases listed by `GET /models` remain
@@ -157,11 +158,13 @@ Messages has no `reasoning_effort` field. Atlas reads the effort from the Messag
 | `thinking: {"type": "adaptive"}` | `medium` | GLM 5.3 |
 | no `thinking` (or `disabled`) and no `output_config.effort` | `none` | GLM 5.3 Flash |
 
+`atlas-code-fast` ignores these fields: every request runs on GLM 5.3 Flash, as effort `none`.
+
 `output_config.effort` values `xhigh` and `max` are refused (HTTP 400). Claude Code 2.1.312 (measured
 2026-11-17) sends `output_config.effort` on every request, `high` by default, also when thinking is
 disabled (`MAX_THINKING_TOKENS=0` or `CLAUDE_CODE_DISABLE_THINKING=1`): its requests therefore run on
 GLM 5.3, never on GLM 5.3 Flash. `CLAUDE_CODE_EFFORT_LEVEL=low` (or `/effort low`) keeps GLM 5.3 with a
-shorter reasoning. On the code benchmark of 2026-11-05 (20 tasks, Codex CLI), effort `none` (GLM 5.3
+shorter reasoning. Set the model to `atlas-code-fast` to run Claude Code on GLM 5.3 Flash. On the code benchmark of 2026-11-05 (20 tasks, Codex CLI), effort `none` (GLM 5.3
 Flash) passed 15 tasks for 0.111 EUR and effort `high` (GLM 5.3) passed 19 for 0.819 EUR.
 
 ### What it costs
@@ -465,7 +468,8 @@ Extended thinking and hosted tools (web search, code execution) are not availabl
 drops it), and `ENABLE_TOOL_SEARCH=false` keeps the tool list fixed during a session: both keep the
 start of each request identical, which the prompt cache needs. Claude Code still sends an effort level
 on every request (see "Effort on Messages"), so it runs on GLM 5.3 at the level you choose with
-`CLAUDE_CODE_EFFORT_LEVEL` or `/effort`. Thinking blocks of earlier turns are not sent back to the model,
+`CLAUDE_CODE_EFFORT_LEVEL` or `/effort`. For the lower cost of GLM 5.3 Flash, replace `atlas-dev` with
+`atlas-code-fast` in the six model lines above. Thinking blocks of earlier turns are not sent back to the model,
 so `context_management` edits of type `clear_thinking_*` are accepted; other context edits are refused.
 
 ### Running agents cost-effectively
@@ -587,7 +591,7 @@ without a restriction (or ask your administrator), then send the same request.
 | Request | Scope it needs |
 |---|---|
 | `model`: `atlas` or an assistant profile, on Chat Completions, Responses or Messages | `assistant` |
-| `model`: `atlas-dev`, `atlas-chat`, `atlas-code`, a dated alias, a precise id of `GET /models`, or any other name (served as `atlas-dev`), on Chat Completions, Responses or Messages | `model` |
+| `model`: `atlas-dev`, `atlas-code-fast`, `atlas-chat`, `atlas-code`, a dated alias, a precise id of `GET /models`, or any other name (served as `atlas-dev`), on Chat Completions, Responses or Messages | `model` |
 | `POST /embeddings`, `/audio/speech`, `/audio/transcriptions`, `/audio/translations`, `/responses/input_tokens`, `/messages/count_tokens` | `model` |
 | `GET /models` | any key; the list shows the models the key's scopes allow |
 | `GET /models/{id}` | the scope of that model (403 `insufficient_scope` for a known model outside the key's scopes, 404 `model_not_found` for an unknown one) |

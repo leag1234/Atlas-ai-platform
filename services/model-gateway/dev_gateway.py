@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from packages.dev_request import Request
 from serverless import ServerlessPolicy
 import provider_settings
-from api_routing import Target, targets
+from api_routing import Target, targets, tier
 from provider_refusal import Refusal, classify_refusal, error_envelope
 from provider_retry import TransientProviderError
 from streaming import Delta
@@ -190,7 +190,11 @@ def prepare_api(
     if not request.tools or request.tool_choice == "none":
         for key in ("tools", "tool_choice", "parallel_tool_calls"):
             body.pop(key, None)
-    effort = str(body.get("reasoning_effort", "none"))
+    requested = str(body.get("reasoning_effort", "none"))
+    _, effort = tier(usage, requested)
+    if effort != requested:
+        # A usage with a fixed tier also sends that effort to targets that forward it.
+        body["reasoning_effort"] = effort
     # Several choices (n) multiply the output the provider may bill.
     outgoing = request.max_tokens * getattr(request, "n", 1)
     _, entries = targets(usage, effort, strict=strict, pinned=pinned)
