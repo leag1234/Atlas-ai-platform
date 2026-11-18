@@ -588,6 +588,14 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Sin verificar, por eso se omite: {values}. Ninguna página consultada para esta respuesta lo confirma, y Atlas aún no calcula rutas: compruebe líneas, paradas y transbordos en el planificador de viajes del operador.",
         "it": "Non verificato, quindi omesso: {values}. Nessuna pagina consultata per questa risposta lo conferma, e Atlas non calcola ancora gli itinerari: controlli linee, fermate e coincidenze nel pianificatore di viaggio dell’operatore.",
     },
+    # The same note when the pages read give another line for the route.
+    "disputed": {
+        "en": "Not verified, so left out: {values}. The pages read for this answer disagree on the line, and Atlas does not compute routes yet: check lines, stops and connections in the operator’s journey planner.",
+        "fr": "Non vérifié, donc retiré : {values}. Les pages consultées pour cette réponse ne donnent pas la même ligne, et Atlas ne calcule pas encore d’itinéraire : vérifiez lignes, arrêts et correspondances dans le calculateur d’itinéraire de l’exploitant.",
+        "de": "Nicht überprüft und daher weggelassen: {values}. Die für diese Antwort gelesenen Seiten nennen nicht dieselbe Linie, und Atlas berechnet noch keine Routen: Prüfen Sie Linien, Haltestellen und Umstiege in der Fahrplanauskunft des Verkehrsbetriebs.",
+        "es": "Sin verificar, por eso se omite: {values}. Las páginas consultadas para esta respuesta no indican la misma línea, y Atlas aún no calcula rutas: compruebe líneas, paradas y transbordos en el planificador de viajes del operador.",
+        "it": "Non verificato, quindi omesso: {values}. Le pagine consultate per questa risposta non indicano la stessa linea, e Atlas non calcola ancora gli itinerari: controlli linee, fermate e coincidenze nel pianificatore di viaggio dell’operatore.",
+    },
 }
 
 
@@ -1139,6 +1147,13 @@ class Findings:
     def note(self, language: str) -> str:
         """The one closing note: what was left out, and where to check."""
         key = "route" if self.route.route else "note"
+        if (
+            not self.values
+            and self.route.disputed
+            and self.route.disputed
+            == sum(1 for _, _, labels in self.route.spans if labels)
+        ):
+            key = "disputed"
         return wording(key, language).format(values=self.listed()).replace("….", "…")
 
     def listed(self) -> str:
@@ -1414,6 +1429,7 @@ class Turn:
             self.computed,
             owned_clocks,
             given=[self.place],
+            pages=self.linked,
         )
         # A sentence the values check already leaves out needs no second reason.
         taken = [_removal(body, claim) for claim in flagged]

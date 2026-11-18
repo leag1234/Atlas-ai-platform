@@ -28,7 +28,7 @@ from packages.validation import describe_validation
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from services.orchestrator import mcp_client, search_freshness, search_guard
+from services.orchestrator import mcp_client, redirects, search_freshness, search_guard
 from services.orchestrator.cache import Cache
 from services.orchestrator.daily_budget import BudgetRefusal
 from services.orchestrator.calculator import calculate
@@ -389,11 +389,15 @@ class Runtime:
                 found = replay.lookup(request.query, request.lang, request.news)
                 if found is not None:
                     attempts = [{"provider": "replay", "outcome": "ok"}]
-                    return found
+                    return redirects.results(found)
                 if not replay.live_on_miss:
                     attempts = [{"provider": "replay", "outcome": "replay_miss"}]
                     raise ValueError("search_replay_miss")
-            result = drop_low_value(await self._search(request, timeout), request.query)
+            # Every provider's links, cached ones included: a search-engine
+            # redirect is resolved or not used (redirects.py, staging -112).
+            result = drop_low_value(
+                redirects.results(await self._search(request, timeout)), request.query
+            )
             attempts = result.get("attempts")
             if scope.test:
                 try:

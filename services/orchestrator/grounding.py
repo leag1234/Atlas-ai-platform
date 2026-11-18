@@ -100,6 +100,13 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Una fuente consultada contradice esta afirmación:",
         "it": "Una fonte consultata contraddice questa affermazione:",
     },
+    "contradicted_item": {
+        "en": "A retrieved source contradicts {claim}:",
+        "fr": "Une source consultée contredit {claim} :",
+        "de": "Eine abgerufene Quelle widerspricht {claim}:",
+        "es": "Una fuente consultada contradice {claim}:",
+        "it": "Una fonte consultata contraddice {claim}:",
+    },
     "premise_unsupported": {
         "en": "The question's premise is contradicted by a retrieved source.",
         "fr": "La prémisse de la question est contredite par une source consultée.",
@@ -120,6 +127,46 @@ WORDING: dict[str, dict[str, str]] = {
 def wording(key: str, language: str) -> str:
     table = WORDING[key]
     return table.get(language, table["en"])
+
+
+_HEADING = re.compile(
+    r"^[ \t]*+(?:#{1,6}+[ \t]|(?:\*\*|__)[^*_\n]++(?:\*\*|__)[ \t]*+:?+[ \t]*+$)"
+)
+_ITEM = re.compile(r"^[ \t]*+(?:[-*+]|\d{1,3}+[.)])[ \t]++")
+
+
+def _section(text: str, position: int) -> int:
+    """The answer section a position is in: headings counted before it."""
+    return sum(1 for line in text[:position].split("\n")[:-1] if _HEADING.match(line))
+
+
+def _list_item(text: str, position: int) -> bool:
+    start = text.rfind("\n", 0, position) + 1
+    end = text.find("\n", position)
+    return bool(_ITEM.match(text[start : len(text) if end < 0 else end]))
+
+
+def _list_end(text: str, position: int) -> int:
+    """The end of the list a list item belongs to (its last item's line)."""
+    end = text.find("\n", position)
+    while end >= 0:
+        following = text.find("\n", end + 1)
+        line = text[end + 1 : len(text) if following < 0 else following]
+        if not _ITEM.match(line) and not (
+            line.startswith((" ", "\t")) and line.strip()
+        ):
+            return end
+        end = following
+    return len(text)
+
+
+def _quoted_claim(text: str, limit: int = 90) -> str:
+    plain = re.sub(r"\[([^\]\n]*)\]\([^)\s]*\)", r"\1", text)
+    plain = " ".join(re.sub(r"[*_`#>|]+", " ", _ITEM.sub("", plain)).split())
+    plain = plain.strip(" -–,;:.")
+    if len(plain) > limit:
+        plain = plain[:limit].rsplit(" ", 1)[0].rstrip(" ,;:") + "…"
+    return f"“{plain}”"
 
 
 @dataclass(frozen=True)
@@ -260,6 +307,39 @@ def question_entities(question: str) -> list[str]:
     return entities
 
 
+# A name followed by its number names one item among others of its kind: a
+# train ("Nozomi 233", "ICE 597"), a flight, a line, a gate. Never a date
+# ("November 18"), a year, a clock time or a quantity.
+DESIGNATOR = re.compile(
+    r"(?<![\w-])([A-ZÀ-Ý][\wÀ-ÿ'-]*)\s+(?:n[°o]\.?\s*|nr\.?\s*|#\s*)?"
+    r"(\d{1,5}[a-zA-Z]?)(?![\w-])(?!\s?(?::\d|[.,]\d|h\b|h\d|min|km|%))"
+)
+_CALENDAR = frozenset(
+    "january february march april may june july august september october "
+    "november december janvier fevrier mars avril mai juin juillet aout "
+    "septembre octobre novembre decembre januar februar marz juni juli "
+    "oktober dezember enero febrero marzo abril mayo junio julio agosto "
+    "septiembre setiembre octubre noviembre diciembre gennaio febbraio marzo "
+    "aprile maggio giugno luglio settembre ottobre dicembre monday tuesday "
+    "wednesday thursday friday saturday sunday lundi mardi mercredi jeudi "
+    "vendredi samedi dimanche montag dienstag mittwoch donnerstag freitag "
+    "samstag sonntag lunes martes miercoles jueves viernes sabado domingo "
+    "lunedi martedi mercoledi giovedi venerdi sabato domenica".split()
+)
+
+
+def designators(text: str) -> set[tuple[str, str]]:
+    """The numbered items a sentence names, as (name, number)."""
+    found: set[tuple[str, str]] = set()
+    for match in DESIGNATOR.finditer(text):
+        name = normalized(match[1])
+        number = normalized(match[2])
+        if not name or name in STOP or name in _CALENDAR or YEAR.fullmatch(number):
+            continue
+        found.add((name, number))
+    return found
+
+
 @dataclass
 class Grounding:
     evidence: list[str] = field(default_factory=list)
@@ -300,8 +380,12 @@ class Grounding:
         if not claim.values:
             return ""
         content = terms(claim.text) - set(" ".join(claim.values).split())
-        if not content:
+        # One shared word does not make two sentences about the same thing
+        # (staging -112: "Nozomi 1: 06:00 → 08:08" was "contradicted" by
+        # "Nozomi 233 · 07:03 → 09:37", another train of the same timetable).
+        if len(content) < 2 and not designators(claim.text):
             return ""
+        own = designators(claim.text)
         claim_values = set(claim.values)
         supporting_passages = [
             passage
@@ -341,6 +425,11 @@ class Grounding:
                 source_values.update(
                     normalized(quoted[1]) for quoted in QUOTED.finditer(source_sentence)
                 )
+                # A numbered item (a train, a flight, a line) is its own
+                # entity: the source must name the same one.
+                if own and not own <= designators(source_sentence):
+                    continue
+                source_values -= {value for _, value in own}
                 if not source_values or source_values & claim_values:
                     continue
                 if not all(
@@ -349,7 +438,7 @@ class Grounding:
                 ):
                     continue
                 overlap = content & terms(source_sentence)
-                if overlap and len(overlap) / len(content) >= 0.75:
+                if content and overlap and len(overlap) / len(content) >= 0.75:
                     return source_sentence.strip()
         return ""
 
@@ -430,13 +519,34 @@ class Grounding:
         self.claims_checked = len(claims)
         notes: dict[int, list[str]] = {}
         missing = self.missing_entities(question) if self.evidence else []
+        # One contradiction note per section of the answer, and a source
+        # sentence quoted once (staging -112 repeated one quote under twelve
+        # trains of a list).
+        quoted: set[str] = set()
+        noted_sections: set[int] = set()
         for index, claim in enumerate(claims):
             source_sentence = self.contradicted(claim)
             if source_sentence:
+                section = _section(answer, claim.start)
+                if source_sentence in quoted or section in noted_sections:
+                    continue
+                quoted.add(source_sentence)
+                noted_sections.add(section)
                 self.claims_changed += 1
-                notes.setdefault(index, []).append(
-                    wording("contradicted", language) + "\n> " + source_sentence
-                )
+                if _list_item(answer, claim.start):
+                    # Under the list, never between its items: it says which
+                    # item it is about.
+                    notes.setdefault(index, []).append(
+                        wording("contradicted_item", language).format(
+                            claim=_quoted_claim(claim.text)
+                        )
+                        + "\n> "
+                        + source_sentence
+                    )
+                else:
+                    notes.setdefault(index, []).append(
+                        wording("contradicted", language) + "\n> " + source_sentence
+                    )
                 continue
             plain = normalized(claim.text)
             named = [
@@ -474,8 +584,13 @@ class Grounding:
                     )
         for index in sorted(notes, reverse=True):
             claim = claims[index]
+            end = (
+                _list_end(answer, claim.start)
+                if _list_item(answer, claim.start)
+                else claim.end
+            )
             note = "\n\n" + "\n\n".join(notes[index]) + "\n\n"
-            answer = answer[: claim.end] + note + answer[claim.end :].lstrip()
+            answer = answer[:end].rstrip() + note + answer[end:].lstrip()
         answer = answer.rstrip()
         if correction:
             # Self-contained: it names the source's date and the question's own.
