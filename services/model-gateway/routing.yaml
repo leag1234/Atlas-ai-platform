@@ -111,3 +111,11 @@ picture_roles:
   # smoke 2026-11-17). A profile not enabled here falls back to the turn's own profile.
   source_faithfulness: atlas-mistral
   source_faithfulness_rewrite: atlas-mistral
+  # The judge's model reasons at "low" at least (no "none" on this provider), p50 25-35 s.
+  # The same prompt on this profile, reasoning off, answers in p50 1-1.5 s and is the screen:
+  # a clean answer is done, a flagged one goes to the judge above, whose verdict is used
+  # (measurement 2026-11-17, pilot 66 outputs and 98 of the 264 of the larger set: screen
+  # alone 8 false alarms in 112 faithful readings; screen then judge 0/80 false alarms,
+  # 41-42/42 and 39/42 faults found where the judge alone finds 42 and 40; faithful answers
+  # p50 1.0-1.6 s).
+  source_faithfulness_screen: atlas-glm

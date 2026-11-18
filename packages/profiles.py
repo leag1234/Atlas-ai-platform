@@ -222,6 +222,7 @@ PICTURE_ROLES = (
     "request_router",
     "request_router_retry",
     "source_faithfulness",
+    "source_faithfulness_screen",
     "source_faithfulness_rewrite",
 )
 
