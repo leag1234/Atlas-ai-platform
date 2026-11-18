@@ -163,13 +163,14 @@ def source_check(
 
     async def run() -> tuple[str, Decimal]:
         try:
+            screen = faith.screen_profile(profile)
             verdict = await faith.checked(
                 request,
                 source,
                 text,
                 judge_profile,
-                faith.screen_profile(profile),
-                min(faith.JUDGE_SECONDS, seconds),
+                screen,
+                min(faith.check_seconds(screen), seconds),
                 complete=call,
             )
         except faith.JudgeFailure as failure:

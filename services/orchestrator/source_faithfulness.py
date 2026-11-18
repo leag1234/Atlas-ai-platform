@@ -686,6 +686,15 @@ async def judge(
     return verdict
 
 
+def check_seconds(screen: str | None) -> float:
+    """The time a check may take: the screen's share first, then the judge's whole.
+
+    The judge's time is never shortened by the screen's (measured 2026-11-18:
+    sharing one budget cost the cascade 9 of 168 faults through timeouts).
+    """
+    return JUDGE_SECONDS + (SCREEN_SECONDS if screen is not None else 0.0)
+
+
 async def checked(
     request: str,
     source: Source,
@@ -895,7 +904,7 @@ def statement(body: str, finding: Finding) -> str:
 
 def _left(deadline: float | None) -> float:
     if deadline is None:
-        return JUDGE_SECONDS + REWRITE_SECONDS + JUDGE_SECONDS
+        return 2 * (JUDGE_SECONDS + SCREEN_SECONDS) + REWRITE_SECONDS
     return deadline - time.monotonic() - MARGIN_SECONDS
 
 
@@ -961,7 +970,7 @@ async def review(
             body,
             judge_profile,
             screen,
-            min(JUDGE_SECONDS, _left(deadline)),
+            min(check_seconds(screen), _left(deadline)),
             complete=complete,
         )
     except JudgeFailure as failure:
@@ -1008,7 +1017,7 @@ async def review(
                     revised,
                     judge_profile,
                     screen,
-                    min(JUDGE_SECONDS, _left(deadline)),
+                    min(check_seconds(screen), _left(deadline)),
                     complete=complete,
                 )
             except JudgeFailure as failure:

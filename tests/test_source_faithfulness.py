@@ -617,6 +617,24 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(report.cost_eur, Decimal("0.012"))
         self.assertEqual(report.calls, 1)
 
+    def test_the_judge_keeps_its_whole_time_after_a_slow_screen(self) -> None:
+        clock = [1000.0]
+        seen: list[float] = []
+
+        class Slow(Calls):
+            async def __call__(
+                self, payload: dict[str, Any], seconds: float
+            ) -> dict[str, Any]:
+                seen.append(seconds)
+                clock[0] += 15.0
+                return await super().__call__(payload, seconds)
+
+        calls = Slow(CAUGHT, CLEAN)
+        with patch.object(faith.time, "monotonic", lambda: clock[0]):
+            self.run_review(CAUSAL, calls)
+        # The screen's 15 s are not taken from the judge.
+        self.assertEqual(seen, [faith.SCREEN_SECONDS + 5, faith.JUDGE_SECONDS + 5])
+
     def test_a_confirmed_finding_is_rewritten_and_the_rewrite_screened(self) -> None:
         fixed = (
             "The town council chose a steel deck because it weighed less than concrete."
