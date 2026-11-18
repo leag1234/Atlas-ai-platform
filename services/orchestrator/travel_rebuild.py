@@ -266,6 +266,93 @@ def _substantial(sentence: str) -> bool:
     return len(words) >= 3
 
 
+# Street types, five languages: a starting point's street type names no place.
+_STREETS = frozenset(
+    (
+        "street road avenue lane drive boulevard place square terrace court "
+        "highway parkway rue avenue chemin allee impasse quai cours route "
+        "strasse weg gasse platz allee ring damm ufer calle avenida paseo plaza "
+        "camino carrer ronda carretera via viale piazza corso vicolo largo"
+    ).split()
+)
+
+
+def _capitalized(texts: list[str]) -> set[str]:
+    """Names: words written with a capital after a lower-case word more often
+    than in lower case ("Sydney", never "flight")."""
+    upper: dict[str, int] = {}
+    lower: dict[str, int] = {}
+    for text in texts:
+        previous = ""
+        for match in re.finditer(r"[^\W\d_]++", text):
+            word = match[0]
+            if word[:1].islower():
+                for key in _place_words(word):
+                    lower[key] = lower.get(key, 0) + 1
+            elif previous[:1].islower():
+                for key in _place_words(word):
+                    upper[key] = upper.get(key, 0) + 1
+            previous = word
+    return {key for key, count in upper.items() if count > lower.get(key, 0)}
+
+
+def _trip_names(
+    turn: travel_claims.Turn, question: str, answer: str
+) -> tuple[set[str], list[set[str]]]:
+    """The places of this trip: the starting point's words (its street type
+    and country left out), the question's words the pages or the person write
+    as names, and the answer's place names of two words or more."""
+    parts = [part for part in turn.place.split(",") if part.strip()]
+    if len(parts) >= 3:
+        parts = parts[:-1]
+    names = _place_words(" ".join(parts))
+    names |= _place_words(question) & _capitalized(
+        [question, *(text for _, text in turn.linked)]
+    )
+    names = {w for w in names if w not in route_facts.PLACE_WORDS | _STREETS}
+    phrases = [
+        words
+        for mention in route_facts.mentions(answer, answer)
+        if len(words := _place_words(mention) - route_facts.PLACE_WORDS - _STREETS) >= 2
+    ]
+    return names, phrases
+
+
+def elsewhere(turn: travel_claims.Turn, question: str, answer: str) -> set[str]:
+    """The pages read that are about another place (page keys): they name no
+    place of this trip while another page does.
+
+    Staging -118: a Sydney airport answer cited Brisbane's airport train for
+    "the station access fee is included in the fare", and the sources listed
+    Perth's and Bangkok's airport trains. Such a page supports no fact of the
+    trip's answer, is no excerpt for its rewrite and is not listed.
+    """
+    names, phrases = _trip_names(turn, question, answer)
+    if not names and not phrases:
+        return set()
+    texts: dict[str, list[str]] = {}
+    for url, text in turn.linked:
+        if url:
+            texts.setdefault(url, []).append(text)
+
+    def about(url: str, words: set[str]) -> bool:
+        host = urlsplit(url).netloc.lower()
+        return (
+            bool(words & names)
+            or any(name in host for name in names)
+            or any(len(phrase & words) >= 2 for phrase in phrases)
+        )
+
+    named = {
+        url
+        for url, found in texts.items()
+        if about(url, _page_words(url, "\n".join(found)))
+    }
+    if not named:
+        return set()
+    return {travel_claims.page_key(url) for url in set(texts) - named}
+
+
 def _pages(
     turn: travel_claims.Turn, question: str, answer: str
 ) -> tuple[set[str], dict[str, list[str]], dict[str, int], int]:
@@ -275,7 +362,7 @@ def _pages(
     wanted = trip_words(turn, question)
     elsewhere = off_route(turn, question, answer)
     pages: dict[str, list[str]] = {}
-    for url, text in turn.linked:
+    for url, text in turn.pages():
         if url not in elsewhere:
             pages.setdefault(url, []).append(text)
     shared = {
@@ -610,12 +697,32 @@ def _accepted(
             len(trimmed) >= KEPT_SHARE * len(text) or len(trimmed) >= MIN_TRIMMED
         ):
             report.rebuilt, report.built = "kept:left_out", "model"
-            return "\n\n".join(p for p in (trimmed, again.note(language)) if p)
+            return "\n\n".join(
+                p
+                for p in (
+                    trimmed,
+                    _uncited(trimmed, chosen, language),
+                    again.note(language),
+                )
+                if p
+            )
     report.rebuilt = "rejected:" + reason if reason else "kept"
     if reason:
         return ""
     report.built = "model"
-    return text
+    return "\n\n".join(p for p in (text, _uncited(text, chosen, language)) if p)
+
+
+def _uncited(text: str, chosen: list[Excerpt], language: str) -> str:
+    """The pages about the trip, when the answer links none of the pages read.
+
+    Staging -118: a Villeurbanne - Geneva airport rewrite kept only "the rest
+    of the trip is not covered by the sources" although the operators' pages
+    about the trip were read; the person is given those pages at least.
+    """
+    if re.search(r"\]\(https?://", text):
+        return ""
+    return _pointer(chosen, language)
 
 
 def _log(report: Report, started: float) -> None:
@@ -765,11 +872,16 @@ async def review(
     """The travel answer with nothing unsourced (rewritten, or built by code),
     no link to a page about another trip, and the connection the pages give
     when it does not say it."""
+    if turn.active:
+        turn.excluded = elsewhere(turn, question, answer.partition("<details>")[0])
     final, report = await _review(
         turn, answer, language, question=question, profile=profile
     )
     final = _without(final, off_route(turn, question, final.partition("<details>")[0]))
     body, fold, footer = final.partition("<details>")
+    body = redirects.claims_without(
+        body, lambda url: travel_claims.page_key(url) in turn.excluded
+    )
     body = travel_claims.outliers_left_out(redirects.forum_claims(unwrapped(body)))
     final = citations(redirects.cited(body)) + fold + footer
     return _with_connection(turn, final, language), report
@@ -825,6 +937,7 @@ async def recover(
     """
     if not turn.active:
         return None
+    turn.excluded = elsewhere(turn, question, "")
     report = Report(recovered=True)
     started = time.monotonic()
     chosen = excerpts(turn, question)

@@ -36,9 +36,10 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from services.orchestrator import redirects, route_facts
-from services.orchestrator.grounding import Grounding
+from services.orchestrator.grounding import Grounding, normalized
 from services.orchestrator.location import Position
 
 # "route" is a sentence, a parenthesis or a table cell stating an unsourced
@@ -486,6 +487,68 @@ _MONTH_NUMBER = {
     word: number for number, words in enumerate(_MONTHS, 1) for word in words.split()
 }
 _MONTH = r"(" + "|".join(sorted(_MONTH_NUMBER, key=len, reverse=True)) + r")"
+
+
+def page_key(url: str) -> str:
+    """One form of a page address: no scheme, "www." or closing slash."""
+    parts = urlsplit(url.strip().rstrip(".,;"))
+    return parts.netloc.lower().removeprefix("www.") + parts.path.rstrip("/")
+
+
+def _text_key(text: str) -> str:
+    return " ".join(text.split())[:200]
+
+
+# --- Values of another leg. ----------------------------------------------------
+# Staging -118: "The Acela ... takes 7 hours ([amtrak.com](...))" for New York -
+# Boston, a value the page gives for another stretch of the line. A duration or
+# a distance a source sentence states for two places, one of which neither the
+# person, nor their starting point, nor the answer names, is the value of
+# another leg: it supports nothing in this trip's answer.
+_NAME = r"[A-ZÀ-ÖØ-Þ][\w'’.]*+(?:[ -][A-ZÀ-ÖØ-Þ][\w'’.]*+){0,3}+"
+_ARTICLE = r"(?:(?i:la|le|les|l'|the|der|die|dem|den|el|los|il|lo)\s*+)?+"
+_LEG = re.compile(
+    r"(?<![\w-])(?i:from|de|du|des|depuis|von|vom|ab|desde|da|dal|dalla|"
+    r"between|entre|zwischen|tra|fra|connects?|connecting|relie|reliant|"
+    r"verbindet|conecta|collega)\s++"
+    + _ARTICLE
+    + rf"({_NAME})(?:,\s*+{_NAME})?+\s*+(?i:to|and|with|à|a|au|aux|et|avec|nach|bis|"
+    r"und|mit|zum|zur|hasta|y|con|e|al|jusqu'à)\s++"
+    + _ARTICLE
+    + rf"({_NAME})"
+    + rf"|({_NAME})(?:\s++[–—-]\s++|\s*+(?:→|->)\s*+)({_NAME})"
+)
+
+
+def _name_words(name: str) -> set[str]:
+    return {
+        word
+        for word in normalized(name).split()
+        if len(word) >= 3
+        and word not in route_facts._GENERIC
+        and word not in route_facts.STATION_WORDS
+        and word not in route_facts.PLACE_WORDS
+        and word not in _MONTH_NUMBER
+    }
+
+
+def another_leg(sentence: str, places: frozenset[str]) -> bool:
+    """Whether a source sentence names a leg with an end outside ``places``."""
+    if not places:
+        return False
+    for match in _LEG.finditer(sentence):
+        for end in match.groups():
+            words = _name_words(end) if end else set()
+            if words and not words & places:
+                return True
+    return False
+
+
+# Sentences of a source for the leg check: "Washington, D.C. and Boston" is
+# one (an abbreviation's points end no sentence).
+_LEG_SENTENCE = re.compile(r"(?<=\w\w[.!?;])\s++|\n++")
+# The pages an answer sentence cites (markdown links, bare links).
+_CITATION = re.compile(r"\((https?://[^)\s]++)\)|<(https?://[^>\s]++)>")
 _ISO_DATE = re.compile(r"(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)")
 _NUMERIC_DATE = re.compile(
     r"(?<![\d.:/])(\d{1,2})([./-])(\d{1,2})\2(\d{4}|\d{2})(?![\d:])"
@@ -1394,6 +1457,39 @@ class Turn:
     marked: int = 0
     # The texts read, each with the page it came from (travel_rebuild).
     linked: list[tuple[str, str]] = field(default_factory=list, repr=False)
+    # Pages read that are about another place than the trip's (page keys,
+    # set by travel_rebuild): their texts support none of its facts.
+    excluded: set[str] = field(default_factory=set, repr=False)
+
+    def passages(self, cited: frozenset[str] | None = None) -> list[str]:
+        """The texts read this turn, without those of the pages about another
+        place; with ``cited``, only those of these pages (page keys)."""
+        if not self.excluded and cited is None:
+            return list(self.evidence.evidence)
+        pages: dict[str, set[str]] = {}
+        for url, text in self.linked:
+            pages.setdefault(_text_key(text), set()).add(page_key(url))
+        kept: list[str] = []
+        for text in self.evidence.evidence:
+            found = pages.get(_text_key(text), set()) - {""}
+            if found and found <= self.excluded:
+                continue
+            if cited is not None and not found & cited:
+                continue
+            kept.append(text)
+        return kept
+
+    def pages(self) -> list[tuple[str, str]]:
+        """The texts read with their page, without the pages about another place."""
+        return [(u, t) for u, t in self.linked if page_key(u) not in self.excluded]
+
+    def places(self, answer: str) -> frozenset[str]:
+        """The words of the person's messages, starting point and answer."""
+        return frozenset(
+            word
+            for word in normalized(" ".join((*self.asked, self.place, answer))).split()
+            if len(word) >= 3
+        )
 
     def elapsed(self) -> float:
         """Seconds since the turn started (its checks were set up)."""
@@ -1464,7 +1560,7 @@ class Turn:
             return {}
         other: dict[float, set[str]] = {}
         same: set[float] = set()
-        for text in self.evidence.evidence:
+        for text in self.passages():
             for sentence in _EVIDENCE_SENTENCE.split(text):
                 clocks = [
                     q.value
@@ -1481,15 +1577,39 @@ class Turn:
                     same.update(clocks)
         return {value: dates for value, dates in other.items() if value not in same}
 
+    def _read_values(
+        self, texts: list[str] | None, places: frozenset[str]
+    ) -> list[tuple[str, Quantity]]:
+        """The values of the sources (each with its sentence), the computed
+        ones and the person's; a duration or distance of another leg left out."""
+        found: list[tuple[str, Quantity]] = []
+        for text in self.passages() if texts is None else texts:
+            for sentence in _LEG_SENTENCE.split(text):
+                values = quantities(sentence, generous=True)
+                if not values:
+                    continue
+                elsewhere = another_leg(sentence, places)
+                found += [
+                    (sentence, q)
+                    for q in values
+                    if not (elsewhere and q.kind in {"duration", "distance"})
+                ]
+        for text in (*self.computed, *self.asked):
+            found += [(text, q) for q in quantities(text, generous=True)]
+        return found
+
     def known(
-        self, other: dict[float, set[str]] | None = None
+        self,
+        other: dict[float, set[str]] | None = None,
+        *,
+        texts: list[str] | None = None,
+        places: frozenset[str] = frozenset(),
     ) -> dict[Kind, list[float]]:
         values: dict[Kind, list[float]] = {"duration": [], "distance": [], "clock": []}
-        for text in (*self.evidence.evidence, *self.computed, *self.asked):
-            for quantity in quantities(text, generous=True):
-                values[quantity.kind].append(quantity.value)
-                if isinstance(quantity, _Range):
-                    values[quantity.kind].append(quantity.low)
+        for _, quantity in self._read_values(texts, places):
+            values[quantity.kind].append(quantity.value)
+            if isinstance(quantity, _Range):
+                values[quantity.kind].append(quantity.low)
         for text in self.asked:
             values["clock"].extend(spoken_times(text))
         other = self.other_days() if other is None else other
@@ -1509,19 +1629,23 @@ class Turn:
             ]
         return values
 
-    def stated_durations(self) -> list[float]:
+    def stated_durations(
+        self,
+        *,
+        texts: list[str] | None = None,
+        places: frozenset[str] = frozenset(),
+    ) -> list[float]:
         """Durations the sources write as durations ("4 h 02 min", "Fahrzeit 4h29"),
         not clock times read as durations too."""
-        values: list[float] = []
-        for text in (*self.evidence.evidence, *self.computed, *self.asked):
-            found = quantities(text, generous=True)
-            clocks = {(q.start, q.end) for q in found if q.kind == "clock"}
-            values += [
-                q.value
-                for q in found
-                if q.kind == "duration" and (q.start, q.end) not in clocks
-            ]
-        return values
+        found = self._read_values(texts, places)
+        clocks = {
+            (id(sentence), q.start, q.end) for sentence, q in found if q.kind == "clock"
+        }
+        return [
+            q.value
+            for sentence, q in found
+            if q.kind == "duration" and (id(sentence), q.start, q.end) not in clocks
+        ]
 
     def owned_values(self, answer: str) -> str:
         """The travel values of ``answer``, written as the travel check reads them.
@@ -1553,10 +1677,35 @@ class Turn:
             and not route_facts.table_header(body, claim.start)
         ]
         other = self.other_days()
-        known = self.known(other)
+        places = self.places(body)
+        known = self.known(other, places=places)
         sourced_clocks = known["clock"]
-        stated = self.stated_durations()
+        stated = self.stated_durations(places=places)
+        read_pages = {page_key(url) for url, _ in self.linked if url}
+        scoped: dict[frozenset[str], tuple[dict[Kind, list[float]], list[float]]] = {}
         today = min(self.trip_dates(), default="")
+
+        def cited(claim: Quantity) -> tuple[dict[Kind, list[float]], list[float]]:
+            """The values of the pages read that the claim's sentence cites:
+            a value cited to a page comes from that page (staging -118: "takes
+            7 hours" cited to a page that gave it for another leg)."""
+            left, right = _sentence(body, claim.start, claim.end)
+            urls = (
+                frozenset(
+                    page_key(a or b) for a, b in _CITATION.findall(body[left:right])
+                )
+                & read_pages
+            )
+            if not urls:
+                return known, stated
+            if urls not in scoped:
+                texts = self.passages(urls)
+                scoped[urls] = (
+                    self.known(other, texts=texts, places=places),
+                    self.stated_durations(texts=texts, places=places),
+                )
+            return scoped[urls]
+
         dated: dict[int, str] = {}
 
         def other_day(claim: Quantity) -> bool:
@@ -1578,7 +1727,12 @@ class Turn:
             dated[claim.start] = min(days[0])
             return False
 
-        def matches(kind: Kind, value: float) -> bool:
+        def matches(
+            kind: Kind,
+            value: float,
+            known: dict[Kind, list[float]],
+            stated: list[float],
+        ) -> bool:
             if value != value:  # a placeholder ("12 h 2x") states no time
                 return False
             if any(_same(kind, value, item) for item in known[kind]):
@@ -1592,7 +1746,11 @@ class Turn:
             return any(_rounded(value, item) for item in stated)
 
         def supported(claim: Quantity) -> bool:
-            if all(matches(claim.kind, value) for value in _range_values(claim)):
+            values, durations = cited(claim)
+            if all(
+                matches(claim.kind, value, values, durations)
+                for value in _range_values(claim)
+            ):
                 return True
             if other_day(claim):
                 return True
@@ -1643,12 +1801,12 @@ class Turn:
                 for q in read
                 if q.kind == "clock" and q.value == q.value
             ],
-            self.evidence.evidence,
+            self.passages(),
             [*self.asked, self.place],
             self.computed,
             owned_clocks,
             given=[self.place],
-            pages=self.linked,
+            pages=self.pages(),
         )
         # A sentence the values check already leaves out needs no second reason.
         taken = [_removal(body, claim) for claim in (*flagged, *elsewhere)]
