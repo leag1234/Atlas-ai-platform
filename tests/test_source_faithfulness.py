@@ -298,7 +298,8 @@ class ReviewTests(unittest.TestCase):
         payload = calls.payloads[0]
         self.assertEqual(payload["profile"], "atlas-qwen")
         self.assertEqual(payload["tools"], [])
-        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        # The reasoning judge answers without JSON mode: its object is read from the text.
+        self.assertNotIn("response_format", payload)
         self.assertEqual(payload["max_tokens"], faith.JUDGE_TOKENS)
         self.assertIn(SOURCE, payload["messages"][0]["content"])
 
@@ -609,6 +610,10 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual((text, addition, report.outcome), (CAUSAL, "", "clean"))
         self.assertEqual(
             [p["profile"] for p in calls.payloads], ["atlas-fast", "atlas-judge"]
+        )
+        # The screen keeps JSON mode; the judge goes without it.
+        self.assertEqual(
+            ["response_format" in p for p in calls.payloads], [True, False]
         )
         # Both read the same measured prompt.
         screened, judged_by = (p["messages"][0]["content"] for p in calls.payloads)

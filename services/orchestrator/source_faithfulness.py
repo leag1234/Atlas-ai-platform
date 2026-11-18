@@ -624,11 +624,12 @@ def _payload(
     tokens: int,
     seconds: float,
     budget: Decimal,
+    *,
+    json_mode: bool = True,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "messages": messages,
         "tools": [],
-        "response_format": {"type": "json_object"},
         "profile": profile,
         "max_tokens": tokens,
         "timeout": seconds,
@@ -637,6 +638,8 @@ def _payload(
         "single_attempt": True,
         "local_enabled": False,
     }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     if privacy.owned_only():
         payload["privacy"] = "strict"
     return payload
@@ -659,8 +662,14 @@ async def judge(
     seconds: float,
     *,
     complete: Complete | None = None,
+    json_mode: bool = True,
 ) -> Verdict:
-    """One judge call on the whole source; raises JudgeFailure when unusable."""
+    """One judge call on the whole source; raises JudgeFailure when unusable.
+
+    ``json_mode`` asks the provider for a JSON object. The reasoning judge goes
+    without it: on its model JSON mode made 1.5 times the output tokens for the
+    same verdicts (measured 2026-11-18); the reply's object is read from the text.
+    """
     started = time.monotonic()
     body = answer.split("<details>", 1)[0]
     payload = _payload(
@@ -669,6 +678,7 @@ async def judge(
         JUDGE_TOKENS,
         seconds,
         JUDGE_BUDGET_EUR,
+        json_mode=json_mode,
     )
     try:
         reply = await (complete or _complete)(payload, seconds + 5)
@@ -741,6 +751,7 @@ async def checked(
             profile,
             min(JUDGE_SECONDS, left),
             complete=complete,
+            json_mode=False,
         )
     except JudgeFailure as failure:
         failure.cost_eur += spent
