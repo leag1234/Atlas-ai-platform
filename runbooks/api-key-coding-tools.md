@@ -48,6 +48,8 @@ and output limit; the bridge never silently truncates input.
 The public names are `atlas-code` (coding agents and tools) and `atlas-chat`
 (general conversation without the Atlas assistant prompt). The dated aliases
 `atlas-code-2026-10-30` and `atlas-chat-2026-10-30` pin this routing version.
+`atlas-code-fast` always serves the effort `none` chain of `atlas-code` and
+ignores any effort or thinking level the client sends.
 Unrecognized client model strings, including `claude-*` and `gpt-*`, select
 `atlas-code` on all three public wires. `raw/...` IDs are internal-only and are
 rejected at the public edge. `GET /models` lists the public usages and accepted

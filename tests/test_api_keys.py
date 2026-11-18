@@ -731,6 +731,7 @@ class KeyTests(unittest.TestCase):
                     "atlas-code",
                     "atlas-chat",
                     "atlas-dev",
+                    "atlas-code-fast",
                     "atlas-code-2026-10-30",
                     "atlas-chat-2026-10-30",
                     "mistral/zai-glm-5-3-flash",

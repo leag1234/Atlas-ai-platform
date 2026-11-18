@@ -12,6 +12,7 @@ PUBLIC_MODELS = (
     "atlas-code",
     "atlas-chat",
     "atlas-dev",
+    "atlas-code-fast",
     "atlas-code-2026-10-30",
     "atlas-chat-2026-10-30",
 )
@@ -40,6 +41,26 @@ def public_model(name: str) -> str:
     return str(value.get("aliases", {}).get(name, name))
 
 
+def usages() -> dict[str, Any]:
+    value = config().get("usages", {})
+    return value if isinstance(value, dict) else {}
+
+
+def tier(name: str, effort: str) -> tuple[str, str]:
+    """The usage chain and effort tier that serve a request.
+
+    A usage declared with "route" and "effort" always serves that tier of the
+    routed usage, whatever effort or thinking level the client sends.
+    """
+    usage = public_model(name)
+    declared = usages().get(usage)
+    if isinstance(declared, dict):
+        route, fixed = declared.get("route"), declared.get("effort")
+        if isinstance(route, str) and isinstance(fixed, str):
+            return route, fixed
+    return usage, effort
+
+
 def select_public_model(name: str) -> str:
     """Unknown client brand names retain the historic code-default behavior."""
     if name.startswith("raw/"):
@@ -54,9 +75,9 @@ def pinned_target(name: str) -> Target | None:
     provider, separator, model = name.partition("/")
     if not separator or not provider or not model:
         return None
-    for usage in ("atlas-code", "atlas-chat"):
+    for chain in usages().values():
         for effort in EFFORTS:
-            entries = config().get("usages", {}).get(usage, {}).get(effort)
+            entries = chain.get(effort) if isinstance(chain, dict) else None
             if not isinstance(entries, list):
                 continue
             for item in entries:
@@ -78,9 +99,9 @@ def pinned_target(name: str) -> Target | None:
 def pinned_models() -> list[str]:
     """Precise model ids, one per routing target, in configuration order."""
     ids: list[str] = []
-    for usage in ("atlas-code", "atlas-chat"):
+    for chain in usages().values():
         for effort in EFFORTS:
-            entries = config().get("usages", {}).get(usage, {}).get(effort)
+            entries = chain.get(effort) if isinstance(chain, dict) else None
             if not isinstance(entries, list):
                 continue
             for item in entries:
@@ -111,8 +132,10 @@ def targets(
                 raise privacy.refusal("inference")
             raise ValueError("invalid_model")
         return usage, (target,)
-    entries = config().get("usages", {}).get(usage, {}).get(effort)
-    if usage not in ("atlas-code", "atlas-chat") or not isinstance(entries, list):
+    route, level = tier(usage, effort)
+    chain = usages().get(route)
+    entries = chain.get(level) if isinstance(chain, dict) else None
+    if not isinstance(entries, list):
         raise ValueError("invalid_model")
     selected = tuple(
         Target(
