@@ -58,6 +58,7 @@ EGRESS: dict[str, str] = {
     "services/orchestrator/reference_fetch.py": "third_party",
     "services/orchestrator/searxng.py": "third_party",
     "services/orchestrator/tools.py": "third_party",
+    "services/orchestrator/transit_planner.py": "third_party",
     "services/orchestrator/visual_tools.py": "third_party",
     "services/orchestrator/web.py": "third_party",
 }
@@ -487,6 +488,7 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
             reference_fetch,
             searxng,
             tools,
+            transit_planner,
             visual_tools,
             web,
         )
@@ -517,6 +519,19 @@ class FeatureTests(unittest.IsolatedAsyncioTestCase):
                 timeout=5,
                 extra_hosts=frozenset({"www.franceinfo.fr"}),
             ),
+            # A journey planner receives the places of a trip.
+            "transit_plan": lambda: transit_planner.Client(
+                transit_planner.Settings(
+                    url="https://planner.example.invalid",
+                    timeout=1,
+                    daily_plans=1,
+                    cache_seconds=0,
+                    interval=0,
+                    state=Path(tempfile.gettempdir()) / "atlas-transit-egress-test",
+                    attribution_url=transit_planner.SOURCES_URL,
+                    attribution_name="Transitous",
+                )
+            ).geocode("Lyon Part-Dieu", "fr"),
             "mcp_http": lambda: mcp_http.HTTP.exchange(Mock(), "tools/list", {}),
             "mcp_local": lambda: mcp_transport.invoke(
                 "/bin/false", [], {}, [], "tool", {}, 1

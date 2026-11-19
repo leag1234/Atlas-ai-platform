@@ -1,0 +1,14 @@
+{
+"recorded":"2026-11-19 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+"request":{
+"time":"2026-11-20T07:00+11:00",
+"arriveBy":"true",
+"numItineraries":"3",
+"searchWindow":"3600"
+},
+"status":200,
+"body":{
+"itineraries":[],
+"direct":[]
+}
+}
