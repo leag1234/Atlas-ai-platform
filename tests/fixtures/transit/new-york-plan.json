@@ -1,0 +1,255 @@
+{
+"recorded":"2026-11-19 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+"request":{
+"time":"2026-11-20T11:00-05:00",
+"arriveBy":"true",
+"numItineraries":"3",
+"searchWindow":"3600"
+},
+"status":200,
+"body":{
+"itineraries":[
+{
+"startTime":"2026-11-20T10:25:00Z",
+"endTime":"2026-11-20T14:56:00Z",
+"duration":16260,
+"transfers":0,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"New York Midtown (31st St & 8th Ave)",
+"tz":"America/New_York"
+},
+"duration":300,
+"startTime":"2026-11-20T10:25:00Z",
+"endTime":"2026-11-20T10:30:00Z",
+"scheduledStartTime":"2026-11-20T10:25:00Z",
+"scheduledEndTime":"2026-11-20T10:30:00Z",
+"realTime":false
+},
+{
+"mode":"COACH",
+"from":{
+"name":"New York Midtown (31st St & 8th Ave)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"duration":15900,
+"startTime":"2026-11-20T10:30:00Z",
+"endTime":"2026-11-20T14:55:00Z",
+"scheduledStartTime":"2026-11-20T10:30:00Z",
+"scheduledEndTime":"2026-11-20T14:55:00Z",
+"realTime":false,
+"headsign":"Boston (South Station)",
+"agencyName":"FlixBus-us",
+"routeShortName":"FlixBus N2605",
+"routeLongName":"Boston - NYC - Richmond",
+"tripShortName":"",
+"displayName":"FlixBus N2605",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":60,
+"startTime":"2026-11-20T14:55:00Z",
+"endTime":"2026-11-20T14:56:00Z",
+"scheduledStartTime":"2026-11-20T14:55:00Z",
+"scheduledEndTime":"2026-11-20T14:56:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T10:35:00Z",
+"endTime":"2026-11-20T15:25:00Z",
+"duration":17400,
+"transfers":1,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"7 AV/W 34 ST",
+"tz":"America/New_York"
+},
+"duration":300,
+"startTime":"2026-11-20T10:35:00Z",
+"endTime":"2026-11-20T10:40:00Z",
+"scheduledStartTime":"2026-11-20T10:35:00Z",
+"scheduledEndTime":"2026-11-20T10:40:00Z",
+"realTime":false
+},
+{
+"mode":"BUS",
+"from":{
+"name":"7 AV/W 34 ST",
+"tz":"America/New_York"
+},
+"to":{
+"name":"7 AV/W 31 ST",
+"tz":"America/New_York"
+},
+"duration":0,
+"startTime":"2026-11-20T10:40:00Z",
+"endTime":"2026-11-20T10:40:00Z",
+"scheduledStartTime":"2026-11-20T10:40:00Z",
+"scheduledEndTime":"2026-11-20T10:40:00Z",
+"realTime":false,
+"headsign":"14 ST via COLUMBUS via 7 AV",
+"agencyName":"MTA New York City Transit",
+"routeShortName":"M7",
+"routeLongName":"Harlem - 14th Street",
+"tripShortName":"",
+"displayName":"M7",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"7 AV/W 31 ST",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"duration":180,
+"startTime":"2026-11-20T10:40:00Z",
+"endTime":"2026-11-20T10:43:00Z",
+"scheduledStartTime":"2026-11-20T10:40:00Z",
+"scheduledEndTime":"2026-11-20T10:43:00Z",
+"realTime":false,
+"cancelled":false
+},
+{
+"mode":"LONG_DISTANCE",
+"from":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"duration":16620,
+"startTime":"2026-11-20T10:44:00Z",
+"endTime":"2026-11-20T15:21:00Z",
+"scheduledStartTime":"2026-11-20T10:44:00Z",
+"scheduledEndTime":"2026-11-20T15:21:00Z",
+"realTime":false,
+"headsign":"Boston",
+"agencyName":"Amtrak",
+"routeShortName":"",
+"routeLongName":"Northeast Regional",
+"tripShortName":"66",
+"displayName":"66",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":240,
+"startTime":"2026-11-20T15:21:00Z",
+"endTime":"2026-11-20T15:25:00Z",
+"scheduledStartTime":"2026-11-20T15:21:00Z",
+"scheduledEndTime":"2026-11-20T15:25:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T11:10:00Z",
+"endTime":"2026-11-20T15:41:00Z",
+"duration":16260,
+"transfers":0,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"New York Midtown (31st St & 8th Ave)",
+"tz":"America/New_York"
+},
+"duration":300,
+"startTime":"2026-11-20T11:10:00Z",
+"endTime":"2026-11-20T11:15:00Z",
+"scheduledStartTime":"2026-11-20T11:10:00Z",
+"scheduledEndTime":"2026-11-20T11:15:00Z",
+"realTime":false
+},
+{
+"mode":"COACH",
+"from":{
+"name":"New York Midtown (31st St & 8th Ave)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"duration":15900,
+"startTime":"2026-11-20T11:15:00Z",
+"endTime":"2026-11-20T15:40:00Z",
+"scheduledStartTime":"2026-11-20T11:15:00Z",
+"scheduledEndTime":"2026-11-20T15:40:00Z",
+"realTime":false,
+"headsign":"Boston (South Station)",
+"agencyName":"FlixBus-us",
+"routeShortName":"FlixBus 2610",
+"routeLongName":"NYC - Boston",
+"tripShortName":"",
+"displayName":"FlixBus 2610",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":60,
+"startTime":"2026-11-20T15:40:00Z",
+"endTime":"2026-11-20T15:41:00Z",
+"scheduledStartTime":"2026-11-20T15:40:00Z",
+"scheduledEndTime":"2026-11-20T15:41:00Z",
+"realTime":false
+}
+]
+}
+],
+"direct":[]
+}
+}

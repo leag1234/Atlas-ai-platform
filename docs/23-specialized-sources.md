@@ -82,6 +82,84 @@ strict turns, and a call is refused with the level's code.
 `reference_fetch.py` is classified third party in `tests/test_strict_privacy_egress.py`
 and calls `require_shared` before any request; `kiwix.py` is classified internal.
 
+## Public transport journey planner (MOTIS 2)
+
+Trip answers built only from web pages kept defects that a timetable settles (staging
+-126, 2026-11-18): a metro taken in the wrong direction, a departure worked back from a
+duration the checks had removed, a train arriving after the person's deadline. The
+`transit_plan` tool (`services/orchestrator/transit_planner.py`) asks a
+[MOTIS 2](https://github.com/motis-project/motis) journey planner instead. It is offered
+on trip turns (`journey.relevant`) before `journey_plan` and the web tools, when the
+planner is configured.
+
+The model names the origin (or the device position), the destination and the deadline
+or departure time; code does the rest (T8): geocoding (`/api/v1/geocode`; two equally
+ranked places far apart are returned as `ambiguous_place`), planning (`/api/v6/plan`,
+`arriveBy` for a deadline, three itineraries in a one-hour window), and selection: only
+itineraries that leave after now and arrive by the deadline, none far slower than the
+fastest found. Every time is written in the local time of its place, with the time zone
+named. The plan is rendered in the conversation language with lines, directions
+(headsigns), stops, platforms, changes and the arrival against the deadline.
+
+Truthfulness (D7): the rendered plan is recorded as computed facts and each itinerary
+as a passage read in the turn, so the travel checks (`travel_claims`, `route_facts`)
+keep its times, lines, directions and stops and leave out any other. The attribution
+pages are added to the turn's retrieved sources. When the planner is off, unreachable,
+rate limited, over its daily cap or has no itinerary, the tool returns a named outcome
+(`planner_unavailable`, `planner_rate_limited`, `planner_daily_limit`,
+`no_itinerary`, `none_by_deadline`) and the trip is researched on the web as before; a
+limit is said as a limit (D5).
+
+### Settings
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ATLAS_TRANSIT` | `0` | `1` offers the planner; anything else keeps the web path only |
+| `ATLAS_TRANSIT_URL` | `https://api.transitous.org` | base URL of a MOTIS 2 server; empty disables the planner |
+| `ATLAS_TRANSIT_TIMEOUT` | `8` | seconds per request |
+| `ATLAS_TRANSIT_DAILY_PLANS` | `300` | plan requests per UTC day, cached answers not counted |
+| `ATLAS_TRANSIT_CACHE_SECONDS` | `600` | the same plan query is answered from the local cache for this long (geocoding: one day) |
+| `ATLAS_TRANSIT_MIN_INTERVAL` | `0.5` | seconds between two requests, across processes |
+| `ATLAS_TRANSIT_STATE` | `BRAIN/transit` | cache and daily counter (SQLite) |
+| `ATLAS_TRANSIT_ATTRIBUTION_URL`, `ATLAS_TRANSIT_NAME` | `https://transitous.org/sources/`, `Transitous` | the attribution link written under every plan |
+
+Staging sets `ATLAS_TRANSIT=1`; production does not use the planner yet.
+
+### Transitous terms
+
+[Transitous](https://transitous.org/api/) is run by volunteers for free and open-source,
+non-commercial applications, on a best-effort basis. Atlas follows its usage policy:
+
+- every request carries `User-Agent: Atlas/<version> (+https://github.com/leag1234/Atlas-ai-platform)`
+  (`ATLAS_VERSION`, or the client version);
+- every answer that uses a plan shows a link to <https://transitous.org/sources/> and the
+  OpenStreetMap attribution (added by code when the answer leaves them out);
+- light use: more than 720 requests a day to `/plan`, `/one-to-many` or `/one-to-all`
+  is heavy use for Transitous; the default cap is 300 plans a day and repeated queries
+  are cached; heavier use must first be agreed in their Matrix channel;
+- only the production endpoint `https://api.transitous.org/api/`, never their staging
+  or internal servers; no scraping (their whole source dataset can be downloaded);
+- commercial use is not allowed: an organisation that sells a service built on Atlas
+  must run its own MOTIS server.
+
+Coverage on the staging trip battery (2026-11-19, 14 plan requests): itineraries for
+Caen to Paris, Munich to Berlin, New York to Boston, Tokyo to Kyoto and Madrid to
+Barcelona; Lyon to Geneva airport only as night coach chains (no regional train between
+the two cities in the data that day); no itinerary for Sydney (no timetable data near
+the start), where the web path stays.
+
+### Self-hosted MOTIS
+
+Any installing organisation can run its own planner with the same API: build or pull
+MOTIS 2 (MIT licence), give it an OpenStreetMap extract and the GTFS or NeTEx feeds of
+its region (Transitous publishes its feed list), import, and serve. Then set
+`ATLAS_TRANSIT_URL` to that server (for example `http://127.0.0.1:8080`), and
+`ATLAS_TRANSIT_ATTRIBUTION_URL` and `ATLAS_TRANSIT_NAME` to the page that credits its
+data sources. A trial on an Atlas build server answered Munich and Caen itineraries in
+0.18 s. A self-hosted planner is still classified third party for the privacy levels:
+the tool is not offered in enhanced and strict turns until an owned planner can be
+declared.
+
 ## Local Wikipedia mirror
 
 The encyclopedia has two backends:

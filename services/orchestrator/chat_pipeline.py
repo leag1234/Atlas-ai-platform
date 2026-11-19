@@ -454,6 +454,16 @@ class ChatTools(Runtime):
                 # Live on the branch (2026-11-16) a search after the plan left the
                 # answer too little time and the turn timed out.
                 self.model.answer_only = True
+            if (
+                call.name == "transit_plan"
+                and isinstance(data, dict)
+                and data.get("rendered")
+                and isinstance(data.get("source_urls"), list)
+            ):
+                # D7: the planner computed this plan for the turn; its
+                # attribution pages may be cited like a page read.
+                urls = [str(u) for u in data["source_urls"] if isinstance(u, str)]
+                self.item.retrieved_urls.extend(urls)
             if call.name in {"web_images", "make_qr"} and isinstance(data, dict):
                 images = data.get("images", [data] if call.name == "make_qr" else [])
                 if isinstance(images, list):
@@ -1098,6 +1108,12 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.cout_eur = float(Decimal(str(item.cout_eur)) + rebuild_report.cost_eur)
         item.off_trip_urls = sorted(
             travel_rebuild.unrelated(travel, asked, item.reponse)
+        )
+        from services.orchestrator import transit_planner
+
+        # A plan's attribution stays visible (Transitous usage policy).
+        item.reponse = transit_planner.with_attribution(
+            item.reponse, travel.computed, asked_language or travel.language
         )
     # A relative date or weekday that disagrees with the calendar (relative_dates).
     item.reponse = relative_dates.repair(
@@ -2098,6 +2114,16 @@ async def _process(
     ):
         travel.retrieved = lambda: list(item.retrieved_urls)
         travel.activate()
+    from services.orchestrator import transit_planner
+
+    # Public transport itineraries computed by a journey planner (MOTIS 2;
+    # transit_planner), offered before the web path when it is configured.
+    if (
+        trip
+        and transit_planner.enabled()
+        and privacy.tool_allowed(transit_planner.NAME)
+    ):
+        model.tools.append(transit_planner.declaration())
     if trip and privacy.tool_allowed("web_search"):
         model.tools.append(journey.declaration())
         if travel is not None:

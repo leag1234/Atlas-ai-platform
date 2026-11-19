@@ -89,6 +89,7 @@ STRICT_EXCLUDED_TOOLS = frozenset(
         "french_commune",
         "mcp_call",
         "switch_connector_group",
+        "transit_plan",
     }
 )
 TOOL_CAPABILITIES = {
@@ -102,6 +103,7 @@ TOOL_CAPABILITIES = {
     "french_commune": "public_datasets",
     "mcp_call": "connectors",
     "switch_connector_group": "connectors",
+    "transit_plan": "places_search",
 }
 
 _level: ContextVar[Level] = ContextVar("atlas_privacy_level", default=STANDARD)

@@ -927,10 +927,14 @@ class Runtime:
             if os.environ.get("ATLAS_MCP_CONNECTORS") == "1":
                 return {"error": "legacy_connector_disabled"}
             return await mcp_client.execute(call.arguments, timeout)
-        from services.orchestrator import exact_tools, journey
+        from services.orchestrator import exact_tools, journey, transit_planner
 
         if call.name == journey.NAME:
             return await journey.execute(call.arguments, timeout)
+        if call.name == transit_planner.NAME:
+            return await transit_planner.execute(
+                call.arguments, timeout, self.home_zone
+            )
         if call.name in exact_tools.SCHEMAS:
             return await exact_tools.execute(
                 call.name, call.arguments, timeout, self.home_zone
