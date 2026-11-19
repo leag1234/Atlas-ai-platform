@@ -490,15 +490,19 @@ _WEEKDAYS = (
 )
 
 
-def user_dates(texts: list[str], zone: str = "UTC") -> list[str]:
-    """ISO dates the person's words name relative to today, in their zone."""
+def user_dates(texts: list[str], zone: str = "UTC", now: Any = None) -> list[str]:
+    """ISO dates the person's words name relative to today, in their zone.
+
+    ``now`` (an aware datetime) is the caller's clock: the journey planner
+    passes its own, so "tomorrow" and the planned day come from one clock."""
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+    instant = now or datetime.now(ZoneInfo("UTC"))
     try:
-        today = datetime.now(ZoneInfo(zone)).date()
+        today = instant.astimezone(ZoneInfo(zone)).date()
     except (ZoneInfoNotFoundError, ValueError):
-        today = datetime.now(ZoneInfo("UTC")).date()
+        today = instant.astimezone(ZoneInfo("UTC")).date()
     days: set[int] = set()
     named: set[str] = set()
     for text in texts:
@@ -2284,10 +2288,11 @@ class Turn:
         """Values written by code this turn (journey plan, straight-line distance)."""
         self.computed.append(text)
 
-    def trip_dates(self, zone: str = "") -> list[str]:
+    def trip_dates(self, zone: str = "", now: Any = None) -> list[str]:
         """The days the person named for the trip (ISO), in their zone (or
-        ``zone``: where their device is, for the journey planner)."""
-        return user_dates(self.asked, zone or self.zone)
+        ``zone``: where their device is, for the journey planner), relative to
+        ``now`` when the caller has its own clock."""
+        return user_dates(self.asked, zone or self.zone, now)
 
     def plan_gaps(self) -> list[float]:
         """Minutes the computed plan gives by arithmetic: each itinerary's

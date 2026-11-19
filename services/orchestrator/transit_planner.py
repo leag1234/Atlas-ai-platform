@@ -1520,7 +1520,7 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
                 language=turn.language if turn is not None else "en",
                 position=position,
                 home_zone=local or home_zone,
-                days=turn.trip_dates(local) if turn is not None else [],
+                days=turn.trip_dates(local, _now()) if turn is not None else [],
             )
     except PrivacyRefusal:
         return {"error": "tool_unavailable", "next_step": FALLBACK}
