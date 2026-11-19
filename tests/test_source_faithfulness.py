@@ -360,6 +360,20 @@ class ReviewTests(unittest.TestCase):
             review(FAITHFUL, calls)
         self.assertEqual(calls.payloads[0]["profile"], "atlas-judge")
 
+    def test_a_rewrite_that_times_out_leaves_the_note(self) -> None:
+        from services.orchestrator.model import failure_of
+
+        expired = failure_of(504, {"code": "timeout", "reserved_eur": "0.003"})
+        calls = Calls(CAUGHT, expired)
+        text, addition, report = review(CAUSAL, calls)
+        self.assertEqual(text, CAUSAL)
+        self.assertIn(FLAGGED.rstrip("."), addition)
+        self.assertEqual((report.outcome, report.rewrite), ("noted", "failed:timeout"))
+        self.assertEqual(report.cost_eur, Decimal("0.009"))
+        # The rewrite is bounded by its own short time, not the judge's.
+        self.assertEqual(calls.payloads[1]["timeout"], faith.REWRITE_SECONDS)
+        self.assertLessEqual(faith.REWRITE_SECONDS, 20.0)
+
     def test_a_flagged_sentence_is_rewritten_once_and_checked_again(self) -> None:
         fixed = (
             "The town council chose a steel deck because it weighed less than concrete."
