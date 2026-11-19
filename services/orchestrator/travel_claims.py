@@ -42,10 +42,11 @@ from services.orchestrator import redirects, route_facts
 from services.orchestrator.grounding import Grounding, normalized
 from services.orchestrator.location import Position
 
-# "route" is a sentence, a parenthesis or a table cell stating an unsourced
-# route fact (route_facts.py): it is left out like a value.
+# "price" is a fare or fee; "route" is a sentence, a parenthesis or a table
+# cell stating an unsourced route fact (route_facts.py): both are left out
+# like a value.
 # "part": a part of a sentence removed as it is (route_facts._cuts).
-Kind = Literal["duration", "distance", "clock", "route", "part"]
+Kind = Literal["duration", "distance", "clock", "price", "route", "part"]
 
 _SPACE = r"[   ]?"
 _NUMBER = r"(?<![\w.,:/])(\d{1,5}(?:[.,]\d{1,2})?)"
@@ -93,6 +94,17 @@ _M_WORD = re.compile(rf"{_NUMBER}{_SPACE}{_METRES}{_END}", re.I)
 # A bare lower-case "m" only: "12 M" is a million.
 _M_SYMBOL = re.compile(rf"{_NUMBER}{_SPACE}m{_END}")
 _MI = re.compile(rf"{_NUMBER}{_SPACE}{_MILES}{_END}", re.I)
+# "14,170", "1 250", "19,90", "3.50": thousands groups, then two decimals.
+_PRICE_NUMBER = (
+    r"(?P<number>\d{1,3}(?:[,.   ]\d{3})++(?:[.,]\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)"
+)
+_PRICE_CURRENCY = (
+    r"(?P<currency>€|euros?|eur|s\$|r\$|\$|usd|dollars?|£|gbp|pounds?|aud|cad|"
+    r"chf|¥|yen|jpy|yuan|cny|rmb|₩|krw|₹|inr|rupees?|sgd|nzd|hkd|thb|baht|"
+    r"sek|nok|dkk|kr|pln|zł|czk|kč|huf|brl|mxn)"
+)
+_PRICE_BEFORE = re.compile(rf"{_PRICE_CURRENCY}{_SPACE}{_PRICE_NUMBER}(?![\w])", re.I)
+_PRICE_AFTER = re.compile(rf"{_PRICE_NUMBER}{_SPACE}{_PRICE_CURRENCY}(?![\w])", re.I)
 # Words that make "10 h" a time of day ("at 10 h", "um 10 Uhr", the French "a 10 h").
 _CLOCK_BEFORE = re.compile(
     r"(?:\b(?:at|by|before|after|until|till|from|around|à|a|vers|avant|apres|après|"
@@ -133,6 +145,20 @@ class Quantity:
     text: str
 
 
+@dataclass(frozen=True)
+class _Price(Quantity):
+    currency: str = ""
+
+
+def _amount(value: str) -> float:
+    """A price as written: "14,170" and "1 250" are thousands, "19,90" and
+    "3.50" have cents."""
+    groups = re.split(r"[,.   ]", value)
+    if len(groups) > 1 and len(groups[-1]) <= 2:
+        return float("".join(groups[:-1]) + "." + groups[-1])
+    return float("".join(groups))
+
+
 def _number(value: str) -> float:
     return float(value.replace(",", "."))
 
@@ -162,11 +188,20 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
         return all(end <= a or start >= b for a, b in taken)
 
     def add(
-        match: re.Match[str], kind: Kind, value: float, *, claim: bool = True
+        match: re.Match[str],
+        kind: Kind,
+        value: float,
+        *,
+        claim: bool = True,
+        currency: str = "",
     ) -> None:
         taken.append((match.start(), match.end()))
         if claim:
-            found.append(Quantity(match.start(), match.end(), kind, value, match[0]))
+            found.append(
+                _Price(match.start(), match.end(), kind, value, match[0], currency)
+                if kind == "price"
+                else Quantity(match.start(), match.end(), kind, value, match[0])
+            )
 
     for match in _HOURS_MINUTES.finditer(plain):
         add(match, "duration", _number(match[1]) * 60 + int(match[2]))
@@ -238,6 +273,15 @@ def quantities(text: str, *, generous: bool = False) -> list[Quantity]:
         for match in pattern.finditer(plain):
             if free(match.start(), match.end()):
                 add(match, "distance", _number(match[1]) * factor)
+    # "$17 AUD": the amount with its code first, the symbol alone after.
+    for match in (*_PRICE_AFTER.finditer(plain), *_PRICE_BEFORE.finditer(plain)):
+        if free(match.start(), match.end()):
+            add(
+                match,
+                "price",
+                _amount(match["number"]),
+                currency=match["currency"].upper(),
+            )
     # "20-25 min", "1,5 to 2 km": the lower bound of a range goes with the
     # value, and is checked too (staging -98: "20–25 min" was kept because a
     # source said "25 min" about something else, its "20" was never read).
@@ -693,6 +737,83 @@ def _same(kind: Kind, claimed: float, known: float) -> bool:
     return abs(claimed - known) <= max(25.0, 0.03 * known)
 
 
+_CURRENCY = re.compile(_PRICE_CURRENCY, re.I)
+
+
+_CURRENCY_CODE = {
+    "€": "EUR",
+    "euro": "EUR",
+    "euros": "EUR",
+    "eur": "EUR",
+    "£": "GBP",
+    "pound": "GBP",
+    "pounds": "GBP",
+    "gbp": "GBP",
+    "dollar": "USD",
+    "dollars": "USD",
+    "usd": "USD",
+    "aud": "AUD",
+    "cad": "CAD",
+    "chf": "CHF",
+    "$": "$",
+    "¥": "JPY",
+    "yen": "JPY",
+    "jpy": "JPY",
+    "yuan": "CNY",
+    "cny": "CNY",
+    "rmb": "CNY",
+    "₩": "KRW",
+    "krw": "KRW",
+    "₹": "INR",
+    "inr": "INR",
+    "rupee": "INR",
+    "rupees": "INR",
+    "sgd": "SGD",
+    "s$": "SGD",
+    "nzd": "NZD",
+    "hkd": "HKD",
+    "thb": "THB",
+    "baht": "THB",
+    "sek": "SEK",
+    "nok": "NOK",
+    "dkk": "DKK",
+    "kr": "KR",
+    "pln": "PLN",
+    "zł": "PLN",
+    "czk": "CZK",
+    "kč": "CZK",
+    "huf": "HUF",
+    "brl": "BRL",
+    "r$": "BRL",
+    "mxn": "MXN",
+}
+# "$" is the dollar of the page's country: it matches any dollar.
+_DOLLARS = frozenset({"$", "USD", "AUD", "CAD"})
+
+
+def _currency(quantity: Quantity) -> str:
+    """The currency of a price or of a range of prices ("$15–17 AUD": the
+    code wins over the symbol)."""
+    names = [str(getattr(quantity, "currency", ""))]
+    names += [m["currency"] for m in _CURRENCY.finditer(quantity.text)]
+    codes = [_CURRENCY_CODE.get(n.lower(), "") for n in names if n]
+    named = [code for code in codes if code and code != "$"]
+    return named[0] if named else ("$" if "$" in codes else "")
+
+
+def _same_price(claimed: Quantity, known: Quantity) -> bool:
+    currency = _currency(claimed)
+    return (
+        bool(currency)
+        and (
+            currency == (other := _currency(known))
+            or {currency, other} <= _DOLLARS
+            and "$" in {currency, other}
+        )
+        and abs(claimed.value - known.value) <= max(0.01, 0.03 * known.value)
+    )
+
+
 WORDING: dict[str, dict[str, str]] = {
     "note": {
         "en": "Not verified, so left out: {values}. No page read for this answer gives them, and Atlas does not compute routes yet.",
@@ -743,6 +864,7 @@ def _line_bounds(text: str, index: int) -> tuple[int, int]:
 @dataclass(frozen=True)
 class _Range(Quantity):
     low: float = 0.0
+    currency: str = ""
 
 
 # A table cell emptied here (shown as a dash): rows and tables that lost every
@@ -765,6 +887,8 @@ def _ranges(text: str, found: list[Quantity]) -> list[Quantity]:
                     quantity.value,
                     text[last.start : quantity.end],
                     low=last.value if not isinstance(last, _Range) else last.low,
+                    currency=getattr(quantity, "currency", "")
+                    or getattr(last, "currency", ""),
                 )
                 continue
         merged.append(quantity)
@@ -1282,7 +1406,34 @@ def without_orphans(original: str, text: str) -> str:
                     clause = " — ".join(rest).rstrip(" ,;:")
                     rebuilt.append(clause if clause[-1:] in ".!?" else clause + ".")
         kept.append(" ".join(rebuilt))
-    return _restructure(text, "\n".join(kept))
+    return _restructure(text, "\n".join(_without_announcements(old, kept)))
+
+
+def _next_text(lines: list[str], index: int) -> str:
+    return next((line for line in lines[index + 1 :] if line.strip()), "")
+
+
+def _without_announcements(old: list[str], new: list[str]) -> list[str]:
+    """A line announcing a list (it ends with ":") goes when its whole list
+    was left out.
+
+    Staging -122: a Caen - Paris answer read "..., voici les options
+    réalistes:" then only a piece of advice; every option had an unsourced
+    time. A line followed by text that is not a list keeps its colon
+    ("To be at the airport at 9:00 from home:" before the steps).
+    """
+    kept: list[str] = []
+    for index, line in enumerate(new):
+        if line.rstrip().endswith(":") and not _ITEM.match(_next_text(new, index)):
+            # Compared without spaces: "réalistes :" became "réalistes:".
+            bare = re.sub(r"\s++", "", line)
+            source = next(
+                (i for i, o in enumerate(old) if re.sub(r"\s++", "", o) == bare), None
+            )
+            if source is not None and _ITEM.match(_next_text(old, source)):
+                continue
+        kept.append(line)
+    return kept
 
 
 def wellformed(text: str) -> str:
@@ -1663,7 +1814,7 @@ class Turn:
                 found += [
                     (sentence, q)
                     for q in values
-                    if not (elsewhere and q.kind in {"duration", "distance"})
+                    if not (elsewhere and q.kind in {"duration", "distance", "price"})
                 ]
         for text in (*self.computed, *self.asked):
             found += [(text, q) for q in quantities(text, generous=True)]
@@ -1675,14 +1826,23 @@ class Turn:
         *,
         texts: list[str] | None = None,
         places: frozenset[str] = frozenset(),
-    ) -> dict[Kind, list[float]]:
-        values: dict[Kind, list[float]] = {"duration": [], "distance": [], "clock": []}
+    ) -> dict[Kind, list[Quantity]]:
+        values: dict[Kind, list[Quantity]] = {
+            "duration": [],
+            "distance": [],
+            "clock": [],
+            "price": [],
+        }
         for _, quantity in self._read_values(texts, places):
-            values[quantity.kind].append(quantity.value)
+            values[quantity.kind].append(quantity)
             if isinstance(quantity, _Range):
-                values[quantity.kind].append(quantity.low)
+                values[quantity.kind].append(
+                    replace(quantity, value=quantity.low, low=quantity.low)
+                )
         for text in self.asked:
-            values["clock"].extend(spoken_times(text))
+            values["clock"].extend(
+                Quantity(0, 0, "clock", value, "") for value in spoken_times(text)
+            )
         other = self.other_days() if other is None else other
         if other:
             # A time the sources give only for another day is not known for
@@ -1694,9 +1854,10 @@ class Turn:
                 if q.kind == "clock"
             }
             values["clock"] = [
-                value
-                for value in values["clock"]
-                if value in owned or not any(_same("clock", value, o) for o in other)
+                quantity
+                for quantity in values["clock"]
+                if quantity.value in owned
+                or not any(_same("clock", quantity.value, o) for o in other)
             ]
         return values
 
@@ -1750,13 +1911,15 @@ class Turn:
         other = self.other_days()
         places = self.places(body)
         known = self.known(other, places=places)
-        sourced_clocks = known["clock"]
+        sourced_clocks = [quantity.value for quantity in known["clock"]]
         stated = self.stated_durations(places=places)
         read_pages = {page_key(url) for url, _ in self.linked if url}
-        scoped: dict[frozenset[str], tuple[dict[Kind, list[float]], list[float]]] = {}
+        scoped: dict[
+            frozenset[str], tuple[dict[Kind, list[Quantity]], list[float]]
+        ] = {}
         today = min(self.trip_dates(), default="")
 
-        def cited(claim: Quantity) -> tuple[dict[Kind, list[float]], list[float]]:
+        def cited(claim: Quantity) -> tuple[dict[Kind, list[Quantity]], list[float]]:
             """The values of the pages read that the claim's sentence cites:
             a value cited to a page comes from that page (staging -118: "takes
             7 hours" cited to a page that gave it for another leg)."""
@@ -1799,27 +1962,31 @@ class Turn:
             return False
 
         def matches(
-            kind: Kind,
+            claim: Quantity,
             value: float,
-            known: dict[Kind, list[float]],
+            known: dict[Kind, list[Quantity]],
             stated: list[float],
         ) -> bool:
             if value != value:  # a placeholder ("12 h 2x") states no time
                 return False
-            if any(_same(kind, value, item) for item in known[kind]):
+            if claim.kind == "price":
+                return any(_same_price(claim, item) for item in known[claim.kind])
+            if any(_same(claim.kind, value, item.value) for item in known[claim.kind]):
                 return True
-            if kind == "distance":
+            if claim.kind == "distance":
                 return False
             # One fact, two spellings: "4h30" written for a trip a source
             # gives as "4 h 30 min"; "about 4 h" for "4 h 02 min".
-            if kind == "clock" and any(abs(value - item) < 0.5 for item in stated):
+            if claim.kind == "clock" and any(
+                abs(value - item) < 0.5 for item in stated
+            ):
                 return True
             return any(_rounded(value, item) for item in stated)
 
         def supported(claim: Quantity) -> bool:
             values, durations = cited(claim)
             if all(
-                matches(claim.kind, value, values, durations)
+                matches(claim, value, values, durations)
                 for value in _range_values(claim)
             ):
                 return True
