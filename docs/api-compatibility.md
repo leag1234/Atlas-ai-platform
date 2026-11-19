@@ -41,7 +41,8 @@ MCP tools or files. Speech services use separate local endpoints.
 ## Start the developer API
 
 For Docker, run `./atlas setup --api` (or `./atlas setup --reconfigure --api`),
-then `./atlas api-key create editor --daily-requests 20`. Creation prints a private
+then `./atlas api-key create editor` (no request-count cap unless you add
+`--daily-requests N`; the spending cap always applies). Creation prints a private
 mode-600 file path under `BRAIN/api-keys/`; only explicit `--show` reveals the key.
 Use `./atlas api-key list` and `./atlas api-key revoke editor` to manage keys.
 No key is created automatically. Use the file as your SDK API key, base URL
@@ -65,7 +66,7 @@ for key administration and serving. Provision a key without printing it:
 ```bash
 python -m services.orchestrator.dev_auth create alice \
   --key-file /secure/path/alice.key \
-  --daily-requests 20 --daily-micro-eur 50000
+  --daily-micro-eur 50000   # optional: --daily-requests N
 make serve-devapi
 ```
 

@@ -96,6 +96,18 @@ class StableIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     continue
                 if block.startswith("^~ /api/atlas/v1/"):
                     self.assertIn("auth_basic off;", block)
+                    if name == "atlas.indidea.org.conf":
+                        # Frequency limits per key and per address replace any
+                        # request-count cap; a refusal is a JSON 429 (2026-11-19).
+                        for line in (
+                            "limit_req zone=atlas_api_key burst=200 nodelay;",
+                            "limit_req zone=atlas_api_ip burst=400 nodelay;",
+                            "limit_req_status 429;",
+                            "error_page 429 = @atlas_key_rate_limited;",
+                            "error_page 401 = @atlas_key_unauthorized;",
+                        ):
+                            self.assertIn(line, block)
+                        self.assertNotIn("zone=atlas_chat", block)
                     self.assertIn(
                         'if ($http_authorization !~ "^Bearer atl_[A-Za-z0-9_-]+$") { return 401; }',
                         block,

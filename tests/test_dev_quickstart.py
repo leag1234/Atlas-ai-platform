@@ -241,6 +241,7 @@ class SetupTests(unittest.TestCase):
                 self.assertIn("--no-deps", command)
                 self.assertIn("devapi", command)
                 operation = command[command.index("services.orchestrator.dev_auth") + 1]
+                calls.append(command)
                 if operation == "create":
                     provision(
                         store, "alice", root / "BRAIN/api-keys/alice.key", 7, 50000
@@ -249,8 +250,13 @@ class SetupTests(unittest.TestCase):
                 if operation == "revoke":
                     store.revoke("alice")
                 return subprocess.CompletedProcess(
-                    command, 0, '[{"id":"alice","enabled":1,"daily_requests":7}]'
+                    command,
+                    0,
+                    '[{"id":"alice","enabled":1,"daily_requests":7},'
+                    '{"id":"bob","enabled":1,"daily_requests":null}]',
                 )
+
+            calls: list[list[str]] = []
 
             with (
                 patch.object(atlas_setup, "ROOT", root),
@@ -274,21 +280,25 @@ class SetupTests(unittest.TestCase):
                 self.assertNotIn(key, output.getvalue())
                 self.assertIn("mode 600", output.getvalue())
                 self.assertIn("daily requests: 7", output.getvalue())
+                self.assertIn("--daily-requests", calls[0])
                 with self.assertRaises(PermissionError):
                     store.authenticate(key)
                 (root / "BRAIN/api-keys/alice.key").unlink()
                 with store.connection() as db:
                     db.execute("DELETE FROM developers")
+                self.assertIn("bob  enabled  no daily request cap", output.getvalue())
                 output = io.StringIO()
                 with redirect_stdout(output):
+                    # Without --daily-requests the key gets no request-count cap.
                     atlas_setup.api_key_command(
                         argparse.Namespace(
                             operation="create",
                             name="alice",
-                            daily_requests=7,
+                            daily_requests=None,
                             show=True,
                         )
                     )
+                self.assertNotIn("--daily-requests", calls[-1])
                 self.assertIn(
                     (root / "BRAIN/api-keys/alice.key").read_text().strip(),
                     output.getvalue(),

@@ -4,7 +4,7 @@ CREATE TABLE developers (
   id TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL UNIQUE,
   enabled INTEGER NOT NULL CHECK (enabled IN (0,1)),
-  daily_requests INTEGER NOT NULL CHECK (daily_requests > 0),
+  daily_requests INTEGER CHECK (daily_requests > 0),
   daily_micro_eur INTEGER NOT NULL CHECK (daily_micro_eur > 0)
 );
 CREATE TABLE requests (

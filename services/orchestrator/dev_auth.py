@@ -38,6 +38,35 @@ class Store:
                 .replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS")
                 .replace("CREATE INDEX", "CREATE INDEX IF NOT EXISTS")
             )
+            self._optional_request_cap(db)
+
+    @staticmethod
+    def _optional_request_cap(db: sqlite3.Connection) -> None:
+        """Make the request-count cap optional in stores created before 2026-11-19."""
+        columns = {
+            str(row["name"]): row for row in db.execute("PRAGMA table_info(developers)")
+        }
+        if not columns["daily_requests"]["notnull"]:
+            return
+        # Build the new table first and rename it onto the original name, so the
+        # foreign key of `requests` keeps pointing at `developers`.
+        db.commit()
+        db.execute("PRAGMA foreign_keys=OFF")
+        db.execute(
+            "CREATE TABLE developers_optional_cap ("
+            "id TEXT PRIMARY KEY, key_hash TEXT NOT NULL UNIQUE, "
+            "enabled INTEGER NOT NULL CHECK (enabled IN (0,1)), "
+            "daily_requests INTEGER CHECK (daily_requests > 0), "
+            "daily_micro_eur INTEGER NOT NULL CHECK (daily_micro_eur > 0))"
+        )
+        db.execute(
+            "INSERT INTO developers_optional_cap (id,key_hash,enabled,daily_requests,daily_micro_eur) "
+            "SELECT id,key_hash,enabled,daily_requests,daily_micro_eur FROM developers"
+        )
+        db.execute("DROP TABLE developers")
+        db.execute("ALTER TABLE developers_optional_cap RENAME TO developers")
+        db.commit()
+        db.execute("PRAGMA foreign_keys=ON")
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -95,9 +124,9 @@ class Store:
                 "WHERE developer=? AND day=?",
                 (developer, day),
             ).fetchone()
-            if count >= owner["daily_requests"] or (
-                monetary and charged + amount > owner["daily_micro_eur"]
-            ):
+            if (
+                owner["daily_requests"] is not None and count >= owner["daily_requests"]
+            ) or (monetary and charged + amount > owner["daily_micro_eur"]):
                 raise QuotaError("quota_exceeded")
             db.execute(
                 "INSERT INTO requests VALUES (?,?,?,?,?,NULL,NULL,'reserved')",
@@ -139,10 +168,14 @@ class Store:
 
 
 def provision(
-    store: Store, developer: str, keyfile: Path, requests: int, budget: int
+    store: Store, developer: str, keyfile: Path, requests: int | None, budget: int
 ) -> None:
-    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", developer) or any(
-        type(v) is not int or v <= 0 for v in (requests, budget)
+    # `requests` is an optional daily request-count cap: None (the default) sets none.
+    if (
+        not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", developer)
+        or type(budget) is not int
+        or budget <= 0
+        or (requests is not None and (type(requests) is not int or requests <= 0))
     ):
         raise ValueError("invalid_developer_or_quota")
     key = secrets.token_urlsafe(32)
@@ -168,7 +201,8 @@ def main() -> None:
     parser.add_argument("developer", nargs="?")
     parser.add_argument("--key-file", type=Path)
     parser.add_argument("--key-owner", type=int, nargs=2, metavar=("UID", "GID"))
-    parser.add_argument("--daily-requests", type=int, default=20)
+    # Optional request-count cap; without it only the spending cap applies.
+    parser.add_argument("--daily-requests", type=int)
     parser.add_argument("--daily-micro-eur", type=int, default=50000)
     args = parser.parse_args()
     store = Store(Path(os.environ.get("ATLAS_DEVAPI_DB", "BRAIN/devapi/usage.sqlite")))

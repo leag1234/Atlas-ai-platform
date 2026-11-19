@@ -55,7 +55,7 @@ can give, and carry real work with AI beyond a single conversation.
 - In Code mode, Atlas works in a disposable workspace and proposes changes that you
   approve before a pull request is opened.
 - Spending is capped per user and per day; API keys carry their own scopes and
-  daily limits.
+  spending limits (no request-count cap; the request rate is limited).
 
 ## Features
 
@@ -101,7 +101,8 @@ http://localhost:3000 and create the first administrator account. Use
 
 For the OpenAI-compatible developer API, use `./atlas setup --api` (or
 `./atlas setup --reconfigure --api` for an existing installation), then
-`./atlas api-key create editor --daily-requests 20`. This prints the path to a
+`./atlas api-key create editor` (add `--daily-requests N` only if you want a
+request-count cap; by default only the spending cap applies). This prints the path to a
 mode-600 key file; only an explicit `--show` prints the key. Point your client at
 `http://127.0.0.1:3001/v1`, read that file as its API key, and use model
 `atlas-code`. Manage keys with `./atlas api-key list` and

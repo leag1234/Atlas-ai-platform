@@ -85,7 +85,7 @@ class KeyTests(unittest.TestCase):
             self.store.policy("test-org"),
             {
                 "mode": "admin_only",
-                "daily_requests": 200,
+                "daily_requests": None,
                 "daily_micro_eur": 2000000,
                 "weekly_micro_eur": None,
                 "max_lifetime_days": 365,
@@ -235,6 +235,45 @@ class KeyTests(unittest.TestCase):
         with self.assertRaises(KeyQuotaError) as caught:
             self.store.reserve(row["id"], 100000)
         self.assertEqual(caught.exception.values["daily_micro_eur"], 99999)
+
+    def test_no_request_cap_by_default_only_spending_caps(self) -> None:
+        # Owner decision 2026-11-19: keys carry spending caps only; the request
+        # count never refuses a call unless a cap was set explicitly on the key.
+        row, _ = self.create(daily_micro_eur=1000000, weekly_micro_eur=None)
+        self.assertIsNone(row["daily_requests"])
+        for _ in range(250):
+            self.store.finish(self.store.reserve(row["id"], 1000), 1000)
+        usage = self.store.usage(row["id"])
+        self.assertEqual(usage["requests"], 250)
+        self.assertNotIn("daily_requests", usage)
+        self.assertEqual(usage["daily_micro_eur"], 1000000)
+        # The spending cap still refuses, and the refusal names no request cap.
+        with self.assertRaises(KeyQuotaError) as caught:
+            self.store.reserve(row["id"], 800000)
+        self.assertNotIn("daily_requests", caught.exception.values)
+        self.assertEqual(caught.exception.values["requests"], 250)
+        self.assertEqual(caught.exception.values["daily_micro_eur"], 1000000)
+        # Browser self-service keys follow the policy, which has no request cap.
+        for stable in ("0", "1"):
+            with patch.dict(os.environ, {"ATLAS_STABLE": stable}):
+                self.assertIsNone(self.store.policy("test-org")["daily_requests"])
+                browser, _ = self.create(
+                    member_id="member-" + stable,
+                    browser_policy=True,
+                    administrator=True,
+                    lifetime_days=30,
+                )
+            self.assertIsNone(browser["daily_requests"])
+
+    def test_explicit_request_cap_is_still_enforced_and_reported(self) -> None:
+        row, _ = self.create(daily_requests=2, daily_micro_eur=None)
+        for _ in range(2):
+            self.store.finish(self.store.reserve(row["id"], 10), 10)
+        with self.assertRaises(KeyQuotaError) as caught:
+            self.store.reserve(row["id"], 10)
+        self.assertEqual(caught.exception.values["daily_requests"], 2)
+        self.assertEqual(caught.exception.values["requests"], 2)
+        self.assertEqual(self.store.usage(row["id"])["daily_requests"], 2)
 
     def test_weekly_money_cap_is_atomic_resets_in_utc_and_reports_usage(self) -> None:
         self.now[0] = datetime(2026, 1, 4, 23, 59, tzinfo=timezone.utc).timestamp()

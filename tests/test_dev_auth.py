@@ -2,12 +2,13 @@
 
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from services.orchestrator.dev_auth import Store, provision
+from services.orchestrator.dev_auth import QuotaError, Store, provision
 from services.orchestrator.devapi import app
 
 
@@ -85,3 +86,56 @@ class DevAuthTests(unittest.TestCase):
                         ).status_code,
                         401,
                     )
+
+    def test_request_cap_is_optional_and_old_stores_are_upgraded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "usage.sqlite"
+            # A store created before 2026-11-19 required a request-count cap.
+            path.touch(mode=0o600)
+            with sqlite3.connect(path) as db:
+                db.executescript(
+                    "CREATE TABLE developers (id TEXT PRIMARY KEY, key_hash TEXT NOT NULL UNIQUE, "
+                    "enabled INTEGER NOT NULL CHECK (enabled IN (0,1)), "
+                    "daily_requests INTEGER NOT NULL CHECK (daily_requests > 0), "
+                    "daily_micro_eur INTEGER NOT NULL CHECK (daily_micro_eur > 0));"
+                    "CREATE TABLE requests (id TEXT PRIMARY KEY, developer TEXT NOT NULL REFERENCES developers(id), "
+                    "day TEXT NOT NULL, reserved INTEGER NOT NULL CHECK (reserved BETWEEN 1 AND 50000), "
+                    "charged INTEGER NOT NULL CHECK (charged >= 0), input_tokens INTEGER, output_tokens INTEGER, "
+                    "state TEXT NOT NULL CHECK (state IN ('reserved','complete','unknown')));"
+                    "INSERT INTO developers VALUES ('old','hash',1,1,50000);"
+                    "INSERT INTO requests VALUES ('r1','old','2026-01-01',10,10,NULL,NULL,'complete');"
+                )
+            store = Store(path)
+            with store.connection() as db:
+                columns = {
+                    row["name"]: row["notnull"]
+                    for row in db.execute("PRAGMA table_info(developers)")
+                }
+                self.assertEqual(columns["daily_requests"], 0)
+                self.assertEqual(
+                    dict(db.execute("SELECT * FROM developers").fetchone())[
+                        "daily_requests"
+                    ],
+                    1,
+                )
+                self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+                self.assertIn(
+                    "REFERENCES developers(id)",
+                    db.execute(
+                        "SELECT sql FROM sqlite_master WHERE name='requests'"
+                    ).fetchone()[0],
+                )
+            # The explicit cap of the old key still applies.
+            store.reserve("old", 10)
+            with self.assertRaises(QuotaError):
+                store.reserve("old", 10)
+            # A new key without a request cap is refused only by its spending cap.
+            provision(store, "alice", root / "alice", None, 50000)
+            for _ in range(30):
+                store.finish(store.reserve("alice", 1000), 1000)
+            with self.assertRaises(QuotaError):
+                store.reserve("alice", 30000)
+            with self.assertRaises(ValueError):
+                provision(store, "bob", root / "bob", 0, 50000)
+            self.assertEqual(Store(path).usage("alice")["requests"], 30)
