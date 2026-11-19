@@ -83,12 +83,17 @@ class SydneyTests(unittest.TestCase):
             {"link": GUIDE, "title": "Sydney Airport", "text": STATIONS},
         )
         checked = trip.check(SYDNEY, "en")
+        # The guide names three other lines and gives the terminal stations
+        # to T1, T2 and T3, never to T8: words close together on a page that
+        # lists several lines prove no stop of the T8 (staging -122, Lyon).
         self.assertIn(
-            "Take the T8 Airport & South Line train, which runs to Sydney Airport, "
-            "stopping at both the Domestic and International terminals.",
+            "Take the T8 Airport & South Line train, which runs to Sydney Airport.",
             body(checked),
         )
-        self.assertIn("Not verified, so left out: “directly”.", checked)
+        self.assertIn("“directly”", checked)
+        self.assertIn(
+            "“stopping at both the Domestic and International terminals”", checked
+        )
 
     def test_a_closing_clause_no_page_gives_goes_with_it(self) -> None:
         trip = turn(

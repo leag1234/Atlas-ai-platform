@@ -185,6 +185,10 @@ _LINE_ID = re.compile(
     r"(\d{1,5}[a-z]?|[A-Z]{1,3}\d{0,4})(?![\w-])"
     r"(?![ \u00a0]?(?::|h\b|h ?\d|min|km|m\b|%|€|\$))"
 )
+# A line number or letter in a normalized (lower-case) passage.
+_LISTED_ID = re.compile(_LINE_ID.pattern, re.I)
+# Source sentences for a listing: a mark, or a line break.
+_SOURCE_SENTENCE = re.compile(r"(?<=[.!?;])\s|\n")
 _CODE = re.compile(r"(?<![\w-])([A-Z]{1,3})(\d{1,4})[a-z]?(?![\w-])")
 _TOKEN = re.compile(r"[^\W\d_]+(?:[-‐][^\W\d_]+)*")
 _MARKERS = re.compile(r"[\s\-*+>#|.)\d_]*")
@@ -356,7 +360,23 @@ class Sources:
         own: Iterable[str],
         given: Iterable[str] = (),
     ) -> None:
-        self.passages = [p for p in (normalized(t) for t in passages) if p]
+        self.passages: list[str] = []
+        # Sentence bounds in each normalized passage (a network page states
+        # each line with its stops in its own sentence or line).
+        self.sentences: list[list[tuple[int, int]]] = []
+        for text in passages:
+            passage = normalized(text)
+            if not passage:
+                continue
+            bounds: list[tuple[int, int]] = []
+            start = 0
+            for mark in _SOURCE_SENTENCE.finditer(text + "\n"):
+                end = len(normalized(text[: mark.start()]))
+                if end > start:
+                    bounds.append((start, end))
+                start = end
+            self.passages.append(passage)
+            self.sentences.append(bounds or [(0, len(passage))])
         self.words = frozenset(" ".join(self.passages).split())
         # The starting point the person typed or their device gave: known.
         self.given = frozenset(normalized(" ".join(given)).split())
@@ -408,6 +428,12 @@ class Sources:
             positions = [h for found in located if found is not None for h in found]
             if any(found is None for found in located):
                 positions = [[]]
+            if all(positions) and self._listing(index):
+                # Staging -122 (Lyon): a network page put metro A, Perrache
+                # and metro B in one window; metro B never reaches Perrache.
+                if self._served(anchors, located, index):
+                    return True
+                continue
             if all(positions) and _window(positions):
                 return True
             # A page about the line (it names the line in its opening) lists
@@ -420,6 +446,52 @@ class Sources:
             ):
                 return True
         return False
+
+    def _listing(self, index: int) -> bool:
+        """A passage naming several lines (a network page, a map legend), where
+        words close together prove no line serves a stop."""
+        passage = self.passages[index]
+        lines = set()
+        for match in _LINE_WORD.finditer(passage):
+            named = _LISTED_ID.match(passage, match.end())
+            if named is not None:
+                lines.add((match[1], named[1]))
+        return len(lines) > 1
+
+    def _served(
+        self, anchors: list[Anchor], located: list[list[list[int]] | None], index: int
+    ) -> bool:
+        """In a listing, each stop shares a sentence with a line of the claim
+        and each line with a stop of the claim: a transfer between two lines
+        stays, a line at a stop it never serves does not."""
+        bounds = self.sentences[index]
+        passage = self.passages[index]
+
+        def inside(anchor: Anchor, found: list[list[int]] | None) -> set[int]:
+            if anchor.kind == "line":
+                # Searched in each sentence: "trois lignes. Ligne A" matches
+                # from "lignes", in the sentence before the line's own.
+                return {
+                    number
+                    for number, (left, right) in enumerate(bounds)
+                    if any(p.search(passage[left:right]) for p in anchor.patterns)
+                }
+            if not found:
+                return set()
+            return {
+                number
+                for number, (left, right) in enumerate(bounds)
+                if all(any(left <= hit < right for hit in hits) for hits in found)
+            }
+
+        lines = [inside(a, f) for a, f in zip(anchors, located) if a.kind == "line"]
+        stops = [inside(a, f) for a, f in zip(anchors, located) if a.kind == "name"]
+        if not lines or not stops:
+            positions = [h for found in located if found for h in found]
+            return _window(positions)
+        return all(any(stop & line for line in lines) for stop in stops) and all(
+            any(line & stop for stop in stops) for line in lines
+        )
 
 
 class Sites:
