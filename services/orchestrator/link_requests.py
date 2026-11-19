@@ -1,6 +1,6 @@
 """Code-side link discovery and bounded shopping answer policy (D7)."""
 
-from packages import attached_blocks
+from packages import attached_blocks, pasted_text
 import re
 import unicodedata
 from collections.abc import Sequence
@@ -42,7 +42,9 @@ def own_words(text: str) -> str:
     single line break ("Summarize the following:" then the text) or a colon on
     the same line ("Résume ce texte : ...") is all that separates the request
     from the pasted text (owner ruling 2026-11-17: a pasted text never
-    classifies the request).
+    classifies the request). A text of short paragraphs or lines, a fenced or
+    quoted text, and a text the request follows ("TL;DR this") are pasted
+    texts too (staging 2026-11-19).
     """
     return split_pasted(text)[0]
 
@@ -53,39 +55,15 @@ def pasted_parts(text: str) -> list[str]:
 
 
 def split_pasted(text: str) -> tuple[str, list[str]]:
-    """The person's own words, and the pasted parts around which they are read."""
+    """The person's own words, and the pasted parts around which they are read.
+
+    Attached file blocks are pasted parts; the rest is told apart by its
+    layout (packages/pasted_text.py, shared with the answer language).
+    """
     pasted = [found[0] for found in attached_blocks.BLOCKS_ANY_CASE.finditer(text)]
     text = attached_blocks.BLOCKS_ANY_CASE.sub("", text)
-    if len(text.encode()) < 2 * DOCUMENT_PARAGRAPH_BYTES:
-        return text, pasted
-    for separator, joiner in ((r"\n[ \t]*+\n", "\n\n"), (r"\n", "\n")):
-        # Each part with its place in the text: the pasted block is cut out
-        # of the text as it was written.
-        spans: list[tuple[int, int]] = []
-        start = 0
-        for match in re.finditer(separator, text):
-            if text[start : match.start()].strip():
-                spans.append((start, match.start()))
-            start = match.end()
-        if text[start:].strip():
-            spans.append((start, len(text)))
-        long = [
-            index
-            for index, (begin, end) in enumerate(spans)
-            if len(text[begin:end].encode()) > DOCUMENT_PARAGRAPH_BYTES
-        ]
-        if not long:
-            return text, pasted
-        kept = spans[: long[0]] + spans[long[-1] + 1 :]
-        if kept:
-            return joiner.join(text[begin:end] for begin, end in kept), [
-                *pasted,
-                text[spans[long[0]][0] : spans[long[-1]][1]],
-            ]
-    lead = re.match(r"[^\n:]{1,200}:", text)
-    if lead is None:
-        return text, pasted
-    return lead.group(0), [*pasted, text[lead.end() :]]
+    own, parts = pasted_text.split(text)
+    return own, [*pasted, *parts]
 
 
 # "Link" and "lien" also name a relation ("the link between sleep and memory",

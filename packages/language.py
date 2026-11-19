@@ -13,6 +13,8 @@ import unicodedata
 
 from typing import Protocol
 
+from packages.pasted_text import own_words
+
 
 class LanguageMessage(Protocol):
     @property
@@ -34,7 +36,8 @@ def without_quoted(text: str) -> str:
     re.sub(r'`[^`]*`|"[^"]*"|«[^»]*»', "", text), in one pass: an opening
     without a closer after it is kept, and so is every later one of its kind
     (the expression reread the rest of the text from each: quadratic). This
-    module is copied alone into the chat UI image, so it uses no other package.
+    module is copied into the chat UI image with packages/pasted_text.py only,
+    so it uses no other package.
     """
     parts: list[str] = []
     last = position = 0
@@ -82,6 +85,15 @@ def user_prose(text: str) -> str:
     text = re.sub(r"<attached_files>.*?</attached_files>", "", text, flags=re.S)
     text = _SERVICE_NOTE.sub("", text)
     return re.sub(r"^\[Attachment: [^\n]*\]$", "", text, flags=re.M).strip()
+
+
+def own_prose(text: str) -> str:
+    """The person's own prose: a text they pasted in the message never decides
+    the answer's language, their request does (owner rule 2026-11-19: an English
+    request to write an email about a pasted German text got a German email).
+    A language the request names explicitly ("answer in German", "translate
+    into Italian") is read in these words too."""
+    return own_words(user_prose(text)).strip()
 
 
 # Language identification for the answer: the user's language, robustly, for
@@ -378,7 +390,7 @@ def requested_language(text: str) -> str | None:
     """Resolve explicit output-language instructions, independently of prose locale."""
     normalized = "".join(
         c
-        for c in unicodedata.normalize("NFKD", user_prose(text).lower())
+        for c in unicodedata.normalize("NFKD", own_prose(text).lower())
         if not unicodedata.combining(c)
     )
     normalized = without_quoted(normalized)
@@ -422,7 +434,8 @@ def _previous_language(
         found: str | None = None
         for message in messages[:-1]:
             if message.role == role:
-                found = detect(message.text, (found,) if found else (), locale) or found
+                text = own_prose(message.text) if role == "user" else message.text
+                found = detect(text, (found,) if found else (), locale) or found
         if found is not None:
             return found
     return None
@@ -442,7 +455,7 @@ def conversation_language(messages: Sequence[LanguageMessage], locale: str) -> s
     if locale not in LANGUAGES:
         raise ValueError("unsupported_language")
     history = _previous_language(messages, detected_language, locale)
-    current = user_prose(messages[-1].text)
+    current = own_prose(messages[-1].text)
     fallback = history or locale
     if not _carries_evidence(current, history):
         return fallback
@@ -478,7 +491,7 @@ def prose_language(messages: Sequence[LanguageMessage], language: str) -> str:
     """
     if not messages:
         return language
-    current = user_prose(messages[-1].text)
+    current = own_prose(messages[-1].text)
     if requested_language(current) is not None:
         return language
     history = _previous_language(messages, identified_language, language)

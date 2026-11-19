@@ -1266,24 +1266,36 @@ class InputRegexCostTests(unittest.TestCase):
 
     def test_chat_ui_modules_stay_standalone(self) -> None:
         # These modules are copied alone into the chat UI image
-        # (infra/docker/Dockerfile.webui, serving.py mounts): no package import.
+        # (infra/docker/Dockerfile.webui, serving.py mounts): they import no
+        # package but one another.
         import ast
         from pathlib import Path
 
-        for name in ("language", "profiles", "turn_attachments"):
+        standalone = ("language", "pasted_text", "profiles", "turn_attachments")
+        copied = Path("infra/docker/Dockerfile.webui").read_text()
+        allowed = {f"packages.{name}" for name in standalone}
+        for name in standalone:
+            self.assertIn(f"packages/{name}.py", copied, name)
             tree = ast.parse(Path(f"packages/{name}.py").read_text())
             imported = {
-                node.module.split(".")[0]
+                node.module
                 for node in ast.walk(tree)
                 if isinstance(node, ast.ImportFrom) and node.module
             } | {
-                alias.name.split(".")[0]
+                alias.name
                 for node in ast.walk(tree)
                 if isinstance(node, ast.Import)
                 for alias in node.names
             }
-            self.assertNotIn("packages", imported, name)
-            self.assertNotIn("services", imported, name)
+            for module in imported:
+                top = module.split(".")[0]
+                self.assertNotEqual(top, "services", name)
+                if top == "packages":
+                    self.assertIn(module, allowed, name)
+        self.assertIn(
+            "packages/pasted_text.py",
+            Path("services/orchestrator/serving.py").read_text(),
+        )
 
     def test_rewritten_forms_stay_within_budget_on_long_inputs(self) -> None:
         slow = []
