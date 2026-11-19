@@ -18,7 +18,7 @@ import aiohttp
 
 from services.orchestrator.redirects import resolved
 from packages.images import VisionMessage
-from packages.language import identified_language, user_prose, word_count
+from packages.language import identified_language, own_prose, word_count
 from services.orchestrator import search_freshness
 from services.orchestrator.cache import Cache
 from services.orchestrator.loop import Message
@@ -99,7 +99,9 @@ def search_language(messages: Sequence[VisionMessage], locale: str) -> str:
     for message in messages:
         if message.role != "user":
             continue
-        prose = user_prose(message.text)
+        # A pasted text's language is not the search's: the query is the
+        # person's own words.
+        prose = own_prose(message.text)
         if word_count(prose) < 5:
             continue
         # The answer's own detection: unaccented French came back Welsh from

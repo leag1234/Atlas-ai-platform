@@ -67,10 +67,12 @@ def content_limit(raw: dict[str, Any], protocol: str) -> str | None:
     text = caller_text(raw, protocol)
     if not text.strip():
         return None
-    category = text_limit(own_words(text))
+    own = own_words(text)
+    category = text_limit(own)
     if category is None:
         return None
-    return text_refusal(category, question_language(text, "en"))
+    # The refusal is in the language of the caller's request, not of a pasted text.
+    return text_refusal(category, question_language(own, "en"))
 
 
 def _sse(event: dict[str, Any], named: bool) -> str:
