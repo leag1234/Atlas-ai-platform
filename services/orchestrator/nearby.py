@@ -510,8 +510,8 @@ class OSM:
     async def _area_names(
         self, position: Position, endpoint: str, locality: str, country: str
     ) -> list[str]:
-        """The locality's names in other languages ("München": "Munich",
-        "Monaco di Baviera", ...), for the trip checks.
+        """The locality's names in other languages (Munich: its German, English
+        and Italian names, ...), for the trip checks.
 
         A street-level answer carries the street's names only: the city's
         come from a city-level lookup (zoom 10). The names are public and
