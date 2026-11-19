@@ -240,6 +240,13 @@ def place_in_script(parts: list[str], language: str) -> str:
     return ", ".join(present)
 
 
+# A locality's names in other languages (public map data), per locality.
+AREA_NAMES_SECONDS = 1.5
+AREA_NAMES_MAX = 200
+AREA_NAMES_CACHE = 512
+_AREA_NAMES: dict[tuple[str, str], list[str]] = {}
+
+
 class OSM:
     def __init__(self) -> None:
         self.root = Path(os.environ.get("ATLAS_OSM_STATE", "BRAIN/osm"))
@@ -465,7 +472,6 @@ class OSM:
                 "format": "jsonv2",
                 "zoom": "17",
                 "addressdetails": "1",
-                "namedetails": "1",
                 **({"accept-language": language[:2]} if language[:2].isalpha() else {}),
             },
             endpoint,
@@ -489,19 +495,10 @@ class OSM:
         locality = first("city", "town", "village", "municipality")
         postcode = first("postcode")
         country = first("country")
-        details = data.get("namedetails") if isinstance(data, dict) else None
-        self.place_names = []
-        if isinstance(details, dict):
-            self.place_names = [
-                value[:100]
-                for key, value in details.items()
-                if (key == "name" or key.startswith("name:"))
-                and isinstance(value, str)
-                and value
-            ]
         if not locality and not district:
             raise NearbyError("place_not_found")
         self.area = locality or district
+        self.place_names = await self._area_names(position, endpoint, locality, country)
         parts = [
             street,
             district if district != locality else "",
@@ -509,6 +506,56 @@ class OSM:
             country,
         ]
         return place_in_script(parts, language)
+
+    async def _area_names(
+        self, position: Position, endpoint: str, locality: str, country: str
+    ) -> list[str]:
+        """The locality's names in other languages ("München": "Munich",
+        "Monaco di Baviera", ...), for the trip checks.
+
+        A street-level answer carries the street's names only: the city's
+        come from a city-level lookup (zoom 10). The names are public and
+        kept per locality, never per position; a lookup that fails or takes
+        longer than AREA_NAMES_SECONDS is skipped.
+        """
+        if not locality:
+            return []
+        key = (locality, country)
+        if key in _AREA_NAMES:
+            return _AREA_NAMES[key]
+        try:
+            data = await asyncio.wait_for(
+                self.request(
+                    "geocode",
+                    {
+                        "lat": f"{position.latitude:.3f}",
+                        "lon": f"{position.longitude:.4f}",
+                        "format": "jsonv2",
+                        "zoom": "10",
+                        "namedetails": "1",
+                    },
+                    endpoint,
+                ),
+                AREA_NAMES_SECONDS,
+            )
+        except (TimeoutError, NearbyError, OSError, ValueError):
+            return []
+        details = data.get("namedetails") if isinstance(data, dict) else None
+        names = (
+            [
+                value[:100]
+                for name, value in details.items()
+                if (name == "name" or name.startswith("name:"))
+                and isinstance(value, str)
+                and value
+            ][:AREA_NAMES_MAX]
+            if isinstance(details, dict)
+            else []
+        )
+        if len(_AREA_NAMES) >= AREA_NAMES_CACHE:
+            _AREA_NAMES.pop(next(iter(_AREA_NAMES)))
+        _AREA_NAMES[key] = names
+        return names
 
     async def candidates(
         self,

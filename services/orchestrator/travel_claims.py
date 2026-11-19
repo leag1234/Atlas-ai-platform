@@ -1324,8 +1324,8 @@ def _opening(body: str, found: "Findings") -> str:
     """The person's own words that open a first sentence left out whole.
 
     Left out for a route fact, the clauses before the route (route_facts);
-    left out for a value (staging -114: "To be on time for your lunch at
-    Paris Gare de Lyon at 12:30, two departures ..." went for an
+    left out for a value (staging -114: "Pour être à l'heure à votre
+    déjeuner à Paris Gare de Lyon à 12 h 30, deux départs ..." went for an
     unsourced time), the clauses before the first value left out, holding
     none of them.
     """
