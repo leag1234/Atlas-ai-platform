@@ -544,6 +544,51 @@ def another_leg(sentence: str, places: frozenset[str]) -> bool:
     return False
 
 
+# "from Sydney Airport to City of Sydney": a leg ending at a city named after
+# its kind ("City of", "Stadt", "Ciudad de").
+_CITY_LEG = re.compile(
+    rf"(?i:from|de|von|da|desde)\s++({_NAME})\s++(?i:to|à|a|nach|para|al|zu)\s++"
+    rf"(?i:the\s++)?+(?i:city|cité|ville|città|ciudad|stadt)\s++(?i:of|de|di|del)?+\s*+({_NAME})"
+)
+
+
+_UNORDERED = re.compile(
+    r"(?i:between|entre|zwischen|tra|fra|connects?|connecting|relie|reliant|"
+    r"verbindet|conecta|collega)\s"
+)
+
+
+def reverse_leg(sentence: str, starting_point: str) -> bool:
+    """Whether a sentence gives a leg towards the starting point from elsewhere:
+    the opposite direction of the person's trip.
+
+    The leg ends at the starting point (or a station of it) and starts at a
+    place apart from it (staging -120: "the T8 from Sydney Airport to City of
+    Sydney" for a trip from a Sydney street to the airport; "de Barcelona a
+    Madrid" for a trip from Madrid). A leg out of the starting point is never
+    one, even when both ends share the city's name ("from a Sydney street to
+    Sydney Airport"). A time, frequency, platform or departure of that leg is
+    no fact of the trip.
+    """
+    parts = [part.strip() for part in starting_point.split(",")]
+    origin = _name_words(" ".join(parts[:-1] if len(parts) >= 3 else parts))
+    if not origin:
+        return False
+    for match in (*_LEG.finditer(sentence), *_CITY_LEG.finditer(sentence)):
+        first, second = match.group(1), match.group(2)
+        # "between X and Y", "connects X with Y": no direction.
+        if not first or not second or _UNORDERED.match(match[0]):
+            continue
+        start, end = _name_words(first), _name_words(second)
+        if not end & origin or not start - origin:
+            continue
+        # Towards the starting point: from a place apart from it, or to the
+        # starting point itself when both ends share the city's name.
+        if not start & origin or end <= origin:
+            return True
+    return False
+
+
 # Sentences of a source for the leg check: "Washington, D.C. and Boston" is
 # one (an abbreviation's points end no sentence).
 _LEG_SENTENCE = re.compile(r"(?<=\w\w[.!?;])\s++|\n++")
@@ -1384,12 +1429,19 @@ class Findings:
     # Values a source gives for another day than the trip's, written with
     # that day: sourced, but no use for this trip; left out without a note.
     elsewhere: list[Quantity] = field(default_factory=list)
+    # Values of the opposite direction: never a fact of this trip.
+    reverse: list[Quantity] = field(default_factory=list)
 
     def __bool__(self) -> bool:
-        return bool(self.values or self.route.spans or self.elsewhere)
+        return bool(self.values or self.route.spans or self.elsewhere or self.reverse)
 
     def __len__(self) -> int:
-        return len(self.values) + len(self.route.spans) + len(self.elsewhere)
+        return (
+            len(self.values)
+            + len(self.route.spans)
+            + len(self.elsewhere)
+            + len(self.reverse)
+        )
 
     def labels(self) -> list[str]:
         return list(
@@ -1784,6 +1836,15 @@ class Turn:
 
         elsewhere = [claim for claim in claims if another_day(claim)]
         claims = [claim for claim in claims if claim not in elsewhere]
+        reverse = [
+            claim
+            for claim in claims
+            if reverse_leg(
+                body[slice(*_sentence(body, claim.start, claim.end))], self.place
+            )
+        ]
+        claims = [claim for claim in claims if claim not in reverse]
+        read = [claim for claim in read if claim not in reverse]
         flagged = [claim for claim in claims if not supported(claim)]
         # Lines, stops, directions, transfers and "direct" claims: together in
         # one passage of a source read this turn (route_facts.py).
@@ -1809,7 +1870,7 @@ class Turn:
             pages=self.pages(),
         )
         # A sentence the values check already leaves out needs no second reason.
-        taken = [_removal(body, claim) for claim in (*flagged, *elsewhere)]
+        taken = [_removal(body, claim) for claim in (*flagged, *reverse, *elsewhere)]
         route.spans = [
             span
             for span in route.spans
@@ -1824,6 +1885,7 @@ class Turn:
                 if any(c.start == start for c in flagged)
             },
             elsewhere,
+            reverse,
         )
 
     def kept(self, body: str, found: Findings) -> str:
@@ -1831,6 +1893,7 @@ class Turn:
         removed = [
             *found.values,
             *found.elsewhere,
+            *found.reverse,
             *(
                 Quantity(
                     s,

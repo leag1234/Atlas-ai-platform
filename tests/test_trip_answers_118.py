@@ -102,6 +102,104 @@ class AnotherLegTests(unittest.TestCase):
         )
 
 
+class ReverseDirectionTests(unittest.TestCase):
+    SYDNEY_URL = "https://rail.example.test/sydney-airport"
+    MADRID_URL = "https://rail.example.test/madrid-barcelona"
+    TURIN_URL = "https://rail.example.test/turin-milan"
+    LYON_URL = "https://rail.example.test/lyon-marseille"
+
+    def turn(
+        self, asked: str, place: str, url: str, snippet: str
+    ) -> travel_claims.Turn:
+        return turn(
+            asked,
+            place,
+            {"link": url, "title": "Timetable", "snippet": snippet},
+            {"link": url, "title": "Timetable", "text": snippet},
+        )
+
+    def test_reverse_train_times_are_not_this_trip(self) -> None:
+        asked = (
+            "how do i get to sydney airport from here tomorow morning, flight at 8am"
+        )
+        place = "Wattle Lane, Sydney NSW 2000, Australia"
+        snippet = (
+            "The T8 train from Sydney Airport SYD to City of Sydney runs from "
+            "04:18 to 23:53, with departures every 5-15 min."
+        )
+        trip = self.turn(asked, place, self.SYDNEY_URL, snippet)
+        answer = (
+            "The T8 train from Sydney Airport SYD to City of Sydney runs from "
+            "04:18 to 23:53, with departures every 5-15 min "
+            f"([rail.example.test]({self.SYDNEY_URL}))."
+        )
+        self.assertNotIn("04:18 to 23:53", trip.kept(answer, trip.findings(answer)))
+        self.assertFalse(
+            any(
+                "Sydney Airport SYD to City of Sydney" in excerpt.sentence
+                for excerpt in travel_rebuild.excerpts(trip, asked)
+            )
+        )
+
+    def test_reverse_duration_is_not_this_trip(self) -> None:
+        asked = "como llego a barcelona sants manana"
+        place = "Calle del Humilladero, Barrio de los Austrias, Madrid, Spain"
+        snippet = "El trayecto en tren de Barcelona a Madrid dura 3h 6min."
+        trip = self.turn(asked, place, self.MADRID_URL, snippet)
+        answer = (
+            "El trayecto en tren de Barcelona a Madrid dura 3h 6min "
+            f"([rail.example.test]({self.MADRID_URL}))."
+        )
+        self.assertNotIn("3h 6min", trip.kept(answer, trip.findings(answer)))
+        self.assertFalse(
+            any(
+                "de Barcelona a Madrid" in excerpt.sentence
+                for excerpt in travel_rebuild.excerpts(trip, asked)
+            )
+        )
+
+    def test_reverse_departure_in_italian_is_not_this_trip(self) -> None:
+        asked = "come arrivo a milano centrale domani mattina"
+        place = "Via dei Fiori, Torino, Italy"
+        snippet = "Il treno da Milano Centrale a Torino Porta Nuova parte alle 07:12."
+        trip = self.turn(asked, place, self.TURIN_URL, snippet)
+        answer = (
+            "Il treno da Milano Centrale a Torino Porta Nuova parte alle 07:12 "
+            f"([rail.example.test]({self.TURIN_URL}))."
+        )
+        self.assertNotIn("07:12", trip.kept(answer, trip.findings(answer)))
+        self.assertFalse(
+            any(
+                "da Milano Centrale a Torino Porta Nuova" in excerpt.sentence
+                for excerpt in travel_rebuild.excerpts(trip, asked)
+            )
+        )
+
+    def test_reverse_frequency_and_platform_in_french_are_not_this_trip(self) -> None:
+        asked = "comment je vais a marseille saint charles demain"
+        place = "Rue des Lilas, Lyon, France"
+        snippet = (
+            "Le train de Marseille Saint-Charles à Lyon part toutes les 20 "
+            "minutes du quai 4."
+        )
+        trip = self.turn(asked, place, self.LYON_URL, snippet)
+        answer = (
+            "Le train de Marseille Saint-Charles à Lyon part toutes les 20 "
+            "minutes du quai 4 "
+            f"([rail.example.test]({self.LYON_URL}))."
+        )
+        self.assertNotIn(
+            "toutes les 20 minutes", trip.kept(answer, trip.findings(answer))
+        )
+        self.assertNotIn("quai 4", trip.kept(answer, trip.findings(answer)))
+        self.assertFalse(
+            any(
+                "de Marseille Saint-Charles à Lyon" in excerpt.sentence
+                for excerpt in travel_rebuild.excerpts(trip, asked)
+            )
+        )
+
+
 class AnotherPlaceTests(unittest.TestCase):
     def sydney(self) -> travel_claims.Turn:
         return turn(
@@ -177,8 +275,42 @@ class UncitedAnswerTests(unittest.TestCase):
         self.assertEqual(travel_rebuild._uncited(cited, chosen, "fr"), "")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class ForwardDirectionTests(unittest.TestCase):
+    """A leg out of the starting point, or with no direction, stays a fact."""
+
+    PLACE = "Wattle Lane, Sydney NSW 2000, Australia"
+
+    def test_a_leg_out_of_the_starting_point_sharing_its_city_name_stays(self) -> None:
+        self.assertFalse(
+            travel_claims.reverse_leg(
+                "The T8 runs from Wattle Lane Sydney to Sydney Airport every 10 minutes.",
+                self.PLACE,
+            )
+        )
+
+    def test_a_leg_to_a_station_of_the_starting_point_city_stays(self) -> None:
+        self.assertFalse(
+            travel_claims.reverse_leg(
+                "Walk from Wattle Lane to Central Sydney, then take the T8.",
+                self.PLACE,
+            )
+        )
+
+    def test_a_connection_with_no_direction_stays(self) -> None:
+        self.assertFalse(
+            travel_claims.reverse_leg(
+                "The T8 connects Sydney Airport with City of Sydney in 13 minutes.",
+                self.PLACE,
+            )
+        )
+
+    def test_the_opposite_leg_in_german_goes(self) -> None:
+        self.assertTrue(
+            travel_claims.reverse_leg(
+                "Der ICE von Berlin Hauptbahnhof nach München fährt um 06:02.",
+                "Blumenweg, Neuhausen, 80636 München, Deutschland",
+            )
+        )
 
 
 class SectionLabelTests(unittest.TestCase):
@@ -235,3 +367,7 @@ class CitationFormTests(unittest.TestCase):
     def test_a_markdown_link_is_left_alone(self) -> None:
         text = "See [rail.example.test](https://rail.example.test/c) (platform 2)."
         self.assertEqual(travel_rebuild.citations(text), text)
+
+
+if __name__ == "__main__":
+    unittest.main()

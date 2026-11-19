@@ -4,6 +4,10 @@ A first sentence restating the request ("To be at Geneva Airport on Thursday
 at 9:00 from Gratte-Ciel, take ...") was left out whole for its unverified
 leg: the answer opened mid-thought ("From there, ...") and the note quoted the
 restatement instead of the leg.
+
+The restatement says "demain", never a written date: a date written in the
+test becomes another day than the trip once that day has come (CI of
+2026-11-19 00:00 UTC).
 """
 
 import unittest
@@ -27,7 +31,7 @@ class OpeningTests(unittest.TestCase):
             "Orlen Centrale - Valmorel : départ 6h38, arrivée 8h43. Les trains "
             "pour Valmorel partent d'Orlen Centrale.",
         ).check(
-            "Pour être à l'aéroport de Valmorel jeudi 19 novembre 2026 à 9h00 "
+            "Pour être à l'aéroport de Valmorel demain à 9h00 "
             "depuis Brenneville, prenez le métro A jusqu'à Saint-Arnoult puis le "
             "métro B jusqu'à Orlen Centrale. De là, les trains pour Valmorel "
             "partent d'Orlen Centrale. Un départ à 6h38 arrive à 8h43.",
@@ -36,8 +40,7 @@ class OpeningTests(unittest.TestCase):
         opening, body, note = checked.split("\n\n")
         self.assertEqual(
             opening,
-            "Pour être à l'aéroport de Valmorel jeudi 19 novembre 2026 à 9h00 "
-            "depuis Brenneville :",
+            "Pour être à l'aéroport de Valmorel demain à 9h00 depuis Brenneville :",
         )
         self.assertTrue(body.startswith("Les trains pour Valmorel partent"))
         self.assertIn("“prenez le métro A jusqu'à Saint-Arnoult", note)
