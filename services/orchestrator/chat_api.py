@@ -411,15 +411,22 @@ async def chat(request: Request) -> Response:
                     or result.cost_complete
                     or not calls.unmeasured
                 )
-                if result.state != "done" and not result.cost_complete and known:
-                    # A refusal (budget, quota, provider unavailable) or a failure
-                    # before the answer: every provider call came back answered
-                    # or refused, so the turn pays what they measured (0 when
-                    # none ran), never the reservation held for the answer it did
-                    # not produce (cout_eur may still hold that reservation).
-                    measured = calls.measured
-                    result.cout_eur = float(measured)
-                elif not known:
+                if result.state != "done" and not result.cost_complete:
+                    if calls.started and not calls.unmeasured:
+                        # A refusal (budget, quota, provider unavailable) or a
+                        # failure before the answer, and every tracked provider
+                        # call came back answered or refused: the turn pays what
+                        # they measured, never the reservation held for the
+                        # answer it did not produce (cout_eur may still hold it).
+                        measured = calls.measured
+                        result.cout_eur = float(measured)
+                    elif not calls.started and measured > 0:
+                        # No call went through the tracked gateway egress, yet
+                        # the turn holds a cost: a path that bypassed the
+                        # tracking (or a reservation it never replaced) keeps
+                        # that figure, never less (conservative).
+                        billing["kind"] = "reserved_upper_bound"
+                if not known:
                     # A provider call may have consumed tokens that were never
                     # measured: the daily cap keeps at least the reservation, as
                     # the API key ledger does.

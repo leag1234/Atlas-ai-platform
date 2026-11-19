@@ -284,13 +284,10 @@ class RefusedTurnBillingTests(unittest.TestCase):
                     if path.endswith("/chat/completions") and not stream:
                         self.assertEqual(reply.json()["atlas"]["cost_kind"], "measured")
 
-    def test_refusal_before_any_call_costs_nothing_despite_the_reservation(
-        self,
-    ) -> None:
+    def test_refusal_before_any_call_costs_nothing(self) -> None:
         from services.orchestrator.model import GatewayError
 
         async def refused(payload: Any, item: Any) -> None:
-            item.cout_eur = 0.10
             raise GatewayError("search_unavailable", 503, "Web search unavailable.")
 
         for stream in (False, True):
@@ -299,6 +296,26 @@ class RefusedTurnBillingTests(unittest.TestCase):
                 row, _, day = self.settle(refused, path, body)
                 self.assertEqual((row["charged"], row["state"]), (0, "complete"))
                 self.assertEqual(day, 0)
+
+    def test_untracked_call_keeps_the_turns_reserved_cost(self) -> None:
+        from services.orchestrator.model import GatewayError
+
+        async def bypassed(payload: Any, item: Any) -> None:
+            # A call that bypassed the tracked egress (no record of it): the
+            # turn's own figure, here its reservation, is kept, never less.
+            item.cout_eur = 0.10
+            raise GatewayError("timeout", 504, "Timeout")
+
+        for stream in (False, True):
+            path, body = routes(stream)[0]
+            with self.subTest(stream=stream):
+                row, reply, day = self.settle(bypassed, path, body)
+                self.assertEqual((row["charged"], row["state"]), (100000, "complete"))
+                self.assertEqual(day, 100000)
+                if not stream:
+                    self.assertEqual(
+                        reply.json()["atlas"]["cost_kind"], "reserved_upper_bound"
+                    )
 
 
 if __name__ == "__main__":
