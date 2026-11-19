@@ -44,6 +44,9 @@ Sink = Callable[[dict[str, object]], Awaitable[None]]
 RELATIVE_DAYS: dict[str, int] = {
     "today": 0,
     "tomorrow": 1,
+    # Chat abbreviations of tomorrow, out of reach of one edit.
+    "tmrw": 1,
+    "tmrrw": 1,
     "yesterday": -1,
     "day after tomorrow": 2,
     "day before yesterday": -2,

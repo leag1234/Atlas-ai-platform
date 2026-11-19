@@ -36,6 +36,7 @@ import math
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -398,6 +399,101 @@ def _line(leg: dict[str, Any]) -> str:
     return " ".join(name.split())[:60]
 
 
+# Kana to Latin letters (modified Hepburn), for service and stop names a
+# planner gives only in Japanese script (live 2026-11-19: "\u306e\u305e\u307f11\u53f7" in an
+# English answer). Katakana share the table, 0x60 code points apart.
+_KANA_ROWS = (
+    ("\u3042\u3044\u3046\u3048\u304a", ("a", "i", "u", "e", "o")),
+    ("\u304b\u304d\u304f\u3051\u3053", ("ka", "ki", "ku", "ke", "ko")),
+    ("\u304c\u304e\u3050\u3052\u3054", ("ga", "gi", "gu", "ge", "go")),
+    ("\u3055\u3057\u3059\u305b\u305d", ("sa", "shi", "su", "se", "so")),
+    ("\u3056\u3058\u305a\u305c\u305e", ("za", "ji", "zu", "ze", "zo")),
+    ("\u305f\u3061\u3064\u3066\u3068", ("ta", "chi", "tsu", "te", "to")),
+    ("\u3060\u3062\u3065\u3067\u3069", ("da", "ji", "zu", "de", "do")),
+    ("\u306a\u306b\u306c\u306d\u306e", ("na", "ni", "nu", "ne", "no")),
+    ("\u306f\u3072\u3075\u3078\u307b", ("ha", "hi", "fu", "he", "ho")),
+    ("\u3070\u3073\u3076\u3079\u307c", ("ba", "bi", "bu", "be", "bo")),
+    ("\u3071\u3074\u3077\u307a\u307d", ("pa", "pi", "pu", "pe", "po")),
+    ("\u307e\u307f\u3080\u3081\u3082", ("ma", "mi", "mu", "me", "mo")),
+    ("\u3089\u308a\u308b\u308c\u308d", ("ra", "ri", "ru", "re", "ro")),
+    ("\u3084\u3086\u3088\u308f\u3092\u3093", ("ya", "yu", "yo", "wa", "o", "n")),
+    ("\u3041\u3043\u3045\u3047\u3049", ("a", "i", "u", "e", "o")),
+)
+_KANA = {kana: latin for row, sounds in _KANA_ROWS for kana, latin in zip(row, sounds)}
+_SMALL_Y = {"\u3083": "a", "\u3085": "u", "\u3087": "o"}
+_SOKUON = "\u3063"
+
+
+def _hiragana(character: str) -> str:
+    code = ord(character)
+    return chr(code - 0x60) if 0x30A1 <= code <= 0x30F6 else character
+
+
+def romanised(text: str) -> str:
+    """Kana written in Latin letters; any other character kept as it is."""
+    out: list[str] = []
+    double = False
+    for raw in text:
+        character = _hiragana(raw)
+        if character == _SOKUON:
+            double = True
+            continue
+        if character in _SMALL_Y and out and out[-1].endswith("i"):
+            base = out[-1][:-1]
+            vowel = _SMALL_Y[character]
+            out[-1] = base + vowel if base in {"sh", "ch", "j"} else base + "y" + vowel
+            continue
+        if character == "\u30fc":  # long vowel mark
+            continue
+        latin = _KANA.get(character, _SMALL_Y.get(character, raw))
+        if double and latin[:1].isalpha() and latin[:1] not in "aeiou":
+            latin = ("t" if latin.startswith("ch") else latin[0]) + latin
+        double = False
+        out.append(latin)
+    return "".join(out)
+
+
+def _latin(text: str) -> bool:
+    return all(
+        not c.isalpha() or unicodedata.name(c, "").startswith("LATIN") for c in text
+    )
+
+
+def service_name(name: str) -> str:
+    """A line name readable in a Latin-script answer: romanised, the original
+    kept in parentheses ("Nozomi 11 (\u306e\u305e\u307f11\u53f7)")."""
+    if not name or _latin(name):
+        return name
+    latin = romanised(name)
+    kept = "".join(c if _latin(c) else " " for c in latin)
+    kept = re.sub(r"(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])", " ", kept)
+    words = [w[:1].upper() + w[1:] for w in kept.split()]
+    if not any(c.isalpha() for c in "".join(words)):
+        return name
+    return f"{' '.join(words)} ({name})"
+
+
+_ENDPOINTS = frozenset({"START", "END"})
+
+
+def place_name(name: str) -> str:
+    """A stop name as people write it: "TOKYO" becomes "Tokyo"; a name in
+    kana only is romanised, the original kept in parentheses."""
+    if name in _ENDPOINTS:
+        # The planner's own markers for the origin and destination places.
+        return name
+    letters = [c for c in name if c.isalpha()]
+    if letters and all(c.isupper() for c in letters) and _latin(name):
+        if any(len(w) >= 4 and w.isalpha() for w in re.split(r"[\s/().,-]+", name)):
+            return re.sub(r"[^\W\d_]+", lambda m: m[0][:1] + m[0][1:].lower(), name)
+        return name
+    if not _latin(name):
+        latin = romanised(name)
+        if _latin(latin):
+            return f"{latin[:1].upper()}{latin[1:]} ({name})"
+    return name
+
+
 def parse(response: dict[str, Any], zone: ZoneInfo) -> list[dict[str, Any]]:
     """The itineraries of a plan answer: legs with local times and names."""
     itineraries: list[dict[str, Any]] = []
@@ -432,11 +528,17 @@ def parse(response: dict[str, Any], zone: ZoneInfo) -> list[dict[str, Any]]:
             legs.append(
                 {
                     "kind": kind,
-                    "line": "" if kind == "walk" else _line(leg),
-                    "headsign": " ".join(str(leg.get("headsign") or "").split())[:80],
+                    "line": "" if kind == "walk" else service_name(_line(leg)),
+                    "headsign": place_name(
+                        " ".join(str(leg.get("headsign") or "").split())[:80]
+                    ),
                     "operator": " ".join(str(leg.get("agencyName") or "").split())[:60],
-                    "from": " ".join(str(origin.get("name") or "").split())[:80],
-                    "to": " ".join(str(target.get("name") or "").split())[:80],
+                    "from": place_name(
+                        " ".join(str(origin.get("name") or "").split())[:80]
+                    ),
+                    "to": place_name(
+                        " ".join(str(target.get("name") or "").split())[:80]
+                    ),
                     "platform": str(
                         origin.get("scheduledTrack") or origin.get("track") or ""
                     )[:12],
@@ -490,11 +592,51 @@ def selected(
     return chosen, "on_time"
 
 
+# A plan whose best itinerary is far slower than travel over that distance
+# usually is, or leaves in the night for a morning arrival, is a sign that the
+# open data lacks a service (live 2026-11-19: Villeurbanne to Geneva airport,
+# 115 km, night buses and a coach via Annecy, no regional train in the data).
+DOUBT_KM = 50
+DOUBT_KMH = 35
+NIGHT_END = 5
+
+
+def doubts(
+    itineraries: list[dict[str, Any]],
+    distance_km: float,
+    asked: datetime | None,
+) -> dict[str, Any]:
+    """Why the best itinerary found is implausible ({} when it is not)."""
+    if not itineraries:
+        return {}
+    fastest = min(itineraries, key=lambda i: i["minutes"])
+    found: dict[str, Any] = {}
+    hours = max(fastest["minutes"], 1) / 60
+    if distance_km >= DOUBT_KM and distance_km / hours < DOUBT_KMH:
+        found["slow"] = {
+            "km": round(distance_km),
+            "minutes": fastest["minutes"],
+            "kmh": round(distance_km / hours),
+        }
+    if asked is not None and asked.hour >= NIGHT_END + 1:
+        night = [
+            i
+            for i in itineraries
+            if i["depart"].hour < NIGHT_END or i["depart"].date() < asked.date()
+        ]
+        if len(night) == len(itineraries):
+            found["night"] = {"depart": fastest["depart"].strftime("%H:%M")}
+    return found
+
+
 # --- Wording -----------------------------------------------------------------
 # Five interface languages; non-ASCII letters are written as escapes.
 
 WORDS: dict[str, dict[str, Any]] = {
     "en": {
+        "doubt": "Caution: {why}. The open timetable data may lack a direct service on this route (for example a cross-border train): check the operators' timetables before you rely on this plan.",
+        "doubt_slow": "the fastest itinerary found takes {m} for {km} km",
+        "doubt_night": "every itinerary found leaves at night (from {t})",
         "title": "Public transport plan",
         "option": "Option {n}",
         "summary": "leave {d}, arrive {a}, {m}, {t}",
@@ -526,6 +668,9 @@ WORDS: dict[str, dict[str, Any]] = {
         },
     },
     "fr": {
+        "doubt": "Attention : {why}. Les donn\u00e9es horaires ouvertes n\u2019ont peut-\u00eatre pas de liaison directe sur ce trajet (par exemple un train transfrontalier) : v\u00e9rifiez les horaires des exploitants avant de vous fier \u00e0 ce plan.",
+        "doubt_slow": "l\u2019itin\u00e9raire le plus rapide trouv\u00e9 met {m} pour {km} km",
+        "doubt_night": "tous les itin\u00e9raires trouv\u00e9s partent la nuit (d\u00e8s {t})",
         "title": "Itin\u00e9raire en transports en commun",
         "option": "Option {n}",
         "summary": "d\u00e9part {d}, arriv\u00e9e {a}, {m}, {t}",
@@ -557,6 +702,9 @@ WORDS: dict[str, dict[str, Any]] = {
         },
     },
     "de": {
+        "doubt": "Achtung: {why}. In den offenen Fahrplandaten fehlt auf dieser Strecke vielleicht eine direkte Verbindung (zum Beispiel ein grenz\u00fcberschreitender Zug): pr\u00fcfen Sie die Fahrpl\u00e4ne der Verkehrsunternehmen, bevor Sie sich auf diesen Plan verlassen.",
+        "doubt_slow": "die schnellste gefundene Verbindung braucht {m} f\u00fcr {km} km",
+        "doubt_night": "alle gefundenen Verbindungen fahren nachts ab (ab {t})",
         "title": "Verbindung mit \u00f6ffentlichen Verkehrsmitteln",
         "option": "Option {n}",
         "summary": "ab {d}, an {a}, {m}, {t}",
@@ -588,6 +736,9 @@ WORDS: dict[str, dict[str, Any]] = {
         },
     },
     "es": {
+        "doubt": "Atenci\u00f3n: {why}. Puede que los datos horarios abiertos no tengan un servicio directo en este trayecto (por ejemplo un tren transfronterizo): compruebe los horarios de los operadores antes de fiarse de este plan.",
+        "doubt_slow": "el itinerario m\u00e1s r\u00e1pido encontrado tarda {m} para {km} km",
+        "doubt_night": "todos los itinerarios encontrados salen de noche (desde las {t})",
         "title": "Itinerario en transporte p\u00fablico",
         "option": "Opci\u00f3n {n}",
         "summary": "salida {d}, llegada {a}, {m}, {t}",
@@ -619,6 +770,9 @@ WORDS: dict[str, dict[str, Any]] = {
         },
     },
     "it": {
+        "doubt": "Attenzione: {why}. I dati orari aperti forse non hanno un servizio diretto su questo tragitto (per esempio un treno transfrontaliero): verifichi gli orari degli operatori prima di affidarsi a questo piano.",
+        "doubt_slow": "l\u2019itinerario pi\u00f9 veloce trovato impiega {m} per {km} km",
+        "doubt_night": "tutti gli itinerari trovati partono di notte (dalle {t})",
         "title": "Itinerario con i mezzi pubblici",
         "option": "Opzione {n}",
         "summary": "partenza {d}, arrivo {a}, {m}, {t}",
@@ -690,11 +844,24 @@ def render(
     deadline: datetime | None,
     language: str,
     config: Settings,
+    doubt: dict[str, Any] | None = None,
 ) -> tuple[str, list[str]]:
     """The plan as Markdown, and one passage per itinerary (its legs as
     sentences, each with its line, direction, stops and times)."""
     w = words(language)
     lines = [f"**{w['title']}: {_clean(origin)} \u2192 {_clean(destination)}**", ""]
+    if doubt:
+        why = []
+        if "slow" in doubt:
+            why.append(
+                w["doubt_slow"].format(
+                    m=_duration(doubt["slow"]["minutes"]), km=doubt["slow"]["km"]
+                )
+            )
+        if "night" in doubt:
+            why.append(w["doubt_night"].format(t=doubt["night"]["depart"]))
+        caveat = w["doubt"].format(why="; ".join(why))
+        lines[1:1] = ["", f"_{caveat}_"]
     passages: list[str] = []
     zones: list[str] = []
     for number, itinerary in enumerate(itineraries, 1):
@@ -757,7 +924,13 @@ def render(
                 if leg["delay_minutes"] > 0:
                     text += w["delay"].format(m=leg["delay_minutes"])
             lines.append(f"- {text}")
-            sentences.append(text + ".")
+            operator = _clean(leg.get("operator") or "")
+            if operator and operator.lower() not in text.lower():
+                # The operator is in the tool's data: the passage names it, so
+                # "Amtrak Acela 2150" is a fact of the plan (staging -128).
+                sentences.append(text + f" ({operator}).")
+            else:
+                sentences.append(text + ".")
         if deadline is not None:
             check = w["deadline"].format(
                 a=_clock(itinerary["arrive"], deadline.date()),
@@ -805,8 +978,9 @@ DESCRIPTION = (
     "with lines, directions, stops, local times and changes: put `rendered` in "
     "your answer unchanged, including its attribution line, then add only what "
     "a page you read says (fares, disruptions). Never add a time, line, "
-    "direction or duration of your own. If the outcome is not `planned`, follow "
-    "its `next_step`."
+    "direction or duration of your own. Write to the person in the second "
+    "person of their language. If the outcome is not `planned`, follow its "
+    "`next_step`."
 )
 
 NEXT_STEPS = {
@@ -821,7 +995,18 @@ NEXT_STEPS = {
     "position their device shared.",
     "no_itinerary": "The planner has no timetable data for this trip: research "
     "it on the web and use journey_plan.",
+    "doubtful": "This plan looks implausible (see `doubts`): research the "
+    "operators' direct services for this trip on the web and give them first, "
+    "with their sources; give the computed plan only as a fallback, with its "
+    "caution line, never as the answer.",
 }
+INSTRUCTION = (
+    "Put `rendered` in the answer unchanged, with its attribution line. Do not "
+    "add any time, line, direction or duration it does not state. The trip is "
+    "on `day`: write that date. Write to the person in the second person of "
+    "their language, never in their own first-person words ('which train do I "
+    "take' is answered 'the train for you is', not 'the train I take is')."
+)
 FALLBACK = (
     "The journey planner is not available for this turn: research the trip on "
     "the web and use journey_plan."
@@ -857,9 +1042,11 @@ def local_time(
     hours, minutes = int(found[2]), int(found[3])
     if hours > 23 or minutes > 59:
         raise TransitError("invalid_time", f"{value!r} is out of range")
-    if found[1]:
+    if found[1] and (not days or found[1] in days):
         day = date.fromisoformat(found[1])
     elif days:
+        # The day the person named wins over another the call gives (staging
+        # -128: "tmrw" planned for today, so every train arrived too late).
         day = date.fromisoformat(days[0])
     else:
         day = now.astimezone(zone).date()
@@ -921,6 +1108,7 @@ async def compute(
     )
     itineraries, verdict = selected(parse(response, zone), now=now, deadline=deadline)
     destination_label = label(target)
+    doubt = doubts(itineraries, _distance_km(start, _point(target)), when)
     rendered, passages = render(
         itineraries,
         origin=origin_label,
@@ -928,6 +1116,7 @@ async def compute(
         deadline=deadline,
         language=language,
         config=config,
+        doubt=doubt,
     )
     plain = [
         {
@@ -945,10 +1134,12 @@ async def compute(
         }
         for itinerary in itineraries
     ]
-    outcome = "planned" if itineraries else verdict
+    outcome = ("doubtful" if doubt else "planned") if itineraries else verdict
     data: dict[str, Any] = {
         "outcome": outcome,
         "verdict": verdict,
+        "day": when.date().isoformat(),
+        "weekday": when.strftime("%A"),
         "origin": origin_label,
         "destination": destination_label,
         "arrive_by": deadline.isoformat(timespec="minutes") if deadline else None,
@@ -959,10 +1150,10 @@ async def compute(
     if itineraries:
         data["rendered"] = rendered
         data["passages"] = passages
-        data["instruction"] = (
-            "Put `rendered` in the answer unchanged, with its attribution line. "
-            "Do not add any time, line, direction or duration it does not state."
-        )
+        data["instruction"] = INSTRUCTION
+        if doubt:
+            data["doubts"] = doubt
+            data["next_step"] = NEXT_STEPS["doubtful"]
     else:
         data["next_step"] = NEXT_STEPS.get(verdict, FALLBACK)
         if verdict == "none_by_deadline":
@@ -1021,6 +1212,7 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
         # itinerary as a passage read from the planner, so the travel checks
         # keep its lines, directions, stops and times and nothing else.
         if turn is not None:
+            turn.planned = True
             turn.compute(str(data["rendered"]))
             for passage in data.get("passages", []):
                 turn.collect({"url": config.attribution_url, "text": passage})

@@ -110,6 +110,26 @@ rate limited, over its daily cap or has no itinerary, the tool returns a named o
 `no_itinerary`, `none_by_deadline`) and the trip is researched on the web as before; a
 limit is said as a limit (D5).
 
+Staging -128 (2026-11-19, UI trip battery on the planner) added four general rules:
+
+- the day the person named ("tomorrow", "tmrw", a weekday) wins over another date the
+  call gives: the Boston trip was planned for today, so every train arrived after the
+  deadline and the trip checks rightly left the late itineraries out (with the right
+  day, three itineraries arrive before 11:00);
+- every name the tool returns is in the passages read, the operator included, so
+  "Amtrak Acela 2150" is a fact of the plan; after a plan, the unverified note no longer
+  says that Atlas computes no route;
+- names are written for a Latin-script answer: a stop name in capitals ("TOKYO") as a
+  name ("Tokyo"), a service name in kana romanised with the original kept
+  ("Nozomi 11 (...)"). MOTIS already returns the translations a feed has for the
+  `language` parameter; the Japanese feed translates stops, not train names;
+- a doubtful plan (outcome `doubtful`): the fastest itinerary averages under 35 km/h
+  over 50 km or more in a straight line, or every itinerary leaves in the night (before
+  05:00, or the evening before) for a later deadline. The plan then opens with a caution
+  and the model researches the operators' direct services first. On the seven battery
+  trips only Villeurbanne to Geneva airport is doubtful (108 km, 4 h 18 min, night
+  buses and a coach; the cross-border regional trains are missing from the data).
+
 ### Settings
 
 | Variable | Default | Meaning |
