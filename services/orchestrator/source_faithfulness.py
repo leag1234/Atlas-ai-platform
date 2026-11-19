@@ -99,8 +99,9 @@ judge: 0 false alarm (0/24, 0/56); faults found 41 to 42 of 42 on the pilot,
 39 of 42 on the larger set where the judge alone finds 40 (an added cause
 carried by a participle clause passes the screen); faithful answers are
 checked in p50 1.0 to 1.6 s, p95 2 to 26 s, flagged ones in p50 26 to 35 s;
-about 0.004 to 0.006 EUR per clean answer, 0.01 per flagged one. A repair and
-its re-check add 20 to 45 s more. In the interface the answer streams as
+about 0.004 to 0.006 EUR per clean answer, 0.01 per flagged one. A repair
+(rewrite profile, reasoning off: p50 1.5 s, p95 2.6 s) and its re-check (screen
+then confirmation, as long as a first check) follow. In the interface the answer streams as
 before; the stream closes after the check (keepalive frames meanwhile) and a
 note may follow. API answers and held streams wait for the check. A
 whole-answer judge cannot run while the answer is still being written;
@@ -158,7 +159,9 @@ JUDGE_BUDGET_EUR = Decimal("0.04")
 REWRITE_BUDGET_EUR = Decimal("0.02")
 BUDGET_EUR_PER_BYTE = Decimal("0.000002")
 BUDGET_MAX_EUR = Decimal("0.15")
-REWRITE_SECONDS = 45.0
+# The rewrite profile, reasoning off, answers in p50 1.5 s, at most 3.4 s on short and
+# long answers (2026-11-19): past this it has failed and the note is given instead.
+REWRITE_SECONDS = 20.0
 REWRITE_TOKENS = 4_000
 # Under this, a call has no time left to be useful.
 MIN_SECONDS = 12.0
@@ -1069,6 +1072,8 @@ async def rewrite(
     seconds: float,
     report: Report,
     complete: Complete | None = None,
+    *,
+    json_mode: bool = True,
 ) -> str | None:
     """One call rewriting the flagged sentences only; None when not usable."""
     spans = targets(body, findings)
@@ -1086,7 +1091,14 @@ async def rewrite(
             "content": f"SENTENCES:\n{numbered}\n\nSOURCE:\n{source.text}",
         },
     ]
-    payload = _payload(messages, profile, REWRITE_TOKENS, seconds, REWRITE_BUDGET_EUR)
+    payload = _payload(
+        messages,
+        profile,
+        REWRITE_TOKENS,
+        seconds,
+        REWRITE_BUDGET_EUR,
+        json_mode=json_mode,
+    )
     report.calls += 1
     try:
         reply = await (complete or _complete)(payload, seconds + 5)
