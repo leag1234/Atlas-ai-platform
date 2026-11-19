@@ -75,7 +75,10 @@ class WorkedOutTimeTests(unittest.TestCase):
         self.assertNotIn("09:30", checked.split("Not verified")[0])
         self.assertNotIn("4h30m", checked.split("Not verified")[0])
         self.assertIn("take a direct **ICE**", checked)
-        self.assertIn("4h to 4h30m, 09:30", checked)
+        self.assertIn(
+            "“The ride takes 4h to 4h30m”, “…Munich Hbf no later than about 09:30”",
+            checked,
+        )
 
     def test_the_deadline_does_not_source_the_duration(self) -> None:
         # Same paragraph: 14:00 - 09:30 = 4 h 30 is no sourced arithmetic.

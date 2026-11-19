@@ -464,6 +464,11 @@ class ChatTools(Runtime):
                 # attribution pages may be cited like a page read.
                 urls = [str(u) for u in data["source_urls"] if isinstance(u, str)]
                 self.item.retrieved_urls.extend(urls)
+                if data.get("doubts") and privacy.tool_allowed("web_search"):
+                    # A doubtful plan: code reads the operators' direct services
+                    # (staging -129: the model kept the night chain to Geneva).
+                    data = await self.direct_services(data, timeout)
+                    output = {**output, "data": data}
             if call.name in {"web_images", "make_qr"} and isinstance(data, dict):
                 images = data.get("images", [data] if call.name == "make_qr" else [])
                 if isinstance(images, list):
@@ -710,6 +715,59 @@ class ChatTools(Runtime):
         if self.daily_ledger is not None:
             self.daily_ledger.reserve_search(self.daily_user, self.daily_lang, provider)
         super()._reserve_search(provider)
+
+    async def direct_services(self, data: Message, timeout: float) -> Message:
+        """A doubtful plan with the pages that one web search for the trip's
+        direct services finds and reads, through the turn's own web tools (D7,
+        limits and checks as for the model's calls)."""
+        from services.orchestrator import transit_planner
+
+        query = str(data.get("direct_query") or "")
+        if not query:
+            return transit_planner.with_direct_pages(data, [])
+        travel = travel_claims.current.get()
+        language = travel.language if travel is not None else "en"
+        if language not in {"fr", "de", "es", "it", "en"}:
+            language = "en"
+        try:
+            found = await self.execute(
+                Call(
+                    "doubtful-plan-search",
+                    "web_search",
+                    json.dumps({"query": query, "lang": language, "n": 5}),
+                ),
+                timeout,
+            )
+        except GatewayError:
+            return transit_planner.with_direct_pages(data, [])
+        links = (
+            []
+            if "error" in found
+            else transit_planner.direct_candidates(found.get("data"))
+        )
+        read = await asyncio.gather(
+            *(
+                self.execute(
+                    Call(
+                        f"doubtful-plan-fetch-{number}",
+                        "web_fetch",
+                        json.dumps({"url": link, "query": query}),
+                    ),
+                    timeout,
+                )
+                for number, link in enumerate(links)
+            ),
+            return_exceptions=True,
+        )
+        pages: list[dict[str, str]] = []
+        for link, page in zip(links, read, strict=True):
+            if not isinstance(page, dict) or "error" in page:
+                continue
+            body = page.get("data")
+            text = body.get("text") if isinstance(body, dict) else None
+            if isinstance(text, str) and text.strip():
+                pages.append({"url": link, "text": text})
+        return transit_planner.with_direct_pages(data, pages)
 
     def search_evidence(self, data: Message) -> Message:
         """Budget evidence for the next inference; every later step rechecks cost."""
@@ -1130,6 +1188,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         )
         from services.orchestrator import transit_planner
 
+        # A doubtful plan is a fallback after what the pages read support.
+        item.reponse = transit_planner.doubtful_answer(
+            item.reponse, asked_language or travel.language
+        )
         # A plan's attribution stays visible (Transitous usage policy).
         item.reponse = transit_planner.with_attribution(
             item.reponse, travel.computed, asked_language or travel.language

@@ -130,6 +130,29 @@ Staging -128 (2026-11-19, UI trip battery on the planner) added four general rul
   trips only Villeurbanne to Geneva airport is doubtful (108 km, 4 h 18 min, night
   buses and a coach; the cross-border regional trains are missing from the data).
 
+Staging -129 (2026-11-19) showed that the model still gave the doubtful night chain as
+"the most direct option", with no daytime service from a page read, and that a Sydney
+trip got no plan at all.
+Since then:
+
+- on a doubtful plan, code runs one web search for the trip's direct services (the
+  start's town, never the person's street or position, and the destination's name) and
+  reads its first two pages through the turn's own web tools (limits, D7 and the travel
+  checks as for the model's calls); the tool result carries them in `direct_services`;
+- the computed plan is titled as a fallback, and after the travel checks
+  `transit_planner.doubtful_answer` rebuilds the answer: the lines that cite a page read
+  come first, then the fallback plan once; without such a line the answer opens by
+  saying that no reasonable connection was found in the open data, links the pages read,
+  then gives the fallback;
+- a plan with no itinerary at all, for a start or destination that is not a stop (MOTIS
+  reports `n_start_offsets` or `n_dest_offsets` 0: the "King Street, Sydney" street
+  point had no stop within walking reach), is asked again once from or to the nearest
+  stop within 1.5 km (`/api/v1/reverse-geocode`, type `STOP`); the plan says so;
+- the unverified note quotes the words of the answer it removed (a table row's name and
+  cell, else the clause), never a bare value; while the planner is configured it never
+  says that Atlas computes no route: without a plan it says that no computed itinerary
+  was found for the trip.
+
 ### Settings
 
 | Variable | Default | Meaning |

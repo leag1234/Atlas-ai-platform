@@ -883,6 +883,46 @@ _PLANNED: dict[str, tuple[str, str]] = {
 }
 
 
+# The same clause when a journey planner is configured but computed no
+# itinerary for this trip (staging -129: it found none for Sydney, and the note
+# said that Atlas computes no route).
+_NO_PLAN: dict[str, str] = {
+    "en": ", and no computed itinerary was found for this trip",
+    "fr": ", et aucun itin\u00e9raire calcul\u00e9 n\u2019a \u00e9t\u00e9 trouv\u00e9 pour ce trajet",
+    "de": ", und f\u00fcr diese Reise wurde keine berechnete Verbindung gefunden",
+    "es": ", y no se encontr\u00f3 ning\u00fan itinerario calculado para este trayecto",
+    "it": ", e non \u00e8 stato trovato alcun itinerario calcolato per questo tragitto",
+}
+
+_QUOTE_BEFORE = 40
+
+
+def _quote(text: str, claim: Quantity) -> str:
+    """The words of the answer that state a value left out, quoted: its table
+    row's name and cell, else its clause (its sentence when the clause is the
+    value alone), cut around the value when long."""
+    line_start, _ = _line_bounds(text, claim.start)
+    if text[line_start:].lstrip().startswith("|"):
+        cells = _row_cells(text, claim.start)
+        start, end = _cell_bounds(text, claim.start)
+        name = (
+            text[cells[0][0] : cells[0][1]].strip()
+            if cells and cells[0][0] != start
+            else ""
+        )
+        cell = text[start:end].strip()
+        return route_facts.quoted(f"{name}: {cell}" if name else cell) or claim.text
+    start, end = _clause(text, claim.start, claim.end)
+    rest = text[start : claim.start] + text[claim.end : end]
+    if not re.search(r"[^\W\d_]{3}", rest):
+        start, end = _sentence(text, claim.start, claim.end)
+    prefix = ""
+    if claim.start - start > _QUOTE_BEFORE:
+        cut = text.find(" ", claim.start - _QUOTE_BEFORE, claim.start)
+        start, prefix = (cut + 1 if cut >= 0 else claim.start), "\u2026"
+    return route_facts.quoted(prefix + text[start:end]) or claim.text
+
+
 def wording(key: str, language: str) -> str:
     table = WORDING[key]
     return table.get(language, table["en"])
@@ -1991,6 +2031,14 @@ class Findings:
     # A journey planner computed itineraries this turn: the note never says
     # that Atlas computes no route (staging -128).
     planned: bool = False
+    # A journey planner is configured: without a plan this turn, the note
+    # says that none was computed, never that Atlas computes no route
+    # (staging -129, Sydney).
+    planner: bool = False
+    # Each value left out, quoted from the words of the answer that state it
+    # (start of the value: quote); never the bare value (staging -129 listed
+    # "13 minutes").
+    quotes: dict[int, str] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         return bool(
@@ -2019,7 +2067,7 @@ class Findings:
                 " ".join(text.split())
                 for text in (
                     *(
-                        c.text
+                        self.quotes.get(c.start, c.text)
                         + (f" ({self.dated[c.start]})" if c.start in self.dated else "")
                         for c in self.values
                     ),
@@ -2056,11 +2104,20 @@ class Findings:
         if self.planned:
             old, new = _PLANNED.get(language, _PLANNED["en"])
             text = text.replace(old, "" if key == "disputed" else new)
+        elif self.planner:
+            old, _ = _PLANNED.get(language, _PLANNED["en"])
+            text = text.replace(old, _NO_PLAN.get(language, _NO_PLAN["en"]))
         return text.format(values=self.listed()).replace("….", "…")
 
     def listed(self) -> str:
         values = self.labels()
         return ", ".join(values[:6]) + (", …" if len(values) > 6 else "")
+
+
+def _planner_enabled() -> bool:
+    from services.orchestrator import transit_planner
+
+    return transit_planner.enabled()
 
 
 def _empty_row(row: str) -> bool:
@@ -2093,6 +2150,12 @@ class Turn:
     journey_called: bool = False
     # A journey planner computed itineraries this turn (transit_planner).
     planned: bool = False
+    # The computed plan when it is doubtful (night only, far too slow): a
+    # fallback after what the pages read say (transit_planner.doubtful_answer),
+    # why it is doubtful, and the pages code read about the direct services.
+    doubtful: str = ""
+    doubt_reason: str = ""
+    direct_pages: list[str] = field(default_factory=list)
     results: int = 0
     started: float = field(default_factory=time.monotonic, repr=False)
     held: bool = False
@@ -2597,6 +2660,8 @@ class Turn:
             late,
             _clock_text(deadline) if deadline is not None else "",
             planned=self.planned,
+            planner=_planner_enabled(),
+            quotes={claim.start: _quote(body, claim) for claim in flagged},
         )
 
     def kept(self, body: str, found: Findings) -> str:

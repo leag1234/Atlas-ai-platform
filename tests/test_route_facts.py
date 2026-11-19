@@ -144,7 +144,10 @@ class OwnerDefectTests(unittest.TestCase):
         answer = "Comptez environ 20–25 min (métro ligne 14 direct)."
         unrelated = turn_with("Le RER A relie Châtelet à Nation en 25 min environ.")
         checked = unrelated.check(answer, "fr")
-        self.assertTrue(checked.startswith("Non vérifié, donc retiré : 20–25 min"))
+        self.assertTrue(
+            checked.startswith("Non vérifié, donc retiré : “Comptez environ 20–25 min"),
+            checked,
+        )
         sourced = turn_with(
             "Métro ligne 14, direct : comptez 20 à 25 min jusqu'à Gare de Lyon."
         )

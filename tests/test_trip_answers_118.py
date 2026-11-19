@@ -149,7 +149,9 @@ class PlaceNameTests(unittest.TestCase):
         snippet = "Trains from Hamburg to Bremen take about 90 minutes."
         trip = self.turn(asked, place, ["München", "Munich"], self.OTHER_URL, snippet)
         answer = "The journey takes about 90 minutes."
-        self.assertEqual(trip.findings(answer).labels(), ["90 minutes"])
+        self.assertEqual(
+            trip.findings(answer).labels(), ["“The journey takes about 90 minutes”"]
+        )
 
 
 class ReverseDirectionTests(unittest.TestCase):
