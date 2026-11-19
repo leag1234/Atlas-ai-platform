@@ -176,7 +176,12 @@ def source_check(
         except faith.JudgeFailure as failure:
             log.warning(
                 json.dumps(
-                    {"event": "deliverable_source_check_failed", "code": failure.code}
+                    {
+                        "event": "deliverable_source_check_failed",
+                        "code": failure.code,
+                        "cost_eur": str(failure.cost_eur),
+                        "unmeasured": failure.unmeasured,
+                    }
                 )
             )
             return "", failure.cost_eur

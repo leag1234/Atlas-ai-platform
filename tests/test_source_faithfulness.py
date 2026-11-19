@@ -273,6 +273,53 @@ class HintTests(unittest.TestCase):
         )
         self.assertEqual(faith.hints(answer, source()), [])
 
+    def test_a_value_derived_from_stated_values_is_not_a_hint(self) -> None:
+        # 15.5 = 12.4 + 3.1 (both stated by the answer); 3.1 is a stated cost.
+        sources = document_quotes.Sources()
+        sources.add_document(SOURCE + "The lighting cost 3.1 million euros.", "b.txt")
+        given = faith.provided(sources)
+        assert given is not None
+        answer = (
+            "The bridge cost 12.4 million euros and its lighting 3.1 million, "
+            "15.5 million in all."
+        )
+        self.assertEqual(faith.hints(answer, given), [])
+        # A number no stated pair gives is still one.
+        self.assertEqual(faith.hints("It cost 17 million.", given), ["17 million"])
+
+    def test_a_year_one_apart_is_derived_only_from_a_relative_year(self) -> None:
+        answer = "The bridge opened in 2021."
+        # The source dates 2020 and never counts years relatively: a wrong year.
+        self.assertEqual(faith.hints(answer, source()), ["2021"])
+        sources = document_quotes.Sources()
+        sources.add_document(
+            SOURCE + "The lights were added the following year.", "b.txt"
+        )
+        given = faith.provided(sources)
+        assert given is not None
+        self.assertEqual(faith.hints("The lights came in 2021.", given), [])
+
+    def test_a_date_resolved_from_today_is_not_the_source_s(self) -> None:
+        sources = document_quotes.Sources()
+        sources.add_document(
+            "The Brenzac council meets on Monday to vote on the Varnholt "
+            "footbridge lights. The vote needs a majority of the 21 members.",
+            "minutes.txt",
+        )
+        given = faith.provided(sources)
+        assert given is not None
+        answer = (
+            "The council votes on Monday 23 November 2026 on the lights. "
+            "A majority of the 21 members is needed."
+        )
+        today = "2026-11-19"
+        with patch("time.strftime", return_value=today):
+            self.assertEqual(faith.hints(answer, given), ["23 November", "2026"])
+        found = faith.leads(answer, given)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].kind, "number")
+        self.assertTrue(answer[found[0].start : found[0].end].startswith("The council"))
+
     def test_the_judge_reads_the_request_the_source_and_the_answer(self) -> None:
         content = faith.judge_messages(QUESTION, "SRC", "ANSWER")[0]["content"]
         self.assertTrue(content.startswith(faith.JUDGE))
@@ -394,6 +441,42 @@ class ReviewTests(unittest.TestCase):
         _, _, report = review(FAITHFUL, calls)
         self.assertEqual(
             (report.outcome, report.cost_eur), ("failed:unreadable", Decimal("0.004"))
+        )
+
+    def test_a_timed_out_judge_is_named_and_its_kept_cost_counted(self) -> None:
+        from services.orchestrator.model import failure_of
+
+        expired = failure_of(504, {"code": "timeout", "reserved_eur": "0.017"})
+        _, _, report = review(FAITHFUL, Calls(expired))
+        self.assertEqual(report.outcome, "failed:timeout")
+        self.assertEqual((report.cost_eur, report.unmeasured), (Decimal("0.017"), 0))
+        # A refusal before any output costs nothing and is measured.
+        _, _, report = review(FAITHFUL, Calls(GatewayError("cost_budget", 429)))
+        self.assertEqual((report.cost_eur, report.unmeasured), (Decimal(0), 0))
+        # A cut the gateway reported no cost for is counted as unmeasured.
+        _, _, report = review(FAITHFUL, Calls(TimeoutError()))
+        self.assertEqual((report.cost_eur, report.unmeasured), (Decimal(0), 1))
+        self.assertEqual(report.metadata()["unmeasured"], 1)
+
+    def test_the_budget_follows_the_size_read(self) -> None:
+        small = [{"role": "user", "content": "x" * 1000}]
+        self.assertEqual(
+            faith.budget(small, faith.JUDGE_BUDGET_EUR),
+            faith.JUDGE_BUDGET_EUR + 1000 * faith.BUDGET_EUR_PER_BYTE,
+        )
+        # A long answer and source (R&D study, 0.046 EUR refused at 0.04).
+        long = [{"role": "user", "content": "é" * 20_000}]
+        self.assertEqual(faith.budget(long, faith.JUDGE_BUDGET_EUR), Decimal("0.12"))
+        huge = [{"role": "user", "content": "x" * 400_000}]
+        self.assertEqual(
+            faith.budget(huge, faith.JUDGE_BUDGET_EUR), faith.BUDGET_MAX_EUR
+        )
+        calls = Calls(CLEAN)
+        review(FAITHFUL, calls)
+        sent = calls.payloads[0]
+        self.assertEqual(
+            Decimal(sent["budget_eur"]),
+            faith.budget(sent["messages"], faith.JUDGE_BUDGET_EUR),
         )
 
     def test_a_failed_judge_still_says_what_code_did_not_find(self) -> None:
@@ -615,12 +698,44 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual(
             ["response_format" in p for p in calls.payloads], [True, False]
         )
-        # Both read the same measured prompt.
+        # The judge confirms what the screen flagged, with its reason.
         screened, judged_by = (p["messages"][0]["content"] for p in calls.payloads)
-        self.assertEqual(screened, judged_by)
+        self.assertTrue(screened.startswith(faith.JUDGE))
+        self.assertTrue(judged_by.startswith(faith.CONFIRM))
+        self.assertIn(
+            "\n\nFLAGGED:\n1. " + FLAGGED + " (first reading: the source does not "
+            "link the flood to the choice; link not stated by the source)",
+            judged_by,
+        )
         self.assertEqual(report.screen, ["flagged"])
+        self.assertEqual(report.leads, 1)
         self.assertEqual(report.cost_eur, Decimal("0.012"))
         self.assertEqual(report.calls, 1)
+
+    def test_a_number_the_source_lacks_is_confirmed_after_a_clean_screen(
+        self,
+    ) -> None:
+        answer = FAITHFUL + " It cost 15 million euros."
+        added = "It cost 15 million euros."
+        confirmed = judged([{"text": added, "reason": "the source says 12.4"}])
+        calls = Calls(CLEAN, confirmed, TimeoutError())
+        text, addition, report = self.run_review(answer, calls)
+        # Screen, confirmation, then the repair of the confirmed sentence.
+        self.assertEqual(
+            [p["profile"] for p in calls.payloads],
+            ["atlas-fast", "atlas-judge", "atlas-judge"],
+        )
+        content = calls.payloads[1]["messages"][0]["content"]
+        self.assertIn(
+            "FLAGGED:\n1. " + added + " (first reading: number not found in the "
+            "source: 15 million)",
+            content,
+        )
+        self.assertEqual((report.screen[0], report.findings), ("clean_leads", 1))
+        # Unconfirmed, a lead is nothing: the judge decides.
+        calls = Calls(CLEAN, judged([]))
+        _, _, report = self.run_review(answer, calls)
+        self.assertEqual((report.outcome, report.screen[0]), ("clean", "clean_leads"))
 
     def test_the_judge_keeps_its_whole_time_after_a_slow_screen(self) -> None:
         clock = [1000.0]

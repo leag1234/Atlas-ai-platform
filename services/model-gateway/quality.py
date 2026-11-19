@@ -31,6 +31,7 @@ from provider_retry import (
 )
 from packages.limits import (
     ProviderFailure,
+    keep_cost,
     LimitError,
     ProviderLimitError,
     MalformedToolCall,
@@ -923,7 +924,9 @@ async def stream_quality(
                     and model == policy.models[fallback_role]
                 )
             ):
-                abandoned = given_up(exc, index)
+                # The failure reports what this call kept (the reservation of an
+                # attempt cut in flight), read back by the caller's report.
+                abandoned = keep_cost(given_up(exc, index), spent)
                 if abandoned is exc:
                     raise
                 raise abandoned from None

@@ -13,7 +13,7 @@ from typing import Any, TypeVar
 
 from gateway_cpu import CPUModels, EMBEDDING_REVISION
 from generation import Generator
-from packages.limits import LimitError, ProviderFailure
+from packages.limits import LimitError, ProviderFailure, kept_cost
 from provider_retry import ProviderResponseError
 from packages.validation import describe_validation
 from pydantic import ValidationError
@@ -40,6 +40,12 @@ class ClientGone(Exception):
 
 # How often a call in progress checks that its caller is still connected.
 CLIENT_CHECK_SECONDS = 0.05
+
+
+def kept(error: BaseException) -> dict[str, str]:
+    """The cost a failed call kept, for its failure answer (empty when unknown)."""
+    spent = kept_cost(error)
+    return {} if spent is None else {"reserved_eur": str(spent)}
 
 
 def client_gone(connection: socket.socket) -> bool:
@@ -430,7 +436,7 @@ def serve(
                 )
             except TypeError:
                 status, response = 400, {"code": "invalid_input"}
-            except TimeoutError:
+            except TimeoutError as exc:
                 value = (
                     request.get("timeout", 120) if isinstance(request, dict) else 120
                 )
@@ -445,7 +451,8 @@ def serve(
                         "code": "timeout",
                         "elapsed_seconds": round(monotonic() - started, 3),
                         "limit_seconds": limit,
-                    },
+                    }
+                    | kept(exc),
                 )
             except ProviderResponseError as exc:
                 status, response = (
@@ -462,7 +469,8 @@ def serve(
                         "code": "provider_failure",
                         "message": exc.detail,
                         "retries": exc.retries,
-                    },
+                    }
+                    | kept(exc),
                 )
             except OwnedServerUnavailable as exc:
                 owned = exc

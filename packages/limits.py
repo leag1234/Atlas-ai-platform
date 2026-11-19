@@ -1,6 +1,7 @@
 """Safe measured boundary failures; never retain rejected input content."""
 
 import logging
+from decimal import Decimal
 
 
 class LimitError(ValueError):
@@ -56,3 +57,20 @@ class MalformedToolCall(ProviderFailure):
             f"measured {measured} characters; allowed 1..80 characters; " + self.detail
         )
         self.args = (self.detail,)
+
+
+def keep_cost(error: BaseException, spent: Decimal) -> BaseException:
+    """Record on a failed call the cost the gateway kept for it (its reservation).
+
+    The gateway's failure answer reports it (reserved_eur): a check whose call
+    timed out counts what that call may have consumed (2026-11-19: an expired
+    judge call kept about 0.017 EUR that no report showed).
+    """
+    setattr(error, "spent_eur", spent)
+    return error
+
+
+def kept_cost(error: BaseException) -> Decimal | None:
+    """The cost keep_cost recorded on a failure, or None."""
+    value = getattr(error, "spent_eur", None)
+    return value if isinstance(value, Decimal) and value.is_finite() else None
