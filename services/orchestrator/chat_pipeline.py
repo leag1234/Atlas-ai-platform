@@ -882,9 +882,16 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # (document_quotes): the gate holds an open quotation until it can be checked.
     # The same collected sources feed the faithfulness check (source_faithfulness).
     quote_mode = document_quotes.mode()
+    # The interface sends its own tasks (title, tags, follow-up suggestions)
+    # through the same endpoint: a "### Task:" prompt quoting the conversation,
+    # answered by raw JSON the interface parses. The prompt is longer than a
+    # pasted text but is not one, and its answer restates no source (staging
+    # 2026-11-16 to 11-19: the quotation check stripped the quotes of the title
+    # value, the faithfulness check judged the broken title: 83 of 89 checks).
+    interface_task = request.user_text.lstrip().startswith("### Task:")
     quotes = (
         document_quotes.Sources()
-        if quote_mode != "off" or source_faithfulness.enabled()
+        if not interface_task and (quote_mode != "off" or source_faithfulness.enabled())
         else None
     )
     quoting = document_quotes.current.set(quotes)
@@ -967,6 +974,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         number_provenance.current.reset(tracking)
         context_usage.parts.reset(components)
         context_usage.samples.reset(capture)
+    if interface_task:
+        # Raw JSON for the interface: no answer check applies to it.
+        return
     from services.orchestrator.source_truth import clean_citation_residue
 
     item.reponse = clean_citation_residue(item.reponse)
