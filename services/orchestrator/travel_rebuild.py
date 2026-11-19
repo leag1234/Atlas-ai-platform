@@ -234,7 +234,7 @@ def _place_words(text: str) -> set[str]:
     return {
         _key(word)
         for word in normalized(text).split()
-        if len(word) >= 4
+        if (len(word) >= 4 or any(ord(character) > 0x2F80 for character in word))
         and not word.isdigit()
         and word not in route_facts._GENERIC
         and word not in route_facts.STATION_WORDS
@@ -247,7 +247,11 @@ def trip_words(turn: travel_claims.Turn, question: str) -> set[str]:
     parts = [part for part in turn.place.split(",") if part.strip()]
     if len(parts) >= 3:
         parts = parts[:-1]
-    return _place_words(question) | _place_words(" ".join(parts))
+    return (
+        _place_words(question)
+        | _place_words(" ".join(parts))
+        | _place_words(" ".join(turn.place_names))
+    )
 
 
 def _page_words(url: str, text: str) -> set[str]:
@@ -308,6 +312,7 @@ def _trip_names(
     if len(parts) >= 3:
         parts = parts[:-1]
     names = _place_words(" ".join(parts))
+    names |= _place_words(" ".join(turn.place_names))
     names |= _place_words(question) & _capitalized(
         [question, *(text for _, text in turn.linked)]
     )
@@ -422,7 +427,7 @@ def excerpts(
                 seen.add(key)
                 if not _substantial(sentence):
                     continue
-                if travel_claims.reverse_leg(sentence, turn.place):
+                if travel_claims.reverse_leg(sentence, turn.place, turn.place_names):
                     continue
                 valued = bool(travel_claims.quantities(sentence, generous=True))
                 routed = bool(route_facts._TRANSIT.search(route_facts.fold(sentence)))

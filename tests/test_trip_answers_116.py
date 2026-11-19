@@ -242,7 +242,64 @@ class PlaceScriptTests(unittest.IsolatedAsyncioTestCase):
             place = await osm.reverse(Position(latitude=35.68, longitude=139.76), "en")
         self.assertEqual(place, "Marunouchi, 100-0005 Chiyoda, Japan")
         assert call.await_args is not None
-        self.assertEqual(call.await_args.args[1]["accept-language"], "en")
+        self.assertEqual(call.await_args_list[0].args[1]["accept-language"], "en")
+
+    async def test_the_city_names_come_from_a_city_level_lookup(self) -> None:
+        """A street-level answer names the street only (measured on the public
+        service: "Marienplatz", one name); the city's names come at zoom 10."""
+        from services.orchestrator import nearby
+
+        nearby._AREA_NAMES.clear()
+        osm = OSM()
+        street = {
+            "address": {
+                "road": "Blumenweg",
+                "suburb": "Neuhausen",
+                "city": "München",
+                "postcode": "80636",
+                "country": "Germany",
+            },
+            "namedetails": {"name": "Blumenweg"},
+        }
+        city = {
+            "namedetails": {
+                "name": "München",
+                "name:en": "Munich",
+                "name:it": "Monaco di Baviera",
+            }
+        }
+        with patch.object(
+            osm, "request", AsyncMock(side_effect=[street, city])
+        ) as call:
+            place = await osm.reverse(Position(latitude=48.15, longitude=11.53), "en")
+        self.assertEqual(place, "Blumenweg, Neuhausen, 80636 München, Germany")
+        self.assertEqual(osm.place_names, ["München", "Munich", "Monaco di Baviera"])
+        self.assertEqual(call.await_args_list[1].args[1]["zoom"], "10")
+        # The same city again: no second lookup.
+        again = OSM()
+        with patch.object(again, "request", AsyncMock(return_value=street)) as call:
+            await again.reverse(Position(latitude=48.14, longitude=11.56), "en")
+        self.assertEqual(call.await_count, 1)
+        self.assertEqual(again.place_names, ["München", "Munich", "Monaco di Baviera"])
+
+    async def test_a_failed_city_lookup_keeps_the_place(self) -> None:
+        from services.orchestrator import nearby
+
+        nearby._AREA_NAMES.clear()
+        osm = OSM()
+        street = {
+            "address": {
+                "road": "Rue des Tilleuls",
+                "city": "Brenneville",
+                "country": "France",
+            }
+        }
+        with patch.object(
+            osm, "request", AsyncMock(side_effect=[street, OSError("down")])
+        ):
+            place = await osm.reverse(Position(latitude=45.0, longitude=4.0), "fr")
+        self.assertIn("Brenneville", place)
+        self.assertEqual(osm.place_names, [])
 
 
 if __name__ == "__main__":

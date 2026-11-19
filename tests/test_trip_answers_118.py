@@ -102,6 +102,56 @@ class AnotherLegTests(unittest.TestCase):
         )
 
 
+class PlaceNameTests(unittest.TestCase):
+    MUNICH_URL = "https://rail.example.test/munich-berlin"
+    GENEVA_URL = "https://rail.example.test/lyon-geneva"
+    TOKYO_URL = "https://rail.example.test/tokyo-yokohama"
+    OTHER_URL = "https://rail.example.test/hamburg-bremen"
+
+    def turn(
+        self, asked: str, place: str, names: list[str], url: str, snippet: str
+    ) -> travel_claims.Turn:
+        found = travel_claims.Turn(asked=[asked])
+        found.located(place=place, place_names=names)
+        found.collect({"link": url, "title": "Timetable", "snippet": snippet})
+        return found
+
+    def test_a_place_written_in_another_language_is_the_same_place(self) -> None:
+        asked = "how do i get to berlin hbf tomorrow morning?"
+        place = "Blumenweg, Neuhausen, 80636 München, Germany"
+        snippet = (
+            "The fastest journey from Munich to Berlin takes about 3 hours "
+            "and 53 minutes."
+        )
+        trip = self.turn(asked, place, ["München", "Munich"], self.MUNICH_URL, snippet)
+        answer = "The fastest journey takes about 3 hours and 53 minutes."
+        self.assertEqual(trip.findings(answer).labels(), [])
+
+    def test_geneva_written_in_english_is_still_the_starting_point(self) -> None:
+        asked = "je dois être à l'aéroport de Genève demain matin, je pars de Lyon"
+        place = "Rue de la République, 69002 Lyon, France"
+        snippet = "Trains from Lyon to Geneva Airport take about 2 hours."
+        trip = self.turn(asked, place, ["Genève", "Geneva"], self.GENEVA_URL, snippet)
+        answer = "Le trajet prend environ 2 heures."
+        self.assertEqual(trip.findings(answer).labels(), [])
+
+    def test_a_non_latin_name_matches_its_latin_name(self) -> None:
+        asked = "how do i get to yokohama station tomorrow morning?"
+        place = "Marunouchi 1, 100-0005 Chiyoda, Japan"
+        snippet = "Trains from 東京 to Yokohama take about 30 minutes."
+        trip = self.turn(asked, place, ["東京", "Tokyo"], self.TOKYO_URL, snippet)
+        answer = "The journey takes about 30 minutes."
+        self.assertEqual(trip.findings(answer).labels(), [])
+
+    def test_a_page_about_another_city_is_still_left_out(self) -> None:
+        asked = "how do i get to berlin hbf tomorrow morning?"
+        place = "Blumenweg, Neuhausen, 80636 München, Germany"
+        snippet = "Trains from Hamburg to Bremen take about 90 minutes."
+        trip = self.turn(asked, place, ["München", "Munich"], self.OTHER_URL, snippet)
+        answer = "The journey takes about 90 minutes."
+        self.assertEqual(trip.findings(answer).labels(), ["90 minutes"])
+
+
 class ReverseDirectionTests(unittest.TestCase):
     SYDNEY_URL = "https://rail.example.test/sydney-airport"
     MADRID_URL = "https://rail.example.test/madrid-barcelona"

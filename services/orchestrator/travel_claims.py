@@ -568,7 +568,7 @@ def _name_words(name: str) -> set[str]:
     return {
         word
         for word in normalized(name).split()
-        if len(word) >= 3
+        if (len(word) >= 3 or any(ord(character) > 0x2F80 for character in word))
         and word not in route_facts._GENERIC
         and word not in route_facts.STATION_WORDS
         and word not in route_facts.PLACE_WORDS
@@ -602,7 +602,9 @@ _UNORDERED = re.compile(
 )
 
 
-def reverse_leg(sentence: str, starting_point: str) -> bool:
+def reverse_leg(
+    sentence: str, starting_point: str, place_names: list[str] | None = None
+) -> bool:
     """Whether a sentence gives a leg towards the starting point from elsewhere:
     the opposite direction of the person's trip.
 
@@ -616,6 +618,7 @@ def reverse_leg(sentence: str, starting_point: str) -> bool:
     """
     parts = [part.strip() for part in starting_point.split(",")]
     origin = _name_words(" ".join(parts[:-1] if len(parts) >= 3 else parts))
+    origin |= _name_words(" ".join(place_names or []))
     if not origin:
         return False
     for match in (*_LEG.finditer(sentence), *_CITY_LEG.finditer(sentence)):
@@ -1472,8 +1475,8 @@ def _opening(body: str, found: "Findings") -> str:
     """The person's own words that open a first sentence left out whole.
 
     Left out for a route fact, the clauses before the route (route_facts);
-    left out for a value (staging -114: "Pour être à l'heure à votre
-    déjeuner à Paris Gare de Lyon à 12 h 30, deux départs ..." went for an
+    left out for a value (staging -114: "To be on time for your lunch at
+    Paris Gare de Lyon at 12:30, two departures ..." went for an
     unsourced time), the clauses before the first value left out, holding
     none of them.
     """
@@ -1644,6 +1647,8 @@ class Turn:
     active: bool = False
     position: Position | None = field(default=None, repr=False)
     place: str = field(default="", repr=False)
+    # The starting point's names in the languages the map service gave.
+    place_names: list[str] = field(default_factory=list, repr=False)
     evidence: Grounding = field(default_factory=Grounding)
     computed: list[str] = field(default_factory=list)
     asked: list[str] = field(default_factory=list)
@@ -1688,9 +1693,13 @@ class Turn:
 
     def places(self, answer: str) -> frozenset[str]:
         """The words of the person's messages, starting point and answer."""
+        names = _name_words(" ".join(self.place_names))
         return frozenset(
             word
-            for word in normalized(" ".join((*self.asked, self.place, answer))).split()
+            for word in [
+                *names,
+                *normalized(" ".join((*self.asked, self.place, answer))).split(),
+            ]
             if len(word) >= 3
         )
 
@@ -1698,9 +1707,19 @@ class Turn:
         """Seconds since the turn started (its checks were set up)."""
         return time.monotonic() - self.started
 
-    def located(self, *, place: str = "", position: Position | None = None) -> None:
+    def located(
+        self,
+        *,
+        place: str = "",
+        place_names: list[str] | None = None,
+        position: Position | None = None,
+    ) -> None:
         """The person's position or stated place for this turn (memory only)."""
         self.place = place or self.place
+        if place_names is not None:
+            self.place_names = place_names
+        elif place:
+            self.place_names = []
         self.position = position or self.position
         self.activate()
 
@@ -2007,7 +2026,9 @@ class Turn:
             claim
             for claim in claims
             if reverse_leg(
-                body[slice(*_sentence(body, claim.start, claim.end))], self.place
+                body[slice(*_sentence(body, claim.start, claim.end))],
+                self.place,
+                self.place_names,
             )
         ]
         claims = [claim for claim in claims if claim not in reverse]
