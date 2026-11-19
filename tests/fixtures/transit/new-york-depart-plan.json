@@ -1,0 +1,625 @@
+{
+"recorded":"2026-11-19 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+"request":{
+"time":"2026-11-20T07:30-05:00",
+"arriveBy":"false",
+"numItineraries":"3",
+"searchWindow":"3600"
+},
+"status":200,
+"body":{
+"itineraries":[
+{
+"startTime":"2026-11-20T12:46:00Z",
+"endTime":"2026-11-20T16:48:00Z",
+"duration":14520,
+"transfers":1,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"W 34th Ave & 9th Ave",
+"tz":"America/New_York"
+},
+"duration":420,
+"startTime":"2026-11-20T12:46:00Z",
+"endTime":"2026-11-20T12:53:00Z",
+"scheduledStartTime":"2026-11-20T12:46:00Z",
+"scheduledEndTime":"2026-11-20T12:53:00Z",
+"realTime":false
+},
+{
+"mode":"BUS",
+"from":{
+"name":"W 34th Ave & 9th Ave",
+"tz":"America/New_York"
+},
+"to":{
+"name":"W 34th Ave & 8th Ave",
+"tz":"America/New_York"
+},
+"duration":60,
+"startTime":"2026-11-20T12:53:00Z",
+"endTime":"2026-11-20T12:54:00Z",
+"scheduledStartTime":"2026-11-20T12:53:00Z",
+"scheduledEndTime":"2026-11-20T12:54:00Z",
+"realTime":false,
+"headsign":"E 34th St & 3rd Ave",
+"agencyName":"NY Waterway",
+"routeShortName":"",
+"routeLongName":"34th St",
+"tripShortName":"",
+"displayName":"34th St",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"W 34th Ave & 8th Ave",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"duration":120,
+"startTime":"2026-11-20T12:54:00Z",
+"endTime":"2026-11-20T12:56:00Z",
+"scheduledStartTime":"2026-11-20T12:54:00Z",
+"scheduledEndTime":"2026-11-20T12:56:00Z",
+"realTime":false,
+"cancelled":false
+},
+{
+"mode":"HIGHSPEED_RAIL",
+"from":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"duration":13620,
+"startTime":"2026-11-20T12:57:00Z",
+"endTime":"2026-11-20T16:44:00Z",
+"scheduledStartTime":"2026-11-20T12:57:00Z",
+"scheduledEndTime":"2026-11-20T16:44:00Z",
+"realTime":false,
+"headsign":"Boston",
+"agencyName":"Amtrak",
+"routeShortName":"",
+"routeLongName":"Acela",
+"tripShortName":"2150",
+"displayName":"2150",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":240,
+"startTime":"2026-11-20T16:44:00Z",
+"endTime":"2026-11-20T16:48:00Z",
+"scheduledStartTime":"2026-11-20T16:44:00Z",
+"scheduledEndTime":"2026-11-20T16:48:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T12:46:00Z",
+"endTime":"2026-11-20T16:44:00Z",
+"duration":14280,
+"transfers":2,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"W 34th Ave & 9th Ave",
+"tz":"America/New_York"
+},
+"duration":420,
+"startTime":"2026-11-20T12:46:00Z",
+"endTime":"2026-11-20T12:53:00Z",
+"scheduledStartTime":"2026-11-20T12:46:00Z",
+"scheduledEndTime":"2026-11-20T12:53:00Z",
+"realTime":false
+},
+{
+"mode":"BUS",
+"from":{
+"name":"W 34th Ave & 9th Ave",
+"tz":"America/New_York"
+},
+"to":{
+"name":"W 34th Ave & 8th Ave",
+"tz":"America/New_York"
+},
+"duration":60,
+"startTime":"2026-11-20T12:53:00Z",
+"endTime":"2026-11-20T12:54:00Z",
+"scheduledStartTime":"2026-11-20T12:53:00Z",
+"scheduledEndTime":"2026-11-20T12:54:00Z",
+"realTime":false,
+"headsign":"E 34th St & 3rd Ave",
+"agencyName":"NY Waterway",
+"routeShortName":"",
+"routeLongName":"34th St",
+"tripShortName":"",
+"displayName":"34th St",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"W 34th Ave & 8th Ave",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"duration":120,
+"startTime":"2026-11-20T12:54:00Z",
+"endTime":"2026-11-20T12:56:00Z",
+"scheduledStartTime":"2026-11-20T12:54:00Z",
+"scheduledEndTime":"2026-11-20T12:56:00Z",
+"realTime":false,
+"cancelled":false
+},
+{
+"mode":"HIGHSPEED_RAIL",
+"from":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"duration":13080,
+"startTime":"2026-11-20T12:57:00Z",
+"endTime":"2026-11-20T16:35:00Z",
+"scheduledStartTime":"2026-11-20T12:57:00Z",
+"scheduledEndTime":"2026-11-20T16:35:00Z",
+"realTime":false,
+"headsign":"Boston",
+"agencyName":"Amtrak",
+"routeShortName":"",
+"routeLongName":"Acela",
+"tripShortName":"2150",
+"displayName":"2150",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Back Bay",
+"tz":"America/New_York",
+"scheduledTrack":"5",
+"track":"5"
+},
+"duration":120,
+"startTime":"2026-11-20T16:35:00Z",
+"endTime":"2026-11-20T16:37:00Z",
+"scheduledStartTime":"2026-11-20T16:35:00Z",
+"scheduledEndTime":"2026-11-20T16:37:00Z",
+"realTime":false,
+"cancelled":false
+},
+{
+"mode":"REGIONAL_RAIL",
+"from":{
+"name":"Back Bay",
+"tz":"America/New_York",
+"scheduledTrack":"5",
+"track":"5"
+},
+"to":{
+"name":"South Station",
+"tz":"America/New_York"
+},
+"duration":240,
+"startTime":"2026-11-20T16:37:00Z",
+"endTime":"2026-11-20T16:41:00Z",
+"scheduledStartTime":"2026-11-20T16:37:00Z",
+"scheduledEndTime":"2026-11-20T16:41:00Z",
+"realTime":false,
+"headsign":"South Station",
+"agencyName":"MBTA",
+"routeShortName":"",
+"routeLongName":"Framingham/Worcester Line",
+"tripShortName":"5018",
+"displayName":"5018",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"South Station",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":180,
+"startTime":"2026-11-20T16:41:00Z",
+"endTime":"2026-11-20T16:44:00Z",
+"scheduledStartTime":"2026-11-20T16:41:00Z",
+"scheduledEndTime":"2026-11-20T16:44:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T12:47:00Z",
+"endTime":"2026-11-20T17:33:00Z",
+"duration":17160,
+"transfers":0,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"New York (P.A.B.T.)",
+"tz":"America/New_York"
+},
+"duration":780,
+"startTime":"2026-11-20T12:47:00Z",
+"endTime":"2026-11-20T13:00:00Z",
+"scheduledStartTime":"2026-11-20T12:47:00Z",
+"scheduledEndTime":"2026-11-20T13:00:00Z",
+"realTime":false
+},
+{
+"mode":"BUS",
+"from":{
+"name":"New York (P.A.B.T.)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"duration":16200,
+"startTime":"2026-11-20T13:00:00Z",
+"endTime":"2026-11-20T17:30:00Z",
+"scheduledStartTime":"2026-11-20T13:00:00Z",
+"scheduledEndTime":"2026-11-20T17:30:00Z",
+"realTime":false,
+"headsign":"Boston (South Station)",
+"agencyName":"Peter Pan Bus Lines",
+"routeShortName":"PPB 5613",
+"routeLongName":"New York (P.A.B.T.) -> Boston (South Station)",
+"tripShortName":"New York (P.A.B.T.) -> Boston (South Station)",
+"displayName":"PPB 5613",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":180,
+"startTime":"2026-11-20T17:30:00Z",
+"endTime":"2026-11-20T17:33:00Z",
+"scheduledStartTime":"2026-11-20T17:30:00Z",
+"scheduledEndTime":"2026-11-20T17:33:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T12:51:00Z",
+"endTime":"2026-11-20T17:33:00Z",
+"duration":16920,
+"transfers":1,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"34 St-Penn Station",
+"tz":"America/New_York"
+},
+"duration":300,
+"startTime":"2026-11-20T12:51:00Z",
+"endTime":"2026-11-20T12:56:00Z",
+"scheduledStartTime":"2026-11-20T12:51:00Z",
+"scheduledEndTime":"2026-11-20T12:56:00Z",
+"realTime":false
+},
+{
+"mode":"SUBWAY",
+"from":{
+"name":"34 St-Penn Station",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Times Sq-42 St",
+"tz":"America/New_York"
+},
+"duration":60,
+"startTime":"2026-11-20T12:56:00Z",
+"endTime":"2026-11-20T12:57:00Z",
+"scheduledStartTime":"2026-11-20T12:56:00Z",
+"scheduledEndTime":"2026-11-20T12:57:00Z",
+"realTime":false,
+"headsign":"Harlem-148 St",
+"agencyName":"MTA New York City Transit",
+"routeShortName":"3",
+"routeLongName":"7 Avenue Express",
+"tripShortName":"",
+"displayName":"3",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Times Sq-42 St",
+"tz":"America/New_York"
+},
+"to":{
+"name":"New York (P.A.B.T.)",
+"tz":"America/New_York"
+},
+"duration":180,
+"startTime":"2026-11-20T12:57:00Z",
+"endTime":"2026-11-20T13:00:00Z",
+"scheduledStartTime":"2026-11-20T12:57:00Z",
+"scheduledEndTime":"2026-11-20T13:00:00Z",
+"realTime":false,
+"cancelled":false
+},
+{
+"mode":"BUS",
+"from":{
+"name":"New York (P.A.B.T.)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"duration":16200,
+"startTime":"2026-11-20T13:00:00Z",
+"endTime":"2026-11-20T17:30:00Z",
+"scheduledStartTime":"2026-11-20T13:00:00Z",
+"scheduledEndTime":"2026-11-20T17:30:00Z",
+"realTime":false,
+"headsign":"Boston (South Station)",
+"agencyName":"Peter Pan Bus Lines",
+"routeShortName":"PPB 5613",
+"routeLongName":"New York (P.A.B.T.) -> Boston (South Station)",
+"tripShortName":"New York (P.A.B.T.) -> Boston (South Station)",
+"displayName":"PPB 5613",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":180,
+"startTime":"2026-11-20T17:30:00Z",
+"endTime":"2026-11-20T17:33:00Z",
+"scheduledStartTime":"2026-11-20T17:30:00Z",
+"scheduledEndTime":"2026-11-20T17:33:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T13:09:00Z",
+"endTime":"2026-11-20T17:56:00Z",
+"duration":17220,
+"transfers":0,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"New York Midtown (31st St & 8th Ave)",
+"tz":"America/New_York"
+},
+"duration":360,
+"startTime":"2026-11-20T13:09:00Z",
+"endTime":"2026-11-20T13:15:00Z",
+"scheduledStartTime":"2026-11-20T13:09:00Z",
+"scheduledEndTime":"2026-11-20T13:15:00Z",
+"realTime":false
+},
+{
+"mode":"COACH",
+"from":{
+"name":"New York Midtown (31st St & 8th Ave)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"duration":16800,
+"startTime":"2026-11-20T13:15:00Z",
+"endTime":"2026-11-20T17:55:00Z",
+"scheduledStartTime":"2026-11-20T13:15:00Z",
+"scheduledEndTime":"2026-11-20T17:55:00Z",
+"realTime":false,
+"headsign":"Boston (South Station)",
+"agencyName":"FlixBus-us",
+"routeShortName":"FlixBus 2610",
+"routeLongName":"NYC - Boston",
+"tripShortName":"",
+"displayName":"FlixBus 2610",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston (South Station)",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":60,
+"startTime":"2026-11-20T17:55:00Z",
+"endTime":"2026-11-20T17:56:00Z",
+"scheduledStartTime":"2026-11-20T17:55:00Z",
+"scheduledEndTime":"2026-11-20T17:56:00Z",
+"realTime":false
+}
+]
+},
+{
+"startTime":"2026-11-20T13:34:00Z",
+"endTime":"2026-11-20T18:15:00Z",
+"duration":16860,
+"transfers":1,
+"legs":[
+{
+"mode":"WALK",
+"from":{
+"name":"START",
+"tz":"America/New_York"
+},
+"to":{
+"name":"W 34 ST/8 AV",
+"tz":"America/New_York"
+},
+"duration":240,
+"startTime":"2026-11-20T13:34:00Z",
+"endTime":"2026-11-20T13:38:00Z",
+"scheduledStartTime":"2026-11-20T13:34:00Z",
+"scheduledEndTime":"2026-11-20T13:38:00Z",
+"realTime":false
+},
+{
+"mode":"BUS",
+"from":{
+"name":"W 34 ST/8 AV",
+"tz":"America/New_York"
+},
+"to":{
+"name":"W 34 ST/7 AV",
+"tz":"America/New_York"
+},
+"duration":120,
+"startTime":"2026-11-20T13:38:00Z",
+"endTime":"2026-11-20T13:40:00Z",
+"scheduledStartTime":"2026-11-20T13:38:00Z",
+"scheduledEndTime":"2026-11-20T13:40:00Z",
+"realTime":false,
+"headsign":"SELECT BUS EAST SIDE FDR DR CROSSTOWN",
+"agencyName":"MTA New York City Transit",
+"routeShortName":"M34-SBS",
+"routeLongName":"East Side - Javits Center",
+"tripShortName":"",
+"displayName":"M34-SBS",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"W 34 ST/7 AV",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"duration":240,
+"startTime":"2026-11-20T13:40:00Z",
+"endTime":"2026-11-20T13:44:00Z",
+"scheduledStartTime":"2026-11-20T13:40:00Z",
+"scheduledEndTime":"2026-11-20T13:44:00Z",
+"realTime":false,
+"cancelled":false
+},
+{
+"mode":"LONG_DISTANCE",
+"from":{
+"name":"Ny Moynihan Train Hall At Penn Station",
+"tz":"America/New_York"
+},
+"to":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"duration":15960,
+"startTime":"2026-11-20T13:45:00Z",
+"endTime":"2026-11-20T18:11:00Z",
+"scheduledStartTime":"2026-11-20T13:45:00Z",
+"scheduledEndTime":"2026-11-20T18:11:00Z",
+"realTime":false,
+"headsign":"Boston",
+"agencyName":"Amtrak",
+"routeShortName":"",
+"routeLongName":"Northeast Regional",
+"tripShortName":"170",
+"displayName":"170",
+"cancelled":false
+},
+{
+"mode":"WALK",
+"from":{
+"name":"Boston",
+"tz":"America/New_York"
+},
+"to":{
+"name":"END",
+"tz":"America/New_York"
+},
+"duration":240,
+"startTime":"2026-11-20T18:11:00Z",
+"endTime":"2026-11-20T18:15:00Z",
+"scheduledStartTime":"2026-11-20T18:11:00Z",
+"scheduledEndTime":"2026-11-20T18:15:00Z",
+"realTime":false
+}
+]
+}
+],
+"direct":[]
+}
+}

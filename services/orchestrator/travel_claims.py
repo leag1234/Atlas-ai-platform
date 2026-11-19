@@ -464,7 +464,14 @@ _RELATIVE_DAYS = (
         ),
         2,
     ),
-    (re.compile(r"\b(?:demain|tomorrow|morgen|manana|domani)\b"), 1),
+    (
+        re.compile(
+            # Frequent spellings of tomorrow in chat ("tmrw", "tomorow").
+            r"\b(?:demain|tomorrow|morgen|manana|domani|tmrw|tmrrw|tmr|tmw|"
+            r"tom+or+ow|2mor+ow|2moro|tomoz|demin|dmain|domai)\b"
+        ),
+        1,
+    ),
     (
         re.compile(
             r"\b(?:aujourd.hui|today|tonight|ce soir|ce matin|heute|hoy|oggi|stasera)\b"
@@ -847,6 +854,32 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Se omite porque llega después de las {deadline}: {values}.",
         "it": "Omesso perché arriva dopo le {deadline}: {values}.",
     },
+}
+
+
+# The clause of the notes that says Atlas computes no route, and what a turn
+# whose itineraries a journey planner computed says instead.
+_PLANNED: dict[str, tuple[str, str]] = {
+    "en": (
+        ", and Atlas does not compute routes yet",
+        ", nor do the itineraries computed for it",
+    ),
+    "fr": (
+        ", et Atlas ne calcule pas encore d\u2019itin\u00e9raire",
+        ", ni les itin\u00e9raires calcul\u00e9s pour elle",
+    ),
+    "de": (
+        ", und Atlas berechnet noch keine Routen",
+        ", und die f\u00fcr sie berechneten Verbindungen auch nicht",
+    ),
+    "es": (
+        ", y Atlas a\u00fan no calcula rutas",
+        ", ni los itinerarios calculados para ella",
+    ),
+    "it": (
+        ", e Atlas non calcola ancora gli itinerari",
+        ", n\u00e9 gli itinerari calcolati per essa",
+    ),
 }
 
 
@@ -1955,6 +1988,9 @@ class Findings:
     # (start, end of their sentence or row, "13:42 -> 16:44"), and that time.
     late: list[tuple[int, int, str]] = field(default_factory=list)
     deadline: str = ""
+    # A journey planner computed itineraries this turn: the note never says
+    # that Atlas computes no route (staging -128).
+    planned: bool = False
 
     def __bool__(self) -> bool:
         return bool(
@@ -2016,7 +2052,11 @@ class Findings:
             == sum(1 for _, _, labels in self.route.spans if labels)
         ):
             key = "disputed"
-        return wording(key, language).format(values=self.listed()).replace("….", "…")
+        text = wording(key, language)
+        if self.planned:
+            old, new = _PLANNED.get(language, _PLANNED["en"])
+            text = text.replace(old, "" if key == "disputed" else new)
+        return text.format(values=self.listed()).replace("….", "…")
 
     def listed(self) -> str:
         values = self.labels()
@@ -2051,6 +2091,8 @@ class Turn:
     zone: str = "UTC"
     journey_offered: bool = False
     journey_called: bool = False
+    # A journey planner computed itineraries this turn (transit_planner).
+    planned: bool = False
     results: int = 0
     started: float = field(default_factory=time.monotonic, repr=False)
     held: bool = False
@@ -2554,6 +2596,7 @@ class Turn:
             reverse,
             late,
             _clock_text(deadline) if deadline is not None else "",
+            planned=self.planned,
         )
 
     def kept(self, body: str, found: Findings) -> str:

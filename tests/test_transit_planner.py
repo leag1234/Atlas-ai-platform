@@ -14,7 +14,7 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -24,7 +24,7 @@ import aiohttp
 
 from packages import privacy
 from services.orchestrator import transit_planner as tp
-from services.orchestrator import travel_claims
+from services.orchestrator import relative_dates, travel_claims
 from services.orchestrator.location import Position
 
 FIXTURES = Path(__file__).parent / "fixtures" / "transit"
@@ -85,6 +85,12 @@ PLACES = {
             "Madrid",
             kind="ADDRESS",
         )
+    ],
+    "Boston South Station": [
+        match("Boston (South Station)", 42.3505, -71.0562, "America/New_York", "Boston")
+    ],
+    "Geneva Airport": [
+        match("Geneve-Aeroport", 46.2325, 6.112, "Europe/Zurich", "Le Grand-Saconnex")
     ],
     # Two streets of the same name in two districts: the geocoder ranks them equal.
     "Example Street": [
@@ -165,6 +171,8 @@ class Base(unittest.TestCase):
         language: str = "en",
         position: tuple[float, float] | None = None,
         now: datetime = NOW,
+        days: list[str] | None = None,
+        depart_at: str | None = None,
     ) -> dict[str, Any]:
         config = self.config()
         request = tp.TransitPlan(
@@ -172,6 +180,7 @@ class Base(unittest.TestCase):
             origin=origin,
             from_device_position=position is not None,
             arrive_by=arrive_by,
+            depart_at=depart_at,
         )
         return asyncio.run(
             tp.compute(
@@ -180,7 +189,7 @@ class Base(unittest.TestCase):
                 language=language,
                 position=position,
                 home_zone="Europe/Paris",
-                days=[],
+                days=days or [],
                 now=now,
                 client=tp.Client(config, planner),
             )
@@ -527,3 +536,194 @@ class ParseTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --- Staging -128 (2026-11-19, UI trip battery on the planner) ---------------
+
+
+class NamesTest(Base):
+    def test_kana_service_names_are_romanised_with_the_original(self) -> None:
+        self.assertEqual(
+            tp.service_name("\u306e\u305e\u307f11\u53f7"),
+            "Nozomi 11 (\u306e\u305e\u307f11\u53f7)",
+        )
+        self.assertEqual(tp.service_name("ICE 802"), "ICE 802")
+        self.assertEqual(tp.romanised("\u304d\u3063\u3077"), "kippu")
+        self.assertEqual(tp.romanised("\u3068\u3046\u304d\u3087\u3046"), "toukyou")
+        self.assertEqual(tp.romanised("\u30b7\u30e3\u30c8\u30eb"), "shatoru")
+
+    def test_all_caps_stop_names_are_written_as_names(self) -> None:
+        self.assertEqual(tp.place_name("TOKYO"), "Tokyo")
+        self.assertEqual(tp.place_name("NY PENN STATION"), "Ny Penn Station")
+        self.assertEqual(tp.place_name("7 AV/W 34 ST"), "7 AV/W 34 ST")
+        self.assertEqual(tp.place_name("Gare de Lyon"), "Gare de Lyon")
+        self.assertEqual(tp.place_name("MONDEVILLE Centre"), "MONDEVILLE Centre")
+
+    def test_tokyo_plan_in_english_reads_without_japanese_alone(self) -> None:
+        data = self.compute(
+            Planner("tokyo"),
+            "Kyoto Station",
+            position=(35.681, 139.767),
+            arrive_by="2026-11-20T10:00",
+        )
+        rendered = data["rendered"]
+        self.assertIn(
+            "Train Nozomi 11 (\u306e\u305e\u307f11\u53f7) towards Hakata: Tokyo 07:30",
+            rendered,
+        )
+        self.assertNotIn("TOKYO", rendered)
+        self.assertNotIn("KYOTO", rendered)
+
+
+class DateTest(Base):
+    def test_the_day_the_person_named_wins_over_the_call(self) -> None:
+        # Staging -128: "tmrw" asked, the call gave today, every train was late.
+        planner = Planner("new-york")
+        data = self.compute(
+            planner,
+            "Boston South Station",
+            position=(40.751, -73.992),
+            arrive_by="2026-11-19T11:00",
+            days=["2026-11-20"],
+        )
+        _, params = planner.calls[-1]
+        self.assertEqual(params["time"], "2026-11-20T11:00-05:00")
+        self.assertEqual(data["day"], "2026-11-20")
+        self.assertEqual(data["outcome"], "planned")
+        self.assertIn("Arrives 10:25 for 11:00 requested.", data["rendered"])
+
+    def test_chat_spellings_of_tomorrow_name_the_day(self) -> None:
+        tomorrow = (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        for word in ("tmrw", "tomorow", "tommorow", "tomorrow"):
+            with self.subTest(word=word):
+                self.assertIn(
+                    tomorrow,
+                    travel_claims.user_dates(
+                        [f"i gotta be at the station {word} by 11am"], "UTC"
+                    ),
+                )
+        self.assertTrue(
+            relative_dates.mentions_relative_date("boston south station tmrw by 11am")
+        )
+
+
+class AnswerFactsTest(Base):
+    def depart_turn(self) -> tuple[travel_claims.Turn, dict[str, Any]]:
+        planner = Planner("new-york-depart")
+
+        async def fetch(
+            _self: Any, path: str, params: dict[str, str]
+        ) -> tuple[int, bytes]:
+            return await planner(path, params)
+
+        turn = travel_claims.Turn(
+            active=True,
+            asked=["whats the best train from here to Boston South Station?"],
+            zone="America/New_York",
+            position=Position(latitude=40.751, longitude=-73.992),
+        )
+        result = self.run_tool(
+            {
+                "destination": "Boston South Station",
+                "from_device_position": True,
+                "depart_at": "2026-11-20T07:30",
+            },
+            fetch,
+            turn,
+        )
+        return turn, result["data"]
+
+    def test_the_operator_of_a_planned_train_is_a_fact_of_the_plan(self) -> None:
+        turn, data = self.depart_turn()
+        self.assertTrue(turn.planned)
+        sentence = (
+            "The earliest option is Amtrak Acela 2150, which leaves Ny Moynihan "
+            "Train Hall At Penn Station at 07:57 and arrives at Boston at 11:44."
+        )
+        checked = turn.check(data["attribution"] + "\n\n" + sentence, "en")
+        self.assertIn(sentence, checked)
+        self.assertNotIn("Not verified", checked)
+
+    def test_after_a_plan_the_note_never_says_atlas_computes_no_route(self) -> None:
+        turn, data = self.depart_turn()
+        answer = (
+            data["rendered"]
+            + "\n\nThen take the Red Line towards Alewife from South Station at 12:10."
+        )
+        for language, clause in (
+            ("en", "nor do the itineraries computed for it"),
+            ("fr", "ni les itin\u00e9raires calcul\u00e9s pour elle"),
+        ):
+            with self.subTest(language=language):
+                checked = turn.check(answer, language)
+                self.assertNotIn("Alewife", checked.partition("\n\nN")[0])
+                self.assertIn(clause, checked)
+                self.assertNotIn("does not compute routes", checked)
+                self.assertNotIn("ne calcule pas encore", checked)
+
+    def test_without_a_plan_the_note_still_says_so(self) -> None:
+        turn = travel_claims.Turn(active=True, asked=["train to Boston?"])
+        checked = turn.check("Take the Red Line towards Alewife at 12:10.", "en")
+        self.assertIn("does not compute routes yet", checked)
+
+    def test_the_instruction_asks_for_the_second_person(self) -> None:
+        _, data = self.depart_turn()
+        self.assertIn("second person", data["instruction"])
+        self.assertIn("never in their own first-person words", data["instruction"])
+        self.assertIn("second person", tp.DESCRIPTION)
+
+
+# The seven trips of the staging battery: start, destination, deadline.
+BATTERY = {
+    "caen": ((49.181, -0.364), (48.8446, 2.3751), "Europe/Paris", 12, 30),
+    "munich": ((48.1542, 11.5315), (52.525, 13.3692), "Europe/Berlin", 14, 0),
+    "lyon": ((45.769, 4.882), (46.2325, 6.112), "Europe/Zurich", 9, 0),
+    "new-york": ((40.7508, -73.9923), (42.3505, -71.0562), "America/New_York", 11, 0),
+    "tokyo": ((35.681, 139.767), (34.9842, 135.7593), "Asia/Tokyo", 10, 0),
+    "sydney": ((-33.869, 151.21), (-33.9463, 151.1881), "Australia/Sydney", 7, 0),
+    "madrid": ((40.4178, -3.699), (41.3753, 2.1349), "Europe/Madrid", 13, 0),
+}
+
+
+class DoubtTest(Base):
+    def test_only_the_night_coach_chain_of_the_battery_is_doubtful(self) -> None:
+        early = datetime(2026, 11, 19, 6, 0, tzinfo=timezone.utc)
+        for name, (start, end, zone, hour, minute) in BATTERY.items():
+            with self.subTest(trip=name):
+                deadline = datetime(2026, 11, 20, hour, minute, tzinfo=ZoneInfo(zone))
+                kept, _ = tp.selected(
+                    tp.parse(recorded(name), ZoneInfo(zone)),
+                    now=early,
+                    deadline=deadline,
+                )
+                found = tp.doubts(kept, tp._distance_km(start, end), deadline)
+                self.assertEqual(bool(found), name == "lyon", found)
+
+    def test_a_doubtful_plan_is_a_fallback_with_a_caution(self) -> None:
+        data = self.compute(
+            Planner("lyon"),
+            "Geneva Airport",
+            position=(45.769, 4.882),
+            arrive_by="2026-11-20T09:00",
+            language="fr",
+            now=datetime(2026, 11, 19, 18, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(data["outcome"], "doubtful")
+        self.assertEqual(set(data["doubts"]), {"slow", "night"})
+        self.assertIn(
+            "_Attention : l\u2019itin\u00e9raire le plus rapide", data["rendered"]
+        )
+        self.assertIn("partent la nuit", data["rendered"])
+        self.assertIn("fallback", data["next_step"])
+        self.assertIn("never as the answer", data["next_step"])
+
+    def test_a_plausible_plan_has_no_caution(self) -> None:
+        data = self.compute(
+            Planner("munich"),
+            "Berlin Hauptbahnhof",
+            origin="Lindenweg 4, Munich",
+            arrive_by="2026-11-20T14:00",
+        )
+        self.assertEqual(data["outcome"], "planned")
+        self.assertNotIn("doubts", data)
+        self.assertNotIn("Caution", data["rendered"])
