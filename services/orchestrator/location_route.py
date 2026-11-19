@@ -387,10 +387,12 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
                 item, no_position_reply("privacy", request.lang), "location_privacy"
             )
             return True
-        from services.orchestrator.nearby import OSM, NearbyError
+        from services.orchestrator.nearby import OSM as MapService
+        from services.orchestrator.nearby import NearbyError
 
         try:
-            place = await OSM().reverse(position, request.lang)
+            osm = MapService()
+            place = await osm.reverse(position, request.lang)
         except NearbyError:
             await ask(
                 item,
@@ -403,7 +405,11 @@ async def location_turn(request: ChatRequest, item: Interaction) -> bool:
         )
         if travel is not None:
             # Kept for this turn only: the straight-line distance code computes.
-            travel.located(place=place, position=position)
+            travel.located(
+                place=place,
+                place_names=osm.place_names,
+                position=position,
+            )
         label = LEDGER_LABEL_REUSED if reused else LEDGER_LABEL
         item.location_used = label
         if sink := sink_context.get():

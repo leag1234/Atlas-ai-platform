@@ -244,6 +244,25 @@ class PlaceScriptTests(unittest.IsolatedAsyncioTestCase):
         assert call.await_args is not None
         self.assertEqual(call.await_args.args[1]["accept-language"], "en")
 
+    async def test_reverse_geocoding_keeps_the_place_names_it_read(self) -> None:
+        osm = OSM()
+        answer = {
+            "address": {
+                "road": "Blumenweg",
+                "suburb": "Neuhausen",
+                "city": "München",
+                "postcode": "80636",
+                "country": "Germany",
+            },
+            "namedetails": {"name": "München", "name:en": "Munich"},
+        }
+        with patch.object(osm, "request", AsyncMock(return_value=answer)) as call:
+            place = await osm.reverse(Position(latitude=48.15, longitude=11.53), "en")
+        self.assertEqual(place, "Blumenweg, Neuhausen, 80636 München, Germany")
+        self.assertEqual(osm.place_names, ["München", "Munich"])
+        assert call.await_args is not None
+        self.assertEqual(call.await_args.args[1]["namedetails"], "1")
+
 
 if __name__ == "__main__":
     unittest.main()

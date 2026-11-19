@@ -248,6 +248,7 @@ class OSM:
         self.served_by = ""
         self.failures: list[str] = []
         self.area = ""
+        self.place_names: list[str] = []
 
     async def request(
         self, service: str, parameters: dict[str, str], endpoint: str | None = None
@@ -464,6 +465,7 @@ class OSM:
                 "format": "jsonv2",
                 "zoom": "17",
                 "addressdetails": "1",
+                "namedetails": "1",
                 **({"accept-language": language[:2]} if language[:2].isalpha() else {}),
             },
             endpoint,
@@ -487,6 +489,16 @@ class OSM:
         locality = first("city", "town", "village", "municipality")
         postcode = first("postcode")
         country = first("country")
+        details = data.get("namedetails") if isinstance(data, dict) else None
+        self.place_names = []
+        if isinstance(details, dict):
+            self.place_names = [
+                value[:100]
+                for key, value in details.items()
+                if (key == "name" or key.startswith("name:"))
+                and isinstance(value, str)
+                and value
+            ]
         if not locality and not district:
             raise NearbyError("place_not_found")
         self.area = locality or district
