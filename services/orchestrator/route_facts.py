@@ -267,6 +267,9 @@ class Unit:
     parentheses: list[tuple[int, int, list[Anchor]]] = field(default_factory=list)
     cells: list[tuple[int, list[Anchor]]] = field(default_factory=list)
     computed: bool = False
+    # Names given as a line's direction ("direction X", "towards X"), each
+    # with the span of its phrase in the body.
+    directions: list[tuple[Anchor, int, int]] = field(default_factory=list)
 
 
 @dataclass
@@ -446,6 +449,78 @@ class Sources:
             ):
                 return True
         return False
+
+    def directed(
+        self,
+        direction: Anchor,
+        lines: list[Anchor],
+        stops: list[Anchor],
+        ahead: list[Anchor],
+    ) -> bool:
+        """Whether a page gives this direction for the leg.
+
+        Either a passage gives the name as a direction ("direction X",
+        "Richtung X") within one window of the leg's line and stops, or a
+        sentence naming the line lists its stops in order with the leg's
+        stop to get off between the stop it is boarded at and the direction
+        (staging -126: a page saying line A links its two termini gave no
+        direction for a leg from a stop between them). The stop to get off
+        is the leg's last stop, else the first stop of the next sentences
+        the list names.
+        """
+        words = direction.key.split()
+        if not words:
+            return True
+        name = r"(?: \w+){0,2} ".join(map(re.escape, words))
+        pattern = re.compile(rf"(?<!\w)(?:{_DIRECTION_N})(?: \w+){{0,3}}? {name}(?!\w)")
+        hits = self.hits(pattern)
+        for index, found in enumerate(hits):
+            if not found:
+                continue
+            located = [self._positions(a, index) for a in (*lines, *stops)]
+            if any(item is None for item in located):
+                continue
+            positions = [found, *(h for item in located if item for h in item)]
+            if _window(positions):
+                return True
+        if not lines or not stops:
+            return False
+        board = stops[0]
+        for index, passage in enumerate(self.passages):
+            for left, right in self.sentences[index]:
+                if not any(
+                    p.search(passage, left, right) for a in lines for p in a.patterns
+                ):
+                    continue
+                terminus = self._at(direction, passage, left, right)
+                boarded = self._at(board, passage, left, right)
+                if terminus is None or boarded is None or terminus == boarded:
+                    continue
+                off = [
+                    at
+                    for anchor in (stops[1:] if len(stops) > 1 else ahead)
+                    if (at := self._at(anchor, passage, left, right)) is not None
+                    and at != boarded
+                ]
+                if not off:
+                    continue
+                if len(stops) > 1:
+                    off = off[-1:]
+                stop = off[0]
+                if boarded < stop <= terminus or terminus <= stop < boarded:
+                    return True
+        return False
+
+    def _at(self, anchor: Anchor, passage: str, left: int, right: int) -> int | None:
+        """Where a name is in one sentence of a passage: its first word, all
+        its words in the sentence; None when it is not there."""
+        first: int | None = None
+        for pattern in anchor.patterns:
+            match = pattern.search(passage, left, right)
+            if match is None:
+                return None
+            first = match.start() if first is None else first
+        return first
 
     def _listing(self, index: int) -> bool:
         """A passage naming several lines (a network page, a map legend), where
@@ -751,6 +826,49 @@ def _breaks(tokens: list[re.Match[str]], index: int, plain: str) -> bool:
     )
 
 
+# A line's direction in an answer, read before its name (folded, apostrophes
+# as spaces): "en direction de", "towards", "in Richtung", "en direccion a",
+# "in direzione di", "sentido". Staging -126: "line A direction Vaulx-en-Velin
+# La Soie" from a stop where the leg runs the other way was kept because a
+# page about line A named both termini.
+_DIRECTION_BEFORE = re.compile(
+    r"(?:(?<![\w-])(?:en|in|im|nella)[ \t]++)?+"
+    r"(?<![\w-])(?:direction|directions|towards?+|richtung|direccion|direzione|"
+    r"sentido|bound for)(?:[ \t]*+:)?+"
+    r"(?:[ \t]++(?:de|du|des|d|of|von|del|della|di|to|a|per))?+"
+    r"(?:[ \t]++(?:la|le|les|l|the|der|die|das|den|dem|el|los|las|il|lo|gli))?+"
+    r"[ \t*_]*+$"
+)
+# The same words in a normalized source passage ("vers", "nach" and "hacia"
+# too: a page saying "U3 nach Moosach" gives a direction).
+_DIRECTION_N = (
+    "direction|directions|towards|toward|richtung|direccion|direzione|sentido|"
+    "bound for|vers|hacia|verso|nach"
+)
+# The rest of a direction's name after its anchor ("Vaulx-en-Velin La Soie").
+_NAME_REST = re.compile(
+    r"(?:[ \u00a0]++(?:(?:de|du|des|del|di|da|la|le|les|am|im|an|sur|sous)"
+    r"[ \u00a0]++)?+[A-Z\u00c0-\u00de][\w'\u2019-]*+)*+[*_]*+"
+)
+
+
+def _directions(
+    plain: str, folded: str, start: int, names: list[Anchor]
+) -> list[tuple[Anchor, int, int]]:
+    """The names of a sentence given as a line's direction, with their phrase."""
+    found: list[tuple[Anchor, int, int]] = []
+    for name in names:
+        left = max(start, name.position - 40)
+        before = folded[left : name.position].replace("'", " ").replace("\u2019", " ")
+        match = _DIRECTION_BEFORE.search(before)
+        if match is None:
+            continue
+        end = name.position + len(name.text)
+        rest = _NAME_REST.match(plain, end)
+        found.append((name, left + match.start(), rest.end() if rest else end))
+    return found
+
+
 def _lines(plain: str, folded: str, start: int, end: int) -> list[Anchor]:
     found: dict[str, Anchor] = {}
     for match in _LINE_WORD.finditer(folded, start, end):
@@ -847,6 +965,8 @@ def _read(
     if unit.gap:
         unit.route = False
     unit.anchors = anchors
+    if lines:
+        unit.directions = _directions(plain, folded, start, names)
     if not unit.route:
         return
     for clock_start, clock_end, value in timed:
@@ -1149,6 +1269,48 @@ def _cuts(
     return []
 
 
+def _directed(
+    sources: Sources, unit: Unit, direction: Anchor, ahead: list[Anchor]
+) -> bool:
+    """Whether a page gives this direction for the leg (``Sources.directed``):
+    the leg is the part of the sentence on the direction's line."""
+    named = {anchor for anchor, _, _ in unit.directions}
+    part = next((p for p in _segments(unit.anchors) if direction in p), unit.anchors)
+    lines = [a for a in part if a.kind == "line"]
+    if not lines:
+        return True
+    stops = sorted(
+        (a for a in part if a.kind == "name" and a not in named),
+        key=lambda a: a.position,
+    )
+    return sources.directed(direction, lines, stops, ahead)
+
+
+def _ahead(units: list[Unit], unit: Unit, plain: str, folded: str) -> list[Anchor]:
+    """The place names of the two sentences after ``unit``, in order: where
+    a leg with no stop to get off goes next."""
+    index = units.index(unit)
+    return [
+        name
+        for following in units[index + 1 : index + 3]
+        for name in _names(plain, folded, following.start, following.end)
+    ]
+
+
+def _phrase(body: str, left: int, right: int) -> tuple[int, int]:
+    """A direction phrase as it is cut: with its parentheses, its commas or
+    the space before it, so the sentence still reads."""
+    if body[left - 1 : left] == "(" and body[right : right + 1] == ")":
+        left, right = left - 1, right + 1
+        return (left - 1 if body[left - 1 : left] == " " else left), right
+    before = body[:left].rstrip(" ")
+    if before.endswith(",") and body[right:].lstrip(" ").startswith(
+        (",", ".", ";", ")")
+    ):
+        return len(before) - 1, right
+    return (left - 1 if body[left - 1 : left] == " " else left), right
+
+
 def review(
     body: str,
     plain: str,
@@ -1173,6 +1335,9 @@ def review(
     finding = Finding()
     units = _units(body)
     removed: list[bool] = []
+    # Direction phrases no page gives for the leg: cut from sentences that
+    # otherwise stay (index of the unit, spans).
+    directions: dict[int, list[tuple[int, int]]] = {}
     for unit in units:
         line_start = body.rfind("\n", 0, unit.start) + 1
         line_end = body.find("\n", unit.start)
@@ -1186,10 +1351,31 @@ def review(
         if unit.start == len(body) - len(body.lstrip()) and not unit.row:
             finding.lead_start = unit.start
             finding.leads = _restated(body, unit, sources)
+        undirected = (
+            [
+                d
+                for d in unit.directions
+                if not _directed(
+                    sources, unit, d[0], _ahead(units, unit, plain, folded)
+                )
+            ]
+            if unit.route
+            else []
+        )
+        if undirected and not unit.row:
+            cut = [anchor for anchor, _, _ in undirected]
+            unit.anchors = [a for a in unit.anchors if a not in cut]
+            unit.parentheses = [
+                (left, right, [a for a in inside if a not in cut])
+                for left, right, inside in unit.parentheses
+            ]
+            directions[len(removed)] = [
+                _phrase(body, left, right) for _, left, right in undirected
+            ]
         if not unit.route or not a_route(unit.anchors):
             removed.append(False)
             continue
-        if not _failing(sources, unit.anchors):
+        if not _failing(sources, unit.anchors) and not (unit.row and undirected):
             if unit.row or not sites.disputed(unit.anchors):
                 removed.append(False)
                 continue
@@ -1253,6 +1439,13 @@ def review(
                 (text for _, text, route in finding.leads if route), ""
             )
         removed.append(True)
+    for index, spans in directions.items():
+        if removed[index]:
+            continue
+        for left, right in spans:
+            label = quoted(body[left:right])
+            finding.spans.append((left, right, [label] if label else []))
+            finding.exact.add((left, right))
     if not finding.spans:
         return finding
     # A sentence that only continues a removed one ("Trains run every few

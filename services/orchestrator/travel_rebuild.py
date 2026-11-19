@@ -491,6 +491,12 @@ def _prompt(
         f"PLAN:\n{plan or '(none)'}\n\n"
         f"SOURCE EXCERPTS:\n{sources or '(none)'}\n\n"
         f"NOT VERIFIED:\n{', '.join(found.labels()) or '(none)'}"
+        + (
+            f"\n\nARRIVE BY: {found.deadline}. These departures arrive after "
+            f"it; never offer them: {', '.join(found.late_labels())}"
+            if found.late
+            else ""
+        )
     )
 
 
