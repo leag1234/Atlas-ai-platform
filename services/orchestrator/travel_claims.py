@@ -2155,6 +2155,10 @@ class Turn:
     # (transit_planner.planned_answer), never a paraphrase of it.
     plan: str = ""
     plan_times: set[str] = field(default_factory=set)
+    # Each itinerary's departure and arrival (HH:MM): the model's sums of the
+    # plan (a margin before the deadline, a later option) are worked out from
+    # them.
+    plan_ends: list[tuple[str, str]] = field(default_factory=list)
     # The computed plan when it is doubtful (night only, far too slow): a
     # fallback after what the pages read say (transit_planner.doubtful_answer),
     # why it is doubtful, and the pages code read about the direct services.
@@ -2280,9 +2284,36 @@ class Turn:
         """Values written by code this turn (journey plan, straight-line distance)."""
         self.computed.append(text)
 
-    def trip_dates(self) -> list[str]:
-        """The days the person named for the trip (ISO), in their zone."""
-        return user_dates(self.asked, self.zone)
+    def trip_dates(self, zone: str = "") -> list[str]:
+        """The days the person named for the trip (ISO), in their zone (or
+        ``zone``: where their device is, for the journey planner)."""
+        return user_dates(self.asked, zone or self.zone)
+
+    def plan_gaps(self) -> list[float]:
+        """Minutes the computed plan gives by arithmetic: each itinerary's
+        duration, its margin before the time the person must be there by (and
+        from its departure), and the gaps between the options' departures and
+        between their arrivals (staging -132: "12:17, soit seulement 13
+        minutes avant votre déjeuner" for 12:30 was listed as not verified)."""
+
+        def minutes(clock: str) -> float:
+            return int(clock[:2]) * 60 + int(clock[3:5])
+
+        ends = [
+            (minutes(a), minutes(b))
+            for a, b in self.plan_ends
+            if re.fullmatch(r"\d\d:\d\d", a) and re.fullmatch(r"\d\d:\d\d", b)
+        ]
+        deadline = self.deadline()
+        gaps: set[float] = set()
+        for depart, arrive in ends:
+            gaps.add((arrive - depart) % 1440)
+            if deadline is not None:
+                gaps.update({(deadline - arrive) % 1440, (deadline - depart) % 1440})
+        for column in (0, 1):
+            values = [pair[column] for pair in ends]
+            gaps.update(_gap(a, b) for a in values for b in values if a != b)
+        return sorted(gap for gap in gaps if gap > 0)
 
     def other_days(self) -> dict[float, set[str]]:
         """Clock times the sources give only next to another date than the trip's.
@@ -2503,12 +2534,20 @@ class Turn:
                 return True
             return any(_rounded(value, item) for item in stated)
 
+        plan_gaps = self.plan_gaps()
+
         def supported(claim: Quantity) -> bool:
             values, durations = cited(claim)
             if all(
                 matches(claim, value, values, durations)
                 for value in _range_values(claim)
             ):
+                return True
+            if claim.kind == "duration" and all(
+                any(abs(value - gap) <= 1 for gap in plan_gaps)
+                for value in _range_values(claim)
+            ):
+                # Arithmetic on the computed plan's own times.
                 return True
             if other_day(claim):
                 return True
@@ -2643,6 +2682,7 @@ class Turn:
             owned_clocks,
             given=[self.place],
             pages=self.pages(),
+            plan=self.plan,
         )
         # A sentence the values check already leaves out needs no second reason.
         taken = [_removal(body, claim) for claim in (*flagged, *reverse, *elsewhere)]

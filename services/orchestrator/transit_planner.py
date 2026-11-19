@@ -409,6 +409,22 @@ def choose(matches: list[dict[str, Any]], *, biased: bool) -> dict[str, Any]:
     return first
 
 
+def zone_at(latitude: float, longitude: float) -> str:
+    """The time zone at a point (offline, from the zone boundaries the
+    opening-hours library ships); "" when unknown or a sea zone."""
+    try:
+        from opening_hours import OpeningHours
+
+        now = datetime.now(ZoneInfo("UTC"))
+        hours = OpeningHours("24/7", coords=(latitude, longitude))
+        start = next(hours.intervals(now, now + timedelta(minutes=1)))[0]
+        name = str(start.tzinfo or "")
+        ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - an unknown zone leaves the person's own
+        return ""
+    return "" if name.startswith("Etc/") else name
+
+
 def zone_of(name: object, fallback: str = "UTC") -> ZoneInfo:
     for candidate in (name, fallback, "UTC"):
         if isinstance(candidate, str) and candidate:
@@ -1342,6 +1358,7 @@ async def compute(
             data["direct_query"] = await _direct_query(
                 client, start, origin_match, target, language
             )
+            data["direct_destination"] = str(target.get("name") or "")
     else:
         data["next_step"] = NEXT_STEPS.get(verdict, FALLBACK)
         if verdict == "none_by_deadline":
@@ -1425,8 +1442,12 @@ async def _direct_query(
     """The web search for the direct services of a doubtful trip: the start's
     town (never the person's street or position) and the destination's name."""
     town = ""
-    if origin is not None and origin.get("type") in {"STOP", "PLACE"}:
+    if origin is not None and origin.get("type") == "PLACE":
         town = str(origin.get("name") or "")
+    elif origin is not None and origin.get("type") == "STOP":
+        # A stop's name is no town (staging -132: "Gratte-Ciel Rollet" found
+        # pages about skyscrapers and a cyclist, nothing about the trains).
+        town = _area(origin) or str(origin.get("name") or "")
     elif origin is not None:
         town = _area(origin)
     else:
@@ -1441,6 +1462,23 @@ async def _direct_query(
         return ""
     return str(words(language)["direct_query"]).format(
         a=_clean(town), b=_clean(destination)
+    )
+
+
+# Words of a destination's name that name no place (five languages): a page
+# must name the destination by another word to be about this trip.
+_GENERIC = frozenset(
+    "airport aeroport aeropuerto aeroporto flughafen station gare bahnhof "
+    "hauptbahnhof hbf estacion stazione centrale central centro terminal "
+    "international internationale city ville stadt ciudad citta "
+    "de du des la le les the of di del della von der den el".split()
+)
+
+
+def place_words(name: str) -> set[str]:
+    """The words of a place name that name it (folded, three letters or more)."""
+    return {w for w in _folded(name).replace("-", " ").split() if len(w) >= 3} - (
+        _GENERIC
     )
 
 
@@ -1467,6 +1505,13 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
         if turn is not None and turn.position is not None
         else None
     )
+    # The person's "tomorrow" is the day after theirs where their device is
+    # (staging -132: a browser on UTC located in Sydney, where it was already
+    # 07:55 on the 20th, planned "tomorrow" for the 20th; the 08:00 deadline
+    # was minutes away and no itinerary could make it).
+    local = (zone_at(*position) if position is not None else "") or (
+        turn.zone if turn is not None else ""
+    )
     try:
         async with asyncio.timeout(max(1.0, min(timeout, config.timeout * 3))):
             data = await compute(
@@ -1474,8 +1519,8 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
                 config=config,
                 language=turn.language if turn is not None else "en",
                 position=position,
-                home_zone=(turn.zone if turn is not None else "") or home_zone,
-                days=turn.trip_dates() if turn is not None else [],
+                home_zone=local or home_zone,
+                days=turn.trip_dates(local) if turn is not None else [],
             )
     except PrivacyRefusal:
         return {"error": "tool_unavailable", "next_step": FALLBACK}
@@ -1497,11 +1542,12 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
             # direct services or says that none was found (doubtful_answer).
             turn.doubtful = str(data["rendered"])
             turn.doubt_reason = str(data.get("doubt_reason") or "")
-            turn.plan, turn.plan_times = "", set()
+            turn.plan, turn.plan_times, turn.plan_ends = "", set(), []
         else:
             # The plan is the answer's block, given unaltered (planned_answer).
             turn.plan = str(data["rendered"])
             turn.plan_times = _plan_times(data["itineraries"])
+            turn.plan_ends = _plan_ends(data["itineraries"])
             turn.doubtful = turn.doubt_reason = ""
     if data.get("rendered"):
         # Computed facts of this turn (D7): the plan as written, and each
@@ -1517,15 +1563,28 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
     return {"data": data}
 
 
-def with_attribution(answer: str, computed: list[str], language: str) -> str:
+def with_attribution(
+    answer: str, computed: list[str], language: str, blocks: tuple[str, ...] = ()
+) -> str:
     """An answer that uses a plan keeps the planner's attribution visible
-    (Transitous usage policy): added at the end of the body when missing."""
+    (Transitous usage policy): added at the end of the body when missing.
+
+    With ``blocks`` (the turn's computed plan blocks), only when the answer
+    shows one: a plan with no itinerary on time is no plan given (staging
+    -132: Sydney's web-only answer ended with "Itineraries computed with
+    Transitous").
+    """
     config = settings()
     if config is None or not answer.strip():
         return answer
     if not any(config.attribution_url in text and OSM_URL in text for text in computed):
         return answer
     body, fold, footer = answer.partition("<details>")
+    if blocks and not any(
+        block.strip() and _block_span(body.splitlines(), block) is not None
+        for block in blocks
+    ):
+        return answer
     if config.attribution_url in body and OSM_URL in body:
         return answer
     line = attribution(language, config)
@@ -1535,17 +1594,30 @@ def with_attribution(answer: str, computed: list[str], language: str) -> str:
 # --- Doubtful plans: the operators' direct services first ------------------------
 
 
-def direct_candidates(data: object, config: Settings | None = None) -> list[str]:
+def direct_candidates(
+    data: object, config: Settings | None = None, destination: str = ""
+) -> list[str]:
     """The pages of a direct-services search to read: its first results that
-    are not the planner's own attribution pages."""
+    are not the planner's own attribution pages and, when the destination is
+    known, whose title, extract or address names it (staging -132: the first
+    two results were encyclopedia articles about the start's stop name, read
+    instead of the airport's access page ranked fourth)."""
     config = config or settings()
     own = {OSM_URL, config.attribution_url if config else SOURCES_URL}
+    wanted = place_words(destination)
     rows = data.get("results") if isinstance(data, dict) else None
     links: list[str] = []
     for row in rows if isinstance(rows, list) else []:
         link = row.get("link") if isinstance(row, dict) else None
-        if isinstance(link, str) and link not in own and link not in links:
-            links.append(link)
+        if not isinstance(link, str) or link in own or link in links:
+            continue
+        if wanted:
+            about = " ".join(
+                str(row.get(key) or "") for key in ("title", "snippet", "link")
+            )
+            if not wanted & set(_folded(about).split()):
+                continue
+        links.append(link)
     return links[:DIRECT_PAGES]
 
 
@@ -1603,6 +1675,18 @@ def _plan_times(itineraries: object) -> set[str]:
     }
 
 
+def _plan_ends(itineraries: object) -> list[tuple[str, str]]:
+    """Each itinerary's departure and arrival (HH:MM)."""
+    ends: list[tuple[str, str]] = []
+    for itinerary in itineraries if isinstance(itineraries, list) else []:
+        if not isinstance(itinerary, dict):
+            continue
+        depart, arrive = itinerary.get("depart"), itinerary.get("arrive")
+        if isinstance(depart, str) and isinstance(arrive, str):
+            ends.append((depart[11:16], arrive[11:16]))
+    return ends
+
+
 def _plain(line: str) -> str:
     return " ".join(line.split())
 
@@ -1638,19 +1722,33 @@ def _web(line: str, own: set[str]) -> bool:
     return any(url not in own for _, url in _MD_LINK.findall(line))
 
 
+_QUOTES = str.maketrans({"\u2019": "'", "\u2018": "'", "\u00a0": " ", "\u202f": " "})
+
+
+def _loose(line: str) -> str:
+    """A line as a copy of a block line is compared: emphasis, quotes, case
+    and the spaces around punctuation aside (staging -132: the model's copy of
+    the time-zone note, "publiés;" for the block's "publiés ;", was given
+    twice)."""
+    text = re.sub(r"[*_`]+", "", line.translate(_QUOTES))
+    text = re.sub(r"\s*([;:,.!?])", r"\1", " ".join(text.split()))
+    return text.strip(" -").casefold()
+
+
 def _plan_marks(
     lines: list[str], block: str, clocks: set[str], own: set[str]
 ) -> list[bool]:
-    """Which lines restate the computed plan: a line of its block, a line
-    citing only the planner, or a line without a page link giving one of its
-    clock times (staging -131: "Option 2: leave 07:39, arrive 11:03")."""
-    plan_lines = set(_block_lines(block))
+    """Which lines restate the computed plan: a line of its block (or a copy
+    of one), a line citing only the planner, or a line without a page link
+    giving one of its clock times (staging -131: "Option 2: leave 07:39,
+    arrive 11:03")."""
+    plan_lines = {_loose(line) for line in _block_lines(block)}
 
     def planned(line: str) -> bool:
         plain = _plain(line)
         if not plain:
             return False
-        if plain in plan_lines:
+        if _loose(plain) in plan_lines:
             return True
         if _web(line, own):
             return False
@@ -1658,6 +1756,41 @@ def _plan_marks(
         return cited or bool(_clocks(_MD_LINK.sub(r"\1", line)) & clocks)
 
     return [planned(line) for line in lines]
+
+
+def _notes(block: str) -> set[str]:
+    """The block's closing notes (time zones, attribution): the lines after
+    its last clock time. A copy of one goes, but never places the block."""
+    lines = _block_lines(block)
+    last = max((i for i, line in enumerate(lines) if _clocks(line)), default=-1)
+    return {_loose(line) for line in lines[last + 1 :]}
+
+
+def _announcements(
+    lines: list[str], marks: list[bool], own: set[str], block_at: int | None = None
+) -> None:
+    """Mark the lines that only announced what went (they end with ":"): the
+    restated plan, or nothing at all (staging -132: a Munich answer ended
+    with "All options ... arrive well before your 14:00 deadline:" once its
+    list, a restatement of the plan, was taken out). A line just before the
+    place of the block introduces the block and stays."""
+    for index in range(len(lines) - 1, -1, -1):
+        text = lines[index].strip().rstrip("*_ ")
+        if marks[index] or not text.endswith(":") or _web(lines[index], own):
+            continue
+        following = next(
+            (
+                j
+                for j in range(index + 1, len(lines))
+                if lines[j].strip() and not marks[j]
+            ),
+            None,
+        )
+        end = len(lines) if following is None else following
+        if block_at is not None and index < block_at and end >= block_at:
+            continue
+        if following is None or any(marks[index + 1 : end]):
+            marks[index] = True
 
 
 def without_plans(answer: str, turn: Any) -> tuple[str, bool]:
@@ -1701,7 +1834,9 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     giving one of its times without a page link) go, and the block takes the
     place of the first of them; with none, it opens the answer when it did,
     else follows its first paragraph (staging -131: a Madrid answer rewritten
-    as prose lost its AVE leg, and its option 2 had no leg at all).
+    as prose lost its AVE leg, and its option 2 had no leg at all). A copy of
+    the block's closing notes goes too, and a line that only announced what
+    went (staging -132).
     """
     block = turn.plan.strip()
     if not block or turn.doubtful:
@@ -1714,7 +1849,12 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
         return answer
     own = own_urls()
     marks = _plan_marks(lines, block, turn.plan_times, own)
-    hits = [index for index, mark in enumerate(marks) if mark]
+    notes = _notes(block)
+    hits = [
+        index
+        for index, mark in enumerate(marks)
+        if mark and _loose(_plain(lines[index])) not in notes
+    ]
     if hits:
         # A list item or an option heading inside the restated plan goes too.
         for index in range(hits[0], hits[-1] + 1):
@@ -1724,10 +1864,14 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     elif first:
         at = 0
     else:
-        filled = next((i for i, line in enumerate(lines) if line.strip()), len(lines))
+        filled = next(
+            (i for i, line in enumerate(lines) if line.strip() and not marks[i]),
+            len(lines),
+        )
         at = next(
             (i for i in range(filled, len(lines)) if not lines[i].strip()), len(lines)
         )
+    _announcements(lines, marks, own, at)
     head = "\n".join(line for line, mark in zip(lines[:at], marks[:at]) if not mark)
     tail = "\n".join(line for line, mark in zip(lines[at:], marks[at:]) if not mark)
     parts = [
@@ -1737,6 +1881,47 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     ]
     final = "\n\n".join(part for part in parts if part)
     return final + ("\n\n" + fold + footer if fold else "")
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_HEADING = re.compile(
+    r"^[ \t]*+(?:#{1,6}[ \t]|(?:\*\*|__)[^*_\n]++(?:\*\*|__)[ \t]*+:?+[ \t]*+$)"
+)
+
+
+def _read_only(text: str, own: set[str]) -> str:
+    """The sentences of ``text`` that cite a page read (a list item whole),
+    and the headings of what is kept: for a doubtful plan nothing else of the
+    model's words stands (staging -132: "Il n'existe pas de liaison directe ;
+    le trajet passe par Lyon puis Genève", no page read, stayed above the
+    night chain although direct trains run)."""
+    kept: list[str] = []
+    for line in text.splitlines():
+        if not line.strip():
+            kept.append("")
+            continue
+        if _HEADING.match(line) and not _web(line, own):
+            kept.append(line)
+            continue
+        if _ITEM.match(line):
+            kept.append(line if _web(line, own) else "")
+            continue
+        pieces: list[str] = []
+        for piece in _SENTENCE_END.split(line.strip()):
+            if pieces and not re.search(r"[^\W\d_]", _MD_LINK.sub("", piece)):
+                # A citation after its sentence's full stop belongs to it.
+                pieces[-1] += " " + piece
+            else:
+                pieces.append(piece)
+        kept.append(" ".join(piece for piece in pieces if _web(piece, own)))
+    lines = kept
+    # A heading stays only above kept text of its own.
+    for index in range(len(lines) - 1, -1, -1):
+        if lines[index].strip() and _HEADING.match(lines[index]):
+            following = next((line for line in lines[index + 1 :] if line.strip()), "")
+            if not following or _HEADING.match(following):
+                lines[index] = ""
+    return _tidy("\n".join(lines))
 
 
 def doubtful_answer(answer: str, language: str, turn: Any = None) -> str:
@@ -1749,7 +1934,9 @@ def doubtful_answer(answer: str, language: str, turn: Any = None) -> str:
     ``turn`` is passed by the pipeline: its post-checks run after the turn's
     context is reset (staging -131: this read an empty context, and the
     Geneva night chain stayed the answer). An answer left empty (it was the
-    fallback block alone) gets the statement and the fallback.
+    fallback block alone) gets the statement and the fallback. Only the
+    model's sentences citing a page read stand: the open data lacks a service
+    here, so nothing else says what runs or does not (staging -132).
     """
     from services.orchestrator import travel_claims
 
@@ -1762,19 +1949,9 @@ def doubtful_answer(answer: str, language: str, turn: Any = None) -> str:
     body, fold, footer = answer.partition("<details>")
     lines = body.splitlines()
     marks = _plan_marks(lines, fallback, _clocks(fallback), own)
-    for index in range(len(lines) - 1, -1, -1):
-        # A line that only announces the plan ("the most direct option found:")
-        # goes with it.
-        text = lines[index].strip().rstrip("*_ ")
-        if marks[index] or not text.endswith(":") or _web(lines[index], own):
-            continue
-        following = next(
-            (j for j in range(index + 1, len(lines)) if lines[j].strip()), None
-        )
-        if following is not None and marks[following]:
-            marks[index] = True
+    _announcements(lines, marks, own)
     kept = "\n".join(line for line, mark in zip(lines, marks) if not mark)
-    kept = _tidy(travel_claims.wellformed(kept))
+    kept = _read_only(_tidy(travel_claims.wellformed(kept)), own)
     w = words(language)
     if kept and _web(kept, own):
         parts = [kept, fallback]
@@ -1783,8 +1960,55 @@ def doubtful_answer(answer: str, language: str, turn: Any = None) -> str:
         parts = [
             w["no_connection"].format(why=turn.doubt_reason or "-"),
             w["pages"].format(links=links) if links else "",
-            kept,
             fallback,
         ]
     final = "\n\n".join(part for part in parts if part)
     return final + ("\n\n" + fold + footer if fold else "")
+
+
+_CLAUSE_MARK = re.compile(r"^\s*[,;:(\u2013\u2014]")
+
+
+def without_fragments(answer: str, before: str, turn: Any) -> str:
+    """A planned or doubtful answer without the pieces of the model's own
+    sentences that the checks cut short: a line that is the start of one of
+    its lines up to a clause mark, the rest gone (staging -132: "From Tokyo
+    Station (Chiyoda)" was left of "From Tokyo Station (Chiyoda), three
+    direct Nozomi ... get you to Kyoto Station before 10:00:" above the
+    block, whose title names the trip)."""
+    blocks = [block for block in (turn.plan, turn.doubtful) if block.strip()]
+    if not blocks:
+        return answer
+    originals = [
+        _plain(line).casefold()
+        for line in before.partition("<details>")[0].splitlines()
+        if line.strip()
+    ]
+    body, fold, footer = answer.partition("<details>")
+    lines = body.splitlines()
+    inside: set[int] = set()
+    for block in blocks:
+        span = _block_span(lines, block)
+        if span is not None:
+            inside.update(range(span[0], span[1] + 1))
+
+    def cut(line: str) -> bool:
+        core = re.sub(r"[*_`]+", "", _plain(line)).rstrip(" :,;").casefold()
+        if len(core) < 3 or core[-1] in ".!?\u2026" or _ITEM.match(line):
+            return False
+        return any(
+            original.startswith(core)
+            and _CLAUSE_MARK.match(original[len(core) :])
+            and re.search(r"[^\W\d_]", original[len(core) :])
+            for original in (re.sub(r"[*_`]+", "", o) for o in originals)
+        )
+
+    kept = [
+        line
+        for index, line in enumerate(lines)
+        if index in inside or not line.strip() or not cut(line)
+    ]
+    if len(kept) == len(lines):
+        return answer
+    rest = _tidy("\n".join(kept))
+    return rest + ("\n\n" + fold + footer if fold else "")
