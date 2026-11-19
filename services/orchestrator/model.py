@@ -32,7 +32,7 @@ from services.orchestrator.loop import (
 
 __all__ = ["GatewayError"]
 
-from services.orchestrator.closing import closing_requested
+from services.orchestrator.closing import STEP_LIMIT_CODE, closing_requested
 from services.orchestrator.tools import declarations
 from services.orchestrator.stream_client import (
     Sink,
@@ -481,7 +481,7 @@ class GatewayModel:
         if any(
             message.get("role") == "tool"
             and isinstance(message.get("content"), str)
-            and '"error": "tool_quota_exhausted"' in str(message["content"])
+            and f'"error": "{STEP_LIMIT_CODE}"' in str(message["content"])
             for message in messages
         ):
             return []
