@@ -72,7 +72,7 @@ REQ-KEY-01: one Atlas key system for the organization, owned by the project serv
 | `hash` | Hash of the full key with a server pepper; the key is never stored in clear. |
 | `scopes[]` | `assistant` (Atlas with search and tools, outside projects), `model` (raw model, today's developer API), `project:{id}:read`, `project:{id}:chat`, `project:{id}:work`, `connectors` (off by default; personal connectors never usable by key in P1). |
 | `expires_at` | Required. Default 90 days, maximum set by the organization. |
-| `quota` | Requests per day and EUR per day, with the reservation logic of `dev_auth.py`; also bounded by the member's and organization's quotas. |
+| `quota` | EUR per day and per week, with the reservation logic of `dev_auth.py`; also bounded by the member's and organization's quotas. No request-count cap by default (owner decision 2026-11-19); one can still be set explicitly. Request frequency is limited at the edge. |
 | `created_by`, `created_at`, `last_used_at`, `last_used_ip_prefix`, `revoked_at` | Shown in lists and in the audit. |
 
 REQ-KEY-02: issuing. Org admins create, list and revoke keys for any member or service account. Members create and revoke their own keys only if the organization policy allows self-service (`api_keys: off | admin_only | self_service`, default `admin_only`), within limits the admin sets (scopes, quota, expiry). A key can never have more rights than its member has at the time of each call: scopes are intersected with current grants.

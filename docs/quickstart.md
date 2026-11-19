@@ -168,7 +168,7 @@ Enable the authenticated OpenAI-compatible developer endpoint with:
 ./atlas setup --api
 # For an existing installation:
 ./atlas setup --reconfigure --api
-./atlas api-key create editor --daily-requests 20
+./atlas api-key create editor   # optional: --daily-requests N (no request cap by default)
 ./atlas api-key list
 ./atlas api-key revoke editor
 ```

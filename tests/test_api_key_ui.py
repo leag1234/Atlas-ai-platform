@@ -167,7 +167,8 @@ class BrowserKeyTests(unittest.TestCase):
         self.assertEqual(value["budget_user"], "alice")
         self.assertEqual(value["subject"], "alice@example.invalid")
         self.assertEqual(value["scopes"], ["assistant", "model"])
-        self.assertEqual(value["daily_requests"], 200)
+        # No request-count cap by default (owner decision 2026-11-19).
+        self.assertIsNone(value["daily_requests"])
         self.assertEqual(value["daily_micro_eur"], 2000000)
         self.assertEqual(value["expires_at"] - value["created_at"], 90 * 86400)
         store = configured_store()

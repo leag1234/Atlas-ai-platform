@@ -22,7 +22,9 @@ search budgets cannot be changed by request body or headers. Requests to the bro
 chat route remain subject to browser Origin policy, even if they carry a Bearer key.
 
 Quota errors are OpenAI error envelopes, HTTP 429, containing `requests`,
-`daily_requests`, `charged_micro_eur`, `reserved_micro_eur`, `daily_micro_eur`.
+`charged_micro_eur`, `reserved_micro_eur`, `daily_micro_eur`, and `daily_requests`
+only when the key has an explicit request cap. Keys have no request cap by default
+(owner decision 2026-11-19): only spending caps apply, and the edge limits frequency.
 Scope errors are HTTP 403 with `missing_scope`. Quota reservation and settlement use
 integer micro EUR and transactions; uncertain outcomes retain the reserved amount.
 No project, Work or connector permission is implied by `assistant`.
@@ -87,7 +89,8 @@ The separate administrator HTTP service binds to loopback and also requires a
 dedicated administrator Bearer secret. Forwarded, cookie and browser requests fail
 closed. `POST /keys` accepts login, name, scopes (stable), or org/member IDs and
 subject/budget_user (project/service migration), plus
-lifetime_days (default 90, range 1..365), daily_requests and daily_micro_eur.
+lifetime_days (default 90, range 1..365), daily_micro_eur and an optional
+daily_requests (none by default).
 The response contains metadata and the secret once. GET `/keys` omits secrets/hashes;
 DELETE `/keys/{id}` revokes; POST `/imports/{developer}` imports one legacy service
 credential and its history. The CLI is a client of these endpoints and writes the

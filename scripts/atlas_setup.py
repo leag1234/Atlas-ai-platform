@@ -223,7 +223,7 @@ def api_key_command(args: argparse.Namespace) -> None:
     ]
     keyfile = None
     if args.operation == "create":
-        if args.daily_requests <= 0:
+        if args.daily_requests is not None and args.daily_requests <= 0:
             raise ValueError("Daily requests must be positive.")
         directory = ROOT / "BRAIN" / "api-keys"
         if directory.is_symlink():
@@ -240,12 +240,12 @@ def api_key_command(args: argparse.Namespace) -> None:
         command += [
             "--key-file",
             "/keys/" + keyfile.name,
-            "--daily-requests",
-            str(args.daily_requests),
             "--key-owner",
             str(os.getuid()),
             str(os.getgid()),
         ]
+        if args.daily_requests is not None:
+            command += ["--daily-requests", str(args.daily_requests)]
     result = subprocess.run(
         command, check=True, capture_output=True, text=True, env=environment
     )
@@ -257,8 +257,10 @@ def api_key_command(args: argparse.Namespace) -> None:
             print(keyfile.read_text().strip())
     elif args.operation == "list":
         for row in json.loads(result.stdout):
+            cap = row["daily_requests"]
             print(
-                f"{row['id']}  {'enabled' if row['enabled'] else 'revoked'}  daily requests: {row['daily_requests']}"
+                f"{row['id']}  {'enabled' if row['enabled'] else 'revoked'}  "
+                + ("no daily request cap" if cap is None else f"daily requests: {cap}")
             )
     else:
         print("Key revoked: " + args.name)
@@ -297,7 +299,8 @@ def main() -> int:
     operations = keys.add_subparsers(dest="operation", required=True)
     create = operations.add_parser("create")
     create.add_argument("name")
-    create.add_argument("--daily-requests", type=int, default=20)
+    # Optional: keys have no request-count cap unless one is asked for here.
+    create.add_argument("--daily-requests", type=int)
     create.add_argument("--show", action="store_true")
     operations.add_parser("list")
     revoke = operations.add_parser("revoke")

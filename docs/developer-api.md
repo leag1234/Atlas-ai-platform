@@ -279,7 +279,7 @@ Any model name is accepted and served by `atlas-tts`. `input` is a non-empty str
 characters. `voice` is accepted for client compatibility but ignored: the voice follows the language
 and is returned in `X-Atlas-TTS-Voice`. `response_format` is `mp3` (default) or `wav`; `speed` must be
 `1.0`; `instructions` are refused by name. The request is charged at 1 micro-euro per character
-(CPU-only estimate), so request-count and daily quotas apply. If the local service is unavailable,
+(CPU-only estimate), so the key's spending limits apply. If the local service is unavailable,
 the edge answers 503 `tts_unavailable`; strict privacy mode remains supported because synthesis is
 local.
 
@@ -308,7 +308,7 @@ curl -s https://atlas.eu.com/api/atlas/v1/audio/transcriptions \
 
 The audio is processed in memory by an EU provider and is never stored or logged, nor is the
 transcript. The request is charged by audio duration at 4 000 micro-euros per minute (a rounded-up
-pass-through of the provider's published price); request-count and daily quotas apply. Errors:
+pass-through of the provider's published price); the key's spending limits apply. Errors:
 429 `provider_limit` when the provider refuses for quota or rate (never reported as an outage),
 502 `provider_error`, 503 `transcription_unavailable`, 400 `invalid_request` when the audio cannot
 be decoded. Strict privacy mode answers 403 `strict_privacy_unavailable` and Enhanced 403
@@ -528,14 +528,18 @@ each request. These features answer `storage_not_supported` with that instructio
 ## 7. Budget, limits and usage
 
 Every key has its own budget, set when it was issued (a weekly or daily amount in euros), and an expiry
-date. Check where you stand at any time:
+date. Keys are limited by what they spend, not by how many requests they send: there is no daily
+request cap (owner decision 2026-11-19), only the spending limits and the request rate below. A key
+has a daily request cap only when its administrator set one explicitly. Check where you stand at any
+time:
 
 ```sh
 curl -s -H "Authorization: Bearer $ATLAS_API_KEY" https://atlas.eu.com/api/atlas/v1/usage
 ```
 
 The reply gives the day and week counters (`requests`, `charged_micro_eur`; one million micro-euros
-is one euro) and the limits that apply to your key.
+is one euro) and the limits that apply to your key: `daily_micro_eur` and `weekly_micro_eur` (`null`
+when that limit is not set). `daily_requests` appears only on a key with an explicit request cap.
 
 Each call is charged what the provider measured (its usage frame, cache reads at the cached rate).
 Before the call, Atlas reserves its bound (the whole request plus `max_tokens`) against your budget;
@@ -550,7 +554,7 @@ use `GET /usage` to see what it cost.
 
 | Limit | Value |
 |---|---|
-| Rate | 600 requests per minute per key (burst 200), and 1800 per minute per client address (burst 400). Everyone behind one office or VPN address shares the second limit: start parallel workers a few seconds apart. |
+| Rate | 600 requests per minute per key (burst 200), and 1800 per minute per client address (burst 400). Everyone behind one office or VPN address shares the second limit: start parallel workers a few seconds apart. Above either limit the front server answers 429 at once, before Atlas runs or charges anything (see `edge_rate_limit` in section 8). |
 | Request size | up to 8 MiB, up to 4096 messages of history |
 | Tools | up to 128 tools per request and 128 tool calls per message; a tool description may hold up to 200,000 characters (the request size limit still applies) |
 | Output | 16384 tokens by default, at most 32768 |
@@ -623,12 +627,12 @@ without a restriction (or ask your administrator), then send the same request.
 | 404 | `storage_not_supported` | A stored response, conversation or completion was requested | Atlas stores nothing; keep your own history |
 | 409 | `tool_loop_detected` | The same tool call returned the same result 12 times in a row | Change the approach; do not retry the same call |
 | 413 (400 on some direct-model routes) | `body_limit` | The body is larger than the route accepts (`measured`, `limit`) | Send less, or split the request |
-| 429 | `quota_exceeded` | The key's own daily or weekly limit is reached (the fields say which) | Wait for the next day or week, or ask for a higher limit |
+| 429 | `quota_exceeded` | The key's own daily or weekly spending limit is reached (the fields say which; `daily_requests` appears only on a key with an explicit request cap) | Wait for the next day or week, or ask for a higher limit |
 | 429 | `budget_limit`, `cost_budget` (assistant) | The budget behind the key is reached (`used`, `limit`, `category`) | Stop, or ask for a higher budget |
 | 429 | `rate_limit` (`provider_status`, `Retry-After`) | The model provider rate-limited the request | Retry after the delay |
 | 429 | `provider_limit` | The transcription provider refused for quota or rate | Retry later |
 | 429 | `owned_server_budget`, `owned_server_start_limit` | Strict privacy: the owned server's starter refused (budget cap, or too many starts this hour) | Retry after `retry_after` seconds, or use another level |
-| 429 | (HTML page) | Rate limit of the front server: 600 requests per minute per key, 1800 per client address | Wait 30 to 60 seconds; do not restart all workers at once |
+| 429 | `edge_rate_limit` (`Retry-After`) | Rate limit of the front server: 600 requests per minute per key (burst 200), 1800 per client address (burst 400). Nothing ran and nothing is charged. The body is JSON: `{"error": {"type": "rate_limit_error", "code": "edge_rate_limit", ...}}`, or the Anthropic envelope on Messages. A front server that has not applied the current template still answers this 429 with an HTML page: test the status, not the body | Retry after `Retry-After` seconds with backoff; do not restart all workers at once |
 | 402 | `provider_quota` (`provider_status`) | The model provider's account is out of credit | Do not retry at once; tell the operator |
 | 502 | `invalid_tool_arguments` | The model returned tool-call arguments that are not valid JSON, also after one corrected attempt (section 5) | Send the request again |
 | 502 | `invalid_response_format` | The answer did not match the requested JSON schema, also after one corrected attempt | Send the request again, or simplify the schema |

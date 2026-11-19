@@ -212,7 +212,9 @@ class Store(DeveloperStore):
                 "ATLAS_API_KEY_POLICY",
                 "self_service" if stable else "admin_only",
             ),
-            daily_requests=None if stable else 200,
+            # Owner decision 2026-11-19: no request-count cap by default, only
+            # spending caps; the edge limits request frequency instead.
+            daily_requests=None,
             daily_micro_eur=None if stable else 2000000,
             weekly_micro_eur=100000000 if stable else None,
             max_lifetime_days=90 if stable else 365,
@@ -459,16 +461,19 @@ class Store(DeveloperStore):
                 "FROM api_key_requests WHERE key_id=? AND week=?",
                 (developer, week),
             ).fetchone()
-        return dict(
+        result: dict[str, object] = dict(
             key_id=developer,
             day=day,
             **dict(row),
-            daily_requests=owner["daily_requests"],
             daily_micro_eur=owner["daily_micro_eur"],
             week=week,
             week_usage=dict(weekly),
             weekly_micro_eur=owner["weekly_micro_eur"],
         )
+        # A request-count cap is reported only when one was set on the key.
+        if owner["daily_requests"] is not None:
+            result["daily_requests"] = owner["daily_requests"]
+        return result
 
     def reserve(self, developer: str, amount: int, *, monetary: bool = True) -> str:
         # Same atomic reserve/settle algorithm as dev_auth. The bound is the highest
@@ -515,7 +520,6 @@ class Store(DeveloperStore):
             ):
                 failure = dict(
                     requests=count,
-                    daily_requests=owner["daily_requests"],
                     charged_micro_eur=charged,
                     reserved_micro_eur=amount,
                     daily_micro_eur=owner["daily_micro_eur"],
@@ -523,6 +527,8 @@ class Store(DeveloperStore):
                     weekly_charged_micro_eur=weekly_charged,
                     weekly_micro_eur=owner["weekly_micro_eur"],
                 )
+                if owner["daily_requests"] is not None:
+                    failure["daily_requests"] = owner["daily_requests"]
             else:
                 db.execute(
                     "INSERT INTO api_key_requests (id,key_id,day,week,reserved,charged,state) VALUES (?,?,?,?,?,?,?)",
