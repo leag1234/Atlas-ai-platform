@@ -1,0 +1,6 @@
+Étude courte pour ma PME (40 postes, surtout bureautique + un logiciel de compta Windows). Faut-il migrer les postes sous Linux ?
+J'attends :
+1. une estimation des couts sur 5 ans (licences, migration, formation) comparée au maintien sous Windows 11
+2. les principaux risques et comment les réduire
+3. deux ou trois exemples réels d'organisations européennes qui ont migré, avec ce qui a marché ou pas
+4. un verdict go / no-go avec les conditions

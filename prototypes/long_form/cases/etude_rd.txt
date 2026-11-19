@@ -1,0 +1,60 @@
+Étude R&D : concevoir une alternative européenne aux GPU NVIDIA pour l'inférence IA
+Je souhaite explorer la possibilité de créer une nouvelle entreprise industrielle européenne capable de développer et commercialiser une alternative crédible, compétitive et souveraine aux accélérateurs NVIDIA (L4, L40S, H100, etc.), principalement pour l'inférence de grands modèles de langage (LLM).
+Contexte et ambition
+Aujourd'hui, l'accès aux GPU performants est coûteux, parfois limité par leur disponibilité ou par des restrictions géopolitiques et commerciales.
+L'objectif n'est pas simplement d'assembler un serveur IA moins cher, mais d'imaginer une nouvelle architecture matérielle et logicielle qui pourrait donner naissance à une véritable filière industrielle européenne.
+Je veux explorer des approches innovantes, voire disruptives, sans chercher nécessairement à reproduire l'architecture traditionnelle des GPU.
+Deux voies à étudier
+Voie 1 — Réinventer l'assemblage de technologies existantes
+Étudier comment combiner intelligemment des composants déjà commercialisés :
+* Processeurs RISC-V, FPGA, ASIC, NPU et accélérateurs matriciels.
+* Mémoires DDR5, LPDDR5X, GDDR6, HBM, SRAM et technologies CXL.
+* Interconnexions PCIe, Ethernet, chiplets ou autres technologies disponibles.
+* Calcul distribué, architectures memory-centric, processing-in-memory, etc.
+L'objectif est de concevoir une architecture originale qui pourrait rivaliser avec une NVIDIA L40S ou d'autres GPU sur trois critères :
+1. Performances réelles d'inférence : tokens/seconde, latence, utilisateurs simultanés.
+2. Consommation énergétique : watts, joules/token, rendement énergétique global.
+3. Coût : prix de fabrication, prix de vente et coût par million de tokens sur la durée.
+Je veux identifier des combinaisons de composants auxquelles on ne pense pas nécessairement, mais qui pourraient produire un avantage significatif.
+Voie 2 — Concevoir notre propre accélérateur
+Explorer la possibilité de développer notre propre carte électronique, voire notre propre architecture de calcul, à partir de technologies et de composants accessibles.
+Nous ne disposons pas d'usine de semi-conducteurs, mais nous pouvons :
+* Concevoir nos propres PCB avec KiCad ou d'autres outils.
+* Commander et faire assembler des cartes chez des fabricants spécialisés.
+* Utiliser des puces existantes, des FPGA, des modules de calcul ou des IP ouvertes.
+* Développer notre propre firmware, nos pilotes et notre runtime d'inférence.
+* À terme, envisager un ASIC fabless fabriqué par une fonderie externe.
+Je souhaite explorer des architectures réellement nouvelles, pas simplement placer plusieurs petits accélérateurs sur une carte PCIe.
+L'enjeu est d'identifier où pourrait se situer une véritable innovation technique défendable, susceptible de constituer la propriété intellectuelle d'une future entreprise.
+Questions techniques fondamentales
+* Peut-on contourner certaines limites des GPU grâce à une architecture spécialisée pour l'inférence LLM ?
+* Peut-on réduire drastiquement les déplacements de données entre mémoire et unités de calcul ?
+* Peut-on obtenir une meilleure efficacité grâce au pipeline parallelism, à la mémoire distribuée, au near-memory computing ou à des architectures systoliques ?
+* Peut-on exploiter des technologies peu utilisées, comme le calcul analogique, photonique ou les architectures RISC-V spécialisées ?
+* Peut-on créer un système de 64, 128 ou 256 Go de mémoire exploitable pour des LLM, avec une bande passante suffisante, à moindre coût ?
+* Quels composants sont réellement achetables, à quelles conditions et en quelles quantités ?
+* Quelles solutions seraient industrialisables en Europe avec une dépendance minimale aux technologies américaines ?
+Benchmark attendu
+Comparer les architectures proposées avec :
+* NVIDIA L4 / L40S
+* NVIDIA RTX 5090 ou accélérateurs professionnels comparables
+* NVIDIA H100 comme référence haut de gamme
+* AMD Instinct
+* Apple Mac Studio avec 256 ou 512 Go de mémoire unifiée
+* Accélérateurs alternatifs existants
+Comparer sur des modèles représentatifs : 8B, 32B, 70B et éventuellement 100B+.
+Distinguer systématiquement les performances mesurées, les performances théoriques et les hypothèses d'ingénierie.
+Ce que j'attends de l'étude
+1. Une analyse des limitations fondamentales des architectures GPU classiques pour l'inférence LLM.
+2. 5 à 10 concepts d'architectures matérielles innovantes, y compris des approches non conventionnelles.
+3. Une sélection des 2 ou 3 architectures les plus prometteuses sur les plans technique, économique et industriel.
+4. Pour chacune : composants concrets, architecture, contraintes, estimation des performances et consommation.
+5. Une estimation réaliste des coûts de prototypage, de fabrication en petite série et d'industrialisation.
+6. Une feuille de route pour construire un premier démonstrateur fonctionnel sans usine de semi-conducteurs.
+7. Une réflexion sur la propriété intellectuelle, la différenciation et la création d'un acteur industriel européen.
+Philosophie du projet
+Ne pars pas du principe qu'un GPU est nécessairement la meilleure architecture pour exécuter un LLM.
+Remets en question les choix habituels : hiérarchie mémoire, organisation des calculs, parallélisme, précision numérique, interconnexions et composants utilisés.
+Je recherche une véritable réflexion d'architecture informatique et d'ingénierie industrielle, pas un guide d'achat de GPU ni un simple assemblage de composants existants.
+Sois ambitieux et créatif, mais rigoureux : distingue ce qui est réalisable aujourd'hui, ce qui nécessite une R&D importante et ce qui reste spéculatif.
+La question centrale : si nous devions créer aujourd'hui, en Europe, un nouvel industriel de l'accélération IA en partant de technologies accessibles, quelle architecture choisirions-nous pour avoir une chance réelle de concurrencer NVIDIA sur l'inférence LLM ?

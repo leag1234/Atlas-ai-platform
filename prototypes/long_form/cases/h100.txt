@@ -1,0 +1,1 @@
+explique moi de maniere assez pedagogique comment l inference d un modele d IA fonctionne sur une carte faite pour ça (H100...) - schema etc. appréciés

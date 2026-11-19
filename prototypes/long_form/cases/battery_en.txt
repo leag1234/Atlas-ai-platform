@@ -1,0 +1,1 @@
+Can you explain how a lithium-ion battery actually stores and releases energy, at the level of the electrodes and ions? I'd also like to understand why capacity fades over the years and what fast charging does to it. A diagram or two would help, I'm an engineer but not a chemist.
