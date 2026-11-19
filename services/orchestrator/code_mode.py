@@ -1089,6 +1089,11 @@ async def process_work(
                 item.reponse = engine_result.text
                 item.state = engine_result.state
                 item.cout_eur = engine_result.cost_eur
+                from packages.provider_calls import add_cost
+
+                # The engine prices its own provider calls: the request's record
+                # of what it consumed counts them, whatever the turn's outcome.
+                add_cost(engine_result.cost_eur)
                 item.tokens = {
                     "in": engine_result.input_tokens,
                     "out": engine_result.output_tokens,

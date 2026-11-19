@@ -104,6 +104,21 @@ class WireTurn(BaseModel):
 FREE_PATHS = ("/agent/config", "/images/ready")
 
 
+# Gateway answers that refuse a call before any provider output: bad request,
+# provider account exhausted (402), refused access, size or context limit (413),
+# budget or rate refusal (429), provider not configured or unavailable (503).
+# A provider failure (502) or a timeout (504) may follow partial output: its cost
+# stays unknown.
+REFUSED_BEFORE_OUTPUT = frozenset({400, 401, 402, 403, 404, 409, 413, 422, 429, 503})
+
+
+def refused_before_output(exc: BaseException) -> bool:
+    """True for a gateway answer that refused a call before any provider output."""
+    if isinstance(exc, (StrictPrivacyRefusal, OwnedServerAnswer)):
+        return True
+    return isinstance(exc, GatewayError) and exc.status in REFUSED_BEFORE_OUTPUT
+
+
 # The longest single call the gateway accepts without a file or attachments.
 CHAT_CALL_SECONDS = 120.0
 
@@ -208,9 +223,10 @@ class GatewayModel:
 
     @staticmethod
     async def post(url: str, payload: Message, timeout: float) -> Message:
+        calls = None
         if not url.endswith(FREE_PATHS):
             # Conservative: any other gateway or retrieval call may reach a provider.
-            mark_started()
+            calls = mark_started()
         try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout), trust_env=False
@@ -395,7 +411,16 @@ class GatewayModel:
             value: object = json.loads(data)
             if not isinstance(value, dict):
                 raise ValueError("gateway_response_invalid")
+            if calls is not None:
+                # The call came back whole: its cost is the one the gateway measured.
+                calls.answered(value.get("cost_eur"))
             return value
+        except GatewayError as exc:
+            if calls is not None and refused_before_output(exc):
+                # The gateway refused the call before any provider output: the
+                # call consumed nothing (a refusal is never billed as an answer).
+                calls.answered()
+            raise
         except aiohttp.ClientError:
             if url.endswith(("/images/generate", "/images/start", "/images/ready")):
                 raise GatewayError("provider_error", 502) from None
