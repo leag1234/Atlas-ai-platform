@@ -33,9 +33,12 @@ def provider_credit_detail(status: object) -> str:
 async def receive(
     url: str, payload: dict[str, object], timeout: float, sink: Sink
 ) -> dict[str, object]:
-    mark_started()
+    calls = mark_started()
     total = 0
     result: dict[str, object] | None = None
+    # Whether any answer text came back: a refusal after it may follow consumed
+    # tokens, so only a refusal before the first delta settles the call at 0.
+    delivered = False
     try:
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=timeout),
@@ -46,6 +49,12 @@ async def receive(
                 url, json=payload, allow_redirects=False, headers=privacy.headers()
             ) as response:
                 if response.status != 200:
+                    from services.orchestrator.model import REFUSED_BEFORE_OUTPUT
+
+                    if calls is not None and response.status in REFUSED_BEFORE_OUTPUT:
+                        # Refused before the stream opened: nothing consumed.
+                        calls.answered()
+                        calls = None
                     raise RuntimeError("gateway_error")
                 async for line in response.content:
                     total += len(line)
@@ -150,11 +159,24 @@ async def receive(
                             raise ValueError("invalid_delta")
                         if any(not isinstance(v, str) for v in delta.values()):
                             raise ValueError("invalid_delta")
+                        delivered = True
                         await sink(event)
                     else:
                         raise ValueError("gateway_stream_error")
         if result is None:
             raise ValueError("incomplete_stream")
+        if calls is not None:
+            # The stream ended with its result: the cost the gateway measured.
+            calls.answered(result.get("cost_eur"))
         return result
     except aiohttp.ClientError:
         raise RuntimeError("gateway_unavailable") from None
+    except Exception as exc:
+        from services.orchestrator.model import refused_before_output
+
+        if calls is not None and not delivered and refused_before_output(exc):
+            # A refusal event before any answer text (privacy, owned server
+            # starting, provider account exhausted, budget, context): nothing
+            # was consumed. A provider failure (502) stays unknown.
+            calls.answered()
+        raise

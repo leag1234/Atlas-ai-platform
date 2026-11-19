@@ -255,6 +255,9 @@ async def chat(request: Request) -> Response:
         return JSONResponse({"error": "origin_rejected"}, status_code=403)
     item, started = Interaction(), time.monotonic()
     calls = track()
+    # How the turn was charged: its measured cost, or the reservation kept when a
+    # provider call may have consumed unmeasured tokens (reported to the caller).
+    billing = {"kind": "measured"}
     status, code, payload = 200, "", None
     streaming = False
     detail = ""
@@ -403,27 +406,39 @@ async def chat(request: Request) -> Response:
 
             def settle(result: Interaction) -> None:
                 measured = Decimal(str(result.cout_eur))
-                if (
-                    result.state != "done"
-                    and calls.started
-                    and not result.cost_complete
-                ):
+                known = (
+                    result.state == "done"
+                    or result.cost_complete
+                    or not calls.unmeasured
+                )
+                if result.state != "done" and not result.cost_complete:
+                    if calls.started and not calls.unmeasured:
+                        # A refusal (budget, quota, provider unavailable) or a
+                        # failure before the answer, and every tracked provider
+                        # call came back answered or refused: the turn pays what
+                        # they measured, never the reservation held for the
+                        # answer it did not produce (cout_eur may still hold it).
+                        measured = calls.measured
+                        result.cout_eur = float(measured)
+                    elif not calls.started and measured > 0:
+                        # No call went through the tracked gateway egress, yet
+                        # the turn holds a cost: a path that bypassed the
+                        # tracking (or a reservation it never replaced) keeps
+                        # that figure, never less (conservative).
+                        billing["kind"] = "reserved_upper_bound"
+                if not known:
                     # A provider call may have consumed tokens that were never
                     # measured: the daily cap keeps at least the reservation, as
                     # the API key ledger does.
                     measured = max(measured, reservation.amount)
+                    billing["kind"] = "reserved_upper_bound"
                 ledger.settle_cost(reservation, measured)
                 if key_reservation is not None:
                     # The reservation stays charged ('unknown') only when a provider
-                    # call may have consumed unmeasured tokens; a request that ended
-                    # before any provider call is charged its measured cost.
+                    # call may have consumed unmeasured tokens.
                     request.state.key_store.finish(
                         key_reservation,
-                        int(Decimal(str(result.cout_eur)) * 1000000)
-                        if result.state == "done"
-                        or not calls.started
-                        or result.cost_complete
-                        else None,
+                        int(measured * 1000000) if known else None,
                         result.tokens["in"],
                         result.tokens["out"],
                     )
@@ -610,7 +625,7 @@ async def chat(request: Request) -> Response:
                     "context_samples": item.context_samples,
                     "context_manifest": item.context_manifest,
                     "cost_eur": item.cout_eur,
-                    "cost_kind": "reserved_upper_bound",
+                    "cost_kind": billing["kind"],
                     "provider_retries": item.provider_retries,
                 },
             },
@@ -658,7 +673,7 @@ async def chat(request: Request) -> Response:
                 "reasoning_effort": item.reasoning_effort,
                 "max_output_tokens": payload.max_tokens,
                 "cost_eur": item.cout_eur,
-                "cost_kind": "reserved_upper_bound" if item.erreurs else "measured",
+                "cost_kind": billing["kind"],
                 "provider_model": item.provider_model,
                 "reasoning_retried": item.reasoning_retried,
                 "status": json.loads(Path("prompts/activity-labels.json").read_text())[

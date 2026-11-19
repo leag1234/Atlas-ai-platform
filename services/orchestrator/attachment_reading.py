@@ -226,6 +226,11 @@ async def extract_attachment_with_ocr(
         errors.append(
             f"OCR stopped: {skipped} pages were not read; measured {len(missing) * OCR_PAGE_COST:.6f} EUR, limit {remaining_cost:.6f} EUR ({reason})"
         )
+    from packages.provider_calls import add_cost
+
+    # OCR pages are priced here, not by a gateway answer: the request's record of
+    # what it consumed counts them, so a turn refused later still pays for them.
+    add_cost(OCR_PAGE_COST * len(selected))
     return (
         Extracted(attachment.filename, len(raw), pages, text, tuple(errors)),
         OCR_PAGE_COST * len(selected),

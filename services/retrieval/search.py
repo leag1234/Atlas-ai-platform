@@ -41,7 +41,7 @@ class Gateway:
         self.request_bytes = self.response_bytes = 0
 
     def post(self, operation: str, payload: dict[str, object]) -> object:
-        mark_started()
+        calls = mark_started()
         data = json.dumps(payload, allow_nan=False).encode()
         self.request_bytes = len(data)
         self.response_bytes = 0
@@ -60,7 +60,13 @@ class Gateway:
                 raise LimitError(
                     "provider_response_limit", len(body), 800000, "response bytes"
                 )
-            return json.loads(body)
+            value = json.loads(body)
+            if calls is not None:
+                # The call came back whole, with the cost it reports (if any).
+                calls.answered(
+                    value.get("cost_eur") if isinstance(value, dict) else None
+                )
+            return value
         except HTTPError as exc:
             raise ValueError("gateway_http_error") from exc
         except (URLError, TimeoutError) as exc:
