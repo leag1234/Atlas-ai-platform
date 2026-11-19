@@ -508,6 +508,15 @@ are privileged access, not a guest isolation boundary.
     retained previous worktree. Review nginx/kit changes separately; deploy static
     assets with dry-run first, then reopen the tunnel. Never promote a moving branch.
 
+Memory pressure: the launcher starts every long-lived service container of an instance
+(chat UI, its database, files terminal, SearXNG, project runner, relay) with
+`--oom-score-adj` from `ATLAS_SERVICE_OOM_SCORE_ADJ`, at each start and each recreation
+after a restart. The instance layers set -500 for production and -200 for staging
+(`infra/instances/`); per-turn work containers, test and worktree stacks keep Docker's
+default 0, so the OOM killer (or earlyoom) takes them first. A new value applies when the
+instance restarts. Check it with
+`docker inspect -f '{{.Name}} {{.HostConfig.OomScoreAdj}}' $(docker ps -q --filter name=-100)`.
+
 Guest content is stored on the VM: private logs are 700 directories/600 files,
 host-side state databases inherit service umask 0077, and Docker volumes are accessible to
 root/Docker administrators. The owner controls backups, retention, guest consent,
