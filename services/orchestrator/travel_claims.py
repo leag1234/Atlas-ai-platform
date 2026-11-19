@@ -1403,7 +1403,34 @@ def without_orphans(original: str, text: str) -> str:
                     clause = " — ".join(rest).rstrip(" ,;:")
                     rebuilt.append(clause if clause[-1:] in ".!?" else clause + ".")
         kept.append(" ".join(rebuilt))
-    return _restructure(text, "\n".join(kept))
+    return _restructure(text, "\n".join(_without_announcements(old, kept)))
+
+
+def _next_text(lines: list[str], index: int) -> str:
+    return next((line for line in lines[index + 1 :] if line.strip()), "")
+
+
+def _without_announcements(old: list[str], new: list[str]) -> list[str]:
+    """A line announcing a list (it ends with ":") goes when its whole list
+    was left out.
+
+    Staging -122: a Caen - Paris answer read "..., voici les options
+    réalistes:" then only a piece of advice; every option had an unsourced
+    time. A line followed by text that is not a list keeps its colon
+    ("To be at the airport at 9:00 from home:" before the steps).
+    """
+    kept: list[str] = []
+    for index, line in enumerate(new):
+        if line.rstrip().endswith(":") and not _ITEM.match(_next_text(new, index)):
+            # Compared without spaces: "réalistes :" became "réalistes:".
+            bare = re.sub(r"\s++", "", line)
+            source = next(
+                (i for i, o in enumerate(old) if re.sub(r"\s++", "", o) == bare), None
+            )
+            if source is not None and _ITEM.match(_next_text(old, source)):
+                continue
+        kept.append(line)
+    return kept
 
 
 def wellformed(text: str) -> str:
