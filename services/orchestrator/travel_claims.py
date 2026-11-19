@@ -839,6 +839,14 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Sin verificar, por eso se omite: {values}. Las páginas consultadas para esta respuesta no indican la misma línea, y Atlas aún no calcula rutas: compruebe líneas, paradas y transbordos en el planificador de viajes del operador.",
         "it": "Non verificato, quindi omesso: {values}. Le pagine consultate per questa risposta non indicano la stessa linea, e Atlas non calcola ancora gli itinerari: controlli linee, fermate e coincidenze nel pianificatore di viaggio dell’operatore.",
     },
+    # Departures left out because they arrive after the time the person gave.
+    "late": {
+        "en": "Left out because they arrive after {deadline}: {values}.",
+        "fr": "Retiré car l’arrivée est après {deadline} : {values}.",
+        "de": "Weggelassen, da die Ankunft nach {deadline} liegt: {values}.",
+        "es": "Se omite porque llega después de las {deadline}: {values}.",
+        "it": "Omesso perché arriva dopo le {deadline}: {values}.",
+    },
 }
 
 
@@ -1572,6 +1580,364 @@ def outliers_left_out(text: str) -> str:
     return "\n".join(lines)
 
 
+# --- Times worked out from other values; the time to arrive by. -------------
+# Staging -126 (2026-11-19, seven trips on a phone): a Munich - Berlin answer
+# lost its unsourced "4h to 4h30m" but kept "to arrive by 14:00, depart no
+# later than about 09:30", worked out from it; a Madrid - Barcelona answer
+# for 13:00 offered a train arriving at 16:44 without saying it was too late.
+# Code reads the times; the model writes (owner principle T8).
+
+# How far a time may sit from "other time +/- duration" and still be read as
+# worked out from them ("about 09:30" for 14:00 - 4 h 29).
+DERIVED_MINUTES = 10
+# How far a time may sit from "sourced time +/- sourced duration" to be that
+# arithmetic ("about 09:30" for 14:00 - 4 h 29).
+SUM_MINUTES = 5
+
+
+def _clock_text(minutes: float) -> str:
+    hours, rest = divmod(int(round(minutes)) % 1440, 60)
+    return f"{hours:02d}:{rest:02d}"
+
+
+def _gap(first: float, second: float) -> float:
+    """Minutes between two times of day, around midnight too."""
+    gap = abs(first - second) % 1440
+    return min(gap, 1440 - gap)
+
+
+def _any_clock(text: str) -> bool:
+    return bool(spoken_times(text)) or any(
+        q.kind == "clock" for q in quantities(text, generous=True)
+    )
+
+
+def _clock_sentences(texts: list[str]) -> list[set[float]]:
+    """The clock times of each source sentence (a timetable row) holding two
+    or more."""
+    found: list[set[float]] = []
+    for text in texts:
+        for sentence in _EVIDENCE_SENTENCE.split(text):
+            clocks = {
+                q.value
+                for q in quantities(sentence, generous=True)
+                if q.kind == "clock" and q.value == q.value
+            }
+            if len(clocks) > 1:
+                found.append(clocks)
+    return found
+
+
+def derived_clocks(
+    body: str,
+    claims: list[Quantity],
+    read: list[Quantity],
+    durations: list[float],
+    pairs: list[set[float]],
+    owned: list[float],
+) -> list[Quantity]:
+    """The clock times of an answer worked out from a duration left out.
+
+    A time that is another time of its sentence (the person's deadline, a
+    departure) plus or minus a duration no page gives is no fact, even when a
+    page happens to give the same time for something else. It stays when a
+    page gives it together with that other time (a timetable row), and a time
+    the person gave is theirs.
+    """
+    if not durations:
+        return []
+
+    def together(value: float, other: float) -> bool:
+        return any(
+            any(_gap(value, item) < 0.5 for item in clocks)
+            and any(_gap(other, item) < 0.5 for item in clocks)
+            for clocks in pairs
+        )
+
+    found: list[Quantity] = []
+    for claim in claims:
+        if claim.kind != "clock":
+            continue
+        left, right = _sentence(body, claim.start, claim.end)
+        others = [
+            q.value
+            for q in read
+            if q.kind == "clock"
+            and q.value == q.value
+            and left <= q.start < right
+            and not claim.start <= q.start < claim.end
+        ]
+        values = _range_values(claim)
+        for value in values:
+            if value != value or any(_gap(value, own) < 0.5 for own in owned):
+                continue
+            anchors = [*others, *(item for item in values if item != value)]
+            if any(together(value, anchor) for anchor in anchors):
+                continue
+            if any(
+                _gap(value, anchor + sign * duration) <= DERIVED_MINUTES
+                for anchor in anchors
+                for duration in durations
+                for sign in (1, -1)
+            ):
+                found.append(claim)
+                break
+    return found
+
+
+# Words of the person's request that make a time the time to arrive by
+# (folded, five languages): anywhere in its sentence ...
+_ARRIVAL_NEED = re.compile(
+    r"(?<![\w-])(?:arriv\w*+|be (?:at|in|there)|get (?:to|there)|reach\w*+|"
+    r"flight|plane|appointment|meeting|lunch|dinner|interview|"
+    r"etre (?:a|au|aux|en|la|sur)|rendez-vous|rdv|vol|avion|reunion|dejeuner|"
+    r"diner|entretien|estar (?:en|a|alli|ahi)|llegar|llego|llegada|cita|vuelo|"
+    r"comida|almuerzo|cena|ankommen|ankomme|ankunft|sein|termin|flug|treffen|"
+    r"essere (?:a|in|li|la|al|alla)|arrivare|arrivo|appuntamento|volo|aereo|"
+    r"riunione|pranzo)(?![\w-])"
+)
+# ... or right before the time ("by 2pm", "avant 9h", "bis 14 Uhr").
+_BY = re.compile(
+    r"(?<![\w-])(?:by|before|no later than|at the latest|until|avant|pour|"
+    r"d.ici|au plus tard|bis|vor|spatestens|antes de|para|a mas tardar|entro|"
+    r"prima|al piu tardi)(?:[ \t]++(?:the|a|la|las|le|les|l|um|alle|delle|"
+    r"dalle|de|des|h))*+[ \t]*+$"
+)
+# A time the person leaves at is no time to arrive by ("leave after 8").
+_LEAVING = re.compile(
+    r"(?<![\w-])(?:leav\w*+|depart\w*+|after|from|starting|partir|pars|part|"
+    r"partant|apres|des|a partir de|salir|salgo|saliendo|despues de|desde|ab|"
+    r"abfahr\w*+|losfahr\w*+|partire|parto|partenza|dopo|dalle)"
+    r"(?:[ \t]++(?:at|a|las|la|les|um|alle|le|the|around|about|vers|sobre|"
+    r"hacia|gegen|verso|circa|environ|de|du|del|d))*+[ \t]*+$"
+)
+_REQUEST_SENTENCE = re.compile(r"(?:[^\n.!?]|[.!?](?!\s|$))+")
+
+
+def arrival_deadline(text: str) -> float | None:
+    """The one time a message says the person must arrive by (minutes)."""
+    folded = route_facts.fold(text)
+    found: set[float] = set()
+    for sentence in _REQUEST_SENTENCE.finditer(folded):
+        start, end = sentence.span()
+        need = bool(_ARRIVAL_NEED.search(folded, start, end))
+        for q in quantities(text[start:end], generous=True):
+            if q.kind != "clock" or q.value != q.value:
+                continue
+            before = folded[max(start, start + q.start - 40) : start + q.start]
+            if _LEAVING.search(before):
+                continue
+            if need or _BY.search(before):
+                found.add(q.value % 1440)
+        if need:
+            # Times in words ("midi trente") have no position to read.
+            found.update(value % 1440 for value in spoken_times(text[start:end]))
+    return found.pop() if len(found) == 1 else None
+
+
+# Words that make a time of an answer an arrival ("llega a las 16:44",
+# "arrives 16:44", "13:42 -> 16:44", "an 16:44") or a departure.
+_ARRIVES = re.compile(
+    r"(?<![\w-])(?:arriv\w*+|llega\w*+|ankunft|ankommt|ankommen|kommt|"
+    r"reach\w*+|gets? in)(?![\w-])|→|->|(?<![\w-])an[ \t]*+$"
+)
+_DEPARTS = re.compile(
+    r"(?<![\w-])(?:depart\w*+|leav\w*+|sale|salen|salida|saliendo|part\w*+|"
+    r"abfahr\w*+|fahrt|ab)(?![\w-])"
+)
+# An answer that already says an option is too late, or that it is the
+# evening before: no check needed.
+_SAID_LATE = re.compile(
+    r"too late|trop tard|demasiado tarde|zu spat|troppo tardi|after the "
+    r"requested|apres l.heure|despues de la hora|nach der gewunschten|"
+    r"dopo l.ora|tonight|this evening|the (?:day|evening|night) before|"
+    r"ce soir|la veille|esta noche|la vispera|la noche anterior|heute abend|"
+    r"am vorabend|stasera|la sera prima|la vigilia"
+)
+_ARRIVAL_COLUMN = re.compile(r"arriv|llegada|ankunft|(?<!\w)(?:arr|an)(?!\w)")
+_DEPARTURE_COLUMN = re.compile(
+    r"depart|salida|abfahrt|partenza|(?<!\w)(?:dep|ab)(?!\w)"
+)
+
+
+def _header_cells(body: str, index: int) -> list[str]:
+    """The header labels (folded) of the table holding the row at ``index``."""
+    start, _ = _line_bounds(body, index)
+    while start > 0:
+        start, _ = _line_bounds(body, start - 1)
+        if not body[start:].lstrip().startswith("|"):
+            return []
+        if route_facts.table_header(body, start):
+            return [
+                route_facts.fold(body[a:b]).strip() for a, b in _row_cells(body, start)
+            ]
+    return []
+
+
+def _late_row(
+    body: str, claims: list[Quantity], deadline: float, owned: list[float]
+) -> list[tuple[int, int, str]]:
+    """The rows of a timetable whose arrival column is after the deadline."""
+    found: list[tuple[int, int, str]] = []
+    done: set[int] = set()
+    for claim in claims:
+        line_start, line_end = _line_bounds(body, claim.start)
+        if line_start in done or not body[line_start:].lstrip().startswith("|"):
+            continue
+        done.add(line_start)
+        header = _header_cells(body, line_start)
+        cells = _row_cells(body, line_start)
+        if not header or len(header) != len(cells):
+            continue
+        columns = list(zip(cells, header, strict=True))
+        arrivals = _column(claims, columns, _ARRIVAL_COLUMN, "clock")
+        departures = _column(claims, columns, _DEPARTURE_COLUMN, "clock")
+        departure = departures[0] if len(departures) == 1 else None
+        arrival: float | None = None
+        if len(arrivals) == 1:
+            arrival = arrivals[0].value
+        elif not arrivals and departure is not None:
+            took = _column(claims, columns, _DURATION_COLUMN, "duration")
+            if len(took) == 1:
+                arrival = departure.value + took[0].value
+        if arrival is None or any(_gap(arrival, own) < 0.5 for own in owned):
+            continue
+        if _is_late(departure.value if departure else None, arrival, deadline):
+            label = (
+                f"{departure.text} → {_clock_text(arrival)}"
+                if departure
+                else _clock_text(arrival)
+            )
+            found.append((cells[0][0], line_end, label))
+    return found
+
+
+_DURATION_COLUMN = re.compile(
+    r"duration|duree|dauer|fahrzeit|reisezeit|duracion|durata|travel time|"
+    r"temps de trajet|tiempo de viaje"
+)
+
+
+def _column(
+    claims: list[Quantity],
+    columns: list[tuple[tuple[int, int], str]],
+    label: re.Pattern[str],
+    kind: str,
+) -> list[Quantity]:
+    """The values of one kind in the row cells whose header matches ``label``."""
+    return [
+        claim
+        for (start, end), header in columns
+        if label.search(header)
+        for claim in claims
+        if start <= claim.start < end
+        and claim.kind == kind
+        and claim.value == claim.value
+    ]
+
+
+def _is_late(departure: float | None, arrival: float, deadline: float) -> bool:
+    """Arrives after the deadline on the trip's day (an arrival before its
+    departure is overnight: not read)."""
+    if departure is not None and arrival < departure:
+        return False
+    return arrival > deadline + 0.5 and arrival < 1440
+
+
+def late_departures(
+    body: str,
+    claims: list[Quantity],
+    deadline: float,
+    owned: list[float],
+    computed: list[str] | None = None,
+) -> list[tuple[int, int, str]]:
+    """Departures of an answer that arrive after the time the person gave.
+
+    Read per sentence (a table row): a time after an arrival word is the
+    arrival, the time before it the departure; without an arrival, one
+    departure and one duration give it. A sentence or row whose every option
+    arrives after the deadline goes (start, end, "13:42 -> 16:44"); a sentence
+    that already says so, or that is the evening before, stays.
+    """
+    computed_text = "\n".join(computed or [])
+    folded = route_facts.fold(body)
+    found = _late_row(body, claims, deadline, owned)
+    groups: dict[tuple[int, int], list[Quantity]] = {}
+    for claim in claims:
+        line_start, _ = _line_bounds(body, claim.start)
+        if body[line_start:].lstrip().startswith("|"):
+            continue
+        groups.setdefault(_sentence(body, claim.start, claim.end), []).append(claim)
+    for (left, right), group in groups.items():
+        line_start, line_end = _line_bounds(body, left)
+        line = body[line_start:line_end].strip()
+        if len(line) > 10 and line in computed_text:
+            continue
+        if _SAID_LATE.search(folded, left, right):
+            continue
+        clocks = [
+            c
+            for c in group
+            if c.kind == "clock"
+            and c.value == c.value
+            and not any(_gap(v, own) < 0.5 for v in _range_values(c) for own in owned)
+        ]
+        durations = [c for c in group if c.kind == "duration"]
+        options: list[tuple[float | None, float, str]] = []
+        previous_end = left
+        previous: Quantity | None = None
+        previous_arrival = False
+        for clock in sorted(clocks, key=lambda c: c.start):
+            segment = folded[previous_end : clock.start]
+            if isinstance(clock, _Range):
+                span = clock.value - clock.low
+                if any(m in clock.text for m in ("→", "->")) or any(
+                    abs(d.value - span) <= 5 for d in durations
+                ):
+                    options.append(
+                        (
+                            clock.low,
+                            clock.value,
+                            f"{_clock_text(clock.low)} → {_clock_text(clock.value)}",
+                        )
+                    )
+                previous, previous_arrival = None, True
+            elif _ARRIVES.search(segment):
+                departure = (
+                    previous.value
+                    if previous is not None and not previous_arrival
+                    else None
+                )
+                label = (
+                    f"{previous.text} → {clock.text}"
+                    if departure is not None and previous is not None
+                    else clock.text
+                )
+                options.append((departure, clock.value, label))
+                previous, previous_arrival = clock, True
+            else:
+                previous, previous_arrival = clock, False
+            previous_end = clock.end
+        if not options:
+            leaving = [
+                c
+                for c in clocks
+                if not isinstance(c, _Range)
+                and _DEPARTS.search(folded[max(left, c.start - 40) : c.start])
+            ]
+            if len(clocks) == 1 and len(leaving) == 1 and len(durations) == 1:
+                start = leaving[0]
+                arrival = start.value + durations[0].value
+                options.append(
+                    (start.value, arrival, f"{start.text} → {_clock_text(arrival)}")
+                )
+        if options and all(
+            _is_late(departure, arrival, deadline) for departure, arrival, _ in options
+        ):
+            found += [(left, right, label) for _, _, label in options]
+    return found
+
+
 @dataclass
 class Findings:
     """What a travel answer states that no source, computation or person gave."""
@@ -1585,9 +1951,19 @@ class Findings:
     elsewhere: list[Quantity] = field(default_factory=list)
     # Values of the opposite direction: never a fact of this trip.
     reverse: list[Quantity] = field(default_factory=list)
+    # Departures that arrive after the time the person must be there by
+    # (start, end of their sentence or row, "13:42 -> 16:44"), and that time.
+    late: list[tuple[int, int, str]] = field(default_factory=list)
+    deadline: str = ""
 
     def __bool__(self) -> bool:
-        return bool(self.values or self.route.spans or self.elsewhere or self.reverse)
+        return bool(
+            self.values
+            or self.route.spans
+            or self.elsewhere
+            or self.reverse
+            or self.late
+        )
 
     def __len__(self) -> int:
         return (
@@ -1595,7 +1971,11 @@ class Findings:
             + len(self.route.spans)
             + len(self.elsewhere)
             + len(self.reverse)
+            + len(self.late)
         )
+
+    def late_labels(self) -> list[str]:
+        return list(dict.fromkeys(label for _, _, label in self.late if label))
 
     def labels(self) -> list[str]:
         return list(
@@ -1614,8 +1994,20 @@ class Findings:
 
     def note(self, language: str) -> str:
         """The one closing note: what was left out, and where to check."""
+        late = ""
+        if self.late:
+            listed = self.late_labels()
+            late = wording("late", language).format(
+                deadline=self.deadline,
+                values=", ".join(listed[:6]) + (", …" if len(listed) > 6 else ""),
+            )
         if not self.labels():
-            return ""
+            return late
+        if late:
+            return self._unverified(language) + " " + late
+        return self._unverified(language)
+
+    def _unverified(self, language: str) -> str:
         key = "route" if self.route.route else "note"
         if (
             not self.values
@@ -1668,6 +2060,18 @@ class Turn:
     # Pages read that are about another place than the trip's (page keys,
     # set by travel_rebuild): their texts support none of its facts.
     excluded: set[str] = field(default_factory=set, repr=False)
+    # Durations an earlier check of this turn left out (minutes): a rewrite
+    # that keeps a time worked out from one of them keeps no fact.
+    dropped: list[float] = field(default_factory=list, repr=False)
+
+    def deadline(self) -> float | None:
+        """When the person must be at the destination (minutes), from the last
+        message of theirs that gives a time; None when none or unclear."""
+        for text in reversed(self.asked):
+            found = arrival_deadline(text)
+            if found is not None or _any_clock(text):
+                return found
+        return None
 
     def passages(self, cited: frozenset[str] | None = None) -> list[str]:
         """The texts read this turn, without those of the pages about another
@@ -1912,6 +2316,12 @@ class Turn:
         places = self.places(body)
         known = self.known(other, places=places)
         sourced_clocks = [quantity.value for quantity in known["clock"]]
+        page_clocks = [
+            q.value
+            for text in (*self.passages(), *self.computed)
+            for q in quantities(text, generous=True)
+            if q.kind == "clock"
+        ]
         stated = self.stated_durations(places=places)
         read_pages = {page_key(url) for url, _ in self.linked if url}
         scoped: dict[
@@ -1992,22 +2402,54 @@ class Turn:
                 return True
             if other_day(claim):
                 return True
+            if claim.kind == "clock":
+                return worked_out(claim)
             if claim.kind != "duration":
                 return False
             # A duration between two sourced times of the same line ("10:05 to
-            # 12:00, 1 h 55 min") is arithmetic on sourced values.
+            # 12:00, 1 h 55 min") is arithmetic on sourced values. The time
+            # the person must arrive by is no source of a trip's duration
+            # (staging -126: "by 14:00 ... about 09:30" sourced "4h30").
             start, end = _line_bounds(body, claim.start)
             times = [
                 q.value
                 for q in quantities(body[start:end])
                 if q.kind == "clock"
                 and any(_same("clock", q.value, value) for value in sourced_clocks)
+                and any(_same("clock", q.value, value) for value in page_clocks)
             ]
             return any(
                 abs(((later - earlier) % 1440) - claim.value) <= 1
                 for earlier in times
                 for later in times
                 if later != earlier
+            )
+
+        # The durations the answer states that a page gives.
+        kept_durations: list[float] = []
+
+        def worked_out(claim: Quantity) -> bool:
+            """A time that is another time of its sentence, the person's or a
+            page's, plus or minus a duration the answer states and a page
+            gives ("4 h 30 min ... by 14:00, leave by 09:30"): arithmetic on
+            kept, sourced values."""
+            left, right = _sentence(body, claim.start, claim.end)
+            anchors = [
+                q.value
+                for q in quantities(body[left:right])
+                if q.kind == "clock"
+                and q.value == q.value
+                and not claim.start <= left + q.start < claim.end
+                and any(_gap(q.value, item) < 0.5 for item in sourced_clocks)
+            ]
+            return bool(anchors) and all(
+                any(
+                    _gap(value, anchor + sign * duration) <= SUM_MINUTES
+                    for anchor in anchors
+                    for duration in kept_durations
+                    for sign in (1, -1)
+                )
+                for value in _range_values(claim)
             )
 
         def another_day(claim: Quantity) -> bool:
@@ -2033,6 +2475,12 @@ class Turn:
         ]
         claims = [claim for claim in claims if claim not in reverse]
         read = [claim for claim in read if claim not in reverse]
+        kept_durations.extend(
+            value
+            for claim in claims
+            if claim.kind == "duration" and supported(claim)
+            for value in _range_values(claim)
+        )
         flagged = [claim for claim in claims if not supported(claim)]
         # Lines, stops, directions, transfers and "direct" claims: together in
         # one passage of a source read this turn (route_facts.py).
@@ -2042,6 +2490,35 @@ class Turn:
             for q in quantities(text, generous=True)
             if q.kind == "clock"
         ] + [value for text in self.asked for value in spoken_times(text)]
+        # A time worked out from a duration left out goes with it (staging
+        # -126: "4h to 4h30m" went, "depart no later than about 09:30" for
+        # 14:00 stayed because a page gave an unrelated 09:30).
+        removed = [
+            value
+            for claim in (*flagged, *reverse, *elsewhere)
+            if claim.kind == "duration"
+            for value in _range_values(claim)
+        ]
+        self.dropped.extend(
+            value
+            for value in removed
+            if value not in self.dropped
+            and not any(_same("duration", value, item) for item in stated)
+        )
+        flagged += derived_clocks(
+            body,
+            [c for c in claims if c not in flagged],
+            read,
+            [*removed, *self.dropped],
+            _clock_sentences([*self.passages(), *self.computed]),
+            owned_clocks,
+        )
+        deadline = self.deadline()
+        late = (
+            late_departures(body, claims, deadline, owned_clocks, self.computed)
+            if deadline is not None
+            else []
+        )
         route = route_facts.review(
             body,
             _masked(body),
@@ -2059,6 +2536,7 @@ class Turn:
         )
         # A sentence the values check already leaves out needs no second reason.
         taken = [_removal(body, claim) for claim in (*flagged, *reverse, *elsewhere)]
+        taken += [(start, end) for start, end, _ in late]
         route.spans = [
             span
             for span in route.spans
@@ -2074,6 +2552,8 @@ class Turn:
             },
             elsewhere,
             reverse,
+            late,
+            _clock_text(deadline) if deadline is not None else "",
         )
 
     def kept(self, body: str, found: Findings) -> str:
@@ -2082,6 +2562,7 @@ class Turn:
             *found.values,
             *found.elsewhere,
             *found.reverse,
+            *(Quantity(s, e, "route", 0.0, label) for s, e, label in found.late),
             *(
                 Quantity(
                     s,
