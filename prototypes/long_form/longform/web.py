@@ -20,14 +20,16 @@ from urllib.parse import urlsplit
 import httpx
 import trafilatura
 
-# Web search is disabled for the rest of the measurement (2026-11-19 09:28): duckduckgo answered
-# CAPTCHA and mojeek "access denied" to this IP; startpage is left to staging users.
-ENGINES = ("mojeek", "startpage")
-SEARCH_DISABLED = "web search disabled after upstream blocks (2026-11-19)"
-# Coordinator rule of 2026-11-19 after the staging search incident: at most one query
-# every 8 s overall, at most 30 per run, and no search at all after the first blocked outcome.
+# v6 (2026-11-19 afternoon): staging SearXNG leaves through its own pool of two IPs. Coordinator
+# rule kept: at most one query every 8 s across all prototype processes, at most 25 per run, and no
+# search at all after the first blocked outcome. Engines rotate over the staging list.
+# Brave ("too many requests"), Qwant ("access denied") and DuckDuckGo (CAPTCHA) each blocked their first
+# query in the v6 runs of 2026-11-19 afternoon; Startpage answered every time: it is the only engine left.
+ENGINES = ("startpage",)
+SEARCH_DISABLED = None
 GLOBAL_SPACING = 8.0
-MAX_PER_RUN = 30
+MAX_PER_RUN = 25
+BLOCK = re.compile(r"captcha|access denied|denied|too many requests|suspend|forbidden|blocked|429|403", re.I)
 MAX_BYTES = 6_000_000
 SKIP_HOSTS = re.compile(
     r"(youtube\.com|youtu\.be|facebook\.com|instagram\.com|tiktok\.com|x\.com|twitter\.com|"
@@ -79,37 +81,56 @@ def _global_slot() -> None:
 
 
 def search(query: str, language: str, n: int = 6) -> dict:
-    """One search on one engine, rotating. Stops for good at the first blocked outcome."""
+    """One search on one engine, rotating; an empty answer tries the next engine once. Stops for good at the first block."""
     global _turn
     region = {"fr": "fr-FR", "en": "en-US", "de": "de-DE"}.get(language, "en-US")
-    with _engine_lock:
-        if SEARCH_DISABLED and not STATE["stopped"]:
-            STATE["stopped"] = SEARCH_DISABLED
-        if STATE["stopped"] or STATE["count"] >= MAX_PER_RUN:
-            return {"query": query, "engine": None, "results": [], "tried": [{"outcome": "search_stopped", "why": STATE["stopped"] or "run_cap"}]}
-        _global_slot()
-        engine = ENGINES[_turn % len(ENGINES)]
-        _turn += 1
-        STATE["count"] += 1
-        try:
-            response = httpx.get(
-                searxng_url() + "/search",
-                params={"q": query, "format": "json", "engines": engine, "language": region, "safesearch": "1"},
-                timeout=20,
-            )
-            data = response.json()
-        except (httpx.HTTPError, ValueError) as error:
-            return {"query": query, "engine": engine, "results": [], "tried": [{"engine": engine, "outcome": type(error).__name__}]}
-        unresponsive = data.get("unresponsive_engines") or []
-        if unresponsive or response.status_code == 429:
-            STATE["stopped"] = f"{engine}: {unresponsive[0][1] if unresponsive else 'http 429'}"
-            return {"query": query, "engine": engine, "results": [], "tried": [{"engine": engine, "outcome": "blocked", "detail": STATE["stopped"]}]}
-    rows = [
-        {"title": str(r.get("title", ""))[:200], "url": str(r.get("url", "")), "snippet": str(r.get("content", ""))[:400]}
-        for r in data.get("results", [])
-        if str(r.get("url", "")).startswith("http")
-    ]
-    return {"query": query, "engine": engine, "results": rows[:n], "tried": [{"engine": engine, "outcome": "ok", "results": len(rows)}]}
+    tried = []
+    for _ in range(2):
+        with _engine_lock:
+            if SEARCH_DISABLED and not STATE["stopped"]:
+                STATE["stopped"] = SEARCH_DISABLED
+            if STATE["stopped"] or STATE["count"] >= MAX_PER_RUN:
+                tried.append({"outcome": "search_stopped", "why": STATE["stopped"] or "run_cap"})
+                return {"query": query, "engine": None, "results": [], "tried": tried}
+            live = [e for e in ENGINES if e not in STATE.setdefault("disabled", [])]
+            if not live:
+                STATE["stopped"] = "every engine failed"
+                continue
+            engine = live[_turn % len(live)]
+            _turn += 1
+            _global_slot()
+            STATE["count"] += 1
+            try:
+                response = httpx.get(
+                    searxng_url() + "/search",
+                    params={"q": query, "format": "json", "engines": engine, "language": region, "safesearch": "1"},
+                    timeout=20,
+                )
+                data = response.json()
+            except (httpx.HTTPError, ValueError) as error:
+                STATE["disabled"].append(engine)
+                tried.append({"engine": engine, "outcome": type(error).__name__})
+                continue
+            unresponsive = data.get("unresponsive_engines") or []
+            reason = " ".join(str(u[1]) for u in unresponsive if len(u) > 1)
+            if response.status_code == 429 or (unresponsive and BLOCK.search(reason)):
+                STATE["stopped"] = f"{engine}: {reason or 'http 429'}"
+                tried.append({"engine": engine, "outcome": "blocked", "detail": STATE["stopped"]})
+                return {"query": query, "engine": engine, "results": [], "tried": tried}
+            if unresponsive:
+                # A timeout or an engine error is not a block: leave that engine for the rest of the run.
+                STATE["disabled"].append(engine)
+                tried.append({"engine": engine, "outcome": "engine_error", "detail": reason[:120]})
+                continue
+        rows = [
+            {"title": str(r.get("title", ""))[:200], "url": str(r.get("url", "")), "snippet": str(r.get("content", ""))[:400]}
+            for r in data.get("results", [])
+            if str(r.get("url", "")).startswith("http")
+        ]
+        tried.append({"engine": engine, "outcome": "ok", "results": len(rows)})
+        if rows:
+            return {"query": query, "engine": engine, "results": rows[:n], "tried": tried}
+    return {"query": query, "engine": None, "results": [], "tried": tried}
 
 
 def kiwix_search(query: str, language: str, n: int = 2) -> dict:
@@ -151,8 +172,37 @@ def kiwix_fetch(ref: str) -> dict:
     }
 
 
+WIKI = re.compile(r"^https?://([a-z]{2})\.(?:m\.)?wikipedia\.org/wiki/([^#?]+)")
+ALT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.6; rv:132.0) Gecko/20100101 Firefox/132.0",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf;q=0.8,*/*;q=0.7",
+    "Accept-Language": "fr,en;q=0.8",
+}
+
+
 def read(url: str) -> dict:
-    return kiwix_fetch(url) if url.startswith("kiwix:") else fetch(url)
+    """A page's text, with fallbacks: Wikipedia from the local mirror, a second try with other headers, a plain-text extraction."""
+    if url.startswith("kiwix:"):
+        return kiwix_fetch(url)
+    wiki = WIKI.match(url)
+    if wiki:
+        from urllib.parse import unquote
+
+        language, title = wiki.group(1), unquote(wiki.group(2)).replace("_", " ")
+        found = kiwix_search(title, language, n=1)
+        if found["results"]:
+            page = kiwix_fetch(found["results"][0]["url"])
+            if "error" not in page:
+                page["requested_url"] = url
+                return page
+    page = fetch(url)
+    if page.get("error") in ("http_403", "http_406", "http_429", "http_503", "extraction_empty", "ReadTimeout", "ConnectTimeout", "RemoteProtocolError"):
+        second = fetch(url, headers=ALT_HEADERS, plain_fallback=True)
+        if "error" not in second:
+            second["fallback"] = "alt_headers"
+            return second
+        page["second_try"] = second.get("error")
+    return page
 
 
 def _public(host: str) -> bool:
@@ -167,7 +217,7 @@ def _public(host: str) -> bool:
     return True
 
 
-def fetch(url: str, timeout: float = 20.0) -> dict:
+def fetch(url: str, timeout: float = 20.0, headers: dict | None = None, plain_fallback: bool = False) -> dict:
     """Fetch and extract a page's main text. PDF through pypdf."""
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -181,7 +231,7 @@ def fetch(url: str, timeout: float = 20.0) -> dict:
         with httpx.Client(
             follow_redirects=True,
             timeout=timeout,
-            headers={"User-Agent": USER_AGENT, "Accept-Language": "en,fr;q=0.8"},
+            headers=headers or {"User-Agent": USER_AGENT, "Accept-Language": "en,fr;q=0.8"},
             max_redirects=4,
         ) as client:
             with client.stream("GET", url) as response:
@@ -220,6 +270,18 @@ def fetch(url: str, timeout: float = 20.0) -> dict:
             or ""
         )
         title_match = re.search(r"<title[^>]*>([\s\S]*?)</title>", html, re.I)
+        if len(text) < 400 and plain_fallback:
+            # Pages whose main text the extractor misses (spec tables, short product pages): plain text of the body.
+            plain = re.sub(r"<(script|style|noscript|svg)[^>]*>[\s\S]*?</\1>", " ", html, flags=re.I)
+            plain = re.sub(r"<(?:br|/p|/div|/tr|/li|/h\d)[^>]*>", "\n", plain, flags=re.I)
+            plain = re.sub(r"</t[dh]>", " | ", plain, flags=re.I)
+            plain = re.sub(r"<[^>]+>", " ", plain)
+            import html as html_lib
+
+            plain = html_lib.unescape(plain)
+            plain = "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in plain.splitlines() if line.strip())
+            if len(plain) >= 800 and re.search(r"\d", plain):
+                text = plain[:60000]
     if len(text) < 400:
         return {"url": url, "error": "extraction_empty"}
     title = ""

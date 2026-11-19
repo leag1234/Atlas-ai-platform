@@ -22,8 +22,14 @@ ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "ledger.jsonl"
 TOTAL_BUDGET_EUR = float(os.environ.get("LONGFORM_TOTAL_BUDGET_EUR", "8"))
 
-WRITER = "mistral/mistral-large-4"
+# v6 model roles, chosen by measurement (out/v6_writers.json, 2026-11-19): Mistral Large 4 plans and derives
+# (reasoning helps, latency 1-9 min with 504s); GLM 5.3 writes and repairs (no reasoning tokens, 2-52 s, fewest
+# check issues of the fast candidates); GLM 5.3 Flash extracts.
+STRONG = "mistral/mistral-large-4"
+WRITER = "mistral/zai-glm-5-3"
 FAST = "mistral/zai-glm-5-3-flash"
+# A failed call (5xx, 429, timeout) on a slow model is retried on this one.
+FALLBACK = {STRONG: WRITER, WRITER: FAST}
 
 # EUR per million tokens: input, cached input, output (pricing.yaml, 2026-11-19).
 PRICES = {
@@ -88,10 +94,10 @@ class Client:
         self,
         step: str,
         messages: list[dict],
-        model: str = WRITER,
+        model: str = STRONG,
         max_tokens: int = 2000,
         temperature: float = 0.3,
-        timeout: float = 300.0,
+        timeout: float | None = None,
         reasoning: str | None = None,
     ) -> str:
         if ledger_total() >= TOTAL_BUDGET_EUR:
@@ -107,8 +113,15 @@ class Client:
         }
         if reasoning:
             body["reasoning_effort"] = reasoning
+        if timeout is None:
+            timeout = 240.0 if model == STRONG else 150.0
         last_error = ""
         for attempt in range(4):
+            if attempt >= 1 and last_error and model in FALLBACK:
+                # After one failure the call moves to the faster model instead of waiting again.
+                model = FALLBACK[model]
+                body["model"] = model
+                body.pop("reasoning_effort", None)
             started = time.monotonic()
             try:
                 response = self.http.post(
@@ -126,7 +139,7 @@ class Client:
             if response.status_code >= 500 or response.status_code == 429:
                 last_error = f"http_{response.status_code}"
                 self.calls.append({"step": step, "model": model, "failed": last_error, "seconds": round(elapsed, 1), "eur": 0})
-                time.sleep((5, 15, 30, 30)[attempt])
+                time.sleep((3, 10, 20, 30)[attempt])
                 continue
             data = response.json()
             if response.status_code != 200:

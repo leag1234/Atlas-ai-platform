@@ -6,12 +6,14 @@ import re
 
 from packages.language import identified_language
 
+from longform import claims
 from longform.evidence import canon, quote_found
+from longform.llm import FAST, WRITER
 from longform.numbers import candidates, numbers_in, rounds_to
 
 TAG = re.compile(r"\[((?:[FD]\d+)(?:\s*[,;]\s*[FD]\d+)*)\]")
 FENCE = re.compile(r"```mermaid\s*\n([\s\S]*?)```", re.I)
-HYPOTHESIS = re.compile(r"\((hypoth[eè]ses?|hypothesis|hypotheses|ordre de grandeur hypothétique|non vérifié\w*|not verified|unverified)[^)]*\)", re.I)
+HYPOTHESIS = re.compile(r"\((hypoth[eè]ses?|hypothesis|hypotheses|ordre de grandeur hypothétique|non vérifié\w*|not verified|unverified)[^)]*\)|†", re.I)
 UNVERIFIED = re.compile(r"\((non vérifié\w*|not verified|unverified)[^)]*\)", re.I)
 
 # Unit families: a number cited to a fact must be in the same family as the fact's unit.
@@ -28,6 +30,25 @@ UNIT_FAMILIES = [
     ("length", r"[kcm]?m|km"),
     ("temperature", r"°c|°f|k"),
 ]
+
+
+def _dims_of(unit: str, loose: bool = False) -> str | None:
+    """Dimension signature of a written unit, None when absent or not understood (then no comparison is made)."""
+    from longform import units as dims
+
+    unit = dims.loose_unit(unit) if loose else unit.strip()
+    if not unit:
+        return None
+    try:
+        return dims.signature(dims.parse(unit)[1])
+    except dims.UnitError:
+        loose_unit = dims.loose_unit(unit)
+        if not loose_unit:
+            return None
+        try:
+            return dims.signature(dims.parse(loose_unit)[1])
+        except dims.UnitError:
+            return None
 
 
 def unit_family(text: str) -> str | None:
@@ -111,14 +132,14 @@ def check_numbers(sid: str, text: str, facts: dict, derived: dict, request: str,
                 exact.append(row["value"])
                 allowed |= {float(a["value"]) for a in row["assumptions"].values()}
                 allowed |= {float(i["value"]) for i in row["inputs"].values()}
-        fact_units = {f: fact_family(facts[f]) for f in tags if f in facts}
+        fact_units = {f: _dims_of(facts[f].get("unit") or "") for f in tags if f in facts}
         for token, values, position in numbers_in(stripped):
             if _skip_number(stripped, token, position):
                 continue
             if values & allowed and not hypothesis:
                 # The value matches a cited fact: its unit must too (a "4" that is a
                 # coefficient of performance does not support "€4,000").
-                near = unit_near(stripped, position, position + len(token))
+                near = _dims_of(stripped[position + len(token):].strip()[:24], loose=True)
                 matching = [f for f in fact_units if isinstance(facts[f].get("value"), (int, float)) and float(facts[f]["value"]) in values]
                 if near and matching and all(fact_units[f] != near for f in matching):
                     issues.append({"section": sid, "kind": "unit_mismatch", "number": token, "text": unit[:300]})
@@ -332,3 +353,140 @@ def check_hypothesis_labels(sid: str, text: str, facts: dict) -> list[dict]:
             if hit and hit not in tags_of(unit):
                 issues.append({"section": sid, "kind": "hypothesis_on_sourced_value", "number": token, "fact": hit, "text": unit[:200]})
     return issues
+
+
+
+# ---------------------------------------------------------------- v6: subject and conditions, coherence, repetition
+
+def check_claims(sid: str, text: str, facts: dict, title: str) -> list[dict]:
+    """Code comparison of each sentence with the facts it cites (subject and meaning-changing conditions)."""
+    issues = []
+    previous = ""
+    for unit in units(text):
+        for tag in tags_of(unit):
+            fact = facts.get(tag)
+            if not fact or not claims.value_in_sentence(fact, TAG.sub(" ", unit)):
+                continue
+            for problem in claims.compare(fact, TAG.sub(" ", unit), previous + " " + title):
+                issues.append({"section": sid, "kind": problem["kind"], "why": f"{tag}: {problem['why']}", "text": unit[:300], "fact": tag})
+        previous = TAG.sub(" ", unit)
+    return issues
+
+
+def check_relations(client, sid: str, text: str, facts: dict) -> list[dict]:
+    """The model extracts placements, comparisons and quote support; the code compares (capacity, units, ratios)."""
+    items, previous = [], ""
+    for unit in units(text):
+        plain = TAG.sub(" ", unit)
+        if numbers_in(plain) or tags_of(unit):
+            items.append((plain, previous, [t for t in tags_of(unit) if t in facts]))
+        previous = plain
+    if not items:
+        return []
+    listing = "\n\n".join(
+        f"{n}. Sentence: {_original(text, sentence)[:450]}\n   Previous: {prev[:200]}"
+        + ("\n   Quotes: " + " | ".join(f"\"{facts[t]['quote'][:300]}\"" for t in cited[:3]) if cited else "")
+        for n, (sentence, prev, cited) in enumerate(items, 1)
+    )
+    try:
+        answer = client.json("check:relations:" + sid, [{"role": "system", "content": claims.RELATIONS_PROMPT}, {"role": "user", "content": listing}], model=WRITER, max_tokens=5000, temperature=0)
+    except (ValueError, RuntimeError):
+        return []
+    issues = claims.check_relations(answer, items, facts, sid)
+    for row in answer.get("support", []) if isinstance(answer, dict) else []:
+        try:
+            n = int(row.get("n"))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= n <= len(items) and items[n - 1][2] and row.get("verdict") in ("no", "partly"):
+            issues.append({"section": sid, "kind": "unsupported_by_quote", "verdict": row.get("verdict"), "why": str(row.get("why", ""))[:200], "text": _original(text, items[n - 1][0])})
+    return issues
+
+
+def _original(text: str, plain: str) -> str:
+    """The unit of the section text (with its tags) whose tag-free form is `plain`."""
+    for unit in units(text):
+        if TAG.sub(" ", unit) == plain:
+            return unit[:300]
+    return plain[:300]
+
+
+EXEMPT_SLOTS = {"thesis", "synthesis", "recommendation", "summary", "table", "verdict", "worked_example", "vocabulary"}
+
+
+def check_repeats(written: dict, sections: dict, facts: dict) -> list[dict]:
+    """A fact's value restated in a second body section, and long passages repeated across sections."""
+    issues = []
+    seen: dict[str, list[str]] = {}
+    for sid, text in written.items():
+        if sections[sid].get("slot") in EXEMPT_SLOTS:
+            continue
+        for unit in units(text):
+            for tag in tags_of(unit):
+                fact = facts.get(tag)
+                if not fact or not claims.value_in_sentence(fact, TAG.sub(" ", unit)):
+                    continue
+                where = seen.setdefault(tag, [])
+                if sid not in where:
+                    where.append(sid)
+                first = where[0]
+                # A figure may be presented once and recalled once; from a third section on it is repetition.
+                if len(where) >= 3 and sid not in where[:2]:
+                    issues.append({"section": sid, "kind": "repeated_fact", "why": f"{tag} is already presented in {first}; refer to it without restating the figure, or drop the sentence if it adds nothing", "text": unit[:300], "fact": tag})
+    shingles: dict[tuple, str] = {}
+    for sid, text in written.items():
+        if sections[sid].get("slot") in EXEMPT_SLOTS:
+            continue
+        words = re.findall(r"\w+", canon(TAG.sub(" ", FENCE.sub(" ", text))))
+        hits = set()
+        for i in range(len(words) - 9):
+            key = tuple(words[i : i + 10])
+            owner = shingles.setdefault(key, sid)
+            if owner != sid:
+                hits.add(owner)
+        for owner in hits:
+            issues.append({"section": sid, "kind": "repeated_passage", "why": f"a passage of ten words or more repeats section {owner}"})
+    return issues
+
+
+def fix_acronyms(order: list[str], written: dict, vocab_id: str | None) -> dict:
+    """Keep one expansion per acronym: in the vocabulary table when there is one, else at the document's first use."""
+    seen: set[str] = set()
+    vocab = written.get(vocab_id, "") if vocab_id else ""
+    in_vocab = {m.group(1) for m in re.finditer(r"\|\s*\**([A-Z][A-Za-z0-9-]*[A-Z0-9])\**", vocab)}
+    changed = {}
+    for sid in order:
+        if sid == vocab_id or sid not in written:
+            continue
+        text = written[sid]
+        blocks = []
+
+        def keep_fence(m):
+            blocks.append(m.group(0))
+            return f"\x00{len(blocks) - 1}\x00"
+
+        body = FENCE.sub(keep_fence, text)
+
+        def after(m):
+            acronym = m.group(1)
+            if acronym in in_vocab or acronym in seen:
+                return acronym
+            seen.add(acronym)
+            return m.group(0)
+
+        # "HBM (High Bandwidth Memory)" -> "HBM" after its first expansion.
+        body = re.sub(r"(?<![\w-])([A-Z][A-Z0-9]*[A-Z0-9](?:-[A-Z0-9]+)?)s?\s\((?=[^)]*[a-zà-ÿ]{3,})(?![FD]\d)[^()]{4,90}\)", after, body)
+
+        def before(m):
+            acronym = m.group(2)
+            if acronym in in_vocab or acronym in seen:
+                return m.group(1)
+            seen.add(acronym)
+            return m.group(0)
+
+        # "High Bandwidth Memory (HBM)" -> "High Bandwidth Memory" after the first (the acronym is then known).
+        body = re.sub(r"([a-zà-ÿA-Z][\w' -]{3,80}?)\s\(([A-Z][A-Z0-9]*[A-Z0-9])s?\)", before, body)
+        body = re.sub(r"\x00(\d+)\x00", lambda m: blocks[int(m.group(1))], body)
+        if body != text:
+            changed[sid] = body
+    return changed

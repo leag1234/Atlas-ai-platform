@@ -10,14 +10,14 @@ from urllib.parse import urlsplit
 
 from packages.language import identified_language
 
-from longform import web
+from longform import claims, units, web
 from longform.numbers import text_contains_value
 
 BUDGETS = {
     # searches, pages for the whole document
-    "short": (4, 8),
-    "medium": (12, 18),
-    "long": (24, 28),
+    "short": (6, 10),
+    "medium": (14, 20),
+    "long": (20, 28),
 }
 PAGES_PER_SECTION = 3
 PAGE_CHARS = 22000
@@ -32,6 +32,15 @@ For each fact:
 - "value": the main number as written on the page, as a JSON number with a dot decimal and no thousands separator, or null;
 - "unit": the unit as written on the page (e.g. "TB/s", "GB", "W", "EUR", "%"), or "";
 - "quote": one or two consecutive sentences copied EXACTLY, character for character, from the page, that contain the value;
+- "subject": the exact entity the value applies to, as specific as the page makes it and never more: product AND variant or
+  form factor ("H100 SXM5", "H100 PCIe", "GH100 full chip"), model and size, country and year, cell chemistry... Copy the page's naming;
+- "conditions": the conditions under which the value holds, from the quote OR from anywhere on the page that applies to it
+  (footnotes such as "* with sparsity", table column headers, test setup notes); null when not stated:
+  {{"precision": "FP8|FP16|BF16|TF32|FP32|FP64|INT8|INT4|FP4" or null, "sparsity": "sparse|dense" or null,
+    "scope": "per_user" (one user, request or stream) | "aggregate" (total over users, devices or a server) | "per_device" | null,
+    "bound": "up_to|at_least|about" or null, "status": "official|preliminary|estimate|projection|claim|target" or null,
+    "config": "test configuration as stated (number of devices, batch size, sequence length, model, software)" or null,
+    "date": "the year or date the value refers to" or null}};
 - "sections": the section ids it serves.
 Never compute, convert or round a value; never add a fact the page does not state. If the page has nothing useful, return {{"facts": []}}.
 Reply with JSON only: {{"facts": [ ... ]}}"""
@@ -120,7 +129,6 @@ def gather(client, outline: dict, decision: dict, language: str, trace: dict, lo
                 searches.append({"section": section["id"], "query": None, "engine": "model_proposed_url", "urls": [url], "tried": []})
         section_pages[section["id"]] = picked
         wanted += [(url, section["id"]) for url in picked]
-    trace["search_state"] = dict(web.STATE)
     log(f"search state: {web.STATE}")
     for topic in (outline.get("encyclopedia") or [])[:5]:
         if not isinstance(topic, str) or ":" not in topic:
@@ -154,6 +162,67 @@ def gather(client, outline: dict, decision: dict, language: str, trace: dict, lo
             break
         read.append((page, sid))
     log(f"pages read: {len(read)} of {len(order)} tried in {time.monotonic() - started:.0f} s")
+    facts: list[dict] = []
+    rejected = {"quote_not_on_page": 0, "value_not_in_quote": 0, "malformed": 0}
+    _extract_into(client, outline, language, read, facts, pages, rejected)
+    log(f"facts kept: {len(facts)}; rejected: {rejected}")
+
+    # Gap round: a section left with few facts gets one more targeted search, within the run's search cap.
+    owned = {s["id"]: sum(1 for f in facts if f["owner"] == s["id"]) for s in outline["sections"]}
+    thin = [s for s in outline["sections"] if s.get("queries") and owned.get(s["id"], 0) < 4]
+    if thin and not web.STATE["stopped"] and web.STATE["count"] < web.MAX_PER_RUN - 1:
+        started = time.monotonic()
+        have = "\n".join(f"- {s['id']} {s.get('title')}: {s.get('claim_hint', '')} (facts so far: " + "; ".join(f["statement"][:80] for f in facts if f["owner"] == s["id"])[:300] + ")" for s in thin[:6])
+        try:
+            answer = client.json(
+                "gap:queries",
+                [{"role": "system", "content": GAP_QUERIES}, {"role": "user", "content": have}],
+                model=FAST,
+                max_tokens=1500,
+                temperature=0,
+            )
+        except Exception:  # noqa: BLE001 - no gap round
+            answer = {}
+        extra = []
+        for row in (answer.get("queries", []) if isinstance(answer, dict) else [])[:6]:
+            if not isinstance(row, dict) or not isinstance(row.get("query"), str) or row.get("section") not in owned:
+                continue
+            result = web.search(row["query"], identified_language(row["query"]) or language)
+            searches.append({"section": row["section"], "query": row["query"], "engine": result["engine"], "tried": result["tried"], "urls": [r["url"] for r in result["results"]], "round": "gap"})
+            hosts = set()
+            for r in result["results"]:
+                host = urlsplit(r["url"]).hostname
+                if r["url"] in seen_urls or host in hosts or web.SKIP_HOSTS.search(host or ""):
+                    continue
+                seen_urls.add(r["url"])
+                hosts.add(host)
+                extra.append((r["url"], row["section"]))
+                if len(hosts) >= 2:
+                    break
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            fetched = list(pool.map(lambda item: (web.read(item[0]), item[1]), extra))
+        more = []
+        for page, sid in fetched:
+            if "error" in page:
+                pages.append({"url": page["url"], "section": sid, "error": page["error"]})
+            else:
+                more.append((page, sid))
+        before = len(facts)
+        _extract_into(client, outline, language, more, facts, pages, rejected)
+        log(f"gap round: {len(thin)} thin sections, {len(extra)} pages tried, {len(more)} read, {len(facts) - before} facts added in {time.monotonic() - started:.0f} s")
+    trace["search_state"] = {k: v for k, v in web.STATE.items()}
+    trace["evidence"] = {"searches": searches, "pages": pages, "rejected_facts": rejected}
+    return facts, pages
+
+
+FAST = "mistral/zai-glm-5-3-flash"
+GAP_QUERIES = """These sections of a document still lack sourced facts. For each, give ONE precise web search query (keywords, the
+language where the best primary sources are) that finds a page stating the figures or results the section needs: datasheets,
+official statistics, peer-reviewed or agency pages. Reply with JSON only: {"queries": [{"section": "S3", "query": "..."}]}"""
+
+
+def _extract_into(client, outline, language, read, facts, pages, rejected):
+    """Extract facts from pages read, verify each quote on its page and its value in its quote, append to `facts`."""
     titles = {s["id"]: s for s in outline["sections"]}
     language_name = {"fr": "French", "en": "English"}.get(language, "the document language")
 
@@ -170,22 +239,21 @@ def gather(client, outline: dict, decision: dict, language: str, trace: dict, lo
                     {"role": "system", "content": FACT_PROMPT.format(needs=needs, language_name=language_name)},
                     {"role": "user", "content": f"Page: {page['title']} ({page['url']})\n<<<\n{text}\n>>>"},
                 ],
-                model="mistral/zai-glm-5-3-flash",
-                max_tokens=5000,
+                model=FAST,
+                max_tokens=7000,
                 temperature=0,
             )
         except Exception as error:  # noqa: BLE001 - one page failing does not stop the run
             return page, sid, [], f"extraction_failed:{type(error).__name__}"
-        facts = answer.get("facts", []) if isinstance(answer, dict) else []
-        return page, sid, facts, ""
+        found = answer.get("facts", []) if isinstance(answer, dict) else []
+        return page, sid, found, ""
 
-    started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         extracted = list(pool.map(extract, read))
-    facts: list[dict] = []
-    rejected = {"quote_not_on_page": 0, "value_not_in_quote": 0, "malformed": 0}
     for page, sid, raw, error in extracted:
         record = {"url": page["url"], "title": page["title"], "section": sid, "chars": page["chars"], "consulted_at": page["consulted_at"], "facts": 0}
+        if page.get("fallback"):
+            record["fallback"] = page["fallback"]
         if error:
             record["error"] = error
         for fact in raw:
@@ -206,23 +274,26 @@ def gather(client, outline: dict, decision: dict, language: str, trace: dict, lo
             if value is not None and not text_contains_value(float(value), fact["quote"]):
                 rejected["value_not_in_quote"] += 1
                 continue
+            serves = [s for s in (fact.get("sections") or [sid]) if isinstance(s, str) and s in titles] or [sid]
+            unit = str(fact.get("unit") or "")[:30]
             facts.append(
                 {
                     "id": f"F{len(facts) + 1}",
                     "statement": str(fact["statement"])[:300],
                     "value": value,
-                    "unit": str(fact.get("unit") or "")[:30],
+                    "unit": unit,
                     "quote": fact["quote"][:600],
                     "url": page["url"],
                     "title": page["title"],
-                    "sections": [s for s in (fact.get("sections") or [sid]) if isinstance(s, str)] or [sid],
+                    "sections": serves,
+                    # One owner per fact: the section that searched the page when the fact serves it, else the first it serves.
+                    "owner": sid if sid in serves else serves[0],
+                    "subject": str(fact.get("subject") or "")[:120],
+                    "conditions": claims.normalise_conditions(fact.get("conditions"), fact["quote"], unit),
                 }
             )
             record["facts"] += 1
         pages.append(record)
-    log(f"facts kept: {len(facts)}; rejected: {rejected}; extraction {time.monotonic() - started:.0f} s")
-    trace["evidence"] = {"searches": searches, "pages": pages, "rejected_facts": rejected}
-    return facts, pages
 
 
 SURVEY_QUERIES = """Before planning a document that answers the request below, give the searches that find authoritative overview
@@ -242,7 +313,16 @@ limits, a bottleneck, a dominant cost). Up to 12, the most important first. Repl
 
 
 def survey(client, request: str, language: str, log) -> tuple[list[dict], list[dict], list[dict]]:
-    """STORM-like pre-writing: read overview sources first, so the outline follows the subject's real structure."""
+    """STORM-like pre-writing: read overview sources first, so the outline follows the subject's real structure.
+    The expert-perspectives call runs while the searches and page reads proceed."""
+    pool = ThreadPoolExecutor(max_workers=1)
+    expert_job = pool.submit(
+        client.json,
+        "survey:perspectives",
+        [{"role": "system", "content": PERSPECTIVES}, {"role": "user", "content": request[:5000]}],
+        max_tokens=8000,
+        temperature=0.3,
+    )
     plan = client.json(
         "survey:queries",
         [{"role": "system", "content": SURVEY_QUERIES}, {"role": "user", "content": request[:5000]}],
@@ -272,14 +352,13 @@ def survey(client, request: str, language: str, log) -> tuple[list[dict], list[d
             result = web.kiwix_search(title.strip(), tlang.strip().lower(), n=1)
             searches.append({"section": "survey", "query": title, "engine": result["engine"], "tried": result["tried"], "urls": [r["url"] for r in result["results"]]})
             urls += [r["url"] for r in result["results"] if r["url"] not in urls]
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        pages = [p for p in pool.map(web.read, urls[:8]) if "error" not in p][:6]
-    expert = client.json(
-        "survey:perspectives",
-        [{"role": "system", "content": PERSPECTIVES}, {"role": "user", "content": request[:5000]}],
-        max_tokens=8000,
-        temperature=0.3,
-    )
+    with ThreadPoolExecutor(max_workers=6) as readers:
+        pages = [p for p in readers.map(web.read, urls[:8]) if "error" not in p][:6]
+    try:
+        expert = expert_job.result()
+    except Exception:  # noqa: BLE001 - the plan can go on without the perspectives
+        expert = {}
+    pool.shutdown(wait=False)
     expert_concepts = [
         {"concept": c.get("concept"), "why": c.get("why", ""), "origin": "expert perspective (" + str(c.get("perspective", "")) + ")"}
         for c in (expert.get("concepts", []) if isinstance(expert, dict) else [])

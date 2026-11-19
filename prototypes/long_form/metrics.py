@@ -20,6 +20,13 @@ def text_metrics(text: str) -> dict:
     }
 
 
+def _kinds(issues):
+    out = {}
+    for i in issues:
+        out[i["kind"]] = out.get(i["kind"], 0) + 1
+    return out
+
+
 rows = {}
 for case in CASES:
     row = {}
@@ -50,6 +57,14 @@ for case in CASES:
             "numbers_hypothesis_or_unverified": sum(s["hypothesis"] for s in stats.values()),
             "failed_calls": sum(1 for c in t.get("calls", []) if c.get("failed")),
             "web_searches": (t.get("search_state") or {}).get("count", 0),
+            "search_stopped": (t.get("search_state") or {}).get("stopped"),
+            "pages_read": sum(1 for p in (t.get("evidence") or {}).get("pages", []) if "error" not in p),
+            "removed_sentences": len(final.get("removed", [])),
+            "marked_unverified": len(final.get("marked_unverified", [])),
+            "dagger_or_unverified_labels": len(re.findall(r"†|\((?:non vérifié|not verified|unverified)", doc)),
+            "issue_kinds_first": _kinds((t.get("checks_first") or {}).get("issues", [])),
+            "issue_kinds_final": _kinds(final.get("issues", [])),
+            "step_seconds": {s["step"]: s["seconds"] for s in t.get("steps", [])},
             **text_metrics(doc),
         }
     rows[case] = row
