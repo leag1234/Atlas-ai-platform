@@ -870,6 +870,21 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     answer_language = request.prose_lang
     today = relative_dates.local_today(request.ui_timezone)
     asked_days = relative_dates.asked_weekdays(request.user_text, answer_language)
+    # A stray character of another script glued to a word (stray_script): it
+    # leaves the stream and the stored answer. Innermost gate: it reads the
+    # text after the quotation and date checks, in the stored order.
+    from services.orchestrator import stray_script
+
+    own_scripts = stray_script.scripts_in(
+        m.text for m in request.messages if m.role == "user"
+    )
+    script_gate: stray_script.Gate | None = None
+    scripting = None
+    if (current_sink := sink_context.get()) is not None:
+        script_gate = stray_script.Gate(
+            current_sink, stray_script.Rewriter(answer_language, own_scripts)
+        )
+        scripting = sink_context.set(script_gate)
     date_gate: relative_dates.Gate | None = None
     dating = None
     if (current_sink := sink_context.get()) is not None:
@@ -949,11 +964,15 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             await quote_gate.flush()
         if date_gate is not None:
             await date_gate.flush()
+        if script_gate is not None:
+            await script_gate.flush()
     finally:
         if gating is not None:
             sink_context.reset(gating)
         if dating is not None:
             sink_context.reset(dating)
+        if scripting is not None:
+            sink_context.reset(scripting)
         document_quotes.current.reset(quoting)
         user_urls.reset(supplied)
         # The routing call is part of this turn's cost.
@@ -1093,6 +1112,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     item.reponse = relative_dates.repair(
         item.reponse, answer_language, today, asked=asked_days
     )
+    item.reponse, script_counts = stray_script.clean(
+        item.reponse, answer_language, own_scripts
+    )
+    stray_script.log(script_counts, item.task_type)
     if reviewable and check is not None and check.evidence:
         # What the person gave (their messages, the files of the turn) is a
         # source of the answer, never a missing entity (grounding.provided).

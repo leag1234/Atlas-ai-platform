@@ -191,7 +191,7 @@ class ClosingInstructionTests(unittest.TestCase):
     def test_only_search_limits_are_recognised(self) -> None:
         for code in SEARCH_LIMITS:
             self.assertEqual(limit_code({"error": code}), code)
-        for other in ("search_unavailable", "timeout", "tool_quota_exhausted", 429):
+        for other in ("search_unavailable", "timeout", "answer_step_limit", 429):
             self.assertIsNone(limit_code({"error": other}))
         self.assertIsNone(limit_code(FOUND))
 
@@ -308,7 +308,7 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         tools = Research()
         result = await chat_turn(model, tools)
         self.assertEqual(
-            (result.state, result.reason), ("stopped", "tool_quota_exhausted")
+            (result.state, result.reason), ("stopped", "answer_step_limit")
         )
         self.assertEqual(tools.executed, ["web_search"])
         self.assertEqual(len(model.seen), 2)

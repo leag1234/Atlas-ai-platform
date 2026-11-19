@@ -3,9 +3,12 @@
 from services.orchestrator.closing import (
     LIMIT_CLOSED,
     SEARCH_TOOLS,
+    STEP_LIMIT_CODE,
     WRITING_RESERVE_SECONDS,
     closing_instruction,
     limit_code,
+    step_closing_instruction,
+    step_limit_result,
     time_closing_instruction,
 )
 from services.orchestrator.code_verification import VerificationStatus
@@ -688,7 +691,7 @@ async def run(
             # asked for (a researched note stopped here before its publication,
             # staging 2026-11-11): only more research is refused, below.
             if (quota_recovered or closed) and not limits.code_mode:
-                raise Stop("tool_quota_exhausted")
+                raise Stop(STEP_LIMIT_CODE)
             messages.append(
                 {
                     "role": "assistant",
@@ -814,10 +817,16 @@ async def run(
                 ):
                     quota_recovered = True
                     quota_denials += 1
+                    executed_counts = {
+                        "searches": counts["web_search"],
+                        "fetches": counts["web_fetch"],
+                        "tools": result.tool_calls,
+                    }
                     for denied in pending_calls[pending_calls.index(call) :]:
+                        # The cause in words, so that the model repeats it as
+                        # it is: a step limit of this answer, never a quota (D5).
                         denial: Message = {
-                            "error": "tool_quota_exhausted",
-                            "reason": quota,
+                            **step_limit_result(quota, executed_counts),
                             "tools_executed": result.tool_calls,
                             "tool_limit": limits.tool_calls,
                             "searches_executed": counts["web_search"],
@@ -835,10 +844,24 @@ async def run(
                                     content=json.dumps(denial),
                                 )
                             )
+                    if not limits.code_mode and not closed:
+                        # The chat writes its answer now, told what the limit is
+                        # and how to name it (closing.py), like a search limit.
+                        closed = True
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": step_closing_instruction(
+                                    quota,
+                                    executed_counts,
+                                    query.prose_lang or query.lang,
+                                ),
+                            }
+                        )
                     logging.getLogger(__name__).info(
                         json.dumps(
                             {
-                                "event": "tool_quota_exhausted",
+                                "event": STEP_LIMIT_CODE,
                                 "reason": quota,
                                 "executed": result.tool_calls,
                                 "searches": counts["web_search"],

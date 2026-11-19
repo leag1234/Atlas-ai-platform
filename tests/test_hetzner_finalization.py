@@ -38,7 +38,7 @@ def research_request() -> AgentRequest:
             }
         )
         evidence = (
-            '{"error": "tool_quota_exhausted", "reason": "search_limit"}'
+            '{"error": "answer_step_limit", "reason": "search_limit"}'
             if index == 8
             else "Source: confirmed interruption; cause unknown. "
             * (450 if index >= 3 else 1)

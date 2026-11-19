@@ -535,7 +535,7 @@ class RecoveryTests(unittest.IsolatedAsyncioTestCase):
             messages=[
                 {"role": "user", "content": "Calculate the total."},
                 {"role": "tool", "content": "Measured items: 12 and 30."},
-                {"role": "tool", "content": '{"error": "tool_quota_exhausted"}'},
+                {"role": "tool", "content": '{"error": "answer_step_limit"}'},
             ],
             tools=[],
         )
