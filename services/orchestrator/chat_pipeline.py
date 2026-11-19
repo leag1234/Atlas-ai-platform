@@ -1175,7 +1175,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         # code (travel_rebuild).
         from services.orchestrator import travel_rebuild
 
-        item.reponse, rebuild_report = await travel_rebuild.review(
+        item.reponse, rebuild_report = await _checked_trip(
             travel,
             item.reponse,
             asked_language or travel.language,
@@ -1185,16 +1185,6 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.cout_eur = float(Decimal(str(item.cout_eur)) + rebuild_report.cost_eur)
         item.off_trip_urls = sorted(
             travel_rebuild.unrelated(travel, asked, item.reponse)
-        )
-        from services.orchestrator import transit_planner
-
-        # A doubtful plan is a fallback after what the pages read support.
-        item.reponse = transit_planner.doubtful_answer(
-            item.reponse, asked_language or travel.language
-        )
-        # A plan's attribution stays visible (Transitous usage policy).
-        item.reponse = transit_planner.with_attribution(
-            item.reponse, travel.computed, asked_language or travel.language
         )
     # A relative date or weekday that disagrees with the calendar (relative_dates).
     item.reponse = relative_dates.repair(
@@ -1297,6 +1287,39 @@ async def _recover_trip(
         item.erreurs.append(reason)
     item.cout_eur = float(Decimal(str(item.cout_eur)) + report.cost_eur)
     return True
+
+
+async def _checked_trip(
+    travel: travel_claims.Turn,
+    answer: str,
+    language: str,
+    *,
+    question: str,
+    profile: str,
+) -> tuple[str, Any]:
+    """The travel checks of a trip answer, the planner's block kept as code
+    wrote it.
+
+    The checks read the model's own words only (transit_planner.without_plans):
+    a computed leg is never cut. Code then puts the plan back: a doubtful plan
+    as the fallback after what the pages read support, or after the statement
+    that the open data has no reasonable connection; a plan with itineraries
+    as its block, unaltered, in place of any restatement. The turn is passed
+    explicitly: these checks run after the turn's context is reset (staging
+    -131: the doubtful-plan step read an empty context, so the Geneva night
+    chain stayed the answer).
+    """
+    from services.orchestrator import transit_planner, travel_rebuild
+
+    rest, first = transit_planner.without_plans(answer, travel)
+    final, report = await travel_rebuild.review(
+        travel, rest, language, question=question, profile=profile
+    )
+    final = transit_planner.doubtful_answer(final, language, travel)
+    final = transit_planner.planned_answer(final, travel, first=first)
+    # A plan's attribution stays visible (Transitous usage policy).
+    final = transit_planner.with_attribution(final, travel.computed, language)
+    return final, report
 
 
 class _HeldAnswer:

@@ -785,14 +785,22 @@ class SnapTest(Base):
 
     def planner(self) -> Planner:
         planner = Planner("sydney")
-        unreached = {
-            "debugOutput": {"n_start_offsets": 0, "n_dest_offsets": 167},
-            "itineraries": [],
-            "direct": [],
-        }
 
         async def fake(path: str, params: dict[str, str]) -> tuple[int, bytes]:
             planner.calls.append((path, params))
+            # The origin is the unreached end; an arrive-by search runs
+            # backwards from the destination, so its "dest" offsets are the
+            # origin's (recorded from api.transitous.org on 2026-11-19).
+            side = (
+                "n_dest_offsets"
+                if params.get("arriveBy") == "true"
+                else "n_start_offsets"
+            )
+            unreached = {
+                "debugOutput": {"n_start_offsets": 167, "n_dest_offsets": 167, side: 0},
+                "itineraries": [],
+                "direct": [],
+            }
             if path == "/api/v1/geocode":
                 places = {"King Street, Sydney": [self.KING_STREET], **PLACES}
                 return 200, json.dumps(places.get(params["text"], [])).encode()
@@ -862,6 +870,83 @@ class SnapTest(Base):
         )
         self.assertEqual(data["outcome"], "no_itinerary")
         self.assertEqual(planner.plans(), 1)
+
+    def test_an_unreached_airport_ends_at_its_terminal_stop(self) -> None:
+        """Staging -131: the Sydney Airport point lies amid the runways, with
+        no stop within reach (0 offsets on the destination's side of an
+        arrive-by search); the start was snapped instead and the retry found
+        nothing again. The plan now ends at the nearest stop bearing the
+        airport's name."""
+        planner = Planner("sydney")
+        airport = match(
+            "Sydney Airport",
+            -33.9463,
+            151.1881,
+            "Australia/Sydney",
+            "Bayside",
+            kind="PLACE",
+        )
+        terminal = {
+            **match(
+                "Sydney Airport, Terminal 3 Domestic",
+                -33.9334,
+                151.1806,
+                "Australia/Sydney",
+                "Bayside",
+            ),
+            "id": "AU-NSW_202067",
+        }
+        unreached = {
+            "debugOutput": {"n_start_offsets": 0, "n_dest_offsets": 167},
+            "itineraries": [],
+            "direct": [],
+        }
+
+        async def fake(path: str, params: dict[str, str]) -> tuple[int, bytes]:
+            planner.calls.append((path, params))
+            if path == "/api/v1/geocode":
+                if params.get("type") == "STOP":
+                    far = {**terminal, "name": "Sydney Airport Hotel", "lat": -34.2}
+                    return 200, json.dumps([far, terminal]).encode()
+                places = {
+                    "King Street, Sydney": [self.KING_STREET],
+                    "Sydney Airport": [airport],
+                }
+                return 200, json.dumps(places.get(params["text"], [])).encode()
+            if path == "/api/v1/reverse-geocode":
+                near_street = params["place"].startswith("-33.86")
+                return 200, json.dumps([self.STOP] if near_street else []).encode()
+            if params["toPlace"] == terminal["id"]:
+                return 200, json.dumps(recorded("sydney-stop")).encode()
+            return 200, json.dumps(unreached).encode()
+
+        config = self.config()
+        data = asyncio.run(
+            tp.compute(
+                tp.TransitPlan(
+                    destination="Sydney Airport",
+                    origin="King Street, Sydney",
+                    arrive_by="2026-11-20T07:00",
+                ),
+                config=config,
+                language="en",
+                position=None,
+                home_zone="Australia/Sydney",
+                days=["2026-11-20"],
+                now=datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc),
+                client=tp.Client(config, fake),
+            )
+        )
+        self.assertEqual(data["outcome"], "planned")
+        second = [p for path, p in planner.calls if path.endswith("/plan")][1]
+        self.assertEqual(second["toPlace"], "AU-NSW_202067")
+        self.assertEqual(second["fromPlace"], "-33.86880,151.20360")
+        self.assertIn(
+            "The planner reaches no stop at Sydney Airport (Bayside) itself: the "
+            "plan ends at Sydney Airport, Terminal 3 Domestic (Bayside), the "
+            "nearest stop found (1.6 km in a straight line).",
+            data["rendered"],
+        )
 
 
 # The staging -129 answer to "Villeurbanne Gratte-Ciel to Geneva airport by

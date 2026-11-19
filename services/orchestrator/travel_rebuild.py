@@ -833,7 +833,15 @@ def connection_note(turn: travel_claims.Turn, answer: str, language: str) -> str
         return ""
     stated = bool(_TRANSFER.search(route_facts.fold(body)))
     folded_body = normalized(body)
-    for _, text in turn.linked:
+    from services.orchestrator import transit_planner
+
+    # The planner's own itineraries are no page read: their changes are in
+    # the plan's block (staging -131: "according to the pages read, this trip
+    # includes a connection" was added from the night chain's legs).
+    planner = transit_planner.own_urls()
+    for url, text in turn.linked:
+        if url in planner:
+            continue
         folded = route_facts.fold(text)
         for q in travel_claims.quantities(text, generous=True):
             if q.kind != "clock" or not any(abs(q.value - v) < 0.5 for v in used):

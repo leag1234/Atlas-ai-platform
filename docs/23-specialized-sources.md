@@ -153,6 +153,32 @@ Since then:
   says that Atlas computes no route: without a plan it says that no computed itinerary
   was found for the trip.
 
+Staging -131 (2026-11-19) showed three more defects: answers rewritten as prose lost
+legs of the plan (Madrid: the AVE leg was missing, option 2 had no leg at all), the
+travel checks cut a walk leg out of a Caen block, and the Geneva night chain stayed the
+answer because the doubtful-plan step read the turn's context after the pipeline had
+reset it. Since then the plan block is guaranteed by code:
+
+- the last plan with itineraries is kept on the turn as rendered, with the clock times
+  of its legs (`Turn.plan`, `Turn.plan_times`; a doubtful one in `Turn.doubtful`);
+- before the travel checks, `transit_planner.without_plans` takes the block out of the
+  answer when the answer gives it unaltered: the checks and the bounded rewrite read the
+  model's own words only, so they never cut a computed leg;
+- after them, `chat_pipeline._checked_trip` passes the turn explicitly:
+  `doubtful_answer` opens with what the pages read support, or with the "no reasonable
+  connection" statement (also when the direct-services search failed or the answer was
+  the fallback alone), and gives the fallback once; `planned_answer` removes every line
+  that restates a plausible plan (a block line, a line citing only the planner, a line
+  without a page link that gives one of the plan's times) and puts the block, unaltered,
+  in place of the first of them, or where it was, or after the opening paragraph;
+- the connection note of the travel checks ignores the planner's own passages: their
+  changes are in the block;
+- MOTIS counts offsets in its search direction: an arrive-by search runs backwards from
+  the destination, so its `n_start_offsets` are the destination's. The Sydney Airport
+  point lies amid the runways with no stop in reach; the retry now ends there at the
+  nearest stop bearing the place's name within 3 km (`/api/v1/geocode`, type `STOP`:
+  "Sydney Airport, Terminal 3 Domestic", 1.7 km), said in the plan.
+
 ### Settings
 
 | Variable | Default | Meaning |
