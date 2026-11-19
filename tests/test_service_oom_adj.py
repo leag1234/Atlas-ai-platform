@@ -1,12 +1,18 @@
 """Long-lived service containers outlive memory pressure; per-turn containers do not."""
 
+import ast
+import importlib.util
 import json
 import os
+import sys
 import unittest
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import patch
 
 from services.orchestrator import serving
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_arguments(env: dict[str, str]) -> list[str]:
@@ -49,6 +55,65 @@ class ServiceOomScoreTests(unittest.TestCase):
         self.assertEqual(
             oom_value(run_arguments({"ATLAS_SERVICE_OOM_SCORE_ADJ": "-200"})), "-200"
         )
+
+    def test_container_recreated_at_restart_keeps_the_score(self) -> None:
+        def docker(*args: str) -> str:
+            if args[0] == "ps":
+                return "atlas-chat-ui-100"
+            if args[0] == "inspect":
+                return "ghcr.io/open-webui/open-webui:main"
+            return ""
+
+        with (
+            patch.dict(os.environ, {"ATLAS_SERVICE_OOM_SCORE_ADJ": "-500"}, clear=True),
+            patch.object(serving, "docker", side_effect=docker) as mock,
+        ):
+            serving.docker_run(
+                "atlas-chat-ui-100", "ghcr.io/open-webui/open-webui:main", []
+            )
+        verbs = [c.args[0] for c in mock.call_args_list]
+        self.assertLess(verbs.index("rm"), verbs.index("run"))
+        run = [c.args for c in mock.call_args_list if c.args[0] == "run"]
+        self.assertEqual(oom_value(list(run[0])), "-500")
+
+    def test_every_service_container_of_the_launcher_goes_through_docker_run(
+        self,
+    ) -> None:
+        """A new ``docker run`` in serving.py must not bypass the OOM options."""
+        tree = ast.parse((ROOT / "services/orchestrator/serving.py").read_text())
+        owners: list[str] = []
+        for function in ast.walk(tree):
+            if not isinstance(function, ast.FunctionDef):
+                continue
+            for node in ast.walk(function):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "docker"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)
+                    and node.args[0].value in ("run", "create")
+                ):
+                    owners.append(function.name)
+        self.assertEqual(owners, ["docker_run"])
+
+    def test_instance_layers_protect_production_more_than_staging(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "instance_env", ROOT / "tools" / "instance_env.py"
+        )
+        assert spec is not None and spec.loader is not None
+        instance_env = importlib.util.module_from_spec(spec)
+        sys.modules.setdefault("instance_env", instance_env)
+        spec.loader.exec_module(instance_env)
+        values = {}
+        for instance in ("production", "staging"):
+            public, _ = instance_env.load_public(ROOT, instance)
+            env = {
+                "ATLAS_STABLE": public["ATLAS_STABLE"],
+                "ATLAS_SERVICE_OOM_SCORE_ADJ": public["ATLAS_SERVICE_OOM_SCORE_ADJ"],
+            }
+            values[instance] = oom_value(run_arguments(env))
+        self.assertEqual(values, {"production": "-500", "staging": "-200"})
 
     def test_invalid_setting_fails_before_docker(self) -> None:
         for value in ("abc", "-1001", "1001", "1.5", "- 5"):
