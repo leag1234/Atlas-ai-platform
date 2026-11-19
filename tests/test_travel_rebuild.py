@@ -162,7 +162,9 @@ class RewriteTests(unittest.IsolatedAsyncioTestCase):
     async def test_caen_paris_placeholder_time_is_never_kept(self) -> None:
         turn = paris()
         found = turn.findings(PARIS_ANSWER)
-        self.assertIn("12 h 2x", found.labels())
+        self.assertEqual(
+            found.labels(), ["“arrivée vers 12 h 2x à Paris Saint-Lazare”"]
+        )
         rewritten = (
             "Le TER 3105 part de Caen à 9h12 et arrive à Paris Saint-Lazare à 11h52 "
             f"([rail.example.test]({PARIS_URL})). Bon déjeuner !"
@@ -330,7 +332,10 @@ class StagingSecondDayTests(unittest.IsolatedAsyncioTestCase):
     def test_another_days_time_needs_its_day(self) -> None:
         turn = self.munich()
         found = turn.findings("Tomorrow an ICE leaves München Hbf at 06:34.")
-        self.assertIn(f"06:34 ({self.other})", found.labels())
+        self.assertIn(
+            f"“Tomorrow an ICE leaves München Hbf at 06:34” ({self.other})",
+            found.labels(),
+        )
         day = date.fromisoformat(self.other).strftime("%d.%m.%Y")
         # Written with its own day, it is sourced but of no use for this
         # trip: left out without a note (staging -114).
@@ -381,7 +386,8 @@ class StagingSecondDayTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ICE 1006 leaves München Hbf at 08:55", final)
         self.assertIn("4 h 02 min", final)
         self.assertNotIn("12 minutes.", final.split("Not verified")[0])
-        self.assertIn("Not verified, so left out: 12 minutes", final)
+        self.assertIn("Not verified, so left out: “", final)
+        self.assertIn("12 minutes", final.split("Not verified")[1])
 
     async def test_excerpt_numbers_become_links(self) -> None:
         turn = paris()

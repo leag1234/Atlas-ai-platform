@@ -266,7 +266,12 @@ class TravelClaimsTests(unittest.TestCase):
         body = checked.split("\n\n")[0]
         # The sentence goes whole: no fragment of an address, no marker.
         self.assertEqual(body, "Le TER 3105 part à 9h12 et arrive à 11h52.")
-        self.assertIn("Non vérifié, donc retiré : 10 minutes.", checked)
+        # The note quotes the clause it removed, never a bare value
+        # (staging -129 listed "13 minutes").
+        self.assertIn(
+            "Non vérifié, donc retiré : “est à environ 10 minutes à pied de la gare”.",
+            checked,
+        )
         self.assertNotIn("non vérifiée)", checked)
 
     def test_invented_rows_go_and_sourced_rows_stay(self) -> None:
@@ -277,10 +282,12 @@ class TravelClaimsTests(unittest.TestCase):
         )
         turn = turn_with("TER 3105 Caen 09:12 Paris Saint-Lazare 11:52")
         checked = self.note(turn.check(answer, "fr"))
-        self.assertIn("| TER 3105 | 09:12 | 11:52 |", checked)
-        self.assertNotIn("Correspondance", checked)
-        self.assertIn("Bon voyage.", checked)
-        self.assertIn("10h05, 12h00", checked)
+        body, _, note = checked.partition("\n\nNon vérifié")
+        self.assertIn("| TER 3105 | 09:12 | 11:52 |", body)
+        self.assertNotIn("Correspondance", body)
+        self.assertIn("Bon voyage.", body)
+        # A row's value is quoted with the row's name.
+        self.assertIn("“Correspondance: ~10h05”, “Correspondance: 12h00”", note)
 
     def test_a_table_left_with_no_row_goes(self) -> None:
         answer = (
@@ -294,8 +301,14 @@ class TravelClaimsTests(unittest.TestCase):
     def test_ranges_are_one_value_and_never_half_marked(self) -> None:
         turn = turn_with()
         for answer, values in (
-            ("La gare est à 1,5-2 km, soit 20–25 min à pied.", "1,5-2 km, 20–25 min"),
-            ("Departures 08:30–09:30 every day. Have a good trip.", "08:30–09:30"),
+            (
+                "La gare est à 1,5-2 km, soit 20–25 min à pied.",
+                "“La gare est à 1,5-2 km”, “soit 20–25 min à pied”",
+            ),
+            (
+                "Departures 08:30–09:30 every day. Have a good trip.",
+                "“Departures 08:30–09:30 every day”",
+            ),
         ):
             with self.subTest(answer=answer):
                 checked = self.note(turn.check(answer, "fr"))
@@ -337,7 +350,7 @@ class TravelClaimsTests(unittest.TestCase):
         checked = turn_with().check(answer, "fr")
         before, after = checked.split("<details>")
         self.assertTrue(before.startswith("Bon voyage."), before)
-        self.assertIn("Non vérifié, donc retiré : 2 km.", before)
+        self.assertIn("Non vérifié, donc retiré : “La gare est à 2 km”.", before)
         self.assertNotIn("Non vérifié", after)
 
     def test_the_users_own_times_in_any_form_are_theirs(self) -> None:

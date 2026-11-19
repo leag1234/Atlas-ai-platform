@@ -104,6 +104,17 @@ PLACES = {
 }
 
 
+# Reverse geocoding by type: the start's town for a doubtful trip's search
+# (a fictional street of a public town).
+REVERSE: dict[str, list[dict[str, Any]]] = {
+    "ADDRESS": [
+        match(
+            "Rue Exemple", 45.769, 4.882, "Europe/Paris", "Villeurbanne", kind="ADDRESS"
+        )
+    ],
+}
+
+
 class Planner:
     """A fake MOTIS server: geocodes from PLACES, plans from one recording."""
 
@@ -115,6 +126,8 @@ class Planner:
         self.calls.append((path, params))
         if path == "/api/v1/geocode":
             return 200, json.dumps(PLACES.get(params["text"], [])).encode()
+        if path == "/api/v1/reverse-geocode":
+            return 200, json.dumps(REVERSE.get(params["type"], [])).encode()
         return 200, json.dumps(recorded(self.plan)).encode()
 
     def plans(self) -> int:
@@ -661,10 +674,34 @@ class AnswerFactsTest(Base):
                 self.assertNotIn("does not compute routes", checked)
                 self.assertNotIn("ne calcule pas encore", checked)
 
-    def test_without_a_plan_the_note_still_says_so(self) -> None:
+    def test_without_a_planner_the_note_still_says_so(self) -> None:
         turn = travel_claims.Turn(active=True, asked=["train to Boston?"])
-        checked = turn.check("Take the Red Line towards Alewife at 12:10.", "en")
+        with patch.dict(os.environ, {"ATLAS_TRANSIT": "0"}):
+            checked = turn.check("Take the Red Line towards Alewife at 12:10.", "en")
         self.assertIn("does not compute routes yet", checked)
+
+    def test_a_planner_without_a_plan_never_says_atlas_computes_no_route(
+        self,
+    ) -> None:
+        # Staging -129 (Sydney): the planner found nothing and the note said
+        # "Atlas does not compute routes yet".
+        turn = travel_claims.Turn(active=True, asked=["train to the airport?"])
+        for language, clause in (
+            ("en", "no computed itinerary was found for this trip"),
+            (
+                "fr",
+                "aucun itin\u00e9raire calcul\u00e9 n\u2019a \u00e9t\u00e9 trouv\u00e9",
+            ),
+            ("de", "keine berechnete Verbindung gefunden"),
+        ):
+            with self.subTest(language=language):
+                checked = turn.check(
+                    "Take the Red Line towards Alewife at 12:10.", language
+                )
+                self.assertIn(clause, checked)
+                self.assertNotIn("does not compute routes", checked)
+                self.assertNotIn("ne calcule pas encore", checked)
+                self.assertNotIn("noch keine Routen", checked)
 
     def test_the_instruction_asks_for_the_second_person(self) -> None:
         _, data = self.depart_turn()
@@ -727,3 +764,344 @@ class DoubtTest(Base):
         self.assertEqual(data["outcome"], "planned")
         self.assertNotIn("doubts", data)
         self.assertNotIn("Caution", data["rendered"])
+
+
+class SnapTest(Base):
+    """Staging -129: "King Street, Sydney" geocoded to a street point the
+    planner's walk search could not attach (0 start offsets): no itinerary."""
+
+    KING_STREET = match(
+        "King Street",
+        -33.8688,
+        151.2036,
+        "Australia/Sydney",
+        "City of Sydney",
+        kind="ADDRESS",
+    )
+    STOP = {
+        **match("Town Hall", -33.8732, 151.2066, "Australia/Sydney", "City of Sydney"),
+        "id": "AU-NSW_200060",
+    }
+
+    def planner(self) -> Planner:
+        planner = Planner("sydney")
+        unreached = {
+            "debugOutput": {"n_start_offsets": 0, "n_dest_offsets": 167},
+            "itineraries": [],
+            "direct": [],
+        }
+
+        async def fake(path: str, params: dict[str, str]) -> tuple[int, bytes]:
+            planner.calls.append((path, params))
+            if path == "/api/v1/geocode":
+                places = {"King Street, Sydney": [self.KING_STREET], **PLACES}
+                return 200, json.dumps(places.get(params["text"], [])).encode()
+            if path == "/api/v1/reverse-geocode":
+                return 200, json.dumps([self.STOP]).encode()
+            if params["fromPlace"] == self.STOP["id"]:
+                return 200, json.dumps(recorded("sydney-stop")).encode()
+            return 200, json.dumps(unreached).encode()
+
+        planner.fake = fake  # type: ignore[attr-defined]
+        return planner
+
+    def test_an_unreached_start_is_planned_from_its_nearest_stop(self) -> None:
+        planner = self.planner()
+        config = self.config()
+        data = asyncio.run(
+            tp.compute(
+                tp.TransitPlan(
+                    destination="Sydney Airport",
+                    origin="King Street, Sydney",
+                    arrive_by="2026-11-20T07:00",
+                ),
+                config=config,
+                language="en",
+                position=None,
+                home_zone="Australia/Sydney",
+                days=["2026-11-20"],
+                now=datetime(2026, 11, 19, 12, 0, tzinfo=timezone.utc),
+                client=tp.Client(config, planner.fake),  # type: ignore[attr-defined]
+            )
+        )
+        self.assertEqual(data["outcome"], "planned")
+        self.assertEqual(planner.plans(), 2)
+        second = [p for path, p in planner.calls if path.endswith("/plan")][1]
+        self.assertEqual(second["fromPlace"], "AU-NSW_200060")
+        self.assertIn(
+            "The planner reaches no stop from King Street (City of Sydney) itself: "
+            "the plan starts at Town Hall (City of Sydney), the nearest stop "
+            "(0.6 km in a straight line).",
+            data["rendered"],
+        )
+
+    def test_a_far_stop_is_never_taken_for_the_place(self) -> None:
+        planner = self.planner()
+        self.STOP_FAR = {**self.STOP, "lat": -33.95, "lon": 151.3}
+        config = self.config()
+
+        async def far(path: str, params: dict[str, str]) -> tuple[int, bytes]:
+            if path == "/api/v1/reverse-geocode":
+                return 200, json.dumps([self.STOP_FAR]).encode()
+            answer: tuple[int, bytes] = await planner.fake(path, params)  # type: ignore[attr-defined]
+            return answer
+
+        data = asyncio.run(
+            tp.compute(
+                tp.TransitPlan(
+                    destination="Sydney Airport", origin="King Street, Sydney"
+                ),
+                config=config,
+                language="en",
+                position=None,
+                home_zone="Australia/Sydney",
+                days=[],
+                now=NOW,
+                client=tp.Client(config, far),
+            )
+        )
+        self.assertEqual(data["outcome"], "no_itinerary")
+        self.assertEqual(planner.plans(), 1)
+
+
+# The staging -129 answer to "Villeurbanne Gratte-Ciel to Geneva airport by
+# 09:00": the night chain via Annecy given as the most direct option.
+NIGHT_ANSWER = (
+    "Pour \u00eatre \u00e0 l\u2019a\u00e9roport de Gen\u00e8ve le vendredi 20 novembre "
+    "2026 \u00e0 9 h, les itin\u00e9raires calcul\u00e9s en transports en commun "
+    "partent tous la nuit, d\u00e8s 03:04, et arrivent entre 08:18 et 08:27. "
+    "Voici l\u2019option la plus directe parmi celles trouv\u00e9es :\n\n"
+    "- Bus PL4 direction Cordeliers : Verlaine - Tolsto\u00ef 03:19 \u2192 Saxe - "
+    "Lafayette 03:29 ([transitous.org](https://transitous.org/sources/))\n"
+    "- Car FlixBus N779 direction Chamonix : Lyon (Gerland Bus Station) 05:05 "
+    "\u2192 Annecy (Central Bus Station) 06:40 "
+    "([transitous.org](https://transitous.org/sources/))\n\n"
+    "Itin\u00e9raires calcul\u00e9s avec [Transitous](https://transitous.org/sources/) "
+    "\u00e0 partir des donn\u00e9es ouvertes des exploitants."
+)
+
+
+class DoubtfulAnswerTest(Base):
+    def doubtful_turn(self) -> tuple[travel_claims.Turn, dict[str, Any]]:
+        planner = Planner("lyon")
+
+        async def fetch(
+            _self: Any, path: str, params: dict[str, str]
+        ) -> tuple[int, bytes]:
+            return await planner(path, params)
+
+        turn = travel_claims.Turn(
+            active=True,
+            language="fr",
+            asked=[
+                "je dois \u00eatre \u00e0 l'a\u00e9roport de Gen\u00e8ve demain \u00e0 9h"
+            ],
+            zone="Europe/Paris",
+            position=Position(latitude=45.769, longitude=4.882),
+        )
+        token = travel_claims.current.set(turn)
+        try:
+            with (
+                patch.object(tp.Client, "_fetch", fetch),
+                patch.object(
+                    tp,
+                    "_now",
+                    lambda: datetime(2026, 11, 19, 18, 0, tzinfo=timezone.utc),
+                ),
+            ):
+                result = asyncio.run(
+                    tp.execute(
+                        json.dumps(
+                            {
+                                "destination": "Geneva Airport",
+                                "from_device_position": True,
+                                "arrive_by": "2026-11-20T09:00",
+                            }
+                        ),
+                        30.0,
+                    )
+                )
+        finally:
+            travel_claims.current.reset(token)
+        data = result["data"]
+        assert isinstance(data, dict)
+        return turn, data
+
+    def answer(self, turn: travel_claims.Turn, text: str) -> str:
+        token = travel_claims.current.set(turn)
+        try:
+            return tp.doubtful_answer(text, "fr")
+        finally:
+            travel_claims.current.reset(token)
+
+    def test_the_plan_is_titled_a_fallback_and_the_search_names_the_town(
+        self,
+    ) -> None:
+        turn, data = self.doubtful_turn()
+        self.assertEqual(data["outcome"], "doubtful")
+        self.assertTrue(
+            data["rendered"].startswith("**Solution de repli seulement, calcul\u00e9e")
+        )
+        self.assertEqual(
+            data["direct_query"],
+            "Villeurbanne Geneve-Aeroport train ou car direct horaires",
+        )
+        self.assertEqual(turn.doubtful, data["rendered"])
+        self.assertIn("partent la nuit", turn.doubt_reason)
+
+    def test_a_night_chain_answer_says_no_reasonable_connection_first(self) -> None:
+        turn, _ = self.doubtful_turn()
+        turn.direct_pages = ["https://www.example-rail.test/lyon-geneve"]
+        final = self.answer(turn, NIGHT_ANSWER)
+        self.assertTrue(
+            final.startswith("Aucune liaison raisonnable en transports en commun"),
+            final,
+        )
+        self.assertIn(
+            "[example-rail.test](https://www.example-rail.test/lyon-geneve)", final
+        )
+        self.assertNotIn("option la plus directe", final)
+        self.assertNotIn("d\u00e8s 03:04, et arrivent", final)
+        self.assertIn(turn.doubtful, final)
+        self.assertEqual(final.count("Solution de repli seulement"), 1)
+
+    def test_an_answer_that_leads_with_the_pages_keeps_them_first(self) -> None:
+        turn, data = self.doubtful_turn()
+        lead = (
+            "Le TER direct Lyon Part-Dieu \u2013 Gen\u00e8ve part \u00e0 06:42 et arrive "
+            "\u00e0 08:32 ([example-rail.test](https://www.example-rail.test/lyon-geneve))."
+        )
+        text = (
+            lead
+            + "\n\nEn repli :\n\n"
+            + data["rendered"]
+            + "\n\n<details>Sources</details>"
+        )
+        final = self.answer(turn, text)
+        self.assertTrue(final.startswith(lead), final)
+        self.assertEqual(final.count("Solution de repli seulement"), 1)
+        self.assertNotIn("En repli :", final)
+        self.assertTrue(final.endswith("<details>Sources</details>"))
+        self.assertLess(final.index(lead), final.index("Solution de repli"))
+
+    def test_a_plausible_plan_answer_is_left_as_written(self) -> None:
+        turn = travel_claims.Turn(active=True)
+        self.assertEqual(self.answer(turn, NIGHT_ANSWER), NIGHT_ANSWER)
+
+    def test_the_pages_read_put_the_direct_services_first(self) -> None:
+        turn, data = self.doubtful_turn()
+        token = travel_claims.current.set(turn)
+        try:
+            read = tp.with_direct_pages(
+                data, [{"url": "https://www.example-rail.test/a", "text": "x" * 5000}]
+            )
+            unread = tp.with_direct_pages(data, [])
+        finally:
+            travel_claims.current.reset(token)
+        self.assertEqual(read["next_step"], tp.NEXT_STEPS["doubtful_read"])
+        self.assertEqual(len(read["direct_services"][0]["text"]), tp.DIRECT_CHARACTERS)
+        self.assertIn("direct_services", read["instruction"])
+        self.assertEqual(unread["next_step"], tp.NEXT_STEPS["doubtful_unread"])
+        self.assertIn("no reasonable connection", unread["next_step"])
+        self.assertEqual(turn.direct_pages, [])
+
+    def test_the_planner_pages_are_never_read_as_direct_services(self) -> None:
+        results = {
+            "results": [
+                {"link": "https://transitous.org/sources/"},
+                {"link": "https://www.example-rail.test/a"},
+                {"link": "https://www.example-rail.test/a"},
+                {"link": "https://www.example-coach.test/b"},
+                {"link": "https://www.example-coach.test/c"},
+            ]
+        }
+        self.assertEqual(
+            tp.direct_candidates(results),
+            ["https://www.example-rail.test/a", "https://www.example-coach.test/b"],
+        )
+        self.assertEqual(tp.direct_candidates({"error": "x"}), [])
+
+
+class DirectServicesTest(Base):
+    """A doubtful plan makes code search and read the operators' direct
+    services through the turn's own web tools (staging -129)."""
+
+    def run_plan(self, search: dict[str, Any]) -> tuple[dict[str, Any], Any, list[str]]:
+        from services.orchestrator.chat_pipeline import ChatTools
+        from services.orchestrator.interactions import Interaction
+        from services.orchestrator.loop import Call
+        from services.orchestrator.tools import Runtime
+
+        calls: list[str] = []
+        plan = {
+            "outcome": "doubtful",
+            "rendered": "**Solution de repli seulement: a \u2192 b**",
+            "source_urls": [tp.SOURCES_URL, tp.OSM_URL],
+            "doubts": {"night": {"depart": "03:04"}},
+            "direct_query": "Villeurbanne Geneve-Aeroport train ou car direct horaires",
+        }
+
+        async def fake(_self: Any, call: Any, timeout: float) -> dict[str, Any]:
+            arguments = json.loads(call.arguments)
+            calls.append(
+                f"{call.name}:{arguments.get('url') or arguments.get('query', '')}"
+            )
+            if call.name == "transit_plan":
+                return {"data": dict(plan)}
+            if call.name == "web_search":
+                return search
+            return {"data": {"url": arguments["url"], "text": "TER direct 06:42."}}
+
+        turn = travel_claims.Turn(active=True, language="fr")
+        token = travel_claims.current.set(turn)
+        try:
+            with (
+                patch.object(Runtime, "execute", fake),
+                patch.dict(
+                    os.environ, {"ATLAS_WEB_CACHE": self.state.name + "/web.sqlite"}
+                ),
+            ):
+                tools = ChatTools(Interaction())
+                result = asyncio.run(
+                    tools.execute(Call("c1", "transit_plan", "{}"), 30.0)
+                )
+        finally:
+            travel_claims.current.reset(token)
+        data = result["data"]
+        assert isinstance(data, dict)
+        return data, tools, calls
+
+    def test_the_first_pages_found_are_read_and_put_first(self) -> None:
+        data, tools, calls = self.run_plan(
+            {
+                "data": {
+                    "results": [
+                        {"link": tp.SOURCES_URL, "snippet": "x"},
+                        {"link": "https://www.example-rail.test/a", "snippet": "x"},
+                        {"link": "https://www.example-coach.test/b", "snippet": "x"},
+                        {"link": "https://www.example-coach.test/c", "snippet": "x"},
+                    ]
+                }
+            }
+        )
+        self.assertEqual(
+            calls,
+            [
+                "transit_plan:",
+                "web_search:Villeurbanne Geneve-Aeroport train ou car direct horaires",
+                "web_fetch:https://www.example-rail.test/a",
+                "web_fetch:https://www.example-coach.test/b",
+            ],
+        )
+        self.assertEqual(
+            [page["url"] for page in data["direct_services"]],
+            ["https://www.example-rail.test/a", "https://www.example-coach.test/b"],
+        )
+        self.assertEqual(data["next_step"], tp.NEXT_STEPS["doubtful_read"])
+        self.assertIn("https://www.example-rail.test/a", tools.item.retrieved_urls)
+
+    def test_a_failed_search_says_no_page_was_read(self) -> None:
+        data, _, calls = self.run_plan({"error": "search_unavailable"})
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(data["direct_services"], [])
+        self.assertEqual(data["next_step"], tp.NEXT_STEPS["doubtful_unread"])

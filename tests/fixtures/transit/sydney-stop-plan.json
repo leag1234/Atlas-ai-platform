@@ -1,0 +1,431 @@
+{
+ "recorded": "2026-11-19 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads; start: coordinates in central Sydney, destination: Sydney Airport international terminal",
+ "request": {
+  "time": "2026-11-20T07:00+11:00",
+  "arriveBy": "true",
+  "numItineraries": "3",
+  "searchWindow": "3600"
+ },
+ "status": 200,
+ "body": {
+  "itineraries": [
+   {
+    "startTime": "2026-11-19T18:59:00Z",
+    "endTime": "2026-11-19T19:26:00Z",
+    "transfers": 0,
+    "legs": [
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T18:59:00Z",
+      "endTime": "2026-11-19T19:05:00Z",
+      "scheduledStartTime": "2026-11-19T18:59:00Z",
+      "scheduledEndTime": "2026-11-19T19:05:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "startTime": "2026-11-19T19:05:00Z",
+      "endTime": "2026-11-19T19:23:00Z",
+      "scheduledStartTime": "2026-11-19T19:05:00Z",
+      "scheduledEndTime": "2026-11-19T19:23:00Z",
+      "realTime": false,
+      "headsign": "Macarthur via Airport",
+      "agencyName": "Sydney Trains",
+      "displayName": "T8",
+      "routeShortName": "T8",
+      "tripShortName": "",
+      "routeLongName": "City Circle to Macarthur via Airport",
+      "cancelled": false,
+      "from": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:23:00Z",
+      "endTime": "2026-11-19T19:26:00Z",
+      "scheduledStartTime": "2026-11-19T19:23:00Z",
+      "scheduledEndTime": "2026-11-19T19:26:00Z",
+      "realTime": false,
+      "from": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "END",
+       "tz": "Australia/Sydney"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-19T19:05:00Z",
+    "endTime": "2026-11-19T19:32:00Z",
+    "transfers": 0,
+    "legs": [
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:05:00Z",
+      "endTime": "2026-11-19T19:11:00Z",
+      "scheduledStartTime": "2026-11-19T19:05:00Z",
+      "scheduledEndTime": "2026-11-19T19:11:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "startTime": "2026-11-19T19:11:00Z",
+      "endTime": "2026-11-19T19:29:00Z",
+      "scheduledStartTime": "2026-11-19T19:11:00Z",
+      "scheduledEndTime": "2026-11-19T19:29:00Z",
+      "realTime": false,
+      "headsign": "Revesby via Airport",
+      "agencyName": "Sydney Trains",
+      "displayName": "T8",
+      "routeShortName": "T8",
+      "tripShortName": "",
+      "routeLongName": "City Circle to Macarthur via Airport",
+      "cancelled": false,
+      "from": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:29:00Z",
+      "endTime": "2026-11-19T19:32:00Z",
+      "scheduledStartTime": "2026-11-19T19:29:00Z",
+      "scheduledEndTime": "2026-11-19T19:32:00Z",
+      "realTime": false,
+      "from": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "END",
+       "tz": "Australia/Sydney"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-19T19:11:00Z",
+    "endTime": "2026-11-19T19:38:00Z",
+    "transfers": 0,
+    "legs": [
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:11:00Z",
+      "endTime": "2026-11-19T19:17:00Z",
+      "scheduledStartTime": "2026-11-19T19:11:00Z",
+      "scheduledEndTime": "2026-11-19T19:17:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "startTime": "2026-11-19T19:17:00Z",
+      "endTime": "2026-11-19T19:35:00Z",
+      "scheduledStartTime": "2026-11-19T19:17:00Z",
+      "scheduledEndTime": "2026-11-19T19:35:00Z",
+      "realTime": false,
+      "headsign": "Macarthur via Airport",
+      "agencyName": "Sydney Trains",
+      "displayName": "T8",
+      "routeShortName": "T8",
+      "tripShortName": "",
+      "routeLongName": "City Circle to Macarthur via Airport",
+      "cancelled": false,
+      "from": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:35:00Z",
+      "endTime": "2026-11-19T19:38:00Z",
+      "scheduledStartTime": "2026-11-19T19:35:00Z",
+      "scheduledEndTime": "2026-11-19T19:38:00Z",
+      "realTime": false,
+      "from": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "END",
+       "tz": "Australia/Sydney"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-19T19:20:00Z",
+    "endTime": "2026-11-19T19:47:00Z",
+    "transfers": 0,
+    "legs": [
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:20:00Z",
+      "endTime": "2026-11-19T19:26:00Z",
+      "scheduledStartTime": "2026-11-19T19:20:00Z",
+      "scheduledEndTime": "2026-11-19T19:26:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "startTime": "2026-11-19T19:26:00Z",
+      "endTime": "2026-11-19T19:44:00Z",
+      "scheduledStartTime": "2026-11-19T19:26:00Z",
+      "scheduledEndTime": "2026-11-19T19:44:00Z",
+      "realTime": false,
+      "headsign": "Revesby via Airport",
+      "agencyName": "Sydney Trains",
+      "displayName": "T8",
+      "routeShortName": "T8",
+      "tripShortName": "",
+      "routeLongName": "City Circle to Macarthur via Airport",
+      "cancelled": false,
+      "from": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:44:00Z",
+      "endTime": "2026-11-19T19:47:00Z",
+      "scheduledStartTime": "2026-11-19T19:44:00Z",
+      "scheduledEndTime": "2026-11-19T19:47:00Z",
+      "realTime": false,
+      "from": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "END",
+       "tz": "Australia/Sydney"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-19T19:26:00Z",
+    "endTime": "2026-11-19T19:53:00Z",
+    "transfers": 0,
+    "legs": [
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:26:00Z",
+      "endTime": "2026-11-19T19:32:00Z",
+      "scheduledStartTime": "2026-11-19T19:26:00Z",
+      "scheduledEndTime": "2026-11-19T19:32:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "startTime": "2026-11-19T19:32:00Z",
+      "endTime": "2026-11-19T19:50:00Z",
+      "scheduledStartTime": "2026-11-19T19:32:00Z",
+      "scheduledEndTime": "2026-11-19T19:50:00Z",
+      "realTime": false,
+      "headsign": "Macarthur via Airport",
+      "agencyName": "Sydney Trains",
+      "displayName": "T8",
+      "routeShortName": "T8",
+      "tripShortName": "",
+      "routeLongName": "City Circle to Macarthur via Airport",
+      "cancelled": false,
+      "from": {
+       "name": "St James Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:50:00Z",
+      "endTime": "2026-11-19T19:53:00Z",
+      "scheduledStartTime": "2026-11-19T19:50:00Z",
+      "scheduledEndTime": "2026-11-19T19:53:00Z",
+      "realTime": false,
+      "from": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "END",
+       "tz": "Australia/Sydney"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-19T19:28:00Z",
+    "endTime": "2026-11-19T19:53:00Z",
+    "transfers": 1,
+    "legs": [
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:28:00Z",
+      "endTime": "2026-11-19T19:33:00Z",
+      "scheduledStartTime": "2026-11-19T19:28:00Z",
+      "scheduledEndTime": "2026-11-19T19:33:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "Martin Place Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "SUBWAY",
+      "startTime": "2026-11-19T19:33:00Z",
+      "endTime": "2026-11-19T19:36:00Z",
+      "scheduledStartTime": "2026-11-19T19:33:00Z",
+      "scheduledEndTime": "2026-11-19T19:36:00Z",
+      "realTime": false,
+      "headsign": "Bankstown",
+      "agencyName": "Sydney Metro",
+      "displayName": "M1",
+      "routeShortName": "M1",
+      "tripShortName": "",
+      "routeLongName": "Metro North West & Bankstown Line",
+      "cancelled": false,
+      "from": {
+       "name": "Martin Place Station",
+       "tz": "Australia/Sydney",
+       "scheduledTrack": "3",
+       "track": "3"
+      },
+      "to": {
+       "name": "Central Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:36:00Z",
+      "endTime": "2026-11-19T19:38:00Z",
+      "scheduledStartTime": "2026-11-19T19:36:00Z",
+      "scheduledEndTime": "2026-11-19T19:38:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Central Station",
+       "tz": "Australia/Sydney",
+       "scheduledTrack": "27",
+       "track": "27"
+      },
+      "to": {
+       "name": "Central Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "startTime": "2026-11-19T19:38:00Z",
+      "endTime": "2026-11-19T19:50:00Z",
+      "scheduledStartTime": "2026-11-19T19:38:00Z",
+      "scheduledEndTime": "2026-11-19T19:50:00Z",
+      "realTime": false,
+      "headsign": "Macarthur via Airport",
+      "agencyName": "Sydney Trains",
+      "displayName": "T8",
+      "routeShortName": "T8",
+      "tripShortName": "",
+      "routeLongName": "City Circle to Macarthur via Airport",
+      "cancelled": false,
+      "from": {
+       "name": "Central Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      }
+     },
+     {
+      "mode": "WALK",
+      "startTime": "2026-11-19T19:50:00Z",
+      "endTime": "2026-11-19T19:53:00Z",
+      "scheduledStartTime": "2026-11-19T19:50:00Z",
+      "scheduledEndTime": "2026-11-19T19:53:00Z",
+      "realTime": false,
+      "from": {
+       "name": "International Airport Station",
+       "tz": "Australia/Sydney"
+      },
+      "to": {
+       "name": "END",
+       "tz": "Australia/Sydney"
+      }
+     }
+    ]
+   }
+  ],
+  "direct": []
+ }
+}
