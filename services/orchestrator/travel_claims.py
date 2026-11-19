@@ -2150,6 +2150,11 @@ class Turn:
     journey_called: bool = False
     # A journey planner computed itineraries this turn (transit_planner).
     planned: bool = False
+    # The last plan computed with itineraries, as code rendered it, and the
+    # clock times of its legs: the answer gives this block unaltered
+    # (transit_planner.planned_answer), never a paraphrase of it.
+    plan: str = ""
+    plan_times: set[str] = field(default_factory=set)
     # The computed plan when it is doubtful (night only, far too slow): a
     # fallback after what the pages read say (transit_planner.doubtful_answer),
     # why it is doubtful, and the pages code read about the direct services.

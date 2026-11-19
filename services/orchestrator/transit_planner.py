@@ -287,6 +287,32 @@ class Client:
             and isinstance(row.get("lon"), (int, float))
         ]
 
+    async def stops_named(
+        self, name: str, language: str, near: tuple[float, float]
+    ) -> list[dict[str, Any]]:
+        """The stops whose name holds ``name`` (an airport's terminal stops),
+        searched around ``near``."""
+        params = {
+            "text": name[:200],
+            "type": "STOP",
+            "numResults": "5",
+            "place": f"{near[0]:.4f},{near[1]:.4f}",
+        }
+        if language:
+            params["language"] = language
+        found = await self.get("/api/v1/geocode", params, GEOCODE_SECONDS)
+        wanted = _folded(name)
+        return [
+            row
+            for row in (found if isinstance(found, list) else [])
+            if isinstance(row, dict)
+            and row.get("type") == "STOP"
+            and isinstance(row.get("lat"), (int, float))
+            and isinstance(row.get("lon"), (int, float))
+            and wanted
+            and wanted in _folded(str(row.get("name") or ""))
+        ]
+
     async def plan(
         self,
         origin: tuple[float, float] | str,
@@ -322,6 +348,15 @@ def _place(value: tuple[float, float] | str) -> str:
     if isinstance(value, str):
         return value
     return f"{value[0]:.5f},{value[1]:.5f}"
+
+
+def _folded(text: str) -> str:
+    """Lower case without accents or punctuation, single spaces."""
+    plain = unicodedata.normalize("NFKD", text.casefold())
+    plain = "".join(
+        c if c.isalnum() else " " for c in plain if not unicodedata.combining(c)
+    )
+    return " ".join(plain.split())
 
 
 def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -673,6 +708,7 @@ WORDS: dict[str, dict[str, Any]] = {
     "en": {
         "fallback_title": "Fallback only, computed from the open timetable data",
         "snapped": "The planner reaches no stop from {place} itself: the plan starts at {stop}, the nearest stop ({km} km in a straight line).",
+        "snapped_end": "The planner reaches no stop at {place} itself: the plan ends at {stop}, the nearest stop found ({km} km in a straight line).",
         "no_connection": "No reasonable public transport connection was found in the open timetable data for this trip: {why}. No page read for this answer confirms a direct service either: check the operators' timetables.",
         "pages": "Pages read about the direct services: {links}.",
         "direct_query": "{a} {b} direct train or coach timetable",
@@ -712,6 +748,7 @@ WORDS: dict[str, dict[str, Any]] = {
     "fr": {
         "fallback_title": "Solution de repli seulement, calculée sur les données horaires ouvertes",
         "snapped": "Le calculateur n’atteint aucun arrêt depuis {place} même : l’itinéraire part de {stop}, l’arrêt le plus proche ({km} km à vol d’oiseau).",
+        "snapped_end": "Le calculateur n\u2019atteint aucun arr\u00eat \u00e0 {place} m\u00eame : l\u2019itin\u00e9raire arrive \u00e0 {stop}, l\u2019arr\u00eat le plus proche trouv\u00e9 ({km} km \u00e0 vol d\u2019oiseau).",
         "no_connection": "Aucune liaison raisonnable en transports en commun n’a été trouvée dans les données horaires ouvertes pour ce trajet : {why}. Aucune page consultée pour cette réponse ne confirme non plus de liaison directe : vérifiez les horaires des exploitants.",
         "pages": "Pages consultées sur les liaisons directes : {links}.",
         "direct_query": "{a} {b} train ou car direct horaires",
@@ -751,6 +788,7 @@ WORDS: dict[str, dict[str, Any]] = {
     "de": {
         "fallback_title": "Nur als Notlösung, berechnet aus den offenen Fahrplandaten",
         "snapped": "Von {place} selbst erreicht der Planer keine Haltestelle: Die Verbindung beginnt an {stop}, der nächsten Haltestelle ({km} km Luftlinie).",
+        "snapped_end": "An {place} selbst erreicht der Planer keine Haltestelle: Die Verbindung endet an {stop}, der n\u00e4chsten gefundenen Haltestelle ({km} km Luftlinie).",
         "no_connection": "In den offenen Fahrplandaten wurde für diese Reise keine sinnvolle Verbindung mit öffentlichen Verkehrsmitteln gefunden: {why}. Auch keine für diese Antwort gelesene Seite bestätigt eine direkte Verbindung: Prüfen Sie die Fahrpläne der Verkehrsunternehmen.",
         "pages": "Gelesene Seiten zu direkten Verbindungen: {links}.",
         "direct_query": "{a} {b} direkter Zug oder Fernbus Fahrplan",
@@ -790,6 +828,7 @@ WORDS: dict[str, dict[str, Any]] = {
     "es": {
         "fallback_title": "Solo como alternativa, calculado con los datos horarios abiertos",
         "snapped": "El planificador no alcanza ninguna parada desde {place}: el itinerario sale de {stop}, la parada más cercana ({km} km en línea recta).",
+        "snapped_end": "El planificador no alcanza ninguna parada en {place}: el itinerario llega a {stop}, la parada m\u00e1s cercana encontrada ({km} km en l\u00ednea recta).",
         "no_connection": "No se encontró ninguna conexión razonable en transporte público en los datos horarios abiertos para este trayecto: {why}. Ninguna página consultada para esta respuesta confirma tampoco un servicio directo: compruebe los horarios de los operadores.",
         "pages": "Páginas consultadas sobre los servicios directos: {links}.",
         "direct_query": "{a} {b} tren o autobús directo horarios",
@@ -829,6 +868,7 @@ WORDS: dict[str, dict[str, Any]] = {
     "it": {
         "fallback_title": "Solo come ripiego, calcolato dai dati orari aperti",
         "snapped": "Il pianificatore non raggiunge alcuna fermata da {place}: l’itinerario parte da {stop}, la fermata più vicina ({km} km in linea d’aria).",
+        "snapped_end": "Il pianificatore non raggiunge alcuna fermata a {place}: l\u2019itinerario arriva a {stop}, la fermata pi\u00f9 vicina trovata ({km} km in linea d\u2019aria).",
         "no_connection": "Nei dati orari aperti non è stato trovato alcun collegamento ragionevole con i mezzi pubblici per questo tragitto: {why}. Nessuna pagina consultata per questa risposta conferma neppure un servizio diretto: verifichi gli orari degli operatori.",
         "pages": "Pagine consultate sui servizi diretti: {links}.",
         "direct_query": "{a} {b} treno o pullman diretto orari",
@@ -1097,6 +1137,10 @@ DIRECT_PAGES = 2
 DIRECT_CHARACTERS = 3000
 # A stop this close to a place the planner cannot reach stands for it.
 SNAP_KM = 1.5
+# A stop bearing the place's own name this close stands for it too: an
+# airport's point lies amid its runways, its terminal stops 1.7 to 2.5 km away
+# (staging -131: Sydney Airport, no stop within reach of its point).
+NAMED_KM = 3.0
 INSTRUCTION = (
     "Put `rendered` in the answer unchanged, with its attribution line. Do not "
     "add any time, line, direction or duration it does not state. The trip is "
@@ -1217,9 +1261,20 @@ async def compute(
             retried = await _snapped(
                 client,
                 response,
-                start=(start, origin_kind, origin_label),
-                end=(_point(target), str(target.get("type") or ""), label(target)),
+                start=(
+                    start,
+                    origin_kind,
+                    origin_label,
+                    str((origin_match or {}).get("name") or ""),
+                ),
+                end=(
+                    _point(target),
+                    str(target.get("type") or ""),
+                    label(target),
+                    str(target.get("name") or ""),
+                ),
                 language=language,
+                arrive_by=deadline is not None,
             )
             if retried is not None:
                 ends, snapped = retried
@@ -1298,18 +1353,34 @@ async def _snapped(
     client: Client,
     response: dict[str, Any],
     *,
-    start: tuple[tuple[float, float], str, str],
-    end: tuple[tuple[float, float], str, str],
+    start: tuple[tuple[float, float], str, str, str],
+    end: tuple[tuple[float, float], str, str, str],
     language: str,
+    arrive_by: bool = False,
 ) -> tuple[tuple[tuple[float, float] | str, tuple[float, float] | str], str] | None:
     """The plan ends with each unreached place replaced by its nearest stop,
-    and the sentence that says so; None when no end can be replaced."""
+    and the sentence that says so; None when no end can be replaced.
+
+    Each end is (point, geocoder type, label, name). The planner's debug
+    counts are those of its search: an arrive-by search runs backwards from
+    the destination, so its "start" offsets are the destination's (staging
+    -131: "King Street" had stops 110 m away; the Sydney Airport point, amid
+    the runways, had none, and the start was snapped instead).
+    """
     debug = response.get("debugOutput")
     debug = debug if isinstance(debug, dict) else {}
+    keys = (
+        ("n_dest_offsets", "n_start_offsets")
+        if arrive_by
+        else (
+            "n_start_offsets",
+            "n_dest_offsets",
+        )
+    )
     ends: list[tuple[float, float] | str] = [start[0], end[0]]
     said: list[str] = []
-    for index, ((point, kind, name), key) in enumerate(
-        ((start, "n_start_offsets"), (end, "n_dest_offsets"))
+    for index, ((point, kind, place, name), key) in enumerate(
+        zip((start, end), keys, strict=True)
     ):
         if kind == "STOP":
             continue
@@ -1320,13 +1391,21 @@ async def _snapped(
             for stop in await client.stops_near(point)
         ]
         near = [pair for pair in near if pair[0] <= SNAP_KM]
+        if not near and name.strip():
+            # No stop at the point itself: a stop named after the place (its
+            # terminal, its station) stands for it within NAMED_KM.
+            near = [
+                (_distance_km(point, _point(stop)), stop)
+                for stop in await client.stops_named(name, language, point)
+            ]
+            near = [pair for pair in near if pair[0] <= NAMED_KM]
         if not near:
             continue
         distance, stop = min(near, key=lambda pair: pair[0])
         ends[index] = str(stop.get("id") or "") or _point(stop)
         said.append(
-            words(language)["snapped"].format(
-                place=_clean(name),
+            words(language)["snapped" if index == 0 else "snapped_end"].format(
+                place=_clean(place),
                 stop=_clean(label(stop)),
                 km=f"{distance:.1f}",
             )
@@ -1411,11 +1490,19 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
             outcome["message"] = "The journey planner's daily request limit is reached."
         outcome["next_step"] = NEXT_STEPS.get(exc.code, FALLBACK)
         return {"data": outcome}
-    if turn is not None and data.get("doubts") and data.get("rendered"):
-        # The plan is a fallback: the answer leads with the operators' direct
-        # services or says that none was found (doubtful_answer).
-        turn.doubtful = str(data["rendered"])
-        turn.doubt_reason = str(data.get("doubt_reason") or "")
+    if turn is not None and data.get("itineraries") and data.get("rendered"):
+        # The last plan with itineraries is the one the answer gives.
+        if data.get("doubts"):
+            # The plan is a fallback: the answer leads with the operators'
+            # direct services or says that none was found (doubtful_answer).
+            turn.doubtful = str(data["rendered"])
+            turn.doubt_reason = str(data.get("doubt_reason") or "")
+            turn.plan, turn.plan_times = "", set()
+        else:
+            # The plan is the answer's block, given unaltered (planned_answer).
+            turn.plan = str(data["rendered"])
+            turn.plan_times = _plan_times(data["itineraries"])
+            turn.doubtful = turn.doubt_reason = ""
     if data.get("rendered"):
         # Computed facts of this turn (D7): the plan as written, and each
         # itinerary as a passage read from the planner, so the travel checks
@@ -1498,47 +1585,188 @@ def _site(url: str) -> str:
     return host.removeprefix("www.")
 
 
-def doubtful_answer(answer: str, language: str) -> str:
-    """A doubtful plan's answer: what the pages read support first, the
-    computed plan only as its labelled fallback; or, when no page supports a
-    direct service, the plain statement that the open data has no reasonable
-    connection for this trip (staging -129: the night chain via Annecy was
-    given as "the most direct option" to Geneva airport)."""
-    from services.orchestrator import travel_claims
-
-    turn = travel_claims.current.get()
-    config = settings()
-    if turn is None or not turn.doubtful or config is None or not answer.strip():
-        return answer
-    fallback = turn.doubtful.strip()
-    own = {config.attribution_url, OSM_URL}
-    plan_lines = {
-        " ".join(line.split()) for line in fallback.splitlines() if line.strip()
+def _plan_times(itineraries: object) -> set[str]:
+    """The clock times (HH:MM) of a plan's itineraries and legs, as data:
+    never the deadline the person gave."""
+    values: list[object] = []
+    for itinerary in itineraries if isinstance(itineraries, list) else []:
+        if not isinstance(itinerary, dict):
+            continue
+        values += [itinerary.get("depart"), itinerary.get("arrive")]
+        for leg in itinerary.get("legs") or []:
+            if isinstance(leg, dict):
+                values += [leg.get("depart"), leg.get("arrive")]
+    return {
+        value[11:16]
+        for value in values
+        if isinstance(value, str) and len(value) >= 16 and value[10] == "T"
     }
-    plan_clocks = _clocks(fallback)
-    body, fold, footer = answer.partition("<details>")
-    lines = body.splitlines()
 
-    def web(line: str) -> bool:
-        return any(url not in own for _, url in _MD_LINK.findall(line))
+
+def _plain(line: str) -> str:
+    return " ".join(line.split())
+
+
+def _block_lines(block: str) -> list[str]:
+    return [_plain(line) for line in block.splitlines() if line.strip()]
+
+
+def _block_span(lines: list[str], block: str) -> tuple[int, int] | None:
+    """The first and last indexes of ``block`` in ``lines`` when they hold it
+    unaltered (blank lines and spacing aside); None otherwise."""
+    wanted = _block_lines(block)
+    filled = [(index, _plain(line)) for index, line in enumerate(lines) if line.strip()]
+    texts = [text for _, text in filled]
+    size = len(wanted)
+    for at in range(len(filled) - size + 1) if wanted else ():
+        if texts[at : at + size] == wanted:
+            return filled[at][0], filled[at + size - 1][0]
+    return None
+
+
+def _tidy(text: str) -> str:
+    return re.sub(r"\n[ \t]*(?:\n[ \t]*)+", "\n\n", text).strip()
+
+
+def own_urls() -> set[str]:
+    """The planner's attribution pages: the plan's own, never a page read."""
+    config = settings()
+    return {config.attribution_url if config else SOURCES_URL, OSM_URL}
+
+
+def _web(line: str, own: set[str]) -> bool:
+    return any(url not in own for _, url in _MD_LINK.findall(line))
+
+
+def _plan_marks(
+    lines: list[str], block: str, clocks: set[str], own: set[str]
+) -> list[bool]:
+    """Which lines restate the computed plan: a line of its block, a line
+    citing only the planner, or a line without a page link giving one of its
+    clock times (staging -131: "Option 2: leave 07:39, arrive 11:03")."""
+    plan_lines = set(_block_lines(block))
 
     def planned(line: str) -> bool:
-        plain = " ".join(line.split())
+        plain = _plain(line)
         if not plain:
             return False
         if plain in plan_lines:
             return True
-        if web(line):
+        if _web(line, own):
             return False
         cited = any(url in own for _, url in _MD_LINK.findall(line))
-        return cited or bool(_clocks(_MD_LINK.sub(r"\1", line)) & plan_clocks)
+        return cited or bool(_clocks(_MD_LINK.sub(r"\1", line)) & clocks)
 
-    marks = [planned(line) for line in lines]
+    return [planned(line) for line in lines]
+
+
+def without_plans(answer: str, turn: Any) -> tuple[str, bool]:
+    """The answer without the computed block it gives unaltered, and whether
+    the block opened it.
+
+    The travel checks then read the model's own words only: a computed leg is
+    never cut out of the block (staging -131: a Caen plan lost a leg when a
+    rewrite cut short was replaced by what the checks kept), and code puts the
+    block back after them (planned_answer, doubtful_answer).
+    """
+    blocks = [block for block in (turn.plan, turn.doubtful) if block.strip()]
+    body, fold, footer = answer.partition("<details>")
+    lines = body.splitlines()
+    taken = False
+    first = False
+    for block in blocks:
+        span = _block_span(lines, block)
+        if span is None:
+            continue
+        taken = True
+        first = first or not any(line.strip() for line in lines[: span[0]])
+        lines = lines[: span[0]] + lines[span[1] + 1 :]
+    if not taken:
+        return answer, False
+    rest = _tidy("\n".join(lines))
+    if fold:
+        rest = (rest + "\n\n" if rest else "") + fold + footer
+    return rest, first
+
+
+_ITEM = re.compile(r"^[ \t]*(?:[-*+][ \t]|\d{1,2}[.)][ \t]|\*\*)")
+
+
+def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
+    """A planned trip's answer with the computed block exactly as code wrote
+    it: every option with all its legs.
+
+    The model may open and advise around the block, never restate it: lines
+    restating the plan (a block line, a line citing only the planner, a line
+    giving one of its times without a page link) go, and the block takes the
+    place of the first of them; with none, it opens the answer when it did,
+    else follows its first paragraph (staging -131: a Madrid answer rewritten
+    as prose lost its AVE leg, and its option 2 had no leg at all).
+    """
+    block = turn.plan.strip()
+    if not block or turn.doubtful:
+        return answer
+    from services.orchestrator import travel_claims
+
+    body, fold, footer = answer.partition("<details>")
+    lines = body.splitlines()
+    if _block_span(lines, block) is not None:
+        return answer
+    own = own_urls()
+    marks = _plan_marks(lines, block, turn.plan_times, own)
+    hits = [index for index, mark in enumerate(marks) if mark]
+    if hits:
+        # A list item or an option heading inside the restated plan goes too.
+        for index in range(hits[0], hits[-1] + 1):
+            if _ITEM.match(lines[index]) and not _web(lines[index], own):
+                marks[index] = True
+        at = hits[0]
+    elif first:
+        at = 0
+    else:
+        filled = next((i for i, line in enumerate(lines) if line.strip()), len(lines))
+        at = next(
+            (i for i in range(filled, len(lines)) if not lines[i].strip()), len(lines)
+        )
+    head = "\n".join(line for line, mark in zip(lines[:at], marks[:at]) if not mark)
+    tail = "\n".join(line for line, mark in zip(lines[at:], marks[at:]) if not mark)
+    parts = [
+        _tidy(travel_claims.wellformed(head)),
+        block,
+        _tidy(travel_claims.wellformed(tail)),
+    ]
+    final = "\n\n".join(part for part in parts if part)
+    return final + ("\n\n" + fold + footer if fold else "")
+
+
+def doubtful_answer(answer: str, language: str, turn: Any = None) -> str:
+    """A doubtful plan's answer: what the pages read support first, the
+    computed plan only as its labelled fallback; or, when no page supports a
+    direct service, the plain statement that the open data has no reasonable
+    connection for this trip (staging -129: the night chain via Annecy was
+    given as "the most direct option" to Geneva airport).
+
+    ``turn`` is passed by the pipeline: its post-checks run after the turn's
+    context is reset (staging -131: this read an empty context, and the
+    Geneva night chain stayed the answer). An answer left empty (it was the
+    fallback block alone) gets the statement and the fallback.
+    """
+    from services.orchestrator import travel_claims
+
+    turn = turn if turn is not None else travel_claims.current.get()
+    config = settings()
+    if turn is None or not turn.doubtful or config is None:
+        return answer
+    fallback = turn.doubtful.strip()
+    own = {config.attribution_url, OSM_URL}
+    body, fold, footer = answer.partition("<details>")
+    lines = body.splitlines()
+    marks = _plan_marks(lines, fallback, _clocks(fallback), own)
     for index in range(len(lines) - 1, -1, -1):
         # A line that only announces the plan ("the most direct option found:")
         # goes with it.
         text = lines[index].strip().rstrip("*_ ")
-        if marks[index] or not text.endswith(":") or web(lines[index]):
+        if marks[index] or not text.endswith(":") or _web(lines[index], own):
             continue
         following = next(
             (j for j in range(index + 1, len(lines)) if lines[j].strip()), None
@@ -1546,9 +1774,9 @@ def doubtful_answer(answer: str, language: str) -> str:
         if following is not None and marks[following]:
             marks[index] = True
     kept = "\n".join(line for line, mark in zip(lines, marks) if not mark)
-    kept = travel_claims.wellformed(kept).strip()
+    kept = _tidy(travel_claims.wellformed(kept))
     w = words(language)
-    if kept and web(kept):
+    if kept and _web(kept, own):
         parts = [kept, fallback]
     else:
         links = ", ".join(f"[{_site(url)}]({url})" for url in turn.direct_pages)
