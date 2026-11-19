@@ -122,6 +122,47 @@ def refused_before_output(exc: BaseException) -> bool:
 # The longest single call the gateway accepts without a file or attachments.
 CHAT_CALL_SECONDS = 120.0
 
+# The gateway's own failure codes, kept on a GatewayCallError.
+_FAILURE_CODE = re.compile(r"[a-z][a-z_]{0,47}")
+
+
+class GatewayCallError(RuntimeError):
+    """A gateway answer other than 200 that no named refusal above covers.
+
+    Still "gateway_error" for every caller that reads the message (the turn
+    paths report it as before); it keeps what the gateway said: its failure code
+    (timeout, provider_error, invalid_input...), the HTTP status and, when the
+    gateway reports it, the cost it kept for the failed call (a call cut in
+    flight keeps its reservation). A check that logs its failures reads them
+    (source_faithfulness: failed:timeout instead of failed:RuntimeError).
+    """
+
+    def __init__(self, code: str, status: int, cost_eur: Decimal | None = None):
+        super().__init__("gateway_error")
+        self.code, self.status, self.cost_eur = code, status, cost_eur
+
+
+def reserved_cost(error: object) -> Decimal | None:
+    """The cost a gateway failure body reports for the failed call, or None."""
+    if not isinstance(error, dict):
+        return None
+    value = error.get("reserved_eur")
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        return None
+    try:
+        cost = Decimal(str(value))
+    except ArithmeticError:
+        return None
+    return cost if cost.is_finite() and 0 <= cost <= 10 else None
+
+
+def failure_of(status: int, error: object) -> GatewayCallError:
+    """The GatewayCallError of a gateway failure body (any JSON, or none)."""
+    code = error.get("code") if isinstance(error, dict) else None
+    if not isinstance(code, str) or not _FAILURE_CODE.fullmatch(code):
+        code = "timeout" if status == 504 else f"http_{status}"
+    return GatewayCallError(code, status, reserved_cost(error))
+
 
 class GatewayModel:
     def __init__(self, url: str, configuration: Configuration) -> None:
@@ -332,17 +373,22 @@ class GatewayModel:
                                 f"Conversation: {error['tokens']} tokens, limit {error['limit']} tokens",
                             )
                         raise GatewayError("request_size_exceeded", 413)
+                    failed: object = None
                     if response.status == 502:
-                        error = json.loads(await response.content.read(1024))
+                        error = failed = json.loads(await response.content.read(1024))
                         if (
                             isinstance(error, dict)
                             and error.get("code") == "provider_failure"
                         ):
+                            reserved = reserved_cost(error)
                             raise GatewayError(
                                 "provider_error",
                                 502,
                                 str(error.get("message", "provider_error")),
                                 retries=int(error.get("retries", 0)),
+                                measurements=None
+                                if reserved is None
+                                else {"reserved_eur": reserved},
                             )
                     if response.status != 200:
                         if url.endswith(
@@ -388,7 +434,15 @@ class GatewayModel:
                                 # provider-side 5xx responses, not setup refusals that
                                 # happen to use the same status family.
                                 raise GatewayError(code, response.status, detail)
-                        raise RuntimeError("gateway_error")
+                            raise RuntimeError("gateway_error")
+                        if response.status != 502:
+                            try:
+                                failed = json.loads(await response.content.read(1024))
+                            except ValueError:
+                                failed = None
+                        # The gateway's code and the cost it kept (a timeout keeps
+                        # the call's reservation), still "gateway_error" for callers.
+                        raise failure_of(response.status, failed)
                     maximum = (
                         IMAGE_RESPONSE_BODY_LIMIT
                         if url.endswith("/images/generate")

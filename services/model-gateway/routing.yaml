@@ -113,9 +113,13 @@ picture_roles:
   source_faithfulness_rewrite: atlas-mistral
   # The judge's model reasons at "low" at least (no "none" on this provider), p50 25-35 s.
   # The same prompt on this profile, reasoning off, answers in p50 1-1.5 s and is the screen:
-  # a clean answer is done, a flagged one goes to the judge above, whose verdict is used
-  # (measurement 2026-11-17, pilot 66 outputs and 98 of the 264 of the larger set: screen
-  # alone 8 false alarms in 112 faithful readings; screen then judge 0/80 false alarms,
-  # 41-42/42 and 39/42 faults found where the judge alone finds 42 and 40; faithful answers
-  # p50 1.0-1.6 s).
+  # a clean answer is done, a flagged one goes to the judge above, whose verdict is used.
+  # Since 2026-11-19 the judge confirms the flagged statements instead of reading the whole
+  # answer again: p50 9 s instead of 69 s on 48 outputs, 35/35 faults, 0/13 false alarms; on
+  # 6 long answers 12/12 faults in p50 12 s where the whole reading went over 60 s on all 6.
+  # The other public profiles, reasoning off, confirmed in p50 2-3 s but kept 2 and 4 of 13
+  # faithful outputs flagged. The cascade before that change (measurement 2026-11-17, pilot
+  # 66 outputs and 98 of the 264 of the larger set): screen alone 8 false alarms in 112
+  # faithful readings; screen then judge 0/80 false alarms, 41-42/42 and 39/42 faults found
+  # where the judge alone finds 42 and 40; faithful answers p50 1.0-1.6 s.
   source_faithfulness_screen: atlas-glm

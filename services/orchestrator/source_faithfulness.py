@@ -18,21 +18,26 @@ is decided by the judge, which is given the request.
 
 What it does (T8, code checks, the model decides):
 1. code compares every number of the answer (amounts, years, days, counts) by
-   value with the numbers of the source, whatever their separators. Free; it
-   sees no relation, so its result is only used when the judge cannot give a
-   verdict (failure, source too long): the answer then names the numbers the
-   source lacks. Passed to the judge as a note, the misses of a lookup of names
-   and whole dates made it flag 4 of 12 faithful outputs (staging smoke
-   2026-11-17), so the judge reads the measured prompt alone;
-2. one judge call reads the whole source, the request and the answer, lists every
-   link the answer states through a connector (cause, temporal order, condition,
-   negation, contrast, quantity, attribution) with whether the source states it,
-   then every unsupported statement. It runs first on the fast screen profile
-   (role "source_faithfulness_screen", no reasoning): an answer it finds clean is
-   done; what it flags is judged again, same prompt, on the profile of the
-   "source_faithfulness" role, whose verdict alone is used (a cascade: cheap
-   screen, precise confirmation; FrugalGPT, Chen et al. 2023). A screen that
-   fails or is not enabled leaves the decision to that judge alone;
+   value with the numbers of the source, whatever their separators; a value one
+   operation gives from source values the answer states, or a year one apart
+   from a source year that counts years relatively, is derived, not lacking.
+   Free; it sees no relation. The sentences holding a lacking number are leads
+   the judge confirms or not (a date resolved against the conversation date is
+   one: the source does not state it); when the judge cannot give a verdict
+   (failure, source too long) the answer names the numbers the source lacks.
+   Passed to the judge as a note on the whole answer, the misses of a lookup of
+   names and whole dates made it flag 4 of 12 faithful outputs (staging smoke
+   2026-11-17): leads are numbers only, each confirmed on its own sentence;
+2. one screen call (role "source_faithfulness_screen", no reasoning) reads the
+   whole source, the request and the answer, lists every link the answer states
+   through a connector (cause, temporal order, condition, negation, contrast,
+   quantity, attribution) with whether the source states it, then every
+   unsupported statement. An answer it finds clean, with no lead, is done; what
+   it flags, with the leads, is confirmed statement by statement (CONFIRM) on
+   the profile of the "source_faithfulness" role, whose verdict alone is used (a
+   cascade: cheap screen, precise confirmation; FrugalGPT, Chen et al. 2023). A
+   screen that fails or is not enabled leaves the decision to that judge reading
+   the whole answer (JUDGE);
 3. code checks every quotation the judge returns against the answer: a statement
    whose words are not in the answer is located by word overlap or dropped (it
    cannot be a defect of this answer), and a link the judge calls stated whose
@@ -57,6 +62,31 @@ Related work: FActScore (Min et al. 2023), SummaC (Laban et al. 2022), AlignScor
 (Zha et al. 2023), Chain-of-Verification (Dhuliawala et al. 2023), CRITIC (Gou
 et al. 2024: critique is reliable when grounded in tool output).
 
+Reliability on real answers (2026-11-19). On staging the whole-answer judge
+timed out or nearly so on 3 of 5 real answers, and a long one (R&D study) was
+refused by its fixed 0.04 EUR budget. The gateway reserves a call's input at one
+token per byte: at 0.04 EUR the screen, whose profile's input price is three
+times the judge's, is refused on any source over about 22 000 bytes, which
+leaves long answers to the whole-answer judge. Measured on the staging API with
+the profiles' models (phase 8, /opt/atlas-src/faithfulness/p8), on 48 outputs of
+the larger set the judge reads in production (35 faults the screen flagged, 5
+screen false alarms, 8 faithful outputs with a code lead), both judges sent at
+the same moment: the whole-answer judge took p50 69 s, p95 107 s, 34 of 48 over
+60 s (8 of 35 faults confirmed within 60 s), 3 400 output tokens, 0.0069 EUR;
+the confirmation took p50 9 s, p95 36 s, 1 of 48 over 60 s, 390 output tokens,
+0.0020 EUR, confirmed 35 of 35 faults and 0 of 13 faithful outputs.
+Six long answers (4 sections from 4 documents, 24 000 to 36 000 bytes of source,
+2 injected faults each): the whole-answer judge went over 60 s on 6 of 6 (5
+failed: cut at the API's 120 s, or 8 000 tokens of reasoning), judging the 4
+sections in parallel took 76 to 79 s per answer at 4.6 times the cost; screen
+then confirmation found 12 of 12 faults, flagged 1 of 12 faithful sections
+(the screen 2), screen p50 12 s, max 41 s, confirmation p50 12 s, max 40 s, about
+0.027 EUR per answer. So: confirmation instead of a second whole reading, no
+sectioning, and budgets that follow the size read (BUDGET_EUR_PER_BYTE). The
+public profiles with reasoning off are faster still but not precise enough to
+decide: confirming the same statements they kept 2 and 4 of 13 faithful
+outputs flagged.
+
 Latency: no call on a turn without a provided source. With one, the judge
 alone added p50 25 s, p95 34 to 41 s, about 0.006 EUR for a source of 1 000
 words (input grows with the source, bounded by SOURCE_LIMIT and
@@ -78,8 +108,11 @@ checking paragraph by paragraph during the stream would multiply calls and was
 not measured.
 
 Never blocking, never disguised (D5): a judge that fails, times out or is
-refused by a limit leaves the answer as it is; the failure and its code are
-logged, and the answer never claims a check that did not happen. A source longer
+refused by a limit leaves the answer as it is; the failure and the gateway's
+code (timeout, cost_budget, provider_error) are logged, the cost the gateway
+kept for the failed call (a call cut in flight keeps its reservation) is counted
+in the report and the turn, a failure whose cost nobody reported is counted as
+unmeasured, and the answer never claims a check that did not happen. A source longer
 than SOURCE_LIMIT is not judged (the pilot measured short documents only; a long
 one needs passage retrieval first): only code's number lookup applies, and the
 log says so.
@@ -116,10 +149,17 @@ JUDGE_SECONDS = 60.0
 SCREEN_SECONDS = 20.0
 # The assistant path refuses more than 6,000 output tokens (output_budget).
 JUDGE_TOKENS = 6_000
+# A call's cost budget follows what it reads: the gateway reserves the input at
+# one token per byte before the output room, so a fixed 0.04 EUR refused the
+# judge of a long answer (R&D study, 2026-11-19: 0.046 EUR measured) and left a
+# medium source without its screen. The minimum, plus BUDGET_EUR_PER_BYTE of the
+# message (above the input price of every public profile), at most the maximum.
 JUDGE_BUDGET_EUR = Decimal("0.04")
+REWRITE_BUDGET_EUR = Decimal("0.02")
+BUDGET_EUR_PER_BYTE = Decimal("0.000002")
+BUDGET_MAX_EUR = Decimal("0.15")
 REWRITE_SECONDS = 45.0
 REWRITE_TOKENS = 4_000
-REWRITE_BUDGET_EUR = Decimal("0.02")
 # Under this, a call has no time left to be useful.
 MIN_SECONDS = 12.0
 # A rewrite is asked only with this much time left after it for its re-check.
@@ -128,6 +168,8 @@ RECHECK_SECONDS = 30.0
 MARGIN_SECONDS = 5.0
 MAX_FINDINGS = 12
 MAX_HINTS = 20
+# derived() combines at most this many of the answer's own source values.
+MAX_OPERANDS = 60
 # A paraphrased statement is located in the answer sentence holding this share
 # of its words (character pairs for scripts written without spaces).
 OVERLAP = 0.6
@@ -176,6 +218,32 @@ REWRITE = (
     "Return only a JSON object mapping each sentence number to its corrected "
     'text, for example {"1": "corrected sentence", "2": ""}.'
 )
+# What the screen or code flagged is confirmed by the judge statement by statement:
+# the judge reads the same source, request and answer, and only the flagged
+# statements need its reasoning (measurement in the module docstring).
+CONFIRM = (
+    "A first reading compared the SUMMARY with the SOURCE and flagged the "
+    "statements listed under FLAGGED. The SUMMARY is an assistant's answer to the "
+    "REQUEST, written from the SOURCE: a summary, a report, a rewrite or "
+    "translation, or an answer about it. Text the request asked the assistant to "
+    "create beyond the source (a new story, a draft reply, advice, opinions, "
+    "questions to the person) is not checked, but any fact it attributes to the "
+    "source is.\n"
+    "For each flagged statement, decide whether the source supports it. "
+    "Unsupported: a wrong or unsupported fact, number, date or name, and a link "
+    "(cause or consequence, temporal order, condition, negation, contrast, "
+    "quantity such as only, all or none, attribution) that the source does not "
+    "state itself or imply directly; two facts the source only mentions side by "
+    "side do not support a cause between them. Paraphrase is fine. A value the "
+    "summary computes from the source's own values (a total, a difference, a "
+    "count, a year from 'last year' in a dated text) is supported when the "
+    "computation is right. A calendar date the summary gives for a day the "
+    "source names only relatively (Monday, tomorrow, next week) is not stated by "
+    "the source: it is unsupported unless the request asks for dates.\n"
+    'Output only JSON: {"unsupported":[{"text":"<summary statement, copied '
+    'exactly>","reason":"..."}]} with only the flagged statements the source '
+    "does not support, and an empty list if it supports them all.\n"
+)
 NOTE = {
     "en": "Checked against the provided document: not supported by it: {items}.",
     "fr": "Vérifié sur le document fourni, sans appui dans ce document : {items}.",
@@ -213,6 +281,16 @@ def _line_start(text: str, index: int) -> int:
 _SHOWN = re.compile(
     r"(?:\d{1,3}(?:[ \u00a0\u202f.,]\d{3})+|\d+)(?:[.,]\d+)?"
     r"(?:\s?(?:%|[^\W\d_]{4,11}\b))?"
+)
+# A year named relatively to another ("last year", "the following year", in the
+# languages the source may be written in): with one in the source, a year one
+# apart from a source year is derived from it.
+_RELATIVE_YEAR = re.compile(
+    r"(?i)\b(?:last|next|previous|following|prior) year\b|\byear (?:before|after)\b"
+    r"|\bl'(?:année|an) (?:dernière?|derni[eè]r|précédente|suivante|prochaine?)\b"
+    r"|\b(?:letzte[nms]?|vorige[nms]?|nächste[nms]?|folgende[nms]?) Jahr|\bVorjahr"
+    r"|\b(?:el )?año (?:pasado|anterior|siguiente|próximo)\b|\bpróximo año\b"
+    r"|\banno (?:scorso|precedente|successivo|prossimo)\b|昨年|去年|前年|翌年|来年"
 )
 # A remark in brackets inside a quotation (the judge's own explanation).
 _REMARK = re.compile(r"\([^()]{0,200}\)|（[^（）]{0,200}）")
@@ -281,7 +359,7 @@ class Finding:
 
     text: str
     reason: str
-    kind: str  # unsupported, link, not_confirmed
+    kind: str  # unsupported, link, not_confirmed, number (a code lead)
     start: int = -1
     end: int = -1
     exact: bool = False
@@ -299,6 +377,8 @@ class Verdict:
     seconds: float = 0.0
     # The fast screen: clean, flagged, failed:<code>, or empty when it did not run.
     screen: str = ""
+    # Statements sent to the judge to confirm (screen findings, code leads).
+    leads: int = 0
 
 
 @dataclass
@@ -308,6 +388,8 @@ class Report:
         ""  # clean, revised, noted, revised_noted, failed:<code>, skipped:<reason>
     )
     hints: int = 0
+    # Statements the judge was asked to confirm on the first check.
+    leads: int = 0
     findings: int = 0
     findings_after: int = 0
     links: int = 0
@@ -317,6 +399,8 @@ class Report:
     screen: list[str] = field(default_factory=list)  # one per check (Verdict.screen)
     calls: int = 0
     cost_eur: Decimal = Decimal(0)
+    # Failed calls whose cost the gateway did not report (counted as zero).
+    unmeasured: int = 0
     seconds: float = 0.0
     judge_seconds: list[float] = field(default_factory=list)
     source_characters: int = 0
@@ -326,6 +410,7 @@ class Report:
             "mode": self.mode,
             "outcome": self.outcome,
             "hints": self.hints,
+            "leads": self.leads,
             "findings": self.findings,
             "findings_after": self.findings_after,
             "links": self.links,
@@ -335,6 +420,7 @@ class Report:
             "screen": self.screen,
             "calls": self.calls,
             "cost_eur": str(self.cost_eur),
+            "unmeasured": self.unmeasured,
             "seconds": round(self.seconds, 2),
             "judge_seconds": [round(s, 2) for s in self.judge_seconds],
             "source_characters": self.source_characters,
@@ -344,10 +430,14 @@ class Report:
 class JudgeFailure(Exception):
     """The judge gave no usable verdict; code names why (D5: never hidden)."""
 
-    def __init__(self, code: str, cost_eur: Decimal = Decimal(0)) -> None:
+    def __init__(
+        self, code: str, cost_eur: Decimal = Decimal(0), unmeasured: int = 0
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.cost_eur = cost_eur
+        # Failed calls whose cost nobody reported.
+        self.unmeasured = unmeasured
 
 
 # ------------------------------------------------------------------ code checks
@@ -445,31 +535,71 @@ def locate(
     return spans[best][0], spans[best][1], False
 
 
-def hints(answer: str, source: Source) -> list[str]:
-    """Numbers of the answer (amounts, years, days, counts) the source lacks.
+def _found(value: float, tolerance: float, known: list[float]) -> bool:
+    from bisect import bisect_left
+
+    index = bisect_left(known, value - tolerance)
+    return index < len(known) and known[index] <= value + tolerance
+
+
+def derived(
+    value: float,
+    tolerance: float,
+    known: list[float],
+    stated: list[float],
+    relative_years: bool = False,
+) -> bool:
+    """True when the answer's ``value`` derives from values the source states.
+
+    A year one apart from a year of the source when the source counts years
+    relatively (``relative_years``: "last year" in a text dated 2025 is 2024),
+    or one operation (sum, difference,
+    product, share in percent) on two source values the answer itself states
+    (``stated``): a derivation the source supports, not a number it lacks
+    (2026-11-19: "2024" from "last year" and a computed count were named "not
+    found"). Operands are limited to the values the answer states: any pair of
+    the source's values gives almost every small number (on the 264 outputs of
+    the larger set, pairs of all source values hid 12 of the 15 changed numbers
+    code saw). Whether a derivation is right is the judge's to say.
+    """
+    if relative_years and value.is_integer() and 1000 <= value <= 2100:
+        if _found(value - 1, tolerance, known) or _found(value + 1, tolerance, known):
+            return True
+    margin = tolerance + abs(value) * 1e-6
+    for first in stated:
+        for second in stated:
+            if (
+                abs(first + second - value) <= margin
+                or abs(first - second - value) <= margin
+                or abs(first * second - value) <= margin
+                or (second and abs(first * 100 / second - value) <= margin)
+            ):
+                return True
+    return False
+
+
+def _numbers(body: str, source: Source) -> list[tuple[int, int, str]]:
+    """Numbers of the answer the source lacks: (start, end, text as written).
 
     Each written number is compared by value with the numbers of the source and
     of the person's messages, whatever the separators ("3 000", "3,000",
-    "3000"), so a date or an amount in another written form still matches. Only
-    numbers: on the pilot outputs, names and whole dates looked up by code
+    "3000"), so a date or an amount in another written form still matches; a
+    value derived by one operation from two of them is not lacking (derived).
+    Only numbers: on the pilot outputs, names and whole dates looked up by code
     flagged 11 of 24 faithful summaries (capitalised nouns, words without
-    spaces, a date written as a range), numbers none.
+    spaces, a date written as a range), numbers none. Today's date is not one of
+    the source's values: a date resolved against it (2026-11-19: "on Monday"
+    summarised as "Monday 2026-11-23") is an addition the source does not state.
     """
-    from bisect import bisect_left
-
     from services.orchestrator.unsourced_details import _number_value
 
-    def values(texts: list[str]) -> list[float]:
-        return sorted(
-            parsed[0]
-            for text in texts
-            for match in _NUMBER.finditer(text)
-            if (parsed := _number_value(text[match.start() : match.end() + 16]))
-        )
-
-    known = values([*source.passages, *source.own, time.strftime("%Y-%m-%d")])
-    body = answer.split("<details>", 1)[0]
-    kept: list[str] = []
+    known = sorted(
+        parsed[0]
+        for text in [*source.passages, *source.own]
+        for match in _NUMBER.finditer(text)
+        if (parsed := _number_value(text[match.start() : match.end() + 16]))
+    )
+    values: list[tuple[int, int, str, float, float]] = []
     for match in _NUMBER.finditer(body):
         ordinal = _ORDINAL.match(body, _line_start(body, match.start()))
         if ordinal is not None and ordinal.end() == match.end() + 1:
@@ -480,13 +610,54 @@ def hints(answer: str, source: Source) -> list[str]:
         if parsed is None:
             continue
         value, precision = parsed
-        tolerance = precision / 2 + abs(value) * 1e-9
-        index = bisect_left(known, value - tolerance)
-        if index < len(known) and known[index] <= value + tolerance:
-            continue
+        values.append(
+            (match.start(), match.end(), text, value, precision / 2 + abs(value) * 1e-9)
+        )
+    lacking = [item for item in values if not _found(item[3], item[4], known)]
+    stated = sorted({item[3] for item in values if item not in lacking})[:MAX_OPERANDS]
+    found: list[tuple[int, int, str]] = []
+    relative = any(_RELATIVE_YEAR.search(text) for text in source.passages)
+    for start, end, text, value, tolerance in lacking:
+        if not derived(value, tolerance, known, stated, relative):
+            found.append((start, end, text))
+    return found
+
+
+def hints(answer: str, source: Source) -> list[str]:
+    """Numbers of the answer the source lacks, as written (see _numbers)."""
+    body = answer.split("<details>", 1)[0]
+    kept: list[str] = []
+    for _, _, text in _numbers(body, source):
         if text not in kept:
             kept.append(text)
     return kept[:MAX_HINTS]
+
+
+def leads(body: str, source: Source) -> list[Finding]:
+    """The answer sentences holding a number the source lacks, for the judge.
+
+    Code finds the number, the judge decides (T8): a sentence the screen found
+    clean still goes to the judge when it holds one, which a date resolved from
+    the conversation date or a changed figure the screen let pass needs.
+    """
+    spans = sentences(body)
+    found: dict[tuple[int, int], Finding] = {}
+    for start, _, text in _numbers(body, source):
+        for first, last in spans:
+            if first <= start < last:
+                if (first, last) in found:
+                    found[(first, last)].reason += ", " + text
+                else:
+                    found[(first, last)] = Finding(
+                        " ".join(body[first:last].split())[:NOTE_ITEM_CHARACTERS],
+                        "number not found in the source: " + text,
+                        "number",
+                        first,
+                        last,
+                        True,
+                    )
+                break
+    return list(found.values())[:MAX_FINDINGS]
 
 
 # ------------------------------------------------------------------ the judge
@@ -618,12 +789,18 @@ def screen_profile(turn: str | None) -> str | None:
     return screen if screen is not None and screen != judge_profile else None
 
 
+def budget(messages: list[dict[str, str]], minimum: Decimal) -> Decimal:
+    """The cost budget of a call reading ``messages`` (see BUDGET_EUR_PER_BYTE)."""
+    size = sum(len(message["content"].encode()) for message in messages)
+    return min(BUDGET_MAX_EUR, max(minimum, minimum + size * BUDGET_EUR_PER_BYTE))
+
+
 def _payload(
     messages: list[dict[str, str]],
     profile: str,
     tokens: int,
     seconds: float,
-    budget: Decimal,
+    minimum: Decimal,
     *,
     json_mode: bool = True,
 ) -> dict[str, Any]:
@@ -633,7 +810,7 @@ def _payload(
         "profile": profile,
         "max_tokens": tokens,
         "timeout": seconds,
-        "budget_eur": str(budget),
+        "budget_eur": str(budget(messages, minimum)),
         "sampling_temperature": 0.0,
         "single_attempt": True,
         "local_enabled": False,
@@ -646,12 +823,51 @@ def _payload(
 
 
 def _failure_code(error: BaseException) -> str:
+    """The gateway's code of a failed call (timeout, cost_budget, provider_error)."""
     code = getattr(error, "code", None)
     if isinstance(code, str) and code:
         return code
     if isinstance(error, TimeoutError):
         return "timeout"
     return type(error).__name__
+
+
+def _failure_cost(error: BaseException) -> Decimal | None:
+    """The cost the gateway kept for a failed call, or None when it said none.
+
+    A refusal before any provider output (budget, size, quota) costs nothing; a
+    call cut in flight keeps its reservation, which the gateway reports.
+    """
+    from services.orchestrator.model import refused_before_output
+
+    if refused_before_output(error):
+        return Decimal(0)
+    cost = getattr(error, "cost_eur", None)
+    if cost is None:
+        cost = getattr(error, "measurements", {}).get("reserved_eur")
+    return cost if isinstance(cost, Decimal) and cost.is_finite() else None
+
+
+def confirm_messages(
+    request: str, source: str, answer: str, flagged: list[Finding]
+) -> list[dict[str, str]]:
+    listed = "\n".join(
+        f"{number}. {finding.text}"
+        + (f" (first reading: {finding.reason})" if finding.reason else "")
+        for number, finding in enumerate(flagged, start=1)
+    )
+    content = (
+        CONFIRM
+        + "\nREQUEST:\n"
+        + request[:REQUEST_CHARACTERS]
+        + "\n\nSOURCE:\n"
+        + source
+        + "\n\nSUMMARY:\n"
+        + answer
+        + "\n\nFLAGGED:\n"
+        + listed
+    )
+    return [{"role": "user", "content": content}]
 
 
 async def judge(
@@ -663,17 +879,22 @@ async def judge(
     *,
     complete: Complete | None = None,
     json_mode: bool = True,
+    flagged: list[Finding] | None = None,
 ) -> Verdict:
     """One judge call on the whole source; raises JudgeFailure when unusable.
 
-    ``json_mode`` asks the provider for a JSON object. The reasoning judge goes
-    without it: on its model JSON mode made 1.5 times the output tokens for the
-    same verdicts (measured 2026-11-18); the reply's object is read from the text.
+    With ``flagged``, the call confirms those statements only (CONFIRM);
+    without, it reads the whole answer (JUDGE). ``json_mode`` asks the provider
+    for a JSON object. The reasoning judge goes without it: on its model JSON
+    mode made 1.5 times the output tokens for the same verdicts (measured
+    2026-11-18); the reply's object is read from the text.
     """
     started = time.monotonic()
     body = answer.split("<details>", 1)[0]
     payload = _payload(
-        judge_messages(request, source.text, body),
+        confirm_messages(request, source.text, body, flagged)
+        if flagged
+        else judge_messages(request, source.text, body),
         profile,
         JUDGE_TOKENS,
         seconds,
@@ -683,7 +904,10 @@ async def judge(
     try:
         reply = await (complete or _complete)(payload, seconds + 5)
     except Exception as error:  # noqa: BLE001 - reported by code, never raised on
-        raise JudgeFailure(_failure_code(error)) from error
+        cost = _failure_cost(error)
+        raise JudgeFailure(
+            _failure_code(error), cost or Decimal(0), int(cost is None)
+        ) from error
     cost = _cost(reply) if isinstance(reply, dict) else Decimal(0)
     text = reply.get("text") if isinstance(reply, dict) else None
     if not isinstance(text, str):
@@ -715,14 +939,20 @@ async def checked(
     *,
     complete: Complete | None = None,
 ) -> Verdict:
-    """The screen first; what it flags is judged on ``profile``, whose verdict is used.
+    """The screen first; what it flags is confirmed on ``profile``, whose verdict is used.
 
+    The sentences holding a number the source lacks (leads) are confirmed with
+    the screen's findings, even when the screen found the answer clean. Without
+    a screen verdict (no screen, or it failed) the judge reads the whole answer.
     Raises JudgeFailure when the judge has to decide and gives no usable verdict
     (the screen's cost is carried by the failure).
     """
     started = time.monotonic()
     spent = Decimal(0)
+    unmeasured = 0
     outcome = ""
+    body = answer.split("<details>", 1)[0]
+    flagged: list[Finding] | None = None
     if screen is not None:
         try:
             first = await judge(
@@ -735,14 +965,25 @@ async def checked(
             )
         except JudgeFailure as failure:
             spent, outcome = failure.cost_eur, "failed:" + failure.code
+            unmeasured = failure.unmeasured
         else:
-            if not first.findings:
-                first.screen = "clean"
+            spent = first.cost_eur
+            outcome = "flagged" if first.findings else "clean"
+            flagged = first.findings
+            places = {(finding.start, finding.end) for finding in flagged}
+            flagged = flagged + [
+                lead
+                for lead in leads(body, source)
+                if (lead.start, lead.end) not in places
+            ]
+            if not flagged:
+                first.screen = outcome
                 return first
-            spent, outcome = first.cost_eur, "flagged"
+            if not first.findings:
+                outcome = "clean_leads"
     left = seconds - (time.monotonic() - started)
     if left < MIN_SECONDS:
-        raise JudgeFailure("deadline", spent)
+        raise JudgeFailure("deadline", spent, unmeasured)
     try:
         verdict = await judge(
             request,
@@ -752,13 +993,16 @@ async def checked(
             min(JUDGE_SECONDS, left),
             complete=complete,
             json_mode=False,
+            flagged=flagged[:MAX_FINDINGS] if flagged else None,
         )
     except JudgeFailure as failure:
         failure.cost_eur += spent
+        failure.unmeasured += unmeasured
         raise
     verdict.cost_eur += spent
     verdict.seconds = time.monotonic() - started
     verdict.screen = outcome
+    verdict.leads = len(flagged or [])
     return verdict
 
 
@@ -848,6 +1092,9 @@ async def rewrite(
         reply = await (complete or _complete)(payload, seconds + 5)
     except Exception as error:  # noqa: BLE001 - the answer is still delivered
         report.rewrite = "failed:" + _failure_code(error)
+        cost = _failure_cost(error)
+        report.cost_eur += cost or Decimal(0)
+        report.unmeasured += int(cost is None)
         return None
     if isinstance(reply, dict):
         report.cost_eur += _cost(reply)
@@ -987,6 +1234,7 @@ async def review(
     except JudgeFailure as failure:
         # D5: logged with its code; the answer is delivered and claims nothing.
         report.cost_eur += failure.cost_eur
+        report.unmeasured += failure.unmeasured
         report.outcome = "failed:" + failure.code
         if found and report.mode == "on":
             return done("", answer, note(found, language, judged=False))
@@ -994,6 +1242,7 @@ async def review(
     report.cost_eur += verdict.cost_eur
     report.judge_seconds.append(verdict.seconds)
     report.screen.append(verdict.screen)
+    report.leads = verdict.leads
     report.links = verdict.links
     report.unlocated = verdict.unlocated
     report.not_confirmed = verdict.not_confirmed
@@ -1033,6 +1282,7 @@ async def review(
                 )
             except JudgeFailure as failure:
                 report.cost_eur += failure.cost_eur
+                report.unmeasured += failure.unmeasured
                 report.rewrite = "unchecked:" + failure.code
             else:
                 report.cost_eur += after.cost_eur
