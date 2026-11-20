@@ -228,3 +228,7 @@ prepush: ## fast local copy of the CI checks that fail most often (FULL=1 comple
 	  $(if $(TESTS_BUDGET),--tests-budget $(TESTS_BUDGET)) $(if $(JOBS),--jobs $(JOBS))
 fix-css-digest: ## record sha256 of chat-ui.css in reports/m24-rendering.json after a stylesheet change
 	@python3 tools/prepush.py --fix-css-digest
+
+.PHONY: app-render-image
+app-render-image: ## image of the app render check (docs/27-app-render-check.md)
+	docker build -t atlas-app-render:local - < infra/docker/Dockerfile.app-render

@@ -40,8 +40,8 @@ from packages.artifact_source import (
 from packages.language import LANGUAGES, language_instruction
 from packages.limits import LimitError
 from packages.ports import atlas_ports
-from packages.user_errors import app_failure, app_quota
-from services.orchestrator import artifact_store
+from packages.user_errors import app_failure, app_quota, app_render_failure
+from services.orchestrator import app_render, artifact_store
 from services.orchestrator.artifact_store import ArtifactError
 from services.orchestrator.artifact_tools import (
     PROBLEM_DETAILS,
@@ -194,6 +194,12 @@ NETWORK_REPAIR = (
     "(sounds, images, fonts, libraries) cannot be used. Make the app work without "
     "them; if the user asked for such files, say so plainly in one of the sentences "
     "after the block.\n"
+)
+RENDER_REPAIR = (
+    "Atlas opened this file in the preview (a sandboxed browser page that blocks "
+    "all network access, as the user's side panel does) and it does not work:\n"
+    "{problems}\n{network}Fix the cause of every listed problem and write the "
+    "complete corrected file in one fenced ```html block, " + DESCRIBE
 )
 EXTRA_DETAILS = {
     "svg_syntax": "the SVG is not well-formed XML here (unclosed element, unquoted "
@@ -456,9 +462,11 @@ async def process_app_turn(
     model: GatewayModel | None = None
     # The plan of an app (work_plan.py): write, check, hand over. The code
     # defines it, since one call writes the whole app; each step is checked
-    # by the code itself (block received, validation passed, app stored).
+    # by the code itself (block received, validation and render check passed,
+    # app stored).
     plan = _app_plan(request, previous is not None) if kind == "app" else None
     built = False
+    render_codes: list[str] = []
     await progress.status(0)
     try:
         model = await GatewayModel.connect(
@@ -512,7 +520,11 @@ async def process_app_turn(
                 break
             if attempt:
                 progress.restart()
-                repair = failure in {"artifact_invalid", "artifact_missing"}
+                repair = failure in {
+                    "artifact_invalid",
+                    "artifact_missing",
+                    "artifact_render",
+                }
                 await progress.status(3 if repair else 0)
             # The gateway accepts at most 300 s for a file turn.
             remaining = min(remaining, 290.0)
@@ -602,6 +614,37 @@ async def process_app_turn(
                     },
                 ]
                 continue
+            if kind == "app":
+                # Open the app as the side view would before saying it is done
+                # (owner rule 2026-11-16, Atlas checks its own result).
+                report = await app_render.check(
+                    prepared.document,
+                    deadline - time.monotonic() - DEADLINE_MARGIN,
+                )
+                item.latence_ms["render_check"] = report.ms
+                if report.status == "problems":
+                    failure = "artifact_render"
+                    render_codes = report.codes
+                    network = any(
+                        code in app_render.NETWORK_CODES for code in report.codes
+                    )
+                    redescribe = network
+                    logging.getLogger(__name__).warning(
+                        "app_turn_render attempt=%d codes=%s",
+                        attempt + 1,
+                        ",".join(report.codes),
+                    )
+                    messages += [
+                        {"role": "assistant", "content": text},
+                        {
+                            "role": "user",
+                            "content": RENDER_REPAIR.format(
+                                problems=app_render.repair_lines(report),
+                                network=NETWORK_REPAIR if network else "",
+                            ),
+                        },
+                    ]
+                    continue
             stored = _store(request, item, prepared.document, title, kind, previous)
             if isinstance(stored, str):
                 failure = stored
@@ -628,6 +671,13 @@ async def process_app_turn(
             # that a retry would fix.
             app_quota(language, *artifact_store.quota_limits())
             if failure == "artifact_quota"
+            # The app was written but did not work when opened: said as such.
+            else app_render_failure(
+                language,
+                render_codes,
+                unchanged_version=previous.version if previous is not None else None,
+            )
+            if failure == "artifact_render"
             else app_failure(
                 kind,
                 language,
