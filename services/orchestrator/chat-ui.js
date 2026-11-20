@@ -950,6 +950,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       }
       return slot;
     };
+    const deliverablePreview = /^\/api\/atlas\/orgs\/[0-9a-f-]{36}\/projects\/[0-9a-f-]{36}\/deliverables\/[0-9a-f-]{36}\/preview$/;
     const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; return node; };
     // Marked is only a parser. Rebuild its output from an allowlist in an inert document.
     const sanitize = html => {
@@ -999,6 +1000,13 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.download = () => {
           const link = element("a"); link.href = descriptor.download; link.download = ""; link.click();
         };
+      } },
+      // A deliverable preview: a static page of pictures from the same origin, shown without script.
+      page: { async open(slot, descriptor) {
+        const source = new URL(safeURL(descriptor.src, true));
+        if (!deliverablePreview.test(source.pathname)) throw new Error("Unsupported preview");
+        const node = frame(slot); node.setAttribute("sandbox", "allow-downloads"); node.src = source.pathname; slot.content.append(node);
+        if (descriptor.download) slot.download = () => { const link = element("a"); link.href = safeURL(descriptor.download, true); link.download = ""; link.click(); };
       } },
       url: { async open(slot, descriptor) {
         const url = safeURL(descriptor.src), node = frame(slot), notice = element("p", "atlas-side-fallback", text(2)); notice.hidden = true;
@@ -1149,6 +1157,15 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
               }
             } else if (wide() && latest) open(descriptor).catch(() => {});
           }
+          return;
+        }
+        // A published file's preview is the server's rendering of its pages: it opens beside the conversation
+        // (the whole screen on a phone) instead of replacing it. A modified click keeps the browser's own behaviour.
+        if (url.origin === location.origin && deliverablePreview.test(url.pathname)) {
+          seen.add(node);
+          const prefix = url.pathname.replace(/\/preview$/, ""), sibling = [...((node.closest(".markdown-prose") || node.parentElement)?.querySelectorAll("a[href]") || [])].find(item => new URL(item.href, location.href).pathname === prefix + "/download");
+          const descriptor = { kind: "page", src: url.pathname, download: prefix + "/download", title: sibling?.textContent.trim().replace(/^\S+\s+/, "") || node.textContent.trim() || label("Preview"), slot: "top" };
+          node.addEventListener("click", event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); open(descriptor).catch(() => {}); });
           return;
         }
         const path = url.pathname, match = path.match(/\.(pdf|md)$/i); if (!match) return; seen.add(node);

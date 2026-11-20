@@ -15,6 +15,16 @@ sudo apt-get install -y --no-install-recommends file
 python3 -m unittest tests.test_project_runtime
 ```
 
+Rendered previews of published documents additionally need LibreOffice,
+poppler and `unshare` (see `docs/deliverable-previews.md`). They are optional:
+without them, or without permission to create a network namespace (the Docker
+runtime as shipped), previews stay the verified text:
+
+```sh
+sudo apt-get install -y --no-install-recommends libreoffice-writer \
+  libreoffice-calc libreoffice-impress poppler-utils fonts-liberation
+```
+
 The Docker runtime includes this package. Other quick-start images do not run
 the retrieval-owned project file service and do not need a second installation.
 
