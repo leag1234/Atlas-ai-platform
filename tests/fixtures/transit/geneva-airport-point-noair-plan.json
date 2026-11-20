@@ -1,0 +1,19 @@
+{
+"recorded": "2026-11-20 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+"request": {
+"time": "2026-11-21T09:00+01:00",
+"arriveBy": "true",
+"numItineraries": "3",
+"searchWindow": "3600",
+"transitModes": "TRAM,SUBWAY,FERRY,BUS,COACH,RAIL,FUNICULAR,AERIAL_LIFT,OTHER"
+},
+"status": 200,
+"body": {
+"itineraries": [],
+"direct": [],
+"debugOutput": {
+"n_start_offsets": 2,
+"n_dest_offsets": 48
+}
+}
+}

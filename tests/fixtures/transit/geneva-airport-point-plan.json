@@ -1,0 +1,1425 @@
+{
+"recorded": "2026-11-20 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+"request": {
+"time": "2026-11-21T09:00+01:00",
+"arriveBy": "true",
+"numItineraries": "3",
+"searchWindow": "3600"
+},
+"status": 200,
+"body": {
+"itineraries": [
+{
+"startTime": "2026-11-19T15:36:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"duration": 69900,
+"transfers": 5,
+"legs": [
+{
+"mode": "WALK",
+"duration": 360,
+"startTime": "2026-11-19T15:36:00Z",
+"endTime": "2026-11-19T15:42:00Z",
+"scheduledStartTime": "2026-11-19T15:36:00Z",
+"scheduledEndTime": "2026-11-19T15:42:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Villeurbanne Centre",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "BUS",
+"duration": 360,
+"startTime": "2026-11-19T15:42:00Z",
+"endTime": "2026-11-19T15:48:00Z",
+"scheduledStartTime": "2026-11-19T15:42:00Z",
+"scheduledEndTime": "2026-11-19T15:48:00Z",
+"realTime": false,
+"headsign": "Cordeliers",
+"agencyName": "TCL",
+"routeShortName": "127",
+"routeLongName": "Cordeliers - Villeurbanne Centre",
+"tripShortName": "REF~310826~311226~TVX - Villeurbanne Centre - Cordeliers",
+"displayName": "127",
+"cancelled": false,
+"from": {
+"name": "Villeurbanne Centre",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Collège Bellecombe",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 480,
+"startTime": "2026-11-19T15:48:00Z",
+"endTime": "2026-11-19T15:56:00Z",
+"scheduledStartTime": "2026-11-19T15:48:00Z",
+"scheduledEndTime": "2026-11-19T15:56:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Collège Bellecombe",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "HIGHSPEED_RAIL",
+"duration": 13380,
+"startTime": "2026-11-19T16:00:00Z",
+"endTime": "2026-11-19T19:43:00Z",
+"scheduledStartTime": "2026-11-19T16:00:00Z",
+"scheduledEndTime": "2026-11-19T19:43:00Z",
+"realTime": false,
+"headsign": "",
+"agencyName": "SNCF VOYAGEURS",
+"routeShortName": "",
+"routeLongName": "",
+"tripShortName": "9868",
+"displayName": "TGV INOUI 9868",
+"cancelled": false,
+"from": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Bruxelles Midi",
+"tz": "CET"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T19:43:00Z",
+"endTime": "2026-11-19T19:48:00Z",
+"scheduledStartTime": "2026-11-19T19:43:00Z",
+"scheduledEndTime": "2026-11-19T19:48:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Bruxelles Midi",
+"tz": "CET"
+},
+"to": {
+"name": "Bruxelles-Midi",
+"tz": "CET"
+}
+},
+{
+"mode": "REGIONAL_RAIL",
+"duration": 3060,
+"startTime": "2026-11-19T20:15:00Z",
+"endTime": "2026-11-19T21:06:00Z",
+"scheduledStartTime": "2026-11-19T20:15:00Z",
+"scheduledEndTime": "2026-11-19T21:06:00Z",
+"realTime": false,
+"headsign": "Charleroi-Central",
+"agencyName": "NMBS/SNCB",
+"routeShortName": "IC",
+"routeLongName": "Essen -- Charleroi-Central",
+"tripShortName": "2042",
+"displayName": "IC 2042",
+"cancelled": false,
+"from": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Charleroi-Central",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T21:06:00Z",
+"endTime": "2026-11-19T21:11:00Z",
+"scheduledStartTime": "2026-11-19T21:06:00Z",
+"scheduledEndTime": "2026-11-19T21:11:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Charleroi-Central",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "CHARLEROI Gare Centrale",
+"tz": "Europe/Brussels",
+"scheduledTrack": "18",
+"track": "18"
+}
+},
+{
+"mode": "BUS",
+"duration": 600,
+"startTime": "2026-11-20T05:03:00Z",
+"endTime": "2026-11-20T05:13:00Z",
+"scheduledStartTime": "2026-11-20T05:03:00Z",
+"scheduledEndTime": "2026-11-20T05:13:00Z",
+"realTime": false,
+"headsign": "JUMET Madeleine",
+"agencyName": "LETEC",
+"routeShortName": "68",
+"routeLongName": "Gare Centrale - Zoning Jumet - Gosselies",
+"tripShortName": "2",
+"displayName": "68",
+"cancelled": false,
+"from": {
+"name": "CHARLEROI Gare Centrale",
+"tz": "Europe/Brussels",
+"scheduledTrack": "18",
+"track": "18"
+},
+"to": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-20T05:13:00Z",
+"endTime": "2026-11-20T05:18:00Z",
+"scheduledStartTime": "2026-11-20T05:13:00Z",
+"scheduledEndTime": "2026-11-20T05:18:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 7200,
+"startTime": "2026-11-20T05:55:00Z",
+"endTime": "2026-11-20T07:55:00Z",
+"scheduledStartTime": "2026-11-20T05:55:00Z",
+"scheduledEndTime": "2026-11-20T07:55:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"agencyName": "RYANAIR",
+"routeShortName": "CAG-CRL",
+"routeLongName": "Cagliari (CAG) - Bruxelles Charleroi (CRL)",
+"tripShortName": "FR 04417",
+"displayName": "CAG-CRL",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T07:55:00Z",
+"endTime": "2026-11-20T07:57:00Z",
+"scheduledStartTime": "2026-11-20T07:55:00Z",
+"scheduledEndTime": "2026-11-20T07:57:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 9000,
+"startTime": "2026-11-20T08:30:00Z",
+"endTime": "2026-11-20T11:00:00Z",
+"scheduledStartTime": "2026-11-20T08:30:00Z",
+"scheduledEndTime": "2026-11-20T11:00:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Ginevra/Geneva (GVA)",
+"agencyName": "EASYJET SWITZERLAND",
+"routeShortName": "CAG-GVA",
+"routeLongName": "Cagliari (CAG) - Ginevra/Geneva (GVA)",
+"tripShortName": "DS 01424",
+"displayName": "CAG-GVA",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 60,
+"startTime": "2026-11-20T11:00:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"scheduledStartTime": "2026-11-20T11:00:00Z",
+"scheduledEndTime": "2026-11-20T11:01:00Z",
+"realTime": false,
+"from": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+},
+{
+"startTime": "2026-11-19T17:31:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"duration": 63000,
+"transfers": 6,
+"legs": [
+{
+"mode": "WALK",
+"duration": 900,
+"startTime": "2026-11-19T17:31:00Z",
+"endTime": "2026-11-19T17:46:00Z",
+"scheduledStartTime": "2026-11-19T17:31:00Z",
+"scheduledEndTime": "2026-11-19T17:46:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Verlaine - Tolstoï",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "BUS",
+"duration": 360,
+"startTime": "2026-11-19T17:46:00Z",
+"endTime": "2026-11-19T17:52:00Z",
+"scheduledStartTime": "2026-11-19T17:46:00Z",
+"scheduledEndTime": "2026-11-19T17:52:00Z",
+"realTime": false,
+"headsign": "Gare Saint-Paul",
+"agencyName": "TCL",
+"routeShortName": "TB11",
+"routeLongName": "Gare Saint-Paul - Laurent Bonnevay",
+"tripShortName": "COM~310826~311226~Itinéraire normal : Laurent Bonnevay - Gare Saint-Paul",
+"displayName": "TB11",
+"cancelled": false,
+"from": {
+"name": "Verlaine - Tolstoï",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charmettes",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 480,
+"startTime": "2026-11-19T17:52:00Z",
+"endTime": "2026-11-19T18:00:00Z",
+"scheduledStartTime": "2026-11-19T17:52:00Z",
+"scheduledEndTime": "2026-11-19T18:00:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Charmettes",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "HIGHSPEED_RAIL",
+"duration": 13380,
+"startTime": "2026-11-19T18:00:00Z",
+"endTime": "2026-11-19T21:43:00Z",
+"scheduledStartTime": "2026-11-19T18:00:00Z",
+"scheduledEndTime": "2026-11-19T21:43:00Z",
+"realTime": false,
+"headsign": "",
+"agencyName": "SNCF VOYAGEURS",
+"routeShortName": "",
+"routeLongName": "",
+"tripShortName": "9882",
+"displayName": "TGV INOUI 9882",
+"cancelled": false,
+"from": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Bruxelles Midi",
+"tz": "CET"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T21:43:00Z",
+"endTime": "2026-11-19T21:48:00Z",
+"scheduledStartTime": "2026-11-19T21:43:00Z",
+"scheduledEndTime": "2026-11-19T21:48:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Bruxelles Midi",
+"tz": "CET"
+},
+"to": {
+"name": "Bruxelles-Midi",
+"tz": "CET"
+}
+},
+{
+"mode": "SUBURBAN",
+"duration": 2340,
+"startTime": "2026-11-19T22:30:00Z",
+"endTime": "2026-11-19T23:09:00Z",
+"scheduledStartTime": "2026-11-19T22:30:00Z",
+"scheduledEndTime": "2026-11-19T23:09:00Z",
+"realTime": false,
+"headsign": "Marchienne-au-Pont",
+"agencyName": "NMBS/SNCB",
+"routeShortName": "S1",
+"routeLongName": "Anvers-Central -- Marchienne-au-Pont",
+"tripShortName": "1994",
+"displayName": "S1",
+"cancelled": false,
+"from": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Luttre",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T23:09:00Z",
+"endTime": "2026-11-19T23:14:00Z",
+"scheduledStartTime": "2026-11-19T23:09:00Z",
+"scheduledEndTime": "2026-11-19T23:14:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Luttre",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "LUTTRE Gare SNCB",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "BUS",
+"duration": 2040,
+"startTime": "2026-11-20T03:45:00Z",
+"endTime": "2026-11-20T04:19:00Z",
+"scheduledStartTime": "2026-11-20T03:45:00Z",
+"scheduledEndTime": "2026-11-20T04:20:00Z",
+"realTime": true,
+"headsign": "CHARLEROI Palais",
+"agencyName": "LETEC",
+"routeShortName": "50",
+"routeLongName": "Charleroi (Palais) - Luttre (SNCB)",
+"tripShortName": "1",
+"displayName": "50",
+"cancelled": false,
+"from": {
+"name": "LUTTRE Gare SNCB",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T04:19:00Z",
+"endTime": "2026-11-20T04:21:00Z",
+"scheduledStartTime": "2026-11-20T04:19:00Z",
+"scheduledEndTime": "2026-11-20T04:21:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "BUS",
+"duration": 180,
+"startTime": "2026-11-20T04:46:00Z",
+"endTime": "2026-11-20T04:49:00Z",
+"scheduledStartTime": "2026-11-20T04:46:00Z",
+"scheduledEndTime": "2026-11-20T04:49:00Z",
+"realTime": false,
+"headsign": "CHATELINEAU SNCB",
+"agencyName": "LETEC",
+"routeShortName": "28",
+"routeLongName": "Châtelineau (SNCB) - Jumet (Madeleine)",
+"tripShortName": "6",
+"displayName": "28",
+"cancelled": false,
+"from": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-20T04:49:00Z",
+"endTime": "2026-11-20T04:54:00Z",
+"scheduledStartTime": "2026-11-20T04:49:00Z",
+"scheduledEndTime": "2026-11-20T04:54:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 7200,
+"startTime": "2026-11-20T05:55:00Z",
+"endTime": "2026-11-20T07:55:00Z",
+"scheduledStartTime": "2026-11-20T05:55:00Z",
+"scheduledEndTime": "2026-11-20T07:55:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"agencyName": "RYANAIR",
+"routeShortName": "CAG-CRL",
+"routeLongName": "Cagliari (CAG) - Bruxelles Charleroi (CRL)",
+"tripShortName": "FR 04417",
+"displayName": "CAG-CRL",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T07:55:00Z",
+"endTime": "2026-11-20T07:57:00Z",
+"scheduledStartTime": "2026-11-20T07:55:00Z",
+"scheduledEndTime": "2026-11-20T07:57:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 9000,
+"startTime": "2026-11-20T08:30:00Z",
+"endTime": "2026-11-20T11:00:00Z",
+"scheduledStartTime": "2026-11-20T08:30:00Z",
+"scheduledEndTime": "2026-11-20T11:00:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Ginevra/Geneva (GVA)",
+"agencyName": "EASYJET SWITZERLAND",
+"routeShortName": "CAG-GVA",
+"routeLongName": "Cagliari (CAG) - Ginevra/Geneva (GVA)",
+"tripShortName": "DS 01424",
+"displayName": "CAG-GVA",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 60,
+"startTime": "2026-11-20T11:00:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"scheduledStartTime": "2026-11-20T11:00:00Z",
+"scheduledEndTime": "2026-11-20T11:01:00Z",
+"realTime": false,
+"from": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+},
+{
+"startTime": "2026-11-19T17:45:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"duration": 62160,
+"transfers": 7,
+"legs": [
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T17:45:00Z",
+"endTime": "2026-11-19T17:50:00Z",
+"scheduledStartTime": "2026-11-19T17:45:00Z",
+"scheduledEndTime": "2026-11-19T17:50:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gratte Ciel",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "SUBWAY",
+"duration": 180,
+"startTime": "2026-11-19T17:50:00Z",
+"endTime": "2026-11-19T17:53:00Z",
+"scheduledStartTime": "2026-11-19T17:50:00Z",
+"scheduledEndTime": "2026-11-19T17:53:00Z",
+"realTime": false,
+"headsign": "Perrache",
+"agencyName": "TCL",
+"routeShortName": "A",
+"routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+"tripShortName": "COM~251124~241227~MT C - Vaulx-en-Velin La Soie. - Perrache",
+"displayName": "A",
+"cancelled": false,
+"from": {
+"name": "Gratte Ciel",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-19T17:53:00Z",
+"endTime": "2026-11-19T17:55:00Z",
+"scheduledStartTime": "2026-11-19T17:53:00Z",
+"scheduledEndTime": "2026-11-19T17:55:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "SUBWAY",
+"duration": 180,
+"startTime": "2026-11-19T17:55:00Z",
+"endTime": "2026-11-19T17:58:00Z",
+"scheduledStartTime": "2026-11-19T17:55:00Z",
+"scheduledEndTime": "2026-11-19T17:58:00Z",
+"realTime": false,
+"headsign": "St-Genis-Laval Hôp. Sud",
+"agencyName": "TCL",
+"routeShortName": "B",
+"routeLongName": "Charpennes - Saint-Genis-Laval Hôpital Lyon Sud",
+"tripShortName": "REF~250426~181226~Itinéraire nominal complet",
+"displayName": "B",
+"cancelled": false,
+"from": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gare Part-Dieu V.Merle",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-19T17:58:00Z",
+"endTime": "2026-11-19T18:00:00Z",
+"scheduledStartTime": "2026-11-19T17:58:00Z",
+"scheduledEndTime": "2026-11-19T18:00:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Gare Part-Dieu V.Merle",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "HIGHSPEED_RAIL",
+"duration": 13380,
+"startTime": "2026-11-19T18:00:00Z",
+"endTime": "2026-11-19T21:43:00Z",
+"scheduledStartTime": "2026-11-19T18:00:00Z",
+"scheduledEndTime": "2026-11-19T21:43:00Z",
+"realTime": false,
+"headsign": "",
+"agencyName": "SNCF VOYAGEURS",
+"routeShortName": "",
+"routeLongName": "",
+"tripShortName": "9882",
+"displayName": "TGV INOUI 9882",
+"cancelled": false,
+"from": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Bruxelles Midi",
+"tz": "CET"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T21:43:00Z",
+"endTime": "2026-11-19T21:48:00Z",
+"scheduledStartTime": "2026-11-19T21:43:00Z",
+"scheduledEndTime": "2026-11-19T21:48:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Bruxelles Midi",
+"tz": "CET"
+},
+"to": {
+"name": "Bruxelles-Midi",
+"tz": "CET"
+}
+},
+{
+"mode": "SUBURBAN",
+"duration": 2340,
+"startTime": "2026-11-19T22:30:00Z",
+"endTime": "2026-11-19T23:09:00Z",
+"scheduledStartTime": "2026-11-19T22:30:00Z",
+"scheduledEndTime": "2026-11-19T23:09:00Z",
+"realTime": false,
+"headsign": "Marchienne-au-Pont",
+"agencyName": "NMBS/SNCB",
+"routeShortName": "S1",
+"routeLongName": "Anvers-Central -- Marchienne-au-Pont",
+"tripShortName": "1994",
+"displayName": "S1",
+"cancelled": false,
+"from": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Luttre",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T23:09:00Z",
+"endTime": "2026-11-19T23:14:00Z",
+"scheduledStartTime": "2026-11-19T23:09:00Z",
+"scheduledEndTime": "2026-11-19T23:14:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Luttre",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "LUTTRE Gare SNCB",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "BUS",
+"duration": 2040,
+"startTime": "2026-11-20T03:45:00Z",
+"endTime": "2026-11-20T04:19:00Z",
+"scheduledStartTime": "2026-11-20T03:45:00Z",
+"scheduledEndTime": "2026-11-20T04:20:00Z",
+"realTime": true,
+"headsign": "CHARLEROI Palais",
+"agencyName": "LETEC",
+"routeShortName": "50",
+"routeLongName": "Charleroi (Palais) - Luttre (SNCB)",
+"tripShortName": "1",
+"displayName": "50",
+"cancelled": false,
+"from": {
+"name": "LUTTRE Gare SNCB",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T04:19:00Z",
+"endTime": "2026-11-20T04:21:00Z",
+"scheduledStartTime": "2026-11-20T04:19:00Z",
+"scheduledEndTime": "2026-11-20T04:21:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "BUS",
+"duration": 180,
+"startTime": "2026-11-20T04:46:00Z",
+"endTime": "2026-11-20T04:49:00Z",
+"scheduledStartTime": "2026-11-20T04:46:00Z",
+"scheduledEndTime": "2026-11-20T04:49:00Z",
+"realTime": false,
+"headsign": "CHATELINEAU SNCB",
+"agencyName": "LETEC",
+"routeShortName": "28",
+"routeLongName": "Châtelineau (SNCB) - Jumet (Madeleine)",
+"tripShortName": "6",
+"displayName": "28",
+"cancelled": false,
+"from": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-20T04:49:00Z",
+"endTime": "2026-11-20T04:54:00Z",
+"scheduledStartTime": "2026-11-20T04:49:00Z",
+"scheduledEndTime": "2026-11-20T04:54:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 7200,
+"startTime": "2026-11-20T05:55:00Z",
+"endTime": "2026-11-20T07:55:00Z",
+"scheduledStartTime": "2026-11-20T05:55:00Z",
+"scheduledEndTime": "2026-11-20T07:55:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"agencyName": "RYANAIR",
+"routeShortName": "CAG-CRL",
+"routeLongName": "Cagliari (CAG) - Bruxelles Charleroi (CRL)",
+"tripShortName": "FR 04417",
+"displayName": "CAG-CRL",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T07:55:00Z",
+"endTime": "2026-11-20T07:57:00Z",
+"scheduledStartTime": "2026-11-20T07:55:00Z",
+"scheduledEndTime": "2026-11-20T07:57:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 9000,
+"startTime": "2026-11-20T08:30:00Z",
+"endTime": "2026-11-20T11:00:00Z",
+"scheduledStartTime": "2026-11-20T08:30:00Z",
+"scheduledEndTime": "2026-11-20T11:00:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Ginevra/Geneva (GVA)",
+"agencyName": "EASYJET SWITZERLAND",
+"routeShortName": "CAG-GVA",
+"routeLongName": "Cagliari (CAG) - Ginevra/Geneva (GVA)",
+"tripShortName": "DS 01424",
+"displayName": "CAG-GVA",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 60,
+"startTime": "2026-11-20T11:00:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"scheduledStartTime": "2026-11-20T11:00:00Z",
+"scheduledEndTime": "2026-11-20T11:01:00Z",
+"realTime": false,
+"from": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+},
+{
+"startTime": "2026-11-19T17:48:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"duration": 61980,
+"transfers": 9,
+"legs": [
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T17:48:00Z",
+"endTime": "2026-11-19T17:53:00Z",
+"scheduledStartTime": "2026-11-19T17:48:00Z",
+"scheduledEndTime": "2026-11-19T17:53:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gratte Ciel",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "SUBWAY",
+"duration": 180,
+"startTime": "2026-11-19T17:53:00Z",
+"endTime": "2026-11-19T17:56:00Z",
+"scheduledStartTime": "2026-11-19T17:53:00Z",
+"scheduledEndTime": "2026-11-19T17:56:00Z",
+"realTime": false,
+"headsign": "Perrache",
+"agencyName": "TCL",
+"routeShortName": "A",
+"routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+"tripShortName": "COM~251124~241227~MT C - Vaulx-en-Velin La Soie. - Perrache",
+"displayName": "A",
+"cancelled": false,
+"from": {
+"name": "Gratte Ciel",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-19T17:56:00Z",
+"endTime": "2026-11-19T17:58:00Z",
+"scheduledStartTime": "2026-11-19T17:56:00Z",
+"scheduledEndTime": "2026-11-19T17:58:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "SUBWAY",
+"duration": 180,
+"startTime": "2026-11-19T17:59:00Z",
+"endTime": "2026-11-19T18:02:00Z",
+"scheduledStartTime": "2026-11-19T17:59:00Z",
+"scheduledEndTime": "2026-11-19T18:02:00Z",
+"realTime": false,
+"headsign": "St-Genis-Laval Hôp. Sud",
+"agencyName": "TCL",
+"routeShortName": "B",
+"routeLongName": "Charpennes - Saint-Genis-Laval Hôpital Lyon Sud",
+"tripShortName": "REF~250426~181226~Itinéraire nominal complet",
+"displayName": "B",
+"cancelled": false,
+"from": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gare Part-Dieu V.Merle",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-19T18:02:00Z",
+"endTime": "2026-11-19T18:04:00Z",
+"scheduledStartTime": "2026-11-19T18:02:00Z",
+"scheduledEndTime": "2026-11-19T18:04:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Gare Part-Dieu V.Merle",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "HIGHSPEED_RAIL",
+"duration": 6960,
+"startTime": "2026-11-19T18:04:00Z",
+"endTime": "2026-11-19T20:00:00Z",
+"scheduledStartTime": "2026-11-19T18:04:00Z",
+"scheduledEndTime": "2026-11-19T20:00:00Z",
+"realTime": false,
+"headsign": "",
+"agencyName": "SNCF VOYAGEURS",
+"routeShortName": "",
+"routeLongName": "",
+"tripShortName": "6630",
+"displayName": "TGV INOUI 6630",
+"cancelled": false,
+"from": {
+"name": "Lyon Part Dieu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Paris Gare de Lyon Hall 1 - 2",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 180,
+"startTime": "2026-11-19T20:00:00Z",
+"endTime": "2026-11-19T20:03:00Z",
+"scheduledStartTime": "2026-11-19T20:00:00Z",
+"scheduledEndTime": "2026-11-19T20:03:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Paris Gare de Lyon Hall 1 - 2",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gare de Lyon",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "REGIONAL_RAIL",
+"duration": 480,
+"startTime": "2026-11-19T20:09:00Z",
+"endTime": "2026-11-19T20:17:00Z",
+"scheduledStartTime": "2026-11-19T20:09:00Z",
+"scheduledEndTime": "2026-11-19T20:17:00Z",
+"realTime": false,
+"headsign": "FECA",
+"agencyName": "RER",
+"routeShortName": "D",
+"routeLongName": "",
+"tripShortName": "127318-127319",
+"displayName": "D",
+"cancelled": false,
+"from": {
+"name": "Gare de Lyon",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gare du Nord",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-19T20:17:00Z",
+"endTime": "2026-11-19T20:19:00Z",
+"scheduledStartTime": "2026-11-19T20:17:00Z",
+"scheduledEndTime": "2026-11-19T20:19:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Gare du Nord",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Paris-Nord",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "HIGHSPEED_RAIL",
+"duration": 5040,
+"startTime": "2026-11-19T20:23:00Z",
+"endTime": "2026-11-19T21:47:00Z",
+"scheduledStartTime": "2026-11-19T20:23:00Z",
+"scheduledEndTime": "2026-11-19T21:47:00Z",
+"realTime": false,
+"headsign": "Bruxelles-Midi",
+"agencyName": "Eurostar",
+"routeShortName": "FRPNO -> BEBMI",
+"routeLongName": "Paris-Nord -> Bruxelles-Midi",
+"tripShortName": "9393",
+"displayName": "EST 9393",
+"cancelled": false,
+"from": {
+"name": "Paris-Nord",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels",
+"scheduledTrack": "5",
+"track": "5"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T21:47:00Z",
+"endTime": "2026-11-19T21:52:00Z",
+"scheduledStartTime": "2026-11-19T21:47:00Z",
+"scheduledEndTime": "2026-11-19T21:52:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels",
+"scheduledTrack": "5",
+"track": "5"
+},
+"to": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "SUBURBAN",
+"duration": 2340,
+"startTime": "2026-11-19T22:30:00Z",
+"endTime": "2026-11-19T23:09:00Z",
+"scheduledStartTime": "2026-11-19T22:30:00Z",
+"scheduledEndTime": "2026-11-19T23:09:00Z",
+"realTime": false,
+"headsign": "Marchienne-au-Pont",
+"agencyName": "NMBS/SNCB",
+"routeShortName": "S1",
+"routeLongName": "Anvers-Central -- Marchienne-au-Pont",
+"tripShortName": "1994",
+"displayName": "S1",
+"cancelled": false,
+"from": {
+"name": "Bruxelles-Midi",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Luttre",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-19T23:09:00Z",
+"endTime": "2026-11-19T23:14:00Z",
+"scheduledStartTime": "2026-11-19T23:09:00Z",
+"scheduledEndTime": "2026-11-19T23:14:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Luttre",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "LUTTRE Gare SNCB",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "BUS",
+"duration": 2040,
+"startTime": "2026-11-20T03:45:00Z",
+"endTime": "2026-11-20T04:19:00Z",
+"scheduledStartTime": "2026-11-20T03:45:00Z",
+"scheduledEndTime": "2026-11-20T04:20:00Z",
+"realTime": true,
+"headsign": "CHARLEROI Palais",
+"agencyName": "LETEC",
+"routeShortName": "50",
+"routeLongName": "Charleroi (Palais) - Luttre (SNCB)",
+"tripShortName": "1",
+"displayName": "50",
+"cancelled": false,
+"from": {
+"name": "LUTTRE Gare SNCB",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T04:19:00Z",
+"endTime": "2026-11-20T04:21:00Z",
+"scheduledStartTime": "2026-11-20T04:19:00Z",
+"scheduledEndTime": "2026-11-20T04:21:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "BUS",
+"duration": 180,
+"startTime": "2026-11-20T04:46:00Z",
+"endTime": "2026-11-20T04:49:00Z",
+"scheduledStartTime": "2026-11-20T04:46:00Z",
+"scheduledEndTime": "2026-11-20T04:49:00Z",
+"realTime": false,
+"headsign": "CHATELINEAU SNCB",
+"agencyName": "LETEC",
+"routeShortName": "28",
+"routeLongName": "Châtelineau (SNCB) - Jumet (Madeleine)",
+"tripShortName": "6",
+"displayName": "28",
+"cancelled": false,
+"from": {
+"name": "JUMET Madeleine",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-20T04:49:00Z",
+"endTime": "2026-11-20T04:54:00Z",
+"scheduledStartTime": "2026-11-20T04:49:00Z",
+"scheduledEndTime": "2026-11-20T04:54:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "JUMET Monument",
+"tz": "Europe/Brussels"
+},
+"to": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Brussels"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 7200,
+"startTime": "2026-11-20T05:55:00Z",
+"endTime": "2026-11-20T07:55:00Z",
+"scheduledStartTime": "2026-11-20T05:55:00Z",
+"scheduledEndTime": "2026-11-20T07:55:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"agencyName": "RYANAIR",
+"routeShortName": "CAG-CRL",
+"routeLongName": "Cagliari (CAG) - Bruxelles Charleroi (CRL)",
+"tripShortName": "FR 04417",
+"displayName": "CAG-CRL",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Bruxelles Charleroi (CRL)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T07:55:00Z",
+"endTime": "2026-11-20T07:57:00Z",
+"scheduledStartTime": "2026-11-20T07:55:00Z",
+"scheduledEndTime": "2026-11-20T07:57:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+}
+},
+{
+"mode": "AIRPLANE",
+"duration": 9000,
+"startTime": "2026-11-20T08:30:00Z",
+"endTime": "2026-11-20T11:00:00Z",
+"scheduledStartTime": "2026-11-20T08:30:00Z",
+"scheduledEndTime": "2026-11-20T11:00:00Z",
+"realTime": false,
+"headsign": "Aeroporto di Ginevra/Geneva (GVA)",
+"agencyName": "EASYJET SWITZERLAND",
+"routeShortName": "CAG-GVA",
+"routeLongName": "Cagliari (CAG) - Ginevra/Geneva (GVA)",
+"tripShortName": "DS 01424",
+"displayName": "CAG-GVA",
+"cancelled": false,
+"from": {
+"name": "Aeroporto di Cagliari (CAG) (ELMAS)",
+"tz": "Europe/Rome"
+},
+"to": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 60,
+"startTime": "2026-11-20T11:00:00Z",
+"endTime": "2026-11-20T11:01:00Z",
+"scheduledStartTime": "2026-11-20T11:00:00Z",
+"scheduledEndTime": "2026-11-20T11:01:00Z",
+"realTime": false,
+"from": {
+"name": "Aeroporto di Ginevra/Geneva (GVA)",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+}
+],
+"direct": [],
+"debugOutput": {
+"n_start_offsets": 2,
+"n_dest_offsets": 48
+}
+}
+}

@@ -62,6 +62,22 @@ CLIENT_VERSION = "0.7"
 OPTIONS = 3
 # Seconds of the search window around the time asked.
 SEARCH_WINDOW = 3600
+# The transit modes of a plan (MOTIS 2 names). The server's default, TRANSIT,
+# also allows flights, ride sharing and on-demand taxis (live 2026-11-20: a
+# point of Geneva airport was planned from Villeurbanne by TGV to Brussels and
+# a flight from Charleroi, leaving the day before). Flights only when the
+# person asks for them.
+TRANSIT_MODES = (
+    "TRAM",
+    "SUBWAY",
+    "FERRY",
+    "BUS",
+    "COACH",
+    "RAIL",
+    "FUNICULAR",
+    "AERIAL_LIFT",
+    "OTHER",
+)
 MAX_RESPONSE = 4_000_000
 GEOCODE_SECONDS = 86_400
 
@@ -302,6 +318,9 @@ class Client:
             params["language"] = language
         found = await self.get("/api/v1/geocode", params, GEOCODE_SECONDS)
         wanted = _folded(name)
+        # "aeroport de Geneve" names the stop "Geneve-Aeroport": the words that
+        # name the place, in any order, stand for it too.
+        named = place_words(name)
         return [
             row
             for row in (found if isinstance(found, list) else [])
@@ -310,7 +329,10 @@ class Client:
             and isinstance(row.get("lat"), (int, float))
             and isinstance(row.get("lon"), (int, float))
             and wanted
-            and wanted in _folded(str(row.get("name") or ""))
+            and (
+                wanted in _folded(str(row.get("name") or ""))
+                or bool(named and named <= place_words(str(row.get("name") or "")))
+            )
         ]
 
     async def plan(
@@ -321,6 +343,8 @@ class Client:
         *,
         arrive_by: bool,
         language: str,
+        flights: bool = False,
+        window: int = SEARCH_WINDOW,
     ) -> dict[str, Any]:
         params = {
             "fromPlace": _place(origin),
@@ -328,7 +352,10 @@ class Client:
             "time": when.isoformat(timespec="minutes"),
             "arriveBy": "true" if arrive_by else "false",
             "numItineraries": str(OPTIONS),
-            "searchWindow": str(SEARCH_WINDOW),
+            "searchWindow": str(window),
+            "transitModes": ",".join(
+                (*TRANSIT_MODES, "AIRPLANE") if flights else TRANSIT_MODES
+            ),
             "detailedLegs": "false",
             "detailedTransfers": "false",
         }
@@ -582,8 +609,12 @@ def place_name(name: str) -> str:
     return name
 
 
-def parse(response: dict[str, Any], zone: ZoneInfo) -> list[dict[str, Any]]:
-    """The itineraries of a plan answer: legs with local times and names."""
+def parse(
+    response: dict[str, Any], zone: ZoneInfo, *, flights: bool = False
+) -> list[dict[str, Any]]:
+    """The itineraries of a plan answer: legs with local times and names. An
+    itinerary with a flight is left out unless the person asked to fly (a
+    server that ignores ``transitModes`` still plans no flight)."""
     itineraries: list[dict[str, Any]] = []
     # ``direct``: a walk (or other street mode) alone, when the places are close.
     rows = [*(response.get("itineraries") or []), *(response.get("direct") or [])]
@@ -639,6 +670,8 @@ def parse(response: dict[str, Any], zone: ZoneInfo) -> list[dict[str, Any]]:
             )
         if not legs or any(leg["cancelled"] for leg in legs):
             continue
+        if not flights and any(leg["kind"] == "flight" for leg in legs):
+            continue
         itineraries.append(
             {
                 "depart": legs[0]["depart"],
@@ -687,6 +720,29 @@ def selected(
 DOUBT_KM = 50
 DOUBT_KMH = 35
 NIGHT_END = 5
+# When the itineraries that arrive in time are implausible, the second search
+# asks for arrivals up to this many minutes after the deadline (live
+# 2026-11-20: for 09:00 at Geneva airport only night coaches arrive in time;
+# the first regional train from Lyon, TER 96500 at 06:38, arrives 09:05 with
+# its last leg, and was never shown).
+LATE_MINUTES = 30
+# Without a deadline, the second search looks over a wider window of
+# departures for a reasonable itinerary leaving later.
+WIDE_WINDOW = 4 * SEARCH_WINDOW
+
+
+def _slow(itinerary: dict[str, Any], distance_km: float) -> bool:
+    """Far slower than travel over that distance usually is."""
+    hours = max(itinerary["minutes"], 1) / 60
+    return distance_km >= DOUBT_KM and distance_km / hours < DOUBT_KMH
+
+
+def _at_night(itinerary: dict[str, Any], asked: datetime | None) -> bool:
+    """Leaves in the night (or the day before) for a daytime time asked."""
+    if asked is None or asked.hour < NIGHT_END + 1:
+        return False
+    depart = itinerary["depart"]
+    return bool(depart.hour < NIGHT_END or depart.date() < asked.date())
 
 
 def doubts(
@@ -699,21 +755,15 @@ def doubts(
         return {}
     fastest = min(itineraries, key=lambda i: i["minutes"])
     found: dict[str, Any] = {}
-    hours = max(fastest["minutes"], 1) / 60
-    if distance_km >= DOUBT_KM and distance_km / hours < DOUBT_KMH:
+    if _slow(fastest, distance_km):
+        hours = max(fastest["minutes"], 1) / 60
         found["slow"] = {
             "km": round(distance_km),
             "minutes": fastest["minutes"],
             "kmh": round(distance_km / hours),
         }
-    if asked is not None and asked.hour >= NIGHT_END + 1:
-        night = [
-            i
-            for i in itineraries
-            if i["depart"].hour < NIGHT_END or i["depart"].date() < asked.date()
-        ]
-        if len(night) == len(itineraries):
-            found["night"] = {"depart": fastest["depart"].strftime("%H:%M")}
+    if all(_at_night(i, asked) for i in itineraries):
+        found["night"] = {"depart": fastest["depart"].strftime("%H:%M")}
     return found
 
 
@@ -731,6 +781,9 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Caution: {why}. The open timetable data may lack a direct service on this route (for example a cross-border train): check the operators' timetables before you rely on this plan.",
         "doubt_slow": "the fastest itinerary found takes {m} for {km} km",
         "doubt_night": "every itinerary found leaves at night (from {t})",
+        "late_doubt": "No reasonable itinerary found arrives by {d}: {why}. The options below are the first reasonable ones found; they arrive after {d}.",
+        "late_empty": "No itinerary found arrives by {d}. The options below are the first ones found; they arrive after {d}.",
+        "late": "Arrives {a}, {m} after the {d} requested.",
         "title": "Public transport plan",
         "option": "Option {n}",
         "summary": "leave {d}, arrive {a}, {m}, {t}",
@@ -771,6 +824,9 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Attention : {why}. Les donn\u00e9es horaires ouvertes n\u2019ont peut-\u00eatre pas de liaison directe sur ce trajet (par exemple un train transfrontalier) : v\u00e9rifiez les horaires des exploitants avant de vous fier \u00e0 ce plan.",
         "doubt_slow": "l\u2019itin\u00e9raire le plus rapide trouv\u00e9 met {m} pour {km} km",
         "doubt_night": "tous les itin\u00e9raires trouv\u00e9s partent la nuit (d\u00e8s {t})",
+        "late_doubt": "Aucun itin\u00e9raire raisonnable trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d} : {why}. Les options ci-dessous sont les premi\u00e8res raisonnables trouv\u00e9es ; elles arrivent apr\u00e8s {d}.",
+        "late_empty": "Aucun itin\u00e9raire trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d}. Les options ci-dessous sont les premi\u00e8res trouv\u00e9es ; elles arrivent apr\u00e8s {d}.",
+        "late": "Arriv\u00e9e {a}, {m} apr\u00e8s l\u2019heure demand\u00e9e ({d}).",
         "title": "Itin\u00e9raire en transports en commun",
         "option": "Option {n}",
         "summary": "d\u00e9part {d}, arriv\u00e9e {a}, {m}, {t}",
@@ -811,6 +867,9 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Achtung: {why}. In den offenen Fahrplandaten fehlt auf dieser Strecke vielleicht eine direkte Verbindung (zum Beispiel ein grenz\u00fcberschreitender Zug): pr\u00fcfen Sie die Fahrpl\u00e4ne der Verkehrsunternehmen, bevor Sie sich auf diesen Plan verlassen.",
         "doubt_slow": "die schnellste gefundene Verbindung braucht {m} f\u00fcr {km} km",
         "doubt_night": "alle gefundenen Verbindungen fahren nachts ab (ab {t})",
+        "late_doubt": "Keine sinnvolle gefundene Verbindung kommt bis {d} an: {why}. Die folgenden Optionen sind die ersten sinnvollen gefundenen; sie kommen nach {d} an.",
+        "late_empty": "Keine gefundene Verbindung kommt bis {d} an. Die folgenden Optionen sind die ersten gefundenen; sie kommen nach {d} an.",
+        "late": "Ankunft {a}, {m} nach der gew\u00fcnschten Zeit ({d}).",
         "title": "Verbindung mit \u00f6ffentlichen Verkehrsmitteln",
         "option": "Option {n}",
         "summary": "ab {d}, an {a}, {m}, {t}",
@@ -851,6 +910,9 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Atenci\u00f3n: {why}. Puede que los datos horarios abiertos no tengan un servicio directo en este trayecto (por ejemplo un tren transfronterizo): compruebe los horarios de los operadores antes de fiarse de este plan.",
         "doubt_slow": "el itinerario m\u00e1s r\u00e1pido encontrado tarda {m} para {km} km",
         "doubt_night": "todos los itinerarios encontrados salen de noche (desde las {t})",
+        "late_doubt": "Ning\u00fan itinerario razonable encontrado llega antes de las {d}: {why}. Las opciones siguientes son las primeras razonables encontradas; llegan despu\u00e9s de las {d}.",
+        "late_empty": "Ning\u00fan itinerario encontrado llega antes de las {d}. Las opciones siguientes son las primeras encontradas; llegan despu\u00e9s de las {d}.",
+        "late": "Llegada {a}, {m} despu\u00e9s de la hora pedida ({d}).",
         "title": "Itinerario en transporte p\u00fablico",
         "option": "Opci\u00f3n {n}",
         "summary": "salida {d}, llegada {a}, {m}, {t}",
@@ -891,6 +953,9 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Attenzione: {why}. I dati orari aperti forse non hanno un servizio diretto su questo tragitto (per esempio un treno transfrontaliero): verifichi gli orari degli operatori prima di affidarsi a questo piano.",
         "doubt_slow": "l\u2019itinerario pi\u00f9 veloce trovato impiega {m} per {km} km",
         "doubt_night": "tutti gli itinerari trovati partono di notte (dalle {t})",
+        "late_doubt": "Nessun itinerario ragionevole trovato arriva entro le {d}: {why}. Le opzioni seguenti sono le prime ragionevoli trovate; arrivano dopo le {d}.",
+        "late_empty": "Nessun itinerario trovato arriva entro le {d}. Le opzioni seguenti sono le prime trovate; arrivano dopo le {d}.",
+        "late": "Arrivo {a}, {m} dopo l\u2019ora richiesta ({d}).",
         "title": "Itinerario con i mezzi pubblici",
         "option": "Opzione {n}",
         "summary": "partenza {d}, arrivo {a}, {m}, {t}",
@@ -980,9 +1045,11 @@ def render(
     config: Settings,
     doubt: dict[str, Any] | None = None,
     snapped: str = "",
+    note: str = "",
 ) -> tuple[str, list[str]]:
     """The plan as Markdown, and one passage per itinerary (its legs as
-    sentences, each with its line, direction, stops and times)."""
+    sentences, each with its line, direction, stops and times). ``note`` is a
+    paragraph about the plan as a whole (its options arrive late)."""
     w = words(language)
     # A doubtful plan is written as a fallback, never as the trip's answer
     # (staging -129: a night chain via Annecy was given as the way to Geneva).
@@ -991,9 +1058,9 @@ def render(
     if doubt:
         caveat = w["doubt"].format(why=doubt_reason(doubt, language))
         lines[1:1] = ["", f"_{caveat}_"]
-    if snapped:
-        lines.insert(1 + 2 * bool(doubt), "")
-        lines.insert(2 + 2 * bool(doubt), snapped)
+    for paragraph in (snapped, note):
+        if paragraph:
+            lines[-1:-1] = ["", paragraph]
     passages: list[str] = []
     zones: list[str] = []
     for number, itinerary in enumerate(itineraries, 1):
@@ -1063,7 +1130,18 @@ def render(
                 sentences.append(text + f" ({operator}).")
             else:
                 sentences.append(text + ".")
-        if deadline is not None:
+        if deadline is not None and itinerary["arrive"] > deadline:
+            # Only the second search's options arrive late, and say so.
+            check = w["late"].format(
+                a=_clock(itinerary["arrive"], deadline.date()),
+                m=_duration(
+                    round((itinerary["arrive"] - deadline).total_seconds() / 60)
+                ),
+                d=_clock(deadline, deadline.date()),
+            )
+            lines.append(f"- {check}")
+            sentences.append(check)
+        elif deadline is not None:
             check = w["deadline"].format(
                 a=_clock(itinerary["arrive"], deadline.date()),
                 d=_clock(deadline, deadline.date()),
@@ -1093,13 +1171,16 @@ class TransitPlan(BaseModel):
     from_device_position: bool = False
     arrive_by: str | None = Field(default=None, max_length=25)
     depart_at: str | None = Field(default=None, max_length=25)
+    flights: bool = False
 
 
 DESCRIPTION = (
     "Public transport itineraries computed by a journey planner from the "
     "operators' published timetables (trains, metro, tram, bus, coach, ferry, "
     "with the walks between them). Call it first on a request to get from one "
-    "place to another by public transport, before any web search. Give the "
+    "place to another by public transport, before any web search. Set flights "
+    "true only when the person asks to fly; otherwise a plan never includes a "
+    "flight. Give the "
     "destination and the origin as the person wrote them (an address, a station, "
     "a district with its city), or from_device_position true when the starting "
     "point is the position their device shared. arrive_by is when the person "
@@ -1127,6 +1208,10 @@ NEXT_STEPS = {
     "position their device shared.",
     "no_itinerary": "The planner has no timetable data for this trip: research "
     "it on the web and use journey_plan.",
+    "planned_late": "No reasonable itinerary arrives by `arrive_by` (see "
+    "`on_time_doubt`): say so first, then put `rendered` unchanged. Its options "
+    "are the first reasonable ones found; each says how late it arrives. Never "
+    "present them as on time.",
     "doubtful": "This plan looks implausible (see `doubts`): research the "
     "operators' direct services for this trip on the web and give them first, "
     "with their sources; give the computed plan only as a fallback, with its "
@@ -1260,15 +1345,20 @@ async def compute(
     deadline = local_time(request.arrive_by, zone, now, days)
     leave = local_time(request.depart_at, zone_of(origin_zone, zone.key), now, days)
     when = deadline or leave or now.astimezone(zone)
-    response = await client.plan(
+    flights = request.flights
+    ends: tuple[tuple[float, float] | str, tuple[float, float] | str] = (
         start,
         _point(target),
+    )
+    response = await client.plan(
+        *ends,
         when,
         arrive_by=deadline is not None,
         language=language,
+        flights=flights,
     )
     snapped = ""
-    if not parse(response, zone):
+    if not parse(response, zone, flights=flights):
         # A place the planner's walk search cannot attach to the street
         # network (staging -129: the "King Street, Sydney" street point had no
         # stop within reach, 0 start offsets) gets no itinerary at all: the
@@ -1291,23 +1381,57 @@ async def compute(
                 ),
                 language=language,
                 arrive_by=deadline is not None,
+                flights=flights,
             )
             if retried is not None:
-                ends, snapped = retried
                 response = await client.plan(
-                    ends[0],
-                    ends[1],
+                    *retried[0],
                     when,
                     arrive_by=deadline is not None,
                     language=language,
+                    flights=flights,
                 )
+                ends, snapped = retried
         except TransitError:
             # The first answer stands (no itinerary): a failed retry is no
             # reason to hide it.
             snapped = ""
-    itineraries, verdict = selected(parse(response, zone), now=now, deadline=deadline)
+    itineraries, verdict = selected(
+        parse(response, zone, flights=flights), now=now, deadline=deadline
+    )
     destination_label = label(target)
-    doubt = doubts(itineraries, _distance_km(start, _point(target)), when)
+    distance = _distance_km(start, _point(target))
+    doubt = doubts(itineraries, distance, when)
+    note, on_time_doubt = "", ""
+    if doubt or verdict == "no_itinerary":
+        # One more search before giving up: a plan that is implausible or
+        # empty is no answer while a reasonable itinerary arrives a little
+        # after the deadline, or leaves a little later.
+        better = await _reasonable(
+            client,
+            ends,
+            when,
+            deadline=deadline,
+            now=now,
+            zone=zone,
+            distance_km=distance,
+            language=language,
+            flights=flights,
+        )
+        if better is not None:
+            itineraries, late = better
+            on_time_doubt = doubt_reason(doubt, language) if doubt else ""
+            doubt = {}
+            verdict = (
+                "after_deadline" if late else ("on_time" if deadline else "listed")
+            )
+            if late and deadline is not None:
+                at = _clock(deadline, deadline.date())
+                note = (
+                    w["late_doubt"].format(d=at, why=on_time_doubt)
+                    if on_time_doubt
+                    else w["late_empty"].format(d=at)
+                )
     rendered, passages = render(
         itineraries,
         origin=origin_label,
@@ -1317,6 +1441,7 @@ async def compute(
         config=config,
         doubt=doubt,
         snapped=snapped if itineraries else "",
+        note=note,
     )
     plain = [
         {
@@ -1334,7 +1459,11 @@ async def compute(
         }
         for itinerary in itineraries
     ]
-    outcome = ("doubtful" if doubt else "planned") if itineraries else verdict
+    outcome = (
+        ("doubtful" if doubt else "planned_late" if note else "planned")
+        if itineraries
+        else verdict
+    )
     data: dict[str, Any] = {
         "outcome": outcome,
         "verdict": verdict,
@@ -1351,6 +1480,10 @@ async def compute(
         data["rendered"] = rendered
         data["passages"] = passages
         data["instruction"] = INSTRUCTION
+        if note:
+            data["next_step"] = NEXT_STEPS["planned_late"]
+            if on_time_doubt:
+                data["on_time_doubt"] = on_time_doubt
         if doubt:
             data["doubts"] = doubt
             data["doubt_reason"] = doubt_reason(doubt, language)
@@ -1366,6 +1499,71 @@ async def compute(
     return data
 
 
+def _served(stop: dict[str, Any], flights: bool) -> bool:
+    """A stop the plan may end at: never one served by flights alone (an
+    airport's own flight stop) unless the person asked to fly."""
+    modes = stop.get("modes")
+    if flights or not isinstance(modes, list) or not modes:
+        return True
+    return any(mode != "AIRPLANE" for mode in modes)
+
+
+async def _reasonable(
+    client: Client,
+    ends: tuple[tuple[float, float] | str, tuple[float, float] | str],
+    when: datetime,
+    *,
+    deadline: datetime | None,
+    now: datetime,
+    zone: ZoneInfo,
+    distance_km: float,
+    language: str,
+    flights: bool,
+) -> tuple[list[dict[str, Any]], bool] | None:
+    """The reasonable itineraries of a second search, when the plan found is
+    implausible or empty, and whether they arrive after the deadline; None
+    when there is none (the first plan then stands).
+
+    With a deadline, the search asks for arrivals up to LATE_MINUTES later:
+    reasonable itineraries that arrive in time are written as usual, else the
+    first ones that arrive late, each saying by how much. Without one, it
+    looks over a wider window of departures. One plan request, under the
+    cache and the daily cap like any other.
+    """
+    try:
+        response = await client.plan(
+            *ends,
+            deadline + timedelta(minutes=LATE_MINUTES) if deadline else when,
+            arrive_by=deadline is not None,
+            language=language,
+            flights=flights,
+            window=SEARCH_WINDOW if deadline else WIDE_WINDOW,
+        )
+    except TransitError:
+        return None
+    found = [
+        itinerary
+        for itinerary in parse(response, zone, flights=flights)
+        if not _slow(itinerary, distance_km) and not _at_night(itinerary, when)
+    ]
+    kept, _ = selected(found, now=now, deadline=deadline)
+    if kept:
+        return kept, False
+    if deadline is None:
+        return None
+    limit = deadline + timedelta(minutes=LATE_MINUTES)
+    late = [
+        i
+        for i in found
+        if i["depart"] >= now - timedelta(minutes=1) and deadline < i["latest"] <= limit
+    ]
+    if not late:
+        return None
+    # The earliest arrivals; of the same arrival, the latest departure.
+    late.sort(key=lambda i: (i["latest"], -i["depart"].timestamp(), i["transfers"]))
+    return sorted(late[:OPTIONS], key=lambda i: i["depart"]), True
+
+
 async def _snapped(
     client: Client,
     response: dict[str, Any],
@@ -1374,6 +1572,7 @@ async def _snapped(
     end: tuple[tuple[float, float], str, str, str],
     language: str,
     arrive_by: bool = False,
+    flights: bool = False,
 ) -> tuple[tuple[tuple[float, float] | str, tuple[float, float] | str], str] | None:
     """The plan ends with each unreached place replaced by its nearest stop,
     and the sentence that says so; None when no end can be replaced.
@@ -1383,6 +1582,10 @@ async def _snapped(
     the destination, so its "start" offsets are the destination's (staging
     -131: "King Street" had stops 110 m away; the Sydney Airport point, amid
     the runways, had none, and the start was snapped instead).
+
+    A destination the planner reaches without any itinerary ends at a stop
+    named after it (live 2026-11-20: a Geneva airport point reached two
+    stops, the airport's own flight stops; without flights, no itinerary).
     """
     debug = response.get("debugOutput")
     debug = debug if isinstance(debug, dict) else {}
@@ -1401,12 +1604,18 @@ async def _snapped(
     ):
         if kind == "STOP":
             continue
-        if key in debug and debug[key] != 0:
+        reached = key in debug and debug[key] != 0
+        if reached and index == 0:
             continue
-        near = [
-            (_distance_km(point, _point(stop)), stop)
-            for stop in await client.stops_near(point)
-        ]
+        near = (
+            []
+            if reached
+            else [
+                (_distance_km(point, _point(stop)), stop)
+                for stop in await client.stops_near(point)
+                if _served(stop, flights)
+            ]
+        )
         near = [pair for pair in near if pair[0] <= SNAP_KM]
         if not near and name.strip():
             # No stop at the point itself: a stop named after the place (its
@@ -1414,6 +1623,7 @@ async def _snapped(
             near = [
                 (_distance_km(point, _point(stop)), stop)
                 for stop in await client.stops_named(name, language, point)
+                if _served(stop, flights)
             ]
             near = [pair for pair in near if pair[0] <= NAMED_KM]
         if not near:

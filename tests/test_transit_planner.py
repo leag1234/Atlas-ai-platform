@@ -869,7 +869,11 @@ class SnapTest(Base):
             )
         )
         self.assertEqual(data["outcome"], "no_itinerary")
-        self.assertEqual(planner.plans(), 1)
+        # One more search over a wider window, never from the far stop.
+        self.assertEqual(planner.plans(), 2)
+        for path, params in planner.calls:
+            if path.endswith("/plan"):
+                self.assertEqual(params["fromPlace"], "-33.86880,151.20360")
 
     def test_an_unreached_airport_ends_at_its_terminal_stop(self) -> None:
         """Staging -131: the Sydney Airport point lies amid the runways, with
