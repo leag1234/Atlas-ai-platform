@@ -2163,6 +2163,12 @@ class Turn:
     # plan (a margin before the deadline, a later option) are worked out from
     # them.
     plan_ends: list[tuple[str, str]] = field(default_factory=list)
+    # The places the plan's first legs reach from its origin, the origin as
+    # the plan names it, and whether it is the device position: a caveat that
+    # the walk from the start is not covered is contradicted by the plan.
+    plan_starts: list[str] = field(default_factory=list)
+    plan_origin: str = ""
+    plan_from_device: bool = False
     # The computed plan when it is doubtful (night only, far too slow): a
     # fallback after what the pages read say (transit_planner.doubtful_answer),
     # why it is doubtful, and the pages code read about the direct services.
