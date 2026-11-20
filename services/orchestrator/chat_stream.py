@@ -195,9 +195,14 @@ def response(
                     chat_plan.update([i for i in items if isinstance(i, dict)])
             elif kind == "tool":
                 chat_plan.first_step()
+                # The check the call ran, when it ran one (publish_document's
+                # file check): a check step is done only when it passed.
+                output = project_event.get("output")
+                check = output.get("verification") if isinstance(output, dict) else None
                 chat_plan.tool(
                     str(project_event.get("tool") or ""),
                     str(project_event.get("status") or ""),
+                    str(check.get("status") or "") if isinstance(check, dict) else "",
                 )
 
         base = {

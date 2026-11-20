@@ -738,7 +738,11 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         incomplete("chat_answers")
         return False
     item.task_type = "work"
-    request.__dict__[_PLAN_OUTCOME_KEY] = True
+    from services.orchestrator.work_delivery import MISSING_KEY
+
+    # A requested file that was not created: the plan stops before its
+    # delivery step (work_delivery.py), the answer says why.
+    request.__dict__[_PLAN_OUTCOME_KEY] = not scoped.__dict__.get(MISSING_KEY)
     logger.info(
         "chat_work_escalated reason=%s conversation=%s session=%s",
         reason or ("machine_setup" if setup else "follow_up"),

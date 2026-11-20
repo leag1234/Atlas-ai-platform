@@ -328,9 +328,11 @@ class RepairFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.written, 1)
         self.assertNotIn("gaps", result)
         self.assertNotIn("note", result)
-        self.assertNotIn(
-            "lacks", closing_step(tools, True, [("publish_document", result)]) or ""
-        )
+        # The check ran and passed: the plan and the closing may say so.
+        self.assertEqual(result["verification"]["status"], "passed")
+        closing = closing_step(tools, True, [("publish_document", result)]) or ""
+        self.assertNotIn("lacks", closing)
+        self.assertIn("the check passed", closing)
 
     async def test_a_gap_left_after_the_repair_is_said_in_the_answer(self) -> None:
         short = RECORDED["table_three_of_five_columns"]
@@ -342,11 +344,26 @@ class RepairFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.written, 1)
         self.assertTrue(result["gaps"])
         self.assertIn("must say so plainly", result["note"])
+        self.assertEqual(result["verification"]["status"], "failed")
         instruction = closing_step(tools, True, [("publish_document", result)])
         assert instruction is not None
         self.assertIn("lacks", instruction)
         self.assertIn("3 columns", instruction)
+        self.assertNotIn("the check passed", instruction)
         self.assertEqual(replies.await_count, 2)
+
+    async def test_a_file_not_checked_is_never_said_verified(self) -> None:
+        full = RECORDED["table_five_columns"]
+        tools = publishing_tools(full["request"])
+        # No model for the check (or no time left): the file is published unchecked.
+        tools.check_model = None
+        replies = replay(full["replies"]["page"])
+        result = await self.publish(tools, full, replies)
+        self.assertEqual(self.written, 1)
+        self.assertEqual(replies.await_count, 0)
+        self.assertEqual(result["verification"]["status"], "not_run")
+        closing = closing_step(tools, True, [("publish_document", result)]) or ""
+        self.assertIn("do not say that it was checked, verified or reviewed", closing)
 
 
 if __name__ == "__main__":
