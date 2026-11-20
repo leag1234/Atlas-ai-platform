@@ -50,6 +50,8 @@ EGRESS: dict[str, str] = {
     "services/model-gateway/stream_transport.py": "provider",
     "services/model-gateway/transcription.py": "provider",
     "services/model-gateway/vision.py": "provider",
+    # Audio and image files the person names for an app (docs/28-app-media.md).
+    "services/orchestrator/app_media.py": "third_party",
     "services/orchestrator/attachment_reading.py": "third_party",
     "services/orchestrator/commons.py": "third_party",
     "services/orchestrator/fx_rates.py": "third_party",
