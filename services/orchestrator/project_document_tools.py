@@ -670,6 +670,9 @@ async def publish(
         read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
         **note,
         **(dict(gaps=checked.gaps) if lacking else {}),
+        # Whether the file was checked against the request and passed: what
+        # the plan and the closing may say of it (deliverable_check.py).
+        verification=deliverable_check.verification(checked),
     )
 
 
