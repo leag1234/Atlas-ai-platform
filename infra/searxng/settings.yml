@@ -11,6 +11,8 @@ use_default_settings:
       - brave
       - google
       - bing
+      - privacywall
+      - mwmbl
       - wikipedia
 
 general:
@@ -72,6 +74,10 @@ engines:
   - name: google
     disabled: true
   - name: bing
+    disabled: true
+  - name: privacywall
+    disabled: true
+  - name: mwmbl
     disabled: true
 
 outgoing:
