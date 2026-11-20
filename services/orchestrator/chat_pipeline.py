@@ -743,7 +743,10 @@ class ChatTools(Runtime):
         links = (
             []
             if "error" in found
-            else transit_planner.direct_candidates(found.get("data"))
+            else transit_planner.direct_candidates(
+                found.get("data"),
+                destination=str(data.get("direct_destination") or ""),
+            )
         )
         read = await asyncio.gather(
             *(
@@ -1317,8 +1320,13 @@ async def _checked_trip(
     )
     final = transit_planner.doubtful_answer(final, language, travel)
     final = transit_planner.planned_answer(final, travel, first=first)
-    # A plan's attribution stays visible (Transitous usage policy).
-    final = transit_planner.with_attribution(final, travel.computed, language)
+    # Pieces of the model's sentences the checks cut short go (staging -132).
+    final = transit_planner.without_fragments(final, rest, travel)
+    # A plan's attribution stays visible (Transitous usage policy), only with
+    # a plan shown (staging -132: Sydney's web-only answer carried it).
+    final = transit_planner.with_attribution(
+        final, travel.computed, language, (travel.plan, travel.doubtful)
+    )
     return final, report
 
 

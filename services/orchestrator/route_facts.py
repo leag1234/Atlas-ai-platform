@@ -1031,6 +1031,41 @@ def _segments(anchors: list[Anchor]) -> list[list[Anchor]]:
     return parts
 
 
+class Planned:
+    """The words of the turn's computed plan: what a summary of it may say."""
+
+    def __init__(self, plan: str, sources: Sources) -> None:
+        text = normalized(plan)
+        self.words = frozenset(text.split())
+        self.direct = bool(_DIRECT_N.search(text))
+        self.sources = sources
+
+    def summarizes(self, anchors: list[Anchor]) -> bool:
+        """Every line, place and "direct" of a sentence is the plan's, a line
+        or place being written with the plan's words or the person's (the
+        person asked "by shinkansen", the plan names "Nozomi 11"), one word at
+        least the plan's; a time the plan does not give or a frequency (the
+        plan gives none) is no summary of it."""
+        if not self.words or not anchors:
+            return False
+        from_plan = False
+        for anchor in anchors:
+            if anchor.kind == "direct":
+                if not self.direct:
+                    return False
+                from_plan = True
+                continue
+            if anchor.kind not in {"line", "name"}:
+                return False
+            words = anchor.key.split()
+            if not words or not all(
+                w in self.words or w in self.sources.own for w in words
+            ):
+                return False
+            from_plan = from_plan or any(w in self.words for w in words)
+        return from_plan
+
+
 def _failing(sources: Sources, anchors: list[Anchor]) -> list[list[Anchor]]:
     return [part for part in _segments(anchors) if not sources.together(part)]
 
@@ -1073,15 +1108,23 @@ def _claim(
     opening: list[Anchor] | None = None,
 ) -> str:
     """The words of a sentence that state a failing part: from the clause
-    before its first anchor (of ``opening`` when given) to its last anchor."""
+    before its first anchor (of ``opening`` when given) to the end of the
+    clause of its last anchor, never a claim cut mid-phrase (staging -132
+    quoted "The Airport Link is an underground rail line that provides
+    direct")."""
     placed = [a for a in part if a.position >= 0 and a.text]
     if not placed:
         return body[start:end]
     leading = [a for a in opening or placed if a.position >= 0 and a.text]
     first = min(a.position for a in leading or placed)
-    last = max(a.position + len(a.text) for a in placed)
+    last = max(max(a.position + len(a.text) for a in placed), first)
     marks = [m.end() for m in re.finditer(r"[,;:(]\s*", body[start:first])]
-    return body[start + (marks[-1] if marks else 0) : max(last, first)]
+    close = _CLAUSE_CLOSE.search(body, last, max(end, last))
+    return body[start + (marks[-1] if marks else 0) : close.start() if close else end]
+
+
+# The end of a clause: a mark followed by a space or the end, or a new line.
+_CLAUSE_CLOSE = re.compile(r"[,;:.!?](?=\s|$)|\n")
 
 
 def _labels(
@@ -1321,14 +1364,17 @@ def review(
     owned_clocks: list[float],
     given: Iterable[str] = (),
     pages: Iterable[tuple[str, str]] = (),
+    plan: str = "",
 ) -> Finding:
     """The route units no source of the turn supports, and what follows them.
 
     ``plain`` is ``body`` with code and link targets blanked (same offsets);
     ``clocks`` are the clock times read in ``body`` (start, end, minutes);
-    ``pages`` are the texts read with their address (``Sites``).
+    ``pages`` are the texts read with their address (``Sites``); ``plan`` is
+    the journey plan code computed for the turn (never a doubtful one).
     """
     sources = Sources(passages, own, given)
+    planned = Planned(plan, sources)
     sites = Sites(pages, own, given)
     folded = fold(plain)
     computed_text = "\n".join(computed)
@@ -1348,6 +1394,12 @@ def review(
             removed.append(False)
             continue
         _read(unit, plain, folded, clocks, sources, owned_clocks)
+        if unit.route and not unit.row and planned.summarizes(unit.anchors):
+            # The model's summary of the computed plan (staging -132: "three
+            # direct Nozomi Shinkansen options get you to Kyoto Station").
+            unit.computed = True
+            removed.append(False)
+            continue
         if unit.start == len(body) - len(body.lstrip()) and not unit.row:
             finding.lead_start = unit.start
             finding.leads = _restated(body, unit, sources)

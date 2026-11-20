@@ -128,12 +128,14 @@ class OwnerDefectTests(unittest.TestCase):
             body,
             "Nehmen Sie am Marienplatz die S8 Richtung Flughafen München. Gute Reise!",
         )
-        # Notes quote the claim, never a word cut from it (staging -112).
+        # Notes quote the claim, never a word cut from it (staging -112), to
+        # the end of its clause (staging -132).
         self.assertTrue(
             note.startswith(
                 "Nicht überprüft und daher weggelassen: "
-                "“Steigen Sie am Ostbahnhof in die U5”"
-            )
+                "“Steigen Sie am Ostbahnhof in die U5 um”"
+            ),
+            note,
         )
         self.assertIn("Fahrplanauskunft", note)
 
@@ -266,7 +268,10 @@ class AnchorTests(unittest.TestCase):
             body,
             "Your train leaves from platform 4 at 08:15 and calls at Stoke-on-Trent.",
         )
-        self.assertTrue(note.startswith("Not verified, so left out: “Platform 9”."))
+        self.assertTrue(
+            note.startswith("Not verified, so left out: “Platform 9 for the return”."),
+            note,
+        )
 
 
 class StructureTests(unittest.TestCase):
