@@ -1,0 +1,2371 @@
+{
+ "recorded": "MOTIS 2 /api/v1/geocode answers (numResults 5), trimmed to the fields Atlas reads; public places only",
+ "geocodes": [
+  {
+   "trip": "lyon-geneva-staging-138",
+   "recorded": "2026-11-20 08:22 UTC, staging -138 planner cache (the model's destination for the battery's Geneva trip)",
+   "params": {
+    "text": "Aéroport de Genève (GVA), Genève, Suisse",
+    "numResults": "5",
+    "language": "fr",
+    "place": "45.7700,4.8800"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "aéroport de Genève",
+     "id": "way/42308757",
+     "lat": 46.2260776,
+     "lon": 6.0870471,
+     "tz": "Europe/Zurich",
+     "score": -16.574840545654297,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:1026",
+     "lat": 46.23253600000001,
+     "lon": 6.111984299999999,
+     "tz": "Europe/Zurich",
+     "score": -12.965330123901367,
+     "modes": [
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Geneve-Aeroport",
+     "id": "fr-horaires-sncf_FR::LMO:70e7d750-3a69-11e9-8417-bb1d8a705241:",
+     "lat": 46.231167,
+     "lon": 6.110252,
+     "tz": "Europe/Zurich",
+     "score": -10.674839973449707,
+     "modes": [
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aéroport",
+     "id": "fr-reseau-interurbain-cars-region-haute-savoie-74_FR:6623:ZE:57862:HAUTExSAVOIE",
+     "lat": 46.230965000000005,
+     "lon": 6.109678300000001,
+     "tz": "Europe/Zurich",
+     "score": -10.174839973449707,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, ICC",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:93014",
+     "lat": 46.22626,
+     "lon": 6.1013665,
+     "tz": "Europe/Zurich",
+     "score": -9.924839973449707,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "sydney-airport-stops",
+   "recorded": "2026-11-20, staging -138 planner cache (the stops named after the Sydney Airport aerodrome)",
+   "params": {
+    "text": "Sydney Airport",
+    "type": "STOP",
+    "numResults": "5",
+    "place": "-33.9463,151.1881",
+    "language": "en"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Sydney Airport, Terminal 3 Domestic",
+     "id": "au-nsw-Transport-for-New-South-Wales-GSBC009_202067",
+     "lat": -33.932922000000005,
+     "lon": 151.17997999999997,
+     "tz": "Australia/Sydney",
+     "score": -21.100000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Australia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "New South Wales",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bayside Council",
+       "adminLevel": 6.0,
+       "default": true
+      },
+      {
+       "name": "Mascot",
+       "adminLevel": 9.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Sydney Airport, Terminal 1 International",
+     "id": "au-nsw-Transport-for-New-South-Wales-GSBC010_202077",
+     "lat": -33.936275,
+     "lon": 151.16449,
+     "tz": "Australia/Sydney",
+     "score": -19.600000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Australia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "New South Wales",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bayside Council",
+       "adminLevel": 6.0,
+       "default": true
+      },
+      {
+       "name": "Mascot",
+       "adminLevel": 9.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Sydney Metro Airport Bankstown, Marion St",
+     "id": "au-nsw-Transport-for-New-South-Wales-GSBC003_2200170",
+     "lat": -33.91481399999999,
+     "lon": 150.99220000000003,
+     "tz": "Australia/Sydney",
+     "score": -18.600000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Australia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "New South Wales",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Canterbury-Bankstown Council",
+       "adminLevel": 6.0,
+       "default": true
+      },
+      {
+       "name": "Bankstown Aerodrome",
+       "adminLevel": 9.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Western Sydney International Airport, Ngurra Dr",
+     "id": "au-nsw-Transport-for-New-South-Wales-GSBC001_255519",
+     "lat": -33.890503,
+     "lon": 150.71985999999995,
+     "tz": "Australia/Sydney",
+     "score": -17.350000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Australia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "New South Wales",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Liverpool City Council",
+       "adminLevel": 6.0,
+       "default": true
+      },
+      {
+       "name": "Badgerys Creek",
+       "adminLevel": 9.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Airport Hotel",
+     "id": "gb-dft-bods_6200247600",
+     "lat": 55.94357,
+     "lon": -3.361123,
+     "tz": "Europe/London",
+     "score": -14.257949829101562,
+     "modes": [
+      "COACH",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "United Kingdom",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Scotland",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "City of Edinburgh",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "geneva-meyrin",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "aéroport de Genève (Meyrin)",
+    "numResults": "5",
+    "language": "fr",
+    "place": "45.7700,4.8800"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "aéroport de Genève",
+     "id": "way/42308757",
+     "lat": 46.2260776,
+     "lon": 6.0870471,
+     "tz": "Europe/Zurich",
+     "score": -33.0,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, ICC",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:93014",
+     "lat": 46.22626,
+     "lon": 6.1013665,
+     "tz": "Europe/Zurich",
+     "score": -26.350000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, WTC",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92929",
+     "lat": 46.229366000000006,
+     "lon": 6.106424,
+     "tz": "Europe/Zurich",
+     "score": -26.350000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, Grand-Hangar",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:93012",
+     "lat": 46.22441500000001,
+     "lon": 6.0997405,
+     "tz": "Europe/Zurich",
+     "score": -24.350000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, Tour-Contrôle",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:93021",
+     "lat": 46.22854600000001,
+     "lon": 6.103980499999999,
+     "tz": "Europe/Zurich",
+     "score": -24.100000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "geneva-en",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Geneva Airport",
+    "numResults": "5",
+    "language": "en",
+    "place": "45.7700,4.8800"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Geneva Airport (Bus Station)",
+     "id": "eu-blablacar-bus_GVA",
+     "lat": 46.23012000000001,
+     "lon": 6.109288,
+     "tz": "Europe/Zurich",
+     "score": -22.15257453918457,
+     "modes": [
+      "COACH"
+     ],
+     "areas": [
+      {
+       "name": "Switzerland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Geneva",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Geneva Airport",
+     "id": "way/42308757",
+     "lat": 46.2260776,
+     "lon": 6.0870471,
+     "tz": "Europe/Zurich",
+     "score": -22.0,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "Switzerland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Geneva",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "NH Geneva Airport",
+     "id": "way/2539837",
+     "lat": 46.2277906,
+     "lon": 6.0853347,
+     "tz": "Europe/Zurich",
+     "score": -21.5,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Switzerland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Geneva",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "B&B Hotel Geneva Airport",
+     "id": "node/10993141738",
+     "lat": 46.2196653,
+     "lon": 6.1029583,
+     "tz": "Europe/Zurich",
+     "score": -20.0,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Switzerland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Geneva",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Vernier",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Geneva Municipal Airport",
+     "id": "way/438605870",
+     "lat": 31.0505612,
+     "lon": -85.8589115,
+     "tz": "America/Chicago",
+     "score": -19.5,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "United States",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Alabama",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Geneva County",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Geneva",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "zurich-airport",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Flughafen Zürich (ZRH), Kloten, Schweiz",
+    "numResults": "5",
+    "language": "de",
+    "place": "47.3779,8.5403"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Zürich Flughafen, Bahnhof",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:3016",
+     "lat": 47.450385999999995,
+     "lon": 8.562400000000002,
+     "tz": "Europe/Zurich",
+     "score": -21.57328224182129,
+     "modes": [
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL",
+      "SUBURBAN",
+      "TRAM",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Zürich",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bezirk Bülach",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Kloten",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Zürich Flughafen, OPC",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:80301",
+     "lat": 47.452652,
+     "lon": 8.565660000000001,
+     "tz": "Europe/Zurich",
+     "score": -20.477415084838867,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Zürich",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bezirk Bülach",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Kloten",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Zürich Flughafen, Fracht",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:88553",
+     "lat": 47.45216,
+     "lon": 8.571733,
+     "tz": "Europe/Zurich",
+     "score": -20.103702545166016,
+     "modes": [
+      "TRAM",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Zürich",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bezirk Bülach",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Kloten",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Zürich Flughafen, Werft",
+     "id": "de-amarillo-bw_ch:1:sloid:73213",
+     "lat": 47.44477870681,
+     "lon": 8.570687550110001,
+     "tz": "Europe/Zurich",
+     "score": -19.601125717163086,
+     "modes": [
+      "RIDE_SHARING",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Zürich",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bezirk Bülach",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Kloten",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Zürich Flughafen, REGA",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:91031",
+     "lat": 47.45844699999999,
+     "lon": 8.572919,
+     "tz": "Europe/Zurich",
+     "score": -19.42483901977539,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Schweiz / Suisse / Svizzera / Svizra",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Zürich",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Bezirk Bülach",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Kloten",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "schiphol",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Amsterdam Airport Schiphol (AMS), Nederland",
+    "numResults": "5",
+    "language": "en",
+    "place": "52.3730,4.8924"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Amsterdam Schiphol Airport",
+     "id": "eu-blablacar-bus_AMS",
+     "lat": 52.306545,
+     "lon": 4.759699000000001,
+     "tz": "Europe/Amsterdam",
+     "score": -35.877288818359375,
+     "modes": [
+      "COACH"
+     ],
+     "areas": [
+      {
+       "name": "Nederland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Netherlands",
+       "adminLevel": 3.0,
+       "default": false
+      },
+      {
+       "name": "North Holland",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Haarlemmermeer",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Schiphol",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Ibis Schiphol Amsterdam Airport",
+     "id": "node/2744881027",
+     "lat": 52.3250454,
+     "lon": 4.79388,
+     "tz": "Europe/Amsterdam",
+     "score": -34.254600524902344,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Nederland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Netherlands",
+       "adminLevel": 3.0,
+       "default": false
+      },
+      {
+       "name": "North Holland",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Haarlemmermeer",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Badhoevedorp",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "ibis Styles Amsterdam Airport",
+     "id": "node/2745225287",
+     "lat": 52.305778,
+     "lon": 4.8064137,
+     "tz": "Europe/Amsterdam",
+     "score": -33.754600524902344,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Nederland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Netherlands",
+       "adminLevel": 3.0,
+       "default": false
+      },
+      {
+       "name": "North Holland",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Haarlemmermeer",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Schiphol",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Ramada Amsterdam Airport Schiphol",
+     "id": "node/5664603021",
+     "lat": 52.3333884,
+     "lon": 4.7720101,
+     "tz": "Europe/Amsterdam",
+     "score": -33.754600524902344,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Nederland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Netherlands",
+       "adminLevel": 3.0,
+       "default": false
+      },
+      {
+       "name": "North Holland",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Haarlemmermeer",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Badhoevedorp",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "NH Amsterdam Schiphol Airport",
+     "id": "node/1588266076",
+     "lat": 52.2895761,
+     "lon": 4.7251698,
+     "tz": "Europe/Amsterdam",
+     "score": -33.504600524902344,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Nederland",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Netherlands",
+       "adminLevel": 3.0,
+       "default": false
+      },
+      {
+       "name": "North Holland",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Haarlemmermeer",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Hoofddorp",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "madrid-airport",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Aeropuerto Adolfo Suárez Madrid-Barajas (MAD), Madrid, España",
+    "numResults": "5",
+    "language": "es",
+    "place": "40.4168,-3.7038"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "Aeropuerto Adolfo Suárez Madrid-Barajas",
+     "id": "way/167025457",
+     "lat": 40.4551113,
+     "lon": -3.5663638,
+     "tz": "Europe/Madrid",
+     "score": -47.69548034667969,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Punto de Información Turística Aeropuerto Adolfo Suárez Madrid - Barajas Terminal 2",
+     "id": "node/1798765305",
+     "lat": 40.4697268,
+     "lon": -3.5694682,
+     "tz": "Europe/Madrid",
+     "score": -24.945480346679688,
+     "category": "office_14",
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Punto de Información Turística Aeropuerto Adolfo Suárez Madrid - Barajas T4",
+     "id": "node/4090576086",
+     "lat": 40.4912596,
+     "lon": -3.5921283,
+     "tz": "Europe/Madrid",
+     "score": -24.945480346679688,
+     "category": "office_14",
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Madrid/Adolfo Suárez",
+     "id": "way/408923648",
+     "lat": 40.5012101,
+     "lon": -3.5864594,
+     "tz": "Europe/Madrid",
+     "score": -22.5,
+     "category": "helipad_16",
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Madrid/Adolfo Suárez",
+     "id": "way/408923650",
+     "lat": 40.501212,
+     "lon": -3.5859866,
+     "tz": "Europe/Madrid",
+     "score": -22.5,
+     "category": "helipad_16",
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "vienna-station",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Wien Hauptbahnhof, Österreich",
+    "numResults": "5",
+    "language": "de",
+    "place": "48.2082,16.3738"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Wien Hauptbahnhof",
+     "id": "at-Railway-Current-Reference-Data-2026_Pat:49:1349",
+     "lat": 48.185190000000006,
+     "lon": 16.376413,
+     "tz": "Europe/Vienna",
+     "score": -42.9691162109375,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "COACH",
+      "NIGHT_RAIL",
+      "REGIONAL_RAIL",
+      "SUBURBAN",
+      "SUBWAY",
+      "TRAM",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Österreich",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Wien",
+       "adminLevel": 4.0,
+       "default": true
+      },
+      {
+       "name": "Favoriten",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Katastralgemeinde Favoriten",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Wien Hauptbahnhof Ost",
+     "id": "at-PTA-Eastern-Region-Flex-2026_Pat:49:905",
+     "lat": 48.18458905999999,
+     "lon": 16.380572599999997,
+     "tz": "Europe/Vienna",
+     "score": -39.062808990478516,
+     "modes": [
+      "TRAM"
+     ],
+     "areas": [
+      {
+       "name": "Österreich",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Wien",
+       "adminLevel": 4.0,
+       "default": true
+      },
+      {
+       "name": "Favoriten",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Katastralgemeinde Favoriten",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Ibis Wien Hauptbahnhof",
+     "id": "node/5584099525",
+     "lat": 48.1856717,
+     "lon": 16.3787189,
+     "tz": "Europe/Vienna",
+     "score": -36.786521911621094,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Österreich",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Wien",
+       "adminLevel": 4.0,
+       "default": true
+      },
+      {
+       "name": "Favoriten",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Katastralgemeinde Favoriten",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Motel One Hauptbahnhof",
+     "id": "way/274962561",
+     "lat": 48.1838363,
+     "lon": 16.3780289,
+     "tz": "Europe/Vienna",
+     "score": -36.786521911621094,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Österreich",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Wien",
+       "adminLevel": 4.0,
+       "default": true
+      },
+      {
+       "name": "Favoriten",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Katastralgemeinde Favoriten",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Wien Hauptbahnhof Autoreisezug",
+     "id": "at-Railway-Current-Reference-Data-2026_Pat:49:1350",
+     "lat": 48.177443999999994,
+     "lon": 16.391838000000003,
+     "tz": "Europe/Vienna",
+     "score": -36.38652038574219,
+     "modes": [
+      "NIGHT_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Österreich",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Wien",
+       "adminLevel": 4.0,
+       "default": true
+      },
+      {
+       "name": "Favoriten",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Katastralgemeinde Favoriten",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "heathrow",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "London Heathrow Airport (LHR), UK",
+    "numResults": "5",
+    "language": "en",
+    "place": "51.5072,-0.1276"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "Easirent London Heathrow Airport LHR",
+     "id": "node/4966859149",
+     "lat": 51.483698,
+     "lon": -0.4601222,
+     "tz": "Europe/London",
+     "score": -24.5,
+     "category": "rental_car_16",
+     "areas": [
+      {
+       "name": "United Kingdom",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "England",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Greater London",
+       "adminLevel": 5.0,
+       "default": false
+      },
+      {
+       "name": "London Borough of Hillingdon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "London Heathrow Airport Terminal 5",
+     "id": "gb-flixbus_cab329fd-7882-4cc0-a292-d796d45b7036",
+     "lat": 51.471289999999996,
+     "lon": -0.48962400000000006,
+     "tz": "Europe/London",
+     "score": -15.625263214111328,
+     "modes": [
+      "COACH"
+     ],
+     "areas": [
+      {
+       "name": "United Kingdom",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "England",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Greater London",
+       "adminLevel": 5.0,
+       "default": false
+      },
+      {
+       "name": "London Borough of Hillingdon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "London Heathrow Airport",
+     "id": "way/28002537",
+     "lat": 51.4766569,
+     "lon": -0.4943776,
+     "tz": "Europe/London",
+     "score": -15.0,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "United Kingdom",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "England",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Greater London",
+       "adminLevel": 5.0,
+       "default": false
+      },
+      {
+       "name": "London Borough of Hillingdon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Heathrow Airport Limited",
+     "id": "node/9643830382",
+     "lat": 51.4810324,
+     "lon": -0.4689046,
+     "tz": "Europe/London",
+     "score": -14.75,
+     "category": "office_16",
+     "areas": [
+      {
+       "name": "United Kingdom",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "England",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Greater London",
+       "adminLevel": 5.0,
+       "default": false
+      },
+      {
+       "name": "London Borough of Hillingdon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Heathrow Airport Coach Park",
+     "id": "way/190396667",
+     "lat": 51.4807047,
+     "lon": -0.4574456,
+     "tz": "Europe/London",
+     "score": -14.25,
+     "category": "parking_16",
+     "areas": [
+      {
+       "name": "United Kingdom",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "England",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Greater London",
+       "adminLevel": 5.0,
+       "default": false
+      },
+      {
+       "name": "London Borough of Hillingdon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "malpensa",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Aeroporto di Milano Malpensa (MXP)",
+    "numResults": "5",
+    "language": "it",
+    "place": "45.4642,9.1900"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Aeroporto di Milano Malpensa (MXP)",
+     "id": "it-Sardegna-Planes-Cagliari-Airport_MXP",
+     "lat": 45.6306,
+     "lon": 8.728109999999997,
+     "tz": "Europe/Rome",
+     "score": -25.526287078857422,
+     "modes": [
+      "AIRPLANE"
+     ],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Varese",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Unione dei comuni di Lonate Pozzolo e Ferno",
+       "adminLevel": 7.0,
+       "default": false
+      },
+      {
+       "name": "Ferno",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Ibis Milano Malpensa Aeroporto",
+     "id": "way/311773292",
+     "lat": 45.6435486,
+     "lon": 8.7601971,
+     "tz": "Europe/Rome",
+     "score": -11.75,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Varese",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Cardano al Campo",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Aeroporto di Milano-Bresso",
+     "id": "way/157168407",
+     "lat": 45.5355038,
+     "lon": 9.1985857,
+     "tz": "Europe/Rome",
+     "score": -9.25,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Milano",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Zona Omogenea Milano Nord",
+       "adminLevel": 7.0,
+       "default": false
+      },
+      {
+       "name": "Bresso",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aeroporto di Milano Linate (LIN)",
+     "id": "it-Sardegna-Planes-Cagliari-Airport_LIN",
+     "lat": 45.445100000000004,
+     "lon": 9.27674,
+     "tz": "Europe/Rome",
+     "score": -9.026287078857422,
+     "modes": [
+      "AIRPLANE"
+     ],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Milano",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Peschiera Borromeo",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Aeroporto di Milano-Linate",
+     "id": "way/40374757",
+     "lat": 45.4611749,
+     "lon": 9.2546734,
+     "tz": "Europe/Rome",
+     "score": -7.75,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Milano",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Milano",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Municipio 4",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "geneva-stops",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "aéroport de Genève",
+    "type": "STOP",
+    "numResults": "5",
+    "place": "46.2261,6.0870",
+    "language": "fr"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:1026",
+     "lat": 46.23253600000001,
+     "lon": 6.111984299999999,
+     "tz": "Europe/Zurich",
+     "score": -22.39048957824707,
+     "modes": [
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Geneve-Aeroport",
+     "id": "fr-horaires-sncf_FR::LMO:70e7d750-3a69-11e9-8417-bb1d8a705241:",
+     "lat": 46.231167,
+     "lon": 6.110252,
+     "tz": "Europe/Zurich",
+     "score": -20.600000381469727,
+     "modes": [
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aéroport",
+     "id": "fr-reseau-interurbain-cars-region-haute-savoie-74_FR:6623:ZE:57862:HAUTExSAVOIE",
+     "lat": 46.230965000000005,
+     "lon": 6.109678300000001,
+     "tz": "Europe/Zurich",
+     "score": -20.100000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, ICC",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:93014",
+     "lat": 46.22626,
+     "lon": 6.1013665,
+     "tz": "Europe/Zurich",
+     "score": -19.850000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, WTC",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92929",
+     "lat": 46.229366000000006,
+     "lon": 6.106424,
+     "tz": "Europe/Zurich",
+     "score": -19.850000381469727,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Suisse",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Genève",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Meyrin",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "madrid-stops",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Aeropuerto Adolfo Suárez Madrid-Barajas",
+    "type": "STOP",
+    "numResults": "5",
+    "place": "40.4551,-3.5664",
+    "language": "es"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Madrid - Barajas Airport T4",
+     "id": "eu-blablacar-bus_ACW",
+     "lat": 40.49521000000001,
+     "lon": -3.594961,
+     "tz": "Europe/Madrid",
+     "score": -15.84999942779541,
+     "modes": [
+      "COACH",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aeropuerto Madrid - Barajas T1",
+     "id": "es-ALSA-autobuses_0001057800000001",
+     "lat": 40.462944,
+     "lon": -3.5722257999999996,
+     "tz": "Europe/Madrid",
+     "score": -15.59999942779541,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aero Madrid-Barajas T2 Llegada",
+     "id": "es-ALSA-autobuses_0000737300000001",
+     "lat": 40.46857000000001,
+     "lon": -3.5695264,
+     "tz": "Europe/Madrid",
+     "score": -15.34999942779541,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Madrid",
+       "adminLevel": 8.0,
+       "default": true
+      },
+      {
+       "name": "Barajas",
+       "adminLevel": 9.0,
+       "default": false
+      },
+      {
+       "name": "Aeropuerto",
+       "adminLevel": 10.0,
+       "default": false
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "AV.MADRID-ADOLFO SUÁREZ",
+     "id": "es-ALSA-autobuses_0030620000000001",
+     "lat": 40.48917,
+     "lon": -3.9634361,
+     "tz": "Europe/Madrid",
+     "score": -14.34999942779541,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Villanueva del Pardillo",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "CTRA.MAJADAHONDA-AV.ADOLFO SUÁREZ",
+     "id": "es-Autobús-urbano-de-Madrid-(CRTM)_par_8_15066",
+     "lat": 40.405037,
+     "lon": -3.8779497,
+     "tz": "Europe/Madrid",
+     "score": -12.526287078857422,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "España",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Comunidad de Madrid",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Boadilla del Monte",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "malpensa-stops",
+   "recorded": "2026-11-20 from https://api.transitous.org/api/v1/geocode",
+   "params": {
+    "text": "Aeroporto di Milano Malpensa",
+    "type": "STOP",
+    "numResults": "5",
+    "place": "45.6306,8.7281",
+    "language": "it"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Aeroporto di Milano Malpensa (MXP)",
+     "id": "it-Sardegna-Planes-Cagliari-Airport_MXP",
+     "lat": 45.6306,
+     "lon": 8.728109999999997,
+     "tz": "Europe/Rome",
+     "score": -38.52629089355469,
+     "modes": [
+      "AIRPLANE"
+     ],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Varese",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Unione dei comuni di Lonate Pozzolo e Ferno",
+       "adminLevel": 7.0,
+       "default": false
+      },
+      {
+       "name": "Ferno",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aeroporto di Milano Linate (LIN)",
+     "id": "it-Sardegna-Planes-Cagliari-Airport_LIN",
+     "lat": 45.445100000000004,
+     "lon": 9.27674,
+     "tz": "Europe/Rome",
+     "score": -19.526287078857422,
+     "modes": [
+      "AIRPLANE"
+     ],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Milano",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Peschiera Borromeo",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Malpensa aeroporto terminal 1",
+     "id": "it-Piemonte-Bus_ITRP-ST0120680002",
+     "lat": 45.626026,
+     "lon": 8.712119,
+     "tz": "Europe/Rome",
+     "score": -10.100000381469727,
+     "modes": [],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Varese",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Unione dei comuni di Lonate Pozzolo e Ferno",
+       "adminLevel": 7.0,
+       "default": false
+      },
+      {
+       "name": "Ferno",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "AEROPORTO MALPENSA - TERMINAL 2",
+     "id": "it-Piemonte-Bus_ITRP-ST0121230004",
+     "lat": 45.648796000000004,
+     "lon": 8.722346,
+     "tz": "Europe/Rome",
+     "score": -9.600000381469727,
+     "modes": [],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Lombardia",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Varese",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Somma Lombardo",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "V.MILANO",
+     "id": "it-Toscana-AT_168985",
+     "lat": 43.40567,
+     "lon": 11.125247,
+     "tz": "Europe/Rome",
+     "score": -7.354320049285889,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Italia",
+       "adminLevel": 2.0,
+       "default": false
+      },
+      {
+       "name": "Toscana",
+       "adminLevel": 4.0,
+       "default": false
+      },
+      {
+       "name": "Siena",
+       "adminLevel": 6.0,
+       "default": false
+      },
+      {
+       "name": "Colle di Val d'Elsa",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
