@@ -54,8 +54,15 @@ pseudonymiser exists), and only where `ATLAS_OWNED_VLLM_BASE_URL` is set: Standa
 requests never reach it, even as a fallback, and the precise model id
 `owned-vllm/owned-vllm-model` is listed only where an owned server is configured.
 An owned server may be powered off between uses (the staging instance uses an
-on-demand GPU reached through an SSH tunnel on loopback): a request sent while it
-is off fails with the usual HTTP 503 provider error, never on a shared provider.
+on-demand GPU reached through an SSH tunnel on loopback). Without a starter, a
+request sent while it is off fails with the usual HTTP 503 provider error, never on
+a shared provider. With a starter (`ATLAS_OWNED_SERVER_STARTER_DIR`), the request
+starts it and waits for it, up to 240 seconds, then is answered by the owned server:
+the chat shows a counting status line, a streamed API request receives SSE comments
+meanwhile, and `X-Atlas-Owned-Wait: 0` keeps the immediate 503 with `Retry-After`
+(`services/orchestrator/owned_wait.py`, the developer API notes). A refusal of the
+starter (budget cap, starts per hour) or a failed start ends the wait at once with
+its named answer; nothing is ever sent to a shared provider meanwhile.
 
 - REQ-PLT-001 (MUST): **Logical silo** model: one Postgres database, isolation by
   `tenant_id` + Row Level Security **enabled at the database level**, not only in the

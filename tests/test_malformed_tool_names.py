@@ -208,7 +208,9 @@ class MalformedToolNameTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.call_count, 2)
         self.assertEqual(answer["text"], "The corrected result is 42.")
         assert isinstance(good.body, dict)
-        self.assertEqual(good.body["tools"], [])
+        # The retry runs without tools: the fields are omitted, never empty.
+        self.assertNotIn("tools", good.body)
+        self.assertNotIn("tool_choice", good.body)
         self.assertNotIn("x" * 277, json.dumps(good.body))
 
     async def test_valid_80_character_name_still_reaches_the_caller(self) -> None:

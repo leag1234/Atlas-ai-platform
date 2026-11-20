@@ -6,7 +6,10 @@ gateway asks the host's starter to power it on (``owned_start``) and the request
 of these answers instead of a provider error:
 
 - ``owned_server_starting`` (503, ``Retry-After``): a start is under way; nothing was sent
-  anywhere else, the client sends the request again when the server is up;
+  anywhere else. A chat turn and an API request wait for the server instead
+  (``services/orchestrator/owned_wait.py``) and answer once it is up; this answer reaches
+  a client that asked not to wait, or one still waiting after the wait limit, then with
+  ``waited`` (the seconds it waited);
 - ``owned_server_budget`` (429): the starter refused because a budget cap is reached
   (daily hours or monthly euros), with the measured value and the limit (D5: a budget
   refusal is never reported as an outage);
@@ -68,6 +71,7 @@ class OwnedServerUnavailable(RuntimeError):
         unit: str | None = None,
         period: str | None = None,
         reason: str | None = None,
+        waited: int | None = None,
     ) -> None:
         if code not in CODES:
             raise ValueError("invalid_owned_server_code")
@@ -82,6 +86,8 @@ class OwnedServerUnavailable(RuntimeError):
             if code == UNAVAILABLE
             else None
         )
+        # Seconds the request already waited for a start (only for "starting").
+        self.waited = waited if code == STARTING and waited is not None else None
 
     @property
     def status(self) -> int:
@@ -96,6 +102,7 @@ class OwnedServerUnavailable(RuntimeError):
             "unit": self.unit,
             "period": self.period,
             "reason": self.reason,
+            "waited": self.waited,
         }
         return {"code": self.code} | {k: v for k, v in values.items() if v is not None}
 
@@ -106,6 +113,12 @@ class OwnedServerUnavailable(RuntimeError):
             if self.retry_after
             else ""
         )
+        if self.code == STARTING and self.waited is not None:
+            return (
+                "The owned inference server for strict privacy is still starting after "
+                f"a wait of {wait_text(self.waited)}. Nothing was sent to any other "
+                "provider." + wait
+            )
         if self.code == STARTING:
             return (
                 "The owned inference server for strict privacy is starting. Nothing "
@@ -147,6 +160,7 @@ def parse(value: object) -> OwnedServerUnavailable | None:
     retry = _number(value.get("retry_after"))
     unit, period = value.get("unit"), value.get("period")
     reason = value.get("reason")
+    waited = _number(value.get("waited"))
     return OwnedServerUnavailable(
         str(value["code"]),
         retry_after=int(retry) if retry is not None else None,
@@ -155,4 +169,5 @@ def parse(value: object) -> OwnedServerUnavailable | None:
         unit=unit if isinstance(unit, str) else None,
         period=period if isinstance(period, str) else None,
         reason=reason if isinstance(reason, str) else None,
+        waited=int(waited) if waited is not None else None,
     )

@@ -3,6 +3,7 @@
 import copy
 import json
 from typing import Any
+from packages.owned_server import CODES as OWNED_CODES
 from services.orchestrator.dev_chat import Output, url_citations
 
 
@@ -291,9 +292,11 @@ class Wire:
             ]
         if "error" in chunk:
             # Output checks keep their own code and message; other failures stay generic.
+            # The owned server's answers (strict privacy) keep theirs too (D5).
             named = chunk["error"].get("type") in (
                 "invalid_response_format",
                 "invalid_tool_arguments",
+                *OWNED_CODES,
             )
             code = chunk["error"]["type"] if named else "server_error"
             message = chunk["error"].get("message", code) if named else "provider_error"

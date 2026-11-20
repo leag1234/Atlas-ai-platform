@@ -115,6 +115,7 @@ PLAN_LABELS: dict[str, dict[str, str]] = {
         "state_in_progress": "en cours",
         "state_pending": "à faire",
         "state_failed": "échoué",
+        "state_skipped": "non fait",
     },
     "en": {
         "title": "Plan",
@@ -142,6 +143,7 @@ PLAN_LABELS: dict[str, dict[str, str]] = {
         "state_in_progress": "in progress",
         "state_pending": "to do",
         "state_failed": "failed",
+        "state_skipped": "not done",
     },
     "de": {
         "title": "Plan",
@@ -169,6 +171,7 @@ PLAN_LABELS: dict[str, dict[str, str]] = {
         "state_in_progress": "läuft",
         "state_pending": "offen",
         "state_failed": "fehlgeschlagen",
+        "state_skipped": "nicht erledigt",
     },
     "es": {
         "title": "Plan",
@@ -196,6 +199,7 @@ PLAN_LABELS: dict[str, dict[str, str]] = {
         "state_in_progress": "en curso",
         "state_pending": "pendiente",
         "state_failed": "fallido",
+        "state_skipped": "no hecho",
     },
     "it": {
         "title": "Piano",
@@ -223,6 +227,7 @@ PLAN_LABELS: dict[str, dict[str, str]] = {
         "state_in_progress": "in corso",
         "state_pending": "da fare",
         "state_failed": "non riuscito",
+        "state_skipped": "non fatto",
     },
 }
 # Units are the same short forms in the five languages, except German minutes.
