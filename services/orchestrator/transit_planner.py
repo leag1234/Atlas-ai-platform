@@ -303,11 +303,10 @@ class Client:
             and isinstance(row.get("lon"), (int, float))
         ]
 
-    async def stops_named(
+    async def stops_found(
         self, name: str, language: str, near: tuple[float, float]
     ) -> list[dict[str, Any]]:
-        """The stops whose name holds ``name`` (an airport's terminal stops),
-        searched around ``near``."""
+        """The stops the geocoder finds for ``name`` around ``near``."""
         params = {
             "text": name[:200],
             "type": "STOP",
@@ -317,10 +316,6 @@ class Client:
         if language:
             params["language"] = language
         found = await self.get("/api/v1/geocode", params, GEOCODE_SECONDS)
-        wanted = _folded(name)
-        # "aeroport de Geneve" names the stop "Geneve-Aeroport": the words that
-        # name the place, in any order, stand for it too.
-        named = place_words(name)
         return [
             row
             for row in (found if isinstance(found, list) else [])
@@ -328,7 +323,21 @@ class Client:
             and row.get("type") == "STOP"
             and isinstance(row.get("lat"), (int, float))
             and isinstance(row.get("lon"), (int, float))
-            and wanted
+        ]
+
+    async def stops_named(
+        self, name: str, language: str, near: tuple[float, float]
+    ) -> list[dict[str, Any]]:
+        """The stops whose name holds ``name`` (an airport's terminal stops),
+        searched around ``near``."""
+        wanted = _folded(name)
+        # "aeroport de Geneve" names the stop "Geneve-Aeroport": the words that
+        # name the place, in any order, stand for it too.
+        named = place_words(name)
+        return [
+            row
+            for row in await self.stops_found(name, language, near)
+            if wanted
             and (
                 wanted in _folded(str(row.get("name") or ""))
                 or bool(named and named <= place_words(str(row.get("name") or "")))
@@ -516,31 +525,107 @@ def _town_or_address(match: dict[str, Any]) -> bool:
     )
 
 
+# Geocoder categories of a transport place mapped as an area (an airport's
+# aerodrome, amid its runways), by kind.
+_FEATURE_CATEGORIES = {
+    "aerodrome": "airport",
+    "airport": "airport",
+    "railway_station": "station",
+    "train_station": "station",
+    "bus_station": "bus",
+    "ferry_terminal": "port",
+}
+
+
+def _feature_kind(match: dict[str, Any], flights: bool) -> str:
+    """The kind of transport place a match is when no plan should end at it:
+    an aerodrome or a station area (its point lies amid the runways or the
+    tracks), or an airport's own flight stop when the person does not fly."""
+    if match.get("type") == "STOP":
+        return "" if _served(match, flights) else "airport"
+    category = re.sub(r"_\d+$", "", str(match.get("category") or "").casefold())
+    return _FEATURE_CATEGORIES.get(category, "")
+
+
+def _named_terms(
+    named: str, matches: list[dict[str, Any]], flights: bool
+) -> tuple[set[str], set[str]] | None:
+    """The kinds of transport place and the words a stop must carry to stand
+    for the first match, or None when the first match is the place asked.
+
+    The first match gives way to a stop when it is a town, an area or an
+    address (the name asked holds a transport word the town's own name does
+    not: "Port Melbourne" is the town), the transport place itself as the
+    geocoder maps it (an aerodrome, a flight stop: its own words then name
+    the stop too), or a place of another kind whose name says more than the
+    name asked (the car rental desk "Easirent London Heathrow Airport LHR"
+    for "London Heathrow Airport (LHR), UK"). A place whose every word is a
+    word of the name asked ("Mercure Sydney Airport") is the place asked.
+    """
+    if not named or not matches:
+        return None
+    first = matches[0]
+    first_name = str(first.get("name") or "")
+    asked = _transport_kinds(named)
+    wanted = _name_words(named)
+    if feature := _feature_kind(first, flights):
+        asked.add(feature)
+        wanted |= _name_words(first_name)
+    elif _town_or_address(first):
+        asked -= _transport_kinds(first_name)
+    elif first.get("type") == "STOP":
+        return None
+    else:
+        own = _name_words(first_name)
+        if not own or all(any(_same_word(w, q) for q in wanted) for w in own):
+            return None
+    if not asked or not wanted:
+        return None
+    return asked, wanted
+
+
+def core_name(named: str) -> str:
+    """A place name without its qualifiers: "Aeroport de Geneve (GVA), Le
+    Grand-Saconnex, Suisse" is "Aeroport de Geneve"."""
+    core = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", named).split(",")[0]
+    return " ".join(core.split()) or " ".join(named.split())
+
+
 def named_stop(
     named: str, matches: list[dict[str, Any]], *, flights: bool = False
 ) -> dict[str, Any] | None:
-    """The stop of the transport place a name names, when the geocoder put a
-    town, an area or an address first; None to keep the first match.
+    """The stop of the transport place a name names when the geocoder put
+    something else first (``_named_terms``); None to keep the first match.
 
     Staging -135: "Aeroport de Geneve (GVA), Le Grand-Saconnex, Suisse" put
     the town Le Grand-Saconnex first and the station Geneve-Aeroport fourth,
-    and the plans ended in the town. A stop among the results fetched stands
-    for the place when its name carries a transport word of the kind named
-    (or its modes serve that kind), every other word of its name is a word of
-    the name asked (any order, accents folded), and it lies within
-    NAMED_STOP_KM of the first match (NAMED_AIRPORT_KM for an airport). Of several, the one that covers the
+    and the plans ended in the town. Staging -138: "Aeroport de Geneve (GVA),
+    Geneve, Suisse" put the aerodrome first (its point amid the runways, a
+    15-minute walk from a bus stop) and the station second. A stop among the
+    results fetched stands for the place when its name carries a transport
+    word of the kind named (or its modes serve that kind), every other word
+    of its name is a word of the name asked (any order, accents folded;
+    qualifiers such as a code, a commune or a country in the name asked do
+    not matter), and it lies within NAMED_STOP_KM of the first match
+    (NAMED_AIRPORT_KM for an airport). Of several, the one that covers the
     most words of the name, then the geocoder's order.
     """
-    if not matches or not _town_or_address(matches[0]):
+    terms = _named_terms(named, matches, flights)
+    if terms is None:
         return None
-    first = matches[0]
-    # A town whose own name holds the word ("Port Melbourne") is that town.
-    asked = _transport_kinds(named) - _transport_kinds(str(first.get("name") or ""))
-    wanted = _name_words(named)
-    if not asked or not wanted:
-        return None
+    return _stop_for(matches[0], matches[:5], *terms, flights=flights)
+
+
+def _stop_for(
+    first: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    asked: set[str],
+    wanted: set[str],
+    *,
+    flights: bool,
+) -> dict[str, Any] | None:
     found: list[tuple[int, bool, int, dict[str, Any]]] = []
-    for index, match in enumerate(matches[:5]):
+    for index, match in enumerate(candidates):
         if match.get("type") != "STOP" or not _served(match, flights):
             continue
         name = str(match.get("name") or "")
@@ -1482,6 +1567,36 @@ def _end(
     return _point(chosen)
 
 
+async def _named_place(
+    client: Client,
+    named: str,
+    matches: list[dict[str, Any]],
+    chosen: dict[str, Any],
+    *,
+    language: str,
+    flights: bool,
+) -> dict[str, Any]:
+    """The place chosen, or the stop of the transport place a name names when
+    the geocoder's first results held none (staging -138 wording "aeroport de
+    Geneve (Meyrin)": the aerodrome first, then four bus stops named after
+    its buildings, the station not among them). One stop search, cached,
+    with the geocoder's own name for the aerodrome or the name asked without
+    its qualifiers, under the rules of ``named_stop``."""
+    if not matches or chosen is not matches[0]:
+        return chosen
+    terms = _named_terms(named, matches, flights)
+    if terms is None:
+        return chosen
+    first = matches[0]
+    own = str(first.get("name") or "") if _feature_kind(first, flights) else ""
+    text = core_name(own or named)
+    try:
+        stops = await client.stops_found(text, language, _point(first))
+    except TransitError:
+        return chosen
+    return _stop_for(first, stops, *terms, flights=flights) or chosen
+
+
 async def compute(
     request: TransitPlan,
     *,
@@ -1505,10 +1620,17 @@ async def compute(
         origin_zone = home_zone
     elif request.origin:
         origins = await client.geocode(request.origin, language, position)
-        found = origin_match = choose(
+        found = origin_match = await _named_place(
+            client,
+            request.origin,
             origins,
-            biased=position is not None,
-            named=request.origin,
+            choose(
+                origins,
+                biased=position is not None,
+                named=request.origin,
+                flights=request.flights,
+            ),
+            language=language,
             flights=request.flights,
         )
         start, origin_label, origin_zone = (
@@ -1522,10 +1644,17 @@ async def compute(
         str(origin_match.get("type") or "") if origin_match is not None else "POSITION"
     )
     destinations = await client.geocode(request.destination, language, start)
-    target = choose(
+    target = await _named_place(
+        client,
+        request.destination,
         destinations,
-        biased=False,
-        named=request.destination,
+        choose(
+            destinations,
+            biased=False,
+            named=request.destination,
+            flights=request.flights,
+        ),
+        language=language,
         flights=request.flights,
     )
     zone = zone_of(target.get("tz"), origin_zone or home_zone)
@@ -1867,7 +1996,8 @@ async def _direct_query(
 _GENERIC = frozenset(
     "airport aeroport aeropuerto aeroporto flughafen station gare bahnhof "
     "hauptbahnhof hbf estacion stazione centrale central centro terminal "
-    "international internationale city ville stadt ciudad citta "
+    "international internationale internacional internazionale intl domestic "
+    "city ville stadt ciudad citta "
     "de du des la le les the of di del della von der den el".split()
 )
 
