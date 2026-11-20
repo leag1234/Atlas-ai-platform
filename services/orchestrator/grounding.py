@@ -429,12 +429,24 @@ class Grounding:
     claims_changed: int = 0
     premises_checked: int = 0
     latency_ms: float = 0.0
+    # Results of the turn's computation tools (calculator, date_time, unit and
+    # currency conversion): not sources of claims, but values the answer may
+    # state (unsourced_details.Computed).
+    computed: list[str] = field(default_factory=list)
 
     def add(self, text: str) -> None:
         text = text[: max(0, 128000 - self.characters)]
         if text.strip():
             self.evidence.append(text)
             self.characters += len(text)
+
+    def computation(self, output: object) -> None:
+        """Record one computation tool result (its data, never its arguments)."""
+        if not isinstance(output, dict) or output.get("error"):
+            return
+        data = output.get("data", output)
+        if len(self.computed) < 32:
+            self.computed.append(json.dumps(data, ensure_ascii=False)[:20_000])
 
     def collect(self, value: object) -> None:
         """Collect only source-bearing fields, never tool arguments or errors."""

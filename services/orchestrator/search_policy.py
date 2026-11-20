@@ -33,6 +33,64 @@ def corpus_allowed(question: str) -> bool:
     )
 
 
+# A self-contained computation: the person gives the numbers (or the dates) and
+# asks for a result worked out from them. Staging 2026-11-20: a French question
+# giving an old and a new price (84 and 63 euros) and asking for the percentage
+# drop ran a required web search because its word for "costs" reads as a price
+# question, and its
+# unrelated hits (a stadium, a pharmacy) were listed under the answer. The ask
+# must target the computed quantity: "why did the price drop by 20 %" is no
+# computation and keeps its research.
+_COMPUTE_ASK = re.compile(
+    r"\b(?:quel(?:le)?s?|what|which|welche\w*|cual|quale?)\s++"
+    r"(?:(?:est|sont|is|are|ist|es|e)\s++)?(?:(?:le|la|l|les|the|der|die|das|el|il|lo)\s++)?"
+    r"(?:nouveau\s++|new\s++|final\s++)?"
+    r"(?:pourcentage|percentage|percent|prozentsatz|porcentaje|percentuale|taux|rate|"
+    r"difference|differenz|diferencia|differenza|ecart|total|somme|sum|summe|suma|somma|"
+    r"moyenne|average|mean|durchschnitt|promedio|media|montant|amount|betrag|importe|importo|"
+    r"prix final|final price|remise|discount|rabatt|descuento|sconto|reduction|marge|margin|"
+    r"ratio|resultat|result|ergebnis|resultado|risultato)\b"
+    r"|\b(?:calcul\w*|compute|computes|work out|berechne\w*|rechne\w*|calcola\w*|calcula\w*)\b"
+    r"|\bcombien\b.{0,40}\b(?:au total|en tout|de baisse|de hausse|de reduction|de remise|"
+    r"de difference|de plus|de moins|reste|font|fait)\b"
+    r"|\bhow (?:much|many)\b.{0,40}\b(?:in total|altogether|left|remain\w*|more|less|"
+    r"difference|saved?)\b"
+    r"|\b(?:by how much|de combien|um wie viel|wie viel prozent|en cuanto|di quanto)\b"
+    r"|\d\s*+[×x*/÷+−]\s*+\d|=\s*+\?"
+)
+_CURRENT = re.compile(
+    r"\b(?:latest|current\w*|actuel\w*|aujourd.hui|today|heute|hoy|oggi|now|"
+    r"maintenant|en ce moment|derniere?s?|neueste\w*|aktuell\w*|cours|"
+    r"taux de change|exchange rates?|wechselkurs\w*|tipo de cambio|tasso di cambio)\b"
+)
+
+
+def computation_only(question: str) -> bool:
+    """A question answered by computing on the numbers or dates it gives."""
+    from services.orchestrator import exact_tools
+
+    question = own_words(question)
+    text = "".join(
+        c
+        for c in unicodedata.normalize("NFD", question.casefold().replace("’", "'"))
+        if not unicodedata.combining(c)
+    )
+    if len(re.findall(r"\d+(?:[.,]\d+)?", text)) < 2:
+        return False
+    families = exact_tools.relevant(question)
+    if "date" in families and (
+        len(exact_tools._DATE.findall(text)) >= 2
+        or re.search(r"\b(?:combien|how many|wie viele|cuant[oa]s|quant[ie])\b", text)
+    ):
+        # A count of days between given dates is calendar work (date_time),
+        # "today" included: the clock is read by code.
+        return True
+    if _CURRENT.search(text):
+        # A current value (a rate, a price today) is looked up, not computed.
+        return False
+    return "unit" in families or bool(_COMPUTE_ASK.search(text))
+
+
 def required_research(
     question: str,
     language: str,
@@ -123,6 +181,10 @@ def required_research(
     hypothetical = re.search(
         r"\b(ficti\w*|imaginary|hypothetical|erfunden\w*)\b", normalized
     )
+    if not explicit and computation_only(question):
+        # The person gave the numbers: code computes the result, nothing is
+        # looked up (a price word is part of the statement, not a question).
+        return ()
     if temporal or explicit or technical or (existing_things and not hypothetical):
         return (
             Call(

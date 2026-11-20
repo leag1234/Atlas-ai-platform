@@ -367,6 +367,85 @@ def provider_reference_markers(text: str, retrieved: list[str]) -> str:
     )
 
 
+# What each page read in this turn said (search titles and snippets, fetched
+# texts), set per request by chat_pipeline.process: the consulted-sources list
+# reads it to leave out the pages that are about nothing the turn asked or said.
+page_texts: ContextVar[dict[str, list[str]] | None] = ContextVar(
+    "atlas_page_texts", default=None
+)
+PAGE_CHARACTERS = 20_000
+
+
+def record_page(url: str, text: str) -> None:
+    pages = page_texts.get()
+    if pages is not None and text.strip():
+        held = pages.setdefault(url, [])
+        if sum(map(len, held)) < PAGE_CHARACTERS:
+            held.append(text[:PAGE_CHARACTERS])
+
+
+def unrelated_pages(urls: list[str], question: str, answer: str) -> set[str]:
+    """Pages read that are about neither the question nor what the answer states.
+
+    A page stays listed when the answer cites it, when it holds one of the
+    answer's distinctive details (a name, a title, a date, a year, a number of
+    three digits or more) that the person did not give, or when it names as
+    many of the question's subject words as a page about the subject does (the
+    rule by which trip answers list their pages, travel_rebuild.unrelated). A
+    page whose text the turn never saw is kept. Staging 2026-11-20: a
+    percentage question listed a stadium, a pharmacy and two economics articles,
+    every hit of a search that found nothing on it.
+    """
+    pages = page_texts.get() or {}
+    if not pages or not urls:
+        return set()
+    from services.orchestrator import unsourced_details as details
+    from services.orchestrator.grounding import STOP, normalized
+    from services.orchestrator.link_requests import own_words
+
+    asked = own_words(question)
+    wanted = {
+        word
+        for word in normalized(asked).split()
+        if len(word) > 2
+        and not word.isdigit()
+        and word not in STOP
+        and word not in details.ASK_WORDS
+    }
+    if not wanted:
+        return set()
+    body = answer.split("<details>", 1)[0]
+    given = details.Evidence.of([asked])
+    nothing = details.Evidence()
+    distinctive = [
+        detail
+        for detail in details.extract(body)
+        if (detail.kind != "number" or len(re.sub(r"\D", "", detail.text)) >= 3)
+        and not details.supported(detail, nothing, given)
+    ]
+    shared: dict[str, int] = {}
+    used: set[str] = set()
+    for url in dict.fromkeys(urls):
+        texts = pages.get(url)
+        if not texts:
+            continue
+        text = " ".join(texts)
+        shared[url] = len(wanted & set(normalized(text).split()))
+        if url in body:
+            used.add(url)
+        elif distinctive:
+            held = details.Evidence.of([text])
+            if any(details.supported(d, held, nothing) for d in distinctive):
+                used.add(url)
+    best = max(shared.values(), default=0)
+    if not best:
+        # No page names any word of the question (pages in another language):
+        # the words cannot tell the pages apart, all stay listed.
+        return set()
+    floor = min(2, best, len(wanted))
+    return {url for url, count in shared.items() if count < floor and url not in used}
+
+
 def source_footer(retrieved: list[str], language: str) -> str:
     """Expose the actual retrieval trail separately from the model's citations."""
     import json
