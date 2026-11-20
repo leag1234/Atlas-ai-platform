@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from services.orchestrator.cache import Cache
 from services.orchestrator.searxng import NOTICES, OUTCOMES, search_language
+from services.orchestrator.source_truth import record_page
 from packages import privacy
 from services.orchestrator import news_feeds, source_tools
 from services.orchestrator.chat_schema import ChatMessage, ChatRequest
@@ -540,6 +541,14 @@ class ChatTools(Runtime):
                         for r in results
                         if isinstance(r, dict) and isinstance(r.get("link"), str)
                     ]
+            if (
+                call.name in unsourced_details.COMPUTATION_TOOLS
+                and (check := grounding.current.get()) is not None
+            ):
+                # A value computed by code in this turn is no detail added from
+                # memory (staging 2026-11-20: the date_time day count was cut
+                # out of "There are 261 days", no page holding it).
+                check.computation(output)
             if call.name in SOURCE_TOOLS and isinstance(data, dict):
                 # D7: every URL a specialized source names was fetched for this
                 # turn (the page, the feed, the dataset), so it may be cited.
@@ -580,12 +589,18 @@ class ChatTools(Runtime):
                             self.search_snippets[row["link"]] = str(
                                 row.get("snippet", "")
                             )
+                            record_page(
+                                row["link"],
+                                f"{row.get('title', '')} {row.get('snippet', '')}",
+                            )
                 if (
                     call.name == "web_fetch"
                     and isinstance(data, dict)
                     and isinstance(data.get("text"), str)
                 ):
                     self.fetched_pages.update({url: str(data["text"]) for url in urls})
+                    for url in urls:
+                        record_page(url, str(data["text"]))
             if "error" in output:
                 self.item.erreurs.append(str(output["error"]))
             sink = sink_context.get()
@@ -1001,6 +1016,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
                 document_quotes.rewriter(quotes, quote_language, request.user_text),
             )
             gating = sink_context.set(quote_gate)
+    from services.orchestrator.source_truth import page_texts
     from services.orchestrator.source_truth import urls as text_urls, user_urls
 
     supplied = user_urls.set(
@@ -1011,6 +1027,9 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             for url in text_urls(message.text)
         )
     )
+    # What each page read in this turn said: the consulted-sources list keeps
+    # the pages about the question or the answer (source_truth.unrelated_pages).
+    reading = page_texts.set({})
     from services.orchestrator.deadline import answer_recovery
 
     def trip_recovery() -> float:
@@ -1057,6 +1076,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             sink_context.reset(scripting)
         document_quotes.current.reset(quoting)
         user_urls.reset(supplied)
+        page_texts.reset(reading)
         # The routing call is part of this turn's cost.
         routing_cost = request.__dict__.get("model_route_cost_eur")
         if isinstance(routing_cost, Decimal) and routing_cost > 0:
@@ -1173,6 +1193,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             language=asked_language,
             question=asked,
             urls=item.retrieved_urls,
+            # What code computed in the turn, and the person's numbers and
+            # dates an answer may compute with.
+            computed=check.computed,
+            given=[m.text for m in request.messages if m.role == "user"],
         )
         item.retrieved_urls.extend(details_report.reference_urls)
         item.cout_eur = float(Decimal(str(item.cout_eur)) + details_report.cost_eur)
@@ -1593,6 +1617,7 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             inline_source_markers,
             without_unretrieved,
             source_footer,
+            unrelated_pages,
             visible_sources,
         )
 
@@ -1651,8 +1676,13 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             ),
         )
         # A trip answer lists the pages about its trip and the pages it cites,
-        # not every search hit (travel_rebuild.unrelated).
-        hidden = set(item.off_trip_urls)
+        # not every search hit (travel_rebuild.unrelated); any answer lists the
+        # pages about its question or holding what it states, not the hits of a
+        # search that found nothing on it (staging 2026-11-20: a stadium and a
+        # pharmacy page under a percentage).
+        hidden = set(item.off_trip_urls) | unrelated_pages(
+            sources, request.user_text, item.reponse
+        )
         listed = [url for url in sources if url not in hidden or url in item.reponse]
         if request.atlas_ui:
             item.reponse += source_footer(listed, request.lang)

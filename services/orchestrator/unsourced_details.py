@@ -11,19 +11,31 @@ with them (owner principle "the code does and checks, the model decides"):
    pages, specialized sources such as the encyclopedia facts), in the person's own
    messages, or as the same value in another written form (another language's
    month name, an ISO date, another thousands separator, a rounded number);
+   a value the turn computed is no added detail either (``Computed``): a result
+   of a computation tool (calculator, date_time, unit_convert, currency_convert),
+   arithmetic on the person's own numbers (a difference, a percentage, a share),
+   a written calculation code recomputes, and calendar facts (the days, weeks or
+   months between two given dates, the weekday names). Staging 2026-11-20:
+   "There are **261** days between 3 March and 19 November 2026" became "There
+   are **days** between...", the date_time result being in no page read;
 3. the details no retrieved text holds go to one bounded revision call: the model
    removes each one, or replaces it with what the given source excerpts state, and
    changes nothing else;
 4. the revision is checked by code and kept only when it removes unsupported
-   details without adding any new one, keeps every link, and stays an answer;
+   details without adding any new one, keeps every link, and stays an answer; a
+   sentence left with its detail cut out and nothing rewritten ("There are
+   **days**") goes as a whole, never stays hollow;
    otherwise the original answer is kept, and in ``revise_mark`` mode the details
    still unsupported are marked next to their sentence, in the answer language.
 
 Before the revision, the details no retrieved text holds are looked up in the
 subject's full encyclopedia articles (the pages the turn reached, the article the
 question names, its counterpart in English or the answer's language): a detail
-found there is sourced, and the article joins the consulted sources. Only standard
-and enhanced levels read the live encyclopedia here.
+found there is sourced, and the article joins the consulted sources. An article
+counts only when it is about the subject (its title is named in the question or
+the answer): a stadium's page holding "21" never supports a percentage, nor
+joins its sources (staging 2026-11-20). Only standard and enhanced levels read
+the live encyclopedia here.
 
 ``ATLAS_UNSOURCED_DETAILS``: ``off`` (default), ``mark``, ``revise``,
 ``revise_mark``. It applies to a held factual turn (grounding's cue, or a
@@ -37,10 +49,13 @@ from __future__ import annotations
 
 import asyncio
 from bisect import bisect_left
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal, InvalidOperation
 import json
 import logging
+import math
 import os
 import re
 import time
@@ -153,6 +168,17 @@ COMMON = frozenset(
         "il lo gli e ma wikipedia wikidata"
     ).split()
 ) | frozenset(MONTHS)
+# Weekday names are calendar facts, not names a source must hold ("19 November
+# 2026 is a Thursday"; relative_dates checks the weekday against the calendar).
+WEEKDAYS = frozenset(
+    (
+        "monday tuesday wednesday thursday friday saturday sunday "
+        "lundi mardi mercredi jeudi vendredi samedi dimanche "
+        "montag dienstag mittwoch donnerstag freitag samstag sonntag "
+        "lunes martes miercoles jueves viernes sabado domingo "
+        "lunedi martedi mercoledi giovedi venerdi sabato domenica"
+    ).split()
+)
 # Words that join the parts of one name ("Charles de Gaulle", "Bank of England").
 CONNECTORS = frozenset(
     "de du des la le les d l von van der den of the di da del dos".split()
@@ -304,6 +330,9 @@ def _number_value(text: str) -> tuple[float, float] | None:
         precision = 10.0**zeros if zeros >= 3 else 0.0
     word = normalized(text[match.end() :]).split()
     scale = SCALES.get(word[0], 1.0) if word else 1.0
+    if not math.isfinite(value * scale):
+        # Hundreds of digit groups read as one number: no value.
+        return None
     return value * scale, precision * scale
 
 
@@ -328,10 +357,15 @@ def extract(answer: str) -> list[Detail]:
         plain = MARKUP.sub(
             " ", re.sub(r"\]\([^)\s]*\)|https?://\S+|\[\d{1,3}\]", " ", sentence)
         )
-        taken: list[tuple[int, int]] = []
+        # Characters a date, a year or a number already covers: one mark per
+        # character, so a sentence of thousands of numbers stays linear.
+        taken = bytearray(len(plain) + 1)
 
         def add(kind: str, text: str, span: tuple[int, int]) -> None:
-            taken.append(span)
+            if kind != "name":
+                taken[span[0] : span[1]] = b"\x01" * (span[1] - span[0])
+            if len(found) >= MAX_DETAILS:
+                return
             detail = Detail(kind, text.strip(), start, end)
             if normalized(detail.text):
                 found.setdefault(detail.key, detail)
@@ -349,15 +383,17 @@ def extract(answer: str) -> list[Detail]:
                 if normalized(match[month_group]) in MONTHS:
                     add("date", match[0], match.span())
         for match in YEAR.finditer(plain):
-            if not any(a <= match.start() < b for a, b in taken):
+            if not taken[match.start()]:
                 add("year", match[0], match.span())
         for match in NUMBER.finditer(plain):
-            if any(a <= match.start() < b for a, b in taken):
+            if taken[match.start()]:
                 continue
             text = match[0]
             tail = normalized(text).split()
             if len(tail) > 1 and tail[-1] not in SCALES and "%" not in text:
-                text = text.split()[0]
+                # The word after the number goes, not the number's own groups:
+                # "9 731 people" is 9 731, never 9.
+                text = re.sub(r"\s?[^\W\d_]+$", "", text)
             digits = re.sub(r"\D", "", text)
             if text == digits and len(digits) == 1:
                 # A lone digit counts only before a noun ("4 founders"), not as a
@@ -420,13 +456,12 @@ def extract(answer: str) -> list[Detail]:
             )
             if not (
                 first in MONTHS
+                or (single and first in WEEKDAYS)
                 or heading
                 or (single and (first in COMMON or len(word) < 3))
                 or (single and sentence_start and not name_like)
             ):
-                detail_start = len(taken)
                 add("name", text, (words[index].start(), words[last].end()))
-                del taken[detail_start:]
             index = following
         if len(found) >= MAX_DETAILS:
             break
@@ -532,20 +567,33 @@ def common_word(
     )
 
 
-def unsupported(answer: str, evidence: Evidence, own: Evidence) -> list[Detail]:
+def unsupported(
+    answer: str,
+    evidence: Evidence,
+    own: Evidence,
+    computed: Computed | None = None,
+) -> list[Detail]:
+    found = _unsupported(answer, evidence, own)
+    if computed is None:
+        return found
+    return [detail for detail in found if not computed.holds(detail, answer)]
+
+
+def _unsupported(answer: str, evidence: Evidence, own: Evidence) -> list[Detail]:
     body = answer.split("<details>", 1)[0]
     lowercase = frozenset(
         normalized(match[0]) for match in WORD.finditer(body) if match[0][0].islower()
     )
     details = [d for d in extract(answer) if not common_word(d, evidence, lowercase)]
     missing = [d for d in details if not supported(d, evidence, own)]
+    absent = {d.key for d in missing}
     # An age or a duration computed from two supported years ("died at 83",
     # "for 14 years") is supported by them.
     years = sorted(
         {
             int(year)
             for d in details
-            if d not in missing and d.kind in {"year", "date"}
+            if d.key not in absent and d.kind in {"year", "date"}
             for year in YEAR.findall(d.text)
         }
     )
@@ -559,6 +607,254 @@ def unsupported(answer: str, evidence: Evidence, own: Evidence) -> list[Detail]:
             and (int(d.text) in spans or int(d.text) + 1 in spans)
         )
     ]
+
+
+# --- Computed values: what the turn worked out, not what it retrieved. --------
+# Tools whose results are computations by code, never pages (roadmap T8).
+COMPUTATION_TOOLS = frozenset(
+    {"calculator", "date_time", "unit_convert", "currency_convert"}
+)
+# Numbers given by the person (and returned by the tools) that enter the pairwise
+# operations: bounded, so the derived values stay few and the pass stays cheap.
+BASE_VALUES = 24
+TOOL_VALUES = 64
+CALENDAR_DATES = 12
+GIVEN_CHARACTERS = 20_000
+# Constants a written calculation multiplies or divides by (a percentage, a unit
+# change, a calendar period).
+CALCULATION_CONSTANTS = frozenset({7.0, 12.0, 24.0, 60.0, 100.0, 365.0, 1000.0, 3600.0})
+# Calendar facts a number of days, weeks, months or hours may state ("a week has
+# 7 days", "February 2028 has 29 days").
+CALENDAR_CONSTANTS = frozenset({7, 12, 24, 28, 29, 30, 31, 52, 53, 60, 365, 366})
+PERIODS = (
+    r"(?:days?|weeks?|months?|years?|hours?|minutes?|jours?|semaines?|mois|ans|"
+    r"annees?|heures?|tage?n?|wochen?|monate?n?|jahre?n?|stunden?|minuten?|dias?|"
+    r"semanas?|meses|anos|horas?|minutos?|giorni|giorno|settimane|settimana|mesi|"
+    r"mese|anni|ore|ora|minuti)"
+)
+
+
+def _operations(a: float, b: float) -> Iterator[float]:
+    """What one operation on two given numbers gives, as an answer states it."""
+    yield a + b
+    yield abs(a - b)
+    yield a * b
+    yield a * b / 100  # b percent of a
+    for x, y in ((a, b), (b, a)):
+        if y:
+            yield x / y
+            yield x / y * 100
+            yield abs(x - y) / y * 100  # the change from y to x, in percent
+
+
+def _calendar_date(match: re.Match[str], kind: str) -> date | None:
+    try:
+        if kind == "numeric":
+            if match[1]:
+                return date(int(match[1]), int(match[2]), int(match[3]))
+            return date(int(match[6]), int(match[5]), int(match[4]))
+        day, name, year = (
+            (match[1], match[2], match[3])
+            if kind == "day_first"
+            else (match[2], match[1], match[3])
+        )
+        month = MONTHS.get(normalized(name))
+        return date(int(year), month, int(day)) if month else None
+    except ValueError:
+        return None
+
+
+def _dates_and_rest(text: str) -> tuple[list[date], str]:
+    """The full dates a text gives, and the text without them."""
+    found: list[date] = []
+
+    def taken(kind: str) -> Callable[[re.Match[str]], str]:
+        def replace(match: re.Match[str]) -> str:
+            day = _calendar_date(match, kind)
+            if day is None:
+                return match[0]
+            found.append(day)
+            return " "
+
+        return replace
+
+    for pattern, kind in (
+        (NUMERIC_DATE, "numeric"),
+        (DAY_FIRST, "day_first"),
+        (MONTH_FIRST, "month_first"),
+    ):
+        text = pattern.sub(taken(kind), text)
+    return found, text
+
+
+def _values(text: str) -> Iterator[float]:
+    for match in NUMBER.finditer(text):
+        parsed = _number_value(match[0])
+        if parsed is not None:
+            yield parsed[0]
+
+
+# A number a tool wrote: a decimal point, never a thousands separator
+# ("42.1648128" is forty-two, not 42 164).
+MACHINE_NUMBER = re.compile(r"(?<![\w.])\d++(?:\.\d++)?+(?![\w])")
+
+
+def _machine_values(text: str) -> Iterator[float]:
+    for match in MACHINE_NUMBER.finditer(text):
+        yield float(match[0])
+
+
+def _calendar_spans(days: list[date]) -> set[float]:
+    """Days, weeks, months and years between two dates, counted either way."""
+    found: set[float] = set()
+    unique = sorted(set(days))[:CALENDAR_DATES]
+    for index, first in enumerate(unique):
+        for last in unique[index + 1 :]:
+            count = (last - first).days
+            months = (
+                (last.year - first.year) * 12
+                + last.month
+                - first.month
+                - (last.day < first.day)
+            )
+            found |= {
+                float(count),
+                float(count + 1),
+                float(count - 1),
+                count / 7,
+                float(count // 7),
+                float(count * 24),
+                float(months),
+                float(months // 12),
+            }
+    return found
+
+
+def _within(values: list[float], value: float, unit: float) -> bool:
+    """A value of the sorted list that, rounded to the written unit, is the stated one."""
+    reach = unit / 2 + abs(value) * 1e-9
+    index = bisect_left(values, value - reach)
+    return index < len(values) and values[index] <= value + reach
+
+
+@dataclass
+class Computed:
+    """Values the turn computed: tool results, arithmetic on the person's numbers,
+    calendar spans between the dates given, and written calculations code
+    recomputes. A computed value is supported however the answer rounds it."""
+
+    base: list[float] = field(default_factory=list)
+    exact: list[float] = field(default_factory=list)
+    answers: dict[str, list[float]] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def of(cls, given: list[str], results: list[str], today: str = "") -> Computed:
+        days: list[date] = []
+
+        def first(
+            texts: list[str], limit: int, read: Callable[[str], Iterator[float]]
+        ) -> list[float]:
+            # The most recent numbers first, read until the limit: a long pasted
+            # text adds no cost beyond one pass.
+            values: dict[float, None] = {}
+            for text in texts:
+                found, rest = _dates_and_rest(text[:GIVEN_CHARACTERS])
+                days.extend(found[:CALENDAR_DATES])
+                for value in read(rest):
+                    if len(values) >= limit:
+                        break
+                    values.setdefault(value)
+            return list(values)
+
+        numbers = first(list(reversed(given)), BASE_VALUES, _values)
+        tool = first(results, TOOL_VALUES, _machine_values)
+        base = list(dict.fromkeys([*numbers, *tool]))[:BASE_VALUES]
+        if today:
+            days += _dates_and_rest(today)[0]
+        derived = {
+            value
+            for index, first in enumerate(base)
+            for second in base[index + 1 :]
+            for value in _operations(first, second)
+        }
+        exact = sorted(set(tool) | derived | _calendar_spans(days))
+        return cls(base, exact)
+
+    def _answer_values(self, answer: str) -> list[float]:
+        """Second step values of one answer: its correct written calculations,
+        and operations between its computed numbers and the given ones."""
+        if (cached := self.answers.get(answer)) is not None:
+            return cached
+        from services.orchestrator import number_provenance as provenance
+
+        body = answer.split("<details>", 1)[0]
+        extra: set[float] = set()
+        # "21 / 84 × 100 = **25 %**": the emphasis is no part of the calculation.
+        text = provenance.scanned(re.sub(r"\*\*|__", "", body))
+        for begin, end in provenance.calculations(text):
+            written = text[begin:end]
+            sides = re.split(r"\s*(?:=|≈|~)\s*", written)
+            if len(sides) < 2 or not re.search(provenance.OPERATOR, sides[0][1:]):
+                continue
+            left = sides[0]
+            # "(120 × 0,85 = 102)": the bracket opened before the calculation
+            # closes after its result.
+            for _ in range(left.count("(") - left.count(")")):
+                left = left.replace("(", " ", 1)
+            result = provenance.evaluate(left)
+            stated = list(provenance.NUMBER.finditer(sides[-1]))
+            if result is None or not stated:
+                continue
+            value = provenance.number(stated[-1][0])
+            tolerance = Decimal("0.01") if re.search("[≈~]", written) else Decimal(0)
+            if value is None or not provenance.matches(
+                value, provenance.places(stated[-1][0]), result, tolerance
+            ):
+                continue
+            # A correct calculation: its result and its constants are computed.
+            extra.add(float(result))
+            for token in provenance.NUMBER.finditer(written):
+                constant = provenance.number(token[0])
+                if constant is not None and float(constant) in CALCULATION_CONSTANTS:
+                    extra.add(float(constant))
+        held = [
+            value
+            for match in NUMBER.finditer(body)
+            if (parsed := _number_value(match[0])) is not None
+            for value in (parsed[0],)
+            if _within(self.exact, value, parsed[1] or 1.0)
+        ]
+        held = list(dict.fromkeys([*extra, *held]))[:BASE_VALUES]
+        extra |= {
+            value
+            for first in held
+            for second in self.base
+            for value in _operations(first, second)
+        }
+        values = sorted(extra)
+        if len(self.answers) < 8:
+            self.answers[answer] = values
+        return values
+
+    def holds(self, detail: Detail, answer: str) -> bool:
+        if detail.kind != "number":
+            return False
+        parsed = _number_value(detail.text)
+        if parsed is None:
+            return False
+        value, precision = parsed
+        unit = precision or 1.0
+        candidates = [value, value / 100] if "%" in detail.text else [value]
+        for candidate in candidates:
+            step = unit / 100 if candidate != value else unit
+            if _within(self.exact, candidate, step) or _within(
+                self._answer_values(answer), candidate, step
+            ):
+                return True
+        if value == int(value) and int(value) in CALENDAR_CONSTANTS:
+            sentence = normalized(answer[detail.start : detail.end])
+            return bool(re.search(rf"(?:^| ){int(value)} {PERIODS}\b", sentence))
+        return False
 
 
 def excerpts(answer: str, details: list[Detail], passages: list[str]) -> str:
@@ -726,7 +1022,7 @@ async def _revise(
         report.revised = "failed:format"
         return None
     revised = body
-    for number, (start, end, _) in reversed(list(enumerate(targets, start=1))):
+    for number, (start, end, texts) in reversed(list(enumerate(targets, start=1))):
         new = edits.get(str(number))
         if not isinstance(new, str):
             continue
@@ -734,6 +1030,10 @@ async def _revise(
         lead = original[: len(original) - len(original.lstrip())]
         trail = original[len(original.rstrip()) :]
         new = new.strip()
+        if hollow(original, new, texts):
+            # A detail cut out of a sentence that still announces it ("There are
+            # **days** between..."): the sentence goes as a whole.
+            new = ""
         if not new:
             # The whole sentence goes; a line it filled goes with its line break.
             line_start = body.rfind("\n", 0, start) + 1
@@ -747,6 +1047,30 @@ async def _revise(
             continue
         revised = revised[:start] + lead + new + trail + revised[end:]
     return revised
+
+
+EMPTY_EMPHASIS = re.compile(r"\*\*\s*+\*\*|__\s*+__|\(\s*+\)|\[\s*+\]")
+
+
+def hollow(original: str, new: str, removed: list[str]) -> bool:
+    """A sentence whose details were only cut out, the words around them kept.
+
+    "There are **261** days between..." returned as "There are **days**
+    between..." reads as an answer with its result missing (staging
+    2026-11-20). A sentence rewritten around the removal, or emptied, is not
+    hollow; an emphasis or a bracket left empty always is. Only quantities
+    count: a name dropped from a list leaves a list, a number dropped from its
+    sentence leaves a hole.
+    """
+    if not new.strip():
+        return False
+    if EMPTY_EMPHASIS.search(new) and not EMPTY_EMPHASIS.search(original):
+        return True
+    rest = original
+    for text in sorted(removed, key=len, reverse=True):
+        if any(character.isdigit() for character in text):
+            rest = rest.replace(text, " ")
+    return rest != original and normalized(rest) == normalized(new)
 
 
 LINK = re.compile(r"https?://[^\s)>\]]++|\]\([^)\s]++\)")
@@ -956,6 +1280,26 @@ async def references(
     return []
 
 
+def about_subject(url: str, question: str, answer: str) -> bool:
+    """An encyclopedia article whose title names something the question or the
+    answer names. A search on a computation's words reached "2026 Iran war" for
+    a count of days and "Stade de Penvillers" for a percentage (staging
+    2026-11-20): a number such a page happens to hold supports nothing. One
+    title word is enough, so the counterpart in another edition ("Bank of
+    France" for "Banque de France") still counts."""
+    match = WIKI_URL.match(url)
+    if match is None:
+        return True
+    title = re.sub(r"\([^)]*\)", " ", unquote(match[2]).replace("_", " "))
+    words = {
+        word
+        for word in normalized(title).split()
+        if word not in STOP_WORDS and word not in CONNECTORS and not word.isdigit()
+    }
+    named = set(normalized(question + " " + answer.split("<details>", 1)[0]).split())
+    return bool(words & named)
+
+
 def with_sources(answer: str, urls: list[str]) -> str:
     """The articles read for the check join the list of consulted sources."""
     closing = answer.rfind("\n</details>")
@@ -976,27 +1320,57 @@ async def review(
     urls: list[str] | None = None,
     setting: str | None = None,
     reference: bool = True,
+    computed: list[str] | None = None,
+    given: list[str] | None = None,
 ) -> tuple[str, Report]:
-    """Apply the configured treatment to an answer's unsupported precise details."""
+    """Apply the configured treatment to an answer's unsupported precise details.
+
+    ``computed``: the results of the turn's computation tools (COMPUTATION_TOOLS),
+    as text; ``given``: the person's own messages, whose numbers and dates the
+    answer may compute with (default: ``own_texts``).
+    """
     started = time.monotonic()
     report = Report(mode=setting or mode())
     if report.mode == "off" or not answer.strip():
         return answer, report
     # Today's date is known to the answer (a "consulted on" date is no invention).
-    own = Evidence.of([*own_texts, time.strftime("%Y-%m-%d")])
+    today = time.strftime("%Y-%m-%d")
+    results = list(computed or [])
+    own = Evidence.of([*own_texts, *results, today])
+    worked = Computed.of(own_texts if given is None else given, results, today)
     evidence = Evidence.of(passages)
     report.details = len(extract(answer))
-    found = unsupported(answer, evidence, own) if passages else extract(answer)
+    # Without a retrieved text, what the person said and what the turn computed
+    # still hold their details: only the others are looked up (a date the
+    # question gave once counted as found in an unrelated article, which then
+    # joined the sources, staging 2026-11-20).
+    found = unsupported(answer, evidence, own, worked)
     if found and reference:
-        articles = await references(question, language, urls or [], passages)
+        articles = [
+            (url, text)
+            for url, text in await references(question, language, urls or [], passages)
+            if about_subject(url, question, answer)
+        ]
         if articles:
             passages = [*passages, *(text for _, text in articles)]
             evidence = Evidence.of(passages)
-            checked = unsupported(answer, evidence, own)
+            checked = unsupported(answer, evidence, own, worked)
             report.referenced = len(found) - len(checked)
             if report.referenced:
-                report.reference_urls = [url for url, _ in articles]
-                report.reference_texts = [text for _, text in articles]
+                # Only the articles that hold one of the details they supported
+                # join the consulted sources.
+                kept = {detail.key for detail in checked}
+                referenced = [d for d in found if d.key not in kept]
+                holding = [
+                    (url, text)
+                    for url, text in articles
+                    if any(
+                        supported(d, Evidence.of([text]), Evidence())
+                        for d in referenced
+                    )
+                ]
+                report.reference_urls = [url for url, _ in holding]
+                report.reference_texts = [text for _, text in holding]
             found = checked
     if not passages:
         report.revised = "skipped:no_source"
@@ -1016,7 +1390,7 @@ async def review(
             body.rstrip(), found, passages, profile, language, report
         )
         if revised is not None:
-            after = unsupported(revised, evidence, own)
+            after = unsupported(revised, evidence, own, worked)
             reason = acceptable(body, revised, found, after)
             if reason:
                 report.revised = "rejected:" + reason
