@@ -38,6 +38,8 @@ from typing import Any, Literal
 
 log = logging.getLogger(__name__)
 
+# The check script, services/orchestrator/app_render_worker.py: passed as
+# source to the container (or the host interpreter), never imported.
 WORKER = Path(__file__).with_name("app_render_worker.py")
 DEFAULT_IMAGE = "atlas-app-render:local"
 # Whole check, browser start included (measured on the build VM: 2.2 to 2.8 s
