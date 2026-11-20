@@ -89,11 +89,19 @@ def reopened(raw: bytes, suffix: str) -> str:
     if suffix == ".pdf":
         return "\n".join(page.extract_text() for page in PdfReader(BytesIO(raw)).pages)
     if suffix == ".pptx":
+        # Speaker notes are read with their slide.
         return "\n".join(
-            shape.text_frame.text
-            for slide in Presentation(BytesIO(raw)).slides
-            for shape in slide.shapes
-            if shape.has_text_frame
+            [
+                shape.text_frame.text
+                for slide in Presentation(BytesIO(raw)).slides
+                for shape in slide.shapes
+                if shape.has_text_frame
+            ]
+            + [
+                slide.notes_slide.notes_text_frame.text
+                for slide in Presentation(BytesIO(raw)).slides
+                if slide.has_notes_slide
+            ]
         )
     book = load_workbook(BytesIO(raw))
     try:

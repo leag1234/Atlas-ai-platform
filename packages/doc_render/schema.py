@@ -95,18 +95,68 @@ class Table(ContentModel):
         return any(cell.startswith("=") for row in self.rows for cell in row)
 
 
+Short = Annotated[
+    str,
+    StringConstraints(strict=True, min_length=1, max_length=120),
+    AfterValidator(font_spaces),
+]
+
+
+class Metric(ContentModel):
+    """A key number shown large: "12 400 €" over "validated budget"."""
+
+    value: Short = Field(description="the number as it should read, e.g. 12 400 €")
+    label: Short = Field(description="what the number measures, a few words")
+
+
+class Chart(ContentModel):
+    """A simple bar chart drawn by code from the numbers given, never invented."""
+
+    title: Short | None = None
+    labels: tuple[Short, ...] = Field(min_length=2, max_length=12)
+    values: tuple[float, ...] = Field(min_length=2, max_length=12)
+    unit: Annotated[str, StringConstraints(strict=True, max_length=20)] = ""
+
+    @model_validator(mode="after")
+    def paired(self) -> Self:
+        if len(self.labels) != len(self.values):
+            raise ValueError("chart_labels_values_mismatch")
+        if any(value != value or abs(value) > 1e15 for value in self.values):
+            raise ValueError("chart_value_invalid")
+        return self
+
+    def texts(self) -> tuple[str, ...]:
+        return (*((self.title,) if self.title else ()), *self.labels)
+
+
 class Section(ContentModel):
     heading: Text
     paragraphs: tuple[Text, ...] = Field(default=(), max_length=50)
     bullets: tuple[Text, ...] = Field(default=(), max_length=50)
     tables: tuple[Table, ...] = Field(default=(), max_length=10)
     images: tuple[Text, ...] = Field(default=(), max_length=5)
+    # Slide-only parts. A deck shows notes as speaker notes, metrics as
+    # number callouts and a chart as a native chart; the formats laid out on
+    # pages receive them as paragraphs and tables (Content.flattened).
+    notes: tuple[Text, ...] = Field(default=(), max_length=5)
+    metrics: tuple[Metric, ...] = Field(default=(), max_length=4)
+    chart: Chart | None = None
 
     @model_validator(mode="after")
     def substantive(self) -> Self:
-        if not (self.paragraphs or self.bullets or self.tables or self.images):
+        if not (
+            self.paragraphs
+            or self.bullets
+            or self.tables
+            or self.images
+            or self.metrics
+            or self.chart
+        ):
             raise ValueError("section_body_required")
         return self
+
+    def slide_only(self) -> bool:
+        return bool(self.notes or self.metrics or self.chart)
 
 
 class Content(ContentModel):
@@ -135,6 +185,7 @@ class Content(ContentModel):
             result.extend(
                 map(shown, (section.heading, *section.paragraphs, *section.bullets))
             )
+            result.extend(map(shown, slide_texts(section)))
             for table in section.tables:
                 for row in table.read():
                     result.extend(
@@ -151,10 +202,46 @@ class Content(ContentModel):
         result = [self.title]
         for section in self.sections:
             result.extend((section.heading, *section.paragraphs, *section.bullets))
+            result.extend(slide_texts(section))
             for table in section.tables:
                 result.extend(filter(None, table.headers))
                 result.extend(cell for row in table.rows for cell in row if cell)
         return tuple(result)
+
+    def flattened(self) -> "Content":
+        """The content for a format laid out on pages: slide-only parts as text.
+
+        Speaker notes become paragraphs, metrics a two-column table and a
+        chart the table of its numbers: nothing written for a deck is lost
+        in a DOCX, a PDF or a workbook.
+        """
+        if not any(section.slide_only() for section in self.sections):
+            return self
+        value = self.model_dump(mode="json")
+        for section, data in zip(self.sections, value["sections"], strict=True):
+            data["paragraphs"] = [*data["paragraphs"], *data.pop("notes")]
+            data["bullets"] = [
+                *data["bullets"],
+                *(f"{m.label}: {m.value}" for m in section.metrics),
+            ][:50]
+            tables = list(data["tables"])
+            if section.chart is not None:
+                chart = section.chart
+                tables.append(
+                    dict(
+                        headers=[chart.title or section.heading, chart.unit],
+                        rows=[
+                            [label, number_text(number)]
+                            for label, number in zip(
+                                chart.labels, chart.values, strict=True
+                            )
+                        ],
+                    )
+                )
+            data.pop("metrics")
+            data.pop("chart")
+            data["tables"] = tables[:10]
+        return Content.model_validate(value)
 
     def repeats_title(self) -> bool:
         """Whether the first heading says the title again.
@@ -168,19 +255,55 @@ class Content(ContentModel):
         )
 
 
+def slide_texts(section: Section) -> tuple[str, ...]:
+    """The written texts of a section's slide-only parts, in reading order."""
+    metrics = tuple(text for m in section.metrics for text in (m.value, m.label))
+    chart = section.chart.texts() if section.chart else ()
+    return (*metrics, *chart, *section.notes)
+
+
+def number_text(value: float) -> str:
+    """A chart value as a cell: 12.0 reads 12, 12.5 reads 12.5."""
+    return str(int(value)) if float(value).is_integer() else repr(float(value))
+
+
 class PresentationSlide(ContentModel):
     """The bounded model-facing contract for a single presentation slide."""
 
     title: Text
-    bullets: tuple[Text, ...] = Field(min_length=1, max_length=8)
-    notes: Text | None = None
+    bullets: tuple[Text, ...] = Field(
+        default=(),
+        max_length=8,
+        description="short lines, one idea each; a 'Label: text' line shows its label in bold",
+    )
+    notes: Text | None = Field(
+        default=None,
+        description="speaker notes: what the presenter says, not shown on the slide",
+    )
     table: Table | None = None
+    metrics: tuple[Metric, ...] = Field(
+        default=(),
+        max_length=4,
+        description="2 to 4 key numbers shown large, only numbers given or read",
+    )
+    chart: Chart | None = Field(
+        default=None,
+        description="a bar chart of numbers given or read, never invented",
+    )
     # Pictures drawn for the deck (make_pictures references), shown on the slide.
     images: tuple[Text, ...] = Field(
         default=(),
         max_length=2,
         description="references returned by make_pictures, shown on this slide",
     )
+
+    @model_validator(mode="after")
+    def substantive(self) -> Self:
+        if not (
+            self.bullets or self.table or self.metrics or self.chart or self.images
+        ):
+            raise ValueError("section_body_required")
+        return self
 
 
 class PresentationOutline(ContentModel):
@@ -195,10 +318,12 @@ class PresentationOutline(ContentModel):
             sections=tuple(
                 Section(
                     heading=slide.title,
-                    paragraphs=(slide.notes,) if slide.notes else (),
                     bullets=slide.bullets,
                     tables=(slide.table,) if slide.table else (),
                     images=slide.images,
+                    notes=(slide.notes,) if slide.notes else (),
+                    metrics=slide.metrics,
+                    chart=slide.chart,
                 )
                 for slide in self.slides
             ),

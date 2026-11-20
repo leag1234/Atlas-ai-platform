@@ -18,8 +18,6 @@ from openpyxl import Workbook
 from openpyxl.drawing.image import Image as SheetImage
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
-from pptx import Presentation
-from pptx.util import Pt
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen.canvas import Canvas
@@ -38,10 +36,7 @@ from .layout import (
     Geometry,
     report_geometry,
     FONT,
-    HEIGHT,
-    MARGIN,
     SLIDE,
-    WIDTH,
     image_path,
     pages,
     table_type,
@@ -77,72 +72,10 @@ def normalize_zip(path: Path) -> None:
 
 
 def build_slides(content: Content, path: Path, root: Path) -> None:
-    deck = Presentation()
-    deck.slide_width, deck.slide_height = Pt(WIDTH), Pt(HEIGHT)
-    deck.core_properties.title = shown(content.title)
-    for page in pages(content, root):
-        slide = deck.slides.add_slide(deck.slide_layouts[6])
-        for placed in page:
-            block, top = placed.block, placed.top
-            if block.image:
-                slide.shapes.add_picture(
-                    str(block.image),
-                    Pt(MARGIN),
-                    Pt(top),
-                    width=Pt(block.width),
-                    height=Pt(block.height - 8),
-                )
-                continue
-            if block.table:
-                table = slide.shapes.add_table(
-                    1,
-                    len(block.lines),
-                    Pt(MARGIN),
-                    Pt(top),
-                    Pt(block.width),
-                    Pt(block.height),
-                ).table
-                for col, lines in enumerate(block.lines):
-                    cell = table.cell(0, col)
-                    cell.text = "\n".join(lines)
-                    cell.margin_left = cell.margin_right = Pt(block.pad)
-                    cell.margin_top = cell.margin_bottom = Pt(3)
-                    for paragraph in cell.text_frame.paragraphs:
-                        paragraph.font.name = "Bitstream Vera Sans"
-                        paragraph.font.size = Pt(block.size)
-                        paragraph.line_spacing = Pt(block.leading)
-            else:
-                indent = 16 if block.bullet else 0
-                box = slide.shapes.add_textbox(
-                    Pt(MARGIN + indent),
-                    Pt(top),
-                    Pt(block.width - indent),
-                    Pt(block.height),
-                )
-                frame = box.text_frame
-                frame.margin_left = frame.margin_right = Pt(0)
-                frame.margin_top = frame.margin_bottom = Pt(0)
-                frame.word_wrap = False
-                for index, line in enumerate(block.lines[0]):
-                    paragraph = (
-                        frame.paragraphs[0] if index == 0 else frame.add_paragraph()
-                    )
-                    paragraph.text = line
-                    paragraph.font.name = "Bitstream Vera Sans"
-                    paragraph.font.size = Pt(block.size)
-                    paragraph.line_spacing = Pt(block.size * 1.35)
-                    paragraph.space_after = Pt(0)
-                if block.bullet:
-                    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+    """A themed deck (deck.py): layouts follow from what each slide holds."""
+    from .deck import build_deck
 
-                    slide.shapes.add_shape(
-                        MSO_AUTO_SHAPE_TYPE.OVAL,
-                        Pt(MARGIN + 3),
-                        Pt(top + 5),
-                        Pt(4),
-                        Pt(4),
-                    )
-    deck.save(str(path))
+    build_deck(content, path, root)
 
 
 def draw_line(canvas: Canvas, x: float, y: float, line: str, size: float) -> None:
@@ -404,6 +337,9 @@ def render(
     With slides, a PDF has one slide-size page per slide, as the PPTX deck.
     """
     content = Content.model_validate(content.model_dump())
+    if path.suffix != ".pptx":
+        # Speaker notes, key numbers and charts are text and tables on pages.
+        content = content.flattened()
     if path.suffix == ".xlsx":
         from .spreadsheet import bind_summaries
 

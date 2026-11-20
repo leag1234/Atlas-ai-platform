@@ -23,12 +23,38 @@ from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.terminal_client import TerminalClient
 
 
-OUTLINE_INSTRUCTION = """
+# What code does with an outline and what the genre expects: the model
+# decides the content, code the layout and the theme (deck.py).
+DECK_GUIDANCE = (
+    "Code lays out each slide from what it holds: a first slide with one to three"
+    " short lines is the cover, a short last slide the closing slide, one line "
+    "alone a statement, two to four bullets cards, metrics (two to four key "
+    "numbers, each a value and a label) number callouts, chart (labels and "
+    "values) a bar chart, notes speaker notes. Write short bullets, one idea "
+    "each; a bullet written 'Label: text' shows its label in bold. Follow what "
+    "the kind of deck expects, within the slide count asked: an investor pitch "
+    "covers problem, solution, product, market, business model, traction, team, "
+    "competition, roadmap and the ask; a course objectives, notions, examples, an"
+    " exercise and a summary; a status report progress, key numbers, risks and "
+    "next steps; a launch the audience, offer, benefits, price, date and call to "
+    "action. A fact (a number, name, date, status or result) not given in the "
+    "request nor read in a page "
+    "or file of this conversation is never invented: write that it is unknown or "
+    "to be confirmed."
+)
+
+OUTLINE_INSTRUCTION = (
+    """
 For this PPTX request, return ONLY a JSON object with this exact shape:
-{"title":"...","slides":[{"title":"...","bullets":["..."],"notes":"...","table":{"headers":["..."],"rows":[["..."]]}]}
-`notes` and `table` are optional. Include no Markdown, code, tool calls, file claims,
-or extra keys. Write all user-visible text in the request language.
+{"title":"...","slides":[{"title":"...","bullets":["..."],"notes":"...","table":{"headers":["..."],"rows":[["..."]]},"metrics":[{"value":"...","label":"..."}],"chart":{"title":"...","labels":["..."],"values":[0],"unit":"..."}}]}
+`bullets`, `notes`, `table`, `metrics` and `chart` are optional; a slide holds at
+least bullets, a table, metrics or a chart. Include no Markdown, code, tool calls, file
+claims, or extra keys. Write all user-visible text in the request language.
 """
+    + "\n"
+    + DECK_GUIDANCE
+    + "\n"
+)
 
 
 def requested_topic_words(question: str) -> set[str]:
@@ -188,7 +214,8 @@ async def deliver_presentation(
                     expected_count=len(outline.slides),
                     require_pagination=True,
                 )
-                if verified.count != len(outline.slides) or any(
+                # A long slide continues on the next one: never fewer slides.
+                if verified.count < len(outline.slides) or any(
                     not slide.strip() for slide in verified.text
                 ):
                     raise ValueError("presentation_verification_failed")
