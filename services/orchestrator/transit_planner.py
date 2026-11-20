@@ -410,9 +410,176 @@ def label(match: dict[str, Any]) -> str:
     return f"{name} ({area})" if area and area.lower() not in name.lower() else name
 
 
-def choose(matches: list[dict[str, Any]], *, biased: bool) -> dict[str, Any]:
+# Words that name a transport place, by kind (folded: lower case, no
+# accents), in the languages people ask in. A destination named "aeroport de
+# Geneve" is the airport's station, never the town around it.
+_TRANSPORT_WORDS: dict[str, frozenset[str]] = {
+    "airport": frozenset(
+        "airport airports aeroport aeroports aeropuerto aeroporto aeroportul "
+        "flughafen luchthaven lotnisko letiste letisko flygplats lufthavn "
+        "lentoasema repuloter havalimani aerodrome aerodromo airfield".split()
+    ),
+    "station": frozenset(
+        "station stations gare gares bahnhof hauptbahnhof hbf estacion estacao "
+        "stazione stacja stanice stanica statie spoorwegstation banegard "
+        "jarnvagsstation rautatieasema railway metro subway underground ubahn "
+        "sbahn".split()
+    ),
+    "bus": frozenset(
+        "routiere busbahnhof zob autostazione autobuses autobus rodoviaria bus "
+        "buses coach autocars".split()
+    ),
+    # Not "porto" nor "puerto": they name cities (Porto, Puerto Madryn).
+    "port": frozenset(
+        "port hafen harbour harbor ferry ferries pier wharf maritime "
+        "embarcadero".split()
+    ),
+    # A terminal is any of them (an airport's, a ferry's, a coach's).
+    "terminal": frozenset("terminal terminals terminus".split()),
+}
+# The same in scripts written without spaces (Kyoto's station is "京都駅").
+_TRANSPORT_MARKS = {
+    "\u7a7a\u6e2f": "airport",  # 空港
+    "\u673a\u573a": "airport",  # 机场
+    "\u6a5f\u5834": "airport",  # 機場
+    "\uacf5\ud56d": "airport",  # 공항
+    "\u99c5": "station",  # 駅
+    "\u7ad9": "station",  # 站
+}
+# The kinds of place a stop's modes serve.
+_MODE_KINDS = {
+    "AIRPLANE": "airport",
+    "RAIL": "station",
+    "HIGHSPEED_RAIL": "station",
+    "LONG_DISTANCE": "station",
+    "NIGHT_RAIL": "station",
+    "REGIONAL_RAIL": "station",
+    "REGIONAL_FAST_RAIL": "station",
+    "SUBURBAN": "station",
+    "SUBWAY": "station",
+    "METRO": "station",
+    "BUS": "bus",
+    "COACH": "bus",
+    "FERRY": "port",
+}
+# Geocoder categories of a town, an area or a district (MOTIS gives OSM
+# place kinds: "town", "place_capital_8").
+_AREA_CATEGORIES = frozenset(
+    "city town village hamlet suburb neighbourhood neighborhood quarter "
+    "borough locality municipality county state province region country "
+    "district island isolated_dwelling administrative boundary".split()
+)
+# How far from the first match a stop of the named place may lie; an
+# airport lies outside the town it is named after (Munich's, 28 km).
+NAMED_STOP_KM = 10.0
+NAMED_AIRPORT_KM = 40.0
+
+
+def _transport_kinds(name: str) -> set[str]:
+    """The kinds of transport place a name names (an airport, a station...)."""
+    folded = _folded(name)
+    words = set(folded.split())
+    kinds = {kind for kind, marks in _TRANSPORT_WORDS.items() if words & marks}
+    kinds |= {kind for mark, kind in _TRANSPORT_MARKS.items() if mark in folded}
+    if "bus" in kinds:
+        # "gare routiere", "bus station": the bus station, not the railway's.
+        kinds.discard("station")
+    return kinds
+
+
+def _name_words(name: str) -> set[str]:
+    """The words of a name that say which place it is: no transport word."""
+    folded = _folded(name)
+    for mark in _TRANSPORT_MARKS:
+        folded = folded.replace(mark, " ")
+    every = set().union(*_TRANSPORT_WORDS.values())
+    # Three letters or more, as in place_words; a word of another script
+    # ("京都") may be shorter.
+    return {
+        w
+        for w in folded.split()
+        if (len(w) >= 3 or not w.isascii()) and w not in every and w not in _GENERIC
+    }
+
+
+def _same_word(a: str, b: str) -> bool:
+    # "Geneva" and "Geneve": the same name in two languages.
+    return a == b or (len(a) == len(b) >= 5 and a[:-1] == b[:-1])
+
+
+def _town_or_address(match: dict[str, Any]) -> bool:
+    if match.get("type") == "ADDRESS":
+        return True
+    category = str(match.get("category") or "").casefold()
+    return match.get("type") == "PLACE" and (
+        category in _AREA_CATEGORIES or category.startswith("place_")
+    )
+
+
+def named_stop(
+    named: str, matches: list[dict[str, Any]], *, flights: bool = False
+) -> dict[str, Any] | None:
+    """The stop of the transport place a name names, when the geocoder put a
+    town, an area or an address first; None to keep the first match.
+
+    Staging -135: "Aeroport de Geneve (GVA), Le Grand-Saconnex, Suisse" put
+    the town Le Grand-Saconnex first and the station Geneve-Aeroport fourth,
+    and the plans ended in the town. A stop among the results fetched stands
+    for the place when its name carries a transport word of the kind named
+    (or its modes serve that kind), every other word of its name is a word of
+    the name asked (any order, accents folded), and it lies within
+    NAMED_STOP_KM of the first match (NAMED_AIRPORT_KM for an airport). Of several, the one that covers the
+    most words of the name, then the geocoder's order.
+    """
+    if not matches or not _town_or_address(matches[0]):
+        return None
+    first = matches[0]
+    # A town whose own name holds the word ("Port Melbourne") is that town.
+    asked = _transport_kinds(named) - _transport_kinds(str(first.get("name") or ""))
+    wanted = _name_words(named)
+    if not asked or not wanted:
+        return None
+    found: list[tuple[int, bool, int, dict[str, Any]]] = []
+    for index, match in enumerate(matches[:5]):
+        if match.get("type") != "STOP" or not _served(match, flights):
+            continue
+        name = str(match.get("name") or "")
+        words = _name_words(name)
+        if not words or not all(any(_same_word(w, q) for q in wanted) for w in words):
+            continue
+        by_name = bool(asked & _transport_kinds(name)) or (
+            "terminal" in asked and bool(_transport_kinds(name))
+        )
+        modes = match.get("modes")
+        served = (
+            {_MODE_KINDS.get(str(m), "") for m in modes}
+            if isinstance(modes, list)
+            else set()
+        )
+        by_modes = bool(asked & served) or ("terminal" in asked and bool(served - {""}))
+        if not (by_name or by_modes):
+            continue
+        reach = NAMED_AIRPORT_KM if "airport" in asked else NAMED_STOP_KM
+        if _distance_km(_point(first), _point(match)) > reach:
+            continue
+        found.append((len(words), by_name, index, match))
+    if not found:
+        return None
+    found.sort(key=lambda row: (-row[0], not row[1], row[2]))
+    return found[0][3]
+
+
+def choose(
+    matches: list[dict[str, Any]],
+    *,
+    biased: bool,
+    named: str = "",
+    flights: bool = False,
+) -> dict[str, Any]:
     """The place a name stands for, or ``ambiguous_place`` when two equally good
-    matches lie far apart (West 33rd Street in Brooklyn and in Manhattan)."""
+    matches lie far apart (West 33rd Street in Brooklyn and in Manhattan). The
+    station or airport a name names stands for it over the town around it
+    (``named_stop``)."""
     if not matches:
         raise TransitError("place_not_found")
     first = matches[0]
@@ -433,7 +600,8 @@ def choose(matches: list[dict[str, Any]], *, biased: bool) -> dict[str, Any]:
                 raise TransitError(
                     "ambiguous_place", "; ".join(label(m) for m in matches[:3])
                 )
-    return first
+    stop = named_stop(named, matches, flights=flights) if named else None
+    return stop or first
 
 
 def zone_at(latitude: float, longitude: float) -> str:
@@ -1303,6 +1471,17 @@ def _point(match: dict[str, Any]) -> tuple[float, float]:
     return float(match["lat"]), float(match["lon"])
 
 
+def _end(
+    chosen: dict[str, Any], matches: list[dict[str, Any]]
+) -> tuple[float, float] | str:
+    """A plan end: the stop id of the station or airport the person named when
+    it stood for the town the geocoder put first (the planner then counts the
+    station's platforms and its stops, as for a snapped end), else the point."""
+    if matches and chosen is not matches[0] and chosen.get("id"):
+        return str(chosen["id"])
+    return _point(chosen)
+
+
 async def compute(
     request: TransitPlan,
     *,
@@ -1319,14 +1498,18 @@ async def compute(
     client = client or Client(config)
     w = words(language)
     origin_match: dict[str, Any] | None = None
+    origins: list[dict[str, Any]] = []
     if request.from_device_position and position is not None:
         start = position
         origin_label = w["position"]
         origin_zone = home_zone
     elif request.origin:
+        origins = await client.geocode(request.origin, language, position)
         found = origin_match = choose(
-            await client.geocode(request.origin, language, position),
+            origins,
             biased=position is not None,
+            named=request.origin,
+            flights=request.flights,
         )
         start, origin_label, origin_zone = (
             _point(found),
@@ -1338,8 +1521,12 @@ async def compute(
     origin_kind = (
         str(origin_match.get("type") or "") if origin_match is not None else "POSITION"
     )
+    destinations = await client.geocode(request.destination, language, start)
     target = choose(
-        await client.geocode(request.destination, language, start), biased=False
+        destinations,
+        biased=False,
+        named=request.destination,
+        flights=request.flights,
     )
     zone = zone_of(target.get("tz"), origin_zone or home_zone)
     deadline = local_time(request.arrive_by, zone, now, days)
@@ -1347,8 +1534,8 @@ async def compute(
     when = deadline or leave or now.astimezone(zone)
     flights = request.flights
     ends: tuple[tuple[float, float] | str, tuple[float, float] | str] = (
-        start,
-        _point(target),
+        _end(origin_match, origins) if origin_match is not None else start,
+        _end(target, destinations),
     )
     response = await client.plan(
         *ends,
