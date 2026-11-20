@@ -107,14 +107,15 @@ WORDING: dict[str, dict[str, str]] = {
         "es": "Esta vez no se pudo redactar la respuesta: el modelo no devolvió un texto utilizable.",
         "it": "Questa volta non è stato possibile scrivere la risposta: il modello non ha restituito un testo utilizzabile.",
     },
-    # The pages about this trip, as links: never their raw snippets (staging
-    # -110: a list of snippets, some in another language than the answer).
+    # What the pages about this trip say of its times, quoted with their page
+    # (staging -141: "the pages read give its timetable: ..." quoted none of
+    # it); never a list of raw snippets (staging -110).
     "pages": {
-        "en": "The pages read about this trip give its timetable: {links}. Check the times for your day there.",
-        "fr": "Les pages consultées sur ce trajet en donnent les horaires : {links}. Vérifiez-y les horaires de votre jour.",
-        "de": "Die gelesenen Seiten zu dieser Reise geben ihren Fahrplan an: {links}. Prüfen Sie dort die Zeiten Ihres Tages.",
-        "es": "Las páginas consultadas sobre este viaje dan sus horarios: {links}. Compruebe allí los horarios de su día.",
-        "it": "Le pagine consultate su questo viaggio ne danno gli orari: {links}. Controlli lì gli orari del suo giorno.",
+        "en": "The pages read about this trip say: {quotes}. Check the times for your day there.",
+        "fr": "Les pages consultées sur ce trajet indiquent : {quotes}. Vérifiez-y les horaires de votre jour.",
+        "de": "Die gelesenen Seiten zu dieser Reise geben an: {quotes}. Prüfen Sie dort die Zeiten Ihres Tages.",
+        "es": "Las páginas consultadas sobre este viaje indican: {quotes}. Compruebe allí los horarios de su día.",
+        "it": "Le pagine consultate su questo viaggio indicano: {quotes}. Controlli lì gli orari del suo giorno.",
     },
     "planner": {
         "en": "Check the full journey and the times for your day in the operator’s journey planner.",
@@ -198,6 +199,8 @@ class Excerpt:
     # Its page names two places of the trip (or the most any page names):
     # only such excerpts are listed to the person by code.
     about: bool = True
+    # The sentence itself names a place of the trip.
+    named: bool = False
 
 
 # Words that say when or how, not where: they do not tie a page to the trip.
@@ -444,7 +447,8 @@ def excerpts(
                     + routed
                     - (3 if day else 0)
                 )
-                scored.append((-score, len(scored), Excerpt(url, sentence, day, about)))
+                excerpt = Excerpt(url, sentence, day, about, bool(wanted & words))
+                scored.append((-score, len(scored), excerpt))
     chosen: list[Excerpt] = []
     used = 0
     for _, _, excerpt in sorted(scored, key=lambda item: item[:2]):
@@ -458,7 +462,7 @@ def excerpts(
 def _trip_day(turn: travel_claims.Turn) -> str:
     days = turn.trip_dates()
     if not days:
-        return f"(not named; today is {date.today().isoformat()})"
+        return f"(not named; today is {turn.today()})"
     return ", ".join(
         f"{day} ({date.fromisoformat(day).strftime('%A')})" for day in days
     )
@@ -589,15 +593,58 @@ def rejected(
     return ""
 
 
-def _pointer(chosen: list[Excerpt], language: str) -> str:
-    """One sentence linking the pages about this trip, at most three."""
-    urls = list(dict.fromkeys(e.url for e in chosen if e.about and e.url))[:3]
-    if not urls:
-        return ""
-    links = ", ".join(
-        f"[{urlsplit(url).netloc.removeprefix('www.')}]({url})" for url in urls
+# Quotation marks of the interface languages.
+_QUOTE_MARKS = {"fr": ("« ", " »"), "de": ("„", "“")}
+POINTER_PAGES = 3
+POINTER_CHARACTERS = 240
+
+
+def _timetable(excerpt: Excerpt) -> bool:
+    """An excerpt that gives this trip's times: a sentence of a page about the
+    trip that names one of its places, a clock time and a line, a train or a
+    station; never a page of the journey planner (its plan is the answer's
+    block, not a page read) nor times of another day."""
+    from services.orchestrator import transit_planner
+
+    sentence = excerpt.sentence
+    return bool(
+        excerpt.about
+        and excerpt.named
+        and excerpt.url
+        and excerpt.url not in transit_planner.own_urls()
+        and not excerpt.day
+        and len(sentence) <= POINTER_CHARACTERS
+        and transit_planner._clocks(sentence)
+        and route_facts._TRANSIT.search(route_facts.fold(sentence))
     )
-    return _wording("pages", language).format(links=links)
+
+
+def _pointer(chosen: list[Excerpt], language: str) -> str:
+    """What the pages about this trip say of its times: one sentence quoted
+    from each, with its page, at most POINTER_PAGES; nothing when none gives
+    them.
+
+    Staging -141: "The pages read about this trip give its timetable:
+    transitous.org, gitesjura-lacheminee.com, tpg.ch" quoted no time, and
+    listed the journey planner's own page and a holiday cottage's contact page
+    (a page about the region, naming Geneva and Lyon for their airports). A
+    sentence about pages states what they say, or is not written.
+    """
+    opening, closing = _QUOTE_MARKS.get(language, ("\u201c", "\u201d"))
+    quotes: list[str] = []
+    pages: set[str] = set()
+    for excerpt in chosen:
+        if excerpt.url in pages or not _timetable(excerpt):
+            continue
+        pages.add(excerpt.url)
+        site = urlsplit(excerpt.url).netloc.removeprefix("www.")
+        text = excerpt.sentence.rstrip(" .;:")
+        quotes.append(f"{opening}{text}{closing} ([{site}]({excerpt.url}))")
+        if len(quotes) == POINTER_PAGES:
+            break
+    if not quotes:
+        return ""
+    return _wording("pages", language).format(quotes="; ".join(quotes))
 
 
 def _code_built(

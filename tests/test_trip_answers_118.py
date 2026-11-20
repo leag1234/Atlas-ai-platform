@@ -319,10 +319,16 @@ class AnotherPlaceTests(unittest.TestCase):
 
 class UncitedAnswerTests(unittest.TestCase):
     def test_an_answer_linking_no_page_gives_the_pages_about_the_trip(self) -> None:
-        chosen = [travel_rebuild.Excerpt(SNCF, "Trains de Lyon Part-Dieu à Genève.")]
+        # Staging -141: the pages are given with what they say of the times.
+        chosen = [
+            travel_rebuild.Excerpt(
+                SNCF, "Trains de Lyon Part-Dieu à Genève à 06:38 et 07:38.", named=True
+            )
+        ]
         text = "Pour la suite du trajet, vérifiez les horaires de l'opérateur."
         pointer = travel_rebuild._uncited(text, chosen, "fr")
         self.assertIn(f"[rail.example.test]({SNCF})", pointer)
+        self.assertIn("« Trains de Lyon Part-Dieu à Genève à 06:38 et 07:38 »", pointer)
         cited = f"Le train part de Lyon ([rail.example.test]({SNCF}))."
         self.assertEqual(travel_rebuild._uncited(cited, chosen, "fr"), "")
 
