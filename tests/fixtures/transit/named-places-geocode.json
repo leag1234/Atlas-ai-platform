@@ -1,0 +1,951 @@
+{
+ "recorded": "MOTIS 2 /api/v1/geocode answers (numResults 5), trimmed to the fields Atlas reads",
+ "geocodes": [
+  {
+   "trip": "lyon-geneva-staging-135",
+   "recorded": "2026-11-20 03:52 UTC, staging -135 planner cache (the model's destination for the battery's Geneva trip)",
+   "params": {
+    "text": "Aéroport de Genève (GVA), Le Grand-Saconnex, Suisse",
+    "numResults": "5",
+    "language": "fr",
+    "place": "45.7700,4.8800"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "Le Grand-Saconnex",
+     "id": "node/36650978",
+     "lat": 46.2363321,
+     "lon": 6.126532,
+     "tz": "Europe/Zurich",
+     "score": -5.133840560913086,
+     "category": "town",
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Grand-Saconnex, Le Nant",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92647",
+     "lat": 46.246517000000004,
+     "lon": 6.128558599999999,
+     "tz": "Europe/Zurich",
+     "score": -4.674840450286865,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Grand-Saconnex, Le Pommier",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92945",
+     "lat": 46.23037300000001,
+     "lon": 6.125108699999999,
+     "tz": "Europe/Zurich",
+     "score": -3.9248406887054443,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:1026",
+     "lat": 46.23253600000001,
+     "lon": 6.111984299999999,
+     "tz": "Europe/Zurich",
+     "score": -3.816960573196411,
+     "modes": [
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Grand-Saconnex, P+R",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92949",
+     "lat": 46.239610000000006,
+     "lon": 6.1233572999999994,
+     "tz": "Europe/Zurich",
+     "score": -2.6748406887054443,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "lyon-geneva",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "aéroport de Genève, Le Grand-Saconnex",
+    "numResults": "5",
+    "language": "fr",
+    "place": "45.7700,4.8800"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:1026",
+     "lat": 46.23253600000001,
+     "lon": 6.111984299999999,
+     "tz": "Europe/Zurich",
+     "score": -40.1404914855957,
+     "modes": [
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Geneve-Aeroport",
+     "id": "fr-horaires-sncf_FR::LMO:70e7d750-3a69-11e9-8417-bb1d8a705241:",
+     "lat": 46.231167,
+     "lon": 6.110252,
+     "tz": "Europe/Zurich",
+     "score": -37.85000228881836,
+     "modes": [
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Aéroport",
+     "id": "fr-reseau-interurbain-cars-region-haute-savoie-74_FR:6623:ZE:57862:HAUTExSAVOIE",
+     "lat": 46.230965000000005,
+     "lon": 6.109678300000001,
+     "tz": "Europe/Zurich",
+     "score": -37.35000228881836,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, Terminal",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92775",
+     "lat": 46.23082,
+     "lon": 6.1098914,
+     "tz": "Europe/Zurich",
+     "score": -35.85000228881836,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Genève-Aéroport, gare-Arena",
+     "id": "ch-opentransportdataswiss26_Parentch:1:sloid:92935",
+     "lat": 46.23321500000001,
+     "lon": 6.1122003,
+     "tz": "Europe/Zurich",
+     "score": -35.60000228881836,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Le Grand-Saconnex",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "caen-paris",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Gare de Lyon, Paris",
+    "numResults": "5",
+    "language": "fr",
+    "place": "49.2016,-0.3790"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Gare de Lyon",
+     "id": "fr-reseau-urbain-et-interurbain-dile-de-france-mobilites_IDFM:73626",
+     "lat": 48.84457,
+     "lon": 2.3751456999999996,
+     "tz": "Europe/Paris",
+     "score": -31.478084564208984,
+     "modes": [
+      "REGIONAL_RAIL",
+      "SUBWAY",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "PARIS GARE DE LYON",
+     "id": "ch-opentransportdataswiss26_Parent8768600",
+     "lat": 48.84483999999999,
+     "lon": 2.3740674999999998,
+     "tz": "Europe/Paris",
+     "score": -30.15257453918457,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE"
+     ],
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Paris Gare de Lyon Hall 1 - 2",
+     "id": "fr-horaires-sncf_FR::LMU:6451bcf0-cb0a-11e8-8bfa-f784c1c7c611:",
+     "lat": 48.844944999999996,
+     "lon": 2.373481,
+     "tz": "Europe/Paris",
+     "score": -29.157724380493164,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Paris Gare-de-Lyon",
+     "id": "node/251774784",
+     "lat": 48.8460989,
+     "lon": 2.3742452,
+     "tz": "Europe/Paris",
+     "score": -27.75,
+     "category": "post_office_14",
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Fnac Paris - Gare de Lyon",
+     "id": "way/366390614",
+     "lat": 48.8445763,
+     "lon": 2.3749268,
+     "tz": "Europe/Paris",
+     "score": -26.75,
+     "category": "books_16",
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "caen-paris-bare",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Gare de Lyon",
+    "numResults": "5",
+    "language": "fr",
+    "place": "49.2016,-0.3790"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Gare de Lyon",
+     "id": "fr-reseau-urbain-et-interurbain-dile-de-france-mobilites_IDFM:73626",
+     "lat": 48.84457,
+     "lon": 2.3751456999999996,
+     "tz": "Europe/Paris",
+     "score": -25.79500389099121,
+     "modes": [
+      "REGIONAL_RAIL",
+      "SUBWAY",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Gare de Lyon Part Dieu",
+     "id": "es-RENFE-Larga-Distancia-y-AVE_87303",
+     "lat": 45.76028,
+     "lon": 4.859801,
+     "tz": "Europe/Paris",
+     "score": -24.02886199951172,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Lyon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Gare de Lyon Perrache",
+     "id": "fr-horaires-sncf_FR::LMU:8d3fa4b0-cb0a-11e8-8bfa-f784c1c7c611:",
+     "lat": 45.74850800000001,
+     "lon": 4.8257769999999995,
+     "tz": "Europe/Paris",
+     "score": -23.679061889648438,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Lyon",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Paris-Gare-de-Lyon",
+     "id": "ch-opentransportdataswiss26_Parent8768600",
+     "lat": 48.84483999999999,
+     "lon": 2.3740674999999998,
+     "tz": "Europe/Paris",
+     "score": -23.15257453918457,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE"
+     ],
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Paris Gare de Lyon Hall 1 - 2",
+     "id": "fr-horaires-sncf_FR::LMU:6451bcf0-cb0a-11e8-8bfa-f784c1c7c611:",
+     "lat": 48.844944999999996,
+     "lon": 2.373481,
+     "tz": "Europe/Paris",
+     "score": -22.157724380493164,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Paris",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "munich-berlin",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Berlin Hauptbahnhof",
+    "numResults": "5",
+    "language": "en",
+    "place": "48.1500,11.5400"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Berlin Hauptbahnhof",
+     "id": "at-Railway-Current-Reference-Data-2026_de:11000:900003200:2:52",
+     "lat": 52.52499,
+     "lon": 13.369186000000003,
+     "tz": "Europe/Berlin",
+     "score": -30.997007369995117,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "COACH",
+      "NIGHT_RAIL",
+      "REGIONAL_RAIL",
+      "SUBURBAN",
+      "SUBWAY",
+      "TRAM",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Berlin",
+       "adminLevel": 4.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "A&O Berlin Hauptbahnhof",
+     "id": "way/423971811",
+     "lat": 52.5288704,
+     "lon": 13.3636863,
+     "tz": "Europe/Berlin",
+     "score": -25.25,
+     "category": "hostel_16",
+     "areas": [
+      {
+       "name": "Berlin",
+       "adminLevel": 4.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Ibis Berlin Hauptbahnhof",
+     "id": "way/237687064",
+     "lat": 52.5270751,
+     "lon": 13.370017,
+     "tz": "Europe/Berlin",
+     "score": -25.0,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Berlin",
+       "adminLevel": 4.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Motel One Berlin-Hauptbahnhof",
+     "id": "way/25557953",
+     "lat": 52.5258237,
+     "lon": 13.3660962,
+     "tz": "Europe/Berlin",
+     "score": -24.0,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Berlin",
+       "adminLevel": 4.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Parkhaus Berlin Hauptbahnhof",
+     "id": "way/169873605",
+     "lat": 52.524018,
+     "lon": 13.3685981,
+     "tz": "Europe/Berlin",
+     "score": -24.0,
+     "category": "parking_16",
+     "areas": [
+      {
+       "name": "Berlin",
+       "adminLevel": 4.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "new-york-boston",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Boston South Station",
+    "numResults": "5",
+    "language": "en",
+    "place": "40.7506,-73.9935"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Boston (South Station)",
+     "id": "us-flixbus_9b6bfd56-3ecb-11ea-8017-02437075395e",
+     "lat": 42.35046799999999,
+     "lon": -71.05618,
+     "tz": "America/New_York",
+     "score": -31.496400833129883,
+     "modes": [
+      "COACH",
+      "REGIONAL_RAIL",
+      "SUBWAY",
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Boston",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "South Boston Meter Station",
+     "id": "way/1235468455",
+     "lat": 36.7428671,
+     "lon": -78.9423286,
+     "tz": "America/New_York",
+     "score": -23.75,
+     "category": "none",
+     "areas": [
+      {
+       "name": "Halifax County",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "South Station Tower",
+     "id": "way/1253315804",
+     "lat": 42.351823,
+     "lon": -71.0550559,
+     "tz": "America/New_York",
+     "score": -23.385120391845703,
+     "category": "none",
+     "areas": [
+      {
+       "name": "Boston",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "South Kyme Pumping Station",
+     "id": "way/377017212",
+     "lat": 53.0058384,
+     "lon": -0.2020087,
+     "tz": "Europe/London",
+     "score": -21.25,
+     "category": "none",
+     "areas": [
+      {
+       "name": "Boston",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "ADDRESS",
+     "name": "South Station Connector",
+     "id": "",
+     "lat": 42.3488454,
+     "lon": -71.0602831,
+     "tz": "America/New_York",
+     "score": -19.885120391845703,
+     "areas": [
+      {
+       "name": "Boston",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "tokyo-kyoto",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Kyoto Station",
+    "numResults": "5",
+    "language": "en",
+    "place": "35.6812,139.7671"
+   },
+   "matches": [
+    {
+     "type": "STOP",
+     "name": "Kyoto Station Hachijo-Gate",
+     "id": "jp-kochi-seinan-kotsu-Seinan-Expressbus_35007_01",
+     "lat": 34.984187999999996,
+     "lon": 135.75928,
+     "tz": "Asia/Tokyo",
+     "score": -20.700000762939453,
+     "modes": [
+      "BUS"
+     ],
+     "areas": [
+      {
+       "name": "Minami Ward",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Kyoto station base",
+     "id": "node/5502387921",
+     "lat": 34.9788085,
+     "lon": 135.7614725,
+     "tz": "Asia/Tokyo",
+     "score": -20.5,
+     "category": "hostel_16",
+     "areas": [
+      {
+       "name": "Minami Ward",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "PUDO Station",
+     "id": "node/12177697550",
+     "lat": 35.0036945,
+     "lon": 135.7720676,
+     "tz": "Asia/Tokyo",
+     "score": -19.75,
+     "category": "parcel_locker",
+     "areas": [
+      {
+       "name": "Higashiyama Ward",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "PUDO Station",
+     "id": "node/13991209909",
+     "lat": 35.0187316,
+     "lon": 135.7358868,
+     "tz": "Asia/Tokyo",
+     "score": -19.75,
+     "category": "parcel_locker",
+     "areas": [
+      {
+       "name": "Nakagyo Ward",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Mercure Kyoto Station",
+     "id": "node/11815905964",
+     "lat": 34.9883486,
+     "lon": 135.753673,
+     "tz": "Asia/Tokyo",
+     "score": -19.5,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Shimogyo Ward",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "sydney-airport",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Sydney Airport",
+    "numResults": "5",
+    "language": "en",
+    "place": "-33.8688,151.2093"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "Sydney Airport",
+     "id": "way/211818374",
+     "lat": -33.9463038,
+     "lon": 151.1880593,
+     "tz": "Australia/Sydney",
+     "score": -23.75,
+     "category": "aerodrome",
+     "areas": [
+      {
+       "name": "Bayside Council",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Mercure Sydney Airport",
+     "id": "node/26637626",
+     "lat": -33.9344767,
+     "lon": 151.1571571,
+     "tz": "Australia/Sydney",
+     "score": -22.0,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Bayside Council",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "The Sydney Water Airport",
+     "id": "node/13159250172",
+     "lat": -33.8702642,
+     "lon": 151.264015,
+     "tz": "Australia/Sydney",
+     "score": -21.75,
+     "category": "memorial_16",
+     "areas": [
+      {
+       "name": "Woollahra Municipal Council",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Airport",
+     "id": "node/11259898511",
+     "lat": -33.9028197,
+     "lon": 151.201924,
+     "tz": "Australia/Sydney",
+     "score": -21.548320770263672,
+     "category": "guidepost_14",
+     "areas": [
+      {
+       "name": "City of Sydney",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Crowne Plaza Sydney Airport",
+     "id": "way/547858893",
+     "lat": -33.9260712,
+     "lon": 151.1875716,
+     "tz": "Australia/Sydney",
+     "score": -21.0,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Bayside Council",
+       "adminLevel": 6.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "trip": "madrid-barcelona",
+   "recorded": "2026-11-20 05:40 UTC, api.transitous.org",
+   "params": {
+    "text": "Barcelona Sants",
+    "numResults": "5",
+    "language": "es",
+    "place": "40.4168,-3.7038"
+   },
+   "matches": [
+    {
+     "type": "PLACE",
+     "name": "Sants",
+     "id": "node/1710349125",
+     "lat": 41.3753288,
+     "lon": 2.1349117,
+     "tz": "Europe/Madrid",
+     "score": -26.640918731689453,
+     "category": "place_capital_8",
+     "areas": [
+      {
+       "name": "Barcelona",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Barcelona-Sants",
+     "id": "es-Ouigo_007171801",
+     "lat": 41.37944399999999,
+     "lon": 2.140555,
+     "tz": "Europe/Madrid",
+     "score": -26.59537696838379,
+     "modes": [
+      "HIGHSPEED_RAIL",
+      "LONG_DISTANCE",
+      "COACH",
+      "REGIONAL_RAIL"
+     ],
+     "areas": [
+      {
+       "name": "Barcelona",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Luna Sants",
+     "id": "node/6183208956",
+     "lat": 41.3820477,
+     "lon": 2.1398748,
+     "tz": "Europe/Madrid",
+     "score": -22.640918731689453,
+     "category": "restaurant_14",
+     "areas": [
+      {
+       "name": "Barcelona",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "STOP",
+     "name": "Barcelona",
+     "id": "es-Ferry-Baleària_BAR2",
+     "lat": 41.35334399999999,
+     "lon": 2.175787,
+     "tz": "Europe/Madrid",
+     "score": -22.137479782104492,
+     "modes": [],
+     "areas": [
+      {
+       "name": "Barcelona",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    },
+    {
+     "type": "PLACE",
+     "name": "Barceló Sants",
+     "id": "node/2422845632",
+     "lat": 41.378881,
+     "lon": 2.1393317,
+     "tz": "Europe/Madrid",
+     "score": -21.890918731689453,
+     "category": "hotel_16",
+     "areas": [
+      {
+       "name": "Barcelona",
+       "adminLevel": 8.0,
+       "default": true
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
