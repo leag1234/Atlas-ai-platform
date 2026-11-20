@@ -128,6 +128,53 @@ _MARGIN = re.compile(
 )
 # Where a clause ends inside a sentence.
 _CLAUSE_END = re.compile(r"[,;:()]|\s[\u2013\u2014]\s|\s-\s")
+# Advice: what the person is told to aim for, plan or do, five languages
+# (folded). A time in advice is a target the person may set, not a fact
+# about a service: unsourced, it still goes, but without a removal note
+# (staging -136: "prévoyez de viser plutôt 8h30 à l'aéroport", under a plan
+# where nothing arrives by 09:00, was quoted in a note as an unverified fact).
+_ADVICE = re.compile(
+    r"\b(?:"
+    # English
+    r"aim(?:ing)? (?:for|to|at)|plan (?:to|on|for)|allow (?:for|yourself)|"
+    r"make sure|be sure to|try to|you (?:should|could|might|may want to)|"
+    r"i(?:'d| would)? (?:recommend|suggest|advise)|recommended|advisable|"
+    r"consider|(?:it'?s |it is )?(?:best|better|wiser|safer) to|"
+    r"give yourself|leave yourself|target|"
+    # French
+    r"prevoy(?:ez|ons)|prevois|prevoir|vis(?:ez|ons|er)|essay(?:ez|e)|"
+    r"tach(?:ez|e)|compt(?:ez|e) (?:sur|arriver|etre)|"
+    r"je (?:vous|te) (?:conseille|recommande|suggere)|"
+    r"(?:conseille|recommande|preferable|prudent) d|il vaut mieux|mieux vaut|"
+    r"(?:vous|tu) (?:devriez|devrais|pourriez|pourrais)|pensez a|"
+    r"assurez.vous|assure.toi|veillez a|"
+    # German
+    r"planen sie|rechnen sie|ich (?:empfehle|rate)|empfehlenswert|empfohlen|"
+    r"sollten sie|sie sollten|solltest|am besten|versuchen sie|"
+    r"achten sie|stellen sie sicher|peilen sie|ratsam|"
+    # Spanish
+    r"procur(?:e|a)|intent(?:e|a)|planee|planea|preve(?:a)?|"
+    r"(?:le|te|les) recomiendo|recomendamos|se recomienda|recomendable|"
+    r"conviene|es mejor|deberia(?:s)?|asegurese|asegurate|apunt(?:e|a) a|"
+    r"cuent(?:e|a) con|"
+    # Italian
+    r"cerc(?:hi|a) di|preved(?:a|i)|pianific(?:hi|a)|"
+    r"(?:le|ti|vi) consiglio|consigliamo|si consiglia|consigliabile|"
+    r"e meglio|dovrebbe|dovresti|si assicuri|assicurati|punt(?:i|a) a|"
+    r"mett(?:i|a) in conto"
+    r")\b"
+)
+# A service named next to an advised time makes it a fact about that service
+# ("take the 08:30 train", "prenez le TER de 8h30"): it keeps its note.
+_SERVICE = re.compile(
+    r"\b(?:trains?|tren(?:es|o|i)?|zug(?:e|s)?|bus|buses|autobus|coach(?:es)?|"
+    r"autocars?|tram(?:way)?s?|metro|u-bahn|s-bahn|rer|ter|tgv|ice|ave|"
+    r"intercity|regional|flixbus|ferry|ferries|fahre|bateau|boat|navette|"
+    r"shuttle|lines?|lignes?|linie|linea|connections?|correspondances?|"
+    r"anschluss|conexion|coincidenza|transbordo|departures?|departs?|"
+    r"abfahrt|salida|partenza)\b"
+)
+_LINE_CODE = re.compile(r"\b[A-Z]{1,4}[ ]?\d{1,5}\b")
 # What joins the two ends of a range ("08:30-09:30", "8 h 30 to 9 h 30").
 _RANGE_JOIN = re.compile(
     r"^[ \u00a0\u202f]*+"
@@ -1015,6 +1062,27 @@ def _clause(text: str, start: int, end: int) -> tuple[int, int]:
     return clause_start, clause_end
 
 
+def _advice(text: str, claim: Quantity) -> bool:
+    """A time the answer advises the person to aim for or plan, naming no
+    service: its clause, or the start of its sentence when only commas lie
+    between, has an advice form (_ADVICE) and neither has a service or a
+    line code (_SERVICE, _LINE_CODE). "Prévoyez du temps : le train part à
+    8h30" states a fact after the colon; "Je vous conseille, si possible,
+    d'arriver à 8h30" advises."""
+    if claim.kind != "clock":
+        return False
+    left, _ = _sentence(text, claim.start, claim.end)
+    start, end = _clause(text, claim.start, claim.end)
+    parts = [text[start:end]]
+    lead = text[left:start]
+    if not re.search(r"[;:()]|\s[\u2013\u2014-]\s", lead):
+        parts.append(lead)
+    words = " ".join(parts)
+    if _SERVICE.search(_folded(words)) or _LINE_CODE.search(words):
+        return False
+    return any(_ADVICE.search(_folded(part)) for part in parts)
+
+
 def _span_to_remove(text: str, claim: Quantity) -> tuple[int, int]:
     """The parenthesis holding the value, else its whole sentence.
 
@@ -1568,7 +1636,7 @@ def _opening(body: str, found: "Findings") -> str:
     route = found.route
     if route.opening or route.lead_start < 0 or not route.leads:
         return route.opening
-    values = [*found.values, *found.elsewhere]
+    values = [*found.values, *found.elsewhere, *found.advice]
     if not any(
         _removal(body, claim)[0] <= route.lead_start < _removal(body, claim)[1]
         for claim in values
@@ -2028,6 +2096,9 @@ class Findings:
     elsewhere: list[Quantity] = field(default_factory=list)
     # Values of the opposite direction: never a fact of this trip.
     reverse: list[Quantity] = field(default_factory=list)
+    # Unsourced times of advice naming no service (_advice): a target the
+    # person could aim for, not a fact to rely on; left out without a note.
+    advice: list[Quantity] = field(default_factory=list)
     # Departures that arrive after the time the person must be there by
     # (start, end of their sentence or row, "13:42 -> 16:44"), and that time.
     late: list[tuple[int, int, str]] = field(default_factory=list)
@@ -2050,6 +2121,7 @@ class Findings:
             or self.route.spans
             or self.elsewhere
             or self.reverse
+            or self.advice
             or self.late
         )
 
@@ -2059,8 +2131,13 @@ class Findings:
             + len(self.route.spans)
             + len(self.elsewhere)
             + len(self.reverse)
+            + len(self.advice)
             + len(self.late)
         )
+
+    def advice_only(self) -> bool:
+        """Only advice goes: no note to write, nothing to rewrite."""
+        return bool(self.advice) and len(self) == len(self.advice)
 
     def late_labels(self) -> list[str]:
         return list(dict.fromkeys(label for _, _, label in self.late if label))
@@ -2702,8 +2779,12 @@ class Turn:
             pages=self.pages(),
             plan=self.plan,
         )
+        advice = [claim for claim in flagged if _advice(body, claim)]
+        flagged = [claim for claim in flagged if claim not in advice]
         # A sentence the values check already leaves out needs no second reason.
-        taken = [_removal(body, claim) for claim in (*flagged, *reverse, *elsewhere)]
+        taken = [
+            _removal(body, claim) for claim in (*flagged, *reverse, *elsewhere, *advice)
+        ]
         taken += [(start, end) for start, end, _ in late]
         route.spans = [
             span
@@ -2720,6 +2801,7 @@ class Turn:
             },
             elsewhere,
             reverse,
+            advice,
             late,
             _clock_text(deadline) if deadline is not None else "",
             planned=self.planned,
@@ -2733,6 +2815,7 @@ class Turn:
             *found.values,
             *found.elsewhere,
             *found.reverse,
+            *found.advice,
             *(Quantity(s, e, "route", 0.0, label) for s, e, label in found.late),
             *(
                 Quantity(

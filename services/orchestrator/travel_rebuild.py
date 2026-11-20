@@ -172,7 +172,8 @@ def _day(iso: str, language: str) -> str:
 @dataclass
 class Report:
     marked: int = 0
-    rebuilt: str = ""  # kept, kept:left_out, rejected:<reason>, failed, late, off
+    # kept, kept:left_out, rejected:<reason>, failed, late, off, advice
+    rebuilt: str = ""
     built: str = ""  # model, code, code+excerpts
     cost_eur: Decimal = Decimal(0)
     seconds: float = 0.0
@@ -981,6 +982,13 @@ async def _review(
         return answer, report
     turn.marked = report.marked = len(found)
     kept = turn.kept(body, found)
+    if found.advice_only():
+        # Unsourced advice goes, and that is all (staging -136): no rewrite,
+        # no pages, no note.
+        report.rebuilt, report.built = "advice", "code"
+        final = kept + ("\n\n" + fold + footer if fold else "")
+        _log(report, started)
+        return final.rstrip(), report
     chosen = excerpts(turn, question, answer=body)
     final = ""
     if enabled():
