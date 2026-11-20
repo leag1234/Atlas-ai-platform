@@ -64,6 +64,15 @@ _OWNED_STARTING = {
     "es": "El servidor privado se está iniciando (unos {wait}). Su mensaje no se ha enviado a ningún otro sitio. Vuelva a enviarlo en un momento.",
     "it": "Il server privato si sta avviando (circa {wait}). Il messaggio non è stato inviato altrove. Invialo di nuovo tra un momento.",
 }
+# The chat waited for the start (owned_wait.py) and the server is still not ready: the
+# person reads how long it waited, that the start goes on, and what to do.
+_OWNED_NOT_READY = {
+    "fr": "Le serveur privé n'est toujours pas prêt après {waited} d'attente ; son démarrage continue. Votre message n'a été envoyé nulle part ailleurs. Renvoyez-le dans quelques minutes.",
+    "en": "The private server is still not ready after a {waited} wait; it is still starting. Your message was not sent anywhere else. Send it again in a few minutes.",
+    "de": "Der private Server ist nach {waited} Wartezeit noch nicht bereit; er startet weiter. Ihre Nachricht wurde nirgendwo anders hin gesendet. Senden Sie sie in ein paar Minuten noch einmal.",
+    "es": "El servidor privado aún no está listo tras {waited} de espera; sigue iniciándose. Su mensaje no se ha enviado a ningún otro sitio. Vuelva a enviarlo dentro de unos minutos.",
+    "it": "Il server privato non è ancora pronto dopo {waited} di attesa; l'avvio continua. Il messaggio non è stato inviato altrove. Invialo di nuovo tra qualche minuto.",
+}
 _OWNED_BUDGET = {
     "fr": "Le mode strict n'utilise que le serveur privé, et sa limite est atteinte : {used} sur {limit} {period}. Votre message n'a été envoyé nulle part ailleurs.",
     "en": "Strict mode runs only on the private server, and its limit is reached: {used} of {limit} {period}. Your message was not sent anywhere else.",
@@ -136,6 +145,9 @@ def owned_server_sentence(
     wait = (
         wait_text(int(retry)) if isinstance(retry, (int, float)) and retry > 0 else ""
     )
+    waited = values.get("waited")
+    if code == STARTING and isinstance(waited, (int, float)) and waited > 0:
+        return _OWNED_NOT_READY[lang].format(waited=wait_text(int(waited)))
     if code == STARTING:
         return _OWNED_STARTING[lang].format(wait=wait or "2 min")
     if code == UNAVAILABLE:
