@@ -508,8 +508,12 @@ class AgentProvider:
         body = {
             "model": model,
             "messages": request.messages,
-            "tools": request.tools,
-            **({"tool_choice": request.tool_choice} if request.tools else {}),
+            # Never an empty tool list: vLLM refuses it (HTTP 400).
+            **(
+                {"tools": request.tools, "tool_choice": request.tool_choice}
+                if request.tools
+                else {}
+            ),
             **provider_settings.json_options(request.response_format),
             "max_tokens": 2048,
             "temperature": 0,

@@ -638,7 +638,7 @@ without a restriction (or ask your administrator), then send the same request.
 | 502 | `invalid_response_format` | The answer did not match the requested JSON schema, also after one corrected attempt | Send the request again, or simplify the schema |
 | 502 | `provider_error` | The model provider failed in another way | Retry once, then report it |
 | 503 | `provider_unavailable` (`provider_status`) | The model provider is unavailable | Retry later |
-| 503 | `owned_server_starting` (`Retry-After`) | Strict privacy: the owned server is starting for this request (about 2 minutes) | Retry after `Retry-After` seconds |
+| 503 | `owned_server_starting` (`Retry-After`, `waited`) | Strict privacy: the owned server is starting. Returned only when the request accepted no wait (`X-Atlas-Owned-Wait: 0`), or when it is still starting after the accepted wait (`waited`: seconds waited) | Retry after `Retry-After` seconds |
 | 503 | `key_service_unavailable`, `unavailable`, `tts_unavailable`, `transcription_unavailable` | A component of Atlas is unavailable | Retry later |
 | 504 | `provider_timeout` | The model provider did not answer in time | Retry, with a shorter output if possible |
 | 502 or 503 (no JSON) | | The service is restarting for a deployment (usually under a minute) | Wait and retry |
@@ -710,6 +710,28 @@ offered. See the strict privacy section of [the platform API notes](08-plateform
 An owned server may be powered off between uses (an on-demand GPU). Where the operator installs a
 starter for it (`ATLAS_OWNED_SERVER_STARTER_DIR`, a directory where Atlas drops a start request and
 reads the starter's `status.json`; the starter alone holds the cloud credentials and enforces its caps),
-a strict request that finds the server silent starts it and gets 503 `owned_server_starting` with
-`Retry-After`; a refusal of the starter is a named 429 with its measured values, never an outage.
-Without a starter, nothing changes. Shared traffic never starts the owned server.
+a strict request that finds the server silent starts it and **waits for it** (a cold start takes
+about 2 minutes), then is answered as usual by the owned server. Nothing is sent to any other
+provider while it waits, and the request never falls back to a shared model.
+
+- A streamed request (`"stream": true`, any of the three formats) opens its stream at once and
+  sends SSE comment lines (`: owned server starting`) every few seconds while it waits, so proxies
+  and clients do not cut it; SSE clients ignore comments. Its frames then follow as usual. If the
+  starter refuses or the start fails during the wait, the stream ends with the named error event in
+  the request's format (`owned_server_budget`, `owned_server_start_limit`,
+  `owned_server_unavailable`, or `owned_server_starting` with `waited`), never a provider error.
+- A request that is not streamed waits silently, inside the same 300-second request limit (the
+  answer gets what the wait leaves).
+- The wait is at most 240 seconds. `X-Atlas-Owned-Wait: <seconds>` (0 to 240) asks for a shorter one;
+  `X-Atlas-Owned-Wait: 0` keeps the immediate answer: 503 `owned_server_starting` with `Retry-After`,
+  for clients that schedule their own retries.
+
+A refusal of the starter is a named 429 (or 503 `owned_server_unavailable` for a failed start) with
+its measured values, never an outage, and is answered at once, without waiting. Without a starter,
+nothing changes. Shared traffic never starts the owned server.
+
+In the chat, a strict turn that finds the owned server off shows the status line "Starting the
+private server… 45 s / ~2 min" (in the conversation's language) and answers as soon as the server
+is up. When the starter refuses, the start fails, or the server is still not ready after 4 minutes,
+the turn ends with one sentence in the conversation's language saying why and what to do; it is the
+turn's answer, not an interface error.

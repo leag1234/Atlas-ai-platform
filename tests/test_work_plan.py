@@ -220,15 +220,15 @@ class TrackingTests(Isolated):
         plan.tool("write_file", "completed")
         plan.finish(True, 0.01)
         # Written (seen), tests never run, the answer delivered.
-        self.assertEqual(self.states(plan), ["completed", "pending", "completed"])
+        self.assertEqual(self.states(plan), ["completed", "skipped", "completed"])
         failed = self.plan()
         failed.tool("write_file", "completed")
         failed.finish(False)
-        self.assertEqual(self.states(failed), ["failed", "pending", "pending"])
+        self.assertEqual(self.states(failed), ["failed", "skipped", "skipped"])
         text = failed.markdown()
         self.assertRegex(text, r"\*\*Plan\*\* \(stopped after \d+ s\)")
         self.assertIn("- ✗ Write the sorting script", text)
-        self.assertIn("- ○ Run it on sample photos", text)
+        self.assertIn("- ⊘ Run it on sample photos", text)
 
     def test_measures_carry_no_content(self) -> None:
         plan = self.plan()
@@ -587,7 +587,9 @@ class OpencodeTodoTests(unittest.TestCase):
         self.assertEqual(_todo_items("not a dict"), [])
 
 
-class ChatStreamPlanTests(Isolated, unittest.IsolatedAsyncioTestCase):
+class StreamTurns(Isolated, unittest.IsolatedAsyncioTestCase):
+    """A chat turn streamed with a scripted Work turn behind it."""
+
     def payload(self, text: str, locale: str = "en") -> ChatRequest:
         return ChatRequest.model_validate(
             {
@@ -613,6 +615,8 @@ class ChatStreamPlanTests(Isolated, unittest.IsolatedAsyncioTestCase):
                 if str(line).startswith("data: {")
             ]
 
+
+class ChatStreamPlanTests(StreamTurns):
     async def test_plan_is_sent_live_then_repeated_in_the_answer(self) -> None:
         async def work(request: ChatRequest, item: Interaction) -> None:
             plan = work_plan.current.get()
@@ -677,6 +681,167 @@ class ChatStreamPlanTests(Isolated, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("atlas_plan", text)
         self.assertNotIn("**Plan**", text)
         self.assertFalse(re.search(r"[○◉✓]", text))
+
+
+class CheckStepTests(Isolated):
+    """Staging 2026-11-20: a presentation turn ended with its check step not done
+    while the answer said the file was verified. A check step is done only when a
+    check of the result ran and passed; a step not seen done is shown as such."""
+
+    def plan(self) -> ChatPlan:
+        plan = ChatPlan("fr", "atlas-test", route="work-file")
+        plan.propose(work_plan.path_steps("fr", "work-file"), source="code")
+        return plan
+
+    def states(self, plan: ChatPlan) -> list[str]:
+        return [step.status for step in plan.steps]
+
+    def test_a_file_check_that_passed_closes_the_check_step_live(self) -> None:
+        plan = self.plan()
+        plan.tool("web_search", "completed")
+        version = plan.version
+        plan.tool("publish_document", "completed", "passed")
+        # Written, built and checked: seen by the code; delivery waits for the end.
+        self.assertEqual(
+            self.states(plan), ["completed", "completed", "completed", "in_progress"]
+        )
+        self.assertGreater(plan.version, version)
+        plan.finish(True, 0.02)
+        self.assertEqual(self.states(plan), ["completed"] * 4)
+        self.assertIn("- ✓ Vérifier le fichier", plan.markdown())
+
+    def test_a_file_never_checked_leaves_the_check_step_not_done(self) -> None:
+        for verification in ("not_run", "failed"):
+            plan = self.plan()
+            plan.tool("publish_document", "completed", verification)
+            plan.finish(True, 0.02)
+            self.assertEqual(plan.steps[2].status, "skipped", verification)
+            self.assertEqual(plan.steps[3].status, "completed")
+            text = plan.markdown()
+            self.assertIn("- ⊘ Vérifier le fichier", text)
+            self.assertNotIn("○", text)
+            payload = plan.payload()["steps"][2]
+            self.assertEqual(payload["state"], "non fait")
+
+    def test_the_model_cannot_declare_a_check_done(self) -> None:
+        plan = self.plan()
+        plan.tool("web_search", "completed")
+        plan.tool("publish_document", "completed", "not_run")
+        told = plan.update(
+            [
+                {"text": step.text, "status": status}
+                for step, status in zip(
+                    plan.steps, ["completed", "completed", "completed", "completed"]
+                )
+            ]
+        )
+        self.assertEqual(told["refused"], [3])
+        self.assertIn("no check has passed", told["next_step"])
+        self.assertNotEqual(plan.steps[2].status, "completed")
+        # A command that runs the result is a check, as before.
+        plan.tool("run_command", "completed")
+        told = plan.update(
+            [
+                {"text": step.text, "status": status}
+                for step, status in zip(
+                    plan.steps, ["completed", "completed", "completed", "pending"]
+                )
+            ]
+        )
+        self.assertEqual(told, {})
+        self.assertEqual(plan.steps[2].status, "completed")
+
+    def test_a_call_on_the_check_step_is_not_a_check(self) -> None:
+        plan = self.plan()
+        plan.tool("publish_document", "completed", "not_run")
+        plan.update(
+            [
+                {"text": step.text, "status": status}
+                for step, status in zip(
+                    plan.steps, ["completed", "completed", "in_progress", "pending"]
+                )
+            ]
+        )
+        # A file read again while the check step runs: work, not a check.
+        plan.tool("read_document", "completed")
+        self.assertEqual(plan.steps[2].calls, 1)
+        plan.finish(True, 0.02)
+        self.assertEqual(plan.steps[2].status, "skipped")
+
+    def test_a_failed_turn_shows_what_was_not_reached(self) -> None:
+        plan = self.plan()
+        plan.tool("web_search", "completed")
+        plan.finish(False)
+        self.assertEqual(self.states(plan), ["failed", "skipped", "skipped", "skipped"])
+
+
+class ChatStreamCheckTests(StreamTurns):
+    """The plan of a file turn through the chat stream: a search in the middle,
+    the check result read from the publish_document event."""
+
+    async def turn(self, verification: str) -> list[dict[str, Any]]:
+        async def work(request: ChatRequest, item: Interaction) -> None:
+            plan = work_plan.current.get()
+            assert plan is not None
+            plan.route = "work-file"
+            plan.propose(work_plan.path_steps("en", "work-file"), source="code")
+            sink = sink_context.get()
+            assert sink is not None
+            await sink({"work_step": {"phase": "preparing"}})
+            events: list[dict[str, Any]] = [
+                {"type": "workspace", "tool": None, "status": "completed"},
+                {"type": "tool", "tool": "web_search", "status": "completed"},
+                {"type": "tool", "tool": "publish_document", "status": "running"},
+                {
+                    "type": "tool",
+                    "tool": "publish_document",
+                    "status": "completed",
+                    "output": {
+                        "verification": {
+                            "status": verification,
+                            "command": None,
+                            "exit_code": None,
+                            "reason": "test",
+                        }
+                    },
+                },
+            ]
+            for seq, event in enumerate(events, 1):
+                await sink({"project": dict(event, seq=seq)})
+            plan.finish(True, 0.02)
+            item.reponse, item.state = "Here is the presentation.", "done"
+
+        return await self.rows(self.payload("make me a deck about tides"), work)
+
+    def answer(self, rows: list[dict[str, Any]]) -> str:
+        return "".join(
+            str(
+                ((row.get("choices") or [{}])[0].get("delta") or {}).get("content")
+                or ""
+            )
+            for row in rows
+        )
+
+    def plans(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            row["event"]["data"]["atlas_plan"]
+            for row in rows
+            if "atlas_plan" in ((row.get("event") or {}).get("data") or {})
+        ]
+
+    async def test_a_check_that_passed_is_shown_live_and_at_the_end(self) -> None:
+        rows = await self.turn("passed")
+        states = [[s["status"] for s in p["steps"]] for p in self.plans(rows)]
+        self.assertIn(["completed", "completed", "completed", "in_progress"], states)
+        self.assertIn("- ✓ Check the file", self.answer(rows))
+
+    async def test_a_check_that_did_not_run_is_never_shown_done(self) -> None:
+        rows = await self.turn("not_run")
+        for plan in self.plans(rows):
+            self.assertNotEqual(plan["steps"][2]["status"], "completed")
+        answer = self.answer(rows)
+        self.assertIn("- ⊘ Check the file", answer)
+        self.assertIn("- ✓ Hand you the file", answer)
 
 
 if __name__ == "__main__":

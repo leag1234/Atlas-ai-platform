@@ -150,6 +150,18 @@ def reasoning_control(
     return control if control in ("reasoning_effort", "enable_thinking") else None
 
 
+def drop_empty_tools(body: dict[str, Any]) -> dict[str, Any]:
+    """Remove tool fields that carry no tool, in place, for every provider.
+
+    vLLM (the owned server) rejects `"tools": []` with HTTP 400 and a
+    `tool_choice` without tools is meaningless; serverless APIs tolerate both.
+    """
+    if not body.get("tools"):
+        for key in ("tools", "tool_choice", "parallel_tool_calls"):
+            body.pop(key, None)
+    return body
+
+
 def request_options(
     body: dict[str, Any],
     provider: str | None = None,
@@ -193,10 +205,9 @@ def request_options(
                 },
                 *[message for message in messages if message.get("role") != "system"],
             ]
+    drop_empty_tools(body)
     if name not in ("", "scaleway"):
         body.pop("reasoning_effort", None)
-        if not body.get("tools"):
-            body.pop("tools", None)
     if name:
         body.update(presets()[name].get("request_options", {}))
     if name == "hetzner" and role == "code":

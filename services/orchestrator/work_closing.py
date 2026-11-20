@@ -18,6 +18,12 @@ when the project session context puts the question after it
 (session_context.py); with "and give me the five essential rules here" the model
 still wrote the five rules.
 
+"Verified" is said only of a file whose check against the request ran and
+passed (deliverable_check.verification, in the publish_document result): the
+instruction said "published and verified" of every file, and a presentation
+was announced as "created and verified" while the plan showed its check step
+not done (staging 2026-11-20).
+
 The links stay the code's (file_results.append_deliverable_links adds the ones
 the answer lacks), and the source checks are unchanged: an address in the
 closing message is kept only if it was retrieved in this turn
@@ -33,7 +39,7 @@ from typing import Any
 PUBLISHING = "publish_document"
 
 CLOSING_INSTRUCTION = (
-    "The requested file is published and verified ({files}). The user already "
+    "The requested file is published ({files}).{check} The user already "
     "gets its download and preview links with your reply: do not write them "
     "and do not say where they are (above, below). If the request asked "
     "only for this file, end the turn now: reply in one or two short sentences, "
@@ -41,6 +47,14 @@ CLOSING_INSTRUCTION = (
     "summarize the document, list its sections or its sources, or offer more "
     "work. If the request also asks for something else (another file, an answer "
     "or a summary in the conversation), do that now instead."
+)
+
+
+# What the instruction says of the file check (deliverable_check.py).
+VERIFIED = " It was checked against the request, and the check passed."
+UNVERIFIED = (
+    " It was not checked against the request: do not say that it was checked, "
+    "verified or reviewed."
 )
 
 
@@ -61,12 +75,22 @@ GAPS_INSTRUCTION = (
 )
 
 
+def verified(output: object) -> bool:
+    """The check of the published file against the request ran and passed."""
+    check = output.get("verification") if isinstance(output, dict) else None
+    return isinstance(check, dict) and check.get("status") == "passed"
+
+
 def closing_instruction(
-    receipts: Sequence[dict[str, Any]], gaps: Sequence[str] = ()
+    receipts: Sequence[dict[str, Any]],
+    gaps: Sequence[str] = (),
+    checked: bool = False,
 ) -> str:
     names = [str(receipt.get("relative_path") or "") for receipt in receipts]
     text = CLOSING_INSTRUCTION.format(
-        files=", ".join(name for name in names if name) or "one file"
+        files=", ".join(name for name in names if name) or "one file",
+        # With gaps the check did not pass: the gaps say what it found.
+        check=VERIFIED if checked and not gaps else "" if gaps else UNVERIFIED,
     )
     if gaps:
         text += GAPS_INSTRUCTION.format(gaps="; ".join(gaps))
@@ -99,4 +123,9 @@ def closing_step(
         if published(tool, output) is not None and isinstance(output, dict)
         for gap in output.get("gaps") or ()
     ]
-    return closing_instruction(receipts, gaps)
+    checked = all(
+        verified(output)
+        for tool, output in executed
+        if published(tool, output) is not None
+    )
+    return closing_instruction(receipts, gaps, checked)

@@ -430,8 +430,9 @@ class GatewayTests(StarterCase):
         with strict():
             with self.assertRaises(OwnedServerAnswer) as streamed:
                 await receive(gateway.url + "/agent/stream", payload, 30, sink)
+            # The boundary itself; GatewayModel.post waits (test_owned_server_wait.py).
             with self.assertRaises(OwnedServerAnswer) as completed:
-                await GatewayModel.post(gateway.url + "/agent/complete", payload, 30)
+                await GatewayModel.send(gateway.url + "/agent/complete", payload, 30)
         for raised in (streamed.exception, completed.exception):
             self.assertIsInstance(raised, GatewayError)
             self.assertEqual((raised.code, raised.status), (STARTING, 503))
@@ -442,7 +443,7 @@ class GatewayTests(StarterCase):
             )
 
 
-class ApiTests(StarterCase):
+class ApiCase(StarterCase):
     def setUp(self) -> None:
         super().setUp()
         from services.orchestrator.api_keys import Store
@@ -484,10 +485,12 @@ class ApiTests(StarterCase):
         )
         self.key = {"Authorization": "Bearer " + secret}
 
-    def chat(self, level: str, stream: bool = False) -> Any:
+    def chat(
+        self, level: str, stream: bool = False, headers: dict[str, str] | None = None
+    ) -> Any:
         return self.client.post(
             "/api/atlas/v1/chat/completions",
-            headers=self.key | {privacy.HEADER: level},
+            headers=self.key | {privacy.HEADER: level} | (headers or {}),
             json={
                 "model": "atlas-chat",
                 "messages": [{"role": "user", "content": "Bonjour"}],
@@ -496,10 +499,13 @@ class ApiTests(StarterCase):
             },
         )
 
+
+class ApiTests(ApiCase):
     def test_strict_request_starts_the_server_and_gets_503_retry_after(self) -> None:
         starter = self.starter(STARTING_STATUS)
         for stream in (False, True, False):
-            reply = self.chat("strict", stream)
+            # A client that accepts no wait (test_owned_server_wait.py: the wait).
+            reply = self.chat("strict", stream, headers={"X-Atlas-Owned-Wait": "0"})
             self.assertEqual(reply.status_code, 503, reply.text)
             error = reply.json()["error"]
             self.assertEqual(error["type"], STARTING)
