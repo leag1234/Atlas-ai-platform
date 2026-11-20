@@ -23,7 +23,15 @@ read "starting" while the first was still watching, staging 2026-11-17); a faile
 start is answered as such (``owned_server_unavailable``) for FAILED_HOLD_SECONDS, without
 asking for another start, which would fail the same way and use up the hourly starts
 (staging 2026-11-17: four strict requests in 15 s asked for four starts, each refused by
-the provider for lack of stock, and each request read "starting").
+the provider for lack of stock, and each request read "starting"). A refusal (budget cap,
+starts per hour) is held the same way for REFUSED_HOLD_SECONDS: one strict turn makes
+several strict calls, and each asking again tripped the start limit of the host's
+service manager, which then stopped watching for requests (staging 2026-11-20 17:35).
+
+A starter that is configured but does not answer is reported by name
+(``owned_server_unavailable``, reason ``starter_unavailable``), never left to the caller,
+whose own error then read as a provider failure (staging 2026-11-20 22:57: "Explicit
+stop: provider_error" for a strict API request while the starter was down).
 
 Without that setting (production, development) nothing is requested and the caller
 reports its usual error. Only strict calls reach this module: shared traffic never routes
@@ -61,6 +69,11 @@ STARTING_VALID_SECONDS = 2700
 CONFIRM_SECONDS = 8.0
 # After a failed start, requests get that failure for this long instead of a new start.
 FAILED_HOLD_SECONDS = 300
+# After a refusal, requests get that refusal for this long (or until its retry_after, if
+# sooner) instead of asking again: a raised cap is seen within this delay.
+REFUSED_HOLD_SECONDS = 120
+# When the starter does not answer: the client may try again after this many seconds.
+SILENT_RETRY_SECONDS = 60
 
 
 def directory() -> Path | None:
@@ -118,6 +131,39 @@ def request_start(folder: Path) -> float | None:
     with os.fdopen(handle, "w") as out:
         out.write(f"{int(now)}\n")
     return now
+
+
+def silent() -> OwnedServerUnavailable:
+    """The starter is configured but gives no answer: named, never a provider error."""
+    logging.getLogger(__name__).warning(
+        json.dumps({"event": "owned_server_starter_silent"})
+    )
+    return OwnedServerUnavailable(
+        UNAVAILABLE, retry_after=SILENT_RETRY_SECONDS, reason="starter_unavailable"
+    )
+
+
+def held_refusal(status: dict[str, Any], now: float) -> OwnedServerUnavailable | None:
+    """A recent refusal, answered as such without a new request; None once it is older
+    than REFUSED_HOLD_SECONDS or than its own retry_after."""
+    if status.get("state") != "refused":
+        return None
+    updated = _number(status.get("updated"))
+    if updated is None or updated > now + 5:
+        return None
+    age = max(0.0, now - updated)
+    retry = _number(status.get("retry_after"))
+    hold = (
+        min(retry, REFUSED_HOLD_SECONDS)
+        if retry and retry > 0
+        else REFUSED_HOLD_SECONDS
+    )
+    if age >= hold:
+        return None
+    found = answer(status, now)
+    if found is not None and found.retry_after is not None:
+        found.retry_after = max(1, int(found.retry_after - age))
+    return found
 
 
 def failure(status: dict[str, Any], now: float) -> OwnedServerUnavailable | None:
@@ -183,13 +229,18 @@ def answer(status: dict[str, Any], now: float) -> OwnedServerUnavailable | None:
 async def ensure() -> None:
     """For a strict call: return when the owned server answers or no starter is
     configured; otherwise ask the starter to power it on and raise its answer
-    (starting, or a named refusal). Returns when the starter gives no usable answer, so
-    that the caller reports its own error."""
+    (starting, a named refusal, or unavailable when the starter does not answer). Returns
+    when the starter says the server is ready or stopped, so that the caller reports its
+    own error."""
     folder = directory()
     if folder is None or await answers():
         return
     log = logging.getLogger(__name__)
     status = read_status(folder)
+    held = held_refusal(status, time.time()) if status is not None else None
+    if held is not None:
+        log.info(json.dumps({"event": held.code, "held": True, **held.fields()}))
+        raise held
     if status is not None and status.get("state") in ("starting", "failed"):
         found = answer(status, time.time())
         if found is not None:
@@ -201,7 +252,7 @@ async def ensure() -> None:
             raise found
     requested = request_start(folder)
     if requested is None:
-        return
+        raise silent()
     deadline = time.monotonic() + ANSWER_SECONDS
     while True:
         status = read_status(folder)
@@ -229,6 +280,5 @@ async def ensure() -> None:
                 )
             return
         if time.monotonic() >= deadline:
-            log.warning(json.dumps({"event": "owned_server_starter_silent"}))
-            return
+            raise silent()
         await asyncio.sleep(0.1)
