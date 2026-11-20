@@ -212,6 +212,9 @@
     if (url.origin === location.origin && /^\/(?:api\/(?:v1\/)?)?chat\/completions$|^\/v1\/chat\/completions$/.test(url.pathname) && typeof options?.body === "string") {
       const body = JSON.parse(options.body);
       body.atlas_ui = true;
+      // The person's own zone: Open WebUI keeps its {{CURRENT_TIMEZONE}} for its
+      // own prompt templates and forwards none, so "today" was the server's day.
+      if (!body.ui_timezone) { try { const zone = Intl.DateTimeFormat().resolvedOptions().timeZone; if (typeof zone === "string" && zone.length <= 80 && /^[A-Za-z][A-Za-z0-9_+\-]*(?:\/[A-Za-z0-9_+\-]+)*$/.test(zone)) body.ui_timezone = zone; } catch { /* no zone: the server's default */ } }
       options = { ...options, body: JSON.stringify(body) };
       const message = body.user_message || [...(body.messages || [])].reverse().find(m => m.role === 'user');
       const text = typeof message?.content === 'string' ? message.content : (message?.content || []).filter(p => p.type === 'text').map(p => p.text).join(' ');
