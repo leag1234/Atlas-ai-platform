@@ -1,0 +1,611 @@
+{
+"recorded": "2026-11-20 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+"request": {
+"time": "2026-11-21T09:00+01:00",
+"arriveBy": "true",
+"numItineraries": "3",
+"searchWindow": "3600"
+},
+"status": 200,
+"body": {
+"itineraries": [
+{
+"startTime": "2026-11-20T21:24:00Z",
+"endTime": "2026-11-21T00:53:00Z",
+"duration": 12540,
+"transfers": 3,
+"legs": [
+{
+"mode": "WALK",
+"duration": 300,
+"startTime": "2026-11-20T21:24:00Z",
+"endTime": "2026-11-20T21:29:00Z",
+"scheduledStartTime": "2026-11-20T21:24:00Z",
+"scheduledEndTime": "2026-11-20T21:29:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Gratte Ciel",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "SUBWAY",
+"duration": 180,
+"startTime": "2026-11-20T21:29:00Z",
+"endTime": "2026-11-20T21:32:00Z",
+"scheduledStartTime": "2026-11-20T21:29:00Z",
+"scheduledEndTime": "2026-11-20T21:32:00Z",
+"realTime": false,
+"headsign": "Perrache",
+"agencyName": "TCL",
+"routeShortName": "A",
+"routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+"tripShortName": "REF~251124~311227~MT A - Vaulx-en-Velin La Soie. - Perrache",
+"displayName": "A",
+"cancelled": false,
+"from": {
+"name": "Gratte Ciel",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-20T21:32:00Z",
+"endTime": "2026-11-20T21:34:00Z",
+"scheduledStartTime": "2026-11-20T21:32:00Z",
+"scheduledEndTime": "2026-11-20T21:34:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "SUBWAY",
+"duration": 780,
+"startTime": "2026-11-20T21:36:00Z",
+"endTime": "2026-11-20T21:49:00Z",
+"scheduledStartTime": "2026-11-20T21:36:00Z",
+"scheduledEndTime": "2026-11-20T21:49:00Z",
+"realTime": false,
+"headsign": "St-Genis-Laval Hôp. Sud",
+"agencyName": "TCL",
+"routeShortName": "B",
+"routeLongName": "Charpennes - Saint-Genis-Laval Hôpital Lyon Sud",
+"tripShortName": "REF~250426~181226~Itinéraire nominal complet",
+"displayName": "B",
+"cancelled": false,
+"from": {
+"name": "Charpennes Charles Hernu",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Stade de Gerland Le LOU",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 180,
+"startTime": "2026-11-20T21:49:00Z",
+"endTime": "2026-11-20T21:52:00Z",
+"scheduledStartTime": "2026-11-20T21:49:00Z",
+"scheduledEndTime": "2026-11-20T21:52:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Stade de Gerland Le LOU",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon (Gerland Bus Station)",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "COACH",
+"duration": 8400,
+"startTime": "2026-11-20T22:00:00Z",
+"endTime": "2026-11-21T00:20:00Z",
+"scheduledStartTime": "2026-11-20T22:00:00Z",
+"scheduledEndTime": "2026-11-21T00:20:00Z",
+"realTime": false,
+"headsign": "Dortmund central bus station",
+"agencyName": "FlixBus-eu",
+"routeShortName": "FlixBus N122",
+"routeLongName": "Dortmund - Lyon",
+"tripShortName": "",
+"displayName": "FlixBus N122",
+"cancelled": false,
+"from": {
+"name": "Lyon (Gerland Bus Station)",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Geneva (central bus station)",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 420,
+"startTime": "2026-11-21T00:20:00Z",
+"endTime": "2026-11-21T00:27:00Z",
+"scheduledStartTime": "2026-11-21T00:20:00Z",
+"scheduledEndTime": "2026-11-21T00:27:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Geneva (central bus station)",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "Genève, gare Cornavin",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "BUS",
+"duration": 720,
+"startTime": "2026-11-21T00:35:00Z",
+"endTime": "2026-11-21T00:47:00Z",
+"scheduledStartTime": "2026-11-21T00:35:00Z",
+"scheduledEndTime": "2026-11-21T00:47:00Z",
+"realTime": false,
+"headsign": "Genève-Aéroport, Terminal",
+"agencyName": "Transports Publics Genevois",
+"routeShortName": "5",
+"routeLongName": "",
+"tripShortName": "698848",
+"displayName": "5",
+"cancelled": false,
+"from": {
+"name": "Genève, gare Cornavin",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "Grand-Saconnex, place",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 360,
+"startTime": "2026-11-21T00:47:00Z",
+"endTime": "2026-11-21T00:53:00Z",
+"scheduledStartTime": "2026-11-21T00:47:00Z",
+"scheduledEndTime": "2026-11-21T00:53:00Z",
+"realTime": false,
+"from": {
+"name": "Grand-Saconnex, place",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+},
+{
+"startTime": "2026-11-21T00:54:00Z",
+"endTime": "2026-11-21T05:25:00Z",
+"duration": 16260,
+"transfers": 3,
+"legs": [
+{
+"mode": "WALK",
+"duration": 900,
+"startTime": "2026-11-21T00:54:00Z",
+"endTime": "2026-11-21T01:09:00Z",
+"scheduledStartTime": "2026-11-21T00:54:00Z",
+"scheduledEndTime": "2026-11-21T01:09:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Verlaine - Tolstoï",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "BUS",
+"duration": 600,
+"startTime": "2026-11-21T01:09:00Z",
+"endTime": "2026-11-21T01:19:00Z",
+"scheduledStartTime": "2026-11-21T01:09:00Z",
+"scheduledEndTime": "2026-11-21T01:19:00Z",
+"realTime": false,
+"headsign": "Cordeliers",
+"agencyName": "TCL",
+"routeShortName": "PL4",
+"routeLongName": "Vaulx HDV Campus - Cordeliers",
+"tripShortName": "REF~040926~271226~Via Maurice Audin Travaux - Vaulx HDV Campus - Cordeliers",
+"displayName": "PL4",
+"cancelled": false,
+"from": {
+"name": "Verlaine - Tolstoï",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-21T01:19:00Z",
+"endTime": "2026-11-21T01:21:00Z",
+"scheduledStartTime": "2026-11-21T01:19:00Z",
+"scheduledEndTime": "2026-11-21T01:21:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "BUS",
+"duration": 900,
+"startTime": "2026-11-21T01:33:00Z",
+"endTime": "2026-11-21T01:48:00Z",
+"scheduledStartTime": "2026-11-21T01:33:00Z",
+"scheduledEndTime": "2026-11-21T01:48:00Z",
+"realTime": false,
+"headsign": "Stade de Gerland Le LOU",
+"agencyName": "TCL",
+"routeShortName": "PL3",
+"routeLongName": "Stade de Gerland - Cordeliers - Campus Lyon Ouest",
+"tripShortName": "REF~260925~271226~NOM - Cordeliers - Stade de Gerland",
+"displayName": "PL3",
+"cancelled": false,
+"from": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Stade de Gerland Le LOU",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 180,
+"startTime": "2026-11-21T01:48:00Z",
+"endTime": "2026-11-21T01:51:00Z",
+"scheduledStartTime": "2026-11-21T01:48:00Z",
+"scheduledEndTime": "2026-11-21T01:51:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Stade de Gerland Le LOU",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon (Gerland Bus Station)",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "COACH",
+"duration": 8700,
+"startTime": "2026-11-21T02:30:00Z",
+"endTime": "2026-11-21T04:55:00Z",
+"scheduledStartTime": "2026-11-21T02:30:00Z",
+"scheduledEndTime": "2026-11-21T04:55:00Z",
+"realTime": false,
+"headsign": "Belgrade bus station",
+"agencyName": "FlixBus-eu",
+"routeShortName": "FlixBus N1909",
+"routeLongName": "Lyon - Kecskemet",
+"tripShortName": "",
+"displayName": "FlixBus N1909",
+"cancelled": false,
+"from": {
+"name": "Lyon (Gerland Bus Station)",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Geneva (central bus station)",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 420,
+"startTime": "2026-11-21T04:55:00Z",
+"endTime": "2026-11-21T05:02:00Z",
+"scheduledStartTime": "2026-11-21T04:55:00Z",
+"scheduledEndTime": "2026-11-21T05:02:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Geneva (central bus station)",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "Genève, gare Cornavin",
+"tz": "Europe/Zurich",
+"scheduledTrack": "J",
+"track": "J"
+}
+},
+{
+"mode": "BUS",
+"duration": 720,
+"startTime": "2026-11-21T05:06:00Z",
+"endTime": "2026-11-21T05:18:00Z",
+"scheduledStartTime": "2026-11-21T05:06:00Z",
+"scheduledEndTime": "2026-11-21T05:18:00Z",
+"realTime": false,
+"headsign": "Genève-Aéroport, Terminal",
+"agencyName": "Transports Publics Genevois",
+"routeShortName": "5",
+"routeLongName": "",
+"tripShortName": "698954",
+"displayName": "5",
+"cancelled": false,
+"from": {
+"name": "Genève, gare Cornavin",
+"tz": "Europe/Zurich",
+"scheduledTrack": "J",
+"track": "J"
+},
+"to": {
+"name": "Grand-Saconnex, place",
+"tz": "Europe/Zurich",
+"scheduledTrack": "D",
+"track": "D"
+}
+},
+{
+"mode": "WALK",
+"duration": 420,
+"startTime": "2026-11-21T05:18:00Z",
+"endTime": "2026-11-21T05:25:00Z",
+"scheduledStartTime": "2026-11-21T05:18:00Z",
+"scheduledEndTime": "2026-11-21T05:25:00Z",
+"realTime": false,
+"from": {
+"name": "Grand-Saconnex, place",
+"tz": "Europe/Zurich",
+"scheduledTrack": "D",
+"track": "D"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+},
+{
+"startTime": "2026-11-21T02:04:00Z",
+"endTime": "2026-11-21T05:55:00Z",
+"duration": 13860,
+"transfers": 3,
+"legs": [
+{
+"mode": "WALK",
+"duration": 900,
+"startTime": "2026-11-21T02:04:00Z",
+"endTime": "2026-11-21T02:19:00Z",
+"scheduledStartTime": "2026-11-21T02:04:00Z",
+"scheduledEndTime": "2026-11-21T02:19:00Z",
+"realTime": false,
+"from": {
+"name": "START",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Verlaine - Tolstoï",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "BUS",
+"duration": 600,
+"startTime": "2026-11-21T02:19:00Z",
+"endTime": "2026-11-21T02:29:00Z",
+"scheduledStartTime": "2026-11-21T02:19:00Z",
+"scheduledEndTime": "2026-11-21T02:29:00Z",
+"realTime": false,
+"headsign": "Cordeliers",
+"agencyName": "TCL",
+"routeShortName": "PL4",
+"routeLongName": "Vaulx HDV Campus - Cordeliers",
+"tripShortName": "REF~040926~271226~Via Maurice Audin Travaux - Vaulx HDV Campus - Cordeliers",
+"displayName": "PL4",
+"cancelled": false,
+"from": {
+"name": "Verlaine - Tolstoï",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-21T02:29:00Z",
+"endTime": "2026-11-21T02:31:00Z",
+"scheduledStartTime": "2026-11-21T02:29:00Z",
+"scheduledEndTime": "2026-11-21T02:31:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "BUS",
+"duration": 900,
+"startTime": "2026-11-21T02:43:00Z",
+"endTime": "2026-11-21T02:58:00Z",
+"scheduledStartTime": "2026-11-21T02:43:00Z",
+"scheduledEndTime": "2026-11-21T02:58:00Z",
+"realTime": false,
+"headsign": "Stade de Gerland Le LOU",
+"agencyName": "TCL",
+"routeShortName": "PL3",
+"routeLongName": "Stade de Gerland - Cordeliers - Campus Lyon Ouest",
+"tripShortName": "REF~260925~271226~NOM - Cordeliers - Stade de Gerland",
+"displayName": "PL3",
+"cancelled": false,
+"from": {
+"name": "Saxe - Lafayette",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Stade de Gerland Le LOU",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "WALK",
+"duration": 180,
+"startTime": "2026-11-21T02:58:00Z",
+"endTime": "2026-11-21T03:01:00Z",
+"scheduledStartTime": "2026-11-21T02:58:00Z",
+"scheduledEndTime": "2026-11-21T03:01:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Stade de Gerland Le LOU",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Lyon - Gerland Bus Station",
+"tz": "Europe/Paris"
+}
+},
+{
+"mode": "COACH",
+"duration": 7500,
+"startTime": "2026-11-21T03:20:00Z",
+"endTime": "2026-11-21T05:25:00Z",
+"scheduledStartTime": "2026-11-21T03:20:00Z",
+"scheduledEndTime": "2026-11-21T05:25:00Z",
+"realTime": false,
+"headsign": "XGC",
+"agencyName": "BlaBlaCar Bus",
+"routeShortName": "BlaBlaCar Bus",
+"routeLongName": "XBC - Barcelona Nord - Bus Station > XGC - Geneva - Bus station",
+"tripShortName": "3154",
+"displayName": "BlaBlaCar Bus",
+"cancelled": false,
+"from": {
+"name": "Lyon - Gerland Bus Station",
+"tz": "Europe/Paris"
+},
+"to": {
+"name": "Geneva - Bus Station",
+"tz": "Europe/Zurich"
+}
+},
+{
+"mode": "WALK",
+"duration": 120,
+"startTime": "2026-11-21T05:25:00Z",
+"endTime": "2026-11-21T05:27:00Z",
+"scheduledStartTime": "2026-11-21T05:25:00Z",
+"scheduledEndTime": "2026-11-21T05:27:00Z",
+"realTime": false,
+"cancelled": false,
+"from": {
+"name": "Geneva - Bus Station",
+"tz": "Europe/Zurich"
+},
+"to": {
+"name": "Genève, Mont-Blanc",
+"tz": "Europe/Zurich",
+"scheduledTrack": "H",
+"track": "H"
+}
+},
+{
+"mode": "BUS",
+"duration": 900,
+"startTime": "2026-11-21T05:33:00Z",
+"endTime": "2026-11-21T05:48:00Z",
+"scheduledStartTime": "2026-11-21T05:33:00Z",
+"scheduledEndTime": "2026-11-21T05:48:00Z",
+"realTime": false,
+"headsign": "Grand-Saconnex, Palexpo",
+"agencyName": "Transports Publics Genevois",
+"routeShortName": "8",
+"routeLongName": "",
+"tripShortName": "645910",
+"displayName": "8",
+"cancelled": false,
+"from": {
+"name": "Genève, Mont-Blanc",
+"tz": "Europe/Zurich",
+"scheduledTrack": "H",
+"track": "H"
+},
+"to": {
+"name": "Grand-Saconnex, place",
+"tz": "Europe/Zurich",
+"scheduledTrack": "D",
+"track": "D"
+}
+},
+{
+"mode": "WALK",
+"duration": 420,
+"startTime": "2026-11-21T05:48:00Z",
+"endTime": "2026-11-21T05:55:00Z",
+"scheduledStartTime": "2026-11-21T05:48:00Z",
+"scheduledEndTime": "2026-11-21T05:55:00Z",
+"realTime": false,
+"from": {
+"name": "Grand-Saconnex, place",
+"tz": "Europe/Zurich",
+"scheduledTrack": "D",
+"track": "D"
+},
+"to": {
+"name": "END",
+"tz": "Europe/Zurich"
+}
+}
+]
+}
+],
+"direct": [],
+"debugOutput": {
+"n_start_offsets": 66,
+"n_dest_offsets": 48
+}
+}
+}

@@ -2320,7 +2320,14 @@ class Turn:
         for depart, arrive in ends:
             gaps.add((arrive - depart) % 1440)
             if deadline is not None:
-                gaps.update({(deadline - arrive) % 1440, (deadline - depart) % 1440})
+                # An option arriving after the deadline says by how much.
+                gaps.update(
+                    {
+                        (deadline - arrive) % 1440,
+                        (arrive - deadline) % 1440,
+                        (deadline - depart) % 1440,
+                    }
+                )
         for column in (0, 1):
             values = [pair[column] for pair in ends]
             gaps.update(_gap(a, b) for a in values for b in values if a != b)
