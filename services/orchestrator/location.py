@@ -200,6 +200,34 @@ _TRAVEL = (
 )
 
 
+# The person starts from where they are now: "from here", "d'ici", "von hier",
+# "desde aquí", "da qui", "from my location" (folded, apostrophes as spaces).
+# "d'ici demain", "da qui a domani" and "from here on" say when, not where
+# from; home ("from home", "de chez moi") may be elsewhere than the device.
+_WHEN_AFTER = (
+    r"(?:demain|ce soir|cette|ce|la|lundi|mardi|mercredi|jeudi|vendredi|samedi|"
+    r"dimanche|midi|minuit|une?|deux|trois|quelques|peu|fin|\d)"
+)
+_OWN_ORIGIN = (
+    r"\b(?:from (?:right )?here(?! on\b)|from where i (?:am|m)\b|from "
+    r"(?:my|our) (?:current )?(?:location|position)|"
+    rf"(?:depuis|a partir) d ici|d ici(?!\s+(?:a\s+)?{_WHEN_AFTER})|depuis ici|"
+    r"(?:depuis|de) (?:la )?ou (?:je suis|je me trouve|on est|nous sommes)|"
+    r"(?:depuis|de|a partir de) (?:ma|notre) (?:position|localisation)|"
+    r"(?:von|ab) hier|von (?:meinem|unserem) standort|von wo ich bin|"
+    r"desde (?:aqui|aca|donde estoy|mi (?:ubicacion|posicion))|"
+    r"da (?:qui|qua)(?!\s+(?:a\s+(?:domani|stasera|\d)|in poi))|da dove sono|"
+    r"dalla mia posizione)"
+)
+
+
+def own_position_origin(text: str) -> bool:
+    """The person's words start the trip where they are now ("how do I get
+    there from here", "que tren cojo desde aqui"): the device position, when
+    shared, is the starting point, whatever place the model writes."""
+    return bool(re.search(_OWN_ORIGIN, _plain(text)))
+
+
 def position_dependent(text: str) -> bool:
     """The answer depends on the person's position (lexical, any category)."""
     if location_dependent(text):

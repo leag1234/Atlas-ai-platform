@@ -1031,6 +1031,23 @@ def _segments(anchors: list[Anchor]) -> list[list[Anchor]]:
     return parts
 
 
+# Counts a summary gives of the plan's options ("Two FlixBus coaches", "Les
+# deux TGV", "Drei ICE"), five languages: opening a sentence, the count is
+# read into the name that follows it.
+COUNTS = {
+    **dict.fromkeys(("one", "un", "une", "ein", "eine", "uno", "una"), 1),
+    **dict.fromkeys(
+        ("two", "both", "deux", "zwei", "beide", "dos", "ambos", "ambas", "due"),
+        2,
+    ),
+    **dict.fromkeys(("three", "trois", "drei", "tres", "tre"), 3),
+    **dict.fromkeys(("four", "quatre", "vier", "cuatro", "quattro"), 4),
+    **dict.fromkeys(("five", "cinq", "funf", "cinco", "cinque"), 5),
+}
+# An option heading of the rendered plan: a bold line with a clock time.
+_OPTION_HEADING = re.compile(r"^\*\*[^\n]*\d{1,2}:\d{2}", re.M)
+
+
 class Planned:
     """The words of the turn's computed plan: what a summary of it may say."""
 
@@ -1039,13 +1056,33 @@ class Planned:
         self.words = frozenset(text.split())
         self.direct = bool(_DIRECT_N.search(text))
         self.sources = sources
+        # The words of each option (its heading and legs), in order.
+        starts = [m.start() for m in _OPTION_HEADING.finditer(plan)]
+        ends = [*starts[1:], len(plan)] if starts else []
+        self.options = [
+            frozenset(normalized(plan[a:b]).split())
+            for a, b in zip(starts, ends, strict=True)
+        ]
+
+    def counted(self, words: list[str]) -> bool:
+        """A count of options with the other words of its name ("two flixbus"):
+        at most as many options of the plan hold those words."""
+        counts = [COUNTS[w] for w in words if w in COUNTS]
+        rest = [w for w in words if w not in COUNTS]
+        if len(counts) != 1 or not rest:
+            return False
+        named = [w for w in rest if w in self.words]
+        holding = [option for option in self.options if all(w in option for w in named)]
+        return 1 <= counts[0] <= len(holding)
 
     def summarizes(self, anchors: list[Anchor]) -> bool:
         """Every line, place and "direct" of a sentence is the plan's, a line
         or place being written with the plan's words or the person's (the
         person asked "by shinkansen", the plan names "Nozomi 11"), one word at
         least the plan's; a time the plan does not give or a frequency (the
-        plan gives none) is no summary of it."""
+        plan gives none) is no summary of it. A count read into a name ("Two
+        FlixBus coach options also get you there earlier", staging -134) is
+        the plan's when as many of its options hold the rest of the name."""
         if not self.words or not anchors:
             return False
         from_plan = False
@@ -1058,8 +1095,15 @@ class Planned:
             if anchor.kind not in {"line", "name"}:
                 return False
             words = anchor.key.split()
-            if not words or not all(
-                w in self.words or w in self.sources.own for w in words
+            if not words or not (
+                all(w in self.words or w in self.sources.own for w in words)
+                or (
+                    self.counted(words)
+                    and all(
+                        w in self.words or w in self.sources.own or w in COUNTS
+                        for w in words
+                    )
+                )
             ):
                 return False
             from_plan = from_plan or any(w in self.words for w in words)

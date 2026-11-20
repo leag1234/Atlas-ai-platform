@@ -1482,6 +1482,35 @@ def place_words(name: str) -> set[str]:
     )
 
 
+# Words of an origin that only say "here" (an origin written "my location").
+_HERE_WORDS = frozenset(
+    "here ici hier aqui aca qui qua current actuelle aktueller actual attuale "
+    "location position localisation standort ubicacion posicion posizione".split()
+)
+
+
+def from_own_position(request: TransitPlan, asked: list[str]) -> TransitPlan:
+    """The request planned from the device position when the person's last
+    message starts the trip where they are ("from here", "desde aquí") and the
+    origin the model wrote is not one the person named in it.
+
+    Staging -134: "how do I get there from here by train?" was planned from
+    "Moosach / Neuhausen-Nymphenburg (Munich)" and "... from here" in Tokyo
+    from "Tokyo Station (Chiyoda)", names the model wrote from the reverse
+    geocoding of the position; the answers then flagged the walk from the
+    person's real position as not covered. The caller passes this only with a
+    device position; an origin the person wrote themselves stays.
+    """
+    from services.orchestrator.location import own_position_origin
+
+    if request.from_device_position or not asked or not own_position_origin(asked[-1]):
+        return request
+    named = place_words(request.origin or "") - _HERE_WORDS
+    if named and named <= place_words(asked[-1]):
+        return request
+    return request.model_copy(update={"from_device_position": True, "origin": None})
+
+
 async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Message:
     """The tool call: a plan, or an outcome the model reads; facts recorded."""
     from services.orchestrator import grounding, travel_claims
@@ -1505,6 +1534,8 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
         if turn is not None and turn.position is not None
         else None
     )
+    if position is not None and turn is not None:
+        request = from_own_position(request, turn.asked)
     # The person's "tomorrow" is the day after theirs where their device is
     # (staging -132: a browser on UTC located in Sydney, where it was already
     # 07:55 on the 20th, planned "tomorrow" for the 20th; the 08:00 deadline
@@ -1543,11 +1574,15 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
             turn.doubtful = str(data["rendered"])
             turn.doubt_reason = str(data.get("doubt_reason") or "")
             turn.plan, turn.plan_times, turn.plan_ends = "", set(), []
+            turn.plan_starts, turn.plan_origin = [], ""
         else:
             # The plan is the answer's block, given unaltered (planned_answer).
             turn.plan = str(data["rendered"])
             turn.plan_times = _plan_times(data["itineraries"])
             turn.plan_ends = _plan_ends(data["itineraries"])
+            turn.plan_starts = _plan_starts(data["itineraries"])
+            turn.plan_origin = str(data.get("origin") or "")
+            turn.plan_from_device = bool(request.from_device_position)
             turn.doubtful = turn.doubt_reason = ""
     if data.get("rendered"):
         # Computed facts of this turn (D7): the plan as written, and each
@@ -1673,6 +1708,18 @@ def _plan_times(itineraries: object) -> set[str]:
         for value in values
         if isinstance(value, str) and len(value) >= 16 and value[10] == "T"
     }
+
+
+def _plan_starts(itineraries: object) -> list[str]:
+    """The place each itinerary's first leg reaches from the plan's origin."""
+    starts: list[str] = []
+    for itinerary in itineraries if isinstance(itineraries, list) else []:
+        legs = itinerary.get("legs") if isinstance(itinerary, dict) else None
+        first = legs[0] if isinstance(legs, list) and legs else None
+        target = first.get("to") if isinstance(first, dict) else None
+        if isinstance(target, str) and target not in _ENDPOINTS | set(starts):
+            starts.append(target)
+    return starts
 
 
 def _plan_ends(itineraries: object) -> list[tuple[str, str]]:
@@ -1851,7 +1898,13 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     marks = _plan_marks(lines, block, turn.plan_times, own)
     notes = _notes(block)
     emptied = _own_sentences(
-        lines, marks, block, notes, own, str(getattr(turn, "language", "") or "en")
+        lines,
+        marks,
+        block,
+        notes,
+        own,
+        str(getattr(turn, "language", "") or "en"),
+        covered=_start_covered(turn),
     )
     hits = [
         index
@@ -1902,10 +1955,21 @@ def _note_copy(sentence: str, notes: list[set[str]]) -> bool:
     (Europe/Berlin) from published timetables; ..." under the block's "Times
     are local (Europe/Berlin), from published timetables; ..."). Words, not
     wording, are compared, so this holds in every language of the notes; a
-    sentence adding a clause of its own is no copy."""
+    sentence adding a clause of its own is no copy.
+
+    A shorter sentence whose content words all come from one note is a copy
+    too (staging -134: "Check the times with the operator before you
+    travel." under "Times are local (America/New_York), from published
+    timetables; check them with the operator before you travel."). Content
+    words are those of four letters or more, in any language: one added word
+    in seven is a rewording, a place or a fact of its own is not. They are
+    compared by their first five letters without accents, so another form
+    of a note's verb ("Compruebe los horarios" for "compruébelas") is the
+    note's word."""
     words = set(_words(sentence))
     if not words:
         return False
+    content = {_stem(word) for word in words if len(word) >= 4 and not word.isdigit()}
     for note in notes:
         if len(note) < 4:
             continue
@@ -1914,7 +1978,14 @@ def _note_copy(sentence: str, notes: list[set[str]]) -> bool:
             2, int(0.3 * len(words))
         ):
             return True
+        stems = {_stem(word) for word in note}
+        if len(content & stems) >= 3 and len(content - stems) <= len(content) // 7:
+            return True
     return False
+
+
+def _stem(word: str) -> str:
+    return _folded(word)[:5]
 
 
 def _weekday_names(day: str, language: str) -> set[str]:
@@ -1958,6 +2029,7 @@ def _own_sentences(
     notes: set[str],
     own: set[str],
     language: str,
+    covered: Callable[[str], bool] | None = None,
 ) -> set[int]:
     """Take out of the model's own lines the sentences that only repeat the
     block or contradict it, and mark the lines left empty; their indexes are
@@ -1971,6 +2043,10 @@ def _own_sentences(
       2026-11-21. Confirm Saturday's exact times ..." under a plan rightly
       computed for the person's tomorrow). Code computed the plan's days in
       the person's zone; a sentence citing a page read stays.
+    - A caveat that the way from the start to the plan's first stop is not
+      covered, when the plan's first leg covers it (``covered``, staging
+      -134: "The walk from your starting point to Westfriedhof is not covered
+      by the sources" under a plan whose first leg is that walk).
     """
     note_words = [set(_words(note)) for note in notes]
     planned = set(_ISO_DAY.findall(block))
@@ -1990,6 +2066,8 @@ def _own_sentences(
                 continue
             if _note_copy(piece, note_words):
                 continue
+            if covered is not None and covered(piece):
+                continue
             days = set(_ISO_DAY.findall(piece))
             if planned and days & planned and days - planned:
                 disputed |= days - planned
@@ -2008,6 +2086,59 @@ def _own_sentences(
         else:
             lines[index] = line[:start] + text
     return emptied
+
+
+# The trip's starting point as an answer names it, five languages (folded).
+_START = re.compile(
+    r"(?<![\w-])(?:starting (?:point|location|address)|start(?:ing)? point|"
+    r"your (?:position|location|address|start)|where you are|"
+    r"point de depart|(?:votre|ta) (?:position|adresse)|(?:la )?ou (?:vous etes|tu es)|"
+    r"ausgangs(?:punkt|ort|adresse)|(?:ihrem|deinem) standort|wo (?:sie sind|du bist)|"
+    r"punto de partida|(?:tu|su) (?:posicion|ubicacion|direccion)|donde (?:estas|esta usted)|"
+    r"punto di partenza|(?:tua|sua) posizione|dove (?:sei|si trova))(?![\w-])"
+)
+
+
+def _start_covered(turn: Any) -> Callable[[str], bool] | None:
+    """Whether a sentence only says that the way from the start to a first
+    stop of the plan is not covered, when that first leg is in the plan: it
+    names one of the stops the first legs reach, and the start as the plan
+    names it (or, for a plan from the device position, as "your starting
+    point" or the person's own place). A sentence with a clock time says more."""
+    starts = [place_words(stop) for stop in getattr(turn, "plan_starts", []) or []]
+    starts = [stop for stop in starts if stop]
+    if not starts:
+        return None
+    from services.orchestrator import route_facts
+
+    device = bool(getattr(turn, "plan_from_device", False))
+    # The origin as the answer writes it: its name without the area the
+    # plan adds in parentheses, and none of the first stops' words.
+    origin = (
+        set()
+        if device
+        else place_words(
+            re.sub(r"\s*\([^)]*\)", "", str(getattr(turn, "plan_origin", "")))
+        ).difference(*starts)
+    )
+    person = place_words(
+        " ".join(
+            [str(getattr(turn, "place", "") or ""), *getattr(turn, "place_names", [])]
+        )
+    ).difference(*starts)
+
+    def covered(sentence: str) -> bool:
+        folded = _folded(sentence).replace("'", " ")
+        if _clocks(sentence) or not route_facts.gap(folded):
+            return False
+        words = set(re.findall(r"\w+", folded))
+        if not any(stop <= words for stop in starts):
+            return False
+        if origin and origin <= words:
+            return True
+        return device and bool(_START.search(folded) or person & words)
+
+    return covered
 
 
 _HEADING = re.compile(
