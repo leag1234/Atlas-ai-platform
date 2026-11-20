@@ -7,6 +7,7 @@ measured values (D5); the refusals of the on-demand owned server's starter are
 written here with their measured values.
 """
 
+import re
 from collections.abc import Mapping
 from typing import Literal
 
@@ -246,3 +247,80 @@ _QUOTA = {
 def app_quota(language: str, hourly: int, stored: int) -> str:
     """The storage quota of apps and drawings, with its limits (D5)."""
     return _QUOTA.get(language, _QUOTA["en"]).format(hourly=hourly, stored=stored)
+
+
+# A tool loop of a chat turn that stopped before its answer could be written.
+# The person reads why in their language; the stop summary of the loop (counts,
+# limits, reserved cost) goes to the logs only (staging -139, 2026-11-20: the
+# summary "Explicit stop: loop_detected. Tools executed: 2; limit 10..." was the
+# answer, followed by "an unexpected error").
+_STOPPED = {
+    "loop": {
+        "fr": "Je n'ai pas pu aller au bout de cette réponse : la même recherche revenait sans élément nouveau. Précisez la demande (un nom exact, un aspect particulier) puis renvoyez-la.",
+        "en": "I could not finish this answer: the same lookup kept coming back with nothing new. Make the request more precise (an exact name, one aspect) and send it again.",
+        "de": "Ich konnte diese Antwort nicht abschließen: Dieselbe Suche brachte immer wieder nichts Neues. Präzisieren Sie die Anfrage (ein genauer Name, ein bestimmter Aspekt) und senden Sie sie erneut.",
+        "es": "No he podido terminar esta respuesta: la misma búsqueda volvía sin nada nuevo. Precise la petición (un nombre exacto, un aspecto concreto) y envíela de nuevo.",
+        "it": "Non sono riuscito a completare questa risposta: la stessa ricerca tornava senza nulla di nuovo. Precisa la richiesta (un nome esatto, un aspetto preciso) e inviala di nuovo.",
+    },
+    "steps": {
+        "fr": "Je n'ai pas pu terminer cette réponse avec le nombre d'étapes de recherche prévu pour une réponse. Posez une question plus ciblée, ou demandez la suite dans un nouveau message.",
+        "en": "I could not finish this answer within the research steps one answer takes. Ask a more focused question, or ask for the rest in a new message.",
+        "de": "Ich konnte diese Antwort nicht innerhalb der Rechercheschritte abschließen, die eine Antwort umfasst. Stellen Sie eine gezieltere Frage oder fragen Sie in einer neuen Nachricht nach dem Rest.",
+        "es": "No he podido terminar esta respuesta con los pasos de búsqueda que admite una respuesta. Haga una pregunta más concreta o pida el resto en un nuevo mensaje.",
+        "it": "Non sono riuscito a completare questa risposta con i passaggi di ricerca previsti per una risposta. Fai una domanda più mirata o chiedi il resto in un nuovo messaggio.",
+    },
+    "answer": {
+        "fr": "Je n'ai pas pu rédiger une réponse exploitable cette fois. Renvoyez votre message, éventuellement reformulé.",
+        "en": "I could not write a usable answer this time. Send your message again, rephrased if you like.",
+        "de": "Diesmal konnte ich keine brauchbare Antwort schreiben. Senden Sie Ihre Nachricht erneut, gern umformuliert.",
+        "es": "Esta vez no he podido redactar una respuesta utilizable. Envíe de nuevo su mensaje, reformulado si lo desea.",
+        "it": "Questa volta non sono riuscito a scrivere una risposta utilizzabile. Invia di nuovo il messaggio, magari riformulato.",
+    },
+}
+# The stop reasons of the tool loop (services.orchestrator.loop) that end a chat
+# turn with one of the sentences above. Budget and deadline stops keep their own
+# wording (D5): the budget sentence of the turn and the "took too long" one.
+STOP_CATEGORIES = {
+    "loop_detected": "loop",
+    "tool_calls": "steps",
+    "search_limit": "steps",
+    "fetch_limit": "steps",
+    "answer_step_limit": "steps",
+    "model_calls": "steps",
+    "protocol_completion_limit": "answer",
+}
+# Deadline stops of the loop: the person reads the deadline it ran into.
+DEADLINE_STOPS = frozenset({"wall_clock", "answer_time"})
+
+
+def stop_answer(reason: str, language: str) -> str | None:
+    """The sentence a chat turn stopped for ``reason`` ends with, else None."""
+    if reason in DEADLINE_STOPS:
+        return _TOO_LONG.get(language, _TOO_LONG["en"])
+    category = STOP_CATEGORIES.get(reason)
+    if category is None:
+        return None
+    labels = _STOPPED[category]
+    return labels.get(language, labels["en"])
+
+
+# Diagnostics written by code for logs, records and API error bodies: the stop
+# summary of the tool loop and the unexpected-failure detail of the stream. They
+# are never part of an answer; each runs to the end of its line.
+_DIAGNOSTIC = re.compile(
+    r"(?:Explicit stop: [a-z_]+\.|The request did not complete because of an "
+    r"unexpected failure \(\w+\))[^\n]*"
+)
+
+
+def internal_diagnostic(text: str) -> bool:
+    """Whether ``text`` carries a diagnostic meant for logs, not for the person."""
+    return bool(_DIAGNOSTIC.search(text))
+
+
+def without_diagnostics(text: str) -> str:
+    """``text`` without its diagnostic lines (see internal_diagnostic)."""
+    if not internal_diagnostic(text):
+        return text
+    kept = _DIAGNOSTIC.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", kept).strip()

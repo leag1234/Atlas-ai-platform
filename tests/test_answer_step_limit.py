@@ -12,6 +12,7 @@ from typing import Literal
 import unittest
 
 from packages.profiles import PROFILES
+from packages.user_errors import stop_answer
 from services.orchestrator.closing import (
     SEARCH_LIMITS,
     STEP_CLOSING_MARK,
@@ -147,8 +148,11 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
             ]
         )
         result = await chat_turn(model, "en")
-        self.assertEqual((result.state, result.reason), ("stopped", STEP_LIMIT_CODE))
-        self.assertIn("Searches: 3; limit 3", result.text)
+        # The turn ends with one sentence naming the step limit, never with the
+        # loop's stop summary (staging -139, 2026-11-20).
+        self.assertEqual((result.state, result.reason), ("done", STEP_LIMIT_CODE))
+        self.assertEqual(result.text, stop_answer(STEP_LIMIT_CODE, "en"))
+        self.assertNotIn("Searches:", result.text)
         self.assertNotIn("quota", result.text)
 
 

@@ -1,15 +1,20 @@
 """POC-P6: reserve worst-case usage before starting cancellable I/O."""
 
 from services.orchestrator.closing import (
+    CLOSABLE_STOPS,
     LIMIT_CLOSED,
+    REPEAT_LIMIT,
     SEARCH_TOOLS,
     STEP_LIMIT_CODE,
     WRITING_RESERVE_SECONDS,
     closing_instruction,
     limit_code,
+    repeated_call_result,
     step_closing_instruction,
     step_limit_result,
+    stop_closing_instruction,
     time_closing_instruction,
+    TRANSIENT_ERRORS,
 )
 from services.orchestrator.code_verification import VerificationStatus
 from services.orchestrator.deadline import recovery_seconds
@@ -23,6 +28,7 @@ from packages.profiles import accepted_profile
 from packages.limits import LimitError
 from packages.privacy import STATUS, StrictPrivacyUnavailable, describe, refusal
 from packages.owned_server import OwnedServerUnavailable
+from packages.user_errors import STOP_CATEGORIES, stop_answer
 
 import asyncio
 import json
@@ -306,6 +312,11 @@ async def run(
     counts: Counter[str] = Counter()
     recent: list[tuple[str, str]] = []
     nudged: set[tuple[str, str]] = set()
+    # Chat: the output of each call that ran, by tool and arguments, for the same
+    # call made again (closing.repeated_call_result), and the calls run twice.
+    outputs: dict[tuple[str, str], Message] = {}
+    rerun: set[tuple[str, str]] = set()
+    repeated_tool = ""
     quota_recovered = False
     quota_denials = 0
     # Chat only: the first search refused for a limit, and whether the model
@@ -402,6 +413,104 @@ async def run(
                 }
             )
             raise Stop("wall_clock") from None
+
+    async def closing_answer(reason: str) -> str | None:
+        """One model call without tools after a stop of research, or None."""
+        from services.orchestrator.narration import (
+            protocol_material,
+            raw_tool_call,
+            unfinished_announcement,
+        )
+
+        answer_missing_calls(messages)
+        messages.append(
+            {
+                "role": "user",
+                "content": stop_closing_instruction(
+                    reason,
+                    {
+                        "searches": counts["web_search"],
+                        "fetches": counts["web_fetch"],
+                        "tools": result.tool_calls,
+                    },
+                    query.prose_lang or query.lang,
+                ),
+            }
+        )
+        try:
+            reserved = model.estimate(messages)
+            reserve(reserved)
+            received = await invoke(model.complete(messages, remaining()))
+        except PublicFailure as exc:
+            # A refusal of the level or the owned server keeps its own answer.
+            if type(exc) is not GatewayError:
+                raise
+            return None
+        except (Stop, LimitError, ValidationError, ValueError, RuntimeError, OSError):
+            return None
+        if not isinstance(received, Turn) or received.calls:
+            return None
+        if received.usage is not None:
+            if (
+                received.usage.tokens > reserved.tokens
+                or received.usage.cost > reserved.cost
+            ):
+                return None
+            result.tokens -= reserved.tokens - received.usage.tokens
+            result.cost -= reserved.cost - received.usage.cost
+        text = received.text if final_only else "".join([*answer_parts, received.text])
+        if (
+            not received.text.strip()
+            or protocol_material(text)
+            or unfinished_announcement(text)
+            or raw_tool_call(text, offered_tools(model)) is not None
+        ):
+            return None
+        return text
+
+    async def close_after_stop(reason: str) -> Result:
+        """Chat: a stop of the tool loop ends with an answer, never its summary.
+
+        The model writes the answer from what it has, offered no tool, when the
+        stop leaves time and budget for that call; otherwise, or when that call
+        fails, the person reads why in one sentence of their language. The stop
+        summary (counts and limits) goes to the log only (staging -139).
+        """
+        language = query.prose_lang or query.lang
+        logging.getLogger(__name__).warning(
+            json.dumps(
+                {
+                    "event": "tool_loop_stop",
+                    "reason": reason,
+                    "tool": repeated_tool or None,
+                    "tools_executed": result.tool_calls,
+                    "tool_limit": limits.tool_calls,
+                    "searches": counts["web_search"],
+                    "fetches": counts["web_fetch"],
+                    "elapsed_seconds": round(
+                        max(0, clock() - (deadline - limits.wall_clock)), 1
+                    ),
+                    "cost_reserved": str(result.cost),
+                }
+            )
+        )
+        text = (
+            await closing_answer(reason)
+            if reason in CLOSABLE_STOPS and not closed
+            else None
+        )
+        logging.getLogger(__name__).warning(
+            json.dumps(
+                {
+                    "event": "tool_loop_closing",
+                    "reason": reason,
+                    "answered": text is not None,
+                }
+            )
+        )
+        result.text = text if text is not None else str(stop_answer(reason, language))
+        result.state = "done"
+        return result
 
     try:
         while True:
@@ -891,7 +1000,52 @@ async def run(
                 if call.name == "web_fetch" and counts[call.name] >= 8:
                     raise Stop("fetch_limit")
                 recent.append((call.name, canonical))
-                if len(recent) >= 3 and recent[-1] == recent[-2] == recent[-3]:
+                if closes_on_limit and len(recent) >= 2 and recent[-1] == recent[-2]:
+                    # Chat: the same call as the previous one. A third time in a
+                    # row closes the research; the answer is then written from
+                    # what is there (close_after_stop).
+                    key = call.name, canonical
+                    if (
+                        len(recent) >= REPEAT_LIMIT
+                        and len(set(recent[-REPEAT_LIMIT:])) == 1
+                    ):
+                        repeated_tool = call.name
+                        raise Stop("loop_detected")
+                    previous_output = outputs.get(key)
+                    if (
+                        previous_output is not None
+                        and previous_output.get("error") in TRANSIENT_ERRORS
+                        and key not in rerun
+                    ):
+                        # A failure a second attempt may cure runs once more.
+                        rerun.add(key)
+                    else:
+                        repeat = repeated_call_result(previous_output)
+                        if references is not None:
+                            await references.retain(call, repeat, messages)
+                        else:
+                            messages.append(
+                                dict(
+                                    role="tool",
+                                    tool_call_id=call.id,
+                                    content=json.dumps(repeat, ensure_ascii=False),
+                                )
+                            )
+                        result.trace.append(
+                            dict(
+                                tool=call.name,
+                                arguments=call.arguments,
+                                output=repeat,
+                                reused=True,
+                            )
+                        )
+                        logging.getLogger(__name__).warning(
+                            json.dumps(
+                                {"event": "repeated_call_reused", "tool": call.name}
+                            )
+                        )
+                        continue
+                elif len(recent) >= 3 and recent[-1] == recent[-2] == recent[-3]:
                     if (call.name, canonical) in nudged:
                         raise Stop("loop_detected")
                     # Third identical call in a row: answer it once without running
@@ -1062,6 +1216,8 @@ async def run(
                     "output": output,
                 }
                 result.trace.append(event)
+                if closes_on_limit:
+                    outputs[(call.name, canonical)] = output
                 logging.getLogger(__name__).info(
                     json.dumps(
                         {
@@ -1155,6 +1311,8 @@ async def run(
                     messages.append({"role": "user", "content": step})
     except Stop as exc:
         result.reason = str(exc)
+        if closes_on_limit and result.reason in STOP_CATEGORIES:
+            return await close_after_stop(result.reason)
     except ValidationError as exc:
         result.state, result.reason, result.text = (
             "stopped",
@@ -1215,6 +1373,51 @@ async def run(
         )
     )
     return result
+
+
+def offered_tools(model: object) -> set[str]:
+    """The tool names the model declares (GatewayModel.tools), if any."""
+    declared = getattr(model, "tools", None)
+    return {
+        str(function["name"])
+        for tool in (declared if isinstance(declared, list) else [])
+        if isinstance(tool, dict)
+        and isinstance(function := tool.get("function"), dict)
+        and isinstance(function.get("name"), str)
+    }
+
+
+def answer_missing_calls(messages: list[Message]) -> None:
+    """Give every call of the last tool batch a result before a closing call.
+
+    A stop raised in the middle of a batch leaves its later calls unanswered, and
+    a provider refuses a conversation with a call that has no result.
+    """
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        calls = message.get("tool_calls")
+        if message.get("role") != "assistant" or not isinstance(calls, list):
+            continue
+        answered = {
+            m.get("tool_call_id")
+            for m in messages[index + 1 :]
+            if m.get("role") == "tool"
+        }
+        for call in calls:
+            if isinstance(call, dict) and call.get("id") not in answered:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.get("id"),
+                        "content": json.dumps(
+                            {
+                                "error": "not_run",
+                                "message": "Not run: the research of this answer is closed.",
+                            }
+                        ),
+                    }
+                )
+        return
 
 
 def display_limit_value(value: object) -> str:

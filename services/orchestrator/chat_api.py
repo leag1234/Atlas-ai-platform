@@ -639,7 +639,11 @@ async def chat(request: Request) -> Response:
     }
     assert payload is not None
     base = {"id": item.request_id, "created": int(time.time()), "model": payload.model}
-    message = {"role": "assistant", "content": item.reponse}
+    from packages.user_errors import without_diagnostics
+
+    # A finished answer never carries a diagnostic written for the logs; an
+    # error body above keeps its measured stop (D5).
+    message = {"role": "assistant", "content": without_diagnostics(item.reponse)}
     if item.reasoning:
         message["reasoning_content"] = item.reasoning
     return JSONResponse(
