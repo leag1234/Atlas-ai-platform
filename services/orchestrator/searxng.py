@@ -31,12 +31,20 @@ from services.orchestrator.web import MAX_BYTES
 # rejoin when their block lifts. Bing answered every request, but about half
 # of its pages were unrelated to the query, so it is accepted when configured
 # and is not in the default order.
+# Measured again from the test addresses on 2026-11-20 (three queries in
+# French, English and German per engine, spaced): PrivacyWall (Bing results
+# through its own front end) answered all three with relevant pages, Mwmbl
+# (small independent open index, no language support) answered all three
+# with fewer pages. Both are accepted when configured. DuckDuckGo and Mojeek
+# answered single spaced calls but refused a turn's burst of searches.
 ENGINES = ("startpage", "duckduckgo", "mojeek", "seznam", "qwant", "brave", "google")
-SUPPORTED = (*ENGINES, "bing")
+SUPPORTED = (*ENGINES, "bing", "privacywall", "mwmbl")
 # Engines of the pinned image that implement a time range. SearXNG silently
 # skips any other engine when a request carries time_range, so a news search
 # would read as empty instead of asking it (staging 2026-11-14).
-TIME_RANGE_ENGINES = frozenset({"duckduckgo", "google", "startpage", "mojeek"})
+TIME_RANGE_ENGINES = frozenset(
+    {"duckduckgo", "google", "startpage", "mojeek", "privacywall"}
+)
 # Local pacing decisions: the engine was not asked, so it is not a failure.
 SKIPPED = frozenset({"cooldown", "quarantined"})
 # A search waits for a busy engine only when the call can still start this
