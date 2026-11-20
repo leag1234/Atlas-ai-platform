@@ -2210,6 +2210,154 @@ def _notes(block: str) -> set[str]:
     return {_loose(line) for line in lines[last + 1 :]}
 
 
+# Words of a line opening with the block's title that add nothing to it: the
+# person's relative days and what states a deadline, five languages (folded,
+# first five letters as _stem gives them).
+_TITLE_FILLER = frozenset(
+    {
+        "tomor",
+        "today",
+        "tonig",
+        "demai",
+        "aujou",
+        "morge",
+        "heute",
+        "manan",
+        "doman",
+        "oggi",
+        "befor",
+        "until",
+        "avant",
+        "jusqu",
+        "antes",
+        "hasta",
+        "prima",
+        "entro",
+        "spate",
+        "spaet",
+        "lates",
+        "ankom",
+        "plus",
+        "tard",
+        "tardi",
+    }
+)
+_TITLE_TRIM = " \t-\u2013\u2014:;,.)]*_"
+_TITLE_SEPARATOR = re.compile(r"\s[-\u2013\u2014]\s|[:;]\s")
+
+
+def _title_words(text: str) -> re.Pattern[str] | None:
+    """A pattern matching the words of ``text`` in order at the start of a
+    line, whatever emphasis, punctuation or arrows lie between them."""
+    words = _WORD.findall(text.translate(_QUOTES))
+    if not words:
+        return None
+    gap = r"[\W_]*+"
+    return re.compile(
+        r"^" + gap + gap.join(map(re.escape, words)) + r"(?![^\W_])",
+        re.IGNORECASE,
+    )
+
+
+def _adds_to_title(rest: str, block: str, language: str) -> bool:
+    """Whether what follows a copy of the block's title says something the
+    block does not: a word of its own (four letters or more), a time or a
+    day it does not give. The plan's days by name, in English and the
+    answer's language, the person's relative days and the words stating a
+    deadline add nothing (staging -136: "... — for tomorrow, Saturday
+    2026-11-21, arriving by 11:00:" over a block giving that day and that
+    deadline)."""
+    days = set(_ISO_DAY.findall(block))
+    if set(_ISO_DAY.findall(rest)) - days or _clocks(rest) - _clocks(block):
+        return True
+    known = {_stem(word) for word in _words(block)} | _TITLE_FILLER
+    for day in days:
+        for name in _weekday_names(day, language) | _month_names(day, language):
+            known |= {_stem(word) for word in _words(name)}
+    content = {
+        _stem(word)
+        for word in _words(_ISO_DAY.sub(" ", rest))
+        if len(word) >= 4 and not any(c.isdigit() for c in word)
+    }
+    return bool(content - known)
+
+
+def _month_names(day: str, language: str) -> set[str]:
+    """The month of an ISO day, in English and in the answer's language."""
+    try:
+        value = date.fromisoformat(day)
+    except ValueError:
+        return set()
+    names = {value.strftime("%B").casefold()}
+    try:
+        from babel.dates import format_date
+
+        names.add(format_date(value, "MMMM", locale=language or "en").casefold())
+    except Exception:  # noqa: BLE001 - an unknown locale keeps the English name
+        pass
+    return names
+
+
+def _title_copies(
+    lines: list[str], marks: list[bool], block: str, own: set[str], language: str
+) -> None:
+    """Mark the model's lines that open with the block's title, or restate
+    it: its label then the trip in other words (staging -136: "Public
+    transport plan: your position → South Station (Boston) — for tomorrow,
+    Saturday 2026-11-21, arriving by 11:00:" right above the block's own
+    "**Public transport plan: your position → South Station (Boston)**").
+    Such a line is a copy of the block's title: it goes, and the block takes
+    its place. What it adds of its own stays, as a plain sentence; a line
+    citing a page read stays whole. The title is the block's own first line,
+    so this holds in every language of the block."""
+    plan = _block_lines(block)
+    if not plan:
+        return
+    title = re.sub(r"[*_`]+", "", plan[0]).strip()
+    label = title.split(":", 1)[0]
+    whole, opening = _title_words(title), _title_words(label)
+    trip = _title_words(title[len(label) + 1 :]) if ":" in title else None
+    for index, line in enumerate(lines):
+        if marks[index] or not line.strip() or _web(line, own):
+            continue
+        text = _MD_LINK.sub(r"\1", line).strip()
+        found = whole.match(text) if whole else None
+        rest = text[found.end() :] if found else ""
+        if found is None:
+            # The label, then the trip in other words, or words the block
+            # gives ("... for tomorrow:"): a title. A sentence about the plan
+            # ("Public transport plan is ...") stays.
+            found = opening.match(text) if opening else None
+            if found is None:
+                continue
+            rest = text[found.end() :]
+            if not (rest.lstrip(" \t*_").startswith(":") or "\u2192" in rest):
+                if not _adds_to_title(rest, block, language):
+                    marks[index] = True
+                continue
+            rest = rest.lstrip(_TITLE_TRIM)
+            moved = trip.match(rest) if trip else None
+            if moved:
+                rest = rest[moved.end() :]
+            elif "\u2192" in rest:
+                # Only what follows the trip, after a dash or a colon, is
+                # the line's own.
+                after = rest.split("\u2192", 1)[1]
+                cut = _TITLE_SEPARATOR.search(after)
+                rest = after[cut.end() :] if cut else ""
+        rest = rest.strip(_TITLE_TRIM)
+        if not rest or not _adds_to_title(rest, block, language):
+            marks[index] = True
+            continue
+        sentence = rest.rstrip(":").rstrip()
+        if not re.search(r"[^\W\d_]", sentence):
+            marks[index] = True
+            continue
+        if sentence[-1] not in ".!?":
+            sentence += "."
+        lines[index] = sentence[0].upper() + sentence[1:]
+
+
 def _announcements(
     lines: list[str], marks: list[bool], own: set[str], block_at: int | None = None
 ) -> None:
@@ -2280,7 +2428,8 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     else follows its first paragraph (staging -131: a Madrid answer rewritten
     as prose lost its AVE leg, and its option 2 had no leg at all). A copy of
     the block's closing notes goes too, and a line that only announced what
-    went (staging -132).
+    went (staging -132), and a line opening with the block's title or
+    restating it (_title_copies, staging -136).
     """
     block = turn.plan.strip()
     if not block or turn.doubtful:
@@ -2292,7 +2441,9 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     if _block_span(lines, block) is not None:
         return answer
     own = own_urls()
+    language = str(getattr(turn, "language", "") or "en")
     marks = _plan_marks(lines, block, turn.plan_times, own)
+    _title_copies(lines, marks, block, own, language)
     notes = _notes(block)
     emptied = _own_sentences(
         lines,
@@ -2300,7 +2451,7 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
         block,
         notes,
         own,
-        str(getattr(turn, "language", "") or "en"),
+        language,
         covered=_start_covered(turn),
     )
     hits = [
