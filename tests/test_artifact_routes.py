@@ -292,6 +292,17 @@ for (const name of ['localStorage', 'sessionStorage']) {
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_a_version_not_stored_opens_a_visible_page(self) -> None:
+        # Staging 2026-11-20: an empty 404 left the side panel blank.
+        response = self.client.get(
+            f"/api/atlas/artifacts/{self.artifact_id}/versions/9/open",
+            headers={**self.owner(), "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn("Cette version n'est pas disponible.", response.text)
+        self.assertNotIn("<script", response.text)
+
     def test_no_allow_same_origin_in_sources(self) -> None:
         paths = [
             Path("services/orchestrator/chat-ui.js"),
