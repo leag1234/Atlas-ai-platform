@@ -1850,10 +1850,13 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     own = own_urls()
     marks = _plan_marks(lines, block, turn.plan_times, own)
     notes = _notes(block)
+    emptied = _own_sentences(
+        lines, marks, block, notes, own, str(getattr(turn, "language", "") or "en")
+    )
     hits = [
         index
         for index, mark in enumerate(marks)
-        if mark and _loose(_plain(lines[index])) not in notes
+        if mark and index not in emptied and _loose(_plain(lines[index])) not in notes
     ]
     if hits:
         # A list item or an option heading inside the restated plan goes too.
@@ -1884,6 +1887,129 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
 
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_WORD = re.compile(r"[^\W_]+")
+_PREFIX = re.compile(r"[ \t]*+(?:[-*+][ \t]++|\d{1,2}[.)][ \t]++)?+")
+_ISO_DAY = re.compile(r"(?<![\d-])(\d{4}-\d{2}-\d{2})(?![\d-])")
+
+
+def _words(text: str) -> list[str]:
+    return _WORD.findall(_MD_LINK.sub(r"\1", text).translate(_QUOTES).casefold())
+
+
+def _note_copy(sentence: str, notes: list[set[str]]) -> bool:
+    """A reworded copy of one of the block's closing notes: it has nearly all
+    the note's words and adds next to none (staging -133: "All times are local
+    (Europe/Berlin) from published timetables; ..." under the block's "Times
+    are local (Europe/Berlin), from published timetables; ..."). Words, not
+    wording, are compared, so this holds in every language of the notes; a
+    sentence adding a clause of its own is no copy."""
+    words = set(_words(sentence))
+    if not words:
+        return False
+    for note in notes:
+        if len(note) < 4:
+            continue
+        added = len(words - note)
+        if len(words & note) >= 0.75 * len(note) and added <= max(
+            2, int(0.3 * len(words))
+        ):
+            return True
+    return False
+
+
+def _weekday_names(day: str, language: str) -> set[str]:
+    """The weekday of an ISO day, in English and in the answer's language."""
+    try:
+        value = date.fromisoformat(day)
+    except ValueError:
+        return set()
+    names = {value.strftime("%A").casefold()}
+    try:
+        from babel.dates import format_date
+
+        names.add(format_date(value, "EEEE", locale=language or "en").casefold())
+    except Exception:  # noqa: BLE001 - an unknown locale keeps the English name
+        pass
+    return names
+
+
+def _names_day(sentence: str, days: set[str], names: set[str]) -> bool:
+    if days & set(_ISO_DAY.findall(sentence)):
+        return True
+    words = set(_words(sentence))
+    return any(set(_words(name)) <= words for name in names if name)
+
+
+def _sentences(line: str) -> list[str]:
+    pieces: list[str] = []
+    for piece in _SENTENCE_END.split(line.strip()):
+        if pieces and not re.search(r"[^\W\d_]", _MD_LINK.sub("", piece)):
+            # A citation after its sentence's full stop belongs to it.
+            pieces[-1] += " " + piece
+        else:
+            pieces.append(piece)
+    return pieces
+
+
+def _own_sentences(
+    lines: list[str],
+    marks: list[bool],
+    block: str,
+    notes: set[str],
+    own: set[str],
+    language: str,
+) -> set[int]:
+    """Take out of the model's own lines the sentences that only repeat the
+    block or contradict it, and mark the lines left empty; their indexes are
+    returned (they never place the block).
+
+    - A reworded copy of a closing note (_note_copy).
+    - A sentence setting one of the plan's days against another day, and the
+      sentences after it in its paragraph that name that other day (staging
+      -133: told the wrong "today", the model wrote "The journey planner
+      returned times for Friday 2026-11-20, not your travel day of Saturday
+      2026-11-21. Confirm Saturday's exact times ..." under a plan rightly
+      computed for the person's tomorrow). Code computed the plan's days in
+      the person's zone; a sentence citing a page read stays.
+    """
+    note_words = [set(_words(note)) for note in notes]
+    planned = set(_ISO_DAY.findall(block))
+    emptied: set[int] = set()
+    for index, line in enumerate(lines):
+        if marks[index] or not line.strip() or _HEADING.match(line):
+            continue
+        prefix = _PREFIX.match(line)
+        start = prefix.end() if prefix else 0
+        pieces = _sentences(line[start:])
+        kept: list[str] = []
+        disputed: set[str] = set()
+        names: set[str] = set()
+        for piece in pieces:
+            if _web(piece, own):
+                kept.append(piece)
+                continue
+            if _note_copy(piece, note_words):
+                continue
+            days = set(_ISO_DAY.findall(piece))
+            if planned and days & planned and days - planned:
+                disputed |= days - planned
+                for day in days - planned:
+                    names |= _weekday_names(day, language)
+                continue
+            if disputed and _names_day(piece, disputed, names):
+                continue
+            kept.append(piece)
+        if len(kept) == len(pieces):
+            continue
+        text = " ".join(kept).strip()
+        if not text or not re.search(r"[^\W\d_]", text):
+            marks[index] = True
+            emptied.add(index)
+        else:
+            lines[index] = line[:start] + text
+    return emptied
+
+
 _HEADING = re.compile(
     r"^[ \t]*+(?:#{1,6}[ \t]|(?:\*\*|__)[^*_\n]++(?:\*\*|__)[ \t]*+:?+[ \t]*+$)"
 )
@@ -1906,14 +2032,7 @@ def _read_only(text: str, own: set[str]) -> str:
         if _ITEM.match(line):
             kept.append(line if _web(line, own) else "")
             continue
-        pieces: list[str] = []
-        for piece in _SENTENCE_END.split(line.strip()):
-            if pieces and not re.search(r"[^\W\d_]", _MD_LINK.sub("", piece)):
-                # A citation after its sentence's full stop belongs to it.
-                pieces[-1] += " " + piece
-            else:
-                pieces.append(piece)
-        kept.append(" ".join(piece for piece in pieces if _web(piece, own)))
+        kept.append(" ".join(piece for piece in _sentences(line) if _web(piece, own)))
     lines = kept
     # A heading stays only above kept text of its own.
     for index in range(len(lines) - 1, -1, -1):

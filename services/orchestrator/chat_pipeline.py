@@ -883,6 +883,10 @@ async def process(request: ChatRequest, item: Interaction) -> None:
 
     capture = context_usage.samples.set(item.context_samples)
     components = context_usage.parts.set({})
+    from services.orchestrator.work_clock import settle_zone
+
+    # The person's zone, settled once: every "today" of this turn reads it.
+    settle_zone(request)
     # Truthfulness V1 (owner decision 2026-10-31): a factual question is answered in
     # one piece after its precise claims are checked against the sources fetched in
     # this turn; other turns keep streaming.

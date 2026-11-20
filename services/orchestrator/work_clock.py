@@ -45,11 +45,63 @@ def person_zone(name: str | None, *, explicit: bool = False) -> str:
     return datecalc.DEFAULT_ZONE
 
 
+def located_zone(location: Any) -> str | None:
+    """The zone of a location the browser sent: its own zone, sent with it,
+    else the zone at the device's position; None when neither is known."""
+    if location is None:
+        return None
+    zone = getattr(location, "timezone", None)
+    if zone and zone != "UTC":
+        try:
+            ZoneInfo(zone)
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+        else:
+            return str(zone)
+    position = getattr(location, "position", None)
+    if position is None:
+        return None
+    from services.orchestrator.transit_planner import zone_at
+
+    return zone_at(position.latitude, position.longitude) or None
+
+
+def settle_zone(request: Any) -> str:
+    """Make ``request.ui_timezone`` the person's zone before anything reads it.
+
+    Every "today" of a chat turn (the calendar note, the date checks, the
+    trip's days, the date tool, reminders) reads ``ui_timezone``. Open WebUI
+    forwards no zone of its own, so it stayed "UTC" and they all fell back to
+    the instance's default zone (staging -133: in New York at 19:25 on the
+    19th, the model was told tomorrow was the 21st, while the journey planner,
+    in the device's zone, rightly planned the 20th). When the interface sent
+    none, the zone of the location it sent (or the one shared earlier in this
+    conversation) is the person's; else the instance default stays.
+    """
+    zone = getattr(request, "ui_timezone", None)
+    if zone and zone != "UTC":
+        return str(zone)
+    location = getattr(request, "location", None)
+    if location is None:
+        from services.orchestrator.location_memory import conversation_key, positions
+
+        try:
+            location = positions.recall(conversation_key(request))
+        except (AttributeError, TypeError):
+            location = None
+    found = located_zone(location)
+    if found:
+        request.ui_timezone = found
+        return found
+    return zone or "UTC"
+
+
 def request_zone(request: Any) -> str:
-    return person_zone(
-        getattr(request, "ui_timezone", None),
-        explicit=bool(getattr(request, "_scheduled_run", False)),
-    )
+    scheduled = bool(getattr(request, "_scheduled_run", False))
+    zone = getattr(request, "ui_timezone", None)
+    if not scheduled and (not zone or zone == "UTC"):
+        zone = located_zone(getattr(request, "location", None)) or zone
+    return person_zone(zone, explicit=scheduled)
 
 
 def current_moment(zone: str, now: datetime | None = None) -> dict[str, str]:
