@@ -186,6 +186,7 @@ kind is one of:
 
 file_format, only when kind is "file", else null: "docx", "xlsx", "pptx", "pdf", "csv" or "md"; null when no format is named or clearly implied. A spreadsheet, budget or tracking table is "xlsx"; a slide deck "pptx"; a Word document "docx".
 follow_up: true when the last message changes, continues, fixes or reruns something produced earlier in this conversation (the previous app, drawing, file, script or machine task); false for a new request.
+delivered_before, when present, names what the assistant delivered before earlier_turns. A last message that brings what that delivery needs (links, files, data or values to use in it) or asks to change it is its follow-up and keeps its kind.
 needs_research: true only when a drawing or a file needs current facts from the web.
 needs_location: true when a correct answer depends on where the user is right now: places near them, what is open around them, directions or a route from where they are, the next departures or a travel time to get somewhere from their position, the weather or events where they are. It stays true when they have said where they are. False when the question is about a named place independently of the user's position (opening hours of a named museum, the weather in a named city, a train between two named cities), and for the current date or time.
 origin: when needs_location is true and the last message or an earlier user turn states where the user is or starts from (an address, a street, a station, a landmark, a town), that place from the user's words only, written as a map search query (street, station or landmark, then the town, separated by a comma); otherwise null. Never guess a place, never use a place that is only the destination.
@@ -218,7 +219,8 @@ Examples (last message, then the reply):
 "écris un script python qui trie mes photos par date et lance-le" {"kind": "run", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "vérifie l'espace disque de mon VPS" {"kind": "remote", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
 "oublie mon ordi portable" {"kind": "remote", "file_format": null, "follow_up": false, "needs_research": false, "needs_location": false, "origin": null}
-After an assistant turn that delivered an app: "rends les boutons plus gros" {"kind": "app", "file_format": null, "follow_up": true, "needs_research": false, "needs_location": false, "origin": null}"""
+After an assistant turn that delivered an app: "rends les boutons plus gros" {"kind": "app", "file_format": null, "follow_up": true, "needs_research": false, "needs_location": false, "origin": null}
+With an app in delivered_before, after the assistant asked for sound files: "here are the links: https://example.org/kick.wav, https://example.org/snare.wav" {"kind": "app", "file_format": null, "follow_up": true, "needs_research": false, "needs_location": false, "origin": null}"""
 
 _HISTORY_TURNS = 4
 _HISTORY_CHARACTERS = 500
@@ -304,29 +306,37 @@ def messages(
     text: str, history: Sequence[Mapping[str, object]]
 ) -> list[dict[str, Any]]:
     """The routing call: the system prompt and the turns as JSON data, text only."""
-    earlier = [
-        {
-            "role": str(turn.get("role")),
-            "text": _clip(content, _HISTORY_CHARACTERS)
-            + (_delivered(content) if turn.get("role") == "assistant" else ""),
-        }
-        for turn in list(history)[-_HISTORY_TURNS:]
+    turns = [
+        (str(turn.get("role")), content)
+        for turn in history
         if turn.get("role") in ("user", "assistant")
         and isinstance(content := turn.get("content"), str)
         and content.strip()
     ]
+    window = turns[-_HISTORY_TURNS:]
+    earlier = [
+        {
+            "role": role,
+            "text": _clip(content, _HISTORY_CHARACTERS)
+            + (_delivered(content) if role == "assistant" else ""),
+        }
+        for role, content in window
+    ]
+    data: dict[str, object] = {"earlier_turns": earlier}
+    # An app delivered before the window is still the conversation's current
+    # one: without it, material sent for it later (sample links the assistant
+    # asked for, staging 2026-11-20) read as a new question.
+    if not any(
+        role == "assistant" and _ARTIFACT.search(content) for role, content in window
+    ) and any(
+        role == "assistant" and _ARTIFACT.search(content)
+        for role, content in turns[: len(turns) - len(window)]
+    ):
+        data["delivered_before"] = "an interactive app or drawing in the side panel"
+    data["last_message"] = _clip(text, _MESSAGE_CHARACTERS)
     return [
         {"role": "system", "content": SYSTEM},
-        {
-            "role": "user",
-            "content": json.dumps(
-                {
-                    "earlier_turns": earlier,
-                    "last_message": _clip(text, _MESSAGE_CHARACTERS),
-                },
-                ensure_ascii=False,
-            ),
-        },
+        {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
     ]
 
 

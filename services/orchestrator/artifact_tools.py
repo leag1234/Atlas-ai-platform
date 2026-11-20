@@ -94,13 +94,15 @@ class CurrentArtifact:
 
 
 CURRENT_ARTIFACT_PREFIX = (
-    "Current app of this conversation (context only; Atlas applies changes to it): "
+    "Current app of this conversation (context only; Atlas applies changes to it "
+    "and writes the links to its versions, never this answer): "
 )
 _FRAGMENT_TITLE = re.compile(r"#[^)\s]*?\btitle=([^&)\s]*)")
 
 
-def parse_history_reference(messages: list[Message]) -> ArtifactReference | None:
-    reference: ArtifactReference | None = None
+def history_references(messages: list[Message]) -> list[ArtifactReference]:
+    """Every app link of the assistant turns before the last message, in order."""
+    references: list[ArtifactReference] = []
     for message in messages[:-1]:
         if message.get("role") != "assistant":
             continue
@@ -121,21 +123,36 @@ def parse_history_reference(messages: list[Message]) -> ArtifactReference | None
                 if title_match
                 else ""
             )
-            reference = ArtifactReference(match.group(1), int(match.group(2)), title)
-    return reference
+            references.append(
+                ArtifactReference(match.group(1), int(match.group(2)), title)
+            )
+    return references
+
+
+def parse_history_reference(messages: list[Message]) -> ArtifactReference | None:
+    references = history_references(messages)
+    return references[-1] if references else None
 
 
 def current_artifact_message(
     messages: list[Message], identity: str | None
 ) -> CurrentArtifact | None:
-    reference = parse_history_reference(messages)
-    if reference is None:
+    references = history_references(messages)
+    if not references:
         return None
-    try:
-        version = artifact_store.read(
-            reference.artifact_id, identity, reference.version
-        )
-    except ArtifactError:
+    # The latest link whose version is stored: a link Atlas never wrote (a
+    # "version 5" an answer invented, staging 2026-11-20) must not hide the
+    # stored app and make the next change rewrite it from scratch.
+    version: artifact_store.ArtifactVersion | None = None
+    for reference in dict.fromkeys(reversed(references)):
+        try:
+            version = artifact_store.read(
+                reference.artifact_id, identity, reference.version
+            )
+        except ArtifactError:
+            continue
+        break
+    if version is None:
         return CurrentArtifact(
             {
                 "role": "system",

@@ -11,7 +11,8 @@ answer about an attached or pasted document.
 When it runs: the turn holds a provided source (an attached document, or a
 pasted message of at least document_quotes.PASTED_MINIMUM characters; passages
 a search retrieved from an indexed corpus are not one) and the answer is a
-finished chat or API answer (not a project, Work or nearby turn; Work files go through
+finished chat or API answer (not a project, Work, nearby or app turn: an app
+turn's answer describes the file it wrote; Work files go through
 deliverable_check.review, which calls ``judge`` here). No keyword of a
 deliverable type is read: whether the answer presents content as the source's
 is decided by the judge, which is given the request.
@@ -1161,8 +1162,25 @@ def joined(answer: str, addition: str) -> str:
     return answer + "\n\n" + addition if addition else answer
 
 
+# A Markdown link: a note names its label, never its target.
+_MARKDOWN_LINK = re.compile(r"\[((?:[^\[\]\n\\]|\\.){0,300})\]\([^)\s]*+\)")
+_BARE_URL = re.compile(r"https?://\S+")
+# A link relative to the instance is written by Atlas itself (an app footer, a
+# side-view chip): it states nothing about the source. Staging 2026-11-20: a
+# note quoted an app footer, its internal URL cut in the middle.
+_OWN_LINK = re.compile(r"\]\(/[^)\s]*")
+
+
+def noted(body: str, finding: Finding) -> bool:
+    """Whether a finding may be named in a note: not Atlas's own text, not empty."""
+    if _OWN_LINK.search(body[max(finding.start, 0) : max(finding.end, 0)]):
+        return False
+    return bool(statement(body, finding))
+
+
 def statement(body: str, finding: Finding) -> str:
-    text = " ".join(body[finding.start : finding.end].split()).lstrip("-*+> ")
+    text = _MARKDOWN_LINK.sub(r"\1", body[finding.start : finding.end])
+    text = " ".join(_BARE_URL.sub("", text).split()).lstrip("-*+> ")
     text = text.replace("**", "")
     if len(text) > NOTE_ITEM_CHARACTERS:
         text = text[: NOTE_ITEM_CHARACTERS - 1].rstrip() + "…"
@@ -1251,6 +1269,7 @@ async def review(
         if found and report.mode == "on":
             return done("", answer, note(found, language, judged=False))
         return done("")
+    verdict.findings = [f for f in verdict.findings if noted(body, f)]
     report.cost_eur += verdict.cost_eur
     report.judge_seconds.append(verdict.seconds)
     report.screen.append(verdict.screen)
@@ -1300,7 +1319,8 @@ async def review(
                 report.cost_eur += after.cost_eur
                 report.judge_seconds.append(after.seconds)
                 report.screen.append(after.screen)
-                text, remaining = revised, after.findings
+                text = revised
+                remaining = [f for f in after.findings if noted(revised, f)]
                 report.findings_after = len(remaining)
     elif not streamed:
         report.rewrite = "skipped:" + (

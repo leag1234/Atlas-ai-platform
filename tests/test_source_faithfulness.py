@@ -423,6 +423,34 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(len(calls.payloads), 1)
         self.assertEqual(report.outcome, "noted")
 
+    def test_atlas_own_links_and_link_targets_are_never_named_in_a_note(
+        self,
+    ) -> None:
+        # Staging 2026-11-20: a note quoted an app footer, its internal URL cut.
+        footer = (
+            "[Open “Drums” (version 5)](/api/atlas/artifacts/"
+            + "a" * 32
+            + "/versions/5/open#atlas-view=app&title=Drums)"
+        )
+        cited = "See [the report](https://example.org/r) on the 3 000 crossings."
+        answer = CAUSAL + "\n" + cited + "\n\n" + footer
+        calls = Calls(
+            judged(
+                [
+                    {"text": FLAGGED, "reason": "no causal link in the source"},
+                    {"text": cited, "reason": "no report in the source"},
+                    {"text": footer, "reason": "not in the source"},
+                ]
+            )
+        )
+        _, addition, report = review(answer, calls, streamed=True)
+        self.assertIn(FLAGGED, addition)
+        self.assertIn("See the report on the 3 000 crossings.", addition)
+        self.assertNotIn("/api/atlas", addition)
+        self.assertNotIn("example.org", addition)
+        self.assertNotIn("version 5", addition)
+        self.assertEqual(report.findings, 2)
+
     def test_a_rewrite_that_adds_a_link_is_not_kept(self) -> None:
         added = FLAGGED + " See https://example.org/bridge."
         calls = Calls(CAUGHT, {"text": json.dumps({"1": added}), "cost_eur": "0"})
@@ -547,9 +575,16 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
     """The chat and API paths share chat_pipeline.process."""
 
     async def turn(
-        self, calls: Calls, *, atlas_ui: bool, pasted: str = SOURCE
+        self,
+        calls: Calls,
+        *,
+        atlas_ui: bool,
+        pasted: str = SOURCE,
+        task_type: str = "",
     ) -> tuple[Interaction, list[str]]:
         async def generate(request: ChatRequest, item: Interaction) -> None:
+            if task_type:
+                item.task_type = task_type
             upstream = sink_context.get()
             assert upstream is not None
             await upstream({"delta": {"content": CAUSAL}})
@@ -609,6 +644,14 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
             sent[-1].startswith("\n\n*Checked against the provided document")
         )
         self.assertEqual(item.reponse, CAUSAL + sent[-1])
+
+    async def test_an_app_turn_is_not_checked_against_a_pasted_text(self) -> None:
+        # Staging 2026-11-20: links the person pasted for the app made the
+        # app's answer "checked against the provided document".
+        calls = Calls()
+        item, _ = await self.turn(calls, atlas_ui=True, task_type="artifact")
+        self.assertEqual(item.reponse, CAUSAL)
+        self.assertEqual(calls.payloads, [])
 
     async def test_a_short_message_without_document_is_not_checked(self) -> None:
         calls = Calls()

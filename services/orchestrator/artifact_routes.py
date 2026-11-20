@@ -101,6 +101,33 @@ def _not_found() -> Response:
     return Response(status_code=404, media_type="text/plain; charset=utf-8")
 
 
+# The side panel shows what /open answers: an empty 404 was a blank panel
+# (staging 2026-11-20, a link to a version that was never stored).
+MISSING = {
+    "en": "This version is not available.",
+    "fr": "Cette version n'est pas disponible.",
+    "de": "Diese Version ist nicht verfügbar.",
+    "es": "Esta versión no está disponible.",
+    "it": "Questa versione non è disponibile.",
+}
+
+
+def _missing(request: Request) -> Response:
+    """A visible 404 page in the person's language for a version not stored."""
+    language = "en"
+    for part in request.headers.get("accept-language", "").split(","):
+        tag = part.split(";", 1)[0].strip().lower()[:2]
+        if tag in MISSING:
+            language = tag
+            break
+    text = MISSING[language]
+    body = (
+        f'<!DOCTYPE html><html lang="{language}"><head><meta charset="utf-8">'
+        f"<title>{text}</title></head><body><p>{text}</p></body></html>"
+    )
+    return Response(body, status_code=404, media_type="text/html; charset=utf-8")
+
+
 def _artifact_response(content: bytes, filename: str) -> Response:
     return Response(
         content,
@@ -159,7 +186,7 @@ async def open_artifact(artifact_id: str, version: str, request: Request) -> Res
         subject = await _owner(request)
         artifact = artifact_store.read(artifact_id, subject, version_number)
     except (ProjectError, ArtifactError):
-        return _not_found()
+        return _missing(request)
     token = issue_token(artifact_id, version_number)
     base = preview_origin() or ""
     return RedirectResponse(

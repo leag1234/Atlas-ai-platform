@@ -335,6 +335,62 @@ class AppTurnTests(unittest.IsolatedAsyncioTestCase):
             [str(event.get("description")) for event in events],
         )
 
+    async def test_a_change_after_an_invented_link_edits_the_stored_version(
+        self,
+    ) -> None:
+        # Staging 2026-11-20: a plain answer wrote a footer for a version that
+        # was never stored; the next change must still edit the stored app.
+        created = artifact_store.create(
+            OWNER, "Minuteur", "minuteur.html", APP.encode(), "request-1"
+        )
+        artifact_id = str(created["id"])
+        history = [
+            {"role": "user", "content": "Crée un minuteur"},
+            {
+                "role": "assistant",
+                "content": footer(artifact_id, 1, "Minuteur", "minuteur.html", "fr"),
+            },
+            {"role": "user", "content": "voici les liens des sons"},
+            {
+                "role": "assistant",
+                "content": "Voici la version 2.\n\n"
+                + footer(artifact_id, 2, "Minuteur", "minuteur.html", "fr"),
+            },
+        ]
+        item, model, _ = await self.turn(
+            [answer(CHANGED, after="Le bouton s'appelle Lancer.")],
+            self.request("rien ne s'affiche", history),
+            intent="modify",
+        )
+        self.assertEqual(item.artifacts[0]["id"], artifact_id)
+        self.assertEqual(item.artifacts[0]["version"], 2)
+        context = json.dumps(model.calls[0], ensure_ascii=False)
+        self.assertIn("version 1", context)
+        self.assertNotIn("no longer available", context)
+
+    async def test_a_file_that_loads_from_the_network_is_described_as_repaired(
+        self,
+    ) -> None:
+        # Staging 2026-11-20: the description of the rejected file ("real
+        # samples loaded from the web") was shown with a repaired file that had
+        # none.
+        fetching = APP.replace(
+            "() => {}", "() => fetch('https://example.org/kick.wav')"
+        )
+        item, model, _ = await self.turn(
+            [
+                answer(fetching, after="Trois banques de vrais échantillons du web."),
+                answer(APP, after="Sons synthétisés : le web est inaccessible ici."),
+            ]
+        )
+        self.assertEqual(self.stored(item), APP)
+        self.assertIn("Sons synthétisés", item.reponse)
+        self.assertNotIn("vrais échantillons", item.reponse)
+        repair = str(model.calls[1][-1]["content"])
+        self.assertIn("network_api", repair)
+        self.assertIn("cannot load anything from the network", repair)
+        self.assertIn("not the fix", repair)
+
     async def test_every_failure_ends_with_one_readable_sentence(self) -> None:
         failed = app_failure("app", "fr")
         cases: dict[str, tuple[list[object], str, str]] = {
