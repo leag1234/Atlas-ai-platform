@@ -21,6 +21,7 @@ from services.orchestrator.chat_schema import ChatRequest, markdown_tail_viable
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
+from services.orchestrator.loop import OwnedServerAnswer
 from services.orchestrator.model import GatewayError
 from services.retrieval.project_identity import ProjectError
 from services.orchestrator.cancellation import (
@@ -145,6 +146,10 @@ def response(
         activity_urls: list[str] = []
         activity_description = ""
         last_activity = time.monotonic()
+        # A strict turn waiting for the on-demand owned server (owned_wait.py):
+        # when the wait began (monotonic) and the start's expected length.
+        owned_wait_since: float | None = None
+        owned_expected = 0.0
         citation_numbers: dict[str, int] = {}
         # A chat turn handed to Work: its steps become the status line.
         relay_work = payload.atlas_ui and not payload.org_id and not payload.code_mode
@@ -190,9 +195,14 @@ def response(
                     chat_plan.update([i for i in items if isinstance(i, dict)])
             elif kind == "tool":
                 chat_plan.first_step()
+                # The check the call ran, when it ran one (publish_document's
+                # file check): a check step is done only when it passed.
+                output = project_event.get("output")
+                check = output.get("verification") if isinstance(output, dict) else None
                 chat_plan.tool(
                     str(project_event.get("tool") or ""),
                     str(project_event.get("status") or ""),
+                    str(check.get("status") or "") if isinstance(check, dict) else "",
                 )
 
         base = {
@@ -208,10 +218,26 @@ def response(
             description = (
                 "" if done and activity == "work_step" else activity_description
             ) or str(activity_labels.get("done" if done else activity, activity))
-            if guest and not (
-                activity in {"artifact_progress", "work_step"}
-                and activity_description
+            owned_waiting = (
+                activity == "owned_server_starting"
+                and owned_wait_since is not None
                 and not done
+            )
+            if owned_waiting:
+                from services.orchestrator.owned_wait import status_text
+
+                assert owned_wait_since is not None
+                description = status_text(
+                    language, time.monotonic() - owned_wait_since, owned_expected
+                )
+            if (
+                guest
+                and not owned_waiting
+                and not (
+                    activity in {"artifact_progress", "work_step"}
+                    and activity_description
+                    and not done
+                )
             ):
                 from services.orchestrator.guest_activity import activity_label
 
@@ -224,7 +250,11 @@ def response(
                 "data": {
                     "description": (
                         description
-                        + (f" {elapsed:.0f} s" if elapsed >= 10 and not done else "")
+                        + (
+                            f" {elapsed:.0f} s"
+                            if elapsed >= 10 and not done and not owned_waiting
+                            else ""
+                        )
                         if guest
                         else f"{description} ({elapsed:.1f}s / {routed_deadline():.0f}s)"
                     ),
@@ -416,7 +446,7 @@ def response(
 
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
-            nonlocal received_content
+            nonlocal received_content, owned_wait_since, owned_expected
             if event.get("phase") == "connector_approval":
                 await queue.put({"atlas": event})
                 return
@@ -493,6 +523,28 @@ def response(
                         "atlas": {"phase": "image_start_notice"},
                         "event": status_event(),
                     }
+                )
+                return
+            if event.get("phase") in {"owned_server_starting", "owned_server_ready"}:
+                # Strict privacy: the turn waits for the owned server to start
+                # (owned_wait.py); the status line counts the wait, and the turn
+                # is answered once the server is up.
+                if event["phase"] == "owned_server_ready":
+                    owned_wait_since = None
+                    activity = "answering"
+                else:
+                    waited = event.get("waited_seconds")
+                    expected = event.get("expected_seconds")
+                    if owned_wait_since is None:
+                        owned_wait_since = time.monotonic() - (
+                            float(waited) if isinstance(waited, (int, float)) else 0.0
+                        )
+                    if isinstance(expected, (int, float)):
+                        owned_expected = float(expected)
+                    activity = "owned_server_starting"
+                activity_description = ""
+                await queue.put(
+                    {"atlas": {"phase": event["phase"]}, "event": status_event()}
                 )
                 return
             if event.get("phase") == "image_progress":
@@ -871,15 +923,30 @@ def response(
                         "Configuration failure; variables=%s", configuration_names(exc)
                     )
                 item.rejection = {"code": exc.code, "message": detail}
-                await queue.put(
-                    {
-                        "error": {
-                            "code": exc.code,
-                            "type": exc.code,
-                            "message": readable or detail,
+                if readable and isinstance(exc, OwnedServerAnswer):
+                    # The owned server's real outcome (refused, failed, or still
+                    # starting after the wait) is the turn's answer, in the
+                    # person's language: sent as an error, the interface showed
+                    # it under "The response was interrupted." with a Retry
+                    # button (staging 2026-11-20).
+                    item.reponse = readable
+                    await queue.put(
+                        {
+                            "delta": {"content": readable},
+                            "atlas": {"turn": turn, "phase": "owned_server_answer"},
                         }
-                    }
-                )
+                    )
+                    await queue.put({"finish": True})
+                else:
+                    await queue.put(
+                        {
+                            "error": {
+                                "code": exc.code,
+                                "type": exc.code,
+                                "message": readable or detail,
+                            }
+                        }
+                    )
             except LimitError as exc:
                 item.state = "error"
                 item.erreurs.append(exc.code)

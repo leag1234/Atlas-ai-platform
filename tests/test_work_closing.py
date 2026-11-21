@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, Mock, patch
 from services.orchestrator.loop import Call, Limits, Query, Reservation, Turn, run
 from services.orchestrator.work_closing import (
     CLOSING_INSTRUCTION,
+    UNVERIFIED,
+    VERIFIED,
     closing_instruction,
     closing_step,
     published,
@@ -93,8 +95,39 @@ class ClosingStepTests(unittest.TestCase):
         self.assertIn("tarot-rules.pdf, tarot-rules.docx", text)
         self.assertEqual(
             closing_instruction([{"id": "x"}]),
-            CLOSING_INSTRUCTION.format(files="one file"),
+            CLOSING_INSTRUCTION.format(files="one file", check=UNVERIFIED),
         )
+
+    def test_verified_is_said_only_of_a_check_that_passed(self) -> None:
+        """Staging 2026-11-20: "created and verified" while the plan showed the
+        check step not done; the instruction said "verified" of every file."""
+
+        def check(status: str) -> dict[str, Any]:
+            verification = dict(status=status, command=None, exit_code=None, reason="x")
+            return dict(PUBLISHED, verification=verification)
+
+        passed = closing_step(_tools(), True, [("publish_document", check("passed"))])
+        assert passed is not None
+        self.assertIn(VERIFIED.strip(), passed)
+        self.assertNotIn("do not say that it was checked", passed)
+        for output in (PUBLISHED, check("not_run")):
+            text = closing_step(_tools(), True, [("publish_document", output)])
+            assert text is not None
+            self.assertIn("do not say that it was checked, verified", text)
+            self.assertNotIn("verified (", text)
+        # Two files: verified only if both checks passed.
+        both = closing_step(
+            _tools(),
+            True,
+            [("publish_document", check("passed")), ("publish_document", PUBLISHED)],
+        )
+        assert both is not None
+        self.assertIn(UNVERIFIED.strip(), both)
+        gaps = dict(check("failed"), gaps=["2 slides of 5"])
+        lacking = closing_step(_tools(), True, [("publish_document", gaps)])
+        assert lacking is not None
+        self.assertIn("lacks: 2 slides of 5", lacking)
+        self.assertNotIn(VERIFIED.strip(), lacking)
 
 
 class LoopClosingTests(unittest.IsolatedAsyncioTestCase):

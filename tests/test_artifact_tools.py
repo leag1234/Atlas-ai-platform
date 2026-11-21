@@ -51,7 +51,8 @@ class ArtifactToolsTests(unittest.TestCase):
                 "role": "system",
                 "content": (
                     "Current app of this conversation (context only; Atlas applies "
-                    "changes to it): "
+                    "changes to it and writes the links to its versions, never this "
+                    "answer): "
                     + json.dumps(
                         {
                             "current_artifact": {
@@ -92,6 +93,31 @@ class ArtifactToolsTests(unittest.TestCase):
             },
         )
         self.assertIsNone(missing.artifact)
+
+    def test_a_link_to_a_version_never_stored_does_not_hide_the_app(self) -> None:
+        created = artifact_store.create(
+            "user@example.test", "Drums", "drums.html", HTML.encode(), "request-1"
+        )
+        artifact_id = str(created["id"])
+        messages: list[Message] = [
+            {
+                "role": "assistant",
+                "content": footer(artifact_id, 1, "Drums", "d.html", "en"),
+            },
+            {"role": "user", "content": "here are the sample links"},
+            {
+                "role": "assistant",
+                "content": footer(artifact_id, 5, "Drums", "d.html", "en"),
+            },
+            {"role": "user", "content": "nothing shows"},
+        ]
+        reference = parse_history_reference(messages)
+        assert reference is not None
+        self.assertEqual(reference.version, 5)
+        current = current_artifact_message(messages, "user@example.test")
+        assert current is not None and current.artifact is not None
+        self.assertEqual(current.artifact["version"], 1)
+        self.assertEqual(current.artifact["content"], HTML)
 
     def test_current_artifact_omits_oversized_source(self) -> None:
         large = "<html><body>" + ("x" * 100000) + "</body></html>"

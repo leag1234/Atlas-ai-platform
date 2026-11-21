@@ -264,6 +264,14 @@ class GatewayModel:
 
     @staticmethod
     async def post(url: str, payload: Message, timeout: float) -> Message:
+        """A gateway call; a strict call that finds the on-demand owned server
+        starting waits for it and is made again (owned_wait.py)."""
+        from services.orchestrator import owned_wait
+
+        return await owned_wait.call(lambda: GatewayModel.send(url, payload, timeout))
+
+    @staticmethod
+    async def send(url: str, payload: Message, timeout: float) -> Message:
         calls = None
         if not url.endswith(FREE_PATHS):
             # Conservative: any other gateway or retrieval call may reach a provider.
@@ -736,8 +744,16 @@ class GatewayModel:
                     else:
                         await sink(event)
 
-                wire = await receive(
-                    self.url + "/agent/stream", payload, transport, filtered
+                from services.orchestrator import owned_wait
+
+                # A strict call that finds the owned server starting waits for it,
+                # with its status on the turn's stream, and is made again: the
+                # refusal comes before any answer text.
+                wire = await owned_wait.call(
+                    lambda: receive(
+                        self.url + "/agent/stream", payload, transport, filtered
+                    ),
+                    sink,
                 )
                 tail = parser.finish()
                 if tail:

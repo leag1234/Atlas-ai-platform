@@ -172,14 +172,28 @@ PREVIOUS_UNAVAILABLE = (
     "days, or too large to edit). Write a new complete file that does what the user "
     "asks."
 )
+# After the block the model describes what the person receives, not its fix.
+# Staging 2026-11-20: the description of a rejected file that loaded samples
+# from the web ("three banks of real samples") was shown with the repaired
+# file, which had none.
+DESCRIBE = (
+    "then at most three short sentences for the user describing what this file "
+    "shows or does (for an app: what it does and how to use it), not the fix."
+)
 NO_BLOCK_REPAIR = (
     "Your answer did not contain the file. Write the complete file now, in one fenced "
-    "```{fence} block, then at most two short sentences."
+    "```{fence} block, " + DESCRIBE
 )
 INVALID_REPAIR = (
-    "Atlas rejected this file:\n{problems}\nFix every listed problem and write the "
-    "complete corrected file in one fenced ```{fence} block, then at most two short "
-    "sentences."
+    "Atlas rejected this file:\n{problems}\n{network}Fix every listed problem and "
+    "write the complete corrected file in one fenced ```{fence} block, " + DESCRIBE
+)
+NETWORK_PROBLEMS = frozenset({"network_api", "external_reference"})
+NETWORK_REPAIR = (
+    "The preview cannot load anything from the network: files from other sites "
+    "(sounds, images, fonts, libraries) cannot be used. Make the app work without "
+    "them; if the user asked for such files, say so plainly in one of the sentences "
+    "after the block.\n"
 )
 EXTRA_DETAILS = {
     "svg_syntax": "the SVG is not well-formed XML here (unclosed element, unquoted "
@@ -437,6 +451,7 @@ async def process_app_turn(
     fence = "svg" if kind == "drawing" else "html"
     failure = "artifact_missing"
     summary = ""
+    redescribe = False
     timed_out = False
     model: GatewayModel | None = None
     # The plan of an app (work_plan.py): write, check, hand over. The code
@@ -533,10 +548,13 @@ async def process_app_turn(
                 continue
             text = turn.text
             block = last_block(text)
-            if block is not None and not summary:
-                # After a repair the model describes its fix; the person wants
-                # the description of the app it first wrote.
-                summary = _summary(text)
+            if block is not None and (not summary or redescribe):
+                # After a repair the model may describe its fix: the person
+                # wants the description of the app it first wrote, unless the
+                # repair took out what the first file loaded from the network
+                # (DESCRIBE).
+                summary = _summary(text) or summary
+                redescribe = False
             if block is None:
                 answer = prose(text)
                 question = answer.rstrip().endswith("?") and len(answer) <= 800
@@ -563,6 +581,10 @@ async def process_app_turn(
             prepared = prepare(block, title, language)
             if prepared.problems:
                 failure = "artifact_invalid"
+                network = any(
+                    problem.code in NETWORK_PROBLEMS for problem in prepared.problems
+                )
+                redescribe = network
                 logging.getLogger(__name__).warning(
                     "app_turn_invalid attempt=%d codes=%s",
                     attempt + 1,
@@ -574,6 +596,7 @@ async def process_app_turn(
                         "role": "user",
                         "content": INVALID_REPAIR.format(
                             problems=_problem_lines(prepared.problems, prepared.source),
+                            network=NETWORK_REPAIR if network else "",
                             fence="svg" if block.kind == "svg" else "html",
                         ),
                     },
@@ -586,7 +609,7 @@ async def process_app_turn(
             artifact_id, version, filename = stored
             item.reponse = compose_answer(
                 "",
-                summary or _summary(text),
+                summary,
                 artifact_id,
                 version,
                 title,

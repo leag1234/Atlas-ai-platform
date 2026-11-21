@@ -32,6 +32,7 @@ from services.orchestrator.model import GatewayError, GatewayModel
 from services.orchestrator.tools import Rag, Runtime, search_providers
 from services.orchestrator.stream_client import Sink, sink_context
 from services.orchestrator import (
+    artifact_links,
     document_quotes,
     grounding,
     number_provenance,
@@ -975,6 +976,23 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             current_sink, stray_script.Rewriter(answer_language, own_scripts)
         )
         scripting = sink_context.set(script_gate)
+    # A link to an app version Atlas did not store is removed (artifact_links),
+    # after the quotation and date checks.
+    links_owner = (
+        str(getattr(request, "artifact_owner", "") or "")
+        if os.environ.get("ATLAS_ARTIFACTS") == "1"
+        else ""
+    )
+    link_gate: artifact_links.Gate | None = None
+    linking = None
+    if links_owner and (current_sink := sink_context.get()) is not None:
+        link_gate = artifact_links.Gate(
+            current_sink,
+            artifact_links.Rewriter(
+                answer_language, *artifact_links.store_lookups(links_owner)
+            ),
+        )
+        linking = sink_context.set(link_gate)
     date_gate: relative_dates.Gate | None = None
     dating = None
     if (current_sink := sink_context.get()) is not None:
@@ -1065,6 +1083,8 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             await quote_gate.flush()
         if date_gate is not None:
             await date_gate.flush()
+        if link_gate is not None:
+            await link_gate.flush()
         if script_gate is not None:
             await script_gate.flush()
     finally:
@@ -1072,6 +1092,8 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             sink_context.reset(gating)
         if dating is not None:
             sink_context.reset(dating)
+        if linking is not None:
+            sink_context.reset(linking)
         if scripting is not None:
             sink_context.reset(scripting)
         document_quotes.current.reset(quoting)
@@ -1121,7 +1143,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         quotes is not None
         and source_faithfulness.enabled()
         and item.state == "done"
-        and item.task_type not in {"work", "nearby"}
+        and item.task_type not in {"work", "nearby", "artifact"}
         and not request.project_id
         and not request.code_mode
         and not any(message.images for message in request.messages)
@@ -1149,6 +1171,11 @@ async def process(request: ChatRequest, item: Interaction) -> None:
             await current_sink({"delta": {"content": "\n\n" + addition}})
         item.cout_eur = float(Decimal(str(item.cout_eur)) + faith_report.cost_eur)
         item.steps.append({"phase": "source_check", **faith_report.metadata()})
+    if links_owner and item.task_type != "artifact":
+        # The stored and API answer, like the stream (artifact_links).
+        item.reponse, _ = artifact_links.checked(
+            item.reponse, answer_language, links_owner
+        )
     # A Work answer describes the file it delivered: its sentences are not factual
     # claims to match against the pages read ("no source mentions this entity" was
     # put in front of delivered documents, staging 2026-11-10). A nearby answer is

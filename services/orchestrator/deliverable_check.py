@@ -739,6 +739,20 @@ def unchecked(tools: Any) -> list[str]:
     return []
 
 
+def verification(outcome: Outcome) -> dict[str, Any]:
+    """The check's result as a Work tool event carries it (VerificationStatus of
+    the project contract): the plan closes its check step only on "passed",
+    and the closing instruction says "verified" only then (work_plan.py,
+    work_closing.py)."""
+    if outcome.gaps:
+        status, reason = "failed", "the file lacks what the request asks"
+    elif outcome.checked:
+        status, reason = "passed", "the file was checked against the request"
+    else:
+        status, reason = "not_run", "the file could not be checked against the request"
+    return {"status": status, "command": None, "exit_code": None, "reason": reason}
+
+
 def joined(gaps: list[str]) -> str:
     return "; ".join(f"({index}) {gap}" for index, gap in enumerate(gaps, 1))
 

@@ -170,6 +170,11 @@ async def authenticate(
         request.state.context_trim = (
             request.headers.get("x-atlas-context-trim", "").lower() == "on"
         )
+        # Strict privacy: how long the client accepts to wait for the owned server
+        # to start (X-Atlas-Owned-Wait, owned_wait.py), read before the strip below.
+        from services.orchestrator.owned_wait import requested_wait
+
+        request.state.owned_wait = requested_wait(request.headers)
         request.state.privacy = privacy.highest(principal.privacy)
         refused = apply_privacy(request, request.headers.get("x-atlas-privacy"))
         if refused is not None:
