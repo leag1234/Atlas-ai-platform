@@ -715,5 +715,17 @@ def project_file_lines(
     return text
 
 
+def not_saved_paths(report: dict[str, Any], tools: Any) -> list[str]:
+    """The files of a turn left unsaved: workspace files whose overwrite was not
+    approved, then delivered files whose new version the person declined in
+    project mode (project_document_tools.publish_revision). The answer names
+    them after not_saved_line."""
+    return [
+        str(entry.get("path", ""))
+        for entry in report.get("not_saved", [])
+        if isinstance(entry, dict)
+    ] + list(getattr(tools, "not_published", None) or [])
+
+
 def not_saved_line(lang: str) -> str:
     return "\n\n" + NOT_SAVED.get(lang, "Not saved (approval denied or expired): ")

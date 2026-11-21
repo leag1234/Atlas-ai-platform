@@ -1325,6 +1325,223 @@ class ProjectDeliverableTests(ProjectWorkTests):
             replies[0]["deliverable"]["sha256"], replies[2]["deliverable"]["sha256"]
         )
 
+    def test_a_change_of_a_project_file_is_its_next_version_once_approved(
+        self,
+    ) -> None:
+        """docs/17, section 12, item 20: in project mode a change of a delivered
+        file is its next version, as in the chat, but only once the person
+        approves the overwrite; a declined approval publishes nothing and the
+        answer says so; a new deliverable or another format is a new file."""
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+        from services.orchestrator.work_save import not_saved_line, not_saved_paths
+
+        self.publication_setup()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        decisions: list[bool] = []
+        cards: list[dict[str, Any]] = []
+
+        def decide(approval: dict[str, Any], allow: bool) -> None:
+            digest = approval.get("action_digest")
+            if not digest:
+                session = self.request(
+                    "GET",
+                    self.project_path() + "/work-sessions/" + self.session["id"],
+                    "editor",
+                ).json()
+                digest = next(
+                    a["action_digest"]
+                    for a in session["pending_approvals"]
+                    if a["id"] == approval["id"]
+                )
+            reply = self.request(
+                "POST",
+                self.project_path() + "/approvals/" + approval["id"] + "/decision",
+                "editor",
+                dict(allow=allow, action_digest=digest),
+                key="decision-" + approval["id"],
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            project = WorkTools(workspace, execution)
+            emit = project.emit
+
+            async def answered(kind: str, **event: Any) -> Any:
+                # The person answers the approval card as it appears.
+                if kind == "approval" and event.get("status") == "running":
+                    approval = event["output"]["approval"]
+                    cards.append(approval)
+                    await asyncio.to_thread(decide, approval, decisions.pop(0))
+                return await emit(kind, **event)
+
+            project.emit = answered  # type: ignore[method-assign]
+
+            async def publish(path: str, text: str, strategy: str) -> dict[str, Any]:
+                reply = await project.execute(
+                    Call(
+                        str(uuid4()),
+                        "publish_document",
+                        json.dumps(
+                            dict(path=path, content=text, sources=[], strategy=strategy)
+                        ),
+                    ),
+                    60,
+                )
+                self.assertNotIn("error", reply, reply)
+                return dict(reply)
+
+            async def run() -> list[dict[str, Any]]:
+                replies = [
+                    await publish(
+                        "Field_Notes.docx", "# Field Notes\n\nDay one.\n", "created"
+                    )
+                ]
+                decisions.extend([True, True])
+                replies.append(
+                    await publish(
+                        "Field_Notes.docx",
+                        "# Field Notes, revised\n\nDay one.\n",
+                        "regenerated",
+                    )
+                )
+                replies.append(
+                    await publish(
+                        "Field_Notes.docx",
+                        "# Field Notes, revised\n\nDay one.\n\n| Day | Birds |\n"
+                        "| --- | --- |\n| 1 | 14 |\n",
+                        "edited_in_place",
+                    )
+                )
+                # The person declines the fourth change: nothing is published,
+                # and the same change is not asked again in this turn.
+                decisions.append(False)
+                replies.append(
+                    await publish(
+                        "Field_Notes.docx", "# Declined\n\nGone.\n", "regenerated"
+                    )
+                )
+                replies.append(
+                    await publish(
+                        "Field_Notes.docx", "# Declined\n\nAgain.\n", "regenerated"
+                    )
+                )
+                # Another format, and a new deliverable, are new files.
+                replies.append(
+                    await publish(
+                        "Field_Notes.md", "# Field Notes\n\nNotes.\n", "regenerated"
+                    )
+                )
+                replies.append(
+                    await publish("Field_Notes.docx", "# Other\n\nNew.\n", "created")
+                )
+                return replies
+
+            replies = asyncio.run(run())
+        self.assertEqual(decisions, [])
+        # One card per change: three approvals asked, none for the repeat.
+        self.assertEqual(len(cards), 3)
+        self.assertEqual([card["action_kind"] for card in cards], ["overwrite"] * 3)
+        for declined in replies[3:5]:
+            self.assertNotIn("deliverable", declined)
+            self.assertEqual(
+                declined["not_published"]["path"], "Field_Notes.docx", declined
+            )
+            self.assertIn("Nothing was overwritten", declined["note"])
+        self.assertEqual(declined["not_published"]["reason"], "denied")
+        self.assertEqual(project.not_published, ["Field_Notes.docx"])
+        # The answer names the file left unchanged (code_mode end of turn).
+        unsaved = not_saved_paths({"not_saved": []}, project)
+        self.assertEqual(unsaved, ["Field_Notes.docx"])
+        self.assertIn("approbation refusée", not_saved_line("fr") + ", ".join(unsaved))
+        self.assertEqual(replies[1]["deliverable"]["relative_path"], "Field_Notes.docx")
+        self.assertIn("saved as its new version", replies[1]["note"])
+        self.assertIn("Download Field_Notes.docx", replies[2]["text"])
+        self.assertEqual(
+            [r["deliverable"]["strategy"] for r in replies[:3]],
+            ["created", "regenerated", "edited_in_place"],
+        )
+        self.assertEqual(
+            len({r["deliverable"]["file_version_id"] for r in replies[:3]}), 3
+        )
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            delivered = files.listing(
+                "file", scope.project_data["deliverables_folder_id"]
+            )
+            notes = next(
+                f for f in delivered if f["relative_path"] == "Field_Notes.docx"
+            )
+            versions = files.listing("version", notes["id"])
+            names = {
+                v["id"]: files.get("file", v["file_id"])["relative_path"]
+                for v in files.listing("version")
+            }
+        self.assertEqual(
+            sorted(f["relative_path"] for f in delivered),
+            ["Field_Notes-2.docx", "Field_Notes.docx", "Field_Notes.md"],
+        )
+        self.assertEqual(
+            [
+                names[replies[i]["deliverable"]["file_version_id"]]
+                for i in (0, 1, 2, 5, 6)
+            ],
+            [
+                "Field_Notes.docx",
+                "Field_Notes.docx",
+                "Field_Notes.docx",
+                "Field_Notes.md",
+                "Field_Notes-2.docx",
+            ],
+        )
+        # One file, three versions; the declined change left the third current.
+        self.assertEqual(
+            {v["id"] for v in versions},
+            {r["deliverable"]["file_version_id"] for r in replies[:3]},
+        )
+        self.assertEqual(
+            notes["version_id"], replies[2]["deliverable"]["file_version_id"]
+        )
+        # Each link keeps serving its own bytes.
+        hashes = set()
+        for reply in replies[:3]:
+            served = self.request(
+                "GET", reply["deliverable"]["download_route"], "viewer"
+            )
+            self.assertEqual(served.status_code, 200)
+            self.assertEqual(
+                hashlib.sha256(served.content).hexdigest(),
+                reply["deliverable"]["sha256"],
+            )
+            hashes.add(reply["deliverable"]["sha256"])
+        self.assertEqual(len(hashes), 3)
+
     def test_web_pages_declared_as_sources_are_ignored_not_refused(self) -> None:
         """Staging corpus 2026-11-12: a researched report listed its web pages
         as sources with invented identifiers and was refused twice."""
