@@ -6522,6 +6522,23 @@ components:
           - created
           - regenerated
           - edited_in_place
+        revision_of:
+          type: object
+          additionalProperties: false
+          properties:
+            file_id:
+              type: string
+              format: uuid
+            base_version:
+              type: string
+              format: uuid
+            approval_id:
+              type: string
+              format: uuid
+          required:
+          - file_id
+          - base_version
+          - approval_id
         validation:
           allOf:
           - $ref: '#/components/schemas/Validation'

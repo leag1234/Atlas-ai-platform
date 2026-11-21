@@ -25,6 +25,12 @@ layout" unchecked while its answer said the file was verified). A step not
 seen done when the plan closes is shown as not done ("skipped"), never as
 still to do or running.
 
+A published file holds the work of the steps that wrote it: one publication
+closes them at once, up to the check step (done only if the file check passed)
+and the delivery; in a file turn the editing steps typed "code" are among them
+(staging 2026-11-20: "change the title to the new one" stayed open while the
+one publication of the turn had changed it).
+
 Every label is service text (work_progress.PLAN_LABELS), never in prompts/.
 Logs carry counts, types and sizes, never the request or the step texts.
 """
@@ -104,6 +110,8 @@ TOOL_TYPES: dict[str, frozenset[str]] = {
         for name in ("web_search", "web_fetch", "websearch", "webfetch")
     },
 }
+# Tools that publish a file: the file holds the work of the steps that wrote it.
+PUBLICATIONS = frozenset({"publish_document", "publish_scheduled_file"})
 # Jargon a step shown to the person must not carry: code, paths, commands.
 _JARGON = re.compile(
     r"[`$<>{}\[\]\\|]|/\w|\w_\w|\b\w+\.(?:py|js|ts|sh|html|css|json|md|txt|go)\b|--\w"
@@ -286,6 +294,14 @@ class ChatPlan:
             return
         now = time.monotonic()
         kinds = TOOL_TYPES.get(name, frozenset())
+        published = status == "completed" and name in PUBLICATIONS
+        if published and self.route == "work-file":
+            # A file turn writes its document whole in the publication: the
+            # steps that change it ("change the title", "add the table", often
+            # typed code) are in the published file. One publication did the
+            # work of three steps and two of them stayed open (staging
+            # 2026-11-20, "change the title" then "add a table").
+            kinds = kinds | {"code"}
         passed = status == "completed" and verification == "passed"
         if passed:
             kinds = kinds | {"test"}
@@ -327,13 +343,16 @@ class ChatPlan:
         self.pool += 1
         if active is not None:
             active.calls += 1
-        if passed:
+        if passed or published:
             self._checked(now)
 
     def _checked(self, now: float) -> None:
-        """A check of the result passed: the steps whose work was seen, from
-        the first one not done, are done up to the delivery, which the code
-        checks when the turn ends; the next step starts."""
+        """A check of the result passed or a file was published: the steps
+        whose work was seen, from the first one not done, are done up to the
+        delivery, which the code checks when the turn ends; the next step
+        starts. One call may do the work of several steps (a publication
+        writes the whole file), so it is not one step per call here; a check
+        step still needs a check that passed."""
         changed = False
         for step in self.steps:
             if step.status == "completed":
