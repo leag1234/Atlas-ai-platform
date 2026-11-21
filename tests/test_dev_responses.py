@@ -4,6 +4,7 @@ import json
 from typing import Any
 import unittest
 from devapi_support import Environment
+from packages.user_errors import unexpected_failure
 from services.orchestrator.dev_input import responses
 from services.orchestrator.dev_chat import Output
 from services.orchestrator.dev_responses import Wire
@@ -242,7 +243,7 @@ class DevResponsesTests(unittest.TestCase):
                 )
             self.assertEqual(
                 wire.feed({"error": {"message": "hidden"}})[0]["message"],
-                "provider_error",
+                unexpected_failure("en"),
             )
 
     def test_client_function_output_item_metadata(self) -> None:

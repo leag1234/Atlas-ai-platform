@@ -619,7 +619,28 @@ async def chat(request: Request) -> Response:
                 Path(os.environ.get("ATLAS_INTERACTION_DIR", "BRAIN/interactions")),
             )
     if code:
+        from packages.user_errors import (
+            DEADLINE_STOPS,
+            PROVIDER_FAILURES,
+            STOP_CATEGORIES,
+            public_message,
+        )
+
+        # A failure reads as a sentence for people, never the loop's stop
+        # summary or a bare code; the record keeps the summary, the client the
+        # code and the stop reason (staging -139).
+        reason = next(
+            (
+                e
+                for e in reversed(item.erreurs)
+                if e in STOP_CATEGORIES or e in DEADLINE_STOPS or e in PROVIDER_FAILURES
+            ),
+            None,
+        )
         detail = public_error_detail(detail)
+        if status >= 500:
+            language = payload.answer_language if payload else "en"
+            detail = public_message(code, detail, language, reason)
         return JSONResponse(
             {
                 "error": {"message": detail or code, "type": code, "code": code},
@@ -632,6 +653,7 @@ async def chat(request: Request) -> Response:
                     "cost_eur": item.cout_eur,
                     "cost_kind": billing["kind"],
                     "provider_retries": item.provider_retries,
+                    **({"stop_reason": reason} if reason else {}),
                 },
             },
             status_code=status,

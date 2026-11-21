@@ -4,6 +4,7 @@ from packages.limits import LimitError
 from packages.validation import describe_validation
 from packages.privacy import PrivacyRefusal
 from packages.owned_server import STARTING, OwnedServerUnavailable
+from packages.user_errors import failure_sentence
 
 import asyncio
 import os
@@ -109,7 +110,7 @@ def owned_wait_stream(
                     },
                 )
                 return
-            yield refusal("unavailable", "unavailable", {})
+            yield refusal("unavailable", failure_sentence("en"), {})
             return
         if isinstance(response, StreamingResponse):
             # Closed with this stream: a client that leaves ends the served request.
@@ -414,7 +415,8 @@ def provider_failure(exc: BaseException) -> dict[str, dict[str, Any]]:
     return {
         "error": {
             "type": "provider_error",
-            "message": "provider_error",
+            # A sentence for people; the code is the type (no bare code as text).
+            "message": failure_sentence("en", "provider_error"),
             **({"provider_status": status} if status is not None else {}),
         }
     }

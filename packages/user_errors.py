@@ -429,3 +429,50 @@ def without_diagnostics(text: str) -> str:
         return text
     kept = _DIAGNOSTIC.sub("", text)
     return re.sub(r"\n{3,}", "\n\n", kept).strip()
+
+
+# API error bodies, in every format (Chat Completions, Responses, Messages; streamed
+# or not; the assistant and the direct models). The code and the reason stay
+# machine-readable fields; the human text is a sentence for people: never the
+# loop's stop summary, a diagnostic for the logs or a bare code such as
+# "provider_error" or "loop_detected" (staging -139, 2026-11-20). Budget refusals
+# keep their own message with its measured values (D5).
+NAMED_REFUSALS = frozenset({"cost", "cost_budget", "budget_limit", "quota_exceeded"})
+_BARE_CODE = re.compile(r"[a-z][a-z0-9]*(?:[_.:-][a-z0-9]+)*")
+PUBLIC_SENTENCES = frozenset(
+    sentence
+    for table in (_INTERRUPTED, _TOO_LONG, _UNEXPECTED, *_STOPPED.values())
+    for sentence in table.values()
+)
+
+
+def failure_sentence(language: str, *codes: str | None) -> str:
+    """The sentence of the first code that names a stop, a deadline or a provider
+    failure, else the unexpected-failure sentence."""
+    for code in codes:
+        if code:
+            sentence = stop_answer(code, language) or ui_failure(code, language)
+            if sentence:
+                return sentence
+    return unexpected_failure(language)
+
+
+def public_message(
+    code: str, message: object, language: str = "en", reason: str | None = None
+) -> str:
+    """The human text of an API error with ``code``: ``message`` when it is written
+    for people, else the sentence of ``reason`` or ``code`` (failure_sentence)."""
+    text = message.strip() if isinstance(message, str) else ""
+    if code in NAMED_REFUSALS:
+        return text or code
+    if text and not internal_diagnostic(text) and not _BARE_CODE.fullmatch(text):
+        return text
+    return failure_sentence(language, reason, code, text)
+
+
+def generic_message(code: object, message: object) -> str:
+    """The text of a failure a format keeps generic (no provider detail): a public
+    sentence already written for this failure, else the sentence of its code."""
+    if isinstance(message, str) and message.strip() in PUBLIC_SENTENCES:
+        return message.strip()
+    return failure_sentence("en", code if isinstance(code, str) else None)

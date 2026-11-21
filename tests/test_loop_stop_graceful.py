@@ -26,8 +26,12 @@ from fastapi.testclient import TestClient
 from packages import privacy
 from packages.profiles import PROFILES
 from packages.user_errors import (
+    generic_message,
     internal_diagnostic,
+    public_message,
     stop_answer,
+    ui_failure,
+    unexpected_failure,
     without_diagnostics,
 )
 from services.orchestrator.chat_api import app
@@ -486,6 +490,58 @@ class ApiTests(unittest.TestCase):
                 self.assertIn(ANSWER, content)
                 self.assertIsNone(DIAGNOSTIC.search(content))
                 self.assertGreaterEqual(len(payloads), 4)
+
+    def test_a_stopped_turn_fails_through_the_api_with_its_sentence(self) -> None:
+        # The closing call fails: the client gets the error with its code and
+        # stop reason, and the sentence of the stream, never the loop's summary.
+        for level in (privacy.STANDARD, privacy.STRICT):
+            with self.subTest(level=level):
+                with replayed_turn(level, stubborn), TestClient(app) as client:
+                    answer = client.post(
+                        "/v1/chat/completions", json=request_body(level)
+                    )
+                self.assertEqual(answer.status_code, 504, answer.text[:300])
+                body = answer.json()
+                self.assertEqual(body["error"]["code"], "request_stopped")
+                self.assertEqual(body["atlas"]["stop_reason"], "loop_detected")
+                message = body["error"]["message"]
+                self.assertEqual(message, stop_answer("loop_detected", "fr"))
+                self.assertIsNone(DIAGNOSTIC.search(message))
+
+
+class PublicMessageTests(unittest.TestCase):
+    def test_no_summary_or_bare_code_is_human_text(self) -> None:
+        summary = "Explicit stop: tool_calls. Tools executed: 10; limit 10."
+        self.assertEqual(
+            public_message("request_stopped", summary, "en", "tool_calls"),
+            stop_answer("tool_calls", "en"),
+        )
+        self.assertEqual(
+            public_message("provider_error", "provider_error", "de"),
+            ui_failure("provider_error", "de"),
+        )
+        self.assertEqual(
+            public_message("timeout", "timeout", "fr"), stop_answer("wall_clock", "fr")
+        )
+        self.assertEqual(
+            public_message("stream_error", "", "it"), unexpected_failure("it")
+        )
+        self.assertEqual(
+            public_message("provider_quota", "Account credit exhausted.", "fr"),
+            "Account credit exhausted.",
+        )
+        # A budget refusal keeps its measured message (D5).
+        measured = "Explicit stop: cost. Cost reserved: 0.11 EUR; limit 0.10 EUR."
+        self.assertEqual(public_message("cost_budget", measured, "fr"), measured)
+
+    def test_generic_formats_keep_only_public_sentences(self) -> None:
+        sentence = str(stop_answer("loop_detected", "fr"))
+        self.assertEqual(generic_message("server_error", sentence), sentence)
+        self.assertEqual(
+            generic_message("provider_error", "private provider content"),
+            ui_failure("provider_error", "en"),
+        )
+        self.assertEqual(generic_message(None, "hidden"), unexpected_failure("en"))
 
 
 if __name__ == "__main__":
