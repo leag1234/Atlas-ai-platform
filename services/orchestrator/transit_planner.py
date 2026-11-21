@@ -995,6 +995,12 @@ LATER_MINUTES = 120
 # late; only one that waits at most NIGHT_WAIT_MINUTES at the destination and
 # takes at most twice as long as the late options.
 NIGHT_WAIT_MINUTES = 180
+# A slow itinerary (``_slow``) is left out of the second searches only when a
+# faster one arrives within this many minutes of it: a speed threshold never
+# removes the option that best meets the time asked (staging -141: a Sunday
+# coach arriving 09:15 for 09:00 was left out as slow, the answer gave a train
+# arriving 11:07). Kept, it says it is long.
+COMPARABLE_MINUTES = 30
 
 
 def _slow(itinerary: dict[str, Any], distance_km: float) -> bool:
@@ -1050,6 +1056,7 @@ WORDS: dict[str, dict[str, Any]] = {
         "late_doubt": "No reasonable itinerary found arrives by {d}: {why}. The options below are the first reasonable ones found; they arrive after {d}.",
         "late_empty": "No itinerary found arrives by {d}. The options below are the first ones found; they arrive after {d}.",
         "late_first": "The first reasonable arrival found is at {a}, {m} after the {d} requested.",
+        "long": "Long trip: {m}; no faster itinerary found arrives at a comparable time.",
         "night_option": "Only if you can travel at night: this itinerary arrives in time, leaving at {t}.",
         "late": "Arrives {a}, {m} after the {d} requested.",
         "title": "Public transport plan",
@@ -1095,6 +1102,7 @@ WORDS: dict[str, dict[str, Any]] = {
         "late_doubt": "Aucun itin\u00e9raire raisonnable trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d} : {why}. Les options ci-dessous sont les premi\u00e8res raisonnables trouv\u00e9es ; elles arrivent apr\u00e8s {d}.",
         "late_empty": "Aucun itin\u00e9raire trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d}. Les options ci-dessous sont les premi\u00e8res trouv\u00e9es ; elles arrivent apr\u00e8s {d}.",
         "late_first": "La premi\u00e8re arriv\u00e9e raisonnable trouv\u00e9e est \u00e0 {a}, {m} apr\u00e8s l\u2019heure demand\u00e9e ({d}).",
+        "long": "Trajet long : {m} ; aucun itin\u00e9raire plus rapide trouv\u00e9 n\u2019arrive \u00e0 une heure comparable.",
         "night_option": "Seulement si vous pouvez voyager de nuit : cet itin\u00e9raire arrive \u00e0 l\u2019heure, avec un d\u00e9part \u00e0 {t}.",
         "late": "Arriv\u00e9e {a}, {m} apr\u00e8s l\u2019heure demand\u00e9e ({d}).",
         "title": "Itin\u00e9raire en transports en commun",
@@ -1140,6 +1148,7 @@ WORDS: dict[str, dict[str, Any]] = {
         "late_doubt": "Keine sinnvolle gefundene Verbindung kommt bis {d} an: {why}. Die folgenden Optionen sind die ersten sinnvollen gefundenen; sie kommen nach {d} an.",
         "late_empty": "Keine gefundene Verbindung kommt bis {d} an. Die folgenden Optionen sind die ersten gefundenen; sie kommen nach {d} an.",
         "late_first": "Die erste sinnvolle gefundene Ankunft ist um {a}, {m} nach der gew\u00fcnschten Zeit ({d}).",
+        "long": "Lange Fahrt: {m}; keine schnellere gefundene Verbindung kommt zu einer vergleichbaren Zeit an.",
         "night_option": "Nur wenn Sie nachts reisen k\u00f6nnen: Diese Verbindung kommt rechtzeitig an, mit Abfahrt um {t}.",
         "late": "Ankunft {a}, {m} nach der gew\u00fcnschten Zeit ({d}).",
         "title": "Verbindung mit \u00f6ffentlichen Verkehrsmitteln",
@@ -1185,6 +1194,7 @@ WORDS: dict[str, dict[str, Any]] = {
         "late_doubt": "Ning\u00fan itinerario razonable encontrado llega antes de las {d}: {why}. Las opciones siguientes son las primeras razonables encontradas; llegan despu\u00e9s de las {d}.",
         "late_empty": "Ning\u00fan itinerario encontrado llega antes de las {d}. Las opciones siguientes son las primeras encontradas; llegan despu\u00e9s de las {d}.",
         "late_first": "La primera llegada razonable encontrada es a las {a}, {m} despu\u00e9s de la hora pedida ({d}).",
+        "long": "Trayecto largo: {m}; ning\u00fan itinerario m\u00e1s r\u00e1pido encontrado llega a una hora comparable.",
         "night_option": "Solo si puede viajar de noche: este itinerario llega a tiempo, con salida a las {t}.",
         "late": "Llegada {a}, {m} despu\u00e9s de la hora pedida ({d}).",
         "title": "Itinerario en transporte p\u00fablico",
@@ -1230,6 +1240,7 @@ WORDS: dict[str, dict[str, Any]] = {
         "late_doubt": "Nessun itinerario ragionevole trovato arriva entro le {d}: {why}. Le opzioni seguenti sono le prime ragionevoli trovate; arrivano dopo le {d}.",
         "late_empty": "Nessun itinerario trovato arriva entro le {d}. Le opzioni seguenti sono le prime trovate; arrivano dopo le {d}.",
         "late_first": "Il primo arrivo ragionevole trovato \u00e8 alle {a}, {m} dopo l\u2019ora richiesta ({d}).",
+        "long": "Viaggio lungo: {m}; nessun itinerario pi\u00f9 veloce trovato arriva a un\u2019ora paragonabile.",
         "night_option": "Solo se pu\u00f2 viaggiare di notte: questo itinerario arriva in tempo, con partenza alle {t}.",
         "late": "Arrivo {a}, {m} dopo l\u2019ora richiesta ({d}).",
         "title": "Itinerario con i mezzi pubblici",
@@ -1415,6 +1426,11 @@ def render(
                 sentences.append(text + f" ({operator}).")
             else:
                 sentences.append(text + ".")
+        if itinerary.get("long"):
+            # Kept although slow: said plainly (COMPARABLE_MINUTES).
+            long_line = w["long"].format(m=_duration(itinerary["minutes"]))
+            lines.append(f"- {long_line}")
+            sentences.append(long_line)
         if deadline is not None and itinerary["arrive"] > deadline:
             # Only the second search's options arrive late, and say so.
             check = w["late"].format(
@@ -1923,13 +1939,16 @@ async def _reasonable(
             ),
             (max(morning, local), False, WIDE_WINDOW, None),
         ]
+    # Late options that are all long: the searches go on for a faster one,
+    # given after them.
+    held: list[dict[str, Any]] = []
     for number, (at, arrive_by, window, limit) in enumerate(searches):
         if (
             number
             and until is not None
             and time.monotonic() + client.config.timeout > until
         ):
-            return None
+            break
         try:
             response = await client.plan(
                 *ends,
@@ -1940,31 +1959,67 @@ async def _reasonable(
                 window=window,
             )
         except TransitError:
-            return None
-        found = [
-            itinerary
-            for itinerary in parse(response, zone, flights=flights)
-            if not _slow(itinerary, distance_km) and not _at_night(itinerary, when)
-        ]
-        kept, _ = selected(found, now=now, deadline=deadline)
-        if kept:
-            return kept, False
-        if deadline is None:
-            return None
+            break
+        found = usable(parse(response, zone, flights=flights), distance_km, when)
+        if not held:
+            kept, _ = selected(found, now=now, deadline=deadline)
+            if kept:
+                return kept, False
+            if deadline is None:
+                return None
         late = [
             i
             for i in found
             if i["depart"] >= now - timedelta(minutes=1)
+            and deadline is not None
             and deadline < i["latest"]
             and (limit is None or i["latest"] <= limit)
         ]
-        if late:
-            # The earliest arrivals; of the same arrival, the latest departure.
-            late.sort(
-                key=lambda i: (i["latest"], -i["depart"].timestamp(), i["transfers"])
-            )
-            return sorted(late[:OPTIONS], key=lambda i: i["depart"]), True
-    return None
+        if held:
+            late = [
+                i
+                for i in late
+                if not i.get("long") and i["latest"] > held[-1]["latest"]
+            ]
+        if not late:
+            continue
+        # The earliest arrivals; of the same arrival, the latest departure.
+        late.sort(key=lambda i: (i["latest"], -i["depart"].timestamp(), i["transfers"]))
+        if held:
+            return _in_order(held + late[: OPTIONS - len(held)]), True
+        chosen = late[:OPTIONS]
+        if all(i.get("long") for i in chosen) and number < len(searches) - 1:
+            held = chosen[: OPTIONS - 1]
+            continue
+        return _in_order(chosen), True
+    return (_in_order(held), True) if held else None
+
+
+def _in_order(itineraries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(itineraries, key=lambda i: i["depart"])
+
+
+def usable(
+    itineraries: list[dict[str, Any]], distance_km: float, when: datetime | None
+) -> list[dict[str, Any]]:
+    """The itineraries a second search may give: none leaving at night; a slow
+    one only when no faster one arrives within COMPARABLE_MINUTES of it, then
+    marked ``long``. Any mode, any trip: the threshold demotes, it never
+    removes the option nearest the time asked."""
+    day = [i for i in itineraries if not _at_night(i, when)]
+    fast = [i for i in day if not _slow(i, distance_km)]
+    kept: list[dict[str, Any]] = []
+    for itinerary in day:
+        if not _slow(itinerary, distance_km):
+            kept.append(itinerary)
+        elif not any(
+            other["minutes"] < itinerary["minutes"]
+            and abs((other["latest"] - itinerary["latest"]).total_seconds())
+            <= COMPARABLE_MINUTES * 60
+            for other in fast
+        ):
+            kept.append({**itinerary, "long": True})
+    return kept
 
 
 def _late_by(itinerary: dict[str, Any], deadline: datetime) -> int:

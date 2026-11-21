@@ -26,9 +26,12 @@ Streets are fictional; the clock is patched wherever a plan is computed.
 import asyncio
 import json
 import time
+import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from services.orchestrator import travel_claims, travel_rebuild
 from services.orchestrator import transit_planner as tp
@@ -119,7 +122,7 @@ def sunday(
 
 
 class WidenedSearchTest(Base):
-    def test_the_first_reasonable_arrival_of_the_day_comes_first(self) -> None:
+    def test_the_arrival_nearest_the_time_asked_comes_first(self) -> None:
         planner, turn, data = sunday()
         self.assertEqual(data["outcome"], "planned_late")
         self.assertEqual(data["day"], "2026-11-22")
@@ -131,33 +134,47 @@ class WidenedSearchTest(Base):
         block = data["rendered"]
         self.assertTrue(block.startswith("**Itinéraire en transports en commun"), block)
         self.assertIn(
-            "La première arrivée raisonnable trouvée est à 11:07, 2 h 07 min "
-            "après l’heure demandée (09:00).",
+            "La première arrivée raisonnable trouvée est à 09:15, 15 min après "
+            "l’heure demandée (09:00).",
             block,
         )
+        # The coach arriving 15 min late is slow (3 h 37 for 109 km): no
+        # faster itinerary arrives near it, so it stays, said to be long.
+        coach = block.index("Car FlixBus N788")
         self.assertIn(
-            "Train TER 96504 : Lyon Part Dieu 08:38 → Genève Cornavin 10:40", block
+            "- Trajet long : 3 h 37 min ; aucun itinéraire plus rapide trouvé "
+            "n’arrive à une heure comparable.\n- Arrivée 09:15, 15 min après "
+            "l’heure demandée (09:00).",
+            block,
         )
-        # The late options come before the night one, which is said as such.
-        night = "Seulement si vous pouvez voyager de nuit : cet itinéraire arrive à l’heure, avec un départ à 03:04."
-        self.assertIn(night, block)
-        self.assertLess(block.index("TER 96504"), block.index(night))
-        self.assertLess(block.index(night), block.index("BlaBlaCar"))
-        self.assertIn("Arrivée 06:47 pour 09:00 demandé.", block)
-        self.assertEqual(data["night_option"], "2026-11-22T03:04+01:00")
-        # Seven hours early at an airport is no option: the 22:34 coach goes.
-        self.assertNotIn("22:34 →", block)
+        # The faster train arriving later follows.
+        train = block.index(
+            "Train TER 96504 : Lyon Part Dieu 08:38 → Genève Cornavin 10:40"
+        )
+        self.assertLess(coach, train)
+        self.assertIn(
+            "Arrivée 11:07, 2 h 07 min après l’heure demandée (09:00).", block
+        )
+        self.assertEqual(block.count("Trajet long"), 1)
+        # 15 min late: no night travel offered; no night chain at all.
+        self.assertNotIn("night_option", data)
+        self.assertNotIn("de nuit", block)
+        self.assertNotIn("BlaBlaCar", block)
         self.assertNotIn("FlixBus N122", block)
+        self.assertEqual(data["itineraries"][0]["long"], True)
         # The plan is the answer's block, not a doubtful fallback.
         self.assertEqual(turn.plan, block)
         self.assertEqual(turn.doubtful, "")
-        self.assertIn("11:07", turn.plan_times)
+        self.assertIn("09:15", turn.plan_times)
         self.assertEqual(turn.clock, LATE_FRIDAY)
 
     def test_no_widening_once_the_tool_time_is_spent(self) -> None:
+        # The +30 min search still runs: its long coach is the answer alone.
         planner, _, data = sunday(until=time.monotonic())
-        self.assertEqual(data["outcome"], "doubtful")
+        self.assertEqual(data["outcome"], "planned_late")
         self.assertEqual(planner.plans(), 2)
+        self.assertIn("Car FlixBus N788", data["rendered"])
+        self.assertNotIn("TER 96504", data["rendered"])
 
     def test_a_late_arrival_within_half_an_hour_gets_no_night_option(self) -> None:
         late = [
@@ -335,3 +352,117 @@ class PlanClockTest(TripTextTest):
         with patch("services.orchestrator.datecalc.utc_now", return_value=saturday):
             self.assertEqual(bare.trip_dates(), ["2026-11-27"])
             self.assertEqual(bare.today(), "2026-11-21")
+
+
+def leg(mode: str, name: str, start: str, end: str, zone: str) -> dict[str, Any]:
+    return {
+        "mode": mode,
+        "startTime": start,
+        "endTime": end,
+        "scheduledStartTime": start,
+        "scheduledEndTime": end,
+        "displayName": name,
+        "from": {"name": "Ferry Quay", "tz": zone},
+        "to": {"name": "Harbour Terminal", "tz": zone},
+    }
+
+
+def row(mode: str, name: str, start: str, end: str, zone: str) -> dict[str, Any]:
+    return {
+        "startTime": start,
+        "endTime": end,
+        "transfers": 0,
+        "legs": [leg(mode, name, start, end, zone)],
+    }
+
+
+class SlowOptionTest(unittest.TestCase):
+    """Any mode, any country: a speed threshold demotes, never removes the
+    option nearest the time asked (synthetic times, 80 km by sea)."""
+
+    ZONE = "Europe/Oslo"
+    DEADLINE = datetime(2026, 12, 7, 10, 0, tzinfo=ZoneInfo(ZONE))
+    NOW = datetime(2026, 12, 6, 18, 0, tzinfo=timezone.utc)
+
+    def itineraries(self, *rows: dict[str, Any]) -> list[dict[str, Any]]:
+        return tp.parse({"itineraries": list(rows)}, ZoneInfo(self.ZONE))
+
+    def test_a_slow_ferry_alone_near_the_time_stays(self) -> None:
+        # Ferry 06:40 -> 10:10 (3 h 30, 23 km/h), express boat 11:30 -> 13:00.
+        ferry = row(
+            "FERRY", "Ferry 12", "2026-12-07T05:40Z", "2026-12-07T09:10Z", self.ZONE
+        )
+        express = row(
+            "FERRY", "Express 3", "2026-12-07T10:30Z", "2026-12-07T12:00Z", self.ZONE
+        )
+        kept = tp.usable(self.itineraries(ferry, express), 80, self.DEADLINE)
+        self.assertEqual(
+            [i["legs"][0]["line"] for i in kept], ["Ferry 12", "Express 3"]
+        )
+        self.assertTrue(kept[0]["long"])
+        self.assertNotIn("long", kept[1])
+
+    def test_a_slow_option_with_a_faster_one_near_it_goes(self) -> None:
+        # Bus 06:30 -> 10:05 (3 h 35), train 08:50 -> 10:20 (1 h 30): 15 min apart.
+        bus = row("BUS", "Bus 400", "2026-12-07T05:30Z", "2026-12-07T09:05Z", self.ZONE)
+        train = row(
+            "RAIL", "Train R20", "2026-12-07T07:50Z", "2026-12-07T09:20Z", self.ZONE
+        )
+        kept = tp.usable(self.itineraries(bus, train), 80, self.DEADLINE)
+        self.assertEqual([i["legs"][0]["line"] for i in kept], ["Train R20"])
+
+    def test_the_searches_give_the_long_option_then_a_faster_one(self) -> None:
+        ferry = row(
+            "FERRY", "Ferry 12", "2026-12-07T05:40Z", "2026-12-07T09:10Z", self.ZONE
+        )
+        express = row(
+            "FERRY", "Express 3", "2026-12-07T10:30Z", "2026-12-07T12:00Z", self.ZONE
+        )
+        answers = [
+            {"itineraries": [ferry]},
+            {"itineraries": [ferry]},
+            {"itineraries": [ferry, express]},
+        ]
+
+        class Client:
+            config = SimpleNamespace(timeout=8)
+
+            async def plan(self, *_: Any, **__: Any) -> dict[str, Any]:
+                return answers.pop(0)
+
+        found = asyncio.run(
+            tp._reasonable(
+                Client(),  # type: ignore[arg-type]
+                ((59.9, 10.7), (59.3, 10.4)),
+                self.DEADLINE,
+                deadline=self.DEADLINE,
+                now=self.NOW,
+                zone=ZoneInfo(self.ZONE),
+                distance_km=80,
+                language="en",
+                flights=False,
+            )
+        )
+        assert found is not None
+        itineraries, late = found
+        self.assertTrue(late)
+        self.assertEqual(
+            [i["legs"][0]["line"] for i in itineraries], ["Ferry 12", "Express 3"]
+        )
+        config = SimpleNamespace(
+            attribution_name="Transitous",
+            attribution_url=tp.SOURCES_URL,
+        )
+        block, _ = tp.render(
+            itineraries,
+            origin="your position",
+            destination="Harbour Terminal",
+            deadline=self.DEADLINE,
+            language="en",
+            config=config,  # type: ignore[arg-type]
+        )
+        self.assertIn(
+            "- Long trip: 3 h 30 min; no faster itinerary found arrives at a "
+            "comparable time.\n- Arrives 10:10, 10 min after the 10:00 requested.",
+            block,
+        )
