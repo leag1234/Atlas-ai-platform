@@ -15,7 +15,13 @@ import traceback
 from fastapi.responses import StreamingResponse
 from packages.file_intent import produces_file, requests_file_delivery
 from packages.limits import LimitError
-from packages.user_errors import ui_failure, unexpected_failure
+from packages.user_errors import (
+    DEADLINE_STOPS,
+    stop_answer,
+    ui_failure,
+    unexpected_failure,
+    without_diagnostics,
+)
 
 from services.orchestrator.chat_schema import ChatRequest, markdown_tail_viable
 from services.orchestrator.deadline import request_deadline
@@ -310,6 +316,8 @@ def response(
 
             if not text and not final:
                 return
+            # A diagnostic written for the logs never reaches the person.
+            text = without_diagnostics(text)
             # Scoped processing buffers and validates the canonical answer before
             # persistence. Its source authority is unrelated to legacy project IDs.
             if payload.org_id:
@@ -815,7 +823,28 @@ def response(
                             raise GatewayError(
                                 failed[-1], 502, item.reponse.strip() or failed[-1]
                             )
-                        raise RuntimeError("request_stopped")
+                        # A stop of the tool loop is not an unexpected error: the
+                        # deadline is said as the deadline (D5), a research stop
+                        # in one sentence, as a finished answer. The stop summary
+                        # stays in the logs (staging -139, 2026-11-20).
+                        stops = [
+                            e
+                            for e in item.erreurs
+                            if e in DEADLINE_STOPS or stop_answer(e, "en")
+                        ]
+                        if stops and payload.project_action != "work":
+                            logging.getLogger(__name__).warning(
+                                json.dumps(
+                                    {"event": "stopped_turn", "reason": stops[-1]}
+                                )
+                            )
+                            if stops[-1] in DEADLINE_STOPS:
+                                raise GatewayError("timeout", 504, "timeout")
+                            item.reponse = str(
+                                stop_answer(stops[-1], payload.answer_language)
+                            )
+                        else:
+                            raise RuntimeError("request_stopped")
                     # The checked plan ends the answer (work_plan.py); the
                     # stored answer keeps it too.
                     plan_text = (
@@ -826,6 +855,16 @@ def response(
                         else ""
                     )
                     item.reponse += plan_text
+                    cleaned = without_diagnostics(item.reponse)
+                    if cleaned != item.reponse:
+                        logging.getLogger(__name__).warning(
+                            json.dumps({"event": "diagnostic_withheld"})
+                        )
+                        item.reponse = cleaned or str(
+                            stop_answer(
+                                "protocol_completion_limit", payload.answer_language
+                            )
+                        )
                     if not payload.atlas_ui and not payload.code_mode:
                         await content(item.reponse, final=True)
                     elif payload.code_mode:

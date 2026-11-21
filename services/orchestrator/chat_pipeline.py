@@ -300,6 +300,15 @@ async def render_citations(item: Interaction) -> None:
         )
 
 
+# What an internal document search that found nothing tells the model: what it
+# means and what to do next, so that it does not repeat the same search.
+NO_PASSAGE: dict[str, str] = {
+    "message": "No internal document matches this query: the internal documents "
+    "do not cover it. Do not search them again with the same words. Answer from "
+    "the other results and your own knowledge, and say what could not be checked."
+}
+
+
 class ChatTools(Runtime):
     def __init__(
         self, item: Interaction, question: str = "", allow_image: bool = False
@@ -693,12 +702,12 @@ class ChatTools(Runtime):
             self.item.chunks_recuperes.extend(passages)
             for passage in result.passages:
                 document_quotes.add_document(passage.text, retrieved=True)
-            return {
-                "trust": "untrusted",
-                "data": {
-                    "passages": select_passages(result.passages, request.query, 8000)
-                },
-            }
+            selected = select_passages(result.passages, request.query, 8000)
+            if not selected:
+                # Said in words: an empty list alone invites the same search
+                # again, which ends in a repeated-call stop (staging -139).
+                return {"trust": "untrusted", "data": {"passages": []}, **NO_PASSAGE}
+            return {"trust": "untrusted", "data": {"passages": selected}}
         except LimitError as exc:
             return {"error": exc.code, "message": exc.detail}
         except ValidationError as exc:
@@ -2988,8 +2997,11 @@ async def _process(
             return
         if result.reason:
             item.erreurs.append(result.reason)
-        if delivery_buffer is not None:
+        if delivery_buffer is not None and item.state == "done":
             # SSE resolves raw citation identifiers itself, after provenance filtering.
+            # A stopped turn sends nothing here: its text is the stop summary of
+            # the loop, for the record and the API error only; the stream writes
+            # the sentence the person reads (staging -139, 2026-11-20).
             await delivery_buffer.finish(item.reponse)
         if result.state == "done" and not followup:
             await render_citations(item)
@@ -3002,6 +3014,7 @@ async def _process(
             (technical_diagram or image_discussion)
             and not links
             and not appearance
+            and item.state == "done"
             and (sink := sink_context.get())
         ):
             await sink({"delta": {"content": item.reponse}})

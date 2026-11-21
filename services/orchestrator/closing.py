@@ -24,6 +24,7 @@ of an answer wrote "search quota exhausted" in its study (staging, 2026-11-19):
 no quota was involved, and the reader was told the service had run out (D5).
 """
 
+import json
 from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 
@@ -183,3 +184,77 @@ def closing_requested(messages: Sequence[Mapping[str, object]]) -> bool:
             and content.startswith(CLOSED_PREFIX)
         )
     return False
+
+
+# The same call repeated with the same arguments, in a chat turn. A small owned
+# model in strict mode (staging -139, 2026-11-20) called the local encyclopedia
+# four times in a row with the same query: it ran twice, the third call was
+# answered with the previous result, and the fourth stopped the turn with no
+# answer. The second identical call now gets the first result back without
+# running again; a third one closes the research and the answer is written from
+# what is there (LOOP_CLOSING_MARK).
+LOOP_CLOSING_MARK = CLOSED_PREFIX + " the same step was repeated without new results."
+REPEATED_CALL_CODE = "repeated_call"
+REPEAT_LIMIT = 3
+# Failures that a second identical call may cure: it runs again once.
+TRANSIENT_ERRORS = frozenset(
+    {"timeout", "source_unavailable", "search_unavailable", "provider_timeout"}
+)
+# Steps whose stop a closing call can still answer: research is over, the
+# budget and the time of the turn are not (budget and deadline stops keep their
+# refusal, D5).
+CLOSABLE_STOPS = frozenset(
+    {"loop_detected", "tool_calls", "search_limit", "fetch_limit"}
+)
+
+
+def repeated_call_result(previous: Mapping[str, object] | None) -> dict[str, object]:
+    """The answer to a call that repeats the previous one exactly, without running it."""
+    error = previous.get("error") if previous is not None else None
+    message = (
+        "Not run again: this exact call was already made in this answer and its "
+        "result does not change. "
+        + (
+            f"It returned no usable result ({error}); repeating it will not help. "
+            if isinstance(error, str)
+            else "Its result is in previous_result. "
+        )
+        + "If that result does not answer the question, change the arguments or "
+        "write the answer from what you have and say what could not be checked. "
+        "The same call a third time ends the research of this answer."
+    )
+    output: dict[str, object] = {"error": REPEATED_CALL_CODE, "message": message}
+    if previous is not None and len(json.dumps(previous, ensure_ascii=False)) <= 4000:
+        output["previous_result"] = dict(previous)
+    return output
+
+
+def loop_closing_instruction(language: str) -> str:
+    """The instruction of the closing call when the same step kept repeating."""
+    return (
+        LOOP_CLOSING_MARK + "\n"
+        "No tool is available for the rest of this turn. Rules for the answer "
+        "you write now:\n"
+        "1. Write the final answer for the user from the results already "
+        "obtained in this conversation when they are relevant, and from your own "
+        "knowledge where they are silent.\n"
+        "2. If a result is about something other than what the user asked (a "
+        "homonym, another product), ignore it. If a point could not be checked, "
+        "say so plainly for that point, in one short sentence, and say what the "
+        "user can ask next. Do not invent it. Never call this an outage, a quota "
+        "or an error.\n"
+        "3. Do not recount what was tried: no attempts, no tool names. Do not "
+        "describe your plan, and never announce what you are going to write: "
+        "write the answer itself.\n"
+        "4. Give no source name, link or consultation date that was not "
+        "retrieved in this conversation." + language_instruction(language)
+    )
+
+
+def stop_closing_instruction(
+    reason: str, counts: Mapping[str, int], language: str
+) -> str:
+    """The closing instruction for a stop of CLOSABLE_STOPS."""
+    if reason in STEP_LIMITS:
+        return step_closing_instruction(reason, counts, language)
+    return loop_closing_instruction(language)
