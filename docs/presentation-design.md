@@ -54,8 +54,10 @@ roadmap, ask) and the usual structure of course and status decks.
    fitted with the wider Vera metrics, so what fits here fits there.
 4. **Nothing invented on a slide.** The footer repeats the deck title, the
    numbers are slide numbers, card numbers are ordinals. Chart values come from
-   the outline; the tool description and the outline instruction say that a fact
-   not given nor read is written as unknown or to be confirmed.
+   the outline; the `publish_document` description says what code does with each
+   field, what each kind of deck covers, and that a fact not given nor read is
+   written as unknown or to be confirmed. The older chat-only outline instruction
+   (`presentation_delivery.py`) is unchanged: its M24 recording (J42) replays it.
 5. **Other formats keep everything.** `Content.flattened()` turns notes into
    paragraphs, metrics into `label: value` bullets and a chart into the table of
    its numbers for DOCX, PDF and XLSX.
