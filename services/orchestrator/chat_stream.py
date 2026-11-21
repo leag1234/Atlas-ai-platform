@@ -961,7 +961,11 @@ def response(
                         else ""
                     )
                     item.reponse += plan_text
-                    cleaned = without_diagnostics(item.reponse)
+                    from services.orchestrator.narration import without_internal
+
+                    # Internal text never reaches the person (class C4): the
+                    # loop's diagnostics, tool-call markup, error envelopes.
+                    cleaned = without_internal(without_diagnostics(item.reponse))
                     if cleaned != item.reponse:
                         logging.getLogger(__name__).warning(
                             json.dumps({"event": "diagnostic_withheld"})

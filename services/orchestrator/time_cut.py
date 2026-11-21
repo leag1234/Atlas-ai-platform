@@ -62,9 +62,10 @@ def written(draft: Draft | None) -> str:
     from services.orchestrator.narration import (
         protocol_material,
         unfinished_announcement,
+        without_internal,
     )
 
-    text = draft.text.strip() if draft is not None else ""
+    text = without_internal(draft.text).strip() if draft is not None else ""
     if not text or protocol_material(text) or unfinished_announcement(text):
         return ""
     return text
