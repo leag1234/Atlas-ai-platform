@@ -246,6 +246,99 @@ def app_failure(
     return labels.get(language, labels["en"])
 
 
+# The render check (services/orchestrator/app_render.py) opened the app twice
+# and it did not work: said plainly, with what the check saw, never delivered
+# as if it worked.
+_APP_RENDER = {
+    "fr": "J'ai ouvert l'application pour la vérifier et elle ne fonctionnait pas ({reasons}), même après une correction ; je ne vous la donne donc pas.",
+    "en": "I opened the app to check it and it did not work ({reasons}), even after one fix, so I am not handing it over.",
+    "de": "Ich habe die App zur Prüfung geöffnet und sie funktionierte nicht ({reasons}), auch nicht nach einer Korrektur; deshalb gebe ich sie nicht weiter.",
+    "es": "Abrí la aplicación para comprobarla y no funcionaba ({reasons}), ni siquiera tras una corrección, así que no se la entrego.",
+    "it": "Ho aperto l'app per verificarla e non funzionava ({reasons}), nemmeno dopo una correzione, quindi non te la consegno.",
+}
+_APP_RENDER_REASONS = {
+    "error": {
+        "fr": "elle affichait une erreur",
+        "en": "it raised an error",
+        "de": "sie meldete einen Fehler",
+        "es": "mostraba un error",
+        "it": "segnalava un errore",
+    },
+    "network": {
+        "fr": "elle avait besoin de fichiers d'Internet, que l'aperçu bloque",
+        "en": "it needed files from the internet, which the preview blocks",
+        "de": "sie brauchte Dateien aus dem Internet, die die Vorschau blockiert",
+        "es": "necesitaba archivos de internet, que la vista previa bloquea",
+        "it": "aveva bisogno di file da Internet, che l'anteprima blocca",
+    },
+    "blank": {
+        "fr": "la page restait vide",
+        "en": "the page stayed blank",
+        "de": "die Seite blieb leer",
+        "es": "la página quedaba en blanco",
+        "it": "la pagina restava vuota",
+    },
+    "controls": {
+        "fr": "ses boutons ne réagissaient pas",
+        "en": "its buttons did not react",
+        "de": "ihre Schaltflächen reagierten nicht",
+        "es": "sus botones no respondían",
+        "it": "i suoi pulsanti non rispondevano",
+    },
+    "frozen": {
+        "fr": "elle se bloquait",
+        "en": "it froze",
+        "de": "sie blieb hängen",
+        "es": "se quedaba bloqueada",
+        "it": "si bloccava",
+    },
+}
+_APP_RENDER_GROUPS = {
+    "not_loaded": "frozen",
+    "not_responding": "frozen",
+    "page_error": "error",
+    "control_error": "error",
+    "csp_violation": "network",
+    "blocked_request": "network",
+    "blank_page": "blank",
+    "dead_controls": "controls",
+}
+_RETRY = {
+    "fr": "Renvoyez votre message pour réessayer, ou demandez une version plus simple.",
+    "en": "Send your message again to retry, or ask for a simpler version.",
+    "de": "Senden Sie Ihre Nachricht erneut oder bitten Sie um eine einfachere Version.",
+    "es": "Envíe de nuevo su mensaje para volver a intentarlo o pida una versión más sencilla.",
+    "it": "Invia di nuovo il messaggio per riprovare o chiedi una versione più semplice.",
+}
+_UNCHANGED_SHORT = {
+    "fr": "La version {version} reste inchangée.",
+    "en": "Version {version} is unchanged.",
+    "de": "Version {version} bleibt unverändert.",
+    "es": "La versión {version} no cambia.",
+    "it": "La versione {version} resta invariata.",
+}
+
+
+def app_render_failure(
+    language: str, codes: list[str], *, unchanged_version: int | None = None
+) -> str:
+    """An app that failed the render check twice: what was seen, and a retry."""
+    language = language if language in _APP_RENDER else "en"
+    groups: list[str] = []
+    for code in codes:
+        group = _APP_RENDER_GROUPS.get(code, "error")
+        if group not in groups:
+            groups.append(group)
+    reasons = ", ".join(
+        _APP_RENDER_REASONS[group][language] for group in (groups or ["error"])[:2]
+    )
+    parts = [_APP_RENDER[language].format(reasons=reasons)]
+    if unchanged_version is not None:
+        parts.append(_UNCHANGED_SHORT[language].format(version=unchanged_version))
+    parts.append(_RETRY[language])
+    return " ".join(parts)
+
+
 _QUOTA = {
     "fr": "La limite d'applications et de dessins est atteinte (au plus {hourly} nouvelles versions par heure et {stored} conservées). Réessayez plus tard.",
     "en": "The limit for apps and drawings is reached (at most {hourly} new versions per hour and {stored} kept). Try again later.",

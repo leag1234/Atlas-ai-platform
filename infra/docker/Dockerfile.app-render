@@ -1,0 +1,12 @@
+# Headless Chromium for the render check of side-panel apps
+# (services/orchestrator/app_render.py, docs/27-app-render-check.md).
+# One container per check: --network none, read-only, non-root, memory capped.
+# The check script is not baked in: the orchestrator passes it at run time.
+FROM python:3.12-slim
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN pip install --no-cache-dir playwright==1.62.0 \
+    && playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.cache /tmp/* \
+    && useradd --create-home --uid 10001 render
+USER render
+WORKDIR /home/render

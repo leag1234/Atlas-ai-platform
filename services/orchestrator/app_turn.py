@@ -16,17 +16,20 @@ only a status for a median 53 s.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal
 
 import aiohttp
 from pydantic import ValidationError
 
+from packages import artifact_media
 from packages.artifact_html import Problem
+from packages.artifact_media import Media
 from packages.artifact_source import (
     LineCounter,
     drawing_source,
@@ -40,8 +43,8 @@ from packages.artifact_source import (
 from packages.language import LANGUAGES, language_instruction
 from packages.limits import LimitError
 from packages.ports import atlas_ports
-from packages.user_errors import app_failure, app_quota
-from services.orchestrator import artifact_store
+from packages.user_errors import app_failure, app_quota, app_render_failure
+from services.orchestrator import app_media, app_render, artifact_store
 from services.orchestrator.artifact_store import ArtifactError
 from services.orchestrator.artifact_tools import (
     PROBLEM_DETAILS,
@@ -189,11 +192,35 @@ INVALID_REPAIR = (
     "write the complete corrected file in one fenced ```{fence} block, " + DESCRIBE
 )
 NETWORK_PROBLEMS = frozenset({"network_api", "external_reference"})
+# The person's files (app_media.py, packages/artifact_media.py): the model
+# writes references, Atlas embeds the bytes when it stores the file.
+MEDIA_FILES = (
+    "Atlas downloaded these files named by the user; they are embedded in the app "
+    "file when it is stored. Use them where the user asked, writing each reference "
+    "exactly as below, as a string:\n{lines}\n"
+    '- In HTML and CSS the reference is a URL: <img src="atlas-media:NAME">, '
+    '<audio src="atlas-media:NAME">, url(atlas-media:NAME).\n'
+    "- For Web Audio, decode it with ctx.decodeAudioData("
+    'atlasMedia.buffer("atlas-media:NAME")); atlasMedia is provided by Atlas and '
+    "returns an ArrayBuffer. Never fetch a reference and never write other "
+    "addresses for these files."
+)
+MEDIA_FAILED = (
+    "These files named by the user could not be downloaded, so the app cannot use "
+    "them: {urls}. Make the app work without them (for sounds, synthesize them with "
+    "the Web Audio API) and say so in one of the sentences after the block."
+)
 NETWORK_REPAIR = (
     "The preview cannot load anything from the network: files from other sites "
     "(sounds, images, fonts, libraries) cannot be used. Make the app work without "
     "them; if the user asked for such files, say so plainly in one of the sentences "
     "after the block.\n"
+)
+RENDER_REPAIR = (
+    "Atlas opened this file in the preview (a sandboxed browser page that blocks "
+    "all network access, as the user's side panel does) and it does not work:\n"
+    "{problems}\n{network}Fix the cause of every listed problem and write the "
+    "complete corrected file in one fenced ```html block, " + DESCRIBE
 )
 EXTRA_DETAILS = {
     "svg_syntax": "the SVG is not well-formed XML here (unclosed element, unquoted "
@@ -368,6 +395,8 @@ class Current:
     title: str
     filename: str
     source: str
+    # The files embedded in the stored version (packages/artifact_media.py).
+    media: list[Media] = field(default_factory=list)
 
 
 def _current(current: CurrentArtifact | None) -> tuple[Current | None, bool]:
@@ -381,6 +410,8 @@ def _current(current: CurrentArtifact | None) -> tuple[Current | None, bool]:
     version = artifact.get("version")
     if not isinstance(content, str) or not isinstance(version, int):
         return None, True
+    media = artifact.get("media")
+    embedded = media if isinstance(media, list) else []
     return (
         Current(
             str(artifact.get("artifact_id")),
@@ -388,6 +419,7 @@ def _current(current: CurrentArtifact | None) -> tuple[Current | None, bool]:
             str(artifact.get("title") or ""),
             str(artifact.get("filename") or ""),
             content,
+            [item for item in embedded if isinstance(item, Media)],
         ),
         False,
     )
@@ -423,6 +455,11 @@ def _problem_lines(problems: list[Problem], source: str) -> str:
         detail = PROBLEM_DETAILS.get(problem.code) or EXTRA_DETAILS.get(problem.code)
         if detail is None and 1 <= problem.line <= len(lines):
             detail = lines[problem.line - 1].strip()[:MAX_DETAIL_CHARS]
+            if problem.code == "unknown_media":
+                detail = (
+                    "this atlas-media reference does not exist, use only the "
+                    "references Atlas listed: " + detail
+                )
         rendered.append(f"- line {problem.line}: {problem.code}: {detail or ''}")
     return "\n".join(rendered)
 
@@ -456,9 +493,11 @@ async def process_app_turn(
     model: GatewayModel | None = None
     # The plan of an app (work_plan.py): write, check, hand over. The code
     # defines it, since one call writes the whole app; each step is checked
-    # by the code itself (block received, validation passed, app stored).
+    # by the code itself (block received, validation and render check passed,
+    # app stored).
     plan = _app_plan(request, previous is not None) if kind == "app" else None
     built = False
+    render_codes: list[str] = []
     await progress.status(0)
     try:
         model = await GatewayModel.connect(
@@ -502,6 +541,28 @@ async def process_app_turn(
             messages.append(
                 {"role": "system", "content": PREVIOUS_UNAVAILABLE.format(noun=noun)}
             )
+        media, fetched, failed = await _media(
+            request, kind, previous, deadline - time.monotonic()
+        )
+        if media:
+            # New downloads, and on a follow-up the files the app embeds already.
+            messages.append(
+                {
+                    "role": "system",
+                    "content": MEDIA_FILES.format(
+                        lines="\n".join(_media_line(item) for item in media)
+                    ),
+                }
+            )
+        if failed:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": MEDIA_FAILED.format(
+                        urls=", ".join(failure.url for failure in failed)
+                    ),
+                }
+            )
         messages.append({"role": "user", "content": request.messages[-1].text})
         for attempt in range(MAX_CALLS):
             remaining = deadline - time.monotonic() - DEADLINE_MARGIN
@@ -512,7 +573,11 @@ async def process_app_turn(
                 break
             if attempt:
                 progress.restart()
-                repair = failure in {"artifact_invalid", "artifact_missing"}
+                repair = failure in {
+                    "artifact_invalid",
+                    "artifact_missing",
+                    "artifact_render",
+                }
                 await progress.status(3 if repair else 0)
             # The gateway accepts at most 300 s for a file turn.
             remaining = min(remaining, 290.0)
@@ -578,7 +643,34 @@ async def process_app_turn(
                 or (previous.title if previous is not None else "")
                 or DEFAULT_TITLES[kind].get(language, DEFAULT_TITLES[kind]["en"])
             )
+            if media:
+                # The static checks read the code: references become short
+                # stand-ins, the bytes are embedded once the file passes.
+                block = dataclasses.replace(
+                    block, content=artifact_media.stand_in(block.content, media)
+                )
             prepared = prepare(block, title, language)
+            missing = artifact_media.unknown(block.content, media)
+            if missing:
+                lines = block.content.splitlines()
+                prepared = dataclasses.replace(
+                    prepared,
+                    problems=prepared.problems
+                    + [
+                        Problem(
+                            "unknown_media",
+                            next(
+                                (
+                                    index + 1
+                                    for index, line in enumerate(lines)
+                                    if "atlas-media:" + name in line
+                                ),
+                                1,
+                            ),
+                        )
+                        for name in missing
+                    ],
+                )
             if prepared.problems:
                 failure = "artifact_invalid"
                 network = any(
@@ -602,7 +694,39 @@ async def process_app_turn(
                     },
                 ]
                 continue
-            stored = _store(request, item, prepared.document, title, kind, previous)
+            document = artifact_media.embed(prepared.document, media)
+            if kind == "app":
+                # Open the app as the side view would before saying it is done
+                # (owner rule 2026-11-16, Atlas checks its own result).
+                report = await app_render.check(
+                    document,
+                    deadline - time.monotonic() - DEADLINE_MARGIN,
+                )
+                item.latence_ms["render_check"] = report.ms
+                if report.status == "problems":
+                    failure = "artifact_render"
+                    render_codes = report.codes
+                    network = any(
+                        code in app_render.NETWORK_CODES for code in report.codes
+                    )
+                    redescribe = network
+                    logging.getLogger(__name__).warning(
+                        "app_turn_render attempt=%d codes=%s",
+                        attempt + 1,
+                        ",".join(report.codes),
+                    )
+                    messages += [
+                        {"role": "assistant", "content": text},
+                        {
+                            "role": "user",
+                            "content": RENDER_REPAIR.format(
+                                problems=app_render.repair_lines(report),
+                                network=NETWORK_REPAIR if network else "",
+                            ),
+                        },
+                    ]
+                    continue
+            stored = _store(request, item, document, title, kind, previous)
             if isinstance(stored, str):
                 failure = stored
                 break
@@ -617,6 +741,8 @@ async def process_app_turn(
                 language,
                 # A drawing has no data to lose on reload.
                 temporary=kind == "app",
+                # Which of the person's files the app embeds, and which not.
+                note=_media_answer(language, fetched, failed, block.content),
             )
             item.state = "done"
             item.latence_ms["artifact_ready"] = (time.monotonic() - started) * 1000
@@ -628,6 +754,13 @@ async def process_app_turn(
             # that a retry would fix.
             app_quota(language, *artifact_store.quota_limits())
             if failure == "artifact_quota"
+            # The app was written but did not work when opened: said as such.
+            else app_render_failure(
+                language,
+                render_codes,
+                unchanged_version=previous.version if previous is not None else None,
+            )
+            if failure == "artifact_render"
             else app_failure(
                 kind,
                 language,
@@ -661,6 +794,58 @@ async def process_app_turn(
         item.latence_ms["first_progress"] = (progress.first_status or 0.0) * 1000
         if progress.first_lines is not None:
             item.latence_ms["first_lines"] = progress.first_lines * 1000
+
+
+async def _media(
+    request: ChatRequest, kind: Kind, previous: Current | None, seconds: float
+) -> tuple[list[Media], list[Media], list[app_media.MediaFailure]]:
+    """The files the app may use: those it embeds already and those the
+    request names (downloaded now), then the downloads that failed."""
+    carried = list(previous.media) if previous is not None else []
+    if kind != "app":
+        return carried, [], []
+    text = request.messages[-1].text
+    if not app_media.media_urls(text):
+        return carried, [], []
+    # Downloads leave most of the turn to writing the app.
+    budget = min(30.0, seconds - MINIMUM_CALL_SECONDS - DEADLINE_MARGIN - 30.0)
+    if budget < 2:
+        return carried, [], []
+    fetched, failed = await app_media.fetch_media(
+        text,
+        budget,
+        {item.name for item in carried},
+        {item.url for item in carried if item.url},
+    )
+    return carried + fetched, fetched, failed
+
+
+def _media_answer(
+    language: str,
+    fetched: list[Media],
+    failed: list[app_media.MediaFailure],
+    content: str,
+) -> str:
+    """The files the app embeds, then those not embedded: failed downloads
+    and downloads the app does not use."""
+    used = [
+        item
+        for item in fetched
+        if item.reference in content or item.stand_in() in content
+    ]
+    unused = [
+        app_media.MediaFailure(item.url, "unused")
+        for item in fetched
+        if item not in used
+    ]
+    return app_media.media_note(language, used, failed + unused)
+
+
+def _media_line(item: Media) -> str:
+    kind = item.mime.split("/", 1)[0]
+    size = f"{max(1, len(item.data) // 1000)} KB"
+    origin = item.filename or item.url or "already in the app"
+    return f"- {item.reference}: {kind} ({item.mime}, {size}), {origin}"
 
 
 def _app_plan(request: ChatRequest, change: bool) -> ChatPlan | None:
