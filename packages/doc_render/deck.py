@@ -46,6 +46,9 @@ BODY_TOP = 122.0
 FOOTER_TOP = H - 34.0
 BODY_BOTTOM = FOOTER_TOP - 14.0
 FACE = "Arial"
+# Shape names give each text its role (title, list, point, footer...):
+# readback.py reads a themed deck by them, not by its geometry.
+ROLE = "atlas:"
 BOLD = 1.08  # bold Vera is about this much wider than regular
 
 
@@ -133,7 +136,15 @@ def fit(
 
 
 def box(
-    slide: Any, x: float, y: float, w: float, h: float, fill: str, *, shape: Any = None
+    slide: Any,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    fill: str,
+    *,
+    shape: Any = None,
+    role: str = "",
 ) -> Any:
     item = slide.shapes.add_shape(
         shape or MSO_SHAPE.RECTANGLE, Pt(x), Pt(y), Pt(w), Pt(h)
@@ -142,15 +153,27 @@ def box(
     item.fill.fore_color.rgb = rgb(fill)
     item.line.fill.background()
     item.shadow.inherit = False
+    if role:
+        item.name = ROLE + role
     if shape == MSO_SHAPE.ROUNDED_RECTANGLE:
         item.adjustments[0] = 0.06
     return item
 
 
 def frame(
-    slide: Any, x: float, y: float, w: float, h: float, anchor: Any = MSO_ANCHOR.TOP
+    slide: Any,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    anchor: Any = MSO_ANCHOR.TOP,
+    *,
+    role: str = "",
 ) -> Any:
     item = slide.shapes.add_textbox(Pt(x), Pt(y), Pt(w), Pt(h))
+    if role:
+        # What the text is, for reading the deck back (readback.py).
+        item.name = ROLE + role
     text = item.text_frame
     text.word_wrap = True
     text.auto_size = MSO_AUTO_SIZE.NONE
@@ -234,13 +257,25 @@ class Rect:
 def chrome(slide: Any, theme: Theme, heading: str, deck: str, number: int) -> None:
     """The frame of a content slide: title, accent rule, footer."""
     size = fit([(shown(heading), True)], W - 2 * SIDE, 74, 36, 22, gap=0)
-    text = frame(slide, SIDE, TITLE_TOP, W - 2 * SIDE, 74, MSO_ANCHOR.BOTTOM)
+    text = frame(
+        slide, SIDE, TITLE_TOP, W - 2 * SIDE, 74, MSO_ANCHOR.BOTTOM, role="title"
+    )
     write(text, [heading], size, theme.primary, bold=True, gap=0, spacing=1.0)
     rule = TITLE_TOP + 74 + 8
     box(slide, SIDE, rule, 56, 4, theme.accent)
-    footer = frame(slide, SIDE, FOOTER_TOP, W - 2 * SIDE - 60, 16, MSO_ANCHOR.MIDDLE)
+    footer = frame(
+        slide,
+        SIDE,
+        FOOTER_TOP,
+        W - 2 * SIDE - 60,
+        16,
+        MSO_ANCHOR.MIDDLE,
+        role="footer",
+    )
     write(footer, [deck], 10, theme.muted, gap=0)
-    count = frame(slide, W - SIDE - 50, FOOTER_TOP, 50, 16, MSO_ANCHOR.MIDDLE)
+    count = frame(
+        slide, W - SIDE - 50, FOOTER_TOP, 50, 16, MSO_ANCHOR.MIDDLE, role="number"
+    )
     write(count, [str(number)], 10, theme.muted, align=PP_ALIGN.RIGHT, gap=0)
 
 
@@ -261,7 +296,7 @@ def body_list(
     measured = [(shown(text), False) for text, _ in items]
     indent_width = area.w - largest * 1.1
     size = fit(measured, indent_width, area.h, largest, 11, gap=0.55)
-    text = frame(slide, area.x, area.y, area.w, area.h)
+    text = frame(slide, area.x, area.y, area.w, area.h, role="list")
     for index, (value, bulleted) in enumerate(items):
         if index:
             text.add_paragraph()
@@ -327,9 +362,9 @@ def cards(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
         y = top + row * (height + gap)
         box(slide, x, y, width, height, theme.card, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
         box(slide, x, y, 6, height, theme.accent)
-        badge = frame(slide, x + 22, y + 20, 80, 34)
+        badge = frame(slide, x + 22, y + 20, 80, 34, role="decor")
         write(badge, [f"{index + 1:02d}"], 24, theme.accent, bold=True, gap=0)
-        content = frame(slide, x + 22, y + 66, inner, height - 76)
+        content = frame(slide, x + 22, y + 66, inner, height - 76, role="point")
         if pair:
             # The label keeps its colon: the card says what the line said.
             colon = " :" if " :" in shown(text) else ":"
@@ -368,6 +403,7 @@ def pillars(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
             disc,
             theme.accent,
             shape=MSO_SHAPE.OVAL,
+            role="decor",
         )
         label = circle.text_frame
         label.margin_left = label.margin_right = Pt(0)
@@ -381,7 +417,9 @@ def pillars(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
             align=PP_ALIGN.CENTER,
             gap=0,
         )
-        content = frame(slide, x, top + disc + 28, width, area.h - disc - 28)
+        content = frame(
+            slide, x, top + disc + 28, width, area.h - disc - 28, role="point"
+        )
         if pair:
             colon = " :" if " :" in shown(text) else ":"
             write(
@@ -424,9 +462,19 @@ def metrics_row(slide: Any, theme: Theme, section: Section, area: Rect) -> None:
             theme.tint,
             shape=MSO_SHAPE.ROUNDED_RECTANGLE,
         )
-        value = frame(slide, x + 16, area.y + 16, width - 32, 62, MSO_ANCHOR.BOTTOM)
+        value = frame(
+            slide,
+            x + 16,
+            area.y + 16,
+            width - 32,
+            62,
+            MSO_ANCHOR.BOTTOM,
+            role="metric-value",
+        )
         write(value, [metric.value], size, theme.accent, bold=True, gap=0, spacing=1.0)
-        text = frame(slide, x + 16, area.y + 86, width - 32, area.h - 96)
+        text = frame(
+            slide, x + 16, area.y + 86, width - 32, area.h - 96, role="metric-label"
+        )
         write(text, [metric.label], label, theme.muted, gap=0)
 
 
@@ -435,7 +483,7 @@ def chart(slide: Any, theme: Theme, section: Section, area: Rect) -> None:
     assert data is not None
     top = area.y
     if data.title:
-        title = frame(slide, area.x, area.y, area.w, 22)
+        title = frame(slide, area.x, area.y, area.w, 22, role="chart-title")
         write(title, [data.title], 14, theme.muted, bold=True, gap=0)
         top += 28
     values = CategoryChartData()  # type: ignore[no-untyped-call]
@@ -631,7 +679,9 @@ def cover(
     width = W - 2 * 80 - 120
     if show_deck:
         size = fit([(title, True)], width, 120, 54, 28, gap=0, spacing=1.05)
-        text = frame(slide, 80, top - 40, width, 120, MSO_ANCHOR.BOTTOM)
+        text = frame(
+            slide, 80, top - 40, width, 120, MSO_ANCHOR.BOTTOM, role="deck-title"
+        )
         write(
             text,
             [content.title],
@@ -643,7 +693,7 @@ def cover(
         )
         top += 96
         size = fit([(heading, False)], width, 60, 28, 16, gap=0)
-        text = frame(slide, 80, top, width, 60)
+        text = frame(slide, 80, top, width, 60, role="title")
         write(text, [section.heading], size, theme.on_primary_muted, gap=0)
         top += 64
     else:
@@ -656,7 +706,7 @@ def cover(
             gap=0,
             spacing=1.05,
         )
-        text = frame(slide, 80, top - 60, width, 140, MSO_ANCHOR.BOTTOM)
+        text = frame(slide, 80, top - 60, width, 140, MSO_ANCHOR.BOTTOM, role="title")
         write(
             text,
             [section.heading],
@@ -678,10 +728,12 @@ def cover(
             12,
             gap=0.4,
         )
-        text = frame(slide, 80, top, width, H - top - 60)
+        text = frame(slide, 80, top, width, H - top - 60, role="lines")
         write(text, list(lines), size, theme.on_primary_muted, gap=0.4)
     if closing:
-        footer = frame(slide, 80, FOOTER_TOP, W - 400, 16, MSO_ANCHOR.MIDDLE)
+        footer = frame(
+            slide, 80, FOOTER_TOP, W - 400, 16, MSO_ANCHOR.MIDDLE, role="footer"
+        )
         write(footer, [content.title], 10, theme.on_primary_muted, gap=0)
 
 
@@ -705,7 +757,13 @@ def statement(
         [(shown(value), False)], area.w - 96, area.h - 60, 32, 16, gap=0, spacing=1.15
     )
     text = frame(
-        slide, area.x + 48, area.y + 30, area.w - 96, area.h - 60, MSO_ANCHOR.MIDDLE
+        slide,
+        area.x + 48,
+        area.y + 30,
+        area.w - 96,
+        area.h - 60,
+        MSO_ANCHOR.MIDDLE,
+        role="point",
     )
     write(text, [value], size, theme.primary, gap=0, spacing=1.15)
 

@@ -260,5 +260,55 @@ class OtherFormatsTests(unittest.TestCase):
                 self.assertIn("paying", "".join(checked.text))
 
 
+class ChartPublicationTests(unittest.TestCase):
+    """A deck with a chart was refused at publication (its embedded workbook)
+    and changed bytes on every build (the workbook's timestamp), 2026-11-21."""
+
+    def test_a_deck_with_a_chart_publishes_reads_back_and_rebuilds_the_same(
+        self,
+    ) -> None:
+        import time
+
+        from packages.doc_render import readback
+        from services.retrieval.project_files import reopen_artifact
+
+        with TemporaryDirectory() as directory:
+            first, _ = build(outline(), directory, "a.pptx")
+            # The embedded workbook records the second it was written.
+            time.sleep(1.1)
+            second, _ = build(outline(), directory, "b.pptx")
+            raw = first.read_bytes()
+            self.assertEqual(raw, second.read_bytes())
+        preview = reopen_artifact(raw, ".pptx").decode()
+        self.assertIn("Monthly recurring revenue", preview)
+        document = readback.read(raw, ".pptx")
+        traction = next(s for s in document.sections if s.heading == "Traction")
+        self.assertEqual(traction.charts, 1)
+
+    def test_an_embedded_object_other_than_a_chart_workbook_is_still_refused(
+        self,
+    ) -> None:
+        import io
+        import zipfile
+
+        from packages.attachment_reader import validate_package
+
+        with TemporaryDirectory() as directory:
+            path, _ = build(outline(), directory)
+            source = zipfile.ZipFile(path)
+            for name, data in (
+                ("ppt/embeddings/oleObject1.bin", b"payload"),
+                ("ppt/embeddings/Macro1.xlsm", b"PK"),
+            ):
+                buffer = io.BytesIO()
+                with zipfile.ZipFile(buffer, "w") as target:
+                    for item in source.namelist():
+                        target.writestr(item, source.read(item))
+                    target.writestr(name, data)
+                with zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as archive:
+                    with self.assertRaises(ValueError):
+                        validate_package(archive)
+
+
 if __name__ == "__main__":
     unittest.main()
