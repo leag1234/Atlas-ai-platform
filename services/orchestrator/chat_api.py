@@ -731,7 +731,14 @@ async def chat(request: Request) -> Response:
 
     # A finished answer never carries a diagnostic written for the logs; an
     # error body above keeps its measured stop (D5).
-    message = {"role": "assistant", "content": without_diagnostics(item.reponse)}
+    from services.orchestrator.narration import without_internal
+
+    answer = without_internal(without_diagnostics(item.reponse))
+    if item.reponse.strip() and not answer:
+        from packages.user_errors import stop_answer
+
+        answer = str(stop_answer("protocol_completion_limit", payload.answer_language))
+    message = {"role": "assistant", "content": answer}
     if item.reasoning:
         message["reasoning_content"] = item.reasoning
     return JSONResponse(

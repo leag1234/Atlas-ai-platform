@@ -78,7 +78,10 @@ class HeldTurnTests(unittest.IsolatedAsyncioTestCase):
         events = await self.complete([])
         before_end = shown(events[: events.index(END_OF_STREAM)])
         self.assertTrue(ANSWER.startswith(before_end))
-        self.assertGreaterEqual(len(before_end), 400)
+        # Whole paragraphs stream as soon as each is checked (class C4); the
+        # paragraph still being written waits for its end.
+        self.assertTrue(before_end.endswith("\n\n"))
+        self.assertGreaterEqual(len(before_end), 200)
         self.assertEqual(shown(events), ANSWER)
 
     async def test_an_answer_shaped_text_before_a_tool_call_is_logged(self) -> None:
@@ -94,8 +97,8 @@ class HeldTurnTests(unittest.IsolatedAsyncioTestCase):
 
         hold = TurnHold(sink)
         await hold({"delta": {"content": ANSWER}})
-        await hold({"delta": {"content": " More."}})
-        self.assertEqual(shown(events), ANSWER + " More.")
+        await hold({"delta": {"content": " More.\n\n"}})
+        self.assertEqual(shown(events), ANSWER + " More.\n\n")
 
 
 class CheckedAnswerProgressTests(unittest.IsolatedAsyncioTestCase):

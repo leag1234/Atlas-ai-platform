@@ -210,6 +210,7 @@ class NarrationFilter:
 # L4, 2026-11-21: 90 to 140 s with no text, then the whole answer at once).
 ANSWER_CHARACTERS = 400
 _PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+_ENDS_PARAGRAPH = re.compile(r"\n[ \t]*\n$")
 _STRUCTURE = re.compile(r"(?m)^[ \t]*(?:#{1,6} |[-*+] |\d{1,2}[.)] |\|)")
 
 
@@ -221,6 +222,54 @@ def answer_shaped(text: str) -> bool:
     return len(paragraphs) >= 2 or len(_STRUCTURE.findall(text)) >= 2
 
 
+# Internal text that never reaches the person, wherever it appears in an answer
+# (class C4): the loop's stop summary and diagnostics, tool-call markup of the
+# model's chat template, error envelopes and Python tracebacks. Fenced code is
+# the answer's own content and is not read.
+_INTERNAL = re.compile(
+    r"Explicit stop\s*:|Tools executed\s*:|Tokens reserved\s*:|Cost reserved\s*:"
+    r"|The request did not complete because of an unexpected failure"
+    r"|</?tool_call>|<\|im_(?:start|end)\|>|</?think>"
+    r"|\b(?:loop_detected|provider_error|request_stopped|tool_budget_exceeded)\b"
+    r'|\{\s*"error"\s*:\s*\{|"(?:type|code)"\s*:\s*"request_stopped"'
+    r'|Traceback \(most recent call last\)|File "[^"\n]+\.py", line \d+'
+)
+
+
+def internal_paragraph(text: str) -> bool:
+    """Whether a paragraph of an answer is internal text, or only announces a search."""
+    prose = _FENCED_CODE.sub("", text)
+    return bool(
+        _INTERNAL.search(prose)
+        or protocol_material(text)
+        or unfinished_announcement(text.strip())
+    )
+
+
+def paragraphs(text: str) -> list[str]:
+    """``text`` cut after each paragraph break outside fenced code, breaks kept."""
+    parts: list[str] = []
+    start = 0
+    for match in _PARAGRAPH_BREAK.finditer(text):
+        if text[start : match.start()].count("```") % 2 == 0:
+            parts.append(text[start : match.end()])
+            start = match.end()
+    if start < len(text):
+        parts.append(text[start:])
+    return parts
+
+
+def without_internal(text: str) -> str:
+    """``text`` without its internal paragraphs (internal_paragraph)."""
+    kept = [part for part in paragraphs(text) if not internal_paragraph(part)]
+    if len(kept) == len(paragraphs(text)):
+        return text
+    logging.getLogger(__name__).warning(
+        json.dumps({"event": "internal_text_withheld", "where": "answer"})
+    )
+    return "".join(kept).strip()
+
+
 class TurnHold:
     """Keep one model turn's streamed text back until the turn's kind is known.
 
@@ -229,7 +278,10 @@ class TurnHold:
     take text back. The turn's text is held, then dropped when the turn calls a
     tool, or released when the turn is the final answer. Held text that takes
     the shape of an answer (answer_shaped) is released at once and the rest of
-    the turn streams live.
+    the turn streams one paragraph at a time. Every paragraph sent is checked
+    first (internal_paragraph): the first one that fails stops the stream, and
+    the rest of the turn is held again, sent at its end without its internal
+    paragraphs. Internal text is never sent.
     """
 
     def __init__(self, sink: Callable[[dict[str, object]], Awaitable[None]]) -> None:
@@ -237,24 +289,75 @@ class TurnHold:
         self.events: list[dict[str, object]] = []
         self.text = ""
         self.streaming = False
+        # Streaming: the paragraph being written, not checked yet.
+        self.pending = ""
+        # A paragraph failed its check: the rest waits for the end of the turn.
+        self.blocked = False
 
     async def __call__(self, event: dict[str, object]) -> None:
+        delta = event.get("delta")
+        content = (
+            delta["content"]
+            if isinstance(delta, dict) and isinstance(delta.get("content"), str)
+            else None
+        )
         if self.streaming:
-            await self.sink(event)
+            if content is None:
+                await self.sink(event)
+            else:
+                await self.stream(content)
             return
         self.events.append(event)
-        delta = event.get("delta")
-        if isinstance(delta, dict) and isinstance(delta.get("content"), str):
-            self.text += delta["content"]
+        if content is not None:
+            self.text += content
             if answer_shaped(self.text):
                 self.streaming = True
-                await self.release()
+                held, self.events = self.events, []
+                for previous in held:
+                    await self(previous)
+
+    async def stream(self, content: str) -> None:
+        self.pending += content
+        if self.blocked:
+            return
+        parts = paragraphs(self.pending)
+        # The last part is still being written, unless it ends a paragraph.
+        complete = parts if _ENDS_PARAGRAPH.search(parts[-1]) else parts[:-1]
+        for part in complete:
+            if internal_paragraph(part):
+                self.blocked = True
+                logging.getLogger(__name__).warning(
+                    json.dumps({"event": "internal_text_withheld", "where": "stream"})
+                )
+                return
+            await self.sink({"delta": {"content": part}})
+            self.pending = self.pending[len(part) :]
 
     async def release(self) -> None:
-        """The turn is the answer: deliver what was held."""
-        events, self.events = self.events, []
-        for event in events:
-            await self.sink(event)
+        """The turn is the answer: deliver what was held, never internal text."""
+        if self.streaming:
+            rest, self.pending = self.pending, ""
+        else:
+            rest = "".join(
+                str(delta.get("content", ""))
+                for event in self.events
+                if isinstance(delta := event.get("delta"), dict)
+            )
+            others = [
+                event
+                for event in self.events
+                if not isinstance(event.get("delta"), dict)
+            ]
+            for event in others:
+                await self.sink(event)
+        self.events = []
+        kept = [part for part in paragraphs(rest) if not internal_paragraph(part)]
+        if len(kept) != len(paragraphs(rest)):
+            logging.getLogger(__name__).warning(
+                json.dumps({"event": "internal_text_withheld", "where": "release"})
+            )
+        if kept:
+            await self.sink({"delta": {"content": "".join(kept)}})
 
     def drop(self) -> None:
         """The turn called a tool: its text was a working note."""
@@ -266,7 +369,7 @@ class TurnHold:
                     {"event": "answer_shaped_note", "characters": len(self.text)}
                 )
             )
-            self.events = []
+            self.events, self.pending = [], ""
             return
         characters = sum(
             len(content)
