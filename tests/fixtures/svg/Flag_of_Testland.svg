@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Test fixture shaped like a Wikimedia Commons flag file (fictional flag,
+     public domain): Inkscape and Sodipodi namespaces, RDF licence metadata,
+     an external DTD reference, a stylesheet, a gradient, a clip path and
+     in-document references (use, xlink:href="#..."). -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   version="1.1"
+   id="svg2"
+   width="900"
+   height="600"
+   viewBox="0 0 900 600"
+   sodipodi:docname="Flag_of_Testland.svg"
+   inkscape:version="1.3.2 (091e20e, 2023-11-25)">
+  <metadata id="metadata7">
+    <rdf:RDF>
+      <cc:Work rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>Flag of Testland</dc:title>
+        <cc:license rdf:resource="http://creativecommons.org/publicdomain/zero/1.0/" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview id="base" pagecolor="#ffffff" bordercolor="#666666"
+     inkscape:zoom="1" inkscape:cx="450" inkscape:cy="300" />
+  <style type="text/css" id="style1">
+    .field { fill: #003399; }
+    .band { fill: url(#bandGradient); }
+  </style>
+  <defs id="defs4">
+    <linearGradient id="bandGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#e8e8e8" />
+    </linearGradient>
+    <clipPath id="clipFlag">
+      <rect width="900" height="600" />
+    </clipPath>
+    <polygon id="star" fill="#ffcc00"
+       points="0,-90 21,-28 86,-28 34,10 53,73 0,35 -53,73 -34,10 -86,-28 -21,-28" />
+  </defs>
+  <g id="layer1" inkscape:label="Flag" inkscape:groupmode="layer" clip-path="url(#clipFlag)">
+    <rect class="field" id="field" width="900" height="600" x="0" y="0" />
+    <rect class="band" id="band" width="900" height="120" x="0" y="480" />
+    <use xlink:href="#star" x="450" y="250" id="use1" />
+    <use href="#star" transform="translate(150,110) scale(0.4)" id="use2" />
+  </g>
+</svg>

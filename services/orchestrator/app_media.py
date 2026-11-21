@@ -10,8 +10,14 @@ app embeds them (packages/artifact_media.py):
   private, link-local or reserved address), redirects are followed by hand
   and checked again (at most MAX_REDIRECTS);
 - the content must be one of the allowed audio or image types, by its own
-  bytes (signature), whatever the server declares; SVG is refused (it can
-  carry script);
+  bytes (signature), whatever the server declares;
+- an SVG file is a document (it can carry script, event handlers and
+  references to other addresses), never embedded as such: it is drawn as a
+  PNG in an isolated browser without network (svg_raster.py) and only the
+  pixels enter the app; one that cannot be drawn safely is named in the
+  answer with the reason;
+- a wiki file page (``https://commons.wikimedia.org/wiki/File:Flag.svg``)
+  is read as the file itself (``Special:FilePath``);
 - MAX_FILE_BYTES per file, MAX_TOTAL_BYTES for the turn, MAX_FILES files,
   FILE_SECONDS per file within the turn's deadline;
 - not in strict privacy (no request leaves Atlas there).
@@ -26,6 +32,7 @@ and the answer says so.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import os
@@ -37,6 +44,7 @@ import aiohttp
 
 from packages.artifact_media import Media, slug
 from packages.limits import LimitError
+from services.orchestrator import svg_raster
 from services.orchestrator.web import (
     USER_AGENT,
     PublicResolver,
@@ -54,10 +62,17 @@ LICENCE_SECONDS = 5.0
 MAX_REDIRECTS = 3
 
 AUDIO_EXTENSIONS = (".wav", ".mp3", ".ogg", ".oga", ".opus", ".flac", ".m4a", ".aac")
-IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
 EXTENSIONS = AUDIO_EXTENSIONS + IMAGE_EXTENSIONS
 _URL = re.compile(r"\b(?:https?)://[^\s<>\"'`)\]]+", re.IGNORECASE)
 _TRAILING = ".,;:!?»”’"
+# Wikimedia projects: a file page (any namespace name: File, Fichier,
+# Datei...) is served as the file by Special:FilePath.
+_WIKI_HOST = re.compile(
+    r"(?:^|\.)(?:wikipedia|wikimedia|wikibooks|wikinews|wikiquote|wikisource|"
+    r"wikiversity|wikivoyage|wiktionary|wikidata)\.org$"
+)
+_WIKI_FILE = re.compile(r"^/wiki/[^/:]+:([^/]+)$")
 
 # Licences a person or a page names, most specific first.
 _LICENCES = (
@@ -85,7 +100,9 @@ class MediaFailure:
     url: str
     # not_https, invalid_url, private_address, wrong_type, too_large,
     # total_too_large, too_many, timeout, http_<status>, redirect_limit,
-    # strict_privacy, unavailable, unused (downloaded, not used by the app)
+    # strict_privacy, unavailable, unused (downloaded, not used by the app),
+    # svg_invalid, svg_too_complex, svg_blank, svg_render_failed,
+    # svg_no_renderer, svg_timeout (svg_raster.py)
     reason: str
 
 
@@ -113,6 +130,20 @@ def media_urls(text: str) -> list[str]:
         if path.endswith(EXTENSIONS) and url not in found:
             found.append(url)
     return found
+
+
+def direct_url(url: str) -> str:
+    """The address of the file itself: a wiki file page becomes its file."""
+    parts = urlsplit(url)
+    found = _WIKI_FILE.match(parts.path)
+    if (
+        parts.scheme == "https"
+        and found is not None
+        and _WIKI_HOST.search((parts.hostname or "").lower())
+        and unquote(found.group(1)).lower().endswith(EXTENSIONS)
+    ):
+        return f"https://{parts.netloc}/wiki/Special:FilePath/{found.group(1)}"
+    return url
 
 
 def _normal(found: str, label: str) -> str:
@@ -244,10 +275,11 @@ class Fetcher:
         limit = min(max_file_bytes(), room)
         if limit <= 0:
             return MediaFailure(url, "total_too_large")
+        target = direct_url(url)
         try:
             async with asyncio.timeout(timeout):
                 final, data, header_licence = await self._get(
-                    session, url, limit, timeout
+                    session, target, limit, timeout
                 )
         except TimeoutError:
             return MediaFailure(url, "timeout")
@@ -262,7 +294,7 @@ class Fetcher:
             return MediaFailure(url, "unavailable")
         except OSError:
             return MediaFailure(url, "unavailable")
-        mime = sniff(data)
+        mime = sniff(data) or (svg_raster.MIME if svg_raster.is_svg(data) else "")
         if not mime:
             return MediaFailure(url, "wrong_type")
         self.total += len(data)
@@ -273,7 +305,7 @@ class Fetcher:
             licence = await self._commons_licence(session, final)
         if not licence:
             source = ""
-        filename = _filename(url)
+        filename = _filename(target)
         return Media(slug(filename, taken), mime, data, url, filename, licence, source)
 
     async def _commons_licence(self, session: aiohttp.ClientSession, url: str) -> str:
@@ -354,7 +386,12 @@ async def fetch_media(
         require_shared("web_fetch")
     except PrivacyRefusal:
         return [], [MediaFailure(url, "strict_privacy") for url in urls]
-    fetcher = Fetcher(seconds)
+    # SVG files are converted after the downloads, in the same turn budget.
+    drawings = any(
+        unquote(urlsplit(direct_url(url)).path).lower().endswith(".svg") for url in urls
+    )
+    reserve = min(svg_raster.SECONDS, seconds / 2) if drawings else 0.0
+    fetcher = Fetcher(seconds - reserve)
     media: list[Media] = []
     failures: list[MediaFailure] = []
     taken = set(taken or ())
@@ -376,6 +413,8 @@ async def fetch_media(
                 media.append(result)
             else:
                 failures.append(result)
+    media, failed = await _convert(fetcher, media, max(fetcher.left(), 0.0) + reserve)
+    failures += failed
     log.info(
         "app_media fetched=%d failed=%s bytes=%d",
         len(media),
@@ -383,6 +422,51 @@ async def fetch_media(
         fetcher.total,
     )
     return media, failures
+
+
+async def _convert(
+    fetcher: Fetcher, media: list[Media], seconds: float
+) -> tuple[list[Media], list[MediaFailure]]:
+    """The downloads with each SVG drawn as a PNG, and the SVGs that are not.
+
+    No SVG leaves this function: each becomes a PNG or a named failure.
+    """
+    drawings = [item for item in media if item.mime == svg_raster.MIME]
+    if not drawings:
+        return media, []
+    results = dict(
+        zip(
+            (id(item) for item in drawings),
+            await svg_raster.rasterise([item.data for item in drawings], seconds),
+            strict=True,
+        )
+    )
+    kept: list[Media] = []
+    failures: list[MediaFailure] = []
+    for item in media:
+        result = results.get(id(item))
+        if result is None:
+            kept.append(item)
+            continue
+        fetcher.total -= len(item.data)
+        if result.error:
+            failures.append(MediaFailure(item.url, result.error))
+        elif len(result.png) > max_file_bytes():
+            failures.append(MediaFailure(item.url, "too_large"))
+        elif fetcher.total + len(result.png) > max_total_bytes():
+            failures.append(MediaFailure(item.url, "total_too_large"))
+        else:
+            fetcher.total += len(result.png)
+            kept.append(
+                dataclasses.replace(
+                    item,
+                    mime="image/png",
+                    data=result.png,
+                    converted_from=svg_raster.MIME,
+                    left_out=result.left_out,
+                )
+            )
+    return kept, failures
 
 
 # The answer says which files are in the app, with their licence, and which
@@ -397,7 +481,7 @@ NOTE = {
         "not_https": "adresse non https, refusée",
         "invalid_url": "adresse invalide",
         "private_address": "adresse privée ou locale, refusée",
-        "wrong_type": "pas un fichier audio ou image accepté (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP)",
+        "wrong_type": "pas un fichier audio ou image accepté (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP, SVG)",
         "too_large": "plus de {file_mb} Mo",
         "total_too_large": "les fichiers dépassent {total_mb} Mo au total",
         "too_many": "plus de {files} fichiers",
@@ -407,6 +491,14 @@ NOTE = {
         "strict_privacy": "rien n'est téléchargé en confidentialité stricte",
         "unavailable": "téléchargement impossible",
         "unused": "téléchargé mais pas utilisé par l'application",
+        "converted": "SVG converti en image PNG",
+        "left_out": "sans les éléments qu'il chargeait depuis d'autres adresses",
+        "svg_invalid": "fichier SVG illisible (pas un document SVG valide)",
+        "svg_too_complex": "dessin SVG trop complexe pour être converti (plus de {elements} éléments)",
+        "svg_blank": "le SVG ne dessine rien sans les éléments qu'il charge depuis d'autres adresses, refusés par sécurité",
+        "svg_render_failed": "le SVG n'a pas pu être converti en image",
+        "svg_no_renderer": "les fichiers SVG sont convertis en image dans un navigateur isolé, qui n'est pas disponible sur ce serveur",
+        "svg_timeout": "la conversion du SVG en image a pris trop de temps",
     },
     "en": {
         "embedded": "Files embedded in the app:",
@@ -417,7 +509,7 @@ NOTE = {
         "not_https": "not an https address, refused",
         "invalid_url": "invalid address",
         "private_address": "private or local address, refused",
-        "wrong_type": "not an accepted audio or image file (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP)",
+        "wrong_type": "not an accepted audio or image file (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP, SVG)",
         "too_large": "larger than {file_mb} MB",
         "total_too_large": "the files exceed {total_mb} MB in total",
         "too_many": "more than {files} files",
@@ -427,6 +519,14 @@ NOTE = {
         "strict_privacy": "nothing is downloaded in strict privacy",
         "unavailable": "could not be downloaded",
         "unused": "downloaded but not used by the app",
+        "converted": "SVG converted to a PNG picture",
+        "left_out": "without the parts it loaded from other addresses",
+        "svg_invalid": "unreadable SVG file (not a valid SVG document)",
+        "svg_too_complex": "SVG drawing too complex to convert (more than {elements} elements)",
+        "svg_blank": "the SVG draws nothing without the parts it loads from other addresses, which are refused for safety",
+        "svg_render_failed": "the SVG could not be converted to a picture",
+        "svg_no_renderer": "SVG files are converted to pictures in an isolated browser, which is not available on this server",
+        "svg_timeout": "converting the SVG to a picture took too long",
     },
     "de": {
         "embedded": "In die App eingebettete Dateien:",
@@ -437,7 +537,7 @@ NOTE = {
         "not_https": "keine https-Adresse, abgelehnt",
         "invalid_url": "ungültige Adresse",
         "private_address": "private oder lokale Adresse, abgelehnt",
-        "wrong_type": "keine zulässige Audio- oder Bilddatei (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP)",
+        "wrong_type": "keine zulässige Audio- oder Bilddatei (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP, SVG)",
         "too_large": "größer als {file_mb} MB",
         "total_too_large": "die Dateien überschreiten insgesamt {total_mb} MB",
         "too_many": "mehr als {files} Dateien",
@@ -447,6 +547,14 @@ NOTE = {
         "strict_privacy": "im strengen Datenschutz wird nichts heruntergeladen",
         "unavailable": "konnte nicht heruntergeladen werden",
         "unused": "heruntergeladen, aber von der App nicht verwendet",
+        "converted": "SVG in ein PNG-Bild umgewandelt",
+        "left_out": "ohne die Teile, die es von anderen Adressen lud",
+        "svg_invalid": "unlesbare SVG-Datei (kein gültiges SVG-Dokument)",
+        "svg_too_complex": "SVG-Zeichnung zu komplex für die Umwandlung (mehr als {elements} Elemente)",
+        "svg_blank": "das SVG zeichnet nichts ohne die Teile, die es von anderen Adressen lädt; diese werden aus Sicherheitsgründen abgelehnt",
+        "svg_render_failed": "das SVG konnte nicht in ein Bild umgewandelt werden",
+        "svg_no_renderer": "SVG-Dateien werden in einem isolierten Browser in Bilder umgewandelt, der auf diesem Server nicht verfügbar ist",
+        "svg_timeout": "die Umwandlung des SVG in ein Bild dauerte zu lange",
     },
     "es": {
         "embedded": "Archivos integrados en la aplicación:",
@@ -457,7 +565,7 @@ NOTE = {
         "not_https": "dirección no https, rechazada",
         "invalid_url": "dirección no válida",
         "private_address": "dirección privada o local, rechazada",
-        "wrong_type": "no es un archivo de audio o imagen aceptado (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP)",
+        "wrong_type": "no es un archivo de audio o imagen aceptado (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP, SVG)",
         "too_large": "más de {file_mb} MB",
         "total_too_large": "los archivos superan {total_mb} MB en total",
         "too_many": "más de {files} archivos",
@@ -467,6 +575,14 @@ NOTE = {
         "strict_privacy": "en privacidad estricta no se descarga nada",
         "unavailable": "no se pudo descargar",
         "unused": "descargado pero la aplicación no lo usa",
+        "converted": "SVG convertido en imagen PNG",
+        "left_out": "sin las partes que cargaba desde otras direcciones",
+        "svg_invalid": "archivo SVG ilegible (no es un documento SVG válido)",
+        "svg_too_complex": "dibujo SVG demasiado complejo para convertirlo (más de {elements} elementos)",
+        "svg_blank": "el SVG no dibuja nada sin las partes que carga desde otras direcciones, rechazadas por seguridad",
+        "svg_render_failed": "no se pudo convertir el SVG en imagen",
+        "svg_no_renderer": "los archivos SVG se convierten en imágenes en un navegador aislado, que no está disponible en este servidor",
+        "svg_timeout": "la conversión del SVG en imagen tardó demasiado",
     },
     "it": {
         "embedded": "File incorporati nell'app:",
@@ -477,7 +593,7 @@ NOTE = {
         "not_https": "indirizzo non https, rifiutato",
         "invalid_url": "indirizzo non valido",
         "private_address": "indirizzo privato o locale, rifiutato",
-        "wrong_type": "non è un file audio o immagine accettato (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP)",
+        "wrong_type": "non è un file audio o immagine accettato (WAV, MP3, OGG, FLAC, M4A, PNG, JPEG, GIF, WebP, SVG)",
         "too_large": "più di {file_mb} MB",
         "total_too_large": "i file superano {total_mb} MB in totale",
         "too_many": "più di {files} file",
@@ -487,6 +603,14 @@ NOTE = {
         "strict_privacy": "nella privacy rigorosa non si scarica nulla",
         "unavailable": "non è stato possibile scaricarlo",
         "unused": "scaricato ma non usato dall'app",
+        "converted": "SVG convertito in immagine PNG",
+        "left_out": "senza le parti che caricava da altri indirizzi",
+        "svg_invalid": "file SVG illeggibile (non è un documento SVG valido)",
+        "svg_too_complex": "disegno SVG troppo complesso da convertire (più di {elements} elementi)",
+        "svg_blank": "l'SVG non disegna nulla senza le parti che carica da altri indirizzi, rifiutate per sicurezza",
+        "svg_render_failed": "non è stato possibile convertire l'SVG in immagine",
+        "svg_no_renderer": "i file SVG vengono convertiti in immagini in un browser isolato, non disponibile su questo server",
+        "svg_timeout": "la conversione dell'SVG in immagine ha richiesto troppo tempo",
     },
 }
 
@@ -508,7 +632,12 @@ def media_note(language: str, media: list[Media], failures: list[MediaFailure]) 
                 licence = labels[item.licence_source].format(licence=item.licence)
             else:
                 licence = labels["unknown"]
-            lines.append(f"- {item.filename or item.name} ({item.url}): {licence}")
+            origin = item.url
+            if item.converted_from:
+                origin += ", " + labels["converted"]
+                if item.left_out:
+                    origin += " " + labels["left_out"]
+            lines.append(f"- {item.filename or item.name} ({origin}): {licence}")
     if failures:
         if lines:
             lines.append("")
@@ -520,6 +649,7 @@ def media_note(language: str, media: list[Media], failures: list[MediaFailure]) 
                 file_mb=_mb(max_file_bytes()),
                 total_mb=_mb(max_total_bytes()),
                 files=MAX_FILES,
+                elements=svg_raster.MAX_ELEMENTS,
             )
             lines.append(f"- {failure.url}: {reason}")
     return "\n".join(lines)

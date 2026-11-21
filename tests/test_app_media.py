@@ -222,13 +222,9 @@ class FetchTests(unittest.IsolatedAsyncioTestCase):
                 200, b"<!DOCTYPE html><p>Not found</p>", {"Content-Type": "audio/wav"}
             ),
         )
-        svg_url = "https://a.example/logo.png"
-        svg = await fetch(
-            svg_url,
-            Response(200, b"<svg xmlns='http://www.w3.org/2000/svg'><script/></svg>"),
-        )
         self.assertEqual(page, MediaFailure(KICK, "wrong_type"))
-        self.assertEqual(svg, MediaFailure(svg_url, "wrong_type"))
+        # An SVG is never embedded as such: it is drawn as a picture first
+        # (tests/test_svg_raster.py).
 
     async def test_private_and_local_addresses_are_refused(self) -> None:
         for url in (
