@@ -883,6 +883,7 @@ async def process_work(
     tools.approvals_unattended = bool(request.__dict__.get("approvals_unattended"))
     tools.numbered_copies = bool(request.__dict__.get("numbered_copies"))
     tools.earlier_answers = list(request.__dict__.get("earlier_answers") or [])
+    tools.revises_delivered = bool(request.__dict__.get("revises_delivered"))
     tools.lang = request.lang
     # The person's answer to an approval asked in the conversation (chat_work.py).
     tools.machine_approval = request.__dict__.get("machine_approval")

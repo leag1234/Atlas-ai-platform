@@ -714,6 +714,15 @@ class ProjectFiles:
 
         schedules = Schedules(self.scope)
         scheduled = schedules.binding(session["id"])
+        revision = metadata.get("revision_of")
+        if (
+            revision is not None
+            and scheduled is not None
+            and scheduled["data"]["target_file"]
+        ):
+            raise ProjectError(
+                422, "invalid_request", "A scheduled publication has its own target"
+            )
         if scheduled is not None and scheduled["data"]["target_file"]:
             target = scheduled["data"]
             metadata["path"] = target["target_file"]
@@ -749,29 +758,7 @@ class ProjectFiles:
                 )
                 if base is None or base["version_id"] != file["version_id"]:
                     raise ProjectError(409, "revision_conflict")
-                version = self.add_version(
-                    file,
-                    content,
-                    origin="work",
-                    verified_mime=PUBLICATION_MIMES[suffix],
-                )
-                file.update(
-                    {
-                        k: version[k]
-                        for k in (
-                            "mime",
-                            "size_bytes",
-                            "sha256",
-                            "origin",
-                            "availability",
-                            "source_locator",
-                            "index_status",
-                        )
-                    },
-                    version_id=version["id"],
-                )
-                self.save(file)
-                self.emit("file_uploaded", [file["id"], version["id"]], len(content))
+                self.published_version(file, content, suffix, "file_uploaded")
             else:
                 file = self.create_file(
                     folder_id,
@@ -784,6 +771,10 @@ class ProjectFiles:
             target["target_file_id"] = file["id"]
             scheduled["run_data"]["published"] = file["version_id"]
             schedules.save(scheduled)
+        elif revision is not None:
+            file = self.revised_deliverable(
+                revision, metadata, content, suffix, folder_id
+            )
         else:
             file = self.create_file(
                 folder_id,
@@ -840,6 +831,74 @@ class ProjectFiles:
                     (self.org, self.project, identifier, source),
                 )
         return value
+
+    def published_version(
+        self, file: dict[str, Any], content: bytes, suffix: str, event: str
+    ) -> dict[str, Any]:
+        """Verified publication bytes as the next version of an existing file."""
+        version = self.add_version(
+            file,
+            content,
+            origin="work",
+            verified_mime=PUBLICATION_MIMES[suffix],
+        )
+        file.update(
+            {
+                k: version[k]
+                for k in (
+                    "mime",
+                    "size_bytes",
+                    "sha256",
+                    "origin",
+                    "availability",
+                    "source_locator",
+                    "index_status",
+                )
+            },
+            version_id=version["id"],
+        )
+        self.save(file)
+        self.emit(event, [file["id"], version["id"]], len(content))
+        return file
+
+    def revised_deliverable(
+        self,
+        revision: dict[str, Any],
+        metadata: dict[str, Any],
+        content: bytes,
+        suffix: str,
+        folder_id: str,
+    ) -> dict[str, Any]:
+        """A change of a deliverable: its next version, under an overwrite approval.
+
+        A follow-up that changes a file delivered earlier in the conversation
+        ("change the title", "add a table") gave a second and a third file with
+        new names (staging 2026-11-20). The file keeps its name, the earlier
+        versions stay recoverable, and the overwrite approval binds the exact
+        bytes, base version and revision, as a replaced upload does.
+        """
+        if metadata["strategy"] == "created":
+            raise ProjectError(
+                422, "invalid_request", "A new version is not a created file"
+            )
+        file = self.get("file", revision["file_id"])
+        if file["folder_id"] != folder_id:
+            raise ProjectError(
+                422, "invalid_request", "Only a deliverable gets a published version"
+            )
+        if (
+            metadata["path"] != file["relative_path"]
+            or Path(file["relative_path"]).suffix.lower() != suffix
+        ):
+            raise ProjectError(
+                422, "invalid_request", "A new version keeps the file name and format"
+            )
+        if file["version_id"] != revision["base_version"]:
+            raise ProjectError(409, "revision_conflict", revision=file["revision"])
+        self.consume(
+            revision["approval_id"], "overwrite", self.overwrite_effects(file, content)
+        )
+        return self.published_version(file, content, suffix, "file_versioned")
 
     def deliverable(self, identifier: str) -> dict[str, Any]:
         value = self.get("deliverable", identifier)

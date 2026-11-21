@@ -223,6 +223,61 @@ async def approve_unattended(execution: Any, approval: dict[str, Any]) -> bool:
     return bool(status == 200)
 
 
+def overwrite_effects(file: dict[str, Any], content: bytes) -> dict[str, Any]:
+    """What an overwrite approval binds: the file as read now and the new bytes
+    (the same fields as ProjectFiles.overwrite_effects on the retrieval side)."""
+    return dict(
+        file_id=str(file["id"]),
+        folder_id=str(file["folder_id"]),
+        path=str(file["relative_path"]),
+        base_version=str(file["version_id"]),
+        revision=int(file["revision"]),
+        sha256=hashlib.sha256(content).hexdigest(),
+        size_bytes=len(content),
+    )
+
+
+async def approved_overwrite(
+    execution: Any, tools: Any, effect: dict[str, Any], deadline: float
+) -> tuple[dict[str, Any] | None, str]:
+    """An allowed overwrite approval for these effects, or None and the reason.
+
+    Behind the chat (approvals_unattended) it is given on the person's behalf;
+    in project mode the owner answers the approval card.
+    """
+    from services.orchestrator.code_tools import wait_for_approval
+    from services.retrieval.project_identity import ProjectError
+
+    try:
+        approval = await execution.broker.call(
+            "approvals",
+            dict(
+                execution.fence(),
+                action_kind="overwrite",
+                effects=effect,
+                maximum_bytes=int(effect["size_bytes"]),
+                approver_member_id=execution.session["lease"]["holder_member_id"],
+                destination=dict(kind="server", ref=execution.broker.project),
+            ),
+        )
+    except ProjectError as error:
+        detail = str(error.args[-1] if error.args else error)
+        return None, "approval_failed: " + detail[:80]
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None, "expired"
+    if getattr(tools, "approvals_unattended", False) and not await approve_unattended(
+        execution, approval
+    ):
+        # Never hold a chat answer for an approval nobody can give.
+        return None, "unattended"
+    decision = await wait_for_approval(execution, tools, approval, min(120, remaining))
+    # The broker records an accepted approval as "allowed".
+    if decision != "allowed":
+        return None, str(decision)
+    return dict(approval), ""
+
+
 async def deliverables_folder(execution: Any) -> str | None:
     status, project = await execution.broker.public("GET", "")
     if status != 200 or not project.get("deliverables_folder_id"):
@@ -468,7 +523,6 @@ async def save_modified_files(
     call and wait loop as request_approval) before its version is posted.
     Never fails the turn: every outcome is recorded in the report.
     """
-    from services.orchestrator.code_tools import wait_for_approval
     from services.retrieval.project_identity import ProjectError
 
     modified = report.get("modified") or []
@@ -524,58 +578,10 @@ async def save_modified_files(
                 {"path": path, "reason": "file_unavailable"}
             )
             continue
-        effect = dict(
-            file_id=str(file["id"]),
-            folder_id=str(file["folder_id"]),
-            path=str(file["relative_path"]),
-            base_version=str(file["version_id"]),
-            revision=int(file["revision"]),
-            sha256=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content),
-        )
-        try:
-            approval = await execution.broker.call(
-                "approvals",
-                dict(
-                    execution.fence(),
-                    action_kind="overwrite",
-                    effects=effect,
-                    maximum_bytes=len(content),
-                    approver_member_id=execution.session["lease"]["holder_member_id"],
-                    destination=dict(kind="server", ref=execution.broker.project),
-                ),
-            )
-        except ProjectError as error:
-            report.setdefault("not_saved", []).append(
-                {
-                    "path": path,
-                    "reason": "approval_failed: "
-                    + str(error.args[-1] if error.args else error)[:80],
-                }
-            )
-            continue
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            report.setdefault("not_saved", []).append(
-                {"path": path, "reason": "expired"}
-            )
-            continue
-        if getattr(
-            tools, "approvals_unattended", False
-        ) and not await approve_unattended(execution, approval):
-            # Never hold a chat answer for an approval nobody can give.
-            report.setdefault("not_saved", []).append(
-                {"path": path, "reason": "unattended"}
-            )
-            continue
-        decision = await wait_for_approval(
-            execution, tools, approval, min(120, remaining)
-        )
-        # The broker records an accepted approval as "allowed".
-        if decision != "allowed":
-            report.setdefault("not_saved", []).append(
-                {"path": path, "reason": decision}
-            )
+        effect = overwrite_effects(file, content)
+        approval, reason = await approved_overwrite(execution, tools, effect, deadline)
+        if approval is None:
+            report.setdefault("not_saved", []).append({"path": path, "reason": reason})
             continue
         boundary = "atlas-" + uuid4().hex
         body = b"".join(

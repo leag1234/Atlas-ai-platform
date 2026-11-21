@@ -1055,6 +1055,193 @@ class ProjectDeliverableTests(ProjectWorkTests):
             b"day,km\ntuesday,7\n",
         )
 
+    def test_a_change_of_a_chat_file_is_its_next_version(self) -> None:
+        """Staging 2026-11-20: "write a report as a Word document", then "change
+        the title", then "add a table" gave three files with three names, each
+        one created. A change of a file the conversation delivered is now that
+        file's next version; a new request, or another format, is a new file."""
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+        from services.orchestrator.terminal_client import (
+            ProjectPublisher,
+            VerifiedDocument,
+        )
+        from services.retrieval.project_identity import ProjectError
+
+        self.publication_setup()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            chat = WorkTools(workspace, execution)
+            chat.numbered_copies = True
+            chat.approvals_unattended = True
+
+            async def publish(path: str, text: str) -> dict[str, Any]:
+                reply = await chat.execute(
+                    Call(
+                        str(uuid4()),
+                        "publish_document",
+                        json.dumps(dict(path=path, content=text, sources=[])),
+                    ),
+                    60,
+                )
+                self.assertNotIn("error", reply, reply)
+                return dict(reply)
+
+            async def run() -> list[dict[str, Any]]:
+                replies = [
+                    await publish("Team_Week.docx", "# Four Days\n\nOur trial.\n")
+                ]
+                # The next turns change it: the chat decided they are follow-ups.
+                chat.revises_delivered = True
+                chat.earlier_answers = [replies[0]["text"]]
+                replies.append(
+                    await publish("Friday_Report.docx", "# Friday Test\n\nOur trial.\n")
+                )
+                chat.earlier_answers.append(replies[1]["text"])
+                replies.append(
+                    await publish(
+                        "Friday_Report (2).docx",
+                        "# Friday Test\n\nOur trial.\n\n| Quarter | Tickets |\n"
+                        "| --- | --- |\n| Q1 | 112 |\n",
+                    )
+                )
+                # Another format in a follow-up is a new file.
+                replies.append(
+                    await publish("Team_Week.md", "# Friday Test\n\nNotes.\n")
+                )
+                # A new request, not a change, is a new file too.
+                chat.revises_delivered = False
+                replies.append(await publish("Team_Week.docx", "# Other\n\nNew.\n"))
+                return replies
+
+            replies = asyncio.run(run())
+
+            async def refused(revision_of: dict[str, str], strategy: str) -> Any:
+                content = b"# Refused\n"
+                document = VerifiedDocument(
+                    content, content, hashlib.sha256(content).hexdigest()
+                )
+                _, project = await execution.broker.public("GET", "")
+                _, listing = await execution.broker.public("GET", "folders")
+                folder = next(
+                    f
+                    for f in listing["items"]
+                    if f["id"] == project["deliverables_folder_id"]
+                )
+                with self.assertRaises(ProjectError) as caught:
+                    await ProjectPublisher(execution).publish(
+                        document,
+                        "Team_Week.md",
+                        strategy,
+                        [],
+                        int(folder["revision"]),
+                        str(uuid4()),
+                        30,
+                        revision_of=revision_of,
+                    )
+                return caught.exception.args
+
+            md = replies[3]["deliverable"]
+            # A receipt names its deliverable; the file is the one of its version.
+            _, listing = asyncio.run(execution.broker.public("GET", "files"))
+            md_file = next(
+                f for f in listing["items"] if f["version_id"] == md["file_version_id"]
+            )
+            stale = dict(
+                file_id=str(md_file["id"]),
+                base_version=str(uuid4()),
+                approval_id=str(uuid4()),
+            )
+            current = dict(stale, base_version=str(md["file_version_id"]))
+            conflict = asyncio.run(refused(stale, "regenerated"))
+            unapproved = asyncio.run(refused(current, "regenerated"))
+            created = asyncio.run(refused(current, "created"))
+        self.assertIn("revision_conflict", conflict)
+        self.assertIn("approval_required", unapproved)
+        self.assertIn("invalid_request", created)
+        names = [r["deliverable"].get("relative_path") for r in replies]
+        self.assertEqual(
+            names,
+            [
+                "Team_Week.docx",
+                "Team_Week.docx",
+                "Team_Week.docx",
+                "Team_Week.md",
+                "Team_Week (2).docx",
+            ],
+        )
+        self.assertNotIn("note", replies[0])
+        self.assertIn("saved as its new version", replies[1]["note"])
+        self.assertIn("Download Team_Week.docx", replies[2]["text"])
+        self.assertEqual(
+            [r["deliverable"]["strategy"] for r in replies[:3]],
+            ["created", "regenerated", "regenerated"],
+        )
+        # Three deliverables, three versions of one file.
+        self.assertEqual(len({r["deliverable"]["id"] for r in replies[:3]}), 3)
+        self.assertEqual(
+            len({r["deliverable"]["file_version_id"] for r in replies[:3]}), 3
+        )
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            delivered = files.listing(
+                "file", scope.project_data["deliverables_folder_id"]
+            )
+            report = next(
+                f for f in delivered if f["relative_path"] == "Team_Week.docx"
+            )
+            versions = files.listing("version", report["id"])
+        self.assertEqual(
+            sorted(f["relative_path"] for f in delivered),
+            ["Team_Week (2).docx", "Team_Week.docx", "Team_Week.md"],
+        )
+        self.assertEqual(
+            {v["id"] for v in versions},
+            {r["deliverable"]["file_version_id"] for r in replies[:3]},
+        )
+        self.assertEqual(
+            report["version_id"], replies[2]["deliverable"]["file_version_id"]
+        )
+        # A link already given keeps serving its own version.
+        for reply in (replies[0], replies[2]):
+            served = self.request(
+                "GET", reply["deliverable"]["download_route"], "viewer"
+            )
+            self.assertEqual(served.status_code, 200)
+            self.assertEqual(
+                hashlib.sha256(served.content).hexdigest(),
+                reply["deliverable"]["sha256"],
+            )
+        self.assertNotEqual(
+            replies[0]["deliverable"]["sha256"], replies[2]["deliverable"]["sha256"]
+        )
+
     def test_web_pages_declared_as_sources_are_ignored_not_refused(self) -> None:
         """Staging corpus 2026-11-12: a researched report listed its web pages
         as sources with invented identifiers and was refused twice."""

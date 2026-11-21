@@ -489,7 +489,11 @@ class ProjectPublisher:
         expected_parent_revision: int,
         key: str,
         timeout: float,
+        revision_of: dict[str, str] | None = None,
     ) -> dict[str, Any]:
+        """Publish verified bytes as a new deliverable file, or, with revision_of
+        (file_id, base_version and an allowed overwrite approval_id), as the next
+        version of a deliverable the project already holds."""
         import hashlib
         from services.orchestrator.chat_pipeline import retrieval_url
         from services.orchestrator.project_ui import broker_identity, bounded_json
@@ -517,6 +521,8 @@ class ProjectPublisher:
                 artifact_sha256=document.sha256,
             ),
         )
+        if revision_of is not None:
+            metadata["revision_of"] = dict(revision_of)
         form = aiohttp.FormData()
         form.add_field(
             "metadata", json.dumps(metadata), content_type="application/json"

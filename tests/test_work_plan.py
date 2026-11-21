@@ -775,6 +775,94 @@ class CheckStepTests(Isolated):
         self.assertEqual(self.states(plan), ["failed", "skipped", "skipped", "skipped"])
 
 
+class PublicationStepTests(Isolated):
+    """Staging 2026-11-20, "change the title" on a Word report: one publication
+    of the whole file did the work of three steps, and "Change the title to the
+    new one" and "Save the updated report" stayed open while the answer said it
+    was done. A publication closes the steps whose work the file holds."""
+
+    STEPS = [
+        {"text": "Open the existing report file", "type": "code"},
+        {"text": "Change the title to the new one", "type": "code"},
+        {"text": "Save the updated report", "type": "code"},
+        {"text": "Check the title appears correctly", "type": "test"},
+        {"text": "Hand you the updated report", "type": "deliver"},
+    ]
+
+    def plan(self, route: str = "work-file") -> ChatPlan:
+        plan = ChatPlan("en", "atlas-test", route=route)
+        plan.propose(validate(self.STEPS, "en"), source="model")
+        return plan
+
+    def report(self, plan: ChatPlan, statuses: list[str]) -> dict[str, Any]:
+        return plan.update(
+            [
+                {"text": step.text, "status": status}
+                for step, status in zip(plan.steps, statuses)
+            ]
+        )
+
+    def states(self, plan: ChatPlan) -> list[str]:
+        return [step.status for step in plan.steps]
+
+    def test_one_publication_closes_the_steps_it_did(self) -> None:
+        plan = self.plan()
+        # The model reports first (its report then drives the plan), as on staging.
+        self.report(plan, ["in_progress", "pending", "pending", "pending", "pending"])
+        plan.tool("switch_tool_group", "completed")
+        plan.tool("publish_document", "completed", "passed")
+        self.assertEqual(
+            self.states(plan),
+            ["completed", "completed", "completed", "completed", "in_progress"],
+        )
+        # Its report of the same steps is accepted: nothing is refused.
+        told = self.report(
+            plan, ["completed", "completed", "completed", "completed", "completed"]
+        )
+        self.assertEqual(told, {})
+        plan.finish(True, 0.02)
+        self.assertEqual(self.states(plan), ["completed"] * 5)
+        text = plan.markdown()
+        self.assertNotIn("○", text)
+        self.assertNotIn("⊘", text)
+
+    def test_an_unchecked_file_leaves_only_the_check_not_done(self) -> None:
+        for verification in ("not_run", "failed"):
+            plan = self.plan()
+            plan.tool("publish_document", "completed", verification)
+            plan.finish(True, 0.02)
+            self.assertEqual(
+                self.states(plan),
+                ["completed", "completed", "completed", "skipped", "completed"],
+                verification,
+            )
+            self.assertIn("- ⊘ Check the title appears correctly", plan.markdown())
+
+    def test_a_refused_publication_closes_nothing(self) -> None:
+        plan = self.plan()
+        plan.tool("publish_document", "failed")
+        plan.finish(False)
+        self.assertNotIn("completed", self.states(plan))
+
+    def test_outside_a_file_turn_code_needs_its_own_evidence(self) -> None:
+        # A script turn: a published report is no evidence that code was written.
+        plan = ChatPlan("en", "atlas-test", route="work-run")
+        plan.propose(
+            validate(
+                [
+                    {"text": "Write the report", "type": "document"},
+                    {"text": "Write the sorting script", "type": "code"},
+                    {"text": "Hand you the script and the report", "type": "deliver"},
+                ],
+                "en",
+            ),
+            source="model",
+        )
+        plan.tool("publish_document", "completed", "not_run")
+        plan.finish(True, 0.02)
+        self.assertEqual(self.states(plan), ["completed", "skipped", "completed"])
+
+
 class ChatStreamCheckTests(StreamTurns):
     """The plan of a file turn through the chat stream: a search in the middle,
     the check result read from the publish_document event."""

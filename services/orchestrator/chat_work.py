@@ -617,6 +617,10 @@ async def _escalate(request: ChatRequest, item: Interaction) -> bool:
         for message in request.conversation_messages[:-1]
         if message.role == "assistant" and message.text.strip()
     ]
+    # A change of something delivered earlier (the router's follow-up, as for
+    # an app): a file of the same format this conversation delivered gets its
+    # next version instead of a new name (project_document_tools.publish_revision).
+    scoped.__dict__["revises_delivered"] = bool(hint and not setup and approval is None)
     if setup:
         scoped.__dict__["machine_setup_pending"] = True
     if approval is not None:

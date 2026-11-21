@@ -543,6 +543,9 @@ class WorkTools(CodeTools):
         # say which files this conversation saved.
         self.numbered_copies = False
         self.earlier_answers: list[str] = []
+        # The turn changes something delivered earlier in the conversation: a
+        # file of the same format it delivered gets its next version.
+        self.revises_delivered = False
         # The one office format the request names, as a suffix (".docx"), or None.
         self.requested_suffix: str | None = None
         # The request of the turn, read for what a workbook must calculate,
