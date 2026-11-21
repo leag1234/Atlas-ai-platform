@@ -591,7 +591,17 @@ async def publish(
     # (deliverable_check.py): the first gaps of a turn are refused once for a
     # repair, later ones are published with a note the answer must say.
     from services.orchestrator import deliverable_check
+    from services.orchestrator.current_file import compared
 
+    # A new version of the file this chat turn changes is compared with its
+    # current version (current_file.py): what it removed, replaced or added
+    # goes to the check below, which refuses unrequested losses once.
+    revision = (
+        await compared(tools, path.suffix, document.content)
+        if getattr(tools, "numbered_copies", False)
+        and getattr(tools, "revises_delivered", False)
+        else None
+    )
     checked = await deliverable_check.review(
         tools,
         path.suffix,
@@ -600,6 +610,7 @@ async def publish(
         document.preview,
         list(left_out or ()),
         pictures=pictures if content is not None else {},
+        revision=revision,
         # The publication itself keeps 20 seconds of the tool's time.
         seconds=deadline - time.monotonic() - 20,
     )
@@ -717,17 +728,13 @@ async def publish_revision(
     when the chat decided it continues something delivered earlier
     (revises_delivered: the router's follow-up, as for an app); the file is
     the one of the same format the conversation's answers linked last
-    (chat_file_names.last_delivered), whatever name the model wrote this time.
+    (chat_file_names.delivered_file), whatever name the model wrote this time.
     Its overwrite is approved on the person's behalf there (owner decision of
     2026-11-11), the earlier versions stay, and a link already given keeps
     serving its own version. A revision that cannot be saved falls back to a
     new file: the change is delivered either way.
     """
-    from services.orchestrator.chat_file_names import (
-        folder_names,
-        folder_revision,
-        last_delivered,
-    )
+    from services.orchestrator.chat_file_names import delivered_file, folder_revision
     from services.orchestrator.work_save import approved_overwrite, overwrite_effects
     from services.retrieval.project_identity import ProjectError
 
@@ -735,13 +742,9 @@ async def publish_revision(
     if not getattr(tools, "revises_delivered", False) or not answers:
         return None
     execution = tools.execution
-    text = "\n".join(answers)
-    names = [
-        name
-        for name in folder_names(existing, folder_id)
-        if PurePosixPath(name).suffix.lower() == path.suffix and name in text
-    ]
-    target = last_delivered(names, answers, execution.broker.project)
+    target = delivered_file(
+        existing, folder_id, answers, execution.broker.project, {path.suffix}
+    )
     if target is None:
         return None
     entry = existing[folder_id + "/" + target]

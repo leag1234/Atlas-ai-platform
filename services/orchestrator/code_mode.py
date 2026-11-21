@@ -1323,6 +1323,11 @@ async def process_work(
                 await prepare(
                     tools, request.user_text, left(WORK_CLOSING_SECONDS).wall_clock
                 )
+            from services.orchestrator import current_file
+
+            # A change of a file this chat delivered starts from its stored
+            # version, as an app follow-up starts from the stored app.
+            tools.current_file = await current_file.load(tools, project)
             result = await execute_turn(
                 request,
                 model,
@@ -1345,6 +1350,11 @@ async def process_work(
                     ],
                     environment=execution.session["environment"],
                     plan=execution.session.get("plan", []),
+                    **(
+                        {"current_file": tools.current_file.context(request.user_text)}
+                        if tools.current_file is not None
+                        else {}
+                    ),
                     # Today's date in the person's zone, and a scheduled run's
                     # deliverable note: trusted context, never the user's words.
                     **work_context(request),

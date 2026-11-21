@@ -1120,6 +1120,7 @@ class ProjectDeliverableTests(ProjectWorkTests):
         the title", then "add a table" gave three files with three names, each
         one created. A change of a file the conversation delivered is now that
         file's next version; a new request, or another format, is a new file."""
+        from services.orchestrator import current_file
         from services.orchestrator.code_api import ExecutionBroker
         from services.orchestrator.code_mode import WorkExecution
         from services.orchestrator.code_tools import WorkTools
@@ -1171,6 +1172,8 @@ class ProjectDeliverableTests(ProjectWorkTests):
                 self.assertNotIn("error", reply, reply)
                 return dict(reply)
 
+            loaded: list[Any] = []
+
             async def run() -> list[dict[str, Any]]:
                 replies = [
                     await publish("Team_Week.docx", "# Four Days\n\nOur trial.\n")
@@ -1182,6 +1185,11 @@ class ProjectDeliverableTests(ProjectWorkTests):
                     await publish("Friday_Report.docx", "# Friday Test\n\nOur trial.\n")
                 )
                 chat.earlier_answers.append(replies[1]["text"])
+                # The next change starts from the stored second version, read
+                # from its bytes (current_file.py), and is compared with it.
+                _, project = await execution.broker.public("GET", "")
+                chat.current_file = await current_file.load(chat, project)
+                loaded.append(chat.current_file)
                 replies.append(
                     await publish(
                         "Friday_Report (2).docx",
@@ -1257,6 +1265,20 @@ class ProjectDeliverableTests(ProjectWorkTests):
         self.assertNotIn("note", replies[0])
         self.assertIn("saved as its new version", replies[1]["note"])
         self.assertIn("Download Team_Week.docx", replies[2]["text"])
+        # The writer of the third version received the second one, title
+        # change included; unchecked here (no turn model), the answer must
+        # name what the new version changed.
+        self.assertEqual(loaded[0].name, "Team_Week.docx")
+        self.assertEqual(loaded[0].document.title, "Friday Test")
+        self.assertEqual(
+            loaded[0].version_id, replies[1]["deliverable"]["file_version_id"]
+        )
+        self.assertEqual(
+            loaded[0].context("add a table")["current"],
+            {"title": "Friday Test", "content": "Our trial."},
+        )
+        self.assertIn('added "Quarter | Tickets Q1 | 112"', replies[2]["note"])
+        self.assertNotIn("removed", replies[2]["note"])
         self.assertEqual(
             [r["deliverable"]["strategy"] for r in replies[:3]],
             ["created", "regenerated", "regenerated"],
