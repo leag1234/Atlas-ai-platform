@@ -454,5 +454,15 @@ class ReadbackTests(unittest.TestCase):
         )
 
 
+class ParallelCardsTests(unittest.TestCase):
+    def test_parallel_cards_carry_no_numbers(self) -> None:
+        with TemporaryDirectory() as directory:
+            _, file = build(outline(), directory)
+            texts = [
+                s.text_frame.text for s in file.slides[1].shapes if s.has_text_frame
+            ]
+        self.assertFalse({"01", "02", "03"} & set(texts), texts)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -332,7 +332,10 @@ def needed(
 
 
 def cards(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
-    """Two to four developed points as cards, a numbered accent on each.
+    """Two to four developed parallel points as cards with an accent edge.
+
+    Unnumbered: ordered points are a process (kind); numbers on parallel
+    cards read as an order that does not exist (owner review 2026-11-21).
 
     The cards are as tall as the fullest one needs (at least half the body)
     and the group is centred in the body: no card is a tall empty box.
@@ -347,14 +350,14 @@ def cards(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
     inner = width - 2 * 22
     # One size for every card, the size the fullest card allows.
     size = min(
-        fit(measured_for(text, pair), inner, room - 76, 24, 12, gap=0.35)
+        fit(measured_for(text, pair), inner, room - 44, 24, 12, gap=0.35)
         for text, pair in zip(texts, pairs, strict=True)
     )
     fullest = max(
         needed(measured_for(text, pair), inner, size, 0.35)
         for text, pair in zip(texts, pairs, strict=True)
     )
-    height = min(room, max(room * 0.55, fullest + 90))
+    height = min(room, max(room * 0.5, fullest + 56))
     top = area.y + (area.h - (height * rows + gap * (rows - 1))) / 2
     for index, (text, pair) in enumerate(zip(texts, pairs, strict=True)):
         column, row = index % columns, index // columns
@@ -362,9 +365,7 @@ def cards(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
         y = top + row * (height + gap)
         box(slide, x, y, width, height, theme.card, shape=MSO_SHAPE.ROUNDED_RECTANGLE)
         box(slide, x, y, 6, height, theme.accent)
-        badge = frame(slide, x + 22, y + 20, 80, 34, role="decor")
-        write(badge, [f"{index + 1:02d}"], 24, theme.accent, bold=True, gap=0)
-        content = frame(slide, x + 22, y + 66, inner, height - 76, role="point")
+        content = frame(slide, x + 22, y + 24, inner, height - 34, role="point")
         if pair:
             # The label keeps its colon: the card says what the line said.
             colon = " :" if " :" in shown(text) else ":"
