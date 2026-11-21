@@ -1542,6 +1542,177 @@ class ProjectDeliverableTests(ProjectWorkTests):
             hashes.add(reply["deliverable"]["sha256"])
         self.assertEqual(len(hashes), 3)
 
+    def test_a_project_revision_is_checked_before_its_approval(self) -> None:
+        """PR 591's guarantees in project mode: the writer is given the stored
+        version, and a new version that loses a section nobody asked to change
+        is refused once before any approval card; the repair still lacking it
+        is approved, published, and its note says so for the answer."""
+        from decimal import Decimal
+        from types import SimpleNamespace
+
+        from services.orchestrator import current_file, deliverable_check
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+
+        self.publication_setup()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200, acquired.text)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        report = (
+            "# Orchard report\n\n## Harvest\n\nThe harvest reached 3 400 kg of "
+            "apples.\n\n## Members\n\nAda Fernhill coordinates the picking teams "
+            "and Bruno Calvel keeps the accounts.\n"
+        )
+        lost = (
+            "# Season review\n\n## Harvest\n\nThe harvest reached 3 400 kg of apples.\n"
+        )
+        gap = 'the section "Members" was removed without being asked'
+        judged = AsyncMock(
+            side_effect=[
+                dict(text=json.dumps({"gaps": [gap], "variants": []}), cost_eur="0"),
+                dict(text=json.dumps({"gaps": [gap], "variants": []}), cost_eur="0"),
+            ]
+        )
+        cards: list[dict[str, Any]] = []
+
+        def allow(approval: dict[str, Any]) -> None:
+            session = self.request(
+                "GET",
+                self.project_path() + "/work-sessions/" + self.session["id"],
+                "editor",
+            ).json()
+            digest = approval.get("action_digest") or next(
+                a["action_digest"]
+                for a in session["pending_approvals"]
+                if a["id"] == approval["id"]
+            )
+            reply = self.request(
+                "POST",
+                self.project_path() + "/approvals/" + approval["id"] + "/decision",
+                "editor",
+                dict(allow=True, action_digest=digest),
+                key="decision-" + approval["id"],
+            )
+            self.assertEqual(reply.status_code, 200, reply.text)
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+            patch.object(deliverable_check, "_complete", judged),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            project = WorkTools(workspace, execution)
+            emit = project.emit
+
+            async def answered(kind: str, **event: Any) -> Any:
+                if kind == "approval" and event.get("status") == "running":
+                    cards.append(event["output"]["approval"])
+                    await asyncio.to_thread(allow, event["output"]["approval"])
+                return await emit(kind, **event)
+
+            project.emit = answered  # type: ignore[method-assign]
+
+            async def publish(text: str, strategy: str) -> dict[str, Any]:
+                return dict(
+                    await project.execute(
+                        Call(
+                            str(uuid4()),
+                            "publish_document",
+                            json.dumps(
+                                dict(
+                                    path="Orchard_Report.docx",
+                                    content=text,
+                                    sources=[],
+                                    strategy=strategy,
+                                )
+                            ),
+                        ),
+                        60,
+                    )
+                )
+
+            async def run() -> tuple[Any, list[dict[str, Any]]]:
+                first = await publish(report, "created")
+                # The next turn: "change the title to Season review".
+                _, data = await execution.broker.public("GET", "")
+                given = await current_file.load(project, data, [first["text"]])
+                project.current_file = given
+                project.check_model = SimpleNamespace(
+                    profile="atlas-qwen",
+                    strict=False,
+                    spent=Decimal(0),
+                    allowance=Decimal("0.1"),
+                )
+                project.request_text = "Change the title to Season review"
+                project.earlier_requests = ["Write the orchard report in Word"]
+                project.deliverable_checks = 0
+                project.deliverable_refused = False
+                return given, [
+                    first,
+                    await publish(lost, "regenerated"),
+                    await publish(lost, "regenerated"),
+                ]
+
+            given, replies = asyncio.run(run())
+        # The writer started from the stored version, with the project wording.
+        assert given is not None
+        self.assertTrue(given.project)
+        self.assertEqual(given.name, "Orchard_Report.docx")
+        self.assertEqual(given.document.title, "Orchard report")
+        context = given.context("Change the title to Season review")
+        self.assertIn(
+            "If this turn changes Orchard_Report.docx", context["instruction"]
+        )
+        self.assertIn("Bruno Calvel", json.dumps(context["current"]))
+        # Refused once, before any approval card, with the lost text named.
+        self.assertIn("deliverable_check", replies[1]["error"])
+        self.assertIn("Members", replies[1]["error"])
+        self.assertNotIn("deliverable", replies[1])
+        payload = judged.await_args_list[0].args[0]
+        self.assertIn("new version of a file", payload["messages"][0]["content"])
+        self.assertIn("Bruno Calvel", json.dumps(payload["messages"][1]))
+        # The repair still lacking it: one card, approved, the note says so.
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(
+            replies[2]["deliverable"]["relative_path"], "Orchard_Report.docx"
+        )
+        self.assertIn("saved as its new version", replies[2]["note"])
+        self.assertIn("must say so plainly", replies[2]["note"])
+        self.assertIn("Members", replies[2]["note"])
+        with store(self.app_dsn).scope(
+            self.identity("editor"), self.org, self.project
+        ) as scope:
+            files = ProjectFiles(scope)
+            delivered = files.listing(
+                "file", scope.project_data["deliverables_folder_id"]
+            )
+            self.assertEqual(
+                [f["relative_path"] for f in delivered], ["Orchard_Report.docx"]
+            )
+            versions = files.listing("version", delivered[0]["id"])
+        self.assertEqual(
+            {v["id"] for v in versions},
+            {r["deliverable"]["file_version_id"] for r in (replies[0], replies[2])},
+        )
+
     def test_web_pages_declared_as_sources_are_ignored_not_refused(self) -> None:
         """Staging corpus 2026-11-12: a researched report listed its web pages
         as sources with invented identifiers and was refused twice."""

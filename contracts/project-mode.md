@@ -389,10 +389,12 @@ serving their own version. A created publication cannot be a version. In the
 hidden chat workspace the overwrite is approved on the person's behalf (owner
 decision of 2026-11-11). In project mode a regenerated or edited_in_place
 publication under a delivered file's path asks the person through the approval
-card; only an allowed decision publishes the version. A denied or expired one
-publishes nothing for that change (no fallback to a new file), and the answer
-names the file left unchanged. A created publication, a free path or another
-format is a new file under the next free name.
+card; only an allowed decision publishes the version. Before that card, as in
+the chat, the new version is compared with the stored one (the writer received
+it) and an unrequested loss is refused once, then stated in the answer. A denied
+or expired one publishes nothing for that change (no fallback to a new file),
+and the answer names the file left unchanged. A created publication, a free path
+or another format is a new file under the next free name.
 
 ## Data ledger (REQ-PROJ-06)
 

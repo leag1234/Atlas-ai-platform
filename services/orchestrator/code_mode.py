@@ -1324,8 +1324,20 @@ async def process_work(
             from services.orchestrator import current_file
 
             # A change of a file this chat delivered starts from its stored
-            # version, as an app follow-up starts from the stored app.
-            tools.current_file = await current_file.load(tools, project)
+            # version, as an app follow-up starts from the stored app. In
+            # project mode, the file this conversation delivered last is given
+            # with a conditional instruction (no router says it is a change).
+            tools.current_file = await current_file.load(
+                tools,
+                project,
+                None
+                if tools.numbered_copies
+                else [
+                    message.text
+                    for message in request.messages[:-1]
+                    if message.role == "assistant" and message.text.strip()
+                ],
+            )
             result = await execute_turn(
                 request,
                 model,

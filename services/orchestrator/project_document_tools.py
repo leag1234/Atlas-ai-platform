@@ -590,18 +590,29 @@ async def publish(
     # The built file against the request, before it is published and claimed
     # (deliverable_check.py): the first gaps of a turn are refused once for a
     # repair, later ones are published with a note the answer must say.
-    from services.orchestrator import deliverable_check
-    from services.orchestrator.current_file import compared
+    from services.orchestrator import current_file, deliverable_check
+    from services.orchestrator.work_save import project_file_paths
 
-    # A new version of the file this chat turn changes is compared with its
+    # A new version of the file this turn changes is compared with its
     # current version (current_file.py): what it removed, replaced or added
-    # goes to the check below, which refuses unrequested losses once.
-    revision = (
-        await compared(tools, path.suffix, document.content)
-        if getattr(tools, "numbered_copies", False)
-        and getattr(tools, "revises_delivered", False)
-        else None
-    )
+    # goes to the check below, which refuses unrequested losses once. In
+    # project mode this happens before the approval card, so the person
+    # approves a version that was already checked.
+    revision: dict[str, Any] | None = None
+    delivered: dict[str, dict[str, Any]] = {}
+    if getattr(tools, "numbered_copies", False):
+        if getattr(tools, "revises_delivered", False):
+            revision = await current_file.compared(tools, path.suffix, document.content)
+    else:
+        delivered = await project_file_paths(execution, str(folder["id"]))
+        target = revision_target(
+            tools, path, str(folder["id"]), delivered, args["strategy"]
+        )
+        if target is not None:
+            tools.current_file = await current_file.revised(
+                tools, str(folder["id"]), target, delivered
+            )
+            revision = await current_file.compared(tools, path.suffix, document.content)
     checked = await deliverable_check.review(
         tools,
         path.suffix,
@@ -670,8 +681,6 @@ async def publish(
         # The link names the file actually saved.
         receipt = dict(receipt, relative_path=saved)
     else:
-        from services.orchestrator.work_save import project_file_paths
-
         folder_id = str(folder["id"])
         try:
             revised = await publish_revision(
@@ -680,7 +689,7 @@ async def publish(
                 document,
                 path,
                 folder_id,
-                await project_file_paths(execution, folder_id),
+                delivered,
                 args["strategy"],
                 list(dict.fromkeys(versions)),
                 deadline,
@@ -896,7 +905,9 @@ async def publish_with_free_name(
             else path.with_name(f"{path.stem}-{attempt}{path.suffix}")
         )
         try:
-            return dict(await publish(str(name)))
+            # The receipt names the file saved: the answer's link says it, and
+            # a later change of it finds it there (chat_file_names.delivered_file).
+            return dict(await publish(str(name)), relative_path=str(name))
         except ProjectError as error:
             if (
                 strategy != "created"

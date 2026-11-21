@@ -834,6 +834,11 @@ is not met). Each item gives its current resolution.
     project mode (2026-11-21) a publication with strategy `regenerated` or `edited_in_place`
     under the path of a delivered file of the project prepares its next version and asks for
     the overwrite through the project approval card; only an approved overwrite publishes it.
+    As in the chat, the writer receives the stored version of the file the conversation
+    delivered last (with an instruction to start from it if the turn changes it), and the new
+    version is compared with the stored one; an unrequested loss is refused once, then stated
+    in the answer. Both happen before the approval card, so the person approves a checked
+    version.
     A declined or expired approval publishes nothing, neither as a version nor as a new file,
     and the answer names the file left unchanged. A `created` publication, a free path or
     another format is a new file (a taken name gets the next free numbered name).
