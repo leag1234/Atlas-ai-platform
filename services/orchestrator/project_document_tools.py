@@ -121,7 +121,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. In an XLSX table a cell starting with = is a formula, with or without formulas=true (a cell that must show a leading = as text starts with an apostrophe: \'=A1); formulas support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Inline Markdown (**bold**, *italic*, `code`, [text](address)) is read in headings, paragraphs, bullets and table cells of every format, never shown as markers. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides, each with a title and bullets, a table, metrics or a chart (images: make_pictures references; notes: speaker notes); omit content. Code lays out each slide from what it holds: a first slide with one to three short lines is the cover, a short last slide the closing slide, one line alone a statement, two to four bullets cards or columns (a timeline only when they are ordered steps or dates, or sequence is true), metrics (two to four key numbers, each a value and a label) number callouts, chart (labels and values) a bar chart, notes speaker notes. Write short bullets, one idea each; a bullet written \'Label: text\' shows its label in bold. Follow what the kind of deck expects, within the slide count asked: an investor pitch covers problem, solution, product, market, business model, traction, team, competition, roadmap and the ask; a course objectives, notions, examples, an exercise and a summary; a status report progress, key numbers, risks and next steps; a launch the audience, offer, benefits, price, date and call to action. A fact (a number, name, date, status or result) not given in the request nor read in a page or file of this conversation is never invented. On a slide of two to four points, each bullet is one full informative sentence built from the facts given or read. The facts the person still has to supply are listed once, in a single to-confirm list on the ask or closing slide, never scattered over slides as placeholders; a slide that would hold only placeholders is left out. A table keeps every row, column and name of the facts given. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors: sources lists only files of this session by their read_input identifiers; cite web pages in the content with their address. Markdown publication appends missing selected source excerpts as a Sources appendix; a deck appends them in the speaker notes of closing Sources slides. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. A picture drawn by make_pictures in this conversation is placed in its section as its own Markdown line ![label](picture-reference), at most five per section; no other image is accepted. A figure keeps the unit and currency the request or the source document gives it: none is added, changed or converted, and a file that changes one is refused once. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.',
+    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. In an XLSX table a cell starting with = is a formula, with or without formulas=true (a cell that must show a leading = as text starts with an apostrophe: \'=A1); formulas support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Inline Markdown (**bold**, *italic*, `code`, [text](address)) is read in headings, paragraphs, bullets and table cells of every format, never shown as markers. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides, each with a title and bullets, a table, metrics or a chart (images: make_pictures references; notes: speaker notes); omit content. Code lays out each slide from what it holds: a first slide with one to three short lines is the cover, a short last slide the closing slide, one line alone a statement, two to four bullets cards or columns (a timeline only when they are ordered steps or dates, or sequence is true), metrics (two to four key numbers, each a value and a label) number callouts, chart (labels and values) a bar chart, notes speaker notes. Write short bullets, one idea each; a bullet written \'Label: text\' shows its label in bold. Follow what the kind of deck expects, within the slide count asked: an investor pitch covers problem, solution, product, market, business model, traction, team, competition, roadmap and the ask; a course objectives, notions, examples, an exercise and a summary; a status report progress, key numbers, risks and next steps; a launch the audience, offer, benefits, price, date and call to action. A fact (a number, name, date, status or result) not given in the request nor read in a page or file of this conversation is never invented. On a slide of two to four points, each bullet is one full informative sentence built from the facts given or read. The facts the person still has to supply are listed once, in a single to-confirm list on the ask or closing slide, never scattered over slides as placeholders; a slide that would hold only placeholders is left out. A table keeps every row, column and name of the facts given. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors: sources lists only files of this session by their read_input identifiers; cite web pages in the content with their address. Markdown publication appends missing selected source excerpts as a Sources appendix; a deck appends them in the speaker notes of closing Sources slides. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. A picture drawn by make_pictures in this conversation is placed in its section as its own Markdown line ![label](picture-reference), at most five per section; no other image is accepted. A figure keeps the unit and currency the request or the source document gives it: none is added, changed or converted, and a file that changes one is refused once. A new file never overwrites an existing path. A change the person asks to a file already delivered in the project is published under that file\'s own path with strategy regenerated or edited_in_place: it becomes its next version once the person approves the overwrite. Returns canonical download and preview links only after reopening and verification.',
 }
 
 
@@ -632,18 +632,29 @@ async def publish(
     # The built file against the request, before it is published and claimed
     # (deliverable_check.py): the first gaps of a turn are refused once for a
     # repair, later ones are published with a note the answer must say.
-    from services.orchestrator import deliverable_check
-    from services.orchestrator.current_file import compared
+    from services.orchestrator import current_file, deliverable_check
+    from services.orchestrator.work_save import project_file_paths
 
-    # A new version of the file this chat turn changes is compared with its
+    # A new version of the file this turn changes is compared with its
     # current version (current_file.py): what it removed, replaced or added
-    # goes to the check below, which refuses unrequested losses once.
-    revision = (
-        await compared(tools, path.suffix, document.content)
-        if getattr(tools, "numbered_copies", False)
-        and getattr(tools, "revises_delivered", False)
-        else None
-    )
+    # goes to the check below, which refuses unrequested losses once. In
+    # project mode this happens before the approval card, so the person
+    # approves a version that was already checked.
+    revision: dict[str, Any] | None = None
+    delivered: dict[str, dict[str, Any]] = {}
+    if getattr(tools, "numbered_copies", False):
+        if getattr(tools, "revises_delivered", False):
+            revision = await current_file.compared(tools, path.suffix, document.content)
+    else:
+        delivered = await project_file_paths(execution, str(folder["id"]))
+        target = revision_target(
+            tools, path, str(folder["id"]), delivered, args["strategy"]
+        )
+        if target is not None:
+            tools.current_file = await current_file.revised(
+                tools, str(folder["id"]), target, delivered
+            )
+            revision = await current_file.compared(tools, path.suffix, document.content)
     checked = await deliverable_check.review(
         tools,
         path.suffix,
@@ -712,19 +723,49 @@ async def publish(
         # The link names the file actually saved.
         receipt = dict(receipt, relative_path=saved)
     else:
-        receipt = await publish_with_free_name(
-            lambda name: publisher.publish(
+        folder_id = str(folder["id"])
+        try:
+            revised = await publish_revision(
+                tools,
+                publisher,
                 document,
-                name,
+                path,
+                folder_id,
+                delivered,
                 args["strategy"],
                 list(dict.fromkeys(versions)),
-                folder["revision"],
-                str(uuid4()),
-                remaining(),
-            ),
-            path,
-            args["strategy"],
-        )
+                deadline,
+            )
+        except RevisionNotApproved as refused:
+            if refused.path not in tools.not_published:
+                tools.not_published.append(refused.path)
+            return dict(
+                not_published=dict(path=refused.path, reason=refused.reason),
+                note=NOT_APPROVED.format(path=refused.path, reason=refused.reason),
+            )
+        if revised is not None:
+            receipt, saved = revised
+            receipt = dict(receipt, relative_path=saved)
+            note["note"] = (
+                f"This change of {saved}, delivered earlier in this project, was "
+                f"saved as its new version after the person approved the overwrite "
+                f"(the earlier versions are kept). Name it {saved} in the answer, "
+                f"as the updated file."
+            )
+        else:
+            receipt = await publish_with_free_name(
+                lambda name: publisher.publish(
+                    document,
+                    name,
+                    args["strategy"],
+                    list(dict.fromkeys(versions)),
+                    folder["revision"],
+                    str(uuid4()),
+                    remaining(),
+                ),
+                path,
+                args["strategy"],
+            )
     if calculated:
         note["note"] = " ".join(filter(None, (note.get("note"), calculated)))
     if lacking:
@@ -750,6 +791,54 @@ async def publish(
     )
 
 
+class RevisionNotApproved(Exception):
+    """Project mode: the person did not approve a delivered file's new version."""
+
+    def __init__(self, path: str, reason: str) -> None:
+        super().__init__(path, reason)
+        self.path, self.reason = path, reason
+
+
+NOT_APPROVED = (
+    "The new version of {path} was not published: the person did not approve "
+    "overwriting it ({reason}). Nothing was overwritten and {path} keeps its "
+    "current version. Say so in the answer; do not publish this change again "
+    "under another name in this turn."
+)
+
+
+def revision_target(
+    tools: Any,
+    path: PurePosixPath,
+    folder_id: str,
+    existing: dict[str, dict[str, Any]],
+    strategy: str,
+) -> str | None:
+    """The delivered file this publication is the next version of, or None.
+
+    In the chat, a turn the chat decided continues something delivered
+    (revises_delivered) changes the file of the same format its answers
+    linked last. In project mode, the model names the file: a regeneration
+    or an in-place edit under the path of a delivered file of the project
+    is its next version (docs/17, section 12, item 20). A created file, a
+    free path or another format is a new file.
+    """
+    from services.orchestrator.chat_file_names import delivered_file
+
+    answers = getattr(tools, "earlier_answers", None)
+    if getattr(tools, "revises_delivered", False) is True and isinstance(answers, list):
+        target = delivered_file(
+            existing, folder_id, answers, tools.execution.broker.project, {path.suffix}
+        )
+        if target is not None:
+            return target
+    if getattr(tools, "numbered_copies", False) or strategy == "created":
+        # The chat project is shared by all of a person's conversations: a
+        # taken name there is another conversation's file, never this one.
+        return None
+    return str(path) if folder_id + "/" + str(path) in existing else None
+
+
 async def publish_revision(
     tools: Any,
     publisher: Any,
@@ -761,8 +850,8 @@ async def publish_revision(
     versions: list[str],
     deadline: float,
 ) -> tuple[dict[str, Any], str] | None:
-    """In the hidden chat project, a change of a file this conversation delivered
-    is published as that file's next version; None when it is a new file.
+    """A change of a delivered file is published as that file's next version;
+    None when it is a new file.
 
     "Change the title", then "add a table" gave three files with three names,
     each one "created" (staging 2026-11-20), while an app changed in the same
@@ -775,20 +864,24 @@ async def publish_revision(
     2026-11-11), the earlier versions stay, and a link already given keeps
     serving its own version. A revision that cannot be saved falls back to a
     new file: the change is delivered either way.
+
+    In project mode the overwrite stays the person's decision (owner decision
+    of 2026-11-11): the new version waits for the approval card, and one
+    declined or expired raises RevisionNotApproved. Nothing is then
+    published, neither as a version nor as a new file.
     """
-    from services.orchestrator.chat_file_names import delivered_file, folder_revision
+    from services.orchestrator.chat_file_names import folder_revision
     from services.orchestrator.work_save import approved_overwrite, overwrite_effects
     from services.retrieval.project_identity import ProjectError
 
-    answers = list(getattr(tools, "earlier_answers", None) or [])
-    if not getattr(tools, "revises_delivered", False) or not answers:
-        return None
-    execution = tools.execution
-    target = delivered_file(
-        existing, folder_id, answers, execution.broker.project, {path.suffix}
-    )
+    chat = bool(getattr(tools, "numbered_copies", False))
+    target = revision_target(tools, path, folder_id, existing, strategy)
     if target is None:
         return None
+    if not chat and target in getattr(tools, "not_published", ()):
+        # Declined once in this turn: the card is not shown again.
+        raise RevisionNotApproved(target, "denied")
+    execution = tools.execution
     entry = existing[folder_id + "/" + target]
     try:
         status, file = await execution.broker.public(
@@ -803,6 +896,8 @@ async def publish_revision(
             deadline - 20,
         )
         if approval is None:
+            if not chat:
+                raise RevisionNotApproved(target, reason.split(":", 1)[0] or "denied")
             raise ProjectError(409, reason.split(":", 1)[0] or "approval_required")
         seconds = deadline - time.monotonic()
         if seconds <= 0:
@@ -822,6 +917,9 @@ async def publish_revision(
             ),
         )
     except ProjectError as error:
+        if not chat:
+            # An approved version that cannot be saved is reported as it is.
+            raise
         logging.getLogger(__name__).warning(
             "chat_file_revision_fallback suffix=%s error=%s",
             path.suffix,
@@ -849,7 +947,9 @@ async def publish_with_free_name(
             else path.with_name(f"{path.stem}-{attempt}{path.suffix}")
         )
         try:
-            return dict(await publish(str(name)))
+            # The receipt names the file saved: the answer's link says it, and
+            # a later change of it finds it there (chat_file_names.delivered_file).
+            return dict(await publish(str(name)), relative_path=str(name))
         except ProjectError as error:
             if (
                 strategy != "created"

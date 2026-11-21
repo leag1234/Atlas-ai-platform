@@ -382,6 +382,20 @@ a partial failure stays a pending job, never a downloadable success claim.
 Strategy created/regenerated/edited_in_place is explicit. Original versions
 remain recoverable. Canonical downloads outlive replaceable delivery caches.
 
+A change the person asks to a delivered file is that file's next version, never
+a new file: same name and format, revision_of binding file_id, base_version and
+the approval_id of an overwrite approval over the exact bytes. Older links keep
+serving their own version. A created publication cannot be a version. In the
+hidden chat workspace the overwrite is approved on the person's behalf (owner
+decision of 2026-11-11). In project mode a regenerated or edited_in_place
+publication under a delivered file's path asks the person through the approval
+card; only an allowed decision publishes the version. Before that card, as in
+the chat, the new version is compared with the stored one (the writer received
+it) and an unrequested loss is refused once, then stated in the answer. A denied
+or expired one publishes nothing for that change (no fallback to a new file),
+and the answer names the file left unchanged. A created publication, a free path
+or another format is a new file under the next free name.
+
 ## Data ledger (REQ-PROJ-06)
 
 Emit kinds from actual boundaries: folder_registered, locality_changed,

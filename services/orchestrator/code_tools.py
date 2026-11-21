@@ -546,6 +546,9 @@ class WorkTools(CodeTools):
         # The turn changes something delivered earlier in the conversation: a
         # file of the same format it delivered gets its next version.
         self.revises_delivered = False
+        # Delivered files whose new version the person did not approve in
+        # project mode: nothing was overwritten, and the answer says so.
+        self.not_published: list[str] = []
         # The file such a change starts from, read from its stored version
         # (current_file.py), and compared with the new version before it is
         # claimed.

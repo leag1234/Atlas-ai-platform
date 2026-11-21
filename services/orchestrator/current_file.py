@@ -21,6 +21,13 @@ the same for documents, with the same rules:
   they fit;
 - after the new version is built, the two versions are compared
   (readback.changes) for the check before it is claimed (deliverable_check.py).
+
+Project mode has the same guarantees (docs/17, section 12, item 20), with no
+router to say whether a turn is a change: the file this conversation's
+answers linked last reaches the writer with a conditional instruction
+(PROJECT_INSTRUCTION), and a publication that is a delivered file's next
+version is compared with that file's stored version (revised) before the
+person is asked to approve the overwrite.
 """
 
 from __future__ import annotations
@@ -53,6 +60,18 @@ INSTRUCTION = (
     "publish the complete new version with publish_document under the path "
     "{name}. Never write it again from the conversation."
 )
+PROJECT_INSTRUCTION = (
+    "{name} is the file delivered last in this conversation. Its current "
+    "version is below, read from the stored file (earlier changes included), in "
+    "the arguments publish_document takes. If this turn changes {name}, start "
+    "from it: apply only the change the person asks for now, keep every other "
+    "title, heading, sentence, figure, table cell and slide exactly as it is "
+    "written there, and publish the complete new version with publish_document "
+    "under the path {name} with strategy regenerated or edited_in_place (it "
+    "becomes its next version once the person approves the overwrite). Never "
+    "write it again from the conversation. A new deliverable is published "
+    "under a new name with strategy created."
+)
 PARTIAL = (
     " The file is too long to show in full: outline lists every part, and parts "
     "gives the parts the request names, then others in order, in full. Keep "
@@ -68,6 +87,8 @@ class CurrentFile:
     file_id: str
     version_id: str
     document: readback.Readback
+    # Project mode: the writer is told to start from it if the turn changes it.
+    project: bool = False
 
     def context(self, request: str) -> dict[str, Any]:
         """What the writer receives: the whole document, or its outline and parts."""
@@ -75,7 +96,9 @@ class CurrentFile:
         whole = json.dumps(arguments, ensure_ascii=False)
         value: dict[str, Any] = {
             "name": self.name,
-            "instruction": INSTRUCTION.format(name=self.name),
+            "instruction": (
+                PROJECT_INSTRUCTION if self.project else INSTRUCTION
+            ).format(name=self.name),
         }
         if len(whole) <= FULL_CHARACTERS or self.document.text is not None:
             if len(whole) > FULL_CHARACTERS:
@@ -151,19 +174,30 @@ def names(request: str, section: readback.Section) -> bool:
     return bool(section.unit) and str(section.unit) in _NUMBER.findall(asked)
 
 
-async def load(tools: Any, project: dict[str, Any]) -> CurrentFile | None:
+async def load(
+    tools: Any, project: dict[str, Any], answers: list[str] | None = None
+) -> CurrentFile | None:
     """The file this turn changes, read from its stored bytes; None when the
     turn is not a change of a chat file or the file cannot be read (the
-    turn then goes on as before, without the comparison)."""
-    if not (
+    turn then goes on as before, without the comparison).
+
+    In project mode (answers: this conversation's earlier answers), the file
+    they linked last, given with the conditional project instruction."""
+    chat = bool(
         getattr(tools, "revises_delivered", False)
         and getattr(tools, "numbered_copies", False)
         and getattr(tools, "earlier_answers", None)
-    ):
+    )
+    if not chat and (getattr(tools, "numbered_copies", False) or not answers):
         return None
     try:
         async with asyncio.timeout(LOAD_SECONDS):
-            return await _load(tools, str(project["deliverables_folder_id"]))
+            return await _load(
+                tools,
+                str(project["deliverables_folder_id"]),
+                list(tools.earlier_answers) if chat else list(answers or []),
+                project=not chat,
+            )
     except Exception as error:  # noqa: BLE001 - the turn goes on without it
         logging.getLogger(__name__).warning(
             "current_file_unread error=%s", type(error).__name__
@@ -171,10 +205,11 @@ async def load(tools: Any, project: dict[str, Any]) -> CurrentFile | None:
         return None
 
 
-async def _load(tools: Any, folder_id: str) -> CurrentFile | None:
+async def _load(
+    tools: Any, folder_id: str, answers: list[str], *, project: bool = False
+) -> CurrentFile | None:
     from services.orchestrator.chat_file_names import delivered_file
     from services.orchestrator.work_save import project_file_paths
-    from services.retrieval.project_identity import ProjectError
 
     execution = tools.execution
     existing = await project_file_paths(execution, folder_id)
@@ -182,13 +217,49 @@ async def _load(tools: Any, folder_id: str) -> CurrentFile | None:
     name = delivered_file(
         existing,
         folder_id,
-        list(tools.earlier_answers),
+        answers,
         execution.broker.project,
         {wanted} if isinstance(wanted, str) and wanted else readback.SUFFIXES,
     )
     if name is None:
         return None
-    entry = existing[folder_id + "/" + name]
+    current = await _read(execution, name, existing[folder_id + "/" + name])
+    current.project = project
+    return current
+
+
+async def revised(
+    tools: Any, folder_id: str, name: str, existing: dict[str, dict[str, Any]]
+) -> CurrentFile | None:
+    """The stored version of the delivered file a project publication is the
+    next version of (project_document_tools.revision_target): the one the
+    writer received when it is still current, else read now. None when it
+    cannot be read: the version is then published without the comparison."""
+    entry = existing.get(folder_id + "/" + name)
+    if entry is None:
+        return None
+    current = getattr(tools, "current_file", None)
+    if (
+        isinstance(current, CurrentFile)
+        and current.name == name
+        and current.version_id == str(entry.get("version_id"))
+    ):
+        return current
+    try:
+        async with asyncio.timeout(LOAD_SECONDS):
+            loaded = await _read(tools.execution, name, entry)
+    except Exception as error:  # noqa: BLE001 - published without the comparison
+        logging.getLogger(__name__).warning(
+            "current_file_unread error=%s", type(error).__name__
+        )
+        return None
+    loaded.project = True
+    return loaded
+
+
+async def _read(execution: Any, name: str, entry: dict[str, Any]) -> CurrentFile:
+    from services.retrieval.project_identity import ProjectError
+
     status, file = await execution.broker.public(
         "GET", "files/" + str(entry["file_id"])
     )

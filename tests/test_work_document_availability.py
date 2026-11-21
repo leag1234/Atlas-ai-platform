@@ -228,7 +228,10 @@ class FreeNameTests(unittest.IsolatedAsyncioTestCase):
         receipt = await publish_with_free_name(
             publish, PurePosixPath("club.pptx"), "created"
         )
-        self.assertEqual(receipt, {"name": "club-3.pptx"})
+        # The receipt names the file saved, for the answer's link.
+        self.assertEqual(
+            receipt, {"name": "club-3.pptx", "relative_path": "club-3.pptx"}
+        )
         self.assertEqual(asked, ["club.pptx", "club-2.pptx", "club-3.pptx"])
         with self.assertRaises(ProjectError):
             await publish_with_free_name(

@@ -1142,6 +1142,7 @@ async def process_work(
                     item.reponse += "\n\nWork failed: " + engine_result.reason
                 from services.orchestrator.work_save import (
                     not_saved_line,
+                    not_saved_paths,
                     project_file_lines,
                     save_turn_files,
                 )
@@ -1162,11 +1163,7 @@ async def process_work(
                 item.reponse += project_file_lines(
                     saved, broker.org, broker.project, request.lang
                 )
-                denied = [
-                    str(entry.get("path", ""))
-                    for entry in saved.get("not_saved", [])
-                    if isinstance(entry, dict)
-                ]
+                denied = not_saved_paths(saved, tools)
                 if denied and not tools.approvals_unattended:
                     item.reponse += not_saved_line(request.lang) + ", ".join(denied)
                 await tools.emit(
@@ -1189,7 +1186,8 @@ async def process_work(
             selection.deliverable_pending = lambda: code_deliverable_pending(
                 request.user_text,
                 selection.group,
-                tools.deliverables,
+                # An overwrite the person declined settles the request too.
+                [*tools.deliverables, *tools.not_published],
                 file_requested,
             )
             if os.environ.get("ATLAS_REMOTE_RUNNERS") == "1":
@@ -1326,8 +1324,20 @@ async def process_work(
             from services.orchestrator import current_file
 
             # A change of a file this chat delivered starts from its stored
-            # version, as an app follow-up starts from the stored app.
-            tools.current_file = await current_file.load(tools, project)
+            # version, as an app follow-up starts from the stored app. In
+            # project mode, the file this conversation delivered last is given
+            # with a conditional instruction (no router says it is a change).
+            tools.current_file = await current_file.load(
+                tools,
+                project,
+                None
+                if tools.numbered_copies
+                else [
+                    message.text
+                    for message in request.messages[:-1]
+                    if message.role == "assistant" and message.text.strip()
+                ],
+            )
             result = await execute_turn(
                 request,
                 model,
@@ -1459,6 +1469,7 @@ async def process_work(
                 item.reponse += "\n\nWork failed: " + reason
             from services.orchestrator.work_save import (
                 not_saved_line,
+                not_saved_paths,
                 project_file_lines,
                 save_turn_files,
             )
@@ -1477,11 +1488,7 @@ async def process_work(
             item.reponse += project_file_lines(
                 saved, broker.org, broker.project, request.lang
             )
-            denied = [
-                str(entry.get("path", ""))
-                for entry in saved.get("not_saved", [])
-                if isinstance(entry, dict)
-            ]
+            denied = not_saved_paths(saved, tools)
             if denied and not tools.approvals_unattended:
                 item.reponse += not_saved_line(request.lang) + ", ".join(denied)
             await tools.emit(

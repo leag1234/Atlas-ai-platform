@@ -337,9 +337,10 @@ Retrieval owns metadata and blob publication; the orchestrator never opens its d
 - A plan confirmation (Q9) is never an approval of an individual effect.
 
 ### 4.6 Publication (contract § deliverable publication amendment)
-- MIME is derived from bytes; DOCX/XLSX/PPTX/PDF only. Publication creates a new file and
-  cannot overwrite (see section 12, item 20 for `edited_in_place`). No link before durable
-  bytes. Optional preview (text or PDF, at most 1 MiB, class E).
+- MIME is derived from bytes; DOCX/XLSX/PPTX/PDF only. A new deliverable creates a new file
+  and never overwrites. A change of a file already delivered is its next version, under the
+  overwrite approval rule (section 12, item 20). No link before durable bytes. Optional
+  preview (text or PDF, at most 1 MiB, class E).
 - Durability: publication follows PM-INT-01, not a single cross-store transaction.
 - Validation labels follow PM-VER-01. A trusted verifier that reopens the artifact establishes
   structural validity; it does not by itself establish that the content answers the request.
@@ -824,10 +825,23 @@ is not met). Each item gives its current resolution.
     section 7.2: approval admits a pinned digest; skill text stays untrusted data and cannot
     change policy.
 20. **`edited_in_place` deliverables against publication that never overwrites.** Contradiction
-    (new). The deliverable strategy enum allows `edited_in_place`; section 4.6 says publication
-    always creates a new file. Owner decision pending, between: (a) `edited_in_place` creates a
-    new version of the existing deliverable under the overwrite approval rule; (b) the value is
-    removed and every edit is a new file. Until decided, no publication overwrites a version.
+    (new). The deliverable strategy enum allows `edited_in_place`; section 4.6 said publication
+    always creates a new file. Resolved with option (a): a change the person asks to a file
+    already delivered becomes the next version of that file, under the overwrite approval rule.
+    The file keeps its name and format, earlier versions stay recoverable, and a link already
+    given keeps serving its own version. In the chat (PR 588, PR 591) the overwrite is approved
+    on the person's behalf in the hidden chat workspace (owner decision of 2026-11-11). In
+    project mode (2026-11-21) a publication with strategy `regenerated` or `edited_in_place`
+    under the path of a delivered file of the project prepares its next version and asks for
+    the overwrite through the project approval card; only an approved overwrite publishes it.
+    As in the chat, the writer receives the stored version of the file the conversation
+    delivered last (with an instruction to start from it if the turn changes it), and the new
+    version is compared with the stored one; an unrequested loss is refused once, then stated
+    in the answer. Both happen before the approval card, so the person approves a checked
+    version.
+    A declined or expired approval publishes nothing, neither as a version nor as a new file,
+    and the answer names the file left unchanged. A `created` publication, a free path or
+    another format is a new file (a taken name gets the next free numbered name).
 21. **HTML previews against restricted publication formats.** Contradiction (new). Previews are
     class E renderings, not publications; HTML is shown only in an isolated view (section 4.6).
     HTML as a deliverable is a roadmap candidate (section 14).
@@ -854,8 +868,9 @@ The owner adopted the recommendations of the challenge synthesis of 2026-11-04 o
 
 Owner decisions pending, collected: guest access restriction until the preview level passes
 (Q12); GitLab as next forge adapter (section 12, item 12); approval of later syncs to an
-approved runner target (item 18); meaning of `edited_in_place` (item 20); assignment of roadmap
-candidates to 0.8 or 0.9 (section 14); owner review of the D01 to D30 fixtures and verifiers.
+approved runner target (item 18); assignment of roadmap candidates to 0.8 or 0.9 (section 14);
+owner review of the D01 to D30 fixtures and verifiers. The meaning of `edited_in_place`
+(item 20) is decided: option (a).
 
 ## 14. Roadmap candidates (0.8 and 0.9)
 
