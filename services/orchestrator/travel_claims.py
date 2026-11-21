@@ -2271,9 +2271,9 @@ class Turn:
     dropped: list[float] = field(default_factory=list, repr=False)
     # The clock of the turn's journey plan (an aware datetime, set by
     # transit_planner): every later check reads the person's days ("tomorrow",
-    # "el viernes") on it, as the plan did. Staging -141 posttests: a check run
-    # after midnight read "el viernes" as the next week's Friday and cut the
-    # opening that dated the plan's Friday.
+    # "on Friday") on it, as the plan did. Staging -141 posttests: a check run
+    # after midnight read a Spanish "Friday" as the next week's Friday and cut
+    # the opening that dated the plan's Friday.
     clock: Any = field(default=None, repr=False)
 
     def deadline(self) -> float | None:

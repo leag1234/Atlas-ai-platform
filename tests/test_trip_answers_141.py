@@ -100,7 +100,7 @@ def sunday(
                 result = {
                     "data": asyncio.run(
                         tp.compute(
-                            tp.TransitPlan(**arguments),
+                            tp.TransitPlan.model_validate(arguments),
                             config=config,
                             language="fr",
                             position=HOME,

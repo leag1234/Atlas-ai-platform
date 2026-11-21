@@ -1969,7 +1969,8 @@ async def _reasonable(
 
 def _late_by(itinerary: dict[str, Any], deadline: datetime) -> int:
     """Minutes an itinerary arrives after the deadline."""
-    return round((itinerary["arrive"] - deadline).total_seconds() / 60)
+    late: timedelta = itinerary["arrive"] - deadline
+    return round(late.total_seconds() / 60)
 
 
 def night_option(
