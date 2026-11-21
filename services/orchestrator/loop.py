@@ -24,9 +24,15 @@ from services.orchestrator.tool_failures import (
     RepeatedFailures,
 )
 
-from packages.profiles import accepted_profile
+from packages.profiles import CHAT_SECONDS, accepted_profile, chat_seconds
 from packages.limits import LimitError
-from packages.privacy import STATUS, StrictPrivacyUnavailable, describe, refusal
+from packages.privacy import (
+    STATUS,
+    StrictPrivacyUnavailable,
+    describe,
+    owned_only,
+    refusal,
+)
 from packages.owned_server import OwnedServerUnavailable
 from packages.user_errors import STOP_CATEGORIES
 
@@ -111,7 +117,8 @@ class Limits:
                 <= (
                     300
                     if (self.has_attachments or self.produces_files) and self.profile
-                    else 120
+                    # A chat turn: the limit of the endpoint that answers it.
+                    else chat_seconds(owned_only())
                 )
             )
             and (
@@ -325,13 +332,17 @@ async def run(
     closes_on_limit = bool(limits.profile) and not limits.code_mode
     last_call_started = 0.0
     # Once research has started, a chat turn keeps this much time for writing
-    # its answer; never more than a third of a short turn.
+    # its answer; never more than a third of a short turn. An endpoint that
+    # writes more slowly (the owned server, packages/profiles.chat_seconds)
+    # keeps a reserve in proportion to its longer chat limit.
     writing_reserve = min(
         float(
             os.environ.get(
                 "ATLAS_CHAT_WRITING_RESERVE_SECONDS", WRITING_RESERVE_SECONDS
             )
-        ),
+        )
+        * chat_seconds(owned_only())
+        / CHAT_SECONDS,
         limits.wall_clock / 3,
     )
     limit_refusal: Message | None = None

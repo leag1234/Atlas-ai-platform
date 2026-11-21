@@ -116,9 +116,14 @@
     "unverified": ["operator-supplied URL, model, capabilities and prices"], "sources": []
   },
   # Source: operator-supplied; strict privacy requires a fully owner-controlled endpoint.
+  # chat_seconds: the plain chat turn's time limit on this endpoint (packages/profiles.chat_seconds;
+  # ATLAS_OWNED_CHAT_SECONDS overrides it). Measured 2026-11-20/21 on the reference owned server
+  # (Qwen3.8-27B INT4 on vLLM, one L4): 14.4 tokens/s (p10 10), first token 9.9 s at 8k prompt
+  # tokens and 20 s at 17k, no reasoning tokens; a researched answer of 970 tokens (median) takes
+  # 78 to 88 s to write after 40 to 110 s of routing and research, beyond the shared 120 s.
   "owned-vllm": {
     "name": "Owned OpenAI-compatible vLLM endpoint", "base_url": null, "privacy": "owned",
-    "reasoning_values": [],
+    "reasoning_values": [], "chat_seconds": 240,
     "api_key_env": "ATLAS_OWNED_VLLM_API_KEY",
     "text_model": "owned-vllm-model", "vision_model": null,
     "context": 262144, "price": {"currency": "EUR", "input": 0, "output": 0},

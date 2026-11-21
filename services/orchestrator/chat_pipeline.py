@@ -602,6 +602,7 @@ class ChatTools(Runtime):
                             record_page(
                                 row["link"],
                                 f"{row.get('title', '')} {row.get('snippet', '')}",
+                                str(row.get("title") or ""),
                             )
                 if (
                     call.name == "web_fetch"
@@ -610,7 +611,9 @@ class ChatTools(Runtime):
                 ):
                     self.fetched_pages.update({url: str(data["text"]) for url in urls})
                     for url in urls:
-                        record_page(url, str(data["text"]))
+                        record_page(
+                            url, str(data["text"]), str(data.get("title") or "")
+                        )
             if "error" in output:
                 self.item.erreurs.append(str(output["error"]))
             sink = sink_context.get()
@@ -1043,7 +1046,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
                 document_quotes.rewriter(quotes, quote_language, request.user_text),
             )
             gating = sink_context.set(quote_gate)
-    from services.orchestrator.source_truth import page_texts
+    from services.orchestrator.source_truth import page_texts, page_titles
     from services.orchestrator.source_truth import urls as text_urls, user_urls
 
     supplied = user_urls.set(
@@ -1057,6 +1060,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
     # What each page read in this turn said: the consulted-sources list keeps
     # the pages about the question or the answer (source_truth.unrelated_pages).
     reading = page_texts.set({})
+    naming = page_titles.set({})
     from services.orchestrator.deadline import answer_recovery
 
     def trip_recovery() -> float:
@@ -1108,6 +1112,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         document_quotes.current.reset(quoting)
         user_urls.reset(supplied)
         page_texts.reset(reading)
+        page_titles.reset(naming)
         # The routing call is part of this turn's cost.
         routing_cost = request.__dict__.get("model_route_cost_eur")
         if isinstance(routing_cost, Decimal) and routing_cost > 0:
@@ -1652,6 +1657,7 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             drawing_references,
             inline_source_markers,
             without_unretrieved,
+            pages_read,
             source_footer,
             unrelated_pages,
             visible_sources,
@@ -1720,6 +1726,7 @@ async def _process_request(request: ChatRequest, item: Interaction) -> None:
             sources, request.user_text, item.reponse
         )
         listed = [url for url in sources if url not in hidden or url in item.reponse]
+        listed, sources = pages_read(listed), pages_read(sources)
         if request.atlas_ui:
             item.reponse += source_footer(listed, request.lang)
         elif sources and not any(url in item.reponse for url in sources):

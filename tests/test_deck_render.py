@@ -17,7 +17,8 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pydantic import ValidationError
 
 from packages.doc_render import PresentationOutline, render, verify
-from packages.doc_render.deck import THEMES, kind, labelled, theme_for
+from packages.doc_render.schema import Section
+from packages.doc_render.deck import THEMES, kind, labelled, ordered, theme_for
 
 
 def outline(**overrides: object) -> PresentationOutline:
@@ -308,6 +309,149 @@ class ChartPublicationTests(unittest.TestCase):
                 with zipfile.ZipFile(io.BytesIO(buffer.getvalue())) as archive:
                     with self.assertRaises(ValueError):
                         validate_package(archive)
+
+
+class SemanticsTests(unittest.TestCase):
+    """Owner review 2026-11-21: attributes drawn as a process, placeholders as
+    key numbers, and a table that must never lose a row or a column."""
+
+    def test_parallel_attributes_are_not_a_process(self) -> None:
+        for bullets in (
+            [
+                "Material: 100% recyclable packaging",
+                "Cost: market pricing",
+                "Supply: reliable sourcing",
+            ],
+            ["Taille : inconnue", "Croissance : à confirmer", "Segment : restauration"],
+        ):
+            section = Section(heading="Our solution", bullets=tuple(bullets))
+            self.assertFalse(ordered(section), bullets)
+            self.assertIn(kind(section, 2, 6), ("cards", "pillars"))
+
+    def test_dates_steps_or_the_planner_flag_make_a_timeline(self) -> None:
+        for bullets in (
+            [
+                "Janvier 2026 : étude des besoins",
+                "Mars 2026 : prototype",
+                "Mai 2026 : pilote",
+            ],
+            ["Q1: Planung", "Q2: Umsetzung", "Q3: Einführung"],
+            ["1. Sign up", "2. Connect the account", "3. Ship the first order"],
+            ["12/03: kick-off", "26/03: review", "09/04: launch"],
+        ):
+            section = Section(heading="Plan", bullets=tuple(bullets))
+            self.assertTrue(ordered(section), bullets)
+            self.assertEqual(kind(section, 2, 6), "process")
+        flagged = Section(
+            heading="How it works",
+            bullets=("Order", "Collect", "Recycle"),
+            sequence=True,
+        )
+        self.assertEqual(kind(flagged, 2, 6), "process")
+        unflagged = Section(
+            heading="How it works", bullets=("Order", "Collect", "Recycle")
+        )
+        self.assertEqual(kind(unflagged, 2, 6), "pillars")
+
+    def test_a_callout_holds_a_number_and_a_placeholder_is_a_line(self) -> None:
+        deck = outline(
+            slides=[
+                dict(
+                    title="Traction",
+                    bullets=["Pilots with three logistics firms"],
+                    metrics=[
+                        dict(value="14", label="paying customers"),
+                        dict(value="to be confirmed", label="valuation"),
+                    ],
+                )
+            ]
+        )
+        with TemporaryDirectory() as directory:
+            _, file = build(deck, directory)
+            slide = file.slides[0]
+            frames = [s.text_frame for s in slide.shapes if s.has_text_frame]
+            sizes = {
+                f.text: max(
+                    (
+                        r.font.size.pt
+                        for p in f.paragraphs
+                        for r in p.runs
+                        if r.font.size
+                    ),
+                    default=0,
+                )
+                for f in frames
+            }
+            self.assertGreaterEqual(sizes["14"], 40)
+            self.assertNotIn("to be confirmed", sizes)
+            self.assertTrue(any("valuation: to be confirmed" in f.text for f in frames))
+
+    def test_the_renderer_keeps_every_table_row_and_column(self) -> None:
+        headers = [f"Column {c}" for c in range(6)]
+        rows = [[f"r{r}c{c}" for c in range(6)] for r in range(45)]
+        deck = outline(
+            slides=[
+                dict(
+                    title="Inventory",
+                    bullets=["All items"],
+                    table=dict(headers=headers, rows=rows),
+                )
+            ]
+        )
+        with TemporaryDirectory() as directory:
+            _, file = build(deck, directory)
+            seen: list[list[str]] = []
+            for slide in file.slides:
+                for shape in slide.shapes:
+                    if shape.has_table:
+                        table = shape.table
+                        self.assertEqual(
+                            [table.cell(0, c).text for c in range(6)], headers
+                        )
+                        self.assertEqual(len(table.columns), 6)
+                        seen.extend(
+                            [table.cell(r, c).text for c in range(6)]
+                            for r in range(1, len(table.rows))
+                        )
+            self.assertEqual(seen, rows)
+
+
+class ReadbackTests(unittest.TestCase):
+    def test_a_themed_deck_reads_back_by_its_shape_roles(self) -> None:
+        from packages.doc_render import readback
+
+        deck = outline(
+            slides=[
+                dict(title="Northwind Robotics", bullets=["Sorting robots"]),
+                dict(
+                    title="Plan",
+                    bullets=["Q1: pilot", "Q2: launch", "Q3: Germany"],
+                ),
+                dict(
+                    title="Traction",
+                    bullets=["Pilots with three firms"],
+                    metrics=[
+                        dict(value="14", label="customers"),
+                        dict(value="8k", label="MRR"),
+                    ],
+                ),
+                dict(title="Contact", bullets=["hello@northwind.example"]),
+            ]
+        )
+        with TemporaryDirectory() as directory:
+            path, _ = build(deck, directory)
+            document = readback.read(path.read_bytes(), ".pptx")
+        self.assertEqual(
+            [s.heading for s in document.sections],
+            ["Northwind Robotics", "Plan", "Traction", "Contact"],
+        )
+        self.assertEqual(
+            document.sections[1].bullets, ["Q1: pilot", "Q2: launch", "Q3: Germany"]
+        )
+        self.assertEqual(
+            document.sections[2].bullets,
+            ["customers: 14", "MRR: 8k", "Pilots with three firms"],
+        )
 
 
 if __name__ == "__main__":

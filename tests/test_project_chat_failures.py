@@ -10,6 +10,7 @@ from services.retrieval.search import Gateway
 from test_project_chat import ProjectChatTests
 import os
 from pathlib import Path
+import own_tests
 
 
 class ProjectFailureTests(ProjectChatTests):
@@ -85,3 +86,6 @@ class ProjectFailureTests(ProjectChatTests):
             ).json(),
             [],
         )
+
+
+load_tests = own_tests.only_own(__name__)

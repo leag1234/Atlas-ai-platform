@@ -18,6 +18,7 @@ from services.retrieval.project_work import Work
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_project_work as work_tests
+import own_tests
 
 
 class ProjectOrganizationTests(work_tests.ProjectWorkTests):
@@ -248,3 +249,6 @@ class ProjectOrganizationTests(work_tests.ProjectWorkTests):
             403,
             "policy_denied",
         )
+
+
+load_tests = own_tests.only_own(__name__)

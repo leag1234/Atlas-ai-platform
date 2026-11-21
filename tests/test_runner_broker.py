@@ -11,12 +11,14 @@ import tempfile
 import time
 from typing import Any
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from services.orchestrator.project_forge import canonical
 from services.runner.broker import Broker
 from services.runner.contract import Target
 from services.runner.policy import RunnerError, decision
+from services.runner import ssh as ssh_transport
 from services.runner.ssh import Keys, fingerprint
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -274,8 +276,23 @@ class RunnerBrokerTests(unittest.TestCase):
         subprocess.run(
             ["docker", "pause", self.container], check=True, capture_output=True
         )
+        original = ssh_transport.SSH.run
+
+        def short(
+            transport: ssh_transport.SSH,
+            command: str,
+            content: bytes | None = None,
+            timeout: float = 30,
+        ) -> bytes:
+            # The paused runner never answers: a short client deadline reaches
+            # the same refusal without waiting out the 30 s default.
+            return original(transport, command, content, min(timeout, 3))
+
         try:
-            with self.assertRaises(RunnerError):
+            with (
+                patch.object(ssh_transport.SSH, "run", short),
+                self.assertRaises(RunnerError),
+            ):
                 self.broker.status(self.auth)
         finally:
             subprocess.run(

@@ -134,8 +134,9 @@ class WidenedSearchTest(Base):
         block = data["rendered"]
         self.assertTrue(block.startswith("**Itinéraire en transports en commun"), block)
         self.assertIn(
-            "La première arrivée raisonnable trouvée est à 09:15, 15 min après "
-            "l’heure demandée (09:00).",
+            "Aucun itinéraire trouvé n’arrive au plus tard à 09:00 sans voyager de "
+            "nuit. Les options ci-dessous arrivent après 09:00 ; la première arrive "
+            "à 09:15, 15 min après l’heure demandée.",
             block,
         )
         # The coach arriving 15 min late is slow (3 h 37 for 109 km): no
@@ -158,7 +159,7 @@ class WidenedSearchTest(Base):
         self.assertEqual(block.count("Trajet long"), 1)
         # 15 min late: no night travel offered; no night chain at all.
         self.assertNotIn("night_option", data)
-        self.assertNotIn("de nuit", block)
+        self.assertNotIn("Seulement si vous pouvez voyager de nuit", block)
         self.assertNotIn("BlaBlaCar", block)
         self.assertNotIn("FlixBus N122", block)
         self.assertEqual(data["itineraries"][0]["long"], True)

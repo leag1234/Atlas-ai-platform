@@ -32,6 +32,7 @@ from services.orchestrator.work_tool_selection import GROUPS, WorkToolSelection
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_project_conversations as conversations
+import own_tests
 
 
 class ClearingPolicyTests(unittest.TestCase):
@@ -551,3 +552,6 @@ class WorkReplayTests(unittest.IsolatedAsyncioTestCase):
                 )
                 + "\n"
             )
+
+
+load_tests = own_tests.only_own(__name__)

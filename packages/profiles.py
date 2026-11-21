@@ -212,6 +212,39 @@ def context_window(profile: str, *, vision: bool = False) -> int:
     return window
 
 
+# The time limit of a plain chat turn, and of one chat model call, on the
+# shared providers: their answers stream at 57 to 196 tokens/s with a first
+# token under 1 s (strict-model-classes comparison, 2026-11-20).
+CHAT_SECONDS = 120.0
+
+
+def chat_seconds(owned: bool) -> float:
+    """The plain chat turn's time limit, which follows the endpoint that answers.
+
+    A shared provider keeps CHAT_SECONDS. The owned endpoint (strict privacy)
+    declares its own in its preset, ``chat_seconds`` of ``owned-vllm`` in
+    services/model-gateway/providers.yaml, measured on its hardware; an operator
+    whose owned server is faster or slower sets ATLAS_OWNED_CHAT_SECONDS (at most
+    300 s, the longest turn a call may carry).
+    """
+    if not owned:
+        return CHAT_SECONDS
+    raw = os.environ.get("ATLAS_OWNED_CHAT_SECONDS", "").strip()
+    if not raw:
+        import yaml
+
+        path = Path(__file__).resolve().parents[1] / "services/model-gateway"
+        preset = yaml.safe_load(path.joinpath("providers.yaml").read_text())
+        raw = str(preset["owned-vllm"].get("chat_seconds", CHAT_SECONDS))
+    try:
+        seconds = float(raw)
+    except ValueError:
+        raise ValueError("invalid_owned_chat_seconds") from None
+    if not CHAT_SECONDS <= seconds <= 300:
+        raise ValueError("invalid_owned_chat_seconds")
+    return seconds
+
+
 # Steps of the picture chain (services/orchestrator/pictures) and other short
 # calls (a file plan, the routing decision), each bound to a declared profile by `picture_roles` in services/model-gateway/routing.yaml.
 PICTURE_ROLES = (

@@ -27,6 +27,7 @@ from services.retrieval.project_identity import sign
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_project_isolation as isolation
+import own_tests
 
 
 def archive(files: dict[str, bytes]) -> bytes:
@@ -506,3 +507,6 @@ class SkillPublicMetadataTests(unittest.TestCase):
             }
         )
         self.assertEqual(result, {"name": "Fictional project", "revision": 3})
+
+
+load_tests = own_tests.only_own(__name__)

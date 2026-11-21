@@ -374,14 +374,23 @@ page_texts: ContextVar[dict[str, list[str]] | None] = ContextVar(
     "atlas_page_texts", default=None
 )
 PAGE_CHARACTERS = 20_000
+# The titles of the pages read in this turn (search results, fetched pages):
+# the consulted-sources list names each page by its title.
+page_titles: ContextVar[dict[str, str] | None] = ContextVar(
+    "atlas_page_titles", default=None
+)
+TITLE_CHARACTERS = 120
 
 
-def record_page(url: str, text: str) -> None:
+def record_page(url: str, text: str, title: str = "") -> None:
     pages = page_texts.get()
     if pages is not None and text.strip():
         held = pages.setdefault(url, [])
         if sum(map(len, held)) < PAGE_CHARACTERS:
             held.append(text[:PAGE_CHARACTERS])
+    titles = page_titles.get()
+    if titles is not None and title.strip() and url not in titles:
+        titles[url] = title
 
 
 def unrelated_pages(urls: list[str], question: str, answer: str) -> set[str]:
@@ -446,15 +455,41 @@ def unrelated_pages(urls: list[str], question: str, answer: str) -> set[str]:
     return {url for url, count in shared.items() if count < floor and url not in used}
 
 
-def source_footer(retrieved: list[str], language: str) -> str:
-    """Expose the actual retrieval trail separately from the model's citations."""
-    import json
-    from pathlib import Path
+def _page_label(url: str, title: str) -> str:
+    """A page's title as a link text: one line, no link syntax, bounded; its
+    site when it has none."""
+    text = " ".join(re.sub(r"[\[\]<>()`*_|]", " ", title).split())
+    if len(text) > TITLE_CHARACTERS:
+        text = text[: TITLE_CHARACTERS - 1].rsplit(" ", 1)[0] + "\u2026"
+    return text or (urlparse(url).hostname or url).removeprefix("www.")
 
+
+def pages_read(urls: list[str]) -> list[str]:
+    """The pages read among ``urls``: never the journey planner's attribution
+    pages, the plan's own and linked by its block (staging -142: every trip
+    answer ended with a sources list holding only them)."""
+    from services.orchestrator import transit_planner
+
+    planner = transit_planner.own_urls()
+    return [url for url in urls if url not in planner]
+
+
+def _target(url: str) -> str:
+    return f"<{url}>" if any(c in url for c in "() ") else url
+
+
+def source_footer(retrieved: list[str], language: str) -> str:
+    """Expose the actual retrieval trail separately from the model's citations:
+    the pages read, each by its title with its link.
+
+    Staging -139/-142: the list's heading read "Sources consulted in this
+    conversation — Web search… / Reading page…", the step labels of the
+    activity trail, and under a trip answer it held only the journey
+    planner's attribution pages; those are the plan's own (its block links
+    them), never pages read, and are left to the caller to remove."""
     if not retrieved:
         return ""
-    labels = json.loads(Path("prompts/activity-labels.json").read_text())
-    labels = labels.get(language, labels["en"])
+    titles = page_titles.get() or {}
     consulted = {
         "en": "Sources consulted in this conversation",
         "fr": "Sources consultées dans cette conversation",
@@ -465,11 +500,10 @@ def source_footer(retrieved: list[str], language: str) -> str:
     return (
         "\n\n<details>\n<summary>"
         + consulted.get(language, consulted["en"])
-        + " — "
-        + str(labels["web_search"])
-        + " / "
-        + str(labels["web_fetch"])
         + "</summary>\n\n"
-        + "\n".join("- <" + url + ">" for url in dict.fromkeys(retrieved))
+        + "\n".join(
+            f"- [{_page_label(url, titles.get(url, ''))}]({_target(url)})"
+            for url in dict.fromkeys(retrieved)
+        )
         + "\n</details>"
     )

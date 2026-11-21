@@ -21,6 +21,7 @@ from services.retrieval.project_work import empty_usage
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_project_isolation import ProjectIsolationTests
+import own_tests
 
 
 class ProjectConversationTests(ProjectIsolationTests):
@@ -1048,3 +1049,6 @@ class ProjectConversationTests(ProjectIsolationTests):
             404,
             "not_found",
         )
+
+
+load_tests = own_tests.only_own(__name__)

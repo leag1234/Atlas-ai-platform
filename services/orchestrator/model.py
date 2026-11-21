@@ -1,7 +1,7 @@
 """Model-independent client; provider selection and prices belong to the gateway."""
 
 from services.orchestrator.image_errors import read_error, decode_error
-from packages.profiles import accepted_profile
+from packages.profiles import accepted_profile, chat_seconds
 from packages import context_usage
 from packages.limits import LimitError
 from packages.provider_calls import mark_started
@@ -33,6 +33,7 @@ from services.orchestrator.loop import (
 __all__ = ["GatewayError"]
 
 from services.orchestrator.closing import STEP_LIMIT_CODE, closing_requested
+from services.orchestrator import time_cut
 from services.orchestrator.tools import declarations
 from services.orchestrator.stream_client import (
     Sink,
@@ -119,8 +120,8 @@ def refused_before_output(exc: BaseException) -> bool:
     return isinstance(exc, GatewayError) and exc.status in REFUSED_BEFORE_OUTPUT
 
 
-# The longest single call the gateway accepts without a file or attachments.
-CHAT_CALL_SECONDS = 120.0
+# The longest single call the gateway accepts without a file or attachments is
+# the chat limit of the endpoint that answers it (packages/profiles.chat_seconds).
 
 # The gateway's own failure codes, kept on a GatewayCallError.
 _FAILURE_CODE = re.compile(r"[a-z][a-z_]{0,47}")
@@ -669,7 +670,7 @@ class GatewayModel:
             # route that answers it (a picture turn answered as text, staging -43:
             # timeout_budget 299949 ms; limit 120000 ms, the turn failed in 1 s); such
             # a call keeps the chat call limit instead of being refused.
-            payload["timeout"] = min(timeout, CHAT_CALL_SECONDS)
+            payload["timeout"] = min(timeout, chat_seconds(self.strict))
         # The transport waits as long as the gateway may keep a call that is
         # still receiving output (strict privacy has no stall watch: unchanged).
         transport = timeout
@@ -705,6 +706,11 @@ class GatewayModel:
             else:
                 payload["reasoning_effort"] = self.reasoning_effort
                 self.stream_turn += 1
+                # What this call writes, for a turn cut by its time limit
+                # (time_cut.py): the person then reads it, held or not.
+                draft = time_cut.current.get()
+                if draft is not None:
+                    draft.begin()
                 await self.sink(
                     {
                         "turn": self.stream_turn,
@@ -740,6 +746,8 @@ class GatewayModel:
                                 {"phase": "narration", "sentences": len(parser.removed)}
                             )
                         if text:
+                            if draft is not None:
+                                draft.add(text)
                             await answer({"delta": {**delta, "content": text}})
                     else:
                         await sink(event)
@@ -757,7 +765,12 @@ class GatewayModel:
                 )
                 tail = parser.finish()
                 if tail:
+                    if draft is not None:
+                        draft.add(tail)
                     await answer({"delta": {"content": tail}})
+                if draft is not None:
+                    # A call that asks for a tool wrote a working note.
+                    draft.end(tool_call=bool(wire.get("calls")))
             result = WireTurn.model_validate(wire)
             context["provider_input_tokens"] = result.usage.prompt_tokens
             if self.session_context is not None:
