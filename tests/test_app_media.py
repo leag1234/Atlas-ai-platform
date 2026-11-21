@@ -451,11 +451,15 @@ class EmbeddedMediaInTheBrowserTests(unittest.IsolatedAsyncioTestCase):
             '<!DOCTYPE html>\n<html lang="en">\n<head><title>Drums</title></head>\n'
             '<body>\n<img src="atlas-media:logo" alt="logo" width="40" height="40">\n'
             '<button id="k">Kick</button><p id="state">loading</p>\n<script>\n'
-            "const ctx = new AudioContext(); let kick = null;\n"
-            "ctx.decodeAudioData(atlasMedia.buffer('atlas-media:kick')).then((b) => {\n"
+            # Decoded at load without sound; the AudioContext starts on the
+            # press (a context made at load stays silent: app_render).
+            "let ctx = null; let kick = null;\n"
+            "new OfflineAudioContext(1, 1, 44100)"
+            ".decodeAudioData(atlasMedia.buffer('atlas-media:kick')).then((b) => {\n"
             "  kick = b; document.getElementById('state').textContent = 'ready';\n"
             "});\n"
-            "document.getElementById('k').onclick = () => { const s = ctx.createBufferSource();"
+            "document.getElementById('k').onclick = () => { ctx = ctx || new AudioContext();"
+            " const s = ctx.createBufferSource();"
             " s.buffer = kick; s.connect(ctx.destination); s.start(); };\n"
             "</script>\n</body>\n</html>"
         )

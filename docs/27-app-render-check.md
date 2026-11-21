@@ -1,6 +1,7 @@
 # App render check: Atlas opens the app before saying it is done
 
 Status: implemented behind `ATLAS_APP_RENDER` (off by default; `docker` on staging).
+Timers, pictures, sound and the follow-up comparison added after staging -142.
 Scope: the "Check the app" step of side-panel app turns
 (`services/orchestrator/app_turn.py`, `services/orchestrator/app_render.py`).
 
@@ -44,6 +45,60 @@ check fails on:
 | `blank_page` | no visible text, control, drawing, image or painted box |
 | `dead_controls` | visible buttons and no event handler anywhere in the page |
 | `not_loaded`, `not_responding` | load not finished in 6 s, or the page hangs after |
+| `later_error` | uncaught exception once the page's timers have run 30 s with nobody touching it |
+| `broken_image` | an `<img>` without a source, or whose source does not decode, shown or hidden |
+| `audio_without_gesture` | an `AudioContext` created, or a media element played, before the first press or key |
+
+Timers run on Playwright's fake clock (`page.clock`, installed before the page
+loads; time still flows): after the first inspection the clock is run forward
+30 s in 1 s steps within 2.5 s of real time, and 2 s more after the presses, so a
+countdown that ends, the next question or a sound at the end of a turn are seen.
+A callback that throws during that run surfaces from `clock.run_for`, not as a
+`pageerror`, and is recorded as `later_error`. `Math.random` follows a fixed
+sequence in the check, so the same file shows the same states at every check.
+
+Sound: Chromium keeps an `AudioContext` created before a user gesture
+suspended ("The AudioContext was not allowed to start"), and headless Chromium
+does not log that warning. The page's own wrapper of `AudioContext`,
+`webkitAudioContext` and `HTMLMediaElement.play` records a start before the
+first trusted `pointerdown`, `mousedown`, `keydown`, `touchstart` or `click`.
+`navigator.userActivation` cannot be used: Playwright's `evaluate()` calls count
+as a gesture for the browser.
+
+`broken_image` and `audio_without_gesture` are soft: the page works otherwise.
+They get the one repair like the others; if the repaired file still has one (or
+the repair breaks the page), the working file is delivered and the answer says
+what does not work (`user_errors.app_soft_defects`).
+
+## Follow-ups: the current version first, and nothing lost
+
+Staging -142 (2026-11-21): after "it does not work, nothing shows", the model
+guessed a cause, rewrote code that worked (how the embedded flags were written)
+and said that had been the problem. Two changes close that class for any app:
+
+- Before the model writes a follow-up, Atlas opens the current version with the
+  same check (in parallel with the media downloads) and gives the model what it
+  saw, or that it saw nothing wrong, with the instruction to fix measured causes
+  and never claim a cause that was not found.
+- After the new file passes the check, `services/orchestrator/app_features.py`
+  compares it with the current version, as PR 591 does for documents
+  (`readback.changes`): element ids, the kinds of parts (pictures, canvas, SVG,
+  sound and video elements, sliders, lists, tables), the number of embedded
+  `data:` pictures and sounds, the `atlas-media` files, the abilities of the script
+  (timer, animation, sound, keyboard and touch controls, drawing, saving, speech,
+  vibration, full screen, drag and drop) and the visible texts. A text alone is
+  most often the requested change, so texts are listed only with a structural
+  loss. Losses get the one repair, which restores them unless the request asked
+  for the removal: the model then answers `KEEP` and the file it wrote is stored
+  without a second write. A version stored with losses still open says so in the
+  answer (`user_errors.app_lost_features`, element ids aside, which the person
+  does not see); the description never claims them.
+- Every repair of a follow-up (a file rejected by the static checks or by the
+  render check) says to start again from the stored version and never write the
+  app from scratch, and lists what the rejected file had already lost, so one
+  repair fixes both. Replays of the -142 turn on staging's gateway: the first
+  file used the flags' web addresses, and its repair wrote the app again and
+  dropped the sound.
 
 On failure the turn makes its one repair call with the list of problems (the same
 budget as a static rejection: at most two calls per turn). If the repaired file fails
