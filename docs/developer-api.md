@@ -708,6 +708,16 @@ with the `X-Atlas-Privacy: strict` header; an operator can also make a key stric
 project can be set to strict through the project API. In strict mode web search and web fetch are not
 offered. See the strict privacy section of [the platform API notes](08-plateforme-api.md).
 
+The time limit of a chat turn follows the endpoint that answers it: 120 s on the shared providers,
+and on the owned server the `chat_seconds` of the `owned-vllm` preset in
+`services/model-gateway/providers.yaml` (240 s, measured on one L4 GPU writing 14 tokens/s), or
+`ATLAS_OWNED_CHAT_SECONDS` (120 to 300) for a faster or slower owned server. A turn of the assistant
+(`atlas`) cut by its time limit is never an empty answer or a bare error: the response is a normal
+completion with the text written so far followed by one sentence saying it was cut by time, or, when
+nothing was written, one sentence saying the model could not answer in time and what to do. It ends
+with `finish_reason: "length"` and `atlas.cut` (`code: "timeout"`, `elapsed_seconds`,
+`limit_seconds`); a non-streamed answer then returns HTTP 200 instead of 504.
+
 An owned server may be powered off between uses (an on-demand GPU). Where the operator installs a
 starter for it (`ATLAS_OWNED_SERVER_STARTER_DIR`, a directory where Atlas drops a start request and
 reads the starter's `status.json`; the starter alone holds the cloud credentials and enforces its caps),
