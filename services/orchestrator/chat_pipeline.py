@@ -551,27 +551,25 @@ class ChatTools(Runtime):
                         for r in results
                         if isinstance(r, dict) and isinstance(r.get("link"), str)
                     ]
-            if (
-                call.name in unsourced_details.COMPUTATION_TOOLS
-                and (check := grounding.current.get()) is not None
-            ):
+            if call.name in unsourced_details.COMPUTATION_TOOLS:
                 # A value computed by code in this turn is no detail added from
                 # memory (staging 2026-11-20: the date_time day count was cut
                 # out of "There are 261 days", no page holding it).
-                check.computation(output)
+                for check in _collectors():
+                    check.computation(output)
             if call.name in SOURCE_TOOLS and isinstance(data, dict):
                 # D7: every URL a specialized source names was fetched for this
                 # turn (the page, the feed, the dataset), so it may be cited.
                 urls = source_tools.cited_urls(data)
                 self.item.retrieved_urls.extend(urls)
-                if (check := grounding.current.get()) is not None:
+                for check in _collectors():
                     check.collect(
                         {"text": json.dumps(data, ensure_ascii=False)[:20_000]}
                     )
                 travel_claims.collect_tool_output(call.name, data)
             if call.name in {"web_search", "web_fetch"} and "error" not in output:
                 self.item.retrieved_urls.extend(urls)
-                if (check := grounding.current.get()) is not None:
+                for check in _collectors():
                     check.collect(data)
                 travel_claims.collect_tool_output(call.name, data)
                 travel = travel_claims.current.get()
@@ -904,6 +902,15 @@ async def dispatch_project(request: ChatRequest, item: Interaction) -> bool:
     return True
 
 
+def _collectors() -> list[grounding.Grounding]:
+    """Where the turn's source texts go: the held check, the streamed one, or both."""
+    return [
+        found
+        for found in (grounding.current.get(), unsourced_details.anchors.get())
+        if found is not None
+    ]
+
+
 async def process(request: ChatRequest, item: Interaction) -> None:
     from services.orchestrator.image_truth import verified_images
 
@@ -934,6 +941,23 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         else None
     )
     checking = grounding.current.set(check)
+    # A turn that streams (no held check) has the specific details of its
+    # answer looked up in the texts it read once it ends; what none holds is
+    # named in one closing note, without a model call (unsourced_details.
+    # streamed_check). Only in the modes that mark, and never on a turn whose
+    # sources are not pages read (an attachment, a picture, a project, code).
+    anchors = (
+        grounding.Grounding()
+        if check is None
+        and unsourced_details.marks()
+        and not request.has_attachments
+        and not request.project_id
+        and not request.code_mode
+        and not request.user_text.lstrip().startswith("### Task:")
+        and not any(message.images for message in request.messages)
+        else None
+    )
+    anchoring = unsourced_details.anchors.set(anchors)
     # The person's own question and language, before any service rewrite of the
     # last message (location_route adds a position note in English): grounding
     # notes are checked against what was asked and written in the answer language.
@@ -1120,6 +1144,7 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         if held is not None:
             sink_context.reset(held)
         grounding.current.reset(checking)
+        unsourced_details.anchors.reset(anchoring)
         travel_claims.current.reset(traveling)
         number_provenance.current.reset(tracking)
         context_usage.parts.reset(components)
@@ -1266,6 +1291,31 @@ async def process(request: ChatRequest, item: Interaction) -> None:
         item.reponse, answer_language, own_scripts
     )
     stray_script.log(script_counts, item.task_type)
+    if (
+        anchors is not None
+        and item.state == "done"
+        and item.task_type not in {"work", "nearby", "artifact"}
+        and (
+            passages := anchors.evidence
+            + [str(chunk.get("text", "")) for chunk in item.chunks_recuperes]
+        )
+    ):
+        # A streamed answer cannot be taken back: its details no text read holds
+        # are named in one closing note, in the person's language.
+        note, anchor_report = unsourced_details.streamed_check(
+            item.reponse,
+            passages,
+            [m.text for m in request.messages],
+            language=detected_language(item.reponse) or answer_language,
+            computed=anchors.computed,
+            given=[m.text for m in request.messages if m.role == "user"],
+        )
+        if note:
+            streamed = bool(request.atlas_ui and holder is not None and holder.passed)
+            item.reponse = unsourced_details.with_note(item.reponse, note, streamed)
+            if streamed and (current_sink := sink_context.get()) is not None:
+                await current_sink({"delta": {"content": "\n\n" + note}})
+        item.steps.append({"phase": "anchor_check", **anchor_report.metadata()})
     if reviewable and check is not None and check.evidence:
         # What the person gave (their messages, the files of the turn) is a
         # source of the answer, never a missing entity (grounding.provided).

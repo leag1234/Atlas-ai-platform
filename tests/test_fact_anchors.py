@@ -9,11 +9,17 @@ model decides once what to do with what is unmatched (unsourced_details.py).
 
 import asyncio
 import json
+import os
 import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from services.orchestrator import grounding
 from services.orchestrator import unsourced_details as details
+from services.orchestrator.chat_pipeline import process
+from services.orchestrator.chat_schema import ChatRequest
+from services.orchestrator.interactions import Interaction
+from services.orchestrator.stream_client import sink_context
 from services.orchestrator.unsourced_details import Evidence
 
 SOURCES = {
@@ -307,6 +313,173 @@ class AnchoredClaimsTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         self.assertLess(elapsed, 1.0)
         self.assertEqual([d.text for d in found], [])
+
+
+# A research answer streamed as written: one invented detail each, and the
+# closing note in the person's language.
+STREAMED = {
+    "fr": (
+        "Fais-moi un point sur la coopérative Brelune",
+        "La coopérative Brelune a été fondée en 2020 à Saint-Énoré-des-Combes. "
+        "Ses magasins utilisent Tarnweld version 4.2.7.",
+        "*Non retrouvé dans les sources lues : 2020, Tarnweld version 4.2.7*",
+    ),
+    "en": (
+        "Give me an overview of Quillon Labs",
+        "Quillon Labs released Tarnweld 4.2.7 on 3 May 2025, and the firm is "
+        "based in Vasselin.",
+        "*Not found in the sources read: 4.2.7*",
+    ),
+    "de": (
+        "Gib mir einen Überblick über die Genossenschaft Brelune",
+        "Die Genossenschaft Brelune wurde 2011 in Ostrelach gegründet und zählt "
+        "heute 1 500 000 Mitglieder.",
+        "*In den gelesenen Quellen nicht gefunden: Ostrelach*",
+    ),
+}
+
+
+class StreamedAnswerTests(unittest.IsolatedAsyncioTestCase):
+    """A turn that streams gets the code check after it ends, and a note if needed."""
+
+    async def turn(
+        self,
+        question: str,
+        answer: str,
+        source: str,
+        *,
+        ui: bool,
+        setting: str = "revise_mark",
+        held: bool = False,
+    ) -> tuple[Interaction, list[str], AsyncMock]:
+        async def generate(request: ChatRequest, item: Interaction) -> None:
+            upstream = sink_context.get()
+            assert upstream is not None
+            # What the search tool returned, where the tool executor puts it.
+            for collector in (grounding.current.get(), details.anchors.get()):
+                if collector is not None:
+                    collector.collect({"results": [{"snippet": source}]})
+            await upstream({"delta": {"content": answer}})
+            item.reponse = answer
+            item.state = "done"
+
+        sent: list[str] = []
+
+        async def sink(event: dict[str, object]) -> None:
+            delta = event.get("delta")
+            if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+                sent.append(delta["content"])
+
+        mock = gateway("{}")
+        request = ChatRequest.model_validate(
+            {"messages": [{"role": "user", "content": question}], "atlas_ui": ui}
+        )
+        item = Interaction()
+        token = sink_context.set(sink)
+        try:
+            with (
+                patch.dict(
+                    os.environ,
+                    {"ATLAS_GROUNDING": "on", "ATLAS_UNSOURCED_DETAILS": setting},
+                ),
+                patch(
+                    "services.orchestrator.chat_pipeline._process_request",
+                    side_effect=generate,
+                ),
+                patch.object(grounding, "needs_grounding", return_value=held),
+                patch.object(details, "wants_review", return_value=held),
+                patch.object(details, "_complete", mock),
+                patch.object(details, "references", AsyncMock(return_value=[])),
+            ):
+                await process(request, item)
+        finally:
+            sink_context.reset(token)
+        return item, sent, mock
+
+    async def test_ui_stream_gets_the_note_after_the_answer(self) -> None:
+        for language, (question, answer, note) in STREAMED.items():
+            with self.subTest(language=language):
+                item, sent, mock = await self.turn(
+                    question, answer, SOURCES[language], ui=True
+                )
+                mock.assert_not_awaited()
+                self.assertEqual("".join(sent), answer + "\n\n" + note)
+                self.assertEqual(item.reponse, answer + "\n\n" + note)
+                steps = [s for s in item.steps if s.get("phase") == "anchor_check"]
+                self.assertEqual(steps[0]["revised"], "noted")
+
+    async def test_api_answers_carry_the_note_in_the_answer(self) -> None:
+        # Stream or not, an API answer is sent whole after the checks
+        # (chat_stream sends item.reponse): the note is part of it, never a
+        # separate delta.
+        for language, (question, answer, note) in STREAMED.items():
+            with self.subTest(language=language):
+                item, sent, mock = await self.turn(
+                    question, answer, SOURCES[language], ui=False
+                )
+                mock.assert_not_awaited()
+                self.assertNotIn(note, "".join(sent))
+                self.assertEqual(item.reponse, answer + "\n\n" + note)
+
+    async def test_oracle_answer_gets_no_note(self) -> None:
+        for language, answer in ORACLES.items():
+            for ui in (True, False):
+                with self.subTest(language=language, ui=ui):
+                    item, sent, _ = await self.turn(
+                        "Parle-moi de Brelune", answer, SOURCES[language], ui=ui
+                    )
+                    self.assertEqual(item.reponse, answer)
+                    self.assertNotIn("\n\n*", "".join(sent))
+
+    async def test_held_turn_is_not_noted_twice(self) -> None:
+        question, answer, note = STREAMED["fr"]
+        item, sent, mock = await self.turn(
+            question, answer, SOURCES["fr"], ui=True, held=True
+        )
+        mock.assert_awaited_once()
+        self.assertNotIn("sources lues", item.reponse)
+        self.assertFalse(any(s.get("phase") == "anchor_check" for s in item.steps))
+
+    async def test_modes_without_marking_add_no_note(self) -> None:
+        question, answer, _ = STREAMED["en"]
+        for setting in ("off", "revise"):
+            with self.subTest(setting=setting):
+                item, sent, _ = await self.turn(
+                    question, answer, SOURCES["en"], ui=True, setting=setting
+                )
+                self.assertEqual(item.reponse, answer)
+                self.assertEqual("".join(sent), answer)
+
+    async def test_turn_without_text_read_is_not_checked(self) -> None:
+        question, answer, _ = STREAMED["en"]
+        item, sent, _ = await self.turn(question, answer, "", ui=True)
+        self.assertEqual(item.reponse, answer)
+        self.assertFalse(any(s.get("phase") == "anchor_check" for s in item.steps))
+
+
+class StreamedNoteTests(unittest.TestCase):
+    def test_note_names_at_most_eight_details(self) -> None:
+        answer = " ".join(
+            f"Brelune opened shop {number} in {1900 + number}." for number in range(12)
+        )
+        note, report = details.streamed_check(
+            answer, [SOURCES["en"]], [], language="en"
+        )
+        self.assertTrue(note.startswith("*Not found in the sources read: 1900"))
+        self.assertTrue(note.endswith(", …*"))
+        self.assertEqual(report.metadata()["marked"], 1)
+        self.assertLess(report.match_seconds, 1.0)
+
+    def test_note_goes_before_the_sources_block_when_not_streamed(self) -> None:
+        answer = "Brelune text.\n\n<details>\n<summary>Sources</summary>\n</details>"
+        stored = details.with_note(answer, "*note*", streamed=False)
+        self.assertEqual(
+            stored,
+            "Brelune text.\n\n*note*\n\n<details>\n<summary>Sources</summary>\n</details>",
+        )
+        self.assertTrue(
+            details.with_note(answer, "*note*", streamed=True).endswith("*note*")
+        )
 
 
 if __name__ == "__main__":

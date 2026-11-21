@@ -55,8 +55,15 @@ the answer): a stadium's page holding "21" never supports a percentage, nor
 joins its sources (staging 2026-11-20). Only standard and enhanced levels read
 the live encyclopedia here.
 
+A turn that streams (no held check) cannot have its text taken back (owner
+decision 2026-11-21): once it ends, ``streamed_check`` looks its details up in
+the texts it read (collected in ``anchors``) and names those none holds in one
+closing note in the person's language, without a model call; an answer whose
+details are all found gets no note. The interface stream receives the note as
+a last delta; an API answer, streamed or not, is sent whole with it.
+
 ``ATLAS_UNSOURCED_DETAILS``: ``off`` (default), ``mark``, ``revise``,
-``revise_mark``. It applies to a held factual turn (grounding's cue, or a
+``revise_mark`` (the streamed note runs in the two marking modes). It applies to a held factual turn (grounding's cue, or a
 question about a named subject when the setting is on), with or without
 retrieved sources; grounding runs after it on the final text. An answer whose
 details are mostly unsupported (the sources do not cover it) is left as it is.
@@ -67,6 +74,7 @@ from __future__ import annotations
 
 import asyncio
 from bisect import bisect_left
+from contextvars import ContextVar
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date
@@ -90,6 +98,7 @@ from services.orchestrator.link_requests import own_words
 from services.orchestrator.grounding import STOP as STOP_WORDS
 from services.orchestrator.grounding import (
     CREATIVE,
+    Grounding,
     needs_grounding,
     normalized,
     question_entities,
@@ -290,6 +299,17 @@ MARKUP = re.compile(r"\*\*|__|`|^\s*(?:[-*+>]|\d{1,3}[.)]|#{1,6})\s", re.M)
 def mode() -> str:
     value = os.environ.get("ATLAS_UNSOURCED_DETAILS", "off").strip().lower()
     return value if value in MODES else "off"
+
+
+def marks() -> bool:
+    """The modes that tell the person what no source holds (streamed_check)."""
+    return mode() in {"mark", "revise_mark"}
+
+
+# The texts a streamed turn read (search results, fetched pages, specialized
+# sources) and its computation results, collected like the held check's
+# (chat_pipeline sets it on turns without one).
+anchors: ContextVar[Grounding | None] = ContextVar("atlas_anchors", default=None)
 
 
 # Questions about a named subject that grounding's precise-fact cues miss. A request
@@ -1376,11 +1396,7 @@ def uncovered_note(
     present its unsourced details as sourced.
     """
     body, separator, footer = answer.partition("<details>")
-    names = list(dict.fromkeys(detail.text for detail in details))
-    shown = ", ".join(names[:NOTE_DETAILS]) + (
-        ", …" if len(names) > NOTE_DETAILS else ""
-    )
-    text = NOTE.get(language, NOTE["en"]).format(details=shown)
+    text = NOTE.get(language, NOTE["en"]).format(details=_listed(details))
     note = "*(" + text[0].upper() + text[1:] + ")*"
     final = body.rstrip() + "\n\n" + note
     return final + ("\n\n" + separator + footer if separator else ""), 1
@@ -1592,6 +1608,78 @@ def with_sources(answer: str, urls: list[str]) -> str:
         return answer
     listed = "".join(f"\n- <{url}>" for url in urls if f"<{url}>" not in answer)
     return answer[:closing] + listed + answer[closing:]
+
+
+# The closing note of a streamed answer (streamed_check).
+STREAM_NOTE = {
+    "en": "Not found in the sources read: {details}",
+    "fr": "Non retrouvé dans les sources lues : {details}",
+    "de": "In den gelesenen Quellen nicht gefunden: {details}",
+    "es": "No encontrado en las fuentes leídas: {details}",
+    "it": "Non trovato nelle fonti lette: {details}",
+}
+
+
+def _listed(details: list[Detail]) -> str:
+    names = list(dict.fromkeys(detail.text for detail in details))
+    more = ", …" if len(names) > NOTE_DETAILS else ""
+    return ", ".join(names[:NOTE_DETAILS]) + more
+
+
+def streamed_check(
+    answer: str,
+    passages: list[str],
+    own_texts: list[str],
+    *,
+    language: str,
+    computed: list[str] | None = None,
+    given: list[str] | None = None,
+) -> tuple[str, Report]:
+    """The closing note of an answer already streamed, empty when all is sourced.
+
+    Text already sent cannot be taken back (owner decision 2026-11-21): once a
+    streamed answer ends, its specific details are looked up in the texts the
+    turn read, as for a held answer, and those none holds are named in one
+    short note in the person's language. Code only: no model call, no
+    encyclopedia read; a turn without a text read is not checked.
+    """
+    started = time.monotonic()
+    report = Report(mode="note")
+    if not answer.strip() or not passages:
+        report.revised = "skipped:no_source"
+        return "", report
+    today = time.strftime("%Y-%m-%d")
+    results = list(computed or [])
+    own = Evidence.of([*own_texts, *results, today])
+    worked = Computed.of(own_texts if given is None else given, results, today)
+    report.details = len(extract(answer))
+    found = unsupported(answer, Evidence.of(passages), own, worked)
+    report.unsupported = report.unsupported_after = len(found)
+    for detail in found:
+        report.kinds[detail.kind] = report.kinds.get(detail.kind, 0) + 1
+    note = ""
+    if found:
+        template = STREAM_NOTE.get(language, STREAM_NOTE["en"])
+        note = "*" + template.format(details=_listed(found)) + "*"
+        report.marked = 1
+        report.revised = "noted"
+    else:
+        report.revised = "skipped:none"
+    report.seconds = report.match_seconds = time.monotonic() - started
+    LOGGER.info("unsourced_details_streamed %s", json.dumps(report.metadata()))
+    return note, report
+
+
+def with_note(answer: str, note: str, streamed: bool) -> str:
+    """The stored answer with its closing note, as the person reads it.
+
+    Streamed, the note came after everything sent; otherwise it goes before
+    the consulted-sources block.
+    """
+    body, separator, footer = answer.partition("<details>")
+    if streamed or not separator:
+        return answer.rstrip() + "\n\n" + note
+    return body.rstrip() + "\n\n" + note + "\n\n" + separator + footer
 
 
 async def review(
