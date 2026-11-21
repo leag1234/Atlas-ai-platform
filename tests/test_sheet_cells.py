@@ -597,8 +597,8 @@ class RefusalMessageTests(unittest.IsolatedAsyncioTestCase):
             self.strict(dict(heading="Year", table=grid)),
             "Invalid document arguments. content.sections[0].table: unknown field "
             '(did you mean "tables"?); fields allowed here: heading, paragraphs, '
-            "bullets, tables, images, notes, metrics, chart. Correct these fields and "
-            "call the tool again.",
+            "bullets, tables, images, notes, metrics, chart, sequence. Correct these "
+            "fields and call the tool again.",
         )
         cases = (
             (dict(tables=[grid]), "content.sections[0].heading: this required field"),

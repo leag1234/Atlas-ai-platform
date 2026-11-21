@@ -77,6 +77,26 @@ and charts where numbers were given, genre structure (12 slides for the
 investor deck), "to be confirmed" where a figure was unknown. The images are kept
 outside the repository (owner evidence folder).
 
+## Revision after the owner review (2026-11-21)
+
+- **Layout semantics.** Numbered discs joined by a line read as a process, and
+  they were drawn for parallel attributes (material, cost, supply). That
+  layout is now `process`, used only for ordered steps or dates: the planner
+  sets `sequence`, or every point carries a sign of order that reads the same
+  in every language (a year, Q1/T2/H1/S2, a day and month, a leading step
+  number). Parallel points are cards or unnumbered columns (`pillars`).
+- **Density and placeholders.** A key-number callout needs a digit: a metric
+  such as "valuation: to be confirmed" is a line of the slide, never a large
+  empty callout. The `publish_document` guidance asks for one full sentence per
+  point, the facts still to supply listed once on the ask or closing slide, no
+  slide made of placeholders, and every row, column and name of the facts given
+  kept in a table.
+- **Tables.** The renderer keeps every row and column; a long table continues
+  on the next slide with its header (tested on 45 rows by 6 columns). In the
+  review case the planner, not the renderer, wrote the shorter table.
+- **Determinism.** A chart embeds the workbook of its numbers, whose own
+  timestamps made a rebuilt deck differ; nested packages are normalised too.
+
 ## Not done here
 
 - An organisation's own `.potx` template as the theme source.
