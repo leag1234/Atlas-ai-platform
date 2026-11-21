@@ -7,6 +7,7 @@ measured values (D5); the refusals of the on-demand owned server's starter are
 written here with their measured values.
 """
 
+import re
 from collections.abc import Mapping
 from typing import Literal
 
@@ -254,6 +255,99 @@ def app_failure(
     return labels.get(language, labels["en"])
 
 
+# The render check (services/orchestrator/app_render.py) opened the app twice
+# and it did not work: said plainly, with what the check saw, never delivered
+# as if it worked.
+_APP_RENDER = {
+    "fr": "J'ai ouvert l'application pour la vérifier et elle ne fonctionnait pas ({reasons}), même après une correction ; je ne vous la donne donc pas.",
+    "en": "I opened the app to check it and it did not work ({reasons}), even after one fix, so I am not handing it over.",
+    "de": "Ich habe die App zur Prüfung geöffnet und sie funktionierte nicht ({reasons}), auch nicht nach einer Korrektur; deshalb gebe ich sie nicht weiter.",
+    "es": "Abrí la aplicación para comprobarla y no funcionaba ({reasons}), ni siquiera tras una corrección, así que no se la entrego.",
+    "it": "Ho aperto l'app per verificarla e non funzionava ({reasons}), nemmeno dopo una correzione, quindi non te la consegno.",
+}
+_APP_RENDER_REASONS = {
+    "error": {
+        "fr": "elle affichait une erreur",
+        "en": "it raised an error",
+        "de": "sie meldete einen Fehler",
+        "es": "mostraba un error",
+        "it": "segnalava un errore",
+    },
+    "network": {
+        "fr": "elle avait besoin de fichiers d'Internet, que l'aperçu bloque",
+        "en": "it needed files from the internet, which the preview blocks",
+        "de": "sie brauchte Dateien aus dem Internet, die die Vorschau blockiert",
+        "es": "necesitaba archivos de internet, que la vista previa bloquea",
+        "it": "aveva bisogno di file da Internet, che l'anteprima blocca",
+    },
+    "blank": {
+        "fr": "la page restait vide",
+        "en": "the page stayed blank",
+        "de": "die Seite blieb leer",
+        "es": "la página quedaba en blanco",
+        "it": "la pagina restava vuota",
+    },
+    "controls": {
+        "fr": "ses boutons ne réagissaient pas",
+        "en": "its buttons did not react",
+        "de": "ihre Schaltflächen reagierten nicht",
+        "es": "sus botones no respondían",
+        "it": "i suoi pulsanti non rispondevano",
+    },
+    "frozen": {
+        "fr": "elle se bloquait",
+        "en": "it froze",
+        "de": "sie blieb hängen",
+        "es": "se quedaba bloqueada",
+        "it": "si bloccava",
+    },
+}
+_APP_RENDER_GROUPS = {
+    "not_loaded": "frozen",
+    "not_responding": "frozen",
+    "page_error": "error",
+    "control_error": "error",
+    "csp_violation": "network",
+    "blocked_request": "network",
+    "blank_page": "blank",
+    "dead_controls": "controls",
+}
+_RETRY = {
+    "fr": "Renvoyez votre message pour réessayer, ou demandez une version plus simple.",
+    "en": "Send your message again to retry, or ask for a simpler version.",
+    "de": "Senden Sie Ihre Nachricht erneut oder bitten Sie um eine einfachere Version.",
+    "es": "Envíe de nuevo su mensaje para volver a intentarlo o pida una versión más sencilla.",
+    "it": "Invia di nuovo il messaggio per riprovare o chiedi una versione più semplice.",
+}
+_UNCHANGED_SHORT = {
+    "fr": "La version {version} reste inchangée.",
+    "en": "Version {version} is unchanged.",
+    "de": "Version {version} bleibt unverändert.",
+    "es": "La versión {version} no cambia.",
+    "it": "La versione {version} resta invariata.",
+}
+
+
+def app_render_failure(
+    language: str, codes: list[str], *, unchanged_version: int | None = None
+) -> str:
+    """An app that failed the render check twice: what was seen, and a retry."""
+    language = language if language in _APP_RENDER else "en"
+    groups: list[str] = []
+    for code in codes:
+        group = _APP_RENDER_GROUPS.get(code, "error")
+        if group not in groups:
+            groups.append(group)
+    reasons = ", ".join(
+        _APP_RENDER_REASONS[group][language] for group in (groups or ["error"])[:2]
+    )
+    parts = [_APP_RENDER[language].format(reasons=reasons)]
+    if unchanged_version is not None:
+        parts.append(_UNCHANGED_SHORT[language].format(version=unchanged_version))
+    parts.append(_RETRY[language])
+    return " ".join(parts)
+
+
 _QUOTA = {
     "fr": "La limite d'applications et de dessins est atteinte (au plus {hourly} nouvelles versions par heure et {stored} conservées). Réessayez plus tard.",
     "en": "The limit for apps and drawings is reached (at most {hourly} new versions per hour and {stored} kept). Try again later.",
@@ -266,3 +360,127 @@ _QUOTA = {
 def app_quota(language: str, hourly: int, stored: int) -> str:
     """The storage quota of apps and drawings, with its limits (D5)."""
     return _QUOTA.get(language, _QUOTA["en"]).format(hourly=hourly, stored=stored)
+
+
+# A tool loop of a chat turn that stopped before its answer could be written.
+# The person reads why in their language; the stop summary of the loop (counts,
+# limits, reserved cost) goes to the logs only (staging -139, 2026-11-20: the
+# summary "Explicit stop: loop_detected. Tools executed: 2; limit 10..." was the
+# answer, followed by "an unexpected error").
+_STOPPED = {
+    "loop": {
+        "fr": "Je n'ai pas pu aller au bout de cette réponse : la même recherche revenait sans élément nouveau. Précisez la demande (un nom exact, un aspect particulier) puis renvoyez-la.",
+        "en": "I could not finish this answer: the same lookup kept coming back with nothing new. Make the request more precise (an exact name, one aspect) and send it again.",
+        "de": "Ich konnte diese Antwort nicht abschließen: Dieselbe Suche brachte immer wieder nichts Neues. Präzisieren Sie die Anfrage (ein genauer Name, ein bestimmter Aspekt) und senden Sie sie erneut.",
+        "es": "No he podido terminar esta respuesta: la misma búsqueda volvía sin nada nuevo. Precise la petición (un nombre exacto, un aspecto concreto) y envíela de nuevo.",
+        "it": "Non sono riuscito a completare questa risposta: la stessa ricerca tornava senza nulla di nuovo. Precisa la richiesta (un nome esatto, un aspetto preciso) e inviala di nuovo.",
+    },
+    "steps": {
+        "fr": "Je n'ai pas pu terminer cette réponse avec le nombre d'étapes de recherche prévu pour une réponse. Posez une question plus ciblée, ou demandez la suite dans un nouveau message.",
+        "en": "I could not finish this answer within the research steps one answer takes. Ask a more focused question, or ask for the rest in a new message.",
+        "de": "Ich konnte diese Antwort nicht innerhalb der Rechercheschritte abschließen, die eine Antwort umfasst. Stellen Sie eine gezieltere Frage oder fragen Sie in einer neuen Nachricht nach dem Rest.",
+        "es": "No he podido terminar esta respuesta con los pasos de búsqueda que admite una respuesta. Haga una pregunta más concreta o pida el resto en un nuevo mensaje.",
+        "it": "Non sono riuscito a completare questa risposta con i passaggi di ricerca previsti per una risposta. Fai una domanda più mirata o chiedi il resto in un nuovo messaggio.",
+    },
+    "answer": {
+        "fr": "Je n'ai pas pu rédiger une réponse exploitable cette fois. Renvoyez votre message, éventuellement reformulé.",
+        "en": "I could not write a usable answer this time. Send your message again, rephrased if you like.",
+        "de": "Diesmal konnte ich keine brauchbare Antwort schreiben. Senden Sie Ihre Nachricht erneut, gern umformuliert.",
+        "es": "Esta vez no he podido redactar una respuesta utilizable. Envíe de nuevo su mensaje, reformulado si lo desea.",
+        "it": "Questa volta non sono riuscito a scrivere una risposta utilizzabile. Invia di nuovo il messaggio, magari riformulato.",
+    },
+}
+# The stop reasons of the tool loop (services.orchestrator.loop) that end a chat
+# turn with one of the sentences above. Budget and deadline stops keep their own
+# wording (D5): the budget sentence of the turn and the "took too long" one.
+STOP_CATEGORIES = {
+    "loop_detected": "loop",
+    "tool_calls": "steps",
+    "search_limit": "steps",
+    "fetch_limit": "steps",
+    "answer_step_limit": "steps",
+    "model_calls": "steps",
+    "protocol_completion_limit": "answer",
+}
+# Deadline stops of the loop: the person reads the deadline it ran into.
+DEADLINE_STOPS = frozenset({"wall_clock", "answer_time"})
+
+
+def stop_answer(reason: str, language: str) -> str | None:
+    """The sentence a chat turn stopped for ``reason`` ends with, else None."""
+    if reason in DEADLINE_STOPS:
+        return _TOO_LONG.get(language, _TOO_LONG["en"])
+    category = STOP_CATEGORIES.get(reason)
+    if category is None:
+        return None
+    labels = _STOPPED[category]
+    return labels.get(language, labels["en"])
+
+
+# Diagnostics written by code for logs, records and API error bodies: the stop
+# summary of the tool loop and the unexpected-failure detail of the stream. They
+# are never part of an answer; each runs to the end of its line.
+_DIAGNOSTIC = re.compile(
+    r"(?:Explicit stop: [a-z_]+\.|The request did not complete because of an "
+    r"unexpected failure \(\w+\))[^\n]*"
+)
+
+
+def internal_diagnostic(text: str) -> bool:
+    """Whether ``text`` carries a diagnostic meant for logs, not for the person."""
+    return bool(_DIAGNOSTIC.search(text))
+
+
+def without_diagnostics(text: str) -> str:
+    """``text`` without its diagnostic lines (see internal_diagnostic)."""
+    if not internal_diagnostic(text):
+        return text
+    kept = _DIAGNOSTIC.sub("", text)
+    return re.sub(r"\n{3,}", "\n\n", kept).strip()
+
+
+# API error bodies, in every format (Chat Completions, Responses, Messages; streamed
+# or not; the assistant and the direct models). The code and the reason stay
+# machine-readable fields; the human text is a sentence for people: never the
+# loop's stop summary, a diagnostic for the logs or a bare code such as
+# "provider_error" or "loop_detected" (staging -139, 2026-11-20). Budget refusals
+# keep their own message with its measured values (D5).
+NAMED_REFUSALS = frozenset({"cost", "cost_budget", "budget_limit", "quota_exceeded"})
+_BARE_CODE = re.compile(r"[a-z][a-z0-9]*(?:[_.:-][a-z0-9]+)*")
+PUBLIC_SENTENCES = frozenset(
+    sentence
+    for table in (_INTERRUPTED, _TOO_LONG, _UNEXPECTED, *_STOPPED.values())
+    for sentence in table.values()
+)
+
+
+def failure_sentence(language: str, *codes: str | None) -> str:
+    """The sentence of the first code that names a stop, a deadline or a provider
+    failure, else the unexpected-failure sentence."""
+    for code in codes:
+        if code:
+            sentence = stop_answer(code, language) or ui_failure(code, language)
+            if sentence:
+                return sentence
+    return unexpected_failure(language)
+
+
+def public_message(
+    code: str, message: object, language: str = "en", reason: str | None = None
+) -> str:
+    """The human text of an API error with ``code``: ``message`` when it is written
+    for people, else the sentence of ``reason`` or ``code`` (failure_sentence)."""
+    text = message.strip() if isinstance(message, str) else ""
+    if code in NAMED_REFUSALS:
+        return text or code
+    if text and not internal_diagnostic(text) and not _BARE_CODE.fullmatch(text):
+        return text
+    return failure_sentence(language, reason, code, text)
+
+
+def generic_message(code: object, message: object) -> str:
+    """The text of a failure a format keeps generic (no provider detail): a public
+    sentence already written for this failure, else the sentence of its code."""
+    if isinstance(message, str) and message.strip() in PUBLIC_SENTENCES:
+        return message.strip()
+    return failure_sentence("en", code if isinstance(code, str) else None)

@@ -21,6 +21,7 @@ from psycopg.types.json import Jsonb
 
 from packages.doc_render import render, verify
 from packages.doc_render.schema import Content, Section
+from services.retrieval import deliverable_render
 from services.retrieval.project_files import ProjectFiles, reopen_artifact
 from services.retrieval.project_identity import sign
 from services.retrieval.project_scoped_api import store
@@ -28,6 +29,9 @@ from services.retrieval.project_scoped_api import store
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_project_work import ProjectWorkTests
 import test_project_auth as auth
+
+
+RENDER_TOOLS = deliverable_render.tools
 
 
 class ProjectDeliverableTests(ProjectWorkTests):
@@ -39,6 +43,14 @@ class ProjectDeliverableTests(ProjectWorkTests):
         from services.retrieval.api import app
 
         cls.retrieval_url = getattr(auth.ProjectAuthTests.serve, "__func__")(cls, app)
+
+    def setUp(self) -> None:
+        super().setUp()
+        # These tests check the verified text preview; the server's rendered
+        # gallery has its own test (test_preview_is_a_server_rendering).
+        renderer = patch.object(deliverable_render, "tools", return_value=None)
+        renderer.start()
+        self.addCleanup(renderer.stop)
 
     def publication_setup(self) -> None:
         # Match ProjectFilesTests' real-document fixture. Quota-refusal tests
@@ -513,6 +525,54 @@ class ProjectDeliverableTests(ProjectWorkTests):
                 "Idempotency-Key": key or str(uuid4()),
             },
         )
+
+    @unittest.skipUnless(
+        RENDER_TOOLS() is not None and deliverable_render.isolation() is not None,
+        "LibreOffice, poppler or network isolation absent",
+    )
+    def test_preview_is_a_server_rendering_of_the_verified_file(self) -> None:
+        self.publication_setup()
+        self.assertEqual(self.acquire().status_code, 200)
+        with patch.object(deliverable_render, "tools", RENDER_TOOLS):
+            for revision, suffix in enumerate((".docx", ".pptx")):
+                with self.subTest(format=suffix):
+                    raw, preview = self.artifact(suffix)
+                    reply = self.publish(
+                        self.metadata(raw, suffix, revision), raw, preview
+                    )
+                    self.assertEqual(reply.status_code, 201, reply.text)
+                    value = reply.json()
+                    route = value["download_route"].removesuffix("download")
+                    shown = self.request("GET", route + "preview", "viewer")
+                    self.assertEqual(shown.status_code, 200)
+                    self.assertTrue(
+                        shown.headers["content-type"].startswith("text/html")
+                    )
+                    self.assertEqual(
+                        shown.headers["content-security-policy"],
+                        deliverable_render.GALLERY_CSP,
+                    )
+                    self.assertEqual(shown.headers["x-content-type-options"], "nosniff")
+                    self.assertIn(b'<img src="data:image/jpeg;base64,', shown.content)
+                    self.assertNotIn(b"<script", shown.content)
+                    self.assertIn(value["download_route"].encode(), shown.content)
+                    # Stored once, beside the deliverable, never as the
+                    # version's extraction record.
+                    with store(self.app_dsn).scope(
+                        self.identity("viewer", self.project),
+                        self.org,
+                        self.project,
+                    ) as scope:
+                        files = ProjectFiles(scope)
+                        row = files.row(
+                            "derived", deliverable_render.render_id(value["id"])
+                        )
+                        self.assertEqual(str(row["parent_id"]), value["id"])
+                        self.assertEqual(
+                            row["data"]["source_version_id"], value["file_version_id"]
+                        )
+                    again = self.request("GET", route + "preview", "viewer")
+                    self.assertEqual(again.content, shown.content)
 
     def test_four_formats_durable_download_preview_hash_and_idempotency(self) -> None:
         self.publication_setup()

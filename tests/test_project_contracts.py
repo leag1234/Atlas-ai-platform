@@ -583,7 +583,7 @@ class ProjectContractTests(unittest.TestCase):
         preview = self.document["paths"][route]["get"]
         self.assertEqual(
             set(preview["responses"]["200"]["content"]),
-            {"text/plain", "application/pdf"},
+            {"text/plain", "application/pdf", "text/html"},
         )
 
     def test_design_endpoint_inventory(self) -> None:

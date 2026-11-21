@@ -162,6 +162,11 @@ def _insert_storage_shim(content: bytes) -> bytes:
     return content[:start] + STORAGE_SHIM + content[start:]
 
 
+def preview_body(content: bytes) -> bytes:
+    """The bytes the side view serves for a stored file (render check)."""
+    return _insert_storage_shim(content)
+
+
 async def _owner(request: Request) -> str:
     async with aiohttp.ClientSession() as client:
         return await verified_subject(request, client)

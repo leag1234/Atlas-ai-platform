@@ -4,6 +4,7 @@ import hashlib
 from typing import Any
 from pydantic_core import from_json
 from services.orchestrator.dev_chat import Output
+from packages.user_errors import generic_message
 from services.orchestrator.dev_responses import Wire as ResponsesWire
 
 
@@ -308,7 +309,9 @@ class Wire:
                         "type": "error",
                         "error": {
                             "type": "api_error",
-                            "message": event["message"] if named else "provider_error",
+                            "message": event["message"]
+                            if named
+                            else generic_message(None, event["message"]),
                             **({"code": event["code"]} if named else {}),
                         },
                     }

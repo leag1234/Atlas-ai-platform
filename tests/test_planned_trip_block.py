@@ -63,16 +63,31 @@ def checked(
     language: str,
     question: str,
     rewrite: str | None = None,
+    now: datetime = NOW,
 ) -> tuple[str, AsyncMock]:
     """The pipeline's trip checks, outside the turn's context as in the
-    pipeline; the bounded rewrite answers ``rewrite`` (None: it fails)."""
+    pipeline; the bounded rewrite answers ``rewrite`` (None: it fails).
+
+    The checks read the person's days ("el viernes", "demain") on ``now``,
+    the clock the recorded plans are computed on (``planned``): never the
+    wall clock (staging -141 posttests: run after midnight in Madrid,
+    "el viernes" became the next week's Friday and the opening dating the
+    plan's Friday was cut)."""
     call = AsyncMock(
         return_value={"text": rewrite, "cost_eur": "0.0004"}
         if rewrite is not None
         else None
     )
     assert travel_claims.current.get() is None
-    with patch(COMPLETE, call):
+    real = travel_claims.user_dates
+
+    def on_the_clock(texts: list[str], zone: str = "UTC", at: Any = None) -> list[str]:
+        return real(texts, zone, at or now)
+
+    with (
+        patch(COMPLETE, call),
+        patch.object(travel_claims, "user_dates", on_the_clock),
+    ):
         final, _ = asyncio.run(
             chat_pipeline._checked_trip(
                 turn, answer, language, question=question, profile="atlas-qwen"

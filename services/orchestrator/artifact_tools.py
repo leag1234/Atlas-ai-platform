@@ -73,6 +73,9 @@ HISTORY_REFERENCE_PATTERN = re.compile(
     r"/api/atlas/artifacts/([0-9a-f]{32})/versions/([1-9][0-9]{0,3})/open"
 )
 MAX_CURRENT_ARTIFACT_BYTES = 96 * 1024
+# A stored app with embedded files (code plus at most
+# app_media.MAX_TOTAL_BYTES in base64) is still read for a follow-up.
+MAX_MEDIA_ARTIFACT_BYTES = 8 * 1024 * 1024
 PROBLEM_DETAILS = {
     "dialog_api": "show the message inside the page",
     "script_syntax": "this script does not parse (check braces, brackets, "
@@ -172,11 +175,18 @@ def current_artifact_message(
         "title": reference.title,
         "filename": version.filename,
     }
-    if version.size_bytes <= MAX_CURRENT_ARTIFACT_BYTES:
-        artifact["content"] = version.content.decode("utf-8")
+    content, media = _editable(version.content, version.size_bytes)
+    if content is not None:
+        artifact["content"] = content
+        if media:
+            artifact["media"] = media
     else:
         artifact["note"] = "source too large to include"
-    visible = {key: value for key, value in artifact.items() if key != "artifact_id"}
+    visible = {
+        key: value
+        for key, value in artifact.items()
+        if key not in {"artifact_id", "media"}
+    }
     return CurrentArtifact(
         {
             "role": "system",
@@ -185,6 +195,24 @@ def current_artifact_message(
         },
         artifact,
     )
+
+
+def _editable(content: bytes, size: int) -> tuple[str | None, list[object]]:
+    """The source a follow-up reads, and the files embedded in it.
+
+    Embedded files (packages/artifact_media.py) are read as short references:
+    an app with samples stays editable while its bytes stay out of the model's
+    context.
+    """
+    from packages.artifact_media import abstract
+
+    if size > MAX_MEDIA_ARTIFACT_BYTES:
+        return None, []
+    text = content.decode("utf-8")
+    readable, media = abstract(text) if "data:" in text else (text, [])
+    if len(readable.encode("utf-8")) > MAX_CURRENT_ARTIFACT_BYTES:
+        return None, []
+    return readable, list(media)
 
 
 # Markdown images; openings that share a failed label or target run are not
@@ -247,9 +275,10 @@ def compose_answer(
     language: str,
     *,
     temporary: bool = True,
+    note: str = "",
 ) -> str:
     cleaned = clean_summary(summary)
-    parts = [part for part in (prose, cleaned) if part]
+    parts = [part for part in (prose, cleaned, note) if part]
     parts.append(
         footer(artifact_id, version, title, filename, language, temporary=temporary)
     )

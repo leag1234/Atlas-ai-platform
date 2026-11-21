@@ -14,6 +14,16 @@ speech models, uploads and backups. Docker access and root or noninteractive sud
 are required for terminal network containment. A containerized shell without
 permission to enter network namespaces cannot run the full launcher.
 
+Previews of published documents (DOCX, PPTX, XLSX, PDF) are rendered on the
+application host by LibreOffice and poppler, in a network namespace created with
+`unshare` from util-linux (root, or unprivileged user namespaces). Without them the
+preview stays the verified text; see [deliverable previews](deliverable-previews.md):
+
+```bash
+sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc \
+  libreoffice-impress poppler-utils fonts-liberation
+```
+
 For image generation, separately arrange a Linux NVIDIA GPU host with Docker and
 the NVIDIA Container Toolkit, enough VRAM for the configured image model, and
 storage for weights. Restrict the worker port to the application host. Set budget
