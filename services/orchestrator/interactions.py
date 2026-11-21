@@ -42,6 +42,9 @@ class Interaction:
     answer_tokens: int = 0
     token_split_estimated: bool = False
     reasoning_retried: bool = False
+    # The selected model's provider failed and its fallback answered (C15):
+    # the turn shows which model answered.
+    provider_fallback: bool = False
     uploads: list[dict[str, int]] = field(default_factory=list)
     rejection: dict[str, str] = field(default_factory=dict)
     startup_seconds: float = 0.0

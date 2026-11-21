@@ -54,7 +54,10 @@ Unrecognized client model strings, including `claude-*` and `gpt-*`, select
 `atlas-code` on all three public wires. `raw/...` IDs are internal-only and are
 rejected at the public edge. `GET /models` lists the public usages and accepted
 reasoning efforts. Every completed response reports `served_by` and the
-`X-Atlas-Served-By` header so the effective provider route is visible.
+`atlas` field (requested model, served model, substitution, cost); a
+non-streamed response also has the `X-Atlas-Served-By` header, so the effective
+provider route is visible. A fallback answer reports the served target in
+`model` (see "Fallbacks never go unreported" in docs/developer-api.md).
 
 Every inference uses the same key request/money ceilings and user cost ledger as
 raw Chat Completions. Expired/revoked keys return 401, missing scope 403 and quota

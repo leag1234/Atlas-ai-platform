@@ -28,6 +28,7 @@ from services.orchestrator.chat_schema import ChatRequest, markdown_tail_viable
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
+from services.orchestrator.substitution_notice import turn_substitution
 from services.orchestrator import time_cut
 from services.orchestrator.loop import OwnedServerAnswer
 from services.orchestrator.model import GatewayError
@@ -1238,9 +1239,14 @@ def response(
                             "reasoning_effort": item.reasoning_effort,
                             "max_output_tokens": payload.max_tokens,
                             "reasoning_retried": item.reasoning_retried,
+                            "provider_fallback": item.provider_fallback,
                             "status": activity_labels["reasoning_fallback"]
                             if item.reasoning_retried
-                            else "",
+                            else turn_substitution(
+                                item.provider_fallback,
+                                item.provider_model,
+                                language,
+                            ),
                             "reasoning": {
                                 "collapsed": True,
                                 "trace_tokens": item.trace_tokens,
@@ -1282,6 +1288,24 @@ def response(
                         else status_event(bool(event.get("finish")))
                     )
                     last_activity = time.monotonic()
+                if event.get("finish") and (
+                    notice := turn_substitution(
+                        item.provider_fallback, item.provider_model, language
+                    )
+                ):
+                    # The status line that stays under the answer, as the other
+                    # turn notices: which model answered and why (C15).
+                    output["event"] = {
+                        "type": "status",
+                        "data": {
+                            "description": notice,
+                            "done": True,
+                            "hidden": False,
+                            "action": "atlas_activity",
+                            "elapsed_seconds": round(time.monotonic() - started, 1),
+                            "urls": [],
+                        },
+                    }
                 last_sent = time.monotonic()
                 yield "data: " + json.dumps(output) + "\n\n"
             yield "data: [DONE]\n\n"

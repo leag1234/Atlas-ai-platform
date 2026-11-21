@@ -170,7 +170,7 @@ async def validated_drive(
                 attempts += 1
                 known = False
                 pending: list[dict[str, Any]] = []
-                candidate = Output(request_id, request)
+                candidate = Output(request_id, request, output.requested_model)
                 emitted = False
                 async with aclosing(
                     repaired_frames(
@@ -229,6 +229,11 @@ async def validated_drive(
                         if details is not None:
                             output.usage["prompt_tokens_details"] = details
                     output.served_by = candidate.served_by
+                    # The model that answered, any substitution and the charge of
+                    # every attempt reach the caller (C15).
+                    output.base["model"] = candidate.base["model"]
+                    output.substitution = candidate.substitution
+                    output.cost_micro_eur = charged
                     for chunk in pending:
                         if "usage" in chunk:
                             chunk["usage"] = output.usage
@@ -285,6 +290,7 @@ async def validated_drive(
                     # fallback (and its price) is visible per request.
                     "planned": request_target(plan),
                     "served_by": getattr(output, "served_by", None),
+                    "substitution": getattr(output, "substitution", None),
                 }
             )
         )
@@ -506,6 +512,7 @@ async def drive(
                     # fallback (and its price) is visible per request.
                     "planned": request_target(plan),
                     "served_by": getattr(output, "served_by", None),
+                    "substitution": getattr(output, "substitution", None),
                 }
             )
         )
@@ -557,8 +564,12 @@ async def hosted_drive(
     )
     original_request_id = request_id
     prompt_tokens = completion_tokens = cached_tokens = 0
+    # Each turn is its own provider call: the charges add up, and a turn served
+    # by a fallback target is reported even when a later turn is not (C15).
+    turns_cost = 0
+    substitution: dict[str, Any] | None = None
     for turn in range(MAX_ROUNDS):
-        candidate = Output(request_id, request, str(output.base["model"]))
+        candidate = Output(request_id, request, output.requested_model)
         kept: list[dict[str, Any]] = []
         async with aclosing(
             drive(store, developer, request_id, plan, candidate, deadline)
@@ -572,6 +583,8 @@ async def hosted_drive(
             prompt_tokens += int(candidate.usage.get("prompt_tokens", 0))
             completion_tokens += int(candidate.usage.get("completion_tokens", 0))
             cached_tokens += cached_count(candidate.usage)
+        turns_cost += candidate.cost_micro_eur or 0
+        substitution = candidate.substitution or substitution
         calls = list(candidate.calls.values())
         hosted_calls = [c for c in calls if c["function"]["name"] in HOSTED_NAMES]
         if (
@@ -582,6 +595,9 @@ async def hosted_drive(
             output.choices = candidate.choices
             output.served_by = candidate.served_by
             output.privacy = candidate.privacy
+            output.base["model"] = candidate.base["model"]
+            output.substitution = substitution
+            output.cost_micro_eur = turns_cost
             output.usage = {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
@@ -1161,6 +1177,7 @@ async def chat(
                 if last is not None:
                     if output.served_by and "error" not in last:
                         last["served_by"] = output.served_by
+                        last["atlas"] = output.atlas()
                     yield record_yield("data: " + json.dumps(last) + "\n\n")
                 yield record_yield("data: [DONE]\n\n")
         except (GeneratorExit, asyncio.CancelledError):
@@ -1192,9 +1209,16 @@ async def chat(
             )
 
     if parsed.stream:
-        headers = {"X-Accel-Buffering": "no"}
+        # Stream headers leave before any provider answers: they name the model
+        # asked for and the target planned first. The served model, any
+        # substitution and the cost come in the stream (C15), never a header
+        # that a fallback would make false.
+        headers = {
+            "X-Accel-Buffering": "no",
+            "X-Atlas-Requested-Model": output.requested_model,
+        }
         if plan.provider:
-            headers["X-Atlas-Served-By"] = plan.provider + "/" + plan.model
+            headers["X-Atlas-Planned-Target"] = plan.provider + "/" + plan.model
         return StreamingResponse(
             chunks(),
             media_type="text/event-stream",
@@ -1225,5 +1249,4 @@ async def chat(
                 except (ValueError, TypeError, KeyError):
                     return error("provider_error", 502)
     result = wire.result() if wire else output.result()
-    headers = {"X-Atlas-Served-By": output.served_by} if output.served_by else {}
-    return JSONResponse(result, headers=headers)
+    return JSONResponse(result, headers=output.headers())

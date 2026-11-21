@@ -32,6 +32,7 @@ from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.source_truth import visible_sources
 from services.orchestrator.stream_client import sink_context, metadata_only_context
 from services.orchestrator.deadline import request_deadline
+from services.orchestrator.substitution_notice import turn_substitution
 from services.orchestrator import time_cut
 from services.orchestrator.chat_stream import response as stream_response
 from services.orchestrator.model import GatewayError
@@ -206,6 +207,10 @@ async def process_request(payload: ChatRequest, item: Interaction) -> None:
     async def collect(event: dict[str, object]) -> None:
         if "phase" in event and event["phase"] != "generating":
             item.steps.append(dict(event))
+        if event.get("phase") == "provider_fallback":
+            # The selected model's provider failed and its fallback answers:
+            # the turn names the model that answered (C15).
+            item.provider_fallback = True
         if downstream:
             await downstream(event)
 
@@ -771,11 +776,16 @@ async def chat(request: Request) -> Response:
                 "cost_kind": billing["kind"],
                 "provider_model": item.provider_model,
                 "reasoning_retried": item.reasoning_retried,
+                "provider_fallback": item.provider_fallback,
                 "status": json.loads(Path("prompts/activity-labels.json").read_text())[
                     payload.status_language
                 ]["reasoning_fallback"]
                 if item.reasoning_retried
-                else "",
+                else turn_substitution(
+                    item.provider_fallback,
+                    item.provider_model,
+                    payload.status_language,
+                ),
                 "reasoning": {
                     "collapsed": True,
                     "trace_tokens": item.trace_tokens,
