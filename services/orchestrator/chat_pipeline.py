@@ -1407,10 +1407,17 @@ class _HeldAnswer:
     text has gone out yet.
     """
 
+    # While text is withheld, the status line counts the words written, every
+    # this many words: the person sees the answer progress, not its unchecked
+    # text (strict L4: 90 s and more of writing before the check).
+    PROGRESS_WORDS = 25
+
     def __init__(self, sink: Sink, *, holding: bool = True) -> None:
         self.sink = sink
         self.holding = holding
         self.passed = False
+        self.withheld = ""
+        self.shown_words = 0
 
     def hold(self) -> bool:
         if not self.passed:
@@ -1425,6 +1432,11 @@ class _HeldAnswer:
                 rest = {key: value for key, value in event.items() if key != "delta"}
                 if rest:
                     await self.sink(rest)
+                self.withheld += delta["content"]
+                words = len(self.withheld.split())
+                if words - self.shown_words >= self.PROGRESS_WORDS:
+                    self.shown_words = words
+                    await self.sink({"answer_progress": {"words": words}})
                 return
             if delta["content"]:
                 self.passed = True

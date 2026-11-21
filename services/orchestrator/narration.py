@@ -203,21 +203,52 @@ class NarrationFilter:
         return tail
 
 
+# A working note is one short paragraph before a tool call ("I found relevant
+# results, I will now read..."). Text that has grown past this length in more
+# than one paragraph, or with Markdown structure, is the answer being written:
+# it streams from then on instead of waiting for the end of the call (strict
+# L4, 2026-11-21: 90 to 140 s with no text, then the whole answer at once).
+ANSWER_CHARACTERS = 400
+_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+_STRUCTURE = re.compile(r"(?m)^[ \t]*(?:#{1,6} |[-*+] |\d{1,2}[.)] |\|)")
+
+
+def answer_shaped(text: str) -> bool:
+    """Whether held text is already an answer, not a working note."""
+    if len(text.strip()) < ANSWER_CHARACTERS:
+        return False
+    paragraphs = [part for part in _PARAGRAPH_BREAK.split(text) if part.strip()]
+    return len(paragraphs) >= 2 or len(_STRUCTURE.findall(text)) >= 2
+
+
 class TurnHold:
     """Keep one model turn's streamed text back until the turn's kind is known.
 
     What a model writes before it calls a tool ("I found relevant results, I
     will now read...") is a working note, never answer text, and a stream cannot
     take text back. The turn's text is held, then dropped when the turn calls a
-    tool, or released when the turn is the final answer.
+    tool, or released when the turn is the final answer. Held text that takes
+    the shape of an answer (answer_shaped) is released at once and the rest of
+    the turn streams live.
     """
 
     def __init__(self, sink: Callable[[dict[str, object]], Awaitable[None]]) -> None:
         self.sink = sink
         self.events: list[dict[str, object]] = []
+        self.text = ""
+        self.streaming = False
 
     async def __call__(self, event: dict[str, object]) -> None:
+        if self.streaming:
+            await self.sink(event)
+            return
         self.events.append(event)
+        delta = event.get("delta")
+        if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+            self.text += delta["content"]
+            if answer_shaped(self.text):
+                self.streaming = True
+                await self.release()
 
     async def release(self) -> None:
         """The turn is the answer: deliver what was held."""
@@ -227,6 +258,16 @@ class TurnHold:
 
     def drop(self) -> None:
         """The turn called a tool: its text was a working note."""
+        if self.streaming:
+            # Shown as an answer, then a tool call: logged, so that the
+            # threshold can be measured against real turns.
+            logging.getLogger(__name__).warning(
+                json.dumps(
+                    {"event": "answer_shaped_note", "characters": len(self.text)}
+                )
+            )
+            self.events = []
+            return
         characters = sum(
             len(content)
             for event in self.events
