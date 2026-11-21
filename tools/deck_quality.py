@@ -23,6 +23,7 @@ import tempfile
 from PIL import Image
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.shapes.picture import Picture
 
 
 def rendered(path: Path, directory: Path) -> list[Path]:
@@ -82,12 +83,20 @@ def score(path: Path, asked: int | None = None) -> dict[str, object]:
         if any(
             shape.shape_type
             in (MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.CHART, MSO_SHAPE_TYPE.TABLE)
+            # A picture placed in a layout's picture placeholder.
+            or isinstance(shape, Picture)
             or getattr(shape, "has_chart", False)
             or getattr(shape, "has_table", False)
             or (
                 # A drawn shape that counts: at least 0.5 % of the slide (a
-                # bullet dot drawn as a shape does not).
-                shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+                # bullet dot drawn as a shape does not). Freeforms and groups
+                # of shapes are drawings too (audit 2026-11-21).
+                shape.shape_type
+                in (
+                    MSO_SHAPE_TYPE.AUTO_SHAPE,
+                    MSO_SHAPE_TYPE.FREEFORM,
+                    MSO_SHAPE_TYPE.GROUP,
+                )
                 and (shape.width or 0) * (shape.height or 0) >= area / 200
             )
             for shape in slide.shapes
