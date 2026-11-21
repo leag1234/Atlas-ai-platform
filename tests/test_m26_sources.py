@@ -39,4 +39,6 @@ class SourceTests(unittest.TestCase):
         text = source_footer([link, link], "fr")
         self.assertEqual(text.count(link), 1)
         self.assertIn("<details>", text)
-        self.assertIn("Recherche", text)
+        # Staging -142: the heading names the list, never the step labels.
+        self.assertNotIn("Recherche web", text)
+        self.assertIn("- [example.org](https://example.org/retrieved)", text)

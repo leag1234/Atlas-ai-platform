@@ -77,7 +77,8 @@ _CLOCK = re.compile(
     r"(?:[ \u00a0\u202f]?([ap])\.?m\b\.?)?",
     re.I,
 )
-# "vers 12 h 2x", and a time cut short ("arrivée ~12h...", staging -104).
+# "vers 12 h 2x" (French for "around 12:2x"), and a time cut short (an
+# "arrival ~12h..." in French, staging -104).
 _PLACEHOLDER = re.compile(
     r"(?<![\w.,:/])\d{1,2}[ \u00a0\u202f]?(?:h|:)[ \u00a0\u202f]?"
     r"(?:\d?[xX?]{1,2}(?![\w?])|\d?(?:\.{2,3}|…))"
@@ -131,7 +132,7 @@ _CLAUSE_END = re.compile(r"[,;:()]|\s[\u2013\u2014]\s|\s-\s")
 # Advice: what the person is told to aim for, plan or do, five languages
 # (folded). A time in advice is a target the person may set, not a fact
 # about a service: unsourced, it still goes, but without a removal note
-# (staging -136: "prévoyez de viser plutôt 8h30 à l'aéroport", under a plan
+# (staging -136: French advice to "rather aim for 8:30 at the airport", under a plan
 # where nothing arrives by 09:00, was quoted in a note as an unverified fact).
 _ADVICE = re.compile(
     r"\b(?:"
@@ -1069,9 +1070,9 @@ def _advice(text: str, claim: Quantity) -> bool:
     """A time the answer advises the person to aim for or plan, naming no
     service: its clause, or the start of its sentence when only commas lie
     between, has an advice form (_ADVICE) and neither has a service or a
-    line code (_SERVICE, _LINE_CODE). "Prévoyez du temps : le train part à
-    8h30" states a fact after the colon; "Je vous conseille, si possible,
-    d'arriver à 8h30" advises."""
+    line code (_SERVICE, _LINE_CODE). In French, "allow time: the train
+    leaves at 8:30" states a fact after the colon; "if possible, I advise
+    you to arrive at 8:30" advises (tests/test_trip_answers_136.py)."""
     if claim.kind != "clock":
         return False
     left, _ = _sentence(text, claim.start, claim.end)
@@ -1581,7 +1582,8 @@ def _without_announcements(old: list[str], new: list[str]) -> list[str]:
     kept: list[str] = []
     for index, line in enumerate(new):
         if line.rstrip().endswith(":") and not _ITEM.match(_next_text(new, index)):
-            # Compared without spaces: "réalistes :" became "réalistes:".
+            # Compared without spaces: a French "realistes :" (space before the
+            # colon) became "realistes:".
             bare = re.sub(r"\s++", "", line)
             source = next(
                 (i for i, o in enumerate(old) if re.sub(r"\s++", "", o) == bare), None
@@ -1617,8 +1619,8 @@ def wellformed(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n")
 
 
-# Words that tie a sentence to the one before it ("De là, ...", "From there,
-# ..."), five languages: an answer never opens with them (staging -113).
+# Words that tie a sentence to the one before it ("From there, ..." and its
+# translations), five languages: an answer never opens with them (staging -113).
 _LEAD_BACK = re.compile(
     r"^(?:de là|à partir de là|ensuite|puis|from there|then|after that|"
     r"von dort(?: aus)?|danach|dann|desde allí|desde alli|desde ahí|desde ahi|"
@@ -2251,6 +2253,8 @@ class Turn:
     plan_from_device: bool = False
     # Every itinerary of the plan starts with a walk from its origin.
     plan_walks_first: bool = False
+    # The lines and trains each option of the plan rides, in its order.
+    plan_services: list[list[str]] = field(default_factory=list)
     # The computed plan when it is doubtful (night only, far too slow): a
     # fallback after what the pages read say (transit_planner.doubtful_answer),
     # why it is doubtful, and the pages code read about the direct services.
@@ -2405,8 +2409,8 @@ class Turn:
         """Minutes the computed plan gives by arithmetic: each itinerary's
         duration, its margin before the time the person must be there by (and
         from its departure), and the gaps between the options' departures and
-        between their arrivals (staging -132: "12:17, soit seulement 13
-        minutes avant votre déjeuner" for 12:30 was listed as not verified)."""
+        between their arrivals (staging -132: a French "12:17, only 13 minutes
+        before your lunch" for 12:30 was listed as not verified)."""
 
         def minutes(clock: str) -> float:
             return int(clock[:2]) * 60 + int(clock[3:5])
