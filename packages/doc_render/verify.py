@@ -64,6 +64,14 @@ def verify(
                         for row in cast(GraphicFrame, shape).table.rows
                         for cell in row.cells
                     )
+                if getattr(shape, "has_chart", False):
+                    # A chart's words are its categories (its numbers are data).
+                    parts.extend(
+                        str(label)
+                        for label in cast(GraphicFrame, shape).chart.plots[0].categories
+                    )
+            if slide.has_notes_slide:
+                parts.append(slide.notes_slide.notes_text_frame.text)
             text.append("\n".join(parts))
         unit = "slide"
     elif path.suffix == ".docx":

@@ -121,7 +121,7 @@ DESCRIPTIONS = {
     "convert_document": "Convert selected PDF text to text/Markdown, DOCX body to text/reflowed PDF, or one XLSX sheet to CSV/reflowed PDF. Text fidelity only; stages a new workspace file, never publishes or overwrites.",
     "compare_documents": "Compare two explicit immutable document inputs and their independent selectors; return located changes and bounded completeness. Partial comparisons are not exhaustive.",
     "organize_files": "Preview or atomically apply up to 100 version/revision-bound canonical moves in selected session folders; no swaps, overwrites or locality changes. Preview does not apply.",
-    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. In an XLSX table a cell starting with = is a formula, with or without formulas=true (a cell that must show a leading = as text starts with an apostrophe: \'=A1); formulas support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Inline Markdown (**bold**, *italic*, `code`, [text](address)) is read in headings, paragraphs, bullets and table cells of every format, never shown as markers. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides with title and bullets (and images: make_pictures references); omit content. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors: sources lists only files of this session by their read_input identifiers; cite web pages in the content with their address. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. A picture drawn by make_pictures in this conversation is placed in its section as its own Markdown line ![label](picture-reference), at most five per section; no other image is accepted. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.',
+    "publish_document": 'Create a durable DOCX, XLSX, PPTX, PDF, MD, CSV, TXT or HTML file in project deliverables with a verified text preview. For MD, CSV, TXT and HTML send the complete file text as content (UTF-8, non-empty; every CSV row has the same column count; slides and formulas are rejected; HTML is delivered as a download, never rendered). MD and TXT append missing selected source excerpts as a Sources section; CSV and HTML must already contain them. For DOCX/PDF/XLSX send content as Markdown text with headings, paragraphs, lists and simple pipe tables. In an XLSX table a cell starting with = is a formula, with or without formulas=true (a cell that must show a leading = as text starts with an apostrophe: \'=A1); formulas support + - * / ^ & %, comparisons, parentheses, SUM, SUMIF with exact criteria, AVERAGE, MIN, MAX, COUNT, ROUND, ABS, IF, AND, OR, NOT and IFERROR over bounded local cell/range references, including numbered sheets; cells a formula computes with hold numbers or are left empty. A table cell typed as a number is a number in XLSX, in every table, shown as typed: 12.50, 1 250,00 €, 1,250.00, $40; 45 % holds 0.45. Write amounts without a unit, and never a lone 1,250 (thousands or decimals?): a formula over text that begins like a number is refused with the cell. Inline Markdown (**bold**, *italic*, `code`, [text](address)) is read in headings, paragraphs, bullets and table cells of every format, never shown as markers. A table has up to 60 columns in XLSX and 14 in DOCX, PDF and PPTX. A table cell may be left empty in any format (a value to fill in later): write nothing between its pipes instead of a dash or placeholder text; an empty cell counts as 0 in formulas, as in Excel. A column or total the person wants calculated is a formula in every data row, rows left empty to fill in included, written so that an empty row shows nothing: =IFERROR(C2/B2,"") for a ratio, =IF(B2="","",B2-C2) otherwise. A header alone (Total, Difference, Pace) calculates nothing: a workbook asked to calculate that holds no formula, or whose calculated column is empty, is refused once. Each section is a sheet named 1, 2, etc., and its first table starts at cell A1 of that sheet: the header is row 1 and the first data row is row 2, so a total under four data rows is =SUM(B2:B5), and 2!B2 is cell B2 of sheet 2; the title, heading and texts are written below the table. Only that first table holds formulas, and a formula refers to cells inside such a table: give each table with formulas its own section. Formula caches are calculated and verified by code; unsupported formulas are rejected. For PPTX send title and slides, each with a title and bullets, a table, metrics or a chart (images: make_pictures references; notes: speaker notes); omit content. Code lays out each slide from what it holds: a first slide with one to three short lines is the cover, a short last slide the closing slide, one line alone a statement, two to four bullets cards, metrics (two to four key numbers, each a value and a label) number callouts, chart (labels and values) a bar chart, notes speaker notes. Write short bullets, one idea each; a bullet written \'Label: text\' shows its label in bold. Follow what the kind of deck expects, within the slide count asked: an investor pitch covers problem, solution, product, market, business model, traction, team, competition, roadmap and the ask; a course objectives, notions, examples, an exercise and a summary; a status report progress, key numbers, risks and next steps; a launch the audience, offer, benefits, price, date and call to action. A fact (a number, name, date, status or result) not given in the request nor read in a page or file of this conversation is never invented: write that it is unknown or to be confirmed. A JSON-encoded strict Content object is also accepted in content. Declare immutable sources and selectors: sources lists only files of this session by their read_input identifiers; cite web pages in the content with their address. Markdown publication appends missing selected source excerpts as a Sources appendix. Strict Content objects must already contain every selected source segment. Use an empty sources list for original content. A picture drawn by make_pictures in this conversation is placed in its section as its own Markdown line ![label](picture-reference), at most five per section; no other image is accepted. Existing paths are never overwritten. Returns canonical download and preview links only after reopening and verification.',
 }
 
 
@@ -591,7 +591,17 @@ async def publish(
     # (deliverable_check.py): the first gaps of a turn are refused once for a
     # repair, later ones are published with a note the answer must say.
     from services.orchestrator import deliverable_check
+    from services.orchestrator.current_file import compared
 
+    # A new version of the file this chat turn changes is compared with its
+    # current version (current_file.py): what it removed, replaced or added
+    # goes to the check below, which refuses unrequested losses once.
+    revision = (
+        await compared(tools, path.suffix, document.content)
+        if getattr(tools, "numbered_copies", False)
+        and getattr(tools, "revises_delivered", False)
+        else None
+    )
     checked = await deliverable_check.review(
         tools,
         path.suffix,
@@ -600,6 +610,7 @@ async def publish(
         document.preview,
         list(left_out or ()),
         pictures=pictures if content is not None else {},
+        revision=revision,
         # The publication itself keeps 20 seconds of the tool's time.
         seconds=deadline - time.monotonic() - 20,
     )
@@ -717,17 +728,13 @@ async def publish_revision(
     when the chat decided it continues something delivered earlier
     (revises_delivered: the router's follow-up, as for an app); the file is
     the one of the same format the conversation's answers linked last
-    (chat_file_names.last_delivered), whatever name the model wrote this time.
+    (chat_file_names.delivered_file), whatever name the model wrote this time.
     Its overwrite is approved on the person's behalf there (owner decision of
     2026-11-11), the earlier versions stay, and a link already given keeps
     serving its own version. A revision that cannot be saved falls back to a
     new file: the change is delivered either way.
     """
-    from services.orchestrator.chat_file_names import (
-        folder_names,
-        folder_revision,
-        last_delivered,
-    )
+    from services.orchestrator.chat_file_names import delivered_file, folder_revision
     from services.orchestrator.work_save import approved_overwrite, overwrite_effects
     from services.retrieval.project_identity import ProjectError
 
@@ -735,13 +742,9 @@ async def publish_revision(
     if not getattr(tools, "revises_delivered", False) or not answers:
         return None
     execution = tools.execution
-    text = "\n".join(answers)
-    names = [
-        name
-        for name in folder_names(existing, folder_id)
-        if PurePosixPath(name).suffix.lower() == path.suffix and name in text
-    ]
-    target = last_delivered(names, answers, execution.broker.project)
+    target = delivered_file(
+        existing, folder_id, answers, execution.broker.project, {path.suffix}
+    )
     if target is None:
         return None
     entry = existing[folder_id + "/" + target]

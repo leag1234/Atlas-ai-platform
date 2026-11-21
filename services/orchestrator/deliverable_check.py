@@ -20,7 +20,14 @@ T8 (code does and checks, the model decides):
 - the first time gaps are found in a turn, the file is not published and the
   agent gets them to repair (one repair attempt); a file published with gaps
   still open carries them, and the closing instruction makes the answer say
-  so (work_closing.py).
+  so (work_closing.py);
+- when the file is a new version of a file the person already has (a change
+  of a delivered chat file, current_file.py), code measures what it removed,
+  replaced, added or moved against the current version (readback.changes) and
+  the check judges each change against the request: an unrequested loss is a
+  gap like any other (refused once, then said); a version identical to the
+  current one is a gap code is sure of; when the check cannot run, the answer
+  must name the measured changes instead of claiming the rest was kept.
 
 Survey (sources in the PR that added this file): self-verification before answering
 (Chain-of-Verification, Dhuliawala et al. 2023; Self-Refine, Madaan et al.
@@ -104,6 +111,29 @@ NOTE = (
     "claim that the file has it."
 )
 LEFT_OUT = "characters the file format cannot draw, left out of the file: {characters}"
+# A new version of a file the person has (current_file.py).
+REVISION = (
+    " This file is a new version of a file the person already has: "
+    "facts.changes_from_previous_version lists the text it removed, replaced, "
+    "added or moved, measured by code on both versions. The request asks for a "
+    "change of that version. A removed or replaced text that the request (with "
+    "the earlier messages) did not ask to change is a gap, even a small one (a "
+    "word, a figure, an earlier change undone): name it with its text and say "
+    "it must be restored as it was. A requested change that is not among the "
+    "changes is a gap. Moved text and requested changes are not gaps."
+)
+IDENTICAL = (
+    "this new version of {name} is identical to its current version: the "
+    "requested change is not in it (start from the current version and apply "
+    "the change)"
+)
+CHANGED = (
+    "This new version of {name} could not be checked against the request. "
+    "Compared with its current version it changes: {changes}. The answer must "
+    "name these changes plainly and must not claim that everything else was "
+    "kept unchanged."
+)
+CHANGES_LISTED = 6
 
 
 @dataclass
@@ -121,6 +151,31 @@ class Outcome:
     # Statements of a file derived from a provided source that the source does
     # not support (source_faithfulness.py): refused once like a judged gap.
     unsupported: list[str] = field(default_factory=list)
+    # A new version that could not be judged: the changes the answer must name.
+    changed: str = ""
+
+
+def described(revision: dict[str, Any] | None) -> str:
+    """The note naming what a new version changed, for an unjudged version."""
+    if not revision or revision.get("identical"):
+        return ""
+    listed = [
+        *(f'removed "{entry["text"]}"' for entry in revision.get("removed", [])),
+        *(
+            f'replaced "{entry["before"]}" with "{entry["after"]}"'
+            for entry in revision.get("replaced", [])
+        ),
+        *(f'added "{entry["text"]}"' for entry in revision.get("added", [])),
+    ]
+    if not listed:
+        return ""
+    more = len(listed) - CHANGES_LISTED + int(revision.get("more_changes") or 0)
+    text = "; ".join(listed[:CHANGES_LISTED]) + (
+        f"; and {more} more changes" if more > 0 else ""
+    )
+    return CHANGED.format(
+        name=revision.get("previous_file") or "the file", changes=text
+    )
 
 
 UNSUPPORTED = (
@@ -325,8 +380,11 @@ def drawn_text(content: Any) -> str:
     from packages.doc_render.cells import shown
 
     lines = [shown(content.title)]
-    for section in content.sections:
-        lines.append(shown(section.heading))
+    for index, section in enumerate(content.sections):
+        # A first heading that repeats the title is not drawn again
+        # (renderer.py): the check read the title twice and called it a gap.
+        if index or not content.repeats_title():
+            lines.append(shown(section.heading))
         lines.extend(map(shown, section.paragraphs))
         lines.extend("- " + shown(text) for text in section.bullets)
         for table in section.tables:
@@ -488,6 +546,8 @@ def messages(
     measured: dict[str, Any],
     text: str,
     page: bytes | None,
+    *,
+    revision: bool = False,
 ) -> list[dict[str, Any]]:
     data = {
         "request": request[:4000],
@@ -506,7 +566,7 @@ def messages(
             {"type": "image_url", "image_url": {"url": _data_url(page)}},
         ]
     return [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": SYSTEM + (REVISION if revision else "")},
         {"role": "user", "content": content},
     ]
 
@@ -558,16 +618,23 @@ async def review(
     pictures: dict[str, bytes] | None = None,
     seconds: float = CHECK_SECONDS,
     complete: Any = None,
+    revision: dict[str, Any] | None = None,
 ) -> Outcome:
     """Check one built file against the request; never raises.
 
     seconds is what the publication can spare (the check is skipped under
-    MIN_SECONDS); complete is the gateway call (tests pass a recorded one).
+    MIN_SECONDS); complete is the gateway call (tests pass a recorded one);
+    revision, the changes of a new version against the current one
+    (current_file.compared).
     """
     seconds = min(CHECK_SECONDS, seconds)
     started = time.monotonic()
     outcome = Outcome()
     certain = planned_gaps(tools, content)
+    if revision is not None and revision.get("identical"):
+        certain.append(
+            IDENTICAL.format(name=revision.get("previous_file") or "the file")
+        )
     outcome.certain = certain
     deterministic = certain + (
         [LEFT_OUT.format(characters=" ".join(missing))] if missing else []
@@ -587,6 +654,7 @@ async def review(
         or seconds < MIN_SECONDS
     ):
         outcome.gaps = deterministic + (unchecked(tools) if count < MAX_CHECKS else [])
+        outcome.changed = described(revision)
         return outcome
     tools.deliverable_checks = count + 1
     strict = bool(getattr(model, "strict", False))
@@ -610,6 +678,8 @@ async def review(
         if isinstance(asked, list)
         else None,
     )
+    if revision is not None:
+        measured["changes_from_previous_version"] = revision
     if getattr(tools, "picture_plan_failed", False) is True:
         measured["picture_plan"] = (
             "could not be made: judge from the request whether pictures are asked"
@@ -631,6 +701,7 @@ async def review(
         allowance = min(allowance, spent_left)
     if allowance <= 0:
         outcome.gaps = deterministic
+        outcome.changed = described(revision)
         return outcome
     from services.orchestrator.work_pictures import plan_profiles
 
@@ -639,7 +710,9 @@ async def review(
         if content is not None
         else preview.decode("utf-8", "replace")
     )
-    body = messages(request, earlier, measured, file_text, page)
+    body = messages(
+        request, earlier, measured, file_text, page, revision=revision is not None
+    )
     call = complete or _complete
     # A file derived from a provided source is also checked against that source
     # (source_faithfulness.py), in parallel with the check against the request.
@@ -709,6 +782,7 @@ async def review(
     outcome.image = page is not None
     if found is None:
         outcome.gaps = deterministic + outcome.unsupported + unchecked(tools)
+        outcome.changed = described(revision)
         return outcome
     outcome.checked = True
     outcome.gaps = certain + outcome.unsupported + found
@@ -761,10 +835,11 @@ def decide(tools: Any, outcome: Outcome) -> str:
     """Refuse the first file with gaps in a turn; return the note otherwise.
 
     The first refusal is the repair attempt. A file published with gaps still
-    open carries them: the note for the answer (and output["gaps"]).
+    open carries them: the note for the answer (and output["gaps"]). A new
+    version that could not be judged adds the changes the answer must name.
     """
     if not outcome.gaps:
-        return ""
+        return outcome.changed
     # Pictures this turn had no time to draw cannot be repaired in it: the
     # file is published and the answer says what is missing.
     pending = getattr(tools, "pictures_pending", None)
@@ -776,4 +851,6 @@ def decide(tools: Any, outcome: Outcome) -> str:
     ):
         tools.deliverable_refused = True
         raise ValueError(REFUSAL.format(gaps=joined(outcome.gaps)))
-    return NOTE.format(gaps=joined(outcome.gaps))
+    return " ".join(
+        filter(None, (NOTE.format(gaps=joined(outcome.gaps)), outcome.changed))
+    )

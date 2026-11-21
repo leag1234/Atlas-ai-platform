@@ -324,6 +324,40 @@ WORK_TEXT = 24_000
 WORK_UNITS = 200
 
 
+# The workbook a native chart embeds for its numbers (ppt/embeddings): a
+# deck with a chart was refused at publication (staging 2026-11-21).
+CHART_WORKBOOK = re.compile(r"ppt/embeddings/[A-Za-z0-9_-]{1,64}\.xlsx")
+CHART_WORKBOOK_BYTES = 2 * 1024 * 1024
+
+
+def chart_workbook(archive: zipfile.ZipFile, entry: zipfile.ZipInfo) -> bool:
+    """Whether an embedded part is a plain workbook a chart may hold.
+
+    Only an .xlsx under ppt/embeddings, bounded in size, that passes the same
+    package checks itself: no macros, no ActiveX, no embedding of its own, no
+    external link, no DTD. Any other embedded object is still refused.
+    """
+    import io
+
+    if not CHART_WORKBOOK.fullmatch(entry.filename) or not (
+        0 < entry.file_size <= CHART_WORKBOOK_BYTES
+    ):
+        return False
+    data = archive.read(entry)
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as inner:
+            names = inner.namelist()
+            if "xl/workbook.xml" not in names or any(
+                "embeddings/" in name.lower() for name in names
+            ):
+                return False
+            validate_package(inner)
+            types = inner.read("[Content_Types].xml").decode("utf-8-sig").lower()
+    except (zipfile.BadZipFile, ValueError, KeyError, ET.ParseError):
+        return False
+    return "spreadsheetml.sheet.main+xml" in types and "macroenabled" not in types
+
+
 def validate_package(archive: zipfile.ZipFile) -> None:
     """Check the whole package before reading parts; never extract archive paths."""
     import stat
@@ -354,9 +388,8 @@ def validate_package(archive: zipfile.ZipFile) -> None:
         names.add(name)
         lowered = name.lower()
         if any(
-            part in lowered
-            for part in ("vbaproject", "activex", "embeddings/", "externallinks/")
-        ):
+            part in lowered for part in ("vbaproject", "activex", "externallinks/")
+        ) or ("embeddings/" in lowered and not chart_workbook(archive, entry)):
             raise ValueError("Active package content is unsupported")
         if name.endswith((".xml", ".rels")) or name == "[Content_Types].xml":
             content = archive.read(entry)

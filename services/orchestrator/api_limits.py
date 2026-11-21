@@ -261,7 +261,8 @@ async def cap_frames(
     still reports what the answer cost.
     """
     async for frame in source:
-        if cap is None:
+        if cap is None or "error" in frame:
+            # A failure frame ends the answer whatever the limit (assistant_bridge.py).
             yield frame
             continue
         choices = []

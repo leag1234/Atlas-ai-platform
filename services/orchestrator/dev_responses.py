@@ -293,10 +293,14 @@ class Wire:
             ]
         if "error" in chunk:
             # Output checks keep their own code and message; other failures stay generic.
-            # The owned server's answers (strict privacy) keep theirs too (D5).
+            # The owned server's answers (strict privacy) and budget refusals keep
+            # theirs too (D5: a budget refusal is never a provider failure).
             named = chunk["error"].get("type") in (
                 "invalid_response_format",
                 "invalid_tool_arguments",
+                "cost_budget",
+                "budget_limit",
+                "quota_exceeded",
                 *OWNED_CODES,
             )
             code = chunk["error"]["type"] if named else "server_error"

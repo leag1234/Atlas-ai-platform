@@ -143,6 +143,14 @@ _OWNED_UNAVAILABLE = {
         "es": "El servidor privado no pudo iniciarse. Su mensaje no se ha enviado a ningún otro sitio. Inténtelo más tarde o abra una nueva conversación en modo Estándar si su contenido lo permite.",
         "it": "Il server privato non è riuscito ad avviarsi. Il messaggio non è stato inviato altrove. Riprova più tardi, oppure apri una nuova conversazione in modalità Standard se il contenuto lo consente.",
     },
+    # The starter is configured but does not answer: no start could be asked.
+    "starter_unavailable": {
+        "fr": "Le serveur privé ne peut pas être démarré pour le moment : son service de démarrage ne répond pas. Votre message n'a été envoyé nulle part ailleurs. Réessayez dans quelques minutes, ou ouvrez une nouvelle conversation en mode Standard si son contenu le permet.",
+        "en": "The private server cannot be started right now: its start service does not answer. Your message was not sent anywhere else. Try again in a few minutes, or open a new conversation in Standard mode if its content allows it.",
+        "de": "Der private Server kann gerade nicht gestartet werden: Sein Startdienst antwortet nicht. Ihre Nachricht wurde nirgendwo anders hin gesendet. Versuchen Sie es in ein paar Minuten erneut oder beginnen Sie ein neues Gespräch im Standardmodus, wenn der Inhalt es erlaubt.",
+        "es": "El servidor privado no puede iniciarse ahora: su servicio de arranque no responde. Su mensaje no se ha enviado a ningún otro sitio. Inténtelo dentro de unos minutos o abra una nueva conversación en modo Estándar si su contenido lo permite.",
+        "it": "Il server privato non può essere avviato ora: il suo servizio di avvio non risponde. Il messaggio non è stato inviato altrove. Riprova tra qualche minuto, oppure apri una nuova conversazione in modalità Standard se il contenuto lo consente.",
+    },
 }
 _OWNED_RETRY = {
     "fr": " Réessayez dans environ {wait}.",

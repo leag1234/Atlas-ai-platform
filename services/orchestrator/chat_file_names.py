@@ -79,6 +79,28 @@ def last_delivered(
     return best[1] if best else None
 
 
+def delivered_file(
+    existing: Mapping[str, Any],
+    folder_id: str,
+    answers: list[str],
+    project: str,
+    suffixes: Iterable[str],
+) -> str | None:
+    """The file of one of these formats this conversation's answers linked last.
+
+    A change of a delivered file updates that one (publish_revision) and
+    starts from its stored version (current_file.load): both find it here.
+    """
+    allowed = set(suffixes)
+    text = "\n".join(answers)
+    names = [
+        name
+        for name in folder_names(existing, folder_id)
+        if PurePosixPath(name).suffix.lower() in allowed and name in text
+    ]
+    return last_delivered(names, answers, project)
+
+
 def folder_names(existing: Mapping[str, Any], folder_id: str) -> set[str]:
     """Relative paths of the files in one folder, from work_save.project_file_paths."""
     prefix = folder_id + "/"

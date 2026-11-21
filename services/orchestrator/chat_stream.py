@@ -1048,12 +1048,20 @@ def response(
                     )
                     await queue.put({"finish": True})
                 else:
+                    # An API client reads the owned server's measured values
+                    # (strict privacy), as the direct models send them (D5).
+                    owned = (
+                        {k: v for k, v in exc.answer.fields().items() if k != "code"}
+                        if isinstance(exc, OwnedServerAnswer)
+                        else {}
+                    )
                     await queue.put(
                         {
                             "error": {
                                 "code": exc.code,
                                 "type": exc.code,
                                 "message": readable or detail,
+                                **owned,
                             }
                         }
                     )

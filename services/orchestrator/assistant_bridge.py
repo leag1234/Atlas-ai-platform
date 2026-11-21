@@ -4,6 +4,11 @@ The request is converted to the assistant's Chat Completions form, the assistant
 stream, and that stream goes through the same assembly and wire as the direct models. The
 assistant runs its own tools (web search, documents): client tools are refused by name rather
 than ignored, and the hosted web search tool is accepted since the assistant searches anyway.
+
+A failure frame of the assistant's stream (a named refusal such as the owned server's budget
+cap in strict privacy, a budget or deadline stop) ends the answer as the format's error: an
+error event in a stream, the named HTTP error otherwise. It was dropped, so the client read
+an empty completed answer (staging 2026-11-20, strict request with the owned server refused).
 """
 
 import json
@@ -49,6 +54,42 @@ def assistant_body(raw: dict[str, Any], protocol: str) -> dict[str, Any]:
     }
 
 
+# Named refusals of a failure frame (with the owned server's answers) and their HTTP
+# status when the answer is not streamed; any other failure is a 502, or 504 for the
+# deadline.
+_REFUSAL_STATUS = {"cost_budget": 429, "budget_limit": 429, "quota_exceeded": 429}
+_FAILURE_STATUS = {"timeout": 504}
+
+
+def failure_response(failure: dict[str, Any]) -> JSONResponse:
+    """The named error of a failure frame, for an answer that is not streamed."""
+    from packages.owned_server import STATUS as OWNED_STATUS
+    from services.orchestrator.api_key_edge import error
+
+    code = str(failure.get("type") or failure.get("code") or "provider_error")
+    named = code in OWNED_STATUS or code in _REFUSAL_STATUS
+    status = (
+        OWNED_STATUS.get(code)
+        or _REFUSAL_STATUS.get(code)
+        or _FAILURE_STATUS.get(code, 502)
+    )
+    values = {k: v for k, v in failure.items() if k not in {"type", "code"}}
+    # A named refusal keeps its sentence and measured values; any other failure stays
+    # generic, as on the streamed wire: a plain sentence, never a diagnostic written
+    # for the logs nor a bare code (user_errors.generic_message).
+    if named:
+        values["message"] = str(values.get("message") or code)
+    else:
+        from packages.user_errors import generic_message
+
+        values = {"message": generic_message(code, failure.get("message"))}
+    reply = error(status, code, **values)
+    retry = failure.get("retry_after")
+    if isinstance(retry, int) and not isinstance(retry, bool) and retry > 0:
+        reply.headers["Retry-After"] = str(retry)
+    return reply
+
+
 def output_limit(raw: dict[str, Any], protocol: str) -> int | None:
     """The caller's output limit (Messages max_tokens, Responses max_output_tokens)."""
     value = raw.get("max_output_tokens" if protocol == "responses" else "max_tokens")
@@ -67,6 +108,9 @@ async def frames(response: Response) -> AsyncIterator[dict[str, Any]]:
             if not line.startswith("data: {"):
                 continue
             chunk = json.loads(line[6:])
+            if isinstance(chunk.get("error"), dict):
+                yield {"choices": [], "error": chunk["error"]}
+                return
             frame: dict[str, Any] = {"choices": []}
             for choice in chunk.get("choices") or []:
                 delta = choice.get("delta") or {}
@@ -106,6 +150,9 @@ async def stop_at(
     keep = max(len(stop) for stop in stops) - 1
     pending, matched = "", None
     async for frame in source:
+        if "error" in frame:
+            yield frame
+            continue
         choices = []
         for choice in frame["choices"]:
             if matched is not None:
@@ -168,12 +215,23 @@ async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Respons
         else MessagesWire(output, raw)
     )
 
+    failures: list[dict[str, Any]] = []
+
     async def events() -> AsyncGenerator[dict[str, Any], None]:
         finished = False
         from services.orchestrator.api_limits import OutputCap, cap_frames
 
         cap = OutputCap(limit) if limit is not None else None
         async for frame in cap_frames(stop_at(frames(reply), stops), cap):
+            if "error" in frame:
+                failures.append(frame["error"])
+                failure = {
+                    "type": str(frame["error"].get("type") or "provider_error"),
+                    "message": str(frame["error"].get("message") or ""),
+                }
+                for event in wire.feed({"error": failure}):
+                    yield event
+                return
             if "usage" in frame and not finished:
                 # The usage frame closes the answer: end the text before it.
                 for event in wire.feed(
@@ -207,4 +265,6 @@ async def serve(request: Request, raw: dict[str, Any], protocol: str) -> Respons
         return StreamingResponse(stream(), media_type="text/event-stream")
     async for _ in events():
         pass
+    if failures:
+        return failure_response(failures[0])
     return JSONResponse(wire.result())
