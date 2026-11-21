@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from packages.user_errors import ui_failure
 from dev_gateway import Plan, prepare_api as real_prepare, events as real_events
 from services.orchestrator.api_keys import Store
 from services.orchestrator.chat_api import app
@@ -690,7 +691,10 @@ class MessagesTests(unittest.TestCase):
             events[-1],
             {
                 "type": "error",
-                "error": {"type": "api_error", "message": "provider_error"},
+                "error": {
+                    "type": "api_error",
+                    "message": ui_failure("provider_error", "en"),
+                },
             },
         )
         self.assertNotIn("message_stop", [e["type"] for e in events])

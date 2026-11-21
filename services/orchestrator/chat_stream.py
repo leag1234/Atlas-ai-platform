@@ -17,6 +17,7 @@ from packages.file_intent import produces_file, requests_file_delivery
 from packages.limits import LimitError
 from packages.user_errors import (
     DEADLINE_STOPS,
+    public_message,
     stop_answer,
     ui_failure,
     unexpected_failure,
@@ -962,6 +963,9 @@ def response(
                         "Configuration failure; variables=%s", configuration_names(exc)
                     )
                 item.rejection = {"code": exc.code, "message": detail}
+                # The record keeps the detail; the client reads a sentence, never
+                # the loop's stop summary or a bare code (staging -139).
+                detail = public_message(exc.code, detail, payload.answer_language)
                 if readable and isinstance(exc, OwnedServerAnswer):
                     # The owned server's real outcome (refused, failed, or still
                     # starting after the wait) is the turn's answer, in the

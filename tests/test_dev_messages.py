@@ -4,6 +4,7 @@ import json
 import unittest
 from typing import Any
 from devapi_support import Environment
+from packages.user_errors import unexpected_failure
 
 PAYLOAD: dict[str, Any] = {
     "model": "atlas-code",
@@ -222,7 +223,10 @@ class DevMessagesTests(unittest.TestCase):
                 [
                     {
                         "type": "error",
-                        "error": {"type": "api_error", "message": "provider_error"},
+                        "error": {
+                            "type": "api_error",
+                            "message": unexpected_failure("en"),
+                        },
                     }
                 ],
             )

@@ -4,6 +4,7 @@ import copy
 import json
 from typing import Any
 from packages.owned_server import CODES as OWNED_CODES
+from packages.user_errors import generic_message
 from services.orchestrator.dev_chat import Output, url_citations
 
 
@@ -299,7 +300,14 @@ class Wire:
                 *OWNED_CODES,
             )
             code = chunk["error"]["type"] if named else "server_error"
-            message = chunk["error"].get("message", code) if named else "provider_error"
+            # Any other failure reads as a sentence, never as a bare code.
+            message = (
+                chunk["error"].get("message", code)
+                if named
+                else generic_message(
+                    chunk["error"].get("type"), chunk["error"].get("message")
+                )
+            )
             # Clients such as Codex wait for a terminal response event; without one an
             # error mid-stream looks like a dropped connection (reported 2026-10-31).
             failed = self.result("failed") | {
