@@ -63,6 +63,12 @@ class Media:
     licence: str = ""
     # "person" (stated in the request), "page" (the hosting site), "" unknown.
     licence_source: str = ""
+    # The type of the file as downloaded when Atlas converted it (an SVG
+    # drawn as a PNG, services/orchestrator/svg_raster.py), else "".
+    converted_from: str = ""
+    # References to other documents taken out when it was converted (this
+    # turn only, not kept in the manifest).
+    left_out: int = 0
 
     @property
     def reference(self) -> str:
@@ -88,7 +94,7 @@ class Media:
             "licence": self.licence,
             "licence_source": self.licence_source,
             "sha": self.fingerprint(),
-        }
+        } | ({"converted_from": self.converted_from} if self.converted_from else {})
 
 
 def slug(text: str, taken: set[str]) -> str:
@@ -217,6 +223,7 @@ def abstract(document: str) -> tuple[str, list[Media]]:
                 str(entry.get("filename") or ""),
                 str(entry.get("licence") or ""),
                 str(entry.get("licence_source") or ""),
+                str(entry.get("converted_from") or ""),
             )
         else:
             item = Media(slug("inline", taken), found.group(1), data)

@@ -151,8 +151,62 @@ static.
 - Enable: `ATLAS_APP_RENDER=docker` (staging first, `infra/instances/staging.env`).
 - Leftovers carry the label `atlas.purpose=app-render`.
 
+## SVG files named for an app
+
+Problem (reported 2026-11-21): a person asked an app to show flags from Wikimedia
+Commons, which are public-domain SVG files. The app media path
+(`services/orchestrator/app_media.py`) refused SVG files because an SVG is a document
+that can carry script. The model then wrote the Commons addresses into the app, the
+side view's policy blocked them, and the person never got the pictures.
+
+What exists (survey before building, owner rule of 2026-11-11):
+
+| Project | Kind | Licence | Fit |
+|---|---|---|---|
+| DOMPurify (cure53) | sanitiser, SVG profile | MPL-2.0 or Apache-2.0 | needs a DOM (browser or jsdom); no Python path |
+| svg-hush (Cloudflare, Rust) and py-svg-hush | SVG sanitiser | Apache-2.0 or MIT | built for this case; the Python binding is a small third-party package (0.3.0) |
+| nh3 (ammonia) | HTML sanitiser | MIT | does not model SVG (namespaces, `use`, paint servers) |
+| bleach | HTML sanitiser | Apache-2.0 | deprecated since 2023, no SVG model |
+| CairoSVG | rasteriser | LGPL-3.0 | in-process parser with advisories CVE-2023-27586 (fetching external resources, fixed in 2.7.0) and CVE-2026-31899 and CVE-2026-107378 (fixed in 2.9.0 and 2.9.1); new native dependency |
+| resvg / resvg-py | rasteriser | Apache-2.0 or MIT | no script, no network by design; new native dependency |
+| librsvg (`rsvg-convert`) | rasteriser | LGPL-2.1 | used by Wikimedia for its thumbnails; new system package |
+| Chromium, image mode | rasteriser | BSD | already in the render check image, isolated, no new dependency |
+
+Choice: rasterise. A sanitiser must anticipate every way an SVG can run code or fetch
+(`script`, event attributes, `foreignObject`, `href` and `xlink:href` on `use`,
+`image`, `feImage`, `a`, animated `href` through `set` and `animate`, CSS `url()` and
+`@import`, `xml-stylesheet`, entity expansion), and the cleaned SVG would still be
+parsed by the person's browser inside the app. A raster leaves only pixels, whatever
+the SVG holds. Atlas already runs Chromium in a throwaway container without network
+for the render check, so rasterising adds no dependency and no new isolation to
+review.
+
+How (`services/orchestrator/svg_raster.py`, `svg_raster_worker.py`):
+
+- All SVG files of a turn are converted in one container run (same image, flags and
+  `ATLAS_APP_RENDER` switch as the render check; about 2 s on the build VM).
+- Each file is parsed with `DOMParser` (an inert document): it must be an SVG root in
+  the SVG namespace, well formed (the parser refuses entity expansion bombs) and have
+  at most 40,000 elements. References to other documents are taken out and counted,
+  since Chromium would draw a broken-image sign in their place.
+- The file is then drawn through `<img src="data:image/svg+xml...">`, the mode where
+  browsers run no script and load no resource, on a page whose policy allows data:
+  images only; every request is aborted and logged. The drawn element is captured as a
+  PNG (longest side between 256 and 800 pixels), and a capture with no painted pixel
+  is refused as blank.
+- Download rules are unchanged (https, public addresses, size and count limits,
+  licence from the person, the site or the Commons API). The PNG counts towards the
+  turn's size limits. A wiki file page (`/wiki/File:Name.svg` on a Wikimedia project)
+  is read as its file (`Special:FilePath`).
+- The answer lists the file as "SVG converted to a PNG picture" with its licence, and
+  says when parts loaded from other addresses were left out. A file that cannot be
+  drawn is named with its reason: not a valid SVG, too complex, blank without its
+  external parts, conversion failed or too long, or the isolated browser is not
+  available on this server (`ATLAS_APP_RENDER=off`).
+
 ## Not covered
 
 - Whether the app does what was asked (a judge or scripted interactions per request
   type; the benchmark of docs/26 measures it offline).
-- Drawings (SVG without script): the static checks remain.
+- Drawings (SVG without script) that the model writes: the static checks remain.
+  SVG files the person names are drawn as pictures (above).

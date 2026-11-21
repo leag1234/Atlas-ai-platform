@@ -1100,6 +1100,8 @@ def _media_line(item: Media) -> str:
     kind = item.mime.split("/", 1)[0]
     size = f"{max(1, len(item.data) // 1000)} KB"
     origin = item.filename or item.url or "already in the app"
+    if item.converted_from:
+        origin += ", drawn by Atlas as a PNG picture from the SVG file"
     return f"- {item.reference}: {kind} ({item.mime}, {size}), {origin}"
 
 
