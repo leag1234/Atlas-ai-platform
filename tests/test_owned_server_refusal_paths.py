@@ -18,6 +18,7 @@ import json
 import os
 import tempfile
 import time
+import unittest
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -211,3 +212,52 @@ class RefusalPaths(ApiCase):
     def test_interface_turn_reads_a_silent_starter_as_its_answer(self) -> None:
         self.enterContext(patch("owned_start.ANSWER_SECONDS", 0.2))
         self.check_interface("son service de démarrage ne répond pas")
+
+
+class UnnamedFailureTests(unittest.TestCase):
+    """A failure frame no refusal names reads as a plain sentence when the answer is
+    not streamed, never its code or the loop's summary (user_errors.generic_message)."""
+
+    def test_unnamed_failure_is_a_plain_sentence(self) -> None:
+        from packages.user_errors import generic_message
+        from services.orchestrator.assistant_bridge import failure_response
+
+        for failure in (
+            {"type": "request_stopped", "message": "request_stopped"},
+            {
+                "type": "provider_error",
+                "message": "Explicit stop: provider_error. Tools executed: 0; limit 10.",
+            },
+            {"type": "stream_error"},
+        ):
+            with self.subTest(code=failure["type"]):
+                reply = failure_response(failure)
+                self.assertEqual(reply.status_code, 502)
+                error = json.loads(bytes(reply.body))["error"]
+                self.assertEqual(error["code"], failure["type"])
+                self.assertEqual(
+                    error["message"],
+                    generic_message(failure["type"], failure.get("message")),
+                )
+                self.assertNotEqual(error["message"], failure["type"])
+                for raw in RAW:
+                    self.assertNotIn(raw, error["message"])
+
+    def test_named_refusal_keeps_its_sentence_and_values(self) -> None:
+        from services.orchestrator.assistant_bridge import failure_response
+
+        reply = failure_response(
+            {
+                "type": BUDGET,
+                "message": "Nothing was sent to any other provider.",
+                "retry_after": 7200,
+                "measured": 4.02,
+            }
+        )
+        self.assertEqual(reply.status_code, 429)
+        self.assertEqual(reply.headers["Retry-After"], "7200")
+        error = json.loads(bytes(reply.body))["error"]
+        self.assertEqual(
+            (error["message"], error["measured"]),
+            ("Nothing was sent to any other provider.", 4.02),
+        )

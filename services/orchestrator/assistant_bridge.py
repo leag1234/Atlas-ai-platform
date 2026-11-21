@@ -75,9 +75,14 @@ def failure_response(failure: dict[str, Any]) -> JSONResponse:
     )
     values = {k: v for k, v in failure.items() if k not in {"type", "code"}}
     # A named refusal keeps its sentence and measured values; any other failure stays
-    # generic, as on the streamed wire (no diagnostic text for the logs).
-    values = values if named else {}
-    values["message"] = str(values.get("message") or code)
+    # generic, as on the streamed wire: a plain sentence, never a diagnostic written
+    # for the logs nor a bare code (user_errors.generic_message).
+    if named:
+        values["message"] = str(values.get("message") or code)
+    else:
+        from packages.user_errors import generic_message
+
+        values = {"message": generic_message(code, failure.get("message"))}
     reply = error(status, code, **values)
     retry = failure.get("retry_after")
     if isinstance(retry, int) and not isinstance(retry, bool) and retry > 0:
