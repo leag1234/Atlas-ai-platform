@@ -311,6 +311,8 @@ class EscalateBrokerTests(unittest.IsolatedAsyncioTestCase):
         # The hidden chat project numbers a taken name (chat_file_names.py).
         self.assertTrue(scoped[0].__dict__["numbered_copies"])
         self.assertEqual(scoped[0].__dict__["earlier_answers"], [])
+        # A new request: a file it publishes is a new file, never a version.
+        self.assertFalse(scoped[0].__dict__["revises_delivered"])
 
     async def test_escalate_reuses_bound_session_on_next_turn(self) -> None:
         from services.orchestrator.chat_work import escalate_to_work

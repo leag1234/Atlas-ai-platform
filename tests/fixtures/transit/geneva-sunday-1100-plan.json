@@ -1,0 +1,2084 @@
+{
+ "recorded": "2026-11-21 from https://api.transitous.org/api/v6/plan (MOTIS 2), trimmed to the fields Atlas reads",
+ "request": {
+  "time": "2026-11-22T11:00+01:00",
+  "arriveBy": "true",
+  "numItineraries": "3",
+  "searchWindow": "7200",
+  "transitModes": "TRAM,SUBWAY,FERRY,BUS,COACH,RAIL,FUNICULAR,AERIAL_LIFT,OTHER"
+ },
+ "status": 200,
+ "body": {
+  "itineraries": [
+   {
+    "startTime": "2026-11-21T20:21:00Z",
+    "endTime": "2026-11-22T05:47:00Z",
+    "duration": 33960,
+    "transfers": 2,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 900,
+      "startTime": "2026-11-21T20:21:00Z",
+      "endTime": "2026-11-21T20:36:00Z",
+      "scheduledStartTime": "2026-11-21T20:21:00Z",
+      "scheduledEndTime": "2026-11-21T20:36:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 480,
+      "startTime": "2026-11-21T20:36:00Z",
+      "endTime": "2026-11-21T20:44:00Z",
+      "scheduledStartTime": "2026-11-21T20:36:00Z",
+      "scheduledEndTime": "2026-11-21T20:44:00Z",
+      "realTime": false,
+      "headsign": "Gare Saint-Paul",
+      "agencyName": "TCL",
+      "routeShortName": "TB11",
+      "routeLongName": "Gare Saint-Paul - Laurent Bonnevay",
+      "tripShortName": "COM~050926~311227~Itinéraire normal : Laurent Bonnevay - Gare Saint-Paul",
+      "displayName": "TB11",
+      "cancelled": false,
+      "from": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Part-Dieu Jules Favre",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-21T20:44:00Z",
+      "endTime": "2026-11-21T20:49:00Z",
+      "scheduledStartTime": "2026-11-21T20:44:00Z",
+      "scheduledEndTime": "2026-11-21T20:49:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Part-Dieu Jules Favre",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon Part Dieu",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "duration": 4860,
+      "startTime": "2026-11-21T20:50:00Z",
+      "endTime": "2026-11-21T22:11:00Z",
+      "scheduledStartTime": "2026-11-21T20:50:00Z",
+      "scheduledEndTime": "2026-11-21T22:11:00Z",
+      "realTime": false,
+      "headsign": "",
+      "agencyName": "SNCF VOYAGEURS",
+      "routeShortName": "",
+      "routeLongName": "",
+      "tripShortName": "18531",
+      "displayName": "TER 18531",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon Part Dieu",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Chambéry - Challes-les-Eaux",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-21T22:11:00Z",
+      "endTime": "2026-11-21T22:14:00Z",
+      "scheduledStartTime": "2026-11-21T22:11:00Z",
+      "scheduledEndTime": "2026-11-21T22:14:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Chambéry - Challes-les-Eaux",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Chambéry - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 6000,
+      "startTime": "2026-11-22T04:00:00Z",
+      "endTime": "2026-11-22T05:40:00Z",
+      "scheduledStartTime": "2026-11-22T04:00:00Z",
+      "scheduledEndTime": "2026-11-22T05:40:00Z",
+      "realTime": false,
+      "headsign": "XGC",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Chambéry - Bus Station > Annecy - Bus Station > Geneva - Airport Bus Station > Geneva - Bus Station",
+      "tripShortName": "7621",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Chambéry - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T05:40:00Z",
+      "endTime": "2026-11-22T05:47:00Z",
+      "scheduledStartTime": "2026-11-22T05:40:00Z",
+      "scheduledEndTime": "2026-11-22T05:47:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T02:04:00Z",
+    "endTime": "2026-11-22T05:47:00Z",
+    "duration": 13380,
+    "transfers": 3,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 900,
+      "startTime": "2026-11-22T02:04:00Z",
+      "endTime": "2026-11-22T02:19:00Z",
+      "scheduledStartTime": "2026-11-22T02:04:00Z",
+      "scheduledEndTime": "2026-11-22T02:19:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 600,
+      "startTime": "2026-11-22T02:19:00Z",
+      "endTime": "2026-11-22T02:29:00Z",
+      "scheduledStartTime": "2026-11-22T02:19:00Z",
+      "scheduledEndTime": "2026-11-22T02:29:00Z",
+      "realTime": false,
+      "headsign": "Cordeliers",
+      "agencyName": "TCL",
+      "routeShortName": "PL4",
+      "routeLongName": "Vaulx HDV Campus - Cordeliers",
+      "tripShortName": "REF~040926~271226~Via Maurice Audin Travaux - Vaulx HDV Campus - Cordeliers",
+      "displayName": "PL4",
+      "cancelled": false,
+      "from": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Saxe - Lafayette",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T02:29:00Z",
+      "endTime": "2026-11-22T02:31:00Z",
+      "scheduledStartTime": "2026-11-22T02:29:00Z",
+      "scheduledEndTime": "2026-11-22T02:31:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Saxe - Lafayette",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Saxe - Lafayette",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 900,
+      "startTime": "2026-11-22T02:43:00Z",
+      "endTime": "2026-11-22T02:58:00Z",
+      "scheduledStartTime": "2026-11-22T02:43:00Z",
+      "scheduledEndTime": "2026-11-22T02:58:00Z",
+      "realTime": false,
+      "headsign": "Stade de Gerland Le LOU",
+      "agencyName": "TCL",
+      "routeShortName": "PL3",
+      "routeLongName": "Stade de Gerland - Cordeliers - Campus Lyon Ouest",
+      "tripShortName": "REF~260925~271226~NOM - Cordeliers - Stade de Gerland",
+      "displayName": "PL3",
+      "cancelled": false,
+      "from": {
+       "name": "Saxe - Lafayette",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T02:58:00Z",
+      "endTime": "2026-11-22T03:01:00Z",
+      "scheduledStartTime": "2026-11-22T02:58:00Z",
+      "scheduledEndTime": "2026-11-22T03:01:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 7500,
+      "startTime": "2026-11-22T03:20:00Z",
+      "endTime": "2026-11-22T05:25:00Z",
+      "scheduledStartTime": "2026-11-22T03:20:00Z",
+      "scheduledEndTime": "2026-11-22T05:25:00Z",
+      "realTime": false,
+      "headsign": "XGC",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "XBC - Barcelona Nord - Bus Station > XGC - Geneva - Bus station",
+      "tripShortName": "3154",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T05:25:00Z",
+      "endTime": "2026-11-22T05:32:00Z",
+      "scheduledStartTime": "2026-11-22T05:25:00Z",
+      "scheduledEndTime": "2026-11-22T05:32:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Geneva - Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "duration": 420,
+      "startTime": "2026-11-22T05:40:00Z",
+      "endTime": "2026-11-22T05:47:00Z",
+      "scheduledStartTime": "2026-11-22T05:40:00Z",
+      "scheduledEndTime": "2026-11-22T05:47:00Z",
+      "realTime": false,
+      "headsign": "Genève-Aéroport",
+      "agencyName": "Schweizerische Bundesbahnen SBB",
+      "routeShortName": "IR95",
+      "routeLongName": "",
+      "tripShortName": "1702",
+      "displayName": "IR95",
+      "cancelled": false,
+      "from": {
+       "name": "Genève",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-21T21:56:00Z",
+    "endTime": "2026-11-22T08:02:00Z",
+    "duration": 36360,
+    "transfers": 2,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 900,
+      "startTime": "2026-11-21T21:56:00Z",
+      "endTime": "2026-11-21T22:11:00Z",
+      "scheduledStartTime": "2026-11-21T21:56:00Z",
+      "scheduledEndTime": "2026-11-21T22:11:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 240,
+      "startTime": "2026-11-21T22:11:00Z",
+      "endTime": "2026-11-21T22:15:00Z",
+      "scheduledStartTime": "2026-11-21T22:11:00Z",
+      "scheduledEndTime": "2026-11-21T22:15:00Z",
+      "realTime": false,
+      "headsign": "Cité Internationale",
+      "agencyName": "TCL",
+      "routeShortName": "C23",
+      "routeLongName": "Flachet - IUT - Cité Internationale",
+      "tripShortName": "REF~050926~311227~Itinéraire Normal : Flachet - IUT - Cite Internationale",
+      "displayName": "C23",
+      "cancelled": false,
+      "from": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Thiers - Lafayette",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-21T22:15:00Z",
+      "endTime": "2026-11-21T22:20:00Z",
+      "scheduledStartTime": "2026-11-21T22:15:00Z",
+      "scheduledEndTime": "2026-11-21T22:20:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Thiers - Lafayette",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon-Part-Dieu Gare Routière",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 8940,
+      "startTime": "2026-11-21T22:20:00Z",
+      "endTime": "2026-11-22T00:49:00Z",
+      "scheduledStartTime": "2026-11-21T22:20:00Z",
+      "scheduledEndTime": "2026-11-22T00:49:00Z",
+      "realTime": false,
+      "headsign": "",
+      "agencyName": "SNCF VOYAGEURS",
+      "routeShortName": "",
+      "routeLongName": "",
+      "tripShortName": "33551",
+      "displayName": "TER 33551",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon-Part-Dieu Gare Routière",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Grenoble",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T00:49:00Z",
+      "endTime": "2026-11-22T00:51:00Z",
+      "scheduledStartTime": "2026-11-22T00:49:00Z",
+      "scheduledEndTime": "2026-11-22T00:51:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Grenoble",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Grenoble - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 10500,
+      "startTime": "2026-11-22T05:00:00Z",
+      "endTime": "2026-11-22T07:55:00Z",
+      "scheduledStartTime": "2026-11-22T05:00:00Z",
+      "scheduledEndTime": "2026-11-22T07:55:00Z",
+      "realTime": false,
+      "headsign": "LSN",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "XGE - Grenoble - Bus Station>LSN - Lausanne",
+      "tripShortName": "50824",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Grenoble - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T07:55:00Z",
+      "endTime": "2026-11-22T08:02:00Z",
+      "scheduledStartTime": "2026-11-22T07:55:00Z",
+      "scheduledEndTime": "2026-11-22T08:02:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T03:14:00Z",
+    "endTime": "2026-11-22T08:15:00Z",
+    "duration": 18060,
+    "transfers": 3,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 900,
+      "startTime": "2026-11-22T03:14:00Z",
+      "endTime": "2026-11-22T03:29:00Z",
+      "scheduledStartTime": "2026-11-22T03:14:00Z",
+      "scheduledEndTime": "2026-11-22T03:29:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 420,
+      "startTime": "2026-11-22T03:29:00Z",
+      "endTime": "2026-11-22T03:36:00Z",
+      "scheduledStartTime": "2026-11-22T03:29:00Z",
+      "scheduledEndTime": "2026-11-22T03:36:00Z",
+      "realTime": false,
+      "headsign": "Cordeliers",
+      "agencyName": "TCL",
+      "routeShortName": "PL4",
+      "routeLongName": "Vaulx HDV Campus - Cordeliers",
+      "tripShortName": "REF~040926~271226~Via Maurice Audin Travaux - Vaulx HDV Campus - Cordeliers",
+      "displayName": "PL4",
+      "cancelled": false,
+      "from": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Part-Dieu Jules Favre",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T03:36:00Z",
+      "endTime": "2026-11-22T03:39:00Z",
+      "scheduledStartTime": "2026-11-22T03:36:00Z",
+      "scheduledEndTime": "2026-11-22T03:39:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Part-Dieu Jules Favre",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gare Part-Dieu V.Merle",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 1260,
+      "startTime": "2026-11-22T03:45:00Z",
+      "endTime": "2026-11-22T04:06:00Z",
+      "scheduledStartTime": "2026-11-22T03:45:00Z",
+      "scheduledEndTime": "2026-11-22T04:06:00Z",
+      "realTime": false,
+      "headsign": "St-Genis-Laval Hôp. Sud",
+      "agencyName": "TCL",
+      "routeShortName": "BRMB",
+      "routeLongName": "Bus relais métro B",
+      "tripShortName": "COM~250826~221126~Gare Part-Dieu V.Merle - St-Genis-Laval Hop. Sud",
+      "displayName": "BRMB",
+      "cancelled": false,
+      "from": {
+       "name": "Gare Part-Dieu V.Merle",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T04:06:00Z",
+      "endTime": "2026-11-22T04:09:00Z",
+      "scheduledStartTime": "2026-11-22T04:06:00Z",
+      "scheduledEndTime": "2026-11-22T04:09:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon (Gerland Bus Station)",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 8700,
+      "startTime": "2026-11-22T05:30:00Z",
+      "endTime": "2026-11-22T07:55:00Z",
+      "scheduledStartTime": "2026-11-22T05:30:00Z",
+      "scheduledEndTime": "2026-11-22T07:55:00Z",
+      "realTime": false,
+      "headsign": "Geneva (central bus station)",
+      "agencyName": "FlixBus-eu",
+      "routeShortName": "FlixBus N788",
+      "routeLongName": "Barcelona - Geneve",
+      "tripShortName": "",
+      "displayName": "FlixBus N788",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon (Gerland Bus Station)",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva (central bus station)",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T07:55:00Z",
+      "endTime": "2026-11-22T08:02:00Z",
+      "scheduledStartTime": "2026-11-22T07:55:00Z",
+      "scheduledEndTime": "2026-11-22T08:02:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Geneva (central bus station)",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "duration": 420,
+      "startTime": "2026-11-22T08:08:00Z",
+      "endTime": "2026-11-22T08:15:00Z",
+      "scheduledStartTime": "2026-11-22T08:08:00Z",
+      "scheduledEndTime": "2026-11-22T08:15:00Z",
+      "realTime": false,
+      "headsign": "Genève-Aéroport",
+      "agencyName": "Schweizerische Bundesbahnen SBB",
+      "routeShortName": "IR90",
+      "routeLongName": "",
+      "tripShortName": "1808",
+      "displayName": "IR90",
+      "cancelled": false,
+      "from": {
+       "name": "Genève",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "1",
+       "track": "1"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T04:38:00Z",
+    "endTime": "2026-11-22T08:15:00Z",
+    "duration": 13020,
+    "transfers": 4,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-22T04:38:00Z",
+      "endTime": "2026-11-22T04:43:00Z",
+      "scheduledStartTime": "2026-11-22T04:38:00Z",
+      "scheduledEndTime": "2026-11-22T04:43:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "SUBWAY",
+      "duration": 660,
+      "startTime": "2026-11-22T04:43:00Z",
+      "endTime": "2026-11-22T04:54:00Z",
+      "scheduledStartTime": "2026-11-22T04:43:00Z",
+      "scheduledEndTime": "2026-11-22T04:54:00Z",
+      "realTime": false,
+      "headsign": "Perrache",
+      "agencyName": "TCL",
+      "routeShortName": "A",
+      "routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+      "tripShortName": "REF~251124~311227~MT A - Vaulx-en-Velin La Soie. - Perrache",
+      "displayName": "A",
+      "cancelled": false,
+      "from": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Bellecour",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T04:54:00Z",
+      "endTime": "2026-11-22T04:57:00Z",
+      "scheduledStartTime": "2026-11-22T04:54:00Z",
+      "scheduledEndTime": "2026-11-22T04:57:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Bellecour",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Bellecour A. Poncet",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 240,
+      "startTime": "2026-11-22T05:00:00Z",
+      "endTime": "2026-11-22T05:04:00Z",
+      "scheduledStartTime": "2026-11-22T05:00:00Z",
+      "scheduledEndTime": "2026-11-22T05:04:00Z",
+      "realTime": false,
+      "headsign": "Brignais Parc Birabent",
+      "agencyName": "TCL",
+      "routeShortName": "C10",
+      "routeLongName": "Bellecour - Saint-Genis Barolles / Brignais Parc Birabent",
+      "tripShortName": "REF~210625~311227~NOM - Bellecour A. Poncet - Brignais Parc Birabent",
+      "displayName": "C10",
+      "cancelled": false,
+      "from": {
+       "name": "Bellecour A. Poncet",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T05:04:00Z",
+      "endTime": "2026-11-22T05:06:00Z",
+      "scheduledStartTime": "2026-11-22T05:04:00Z",
+      "scheduledEndTime": "2026-11-22T05:06:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 300,
+      "startTime": "2026-11-22T05:11:00Z",
+      "endTime": "2026-11-22T05:16:00Z",
+      "scheduledStartTime": "2026-11-22T05:11:00Z",
+      "scheduledEndTime": "2026-11-22T05:16:00Z",
+      "realTime": false,
+      "headsign": "Gare Part-Dieu V.Merle",
+      "agencyName": "TCL",
+      "routeShortName": "BRMB",
+      "routeLongName": "Bus relais métro B",
+      "tripShortName": "COM~250826~221126~St-Genis-Laval Hop. Sud - Gare Part-Dieu V.Merle",
+      "displayName": "BRMB",
+      "cancelled": false,
+      "from": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T05:16:00Z",
+      "endTime": "2026-11-22T05:19:00Z",
+      "scheduledStartTime": "2026-11-22T05:16:00Z",
+      "scheduledEndTime": "2026-11-22T05:19:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon (Gerland Bus Station)",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 8700,
+      "startTime": "2026-11-22T05:30:00Z",
+      "endTime": "2026-11-22T07:55:00Z",
+      "scheduledStartTime": "2026-11-22T05:30:00Z",
+      "scheduledEndTime": "2026-11-22T07:55:00Z",
+      "realTime": false,
+      "headsign": "Geneva (central bus station)",
+      "agencyName": "FlixBus-eu",
+      "routeShortName": "FlixBus N788",
+      "routeLongName": "Barcelona - Geneve",
+      "tripShortName": "",
+      "displayName": "FlixBus N788",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon (Gerland Bus Station)",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva (central bus station)",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T07:55:00Z",
+      "endTime": "2026-11-22T08:02:00Z",
+      "scheduledStartTime": "2026-11-22T07:55:00Z",
+      "scheduledEndTime": "2026-11-22T08:02:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Geneva (central bus station)",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      }
+     },
+     {
+      "mode": "REGIONAL_RAIL",
+      "duration": 420,
+      "startTime": "2026-11-22T08:08:00Z",
+      "endTime": "2026-11-22T08:15:00Z",
+      "scheduledStartTime": "2026-11-22T08:08:00Z",
+      "scheduledEndTime": "2026-11-22T08:15:00Z",
+      "realTime": false,
+      "headsign": "Genève-Aéroport",
+      "agencyName": "Schweizerische Bundesbahnen SBB",
+      "routeShortName": "IR90",
+      "routeLongName": "",
+      "tripShortName": "1808",
+      "displayName": "IR90",
+      "cancelled": false,
+      "from": {
+       "name": "Genève",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "3",
+       "track": "3"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "1",
+       "track": "1"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T04:58:00Z",
+    "endTime": "2026-11-22T08:42:00Z",
+    "duration": 13440,
+    "transfers": 3,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T04:58:00Z",
+      "endTime": "2026-11-22T05:01:00Z",
+      "scheduledStartTime": "2026-11-22T04:58:00Z",
+      "scheduledEndTime": "2026-11-22T05:01:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "TRAM",
+      "duration": 2220,
+      "startTime": "2026-11-22T05:01:00Z",
+      "endTime": "2026-11-22T05:38:00Z",
+      "scheduledStartTime": "2026-11-22T05:01:00Z",
+      "scheduledEndTime": "2026-11-22T05:38:00Z",
+      "realTime": false,
+      "headsign": "Debourg",
+      "agencyName": "TCL",
+      "routeShortName": "T6",
+      "routeLongName": "Debourg - La Doua",
+      "tripShortName": "REF~310826~311227~Itinéraire complet nominal",
+      "displayName": "T6",
+      "cancelled": false,
+      "from": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Debourg",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T05:38:00Z",
+      "endTime": "2026-11-22T05:40:00Z",
+      "scheduledStartTime": "2026-11-22T05:38:00Z",
+      "scheduledEndTime": "2026-11-22T05:40:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Debourg",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Debourg",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 120,
+      "startTime": "2026-11-22T05:49:00Z",
+      "endTime": "2026-11-22T05:51:00Z",
+      "scheduledStartTime": "2026-11-22T05:49:00Z",
+      "scheduledEndTime": "2026-11-22T05:51:00Z",
+      "realTime": false,
+      "headsign": "St-Genis-Laval Hôp. Sud",
+      "agencyName": "TCL",
+      "routeShortName": "BRMB",
+      "routeLongName": "Bus relais métro B",
+      "tripShortName": "COM~250826~221126~Gare Part-Dieu V.Merle - St-Genis-Laval Hop. Sud",
+      "displayName": "BRMB",
+      "cancelled": false,
+      "from": {
+       "name": "Debourg",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T05:51:00Z",
+      "endTime": "2026-11-22T05:54:00Z",
+      "scheduledStartTime": "2026-11-22T05:51:00Z",
+      "scheduledEndTime": "2026-11-22T05:54:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 6000,
+      "startTime": "2026-11-22T06:00:00Z",
+      "endTime": "2026-11-22T07:40:00Z",
+      "scheduledStartTime": "2026-11-22T06:00:00Z",
+      "scheduledEndTime": "2026-11-22T07:40:00Z",
+      "realTime": false,
+      "headsign": "CMX",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Lyon - Perrache Bus station > Annecy > Cluses > Chamonix Sud - Bus station",
+      "tripShortName": "85001",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T07:40:00Z",
+      "endTime": "2026-11-22T07:42:00Z",
+      "scheduledStartTime": "2026-11-22T07:40:00Z",
+      "scheduledEndTime": "2026-11-22T07:42:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 3000,
+      "startTime": "2026-11-22T07:45:00Z",
+      "endTime": "2026-11-22T08:35:00Z",
+      "scheduledStartTime": "2026-11-22T07:45:00Z",
+      "scheduledEndTime": "2026-11-22T08:35:00Z",
+      "realTime": false,
+      "headsign": "GVA",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Grenoble - Bus Station > Crolles - Le Rafour > Chambéry > Annecy > Saint-Julien-en-Genevois - France > Saint-Julien-en-Genevois - Suisse > Geneva - Airport",
+      "tripShortName": "50604",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T08:35:00Z",
+      "endTime": "2026-11-22T08:42:00Z",
+      "scheduledStartTime": "2026-11-22T08:35:00Z",
+      "scheduledEndTime": "2026-11-22T08:42:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T05:14:00Z",
+    "endTime": "2026-11-22T08:42:00Z",
+    "duration": 12480,
+    "transfers": 4,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-22T05:14:00Z",
+      "endTime": "2026-11-22T05:19:00Z",
+      "scheduledStartTime": "2026-11-22T05:14:00Z",
+      "scheduledEndTime": "2026-11-22T05:19:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "SUBWAY",
+      "duration": 660,
+      "startTime": "2026-11-22T05:19:00Z",
+      "endTime": "2026-11-22T05:30:00Z",
+      "scheduledStartTime": "2026-11-22T05:19:00Z",
+      "scheduledEndTime": "2026-11-22T05:30:00Z",
+      "realTime": false,
+      "headsign": "Perrache",
+      "agencyName": "TCL",
+      "routeShortName": "A",
+      "routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+      "tripShortName": "REF~251124~311227~MT A - Vaulx-en-Velin La Soie. - Perrache",
+      "displayName": "A",
+      "cancelled": false,
+      "from": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Bellecour",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T05:30:00Z",
+      "endTime": "2026-11-22T05:33:00Z",
+      "scheduledStartTime": "2026-11-22T05:30:00Z",
+      "scheduledEndTime": "2026-11-22T05:33:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Bellecour",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Bellecour A. Poncet",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 240,
+      "startTime": "2026-11-22T05:35:00Z",
+      "endTime": "2026-11-22T05:39:00Z",
+      "scheduledStartTime": "2026-11-22T05:35:00Z",
+      "scheduledEndTime": "2026-11-22T05:39:00Z",
+      "realTime": false,
+      "headsign": "Brignais Parc Birabent",
+      "agencyName": "TCL",
+      "routeShortName": "C10",
+      "routeLongName": "Bellecour - Saint-Genis Barolles / Brignais Parc Birabent",
+      "tripShortName": "REF~210625~311227~NOM - Bellecour A. Poncet - Brignais Parc Birabent",
+      "displayName": "C10",
+      "cancelled": false,
+      "from": {
+       "name": "Bellecour A. Poncet",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T05:39:00Z",
+      "endTime": "2026-11-22T05:41:00Z",
+      "scheduledStartTime": "2026-11-22T05:39:00Z",
+      "scheduledEndTime": "2026-11-22T05:41:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 300,
+      "startTime": "2026-11-22T05:41:00Z",
+      "endTime": "2026-11-22T05:46:00Z",
+      "scheduledStartTime": "2026-11-22T05:41:00Z",
+      "scheduledEndTime": "2026-11-22T05:46:00Z",
+      "realTime": false,
+      "headsign": "Gare Part-Dieu V.Merle",
+      "agencyName": "TCL",
+      "routeShortName": "BRMB",
+      "routeLongName": "Bus relais métro B",
+      "tripShortName": "COM~250826~221126~St-Genis-Laval Hop. Sud - Gare Part-Dieu V.Merle",
+      "displayName": "BRMB",
+      "cancelled": false,
+      "from": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T05:46:00Z",
+      "endTime": "2026-11-22T05:49:00Z",
+      "scheduledStartTime": "2026-11-22T05:46:00Z",
+      "scheduledEndTime": "2026-11-22T05:49:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 6000,
+      "startTime": "2026-11-22T06:00:00Z",
+      "endTime": "2026-11-22T07:40:00Z",
+      "scheduledStartTime": "2026-11-22T06:00:00Z",
+      "scheduledEndTime": "2026-11-22T07:40:00Z",
+      "realTime": false,
+      "headsign": "CMX",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Lyon - Perrache Bus station > Annecy > Cluses > Chamonix Sud - Bus station",
+      "tripShortName": "85001",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T07:40:00Z",
+      "endTime": "2026-11-22T07:42:00Z",
+      "scheduledStartTime": "2026-11-22T07:40:00Z",
+      "scheduledEndTime": "2026-11-22T07:42:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 3000,
+      "startTime": "2026-11-22T07:45:00Z",
+      "endTime": "2026-11-22T08:35:00Z",
+      "scheduledStartTime": "2026-11-22T07:45:00Z",
+      "scheduledEndTime": "2026-11-22T08:35:00Z",
+      "realTime": false,
+      "headsign": "GVA",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Grenoble - Bus Station > Crolles - Le Rafour > Chambéry > Annecy > Saint-Julien-en-Genevois - France > Saint-Julien-en-Genevois - Suisse > Geneva - Airport",
+      "tripShortName": "50604",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T08:35:00Z",
+      "endTime": "2026-11-22T08:42:00Z",
+      "scheduledStartTime": "2026-11-22T08:35:00Z",
+      "scheduledEndTime": "2026-11-22T08:42:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T05:40:00Z",
+    "endTime": "2026-11-22T09:07:00Z",
+    "duration": 12420,
+    "transfers": 2,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 900,
+      "startTime": "2026-11-22T05:40:00Z",
+      "endTime": "2026-11-22T05:55:00Z",
+      "scheduledStartTime": "2026-11-22T05:40:00Z",
+      "scheduledEndTime": "2026-11-22T05:55:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 420,
+      "startTime": "2026-11-22T05:55:00Z",
+      "endTime": "2026-11-22T06:02:00Z",
+      "scheduledStartTime": "2026-11-22T05:55:00Z",
+      "scheduledEndTime": "2026-11-22T06:02:00Z",
+      "realTime": false,
+      "headsign": "Gare Saint-Paul",
+      "agencyName": "TCL",
+      "routeShortName": "TB11",
+      "routeLongName": "Gare Saint-Paul - Laurent Bonnevay",
+      "tripShortName": "COM~050926~311227~Itinéraire normal : Laurent Bonnevay - Gare Saint-Paul",
+      "displayName": "TB11",
+      "cancelled": false,
+      "from": {
+       "name": "Verlaine - Tolstoï",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Part-Dieu Jules Favre",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T06:02:00Z",
+      "endTime": "2026-11-22T06:05:00Z",
+      "scheduledStartTime": "2026-11-22T06:02:00Z",
+      "scheduledEndTime": "2026-11-22T06:05:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Part-Dieu Jules Favre",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gare Part-Dieu V.Merle",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 1380,
+      "startTime": "2026-11-22T06:15:00Z",
+      "endTime": "2026-11-22T06:38:00Z",
+      "scheduledStartTime": "2026-11-22T06:15:00Z",
+      "scheduledEndTime": "2026-11-22T06:38:00Z",
+      "realTime": false,
+      "headsign": "St-Genis-Laval Hôp. Sud",
+      "agencyName": "TCL",
+      "routeShortName": "BRMB",
+      "routeLongName": "Bus relais métro B",
+      "tripShortName": "COM~250826~221126~Gare Part-Dieu V.Merle - St-Genis-Laval Hop. Sud",
+      "displayName": "BRMB",
+      "cancelled": false,
+      "from": {
+       "name": "Gare Part-Dieu V.Merle",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T06:38:00Z",
+      "endTime": "2026-11-22T06:41:00Z",
+      "scheduledStartTime": "2026-11-22T06:38:00Z",
+      "scheduledEndTime": "2026-11-22T06:41:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 8100,
+      "startTime": "2026-11-22T06:45:00Z",
+      "endTime": "2026-11-22T09:00:00Z",
+      "scheduledStartTime": "2026-11-22T06:45:00Z",
+      "scheduledEndTime": "2026-11-22T09:00:00Z",
+      "realTime": false,
+      "headsign": "XGC",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Lyon - Perrache Bus Station > Saint-Julien-en-Genevois - France > Saint-Julien-en-Genevois - Suisse > Geneva - Airport > Geneva - Bus station",
+      "tripShortName": "3843",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T09:00:00Z",
+      "endTime": "2026-11-22T09:07:00Z",
+      "scheduledStartTime": "2026-11-22T09:00:00Z",
+      "scheduledEndTime": "2026-11-22T09:07:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T05:50:00Z",
+    "endTime": "2026-11-22T09:07:00Z",
+    "duration": 11820,
+    "transfers": 3,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-22T05:50:00Z",
+      "endTime": "2026-11-22T05:55:00Z",
+      "scheduledStartTime": "2026-11-22T05:50:00Z",
+      "scheduledEndTime": "2026-11-22T05:55:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "SUBWAY",
+      "duration": 660,
+      "startTime": "2026-11-22T05:55:00Z",
+      "endTime": "2026-11-22T06:06:00Z",
+      "scheduledStartTime": "2026-11-22T05:55:00Z",
+      "scheduledEndTime": "2026-11-22T06:06:00Z",
+      "realTime": false,
+      "headsign": "Perrache",
+      "agencyName": "TCL",
+      "routeShortName": "A",
+      "routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+      "tripShortName": "REF~251124~311227~MT A - Vaulx-en-Velin La Soie. - Perrache",
+      "displayName": "A",
+      "cancelled": false,
+      "from": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Bellecour",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T06:06:00Z",
+      "endTime": "2026-11-22T06:08:00Z",
+      "scheduledStartTime": "2026-11-22T06:06:00Z",
+      "scheduledEndTime": "2026-11-22T06:08:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Bellecour",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Bellecour A. Poncet",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 240,
+      "startTime": "2026-11-22T06:15:00Z",
+      "endTime": "2026-11-22T06:19:00Z",
+      "scheduledStartTime": "2026-11-22T06:15:00Z",
+      "scheduledEndTime": "2026-11-22T06:19:00Z",
+      "realTime": false,
+      "headsign": "Irigny Hauts de Selettes",
+      "agencyName": "TCL",
+      "routeShortName": "115",
+      "routeLongName": "Bellecour A. Poncet - Irigny Hauts de Selettes",
+      "tripShortName": "COM~161126~241226~TVX Saulaie+Mouche - Bellecour A. Poncet - Irigny Selettes",
+      "displayName": "115",
+      "cancelled": false,
+      "from": {
+       "name": "Bellecour A. Poncet",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T06:19:00Z",
+      "endTime": "2026-11-22T06:21:00Z",
+      "scheduledStartTime": "2026-11-22T06:19:00Z",
+      "scheduledEndTime": "2026-11-22T06:21:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 300,
+      "startTime": "2026-11-22T06:26:00Z",
+      "endTime": "2026-11-22T06:31:00Z",
+      "scheduledStartTime": "2026-11-22T06:26:00Z",
+      "scheduledEndTime": "2026-11-22T06:31:00Z",
+      "realTime": false,
+      "headsign": "Gare Part-Dieu V.Merle",
+      "agencyName": "TCL",
+      "routeShortName": "BRMB",
+      "routeLongName": "Bus relais métro B",
+      "tripShortName": "COM~250826~221126~St-Genis-Laval Hop. Sud - Gare Part-Dieu V.Merle",
+      "displayName": "BRMB",
+      "cancelled": false,
+      "from": {
+       "name": "Musée des Confluences",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 180,
+      "startTime": "2026-11-22T06:31:00Z",
+      "endTime": "2026-11-22T06:34:00Z",
+      "scheduledStartTime": "2026-11-22T06:31:00Z",
+      "scheduledEndTime": "2026-11-22T06:34:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Stade de Gerland Le LOU",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 8100,
+      "startTime": "2026-11-22T06:45:00Z",
+      "endTime": "2026-11-22T09:00:00Z",
+      "scheduledStartTime": "2026-11-22T06:45:00Z",
+      "scheduledEndTime": "2026-11-22T09:00:00Z",
+      "realTime": false,
+      "headsign": "XGC",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Lyon - Perrache Bus Station > Saint-Julien-en-Genevois - France > Saint-Julien-en-Genevois - Suisse > Geneva - Airport > Geneva - Bus station",
+      "tripShortName": "3843",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon - Gerland Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T09:00:00Z",
+      "endTime": "2026-11-22T09:07:00Z",
+      "scheduledStartTime": "2026-11-22T09:00:00Z",
+      "scheduledEndTime": "2026-11-22T09:07:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T06:33:00Z",
+    "endTime": "2026-11-22T09:53:00Z",
+    "duration": 12000,
+    "transfers": 4,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-22T06:33:00Z",
+      "endTime": "2026-11-22T06:38:00Z",
+      "scheduledStartTime": "2026-11-22T06:33:00Z",
+      "scheduledEndTime": "2026-11-22T06:38:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "SUBWAY",
+      "duration": 360,
+      "startTime": "2026-11-22T06:38:00Z",
+      "endTime": "2026-11-22T06:44:00Z",
+      "scheduledStartTime": "2026-11-22T06:38:00Z",
+      "scheduledEndTime": "2026-11-22T06:44:00Z",
+      "realTime": false,
+      "headsign": "Vaulx-en-Velin La Soie",
+      "agencyName": "TCL",
+      "routeShortName": "A",
+      "routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+      "tripShortName": "REF~251124~311227~MT A - Perrache. - Vaulx-en-Velin La Soie",
+      "displayName": "A",
+      "cancelled": false,
+      "from": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T06:44:00Z",
+      "endTime": "2026-11-22T06:46:00Z",
+      "scheduledStartTime": "2026-11-22T06:44:00Z",
+      "scheduledEndTime": "2026-11-22T06:46:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "TRAM",
+      "duration": 1080,
+      "startTime": "2026-11-22T06:54:00Z",
+      "endTime": "2026-11-22T07:12:00Z",
+      "scheduledStartTime": "2026-11-22T06:54:00Z",
+      "scheduledEndTime": "2026-11-22T07:12:00Z",
+      "realTime": false,
+      "headsign": "Aéroport St Exupéry -RX",
+      "agencyName": "TCL",
+      "routeShortName": "RX",
+      "routeLongName": "Rhônexpress Gare Part-Dieu - Aéroport St Exupéry",
+      "tripShortName": "REF~010626~311226~Gare Part-Dieu. - Term aeroport",
+      "displayName": "RX",
+      "cancelled": false,
+      "from": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Aéroport St Exupéry -RX",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 660,
+      "startTime": "2026-11-22T07:12:00Z",
+      "endTime": "2026-11-22T07:23:00Z",
+      "scheduledStartTime": "2026-11-22T07:12:00Z",
+      "scheduledEndTime": "2026-11-22T07:23:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Aéroport St Exupéry -RX",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon Saint-Exupéry Airport",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 5100,
+      "startTime": "2026-11-22T07:30:00Z",
+      "endTime": "2026-11-22T08:55:00Z",
+      "scheduledStartTime": "2026-11-22T07:30:00Z",
+      "scheduledEndTime": "2026-11-22T08:55:00Z",
+      "realTime": false,
+      "headsign": "Chamonix",
+      "agencyName": "FlixBus-eu",
+      "routeShortName": "FlixBus S766",
+      "routeLongName": "Lyon - Annecy - Chamonix",
+      "tripShortName": "",
+      "displayName": "FlixBus S766",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon Saint-Exupéry Airport",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy (Central Bus Station)",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T08:55:00Z",
+      "endTime": "2026-11-22T08:57:00Z",
+      "scheduledStartTime": "2026-11-22T08:55:00Z",
+      "scheduledEndTime": "2026-11-22T08:57:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Annecy (Central Bus Station)",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 3000,
+      "startTime": "2026-11-22T09:00:00Z",
+      "endTime": "2026-11-22T09:50:00Z",
+      "scheduledStartTime": "2026-11-22T09:00:00Z",
+      "scheduledEndTime": "2026-11-22T09:50:00Z",
+      "realTime": false,
+      "headsign": "LSN",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Grenoble - Bus Station > Crolles - Le Rafour > Chambéry > Annecy > Geneva - Airport > Lausanne",
+      "tripShortName": "51822",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T09:50:00Z",
+      "endTime": "2026-11-22T09:52:00Z",
+      "scheduledStartTime": "2026-11-22T09:50:00Z",
+      "scheduledEndTime": "2026-11-22T09:52:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport, Terminal",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "C",
+       "track": "C"
+      }
+     },
+     {
+      "mode": "BUS",
+      "duration": 60,
+      "startTime": "2026-11-22T09:52:00Z",
+      "endTime": "2026-11-22T09:53:00Z",
+      "scheduledStartTime": "2026-11-22T09:52:00Z",
+      "scheduledEndTime": "2026-11-22T09:53:00Z",
+      "realTime": false,
+      "headsign": "Thônex, Vallard",
+      "agencyName": "Transports Publics Genevois",
+      "routeShortName": "5",
+      "routeLongName": "",
+      "tripShortName": "730703",
+      "displayName": "5",
+      "cancelled": false,
+      "from": {
+       "name": "Genève-Aéroport, Terminal",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "C",
+       "track": "C"
+      },
+      "to": {
+       "name": "Genève-Aéroport, gare-Arena",
+       "tz": "Europe/Zurich",
+       "scheduledTrack": "J",
+       "track": "J"
+      }
+     }
+    ]
+   },
+   {
+    "startTime": "2026-11-22T06:33:00Z",
+    "endTime": "2026-11-22T09:57:00Z",
+    "duration": 12240,
+    "transfers": 3,
+    "legs": [
+     {
+      "mode": "WALK",
+      "duration": 300,
+      "startTime": "2026-11-22T06:33:00Z",
+      "endTime": "2026-11-22T06:38:00Z",
+      "scheduledStartTime": "2026-11-22T06:33:00Z",
+      "scheduledEndTime": "2026-11-22T06:38:00Z",
+      "realTime": false,
+      "from": {
+       "name": "START",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "SUBWAY",
+      "duration": 360,
+      "startTime": "2026-11-22T06:38:00Z",
+      "endTime": "2026-11-22T06:44:00Z",
+      "scheduledStartTime": "2026-11-22T06:38:00Z",
+      "scheduledEndTime": "2026-11-22T06:44:00Z",
+      "realTime": false,
+      "headsign": "Vaulx-en-Velin La Soie",
+      "agencyName": "TCL",
+      "routeShortName": "A",
+      "routeLongName": "Perrache - Vaulx-en-Velin La Soie",
+      "tripShortName": "REF~251124~311227~MT A - Perrache. - Vaulx-en-Velin La Soie",
+      "displayName": "A",
+      "cancelled": false,
+      "from": {
+       "name": "Gratte Ciel",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T06:44:00Z",
+      "endTime": "2026-11-22T06:46:00Z",
+      "scheduledStartTime": "2026-11-22T06:44:00Z",
+      "scheduledEndTime": "2026-11-22T06:46:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "TRAM",
+      "duration": 1080,
+      "startTime": "2026-11-22T06:54:00Z",
+      "endTime": "2026-11-22T07:12:00Z",
+      "scheduledStartTime": "2026-11-22T06:54:00Z",
+      "scheduledEndTime": "2026-11-22T07:12:00Z",
+      "realTime": false,
+      "headsign": "Aéroport St Exupéry -RX",
+      "agencyName": "TCL",
+      "routeShortName": "RX",
+      "routeLongName": "Rhônexpress Gare Part-Dieu - Aéroport St Exupéry",
+      "tripShortName": "REF~010626~311226~Gare Part-Dieu. - Term aeroport",
+      "displayName": "RX",
+      "cancelled": false,
+      "from": {
+       "name": "Vaulx-en-Velin La Soie",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Aéroport St Exupéry -RX",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 660,
+      "startTime": "2026-11-22T07:12:00Z",
+      "endTime": "2026-11-22T07:23:00Z",
+      "scheduledStartTime": "2026-11-22T07:12:00Z",
+      "scheduledEndTime": "2026-11-22T07:23:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Aéroport St Exupéry -RX",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Lyon Saint-Exupéry Airport",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 5100,
+      "startTime": "2026-11-22T07:30:00Z",
+      "endTime": "2026-11-22T08:55:00Z",
+      "scheduledStartTime": "2026-11-22T07:30:00Z",
+      "scheduledEndTime": "2026-11-22T08:55:00Z",
+      "realTime": false,
+      "headsign": "Chamonix",
+      "agencyName": "FlixBus-eu",
+      "routeShortName": "FlixBus S766",
+      "routeLongName": "Lyon - Annecy - Chamonix",
+      "tripShortName": "",
+      "displayName": "FlixBus S766",
+      "cancelled": false,
+      "from": {
+       "name": "Lyon Saint-Exupéry Airport",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy (Central Bus Station)",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 120,
+      "startTime": "2026-11-22T08:55:00Z",
+      "endTime": "2026-11-22T08:57:00Z",
+      "scheduledStartTime": "2026-11-22T08:55:00Z",
+      "scheduledEndTime": "2026-11-22T08:57:00Z",
+      "realTime": false,
+      "cancelled": false,
+      "from": {
+       "name": "Annecy (Central Bus Station)",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      }
+     },
+     {
+      "mode": "COACH",
+      "duration": 3000,
+      "startTime": "2026-11-22T09:00:00Z",
+      "endTime": "2026-11-22T09:50:00Z",
+      "scheduledStartTime": "2026-11-22T09:00:00Z",
+      "scheduledEndTime": "2026-11-22T09:50:00Z",
+      "realTime": false,
+      "headsign": "LSN",
+      "agencyName": "BlaBlaCar Bus",
+      "routeShortName": "BlaBlaCar Bus",
+      "routeLongName": "Grenoble - Bus Station > Crolles - Le Rafour > Chambéry > Annecy > Geneva - Airport > Lausanne",
+      "tripShortName": "51822",
+      "displayName": "BlaBlaCar Bus",
+      "cancelled": false,
+      "from": {
+       "name": "Annecy - Bus Station",
+       "tz": "Europe/Paris"
+      },
+      "to": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      }
+     },
+     {
+      "mode": "WALK",
+      "duration": 420,
+      "startTime": "2026-11-22T09:50:00Z",
+      "endTime": "2026-11-22T09:57:00Z",
+      "scheduledStartTime": "2026-11-22T09:50:00Z",
+      "scheduledEndTime": "2026-11-22T09:57:00Z",
+      "realTime": false,
+      "from": {
+       "name": "Geneva - Airport Bus Station",
+       "tz": "Europe/Zurich"
+      },
+      "to": {
+       "name": "Genève-Aéroport",
+       "tz": "Europe/Zurich"
+      }
+     }
+    ]
+   }
+  ],
+  "direct": []
+ }
+}

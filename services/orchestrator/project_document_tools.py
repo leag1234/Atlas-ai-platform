@@ -6,6 +6,7 @@ import base64
 import asyncio
 import hashlib
 import json
+import logging
 from pathlib import PurePosixPath
 import time
 from typing import Any, Literal
@@ -616,27 +617,47 @@ async def publish(
         from services.orchestrator.work_save import project_file_paths
 
         folder_id = str(folder["id"])
-        receipt, saved = await publish_copy(
-            lambda name, revision: publisher.publish(
-                document,
-                name,
-                args["strategy"],
-                list(dict.fromkeys(versions)),
-                revision,
-                str(uuid4()),
-                remaining(),
-            ),
-            str(path),
-            folder_names(await project_file_paths(execution, folder_id), folder_id),
-            lambda: folder_revision(execution, folder_id),
+        existing = await project_file_paths(execution, folder_id)
+        revised = await publish_revision(
+            tools,
+            publisher,
+            document,
+            path,
+            folder_id,
+            existing,
+            args["strategy"],
+            list(dict.fromkeys(versions)),
+            deadline,
         )
+        if revised is not None:
+            receipt, saved = revised
+            note["note"] = (
+                f"This change of {saved}, delivered earlier in this conversation, "
+                f"was saved as its new version (the earlier versions are kept). "
+                f"Name it {saved} in the answer, as the updated file."
+            )
+        else:
+            receipt, saved = await publish_copy(
+                lambda name, revision: publisher.publish(
+                    document,
+                    name,
+                    args["strategy"],
+                    list(dict.fromkeys(versions)),
+                    revision,
+                    str(uuid4()),
+                    remaining(),
+                ),
+                str(path),
+                folder_names(existing, folder_id),
+                lambda: folder_revision(execution, folder_id),
+            )
+            if saved != str(path):
+                note["note"] = (
+                    f"{path} already exists in the chat files: this file was saved as "
+                    f"{saved}. Nothing was overwritten. Name it {saved} in the answer."
+                )
         # The link names the file actually saved.
         receipt = dict(receipt, relative_path=saved)
-        if saved != str(path):
-            note["note"] = (
-                f"{path} already exists in the chat files: this file was saved as "
-                f"{saved}. Nothing was overwritten. Name it {saved} in the answer."
-            )
     else:
         receipt = await publish_with_free_name(
             lambda name: publisher.publish(
@@ -670,7 +691,99 @@ async def publish(
         read_input=dict(file_id=receipt["id"], version=receipt["file_version_id"]),
         **note,
         **(dict(gaps=checked.gaps) if lacking else {}),
+        # Whether the file was checked against the request and passed: what
+        # the plan and the closing may say of it (deliverable_check.py).
+        verification=deliverable_check.verification(checked),
     )
+
+
+async def publish_revision(
+    tools: Any,
+    publisher: Any,
+    document: Any,
+    path: PurePosixPath,
+    folder_id: str,
+    existing: dict[str, dict[str, Any]],
+    strategy: str,
+    versions: list[str],
+    deadline: float,
+) -> tuple[dict[str, Any], str] | None:
+    """In the hidden chat project, a change of a file this conversation delivered
+    is published as that file's next version; None when it is a new file.
+
+    "Change the title", then "add a table" gave three files with three names,
+    each one "created" (staging 2026-11-20), while an app changed in the same
+    way kept one artifact with a version per change. The turn is a change
+    when the chat decided it continues something delivered earlier
+    (revises_delivered: the router's follow-up, as for an app); the file is
+    the one of the same format the conversation's answers linked last
+    (chat_file_names.last_delivered), whatever name the model wrote this time.
+    Its overwrite is approved on the person's behalf there (owner decision of
+    2026-11-11), the earlier versions stay, and a link already given keeps
+    serving its own version. A revision that cannot be saved falls back to a
+    new file: the change is delivered either way.
+    """
+    from services.orchestrator.chat_file_names import (
+        folder_names,
+        folder_revision,
+        last_delivered,
+    )
+    from services.orchestrator.work_save import approved_overwrite, overwrite_effects
+    from services.retrieval.project_identity import ProjectError
+
+    answers = list(getattr(tools, "earlier_answers", None) or [])
+    if not getattr(tools, "revises_delivered", False) or not answers:
+        return None
+    execution = tools.execution
+    text = "\n".join(answers)
+    names = [
+        name
+        for name in folder_names(existing, folder_id)
+        if PurePosixPath(name).suffix.lower() == path.suffix and name in text
+    ]
+    target = last_delivered(names, answers, execution.broker.project)
+    if target is None:
+        return None
+    entry = existing[folder_id + "/" + target]
+    try:
+        status, file = await execution.broker.public(
+            "GET", "files/" + str(entry["file_id"])
+        )
+        if status != 200:
+            raise ProjectError(status, str(file.get("error", "not_found")))
+        approval, reason = await approved_overwrite(
+            execution,
+            tools,
+            overwrite_effects(file, document.content),
+            deadline - 20,
+        )
+        if approval is None:
+            raise ProjectError(409, reason.split(":", 1)[0] or "approval_required")
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError("document_tool_timeout")
+        receipt = await publisher.publish(
+            document,
+            str(file["relative_path"]),
+            "regenerated" if strategy == "created" else strategy,
+            versions,
+            await folder_revision(execution, folder_id),
+            str(uuid4()),
+            seconds,
+            revision_of=dict(
+                file_id=str(file["id"]),
+                base_version=str(file["version_id"]),
+                approval_id=str(approval["id"]),
+            ),
+        )
+    except ProjectError as error:
+        logging.getLogger(__name__).warning(
+            "chat_file_revision_fallback suffix=%s error=%s",
+            path.suffix,
+            str(error.args[-1] if error.args else error)[:60],
+        )
+        return None
+    return dict(receipt), str(file["relative_path"])
 
 
 async def publish_with_free_name(

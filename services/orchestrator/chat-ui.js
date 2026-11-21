@@ -950,6 +950,7 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
       }
       return slot;
     };
+    const deliverablePreview = /^\/api\/atlas\/orgs\/[0-9a-f-]{36}\/projects\/[0-9a-f-]{36}\/deliverables\/[0-9a-f-]{36}\/preview$/;
     const frame = slot => { const node = element("iframe", "atlas-side-frame"); node.title = slot.descriptor.title || label("Side view"); node.setAttribute("sandbox", "allow-scripts"); node.referrerPolicy = "no-referrer"; return node; };
     // Marked is only a parser. Rebuild its output from an allowlist in an inert document.
     const sanitize = html => {
@@ -999,6 +1000,13 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
         slot.download = () => {
           const link = element("a"); link.href = descriptor.download; link.download = ""; link.click();
         };
+      } },
+      // A deliverable preview: a static page of pictures from the same origin, shown without script.
+      page: { async open(slot, descriptor) {
+        const source = new URL(safeURL(descriptor.src, true));
+        if (!deliverablePreview.test(source.pathname)) throw new Error("Unsupported preview");
+        const node = frame(slot); node.setAttribute("sandbox", "allow-downloads"); node.src = source.pathname; slot.content.append(node);
+        if (descriptor.download) slot.download = () => { const link = element("a"); link.href = safeURL(descriptor.download, true); link.download = ""; link.click(); };
       } },
       url: { async open(slot, descriptor) {
         const url = safeURL(descriptor.src), node = frame(slot), notice = element("p", "atlas-side-fallback", text(2)); notice.hidden = true;
@@ -1149,6 +1157,15 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
               }
             } else if (wide() && latest) open(descriptor).catch(() => {});
           }
+          return;
+        }
+        // A published file's preview is the server's rendering of its pages: it opens beside the conversation
+        // (the whole screen on a phone) instead of replacing it. A modified click keeps the browser's own behaviour.
+        if (url.origin === location.origin && deliverablePreview.test(url.pathname)) {
+          seen.add(node);
+          const prefix = url.pathname.replace(/\/preview$/, ""), sibling = [...((node.closest(".markdown-prose") || node.parentElement)?.querySelectorAll("a[href]") || [])].find(item => new URL(item.href, location.href).pathname === prefix + "/download");
+          const descriptor = { kind: "page", src: url.pathname, download: prefix + "/download", title: sibling?.textContent.trim().replace(/^\S+\s+/, "") || node.textContent.trim() || label("Preview"), slot: "top" };
+          node.addEventListener("click", event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); open(descriptor).catch(() => {}); });
           return;
         }
         const path = url.pathname, match = path.match(/\.(pdf|md)$/i); if (!match) return; seen.add(node);
@@ -1429,21 +1446,59 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
 
 // Plan of a long turn (work_plan.py, design note 2026-11-16): a turn handed to Work, or an
 // app being built, sends its plan with the status events (data.atlas_plan: title with the
-// estimate, numbered steps and their states). Open WebUI shows only the status line, so the
-// plan is drawn under it, in the answer being written, and updated live. It goes away when
-// the answer starts: the answer repeats the plan, checked. The Socket.IO frames are only
-// read, never changed or consumed (as guest-chat.js does); nothing touches the composer.
+// estimate, numbered steps and their states). Open WebUI draws only the description of the
+// last status (StatusHistory) and keeps its other data unread, so the plan is drawn as a card
+// at the top of the message (#response-content-container) and updated live. The card stays
+// for the whole turn: the tool details the turn writes into the message content (a web
+// search, a page read) are drawn below it, and the status that marks the start of the answer
+// only freezes it. Staging 2026-11-20: the first search detail made the content non-empty,
+// which removed the card; it came back only as a plain list at the end of the answer. The
+// answer ends with the checked plan as Markdown (ChatPlan.markdown, stored with the message
+// and read by API clients); that list is drawn by the same card, in place of the live one,
+// also when the conversation is opened again, and the Markdown copy is hidden. A turn that
+// ends without it (a failed app, a plan withdrawn) loses the card when its completion ends.
+// The Socket.IO frames are only read, never changed or consumed (as guest-chat.js does);
+// nothing touches the composer.
 (() => {
   "use strict";
-  const plans = new Map();
-  const SYMBOLS = { completed: "✓", in_progress: "◉", pending: "○", failed: "✗" };
+  const live = new Map();
+  const SYMBOLS = { completed: "✓", in_progress: "◉", pending: "○", failed: "✗", skipped: "⊘" };
+  const STATUS_OF = new Map(Object.entries(SYMBOLS).map(([status, symbol]) => [symbol, status]));
+  // The state in words for screen readers when the plan is read back from the answer; the
+  // live plan carries the service's own words (work_progress.PLAN_LABELS, same texts).
+  const STATES = {
+    en: { completed: "done", in_progress: "in progress", pending: "to do", failed: "failed", skipped: "not done" },
+    fr: { completed: "fait", in_progress: "en cours", pending: "à faire", failed: "échoué", skipped: "non fait" },
+    de: { completed: "erledigt", in_progress: "läuft", pending: "offen", failed: "fehlgeschlagen", skipped: "nicht erledigt" },
+    es: { completed: "hecho", in_progress: "en curso", pending: "pendiente", failed: "fallido", skipped: "no hecho" },
+    it: { completed: "fatto", in_progress: "in corso", pending: "da fare", failed: "non riuscito", skipped: "non fatto" }
+  };
+  const states = () => {
+    let locale = "";
+    try { locale = localStorage.getItem("locale") || ""; } catch { /* storage blocked: the page language */ }
+    return STATES[(locale || document.documentElement.lang || navigator.language || "en").toLowerCase().split("-")[0]] || STATES.en;
+  };
+  // A completion that ended without the checked plan: the card waits this long for the final
+  // content to be drawn before it goes away.
+  const END_GRACE_MS = 1500;
   const valid = plan => plan && typeof plan === "object" && Array.isArray(plan.steps) && plan.steps.length > 0 && plan.steps.length <= 7;
   const received = payload => {
     const id = payload?.message_id, event = payload?.data;
-    if (typeof id !== "string" || !/^[\w-]{1,80}$/.test(id) || event?.type !== "status") return;
+    if (typeof id !== "string" || !/^[\w-]{1,80}$/.test(id)) return;
+    if (event?.type === "chat:completion" && event.data?.done === true) {
+      const entry = live.get(id);
+      if (entry) { entry.ended = performance.now(); schedule(); setTimeout(schedule, END_GRACE_MS + 100); }
+      return;
+    }
+    if (event?.type !== "status") return;
     const data = event.data || {};
-    if (data.done === true) { if (plans.has(id)) { plans.set(id, null); schedule(); } return; }
-    if (data.action === "atlas_activity" && valid(data.atlas_plan)) { plans.set(id, data.atlas_plan); schedule(); }
+    // A status without a plan (a search, the start of the answer) leaves the card as it is.
+    if (data.action !== "atlas_activity" || !valid(data.atlas_plan)) return;
+    const entry = live.get(id);
+    // A plan sent again for a page opened late never brings back an older state.
+    if (entry && Number(data.atlas_plan.version) < Number(entry.plan.version)) return;
+    live.set(id, { plan: data.atlas_plan, ended: 0 });
+    schedule();
   };
   const Socket = window.WebSocket;
   window.WebSocket = class extends Socket {
@@ -1479,27 +1534,66 @@ html.dark img[data-atlas-brand="model"] { content:url('/static/atlas/brand/svg/a
     card.replaceChildren(title, list);
     card.dataset.version = String(plan.version);
   };
+  // The checked plan that ends the answer (ChatPlan.markdown): a paragraph led by the bold
+  // heading, then a list of at most seven items, each led by a step symbol. The last such
+  // list of the message is the plan (a file footer may follow it).
+  const finalPlan = host => {
+    const lists = [...host.querySelectorAll(".markdown-prose ul")].filter(list => !list.closest(".atlas-plan"));
+    for (const list of lists.reverse()) {
+      const items = [...list.children];
+      if (!items.length || items.length > 7 || items.some(item => item.tagName !== "LI")) continue;
+      const steps = items.map(item => {
+        const text = item.textContent.trim(), status = STATUS_OF.get(text.charAt(0));
+        return status && /\s/.test(text.charAt(1)) ? { status, text: text.slice(1).trim() } : null;
+      });
+      if (steps.some(step => !step)) continue;
+      const heading = list.previousElementSibling, bold = heading?.querySelector("strong");
+      // "**Plan** (done in 3 min)": the bold heading, then the time in brackets.
+      const line = heading?.textContent.trim() || "";
+      if (heading?.tagName !== "P" || !bold || !line.startsWith(bold.textContent.trim()) || !/\(.+\)$/.test(line)) continue;
+      return { heading, list, title: line, steps };
+    }
+    return null;
+  };
+  const cardOf = host => {
+    let card = [...host.children].find(child => child.classList.contains("atlas-plan"));
+    if (!card) {
+      card = node("div", "atlas-plan");
+      card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
+    }
+    if (host.firstElementChild !== card) host.prepend(card);
+    return card;
+  };
   const render = () => {
-    for (const [id, plan] of [...plans]) {
-      const message = document.getElementById("message-" + id);
-      let card = message?.querySelector(".atlas-plan");
-      if (!plan) { card?.remove(); plans.delete(id); continue; }
-      const host = message?.querySelector("#response-content-container");
-      if (!host) continue;
-      // The answer has started: the plan comes back checked inside it.
-      if (host.querySelector(".markdown-prose")?.textContent.trim()) { card?.remove(); plans.delete(id); continue; }
-      if (!card || card.parentElement !== host) {
-        card?.remove();
-        card = node("div", "atlas-plan");
-        card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
-        host.prepend(card);
-      }
-      if (card.dataset.version !== String(plan.version)) draw(card, plan);
+    // The final plan, in every message on the page: the turn just ended or a chat opened again.
+    for (const host of document.querySelectorAll('[id="response-content-container"]')) {
+      const found = finalPlan(host);
+      if (!found) continue;
+      found.heading.hidden = true; found.list.hidden = true;
+      const words = states();
+      const plan = {
+        title: found.title,
+        version: "final " + found.title + " " + found.steps.map(step => step.status + ":" + step.text).join("|"),
+        steps: found.steps.map(step => ({ ...step, state: words[step.status] }))
+      };
+      const card = cardOf(host);
+      card.dataset.final = "true";
+      if (card.dataset.version !== plan.version) draw(card, plan);
+    }
+    const now = performance.now();
+    for (const [id, entry] of [...live]) {
+      const host = document.getElementById("message-" + id)?.querySelector('[id="response-content-container"]');
+      if (!host) { if (entry.ended) live.delete(id); continue; }
+      const drawn = [...host.children].find(child => child.classList.contains("atlas-plan"));
+      if (drawn?.dataset.final === "true") { live.delete(id); continue; }
+      if (entry.ended && now - entry.ended >= END_GRACE_MS) { drawn?.remove(); live.delete(id); continue; }
+      const card = cardOf(host);
+      if (card.dataset.version !== String(entry.plan.version)) draw(card, entry.plan);
     }
   };
   let scheduled = false;
   const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(() => { scheduled = false; render(); }); } };
-  const start = () => new MutationObserver(() => { if (plans.size) schedule(); }).observe(document.body, { childList: true, subtree: true });
+  const start = () => { new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true }); schedule(); };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true }); else start();
 })();
 

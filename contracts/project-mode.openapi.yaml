@@ -2429,6 +2429,12 @@ paths:
               schema:
                 type: string
                 format: binary
+            text/html:
+              schema:
+                type: string
+                description: Server rendering of the verified file as pictures, without
+                  script, under Content-Security-Policy default-src 'none'; img-src data:;
+                  sandbox (docs/deliverable-previews.md).
         '401':
           $ref: '#/components/responses/Error401'
         '403':
@@ -6516,6 +6522,23 @@ components:
           - created
           - regenerated
           - edited_in_place
+        revision_of:
+          type: object
+          additionalProperties: false
+          properties:
+            file_id:
+              type: string
+              format: uuid
+            base_version:
+              type: string
+              format: uuid
+            approval_id:
+              type: string
+              format: uuid
+          required:
+          - file_id
+          - base_version
+          - approval_id
         validation:
           allOf:
           - $ref: '#/components/schemas/Validation'

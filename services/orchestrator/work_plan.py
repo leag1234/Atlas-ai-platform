@@ -16,6 +16,21 @@ ran for one to three minutes behind a single status line. Now:
   the execution yet);
 - the final answer repeats the plan as a checked list.
 
+A check step (type "test") is done only when a check of the result ran and
+passed: a command (run_command, bash), or the file check of publish_document
+(deliverable_check.py, its "verification" in the tool event). Neither a tool
+call of another kind nor the model's own report closes it (staging
+2026-11-20: a presentation turn ended with "check the content and the
+layout" unchecked while its answer said the file was verified). A step not
+seen done when the plan closes is shown as not done ("skipped"), never as
+still to do or running.
+
+A published file holds the work of the steps that wrote it: one publication
+closes them at once, up to the check step (done only if the file check passed)
+and the delivery; in a file turn the editing steps typed "code" are among them
+(staging 2026-11-20: "change the title to the new one" stayed open while the
+one publication of the turn had changed it).
+
 Every label is service text (work_progress.PLAN_LABELS), never in prompts/.
 Logs carry counts, types and sizes, never the request or the step texts.
 """
@@ -46,7 +61,16 @@ log = logging.getLogger(__name__)
 
 MIN_STEPS, MAX_STEPS = 3, 7
 MAX_WORDS, MAX_CHARACTERS = 12, 100
-SYMBOLS = {"completed": "✓", "in_progress": "◉", "pending": "○", "failed": "✗"}
+SYMBOLS = {
+    "completed": "✓",
+    "in_progress": "◉",
+    "pending": "○",
+    "failed": "✗",
+    # Not seen done when the plan closed (chat-ui.js reads these symbols).
+    "skipped": "⊘",
+}
+# The statuses a step's report (update_plan, todowrite) may set.
+REPORTED = frozenset({"completed", "in_progress", "pending", "failed"})
 SIZES = ("small", "medium", "large")
 # Tools whose calls are plan bookkeeping, not work on a step.
 PLAN_TOOLS = frozenset({"update_plan", "todowrite", "todoread"})
@@ -86,6 +110,8 @@ TOOL_TYPES: dict[str, frozenset[str]] = {
         for name in ("web_search", "web_fetch", "websearch", "webfetch")
     },
 }
+# Tools that publish a file: the file holds the work of the steps that wrote it.
+PUBLICATIONS = frozenset({"publish_document", "publish_scheduled_file"})
 # Jargon a step shown to the person must not carry: code, paths, commands.
 _JARGON = re.compile(
     r"[`$<>{}\[\]\\|]|/\w|\w_\w|\b\w+\.(?:py|js|ts|sh|html|css|json|md|txt|go)\b|--\w"
@@ -253,8 +279,13 @@ class ChatPlan:
         if self.setup_seconds is None:
             self.setup_seconds = time.monotonic() - self.started
 
-    def tool(self, name: str, status: str) -> None:
-        """A finished Work tool call: evidence for the step in progress."""
+    def tool(self, name: str, status: str, verification: str = "") -> None:
+        """A finished Work tool call: evidence for the step in progress.
+
+        verification is the status of the check the call ran, when it ran one
+        (the file check of publish_document): "passed" makes the call evidence
+        of a check step, "failed" or "not_run" never.
+        """
         if not self.steps or self.finished:
             return
         if name in PLAN_TOOLS or name in BOOKKEEPING or not name:
@@ -263,6 +294,19 @@ class ChatPlan:
             return
         now = time.monotonic()
         kinds = TOOL_TYPES.get(name, frozenset())
+        published = status == "completed" and name in PUBLICATIONS
+        if published and self.route == "work-file":
+            # A file turn writes its document whole in the publication: the
+            # steps that change it ("change the title", "add the table", often
+            # typed code) are in the published file. One publication did the
+            # work of three steps and two of them stayed open (staging
+            # 2026-11-20, "change the title" then "add a table").
+            kinds = kinds | {"code"}
+        passed = status == "completed" and verification == "passed"
+        if passed:
+            kinds = kinds | {"test"}
+        elif verification:
+            kinds = kinds - {"test"}
         if status == "completed":
             self.evidence |= kinds
         active = self._active()
@@ -299,6 +343,42 @@ class ChatPlan:
         self.pool += 1
         if active is not None:
             active.calls += 1
+        if passed or published:
+            self._checked(now)
+
+    def _checked(self, now: float) -> None:
+        """A check of the result passed or a file was published: the steps
+        whose work was seen, from the first one not done, are done up to the
+        delivery, which the code checks when the turn ends; the next step
+        starts. One call may do the work of several steps (a publication
+        writes the whole file), so it is not one step per call here; a check
+        step still needs a check that passed."""
+        changed = False
+        for step in self.steps:
+            if step.status == "completed":
+                continue
+            if step.status == "failed" or step.type == "deliver":
+                break
+            if not self._seen(step):
+                break
+            self._done(step, now)
+            changed = True
+        if not changed:
+            return
+        self.pool = 0
+        if self._active() is None:
+            following = next((s for s in self.steps if s.status != "completed"), None)
+            if following is not None and following.status == "pending":
+                self._start(following, now)
+        self.version += 1
+
+    def _seen(self, step: Step) -> bool:
+        """Code saw the step's work: a check step needs a check that passed."""
+        if step.checked:
+            return True
+        if step.type == "test":
+            return "test" in self.evidence
+        return step.calls > 0 or step.type in self.evidence
 
     def update(self, items: Sequence[Mapping[str, object]]) -> dict[str, Any]:
         """The model's own report (update_plan, todowrite): its statuses, checked.
@@ -355,12 +435,13 @@ class ChatPlan:
                     )
             self.version += 1
         refused: list[int] = []
+        unchecked: list[int] = []
         changed = False
         target: Step | None = None
         for step, status in zip(self.steps, statuses):
             if status in {"cancelled", "canceled"}:
                 status = "pending"
-            if status == step.status or status not in SYMBOLS:
+            if status == step.status or status not in REPORTED:
                 continue
             if status == "completed":
                 if step.type == "deliver":
@@ -368,7 +449,11 @@ class ChatPlan:
                     if step.status == "pending":
                         target = step
                     continue
-                if self.pool > 0:
+                if step.type == "test" and not self._seen(step):
+                    # A check is done when a check ran and passed, not when
+                    # the model says so.
+                    unchecked.append(step.number)
+                elif self.pool > 0:
                     self.pool -= 1
                     self._done(step, now)
                     changed = True
@@ -390,19 +475,31 @@ class ChatPlan:
             changed = True
         if changed:
             self.version += 1
-        if refused:
-            self.refusals += len(refused)
-            log.warning("work_plan_done_refused steps=%s", ",".join(map(str, refused)))
-            return {
-                "refused": refused,
-                "next_step": (
+        if refused or unchecked:
+            self.refusals += len(refused) + len(unchecked)
+            log.warning(
+                "work_plan_done_refused steps=%s",
+                ",".join(map(str, sorted(refused + unchecked))),
+            )
+            told: list[str] = []
+            if refused:
+                told.append(
                     "Steps "
                     + ", ".join(map(str, refused))
                     + " were not marked completed: no tool call was made for them "
                     "since the previous step was done. Do the work of each step with "
                     "your tools, then mark it completed."
-                ),
-            }
+                )
+            if unchecked:
+                told.append(
+                    "Steps "
+                    + ", ".join(map(str, unchecked))
+                    + " were not marked completed: they check the result, and no "
+                    "check has passed yet. A check passes when a command that runs "
+                    "or tests the result succeeds, or when publish_document reports "
+                    "verification passed; the step is then marked completed by itself."
+                )
+            return {"refused": sorted(refused + unchecked), "next_step": " ".join(told)}
         return {}
 
     def code_step(self, number: int) -> None:
@@ -457,7 +554,8 @@ class ChatPlan:
     def statuses(self) -> list[str]:
         """The checked status of each step, as update_plan items carry it."""
         return [
-            "pending" if step.status == "failed" else step.status for step in self.steps
+            "pending" if step.status in {"failed", "skipped"} else step.status
+            for step in self.steps
         ]
 
     def discard(self) -> None:
@@ -488,21 +586,18 @@ class ChatPlan:
         for step in self.steps:
             if step.status in {"completed", "failed"}:
                 continue
-            if success and (
-                step.type == "deliver"
-                or step.calls > 0
-                or step.checked
-                or step.type in self.evidence
-            ):
+            if success and (step.type == "deliver" or self._seen(step)):
                 # Delivered: the turn's own checks passed (file stored, app
-                # valid, answer done); the step's work was seen in tool calls.
+                # valid, answer done); the step's work was seen in tool calls,
+                # a check step's in a check that passed.
                 step.started = step.started or now
                 step.status, step.finished = "completed", now
             elif not success and step.status == "in_progress":
                 step.status, step.finished = "failed", now
-            elif step.status == "in_progress":
-                # Not seen done: never shown as still running in the answer.
-                step.status = "pending"
+            else:
+                # Not seen done: shown as not done, never as still to do or
+                # running in the answer.
+                step.status = "skipped"
         self.finished, self.success = True, success
         self.version += 1
         total = now - self.started

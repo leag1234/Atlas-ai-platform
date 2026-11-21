@@ -541,11 +541,14 @@ def user_dates(texts: list[str], zone: str = "UTC", now: Any = None) -> list[str
     """ISO dates the person's words name relative to today, in their zone.
 
     ``now`` (an aware datetime) is the caller's clock: the journey planner
-    passes its own, so "tomorrow" and the planned day come from one clock."""
-    from datetime import datetime, timedelta
+    passes its own, so "tomorrow" and the planned day come from one clock.
+    Without one, the orchestrator's clock (datecalc.utc_now)."""
+    from datetime import timedelta
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-    instant = now or datetime.now(ZoneInfo("UTC"))
+    from services.orchestrator import datecalc
+
+    instant = now or datecalc.utc_now()
     try:
         today = instant.astimezone(ZoneInfo(zone)).date()
     except (ZoneInfoNotFoundError, ValueError):
@@ -2246,6 +2249,8 @@ class Turn:
     plan_starts: list[str] = field(default_factory=list)
     plan_origin: str = ""
     plan_from_device: bool = False
+    # Every itinerary of the plan starts with a walk from its origin.
+    plan_walks_first: bool = False
     # The computed plan when it is doubtful (night only, far too slow): a
     # fallback after what the pages read say (transit_planner.doubtful_answer),
     # why it is doubtful, and the pages code read about the direct services.
@@ -2264,6 +2269,12 @@ class Turn:
     # Durations an earlier check of this turn left out (minutes): a rewrite
     # that keeps a time worked out from one of them keeps no fact.
     dropped: list[float] = field(default_factory=list, repr=False)
+    # The clock of the turn's journey plan (an aware datetime, set by
+    # transit_planner): every later check reads the person's days ("tomorrow",
+    # "on Friday") on it, as the plan did. Staging -141 posttests: a check run
+    # after midnight read a Spanish "Friday" as the next week's Friday and cut
+    # the opening that dated the plan's Friday.
+    clock: Any = field(default=None, repr=False)
 
     def deadline(self) -> float | None:
         """When the person must be at the destination (minutes), from the last
@@ -2374,8 +2385,21 @@ class Turn:
     def trip_dates(self, zone: str = "", now: Any = None) -> list[str]:
         """The days the person named for the trip (ISO), in their zone (or
         ``zone``: where their device is, for the journey planner), relative to
-        ``now`` when the caller has its own clock."""
-        return user_dates(self.asked, zone or self.zone, now)
+        ``now`` when the caller has its own clock, else the plan's."""
+        return user_dates(self.asked, zone or self.zone, now or self.clock)
+
+    def today(self) -> str:
+        """Today in the person's zone (ISO), on the plan's clock when there is
+        one."""
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        from services.orchestrator import datecalc
+
+        instant = self.clock or datecalc.utc_now()
+        try:
+            return instant.astimezone(ZoneInfo(self.zone)).date().isoformat()
+        except (ZoneInfoNotFoundError, ValueError):
+            return instant.astimezone(ZoneInfo("UTC")).date().isoformat()
 
     def plan_gaps(self) -> list[float]:
         """Minutes the computed plan gives by arithmetic: each itinerary's
@@ -2531,7 +2555,7 @@ class Turn:
             parts.append(quantity.text)
             parts.extend(re.findall(r"\d+(?:[.,]\d+)?", quantity.text))
         # "demain", "tomorrow", "Freitag": the dates the person named are theirs.
-        parts.extend(user_dates(self.asked, self.zone))
+        parts.extend(self.trip_dates())
         # Lines and stops of route sentences: checked here, together.
         parts.extend(route_facts.mentions(answer, _masked(answer)))
         return " ".join(parts)

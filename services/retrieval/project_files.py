@@ -714,6 +714,15 @@ class ProjectFiles:
 
         schedules = Schedules(self.scope)
         scheduled = schedules.binding(session["id"])
+        revision = metadata.get("revision_of")
+        if (
+            revision is not None
+            and scheduled is not None
+            and scheduled["data"]["target_file"]
+        ):
+            raise ProjectError(
+                422, "invalid_request", "A scheduled publication has its own target"
+            )
         if scheduled is not None and scheduled["data"]["target_file"]:
             target = scheduled["data"]
             metadata["path"] = target["target_file"]
@@ -749,29 +758,7 @@ class ProjectFiles:
                 )
                 if base is None or base["version_id"] != file["version_id"]:
                     raise ProjectError(409, "revision_conflict")
-                version = self.add_version(
-                    file,
-                    content,
-                    origin="work",
-                    verified_mime=PUBLICATION_MIMES[suffix],
-                )
-                file.update(
-                    {
-                        k: version[k]
-                        for k in (
-                            "mime",
-                            "size_bytes",
-                            "sha256",
-                            "origin",
-                            "availability",
-                            "source_locator",
-                            "index_status",
-                        )
-                    },
-                    version_id=version["id"],
-                )
-                self.save(file)
-                self.emit("file_uploaded", [file["id"], version["id"]], len(content))
+                self.published_version(file, content, suffix, "file_uploaded")
             else:
                 file = self.create_file(
                     folder_id,
@@ -784,6 +771,10 @@ class ProjectFiles:
             target["target_file_id"] = file["id"]
             scheduled["run_data"]["published"] = file["version_id"]
             schedules.save(scheduled)
+        elif revision is not None:
+            file = self.revised_deliverable(
+                revision, metadata, content, suffix, folder_id
+            )
         else:
             file = self.create_file(
                 folder_id,
@@ -841,6 +832,74 @@ class ProjectFiles:
                 )
         return value
 
+    def published_version(
+        self, file: dict[str, Any], content: bytes, suffix: str, event: str
+    ) -> dict[str, Any]:
+        """Verified publication bytes as the next version of an existing file."""
+        version = self.add_version(
+            file,
+            content,
+            origin="work",
+            verified_mime=PUBLICATION_MIMES[suffix],
+        )
+        file.update(
+            {
+                k: version[k]
+                for k in (
+                    "mime",
+                    "size_bytes",
+                    "sha256",
+                    "origin",
+                    "availability",
+                    "source_locator",
+                    "index_status",
+                )
+            },
+            version_id=version["id"],
+        )
+        self.save(file)
+        self.emit(event, [file["id"], version["id"]], len(content))
+        return file
+
+    def revised_deliverable(
+        self,
+        revision: dict[str, Any],
+        metadata: dict[str, Any],
+        content: bytes,
+        suffix: str,
+        folder_id: str,
+    ) -> dict[str, Any]:
+        """A change of a deliverable: its next version, under an overwrite approval.
+
+        A follow-up that changes a file delivered earlier in the conversation
+        ("change the title", "add a table") gave a second and a third file with
+        new names (staging 2026-11-20). The file keeps its name, the earlier
+        versions stay recoverable, and the overwrite approval binds the exact
+        bytes, base version and revision, as a replaced upload does.
+        """
+        if metadata["strategy"] == "created":
+            raise ProjectError(
+                422, "invalid_request", "A new version is not a created file"
+            )
+        file = self.get("file", revision["file_id"])
+        if file["folder_id"] != folder_id:
+            raise ProjectError(
+                422, "invalid_request", "Only a deliverable gets a published version"
+            )
+        if (
+            metadata["path"] != file["relative_path"]
+            or Path(file["relative_path"]).suffix.lower() != suffix
+        ):
+            raise ProjectError(
+                422, "invalid_request", "A new version keeps the file name and format"
+            )
+        if file["version_id"] != revision["base_version"]:
+            raise ProjectError(409, "revision_conflict", revision=file["revision"])
+        self.consume(
+            revision["approval_id"], "overwrite", self.overwrite_effects(file, content)
+        )
+        return self.published_version(file, content, suffix, "file_versioned")
+
     def deliverable(self, identifier: str) -> dict[str, Any]:
         value = self.get("deliverable", identifier)
         version = self.get("version", value["file_version_id"])
@@ -855,7 +914,14 @@ class ProjectFiles:
         return value
 
     def preview(self, identifier: str) -> tuple[int, bytes, dict[str, str]]:
+        from services.retrieval.deliverable_render import gallery_headers
+
         value = self.deliverable(identifier)
+        # The server's own rendering of the verified bytes comes first; the
+        # text read back at publication remains the fallback.
+        rendered = self.rendered_preview(value)
+        if rendered is not None:
+            return 200, rendered, gallery_headers()
         private = self.row("deliverable", identifier)["private"]
         if "preview_id" not in private:
             raise ProjectError(
@@ -881,6 +947,95 @@ class ProjectFiles:
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    def rendered_preview(self, value: dict[str, Any]) -> bytes | None:
+        """The stored gallery of a deliverable's current bytes, if any."""
+        from services.retrieval.deliverable_render import RENDER_VERSION, render_id
+
+        try:
+            row = self.row("derived", render_id(value["id"]))
+            derived = self.checked("derived", row)
+        except ProjectError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        if (
+            derived.get("processor_version") != RENDER_VERSION
+            or derived.get("source_version_id") != value["file_version_id"]
+            or derived.get("mime") != "text/html"
+        ):
+            return None
+        content = base64.b64decode(row["private"]["content"], validate=True)
+        if (
+            len(content) != derived["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != derived["sha256"]
+        ):
+            raise ProjectError(503, "dependency_unavailable")
+        return content
+
+    def deliverable_source(
+        self, value: dict[str, Any]
+    ) -> tuple[bytes, str, str] | None:
+        """Verified bytes, format and name of a deliverable the gallery can show."""
+        from services.retrieval.deliverable_render import RENDER_SUFFIXES
+
+        version = self.get("version", value["file_version_id"])
+        file = self.get("file", version["file_id"])
+        suffix = Path(file["relative_path"]).suffix.lower()
+        if suffix not in RENDER_SUFFIXES:
+            return None
+        content = self.blob_path(file["id"], version["id"]).read_bytes()
+        if (
+            len(content) != version["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != version["sha256"]
+        ):
+            raise ProjectError(
+                503,
+                "dependency_unavailable",
+                "Canonical bytes failed integrity verification",
+            )
+        return content, suffix, Path(file["relative_path"]).name
+
+    def store_rendered_preview(self, value: dict[str, Any], page: bytes) -> None:
+        """Keep a gallery derived by the server from the deliverable's bytes.
+
+        Its parent is the deliverable, not the file version: readers of a
+        version's extraction record never meet it.
+        """
+        from services.retrieval.deliverable_render import (
+            RENDER_LIMIT,
+            RENDER_VERSION,
+            render_id,
+        )
+
+        if not 0 < len(page) <= RENDER_LIMIT:
+            raise ProjectError(413, "size_limit")
+        self.scope.check_quota("stored_bytes", len(page))
+        self.scope.check_quota("derived_bytes", len(page))
+        derived = dict(
+            self.new(render_id(value["id"])),
+            source_version_id=value["file_version_id"],
+            processor_version=RENDER_VERSION,
+            chunks=[],
+            mime="text/html",
+            size_bytes=len(page),
+            sha256=hashlib.sha256(page).hexdigest(),
+        )
+        for resource in ("derived_bytes", "stored_bytes"):
+            self.scope.reserve(derived["id"], {resource: len(page)})
+            self.scope.reconcile(derived["id"], resource, len(page))
+        self.put(
+            "derived",
+            derived,
+            value["id"],
+            retention="E",
+            private=dict(content=base64.b64encode(page).decode()),
+        )
+        for source in [value["file_version_id"], *value["source_version_ids"]]:
+            self.db.execute(
+                "INSERT INTO atlas_projects.resource_sources VALUES(%s,%s,%s,%s)",
+                (self.org, self.project, derived["id"], source),
+            )
 
     def version(
         self,

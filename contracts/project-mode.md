@@ -1187,3 +1187,23 @@ early exits or exception suppression cannot establish an inline passing check.
 Unsupported command forms abstain; command evidence is not an independent oracle.
 Work running-command progress retains redacted arguments in tool_result so the
 command and its worker result can be audited in the same session/request.
+
+## Deliverable revision amendment (2026-11-21)
+
+REQ-PROJ-05: a change of a deliverable is its next version, not a new file.
+ExecutionPublish may carry an optional `revision_of` object (`file_id`,
+`base_version`, `approval_id`, all required). Retrieval then publishes the
+verified bytes as the next version of that file instead of creating one: the
+file must be in the reserved deliverables folder, `path` must equal its current
+relative path (same name and format), `base_version` must equal its current
+version (otherwise `409 revision_conflict`), the strategy must not be `created`,
+and the approval must be an allowed, unconsumed `overwrite` approval of this
+execution whose effects bind the file, its folder, path, base version, revision,
+artifact sha256 and size, exactly as for a replaced upload. A scheduled
+publication keeps its own target and refuses `revision_of`. The deliverable
+record is new and serves the new version; earlier deliverable links keep
+serving their own versions, and earlier versions remain recoverable. This is
+option (a) of open point 20 of docs/17, applied to the hidden chat project,
+where the overwrite approval is given on the person's behalf (owner decision of
+2026-11-11). Project mode does not send `revision_of` yet: there every
+publication still creates a new file until the owner decides point 20.
