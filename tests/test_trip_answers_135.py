@@ -263,8 +263,8 @@ class LateTrainTest(GenevaTest):
                 self.assertIn("RAIL", modes)
 
     def test_nothing_reasonable_later_keeps_the_fallback(self) -> None:
-        # The second search finds the night coaches again: the doubtful plan
-        # stands, titled a fallback.
+        # The widened searches (+30 min, +2 h, the day's departures) find the
+        # night coaches again: the doubtful plan stands, titled a fallback.
         planner = Planner("lyon")
         data = self.compute(
             planner,
@@ -275,7 +275,7 @@ class LateTrainTest(GenevaTest):
             now=datetime(2026, 11, 19, 18, 0, tzinfo=timezone.utc),
         )
         self.assertEqual(data["outcome"], "doubtful")
-        self.assertEqual(planner.plans(), 2)
+        self.assertEqual(planner.plans(), 4)
         self.assertTrue(data["rendered"].startswith("**Solution de repli seulement"))
 
 

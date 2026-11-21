@@ -419,7 +419,13 @@ class StagingSecondDayTests(unittest.IsolatedAsyncioTestCase):
         assert outcome is not None
         self.assertIn("le modèle n’a pas renvoyé de texte utilisable", outcome[0])
         self.assertIn(f"[rail.example.test]({PARIS_URL})", outcome[0])
-        self.assertNotIn("TER 3105 Caen 09:12", outcome[0])
+        # Staging -141: the page's times are quoted as the page writes them,
+        # with its link, never a bare list of pages.
+        self.assertIn(
+            "« TER 3105 Caen 09:12 → Paris Saint-Lazare 11:52 » "
+            f"([rail.example.test]({PARIS_URL}))",
+            outcome[0],
+        )
         self.assertIn("calculateur d’itinéraire", outcome[0])
         empty = travel_claims.Turn(asked=["Caen Paris demain"])
         empty.activate()
