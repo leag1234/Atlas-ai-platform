@@ -639,6 +639,7 @@ without a restriction (or ask your administrator), then send the same request.
 | 502 | `provider_error` | The model provider failed in another way | Retry once, then report it |
 | 503 | `provider_unavailable` (`provider_status`) | The model provider is unavailable | Retry later |
 | 503 | `owned_server_starting` (`Retry-After`, `waited`) | Strict privacy: the owned server is starting. Returned only when the request accepted no wait (`X-Atlas-Owned-Wait: 0`), or when it is still starting after the accepted wait (`waited`: seconds waited) | Retry after `Retry-After` seconds |
+| 503 | `owned_server_unavailable` (`Retry-After`, `reason`) | Strict privacy: the owned server cannot start: `capacity` (no machine of its type free at the host), `start_failed`, or `starter_unavailable` (its starter does not answer) | Retry after `Retry-After` seconds, or use another level |
 | 503 | `key_service_unavailable`, `unavailable`, `tts_unavailable`, `transcription_unavailable` | A component of Atlas is unavailable | Retry later |
 | 504 | `provider_timeout` | The model provider did not answer in time | Retry, with a shorter output if possible |
 | 502 or 503 (no JSON) | | The service is restarting for a deployment (usually under a minute) | Wait and retry |
@@ -727,8 +728,18 @@ provider while it waits, and the request never falls back to a shared model.
   for clients that schedule their own retries.
 
 A refusal of the starter is a named 429 (or 503 `owned_server_unavailable` for a failed start) with
-its measured values, never an outage, and is answered at once, without waiting. Without a starter,
-nothing changes. Shared traffic never starts the owned server.
+its measured values, never an outage, and is answered at once, without waiting. A refusal is held
+for up to 2 minutes (or until its `retry_after`, if sooner): the requests in that time get the same
+refusal without asking the starter again. A starter that is installed but does not answer within a
+few seconds is a 503 `owned_server_unavailable` with `reason: "starter_unavailable"` and
+`Retry-After`, never a provider error. Without a starter, nothing changes. Shared traffic never
+starts the owned server.
+
+These answers have the same code, status and measured values (`retry_after`, `measured`, `limit`,
+`unit`, `period`, `reason`) for every model, the `atlas` assistant included, in the three formats:
+a request that is not streamed gets the HTTP error in its format, a streamed one the error event
+of its format (`data: {"error": ...}` for Chat Completions, `error` then `response.failed` for
+Responses, `error` for Messages).
 
 In the chat, a strict turn that finds the owned server off shows the status line "Starting the
 private server… 45 s / ~2 min" (in the conversation's language) and answers as soon as the server

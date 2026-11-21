@@ -34,6 +34,7 @@ from services.orchestrator.stream_client import sink_context, metadata_only_cont
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.chat_stream import response as stream_response
 from services.orchestrator.model import GatewayError
+from packages.owned_server import OwnedServerUnavailable
 from packages.provider_calls import track, use
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.daily_budget import (
@@ -262,6 +263,8 @@ async def chat(request: Request) -> Response:
     streaming = False
     detail = ""
     retry_after: int | None = None
+    # The owned server's measured values (strict privacy), as the direct models send them.
+    owned_values: dict[str, object] = {}
     from services.orchestrator import owned_wait
 
     # Strict privacy: how long this request may wait for the owned server to start
@@ -542,6 +545,8 @@ async def chat(request: Request) -> Response:
         status, code = exc.status, exc.code
         # The on-demand owned server is starting: the client may retry then.
         retry_after = getattr(exc, "retry_after", None)
+        if isinstance(answer := getattr(exc, "answer", None), OwnedServerUnavailable):
+            owned_values = {k: v for k, v in answer.fields().items() if k != "code"}
         if guest_configuration_failure(exc):
             logging.getLogger(__name__).error(
                 "Configuration failure; variables=%s", configuration_names(exc)
@@ -643,7 +648,12 @@ async def chat(request: Request) -> Response:
             detail = public_message(code, detail, language, reason)
         return JSONResponse(
             {
-                "error": {"message": detail or code, "type": code, "code": code},
+                "error": {
+                    "message": detail or code,
+                    "type": code,
+                    "code": code,
+                    **owned_values,
+                },
                 "atlas": {
                     "context": item.context_samples[-1]
                     if item.context_samples

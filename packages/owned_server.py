@@ -16,8 +16,11 @@ of these answers instead of a provider error:
 - ``owned_server_start_limit`` (429, ``Retry-After``): too many starts in the last hour;
 - ``owned_server_unavailable`` (503, ``Retry-After``): the start was tried and failed, with
   its ``reason``: ``capacity`` (the hosting provider has no machine of that type free right
-  now) or ``start_failed`` (any other failure). Never reported as "starting" (D5: the user
-  reads the real outcome, staging 2026-11-17: "starting" was shown after the start failed).
+  now) or ``start_failed`` (any other failure); or no start could be asked:
+  ``starter_unavailable`` (the starter is configured but does not answer). Never reported
+  as "starting" (D5: the user reads the real outcome, staging 2026-11-17: "starting" was
+  shown after the start failed), nor as a provider failure (staging 2026-11-20: with the
+  starter down, a strict request read "Explicit stop: provider_error").
 
 The gateway marks these answers with the ``X-Atlas-Owned-Server`` response header (value:
 the code) so that its clients name them without guessing from the status.
@@ -31,8 +34,9 @@ START_LIMIT = "owned_server_start_limit"
 UNAVAILABLE = "owned_server_unavailable"
 CODES = frozenset({STARTING, BUDGET, START_LIMIT, UNAVAILABLE})
 STATUS = {STARTING: 503, BUDGET: 429, START_LIMIT: 429, UNAVAILABLE: 503}
-# Why a start failed: no machine of that type free at the hosting provider, or else.
-REASONS = frozenset({"capacity", "start_failed"})
+# Why a start failed: no machine of that type free at the hosting provider, or else;
+# or why none could be asked: the starter does not answer.
+REASONS = frozenset({"capacity", "start_failed", "starter_unavailable"})
 HEADER = "X-Atlas-Owned-Server"
 # Units of a measured cap: hours used today, euros spent this month, starts this hour.
 UNITS = frozenset({"hours", "EUR", "starts"})
@@ -125,11 +129,11 @@ class OwnedServerUnavailable(RuntimeError):
                 "was sent to any other provider." + wait
             )
         if self.code == UNAVAILABLE:
-            why = (
-                "the hosting provider has no machine of its type available right now"
-                if self.reason == "capacity"
-                else "its start failed"
-            )
+            why = {
+                "capacity": "the hosting provider has no machine of its type available "
+                "right now",
+                "starter_unavailable": "its starter does not answer",
+            }.get(str(self.reason), "its start failed")
             return (
                 f"The owned inference server for strict privacy cannot start: {why}. "
                 "Nothing was sent to any other provider." + wait

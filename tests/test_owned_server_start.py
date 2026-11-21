@@ -223,16 +223,90 @@ class EnsureTests(StarterCase):
             "4 fois", ui_failure(START_LIMIT, "fr", raised.exception.fields()) or ""
         )
 
-    async def test_a_silent_starter_leaves_the_usual_error(self) -> None:
+    async def test_a_silent_starter_is_named_never_a_provider_error(self) -> None:
         import owned_start
 
+        # Staging 2026-11-20: the host's starter service had stopped; the strict
+        # request read "Explicit stop: provider_error" instead of a named answer.
         with (
             patch("owned_start.ANSWER_SECONDS", 0.3),
             self.assertLogs("owned_start", level="WARNING") as logs,
+            self.assertRaises(OwnedServerUnavailable) as raised,
         ):
             await owned_start.ensure()
         self.assertIn("owned_server_starter_silent", logs.output[0])
         self.assertTrue((self.folder / "request").exists())
+        answer = raised.exception
+        self.assertEqual((answer.code, answer.status), (UNAVAILABLE, 503))
+        self.assertEqual(answer.fields()["reason"], "starter_unavailable")
+        self.assertEqual(answer.retry_after, owned_start.SILENT_RETRY_SECONDS)
+        self.assertIn("its starter does not answer", answer.message)
+        self.assertIn(
+            "son service de démarrage ne répond pas",
+            ui_failure(answer.code, "fr", answer.fields()) or "",
+        )
+
+    async def test_an_unwritable_starter_directory_is_named(self) -> None:
+        import owned_start
+
+        with (
+            patch("owned_start.request_start", return_value=None),
+            self.assertRaises(OwnedServerUnavailable) as raised,
+        ):
+            await owned_start.ensure()
+        self.assertEqual(raised.exception.fields()["reason"], "starter_unavailable")
+
+    async def test_a_recent_refusal_is_held_without_a_new_request(self) -> None:
+        import owned_start
+
+        # One strict turn makes several strict calls; each asking again tripped the
+        # start limit of the host's service manager (staging 2026-11-20 17:35).
+        starter = self.starter(BUDGET_STATUS)
+        for _ in range(5):
+            with self.assertRaises(OwnedServerUnavailable) as raised:
+                await owned_start.ensure()
+            self.assertEqual(raised.exception.code, BUDGET)
+            self.assertEqual(raised.exception.measured, 4.02)
+            assert raised.exception.retry_after is not None
+            self.assertTrue(7100 <= raised.exception.retry_after <= 7200)
+        self.assertEqual(starter.requests, 1)
+        self.assertFalse((self.folder / "request").exists())
+
+    async def test_an_old_refusal_asks_the_starter_again(self) -> None:
+        import owned_start
+
+        old = time.time() - owned_start.REFUSED_HOLD_SECONDS - 5
+        (self.folder / "status.json").write_text(
+            json.dumps(BUDGET_STATUS | {"updated": old})
+        )
+        starter = self.starter(STARTING_STATUS)
+        with self.assertRaises(OwnedServerUnavailable) as raised:
+            await owned_start.ensure()
+        self.assertEqual(raised.exception.code, STARTING)
+        self.assertEqual(starter.requests, 1)
+
+    async def test_a_refusal_is_held_no_longer_than_its_retry_after(self) -> None:
+        import owned_start
+
+        (self.folder / "status.json").write_text(
+            json.dumps(
+                {
+                    "state": "refused",
+                    "reason": "start_limit",
+                    "measured": 4,
+                    "limit": 4,
+                    "unit": "starts",
+                    "period": "hour",
+                    "retry_after": 10,
+                    "updated": time.time() - 15,
+                }
+            )
+        )
+        starter = self.starter(STARTING_STATUS)
+        with self.assertRaises(OwnedServerUnavailable) as raised:
+            await owned_start.ensure()
+        self.assertEqual(raised.exception.code, STARTING)
+        self.assertEqual(starter.requests, 1)
 
     async def test_a_ready_answer_leaves_the_usual_error(self) -> None:
         import owned_start
@@ -568,6 +642,7 @@ class WireTests(unittest.TestCase):
                 (START_LIMIT, {"measured": 4, "limit": 4, "retry_after": 600}),
                 (UNAVAILABLE, {"reason": "capacity", "retry_after": 300}),
                 (UNAVAILABLE, {"reason": "start_failed"}),
+                (UNAVAILABLE, {"reason": "starter_unavailable", "retry_after": 60}),
             ):
                 with self.subTest(language=language, code=code):
                     sentence = ui_failure(code, language, values)
