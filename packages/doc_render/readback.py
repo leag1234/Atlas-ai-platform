@@ -247,6 +247,74 @@ def _bulleted(frame: Any) -> bool:
     )
 
 
+# A themed deck (deck.py) names each text shape by its role.
+ROLE = "atlas:"
+# Shapes that are not the content: the footer repeats the deck title, the
+# numbers are slide numbers and ordinals, the chart title is the chart's.
+FRAME_ROLES = frozenset({"footer", "number", "decor", "chart-title"})
+
+
+def _themed(shapes: list[Any], section: Section, result: Readback) -> None:
+    """Read a themed slide by its shape names: one point is one bullet."""
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    values: list[str] = []
+    table: list[list[str]] | None = None
+    for shape in shapes:
+        role = shape.name[len(ROLE) :] if shape.name.startswith(ROLE) else ""
+        if getattr(shape, "has_table", False) and shape.has_table:
+            rows = [
+                [_one_line(cell.text) for cell in row.cells] for row in shape.table.rows
+            ]
+            if table is None:
+                table = rows
+                section.add("table", table)
+            else:
+                table.extend(rows)
+            continue
+        if getattr(shape, "has_chart", False) and shape.has_chart:
+            section.add("chart", None)
+            table = None
+            continue
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            section.add("picture", None)
+            table = None
+            continue
+        if role in FRAME_ROLES or not (
+            shape.has_text_frame and shape.text_frame.text.strip()
+        ):
+            continue
+        table = None
+        frame = shape.text_frame
+        lines = [_one_line(p.text) for p in frame.paragraphs if p.text.strip()]
+        text = " ".join(lines)
+        if role == "deck-title":
+            result.title = result.title or text
+        elif role == "title":
+            section.heading = text
+        elif role == "metric-value":
+            values.append(text)
+        elif role == "metric-label":
+            # Values and labels of a row of key numbers pair up in order.
+            value = values.pop(0) if values else ""
+            section.add("bullet", f"{text}: {value}" if value else text)
+        elif role == "lines":
+            for line in lines:
+                section.add("bullet", line)
+        elif role == "list":
+            for paragraph in frame.paragraphs:
+                if paragraph.text.strip():
+                    bulleted = bool(paragraph._p.xpath("./a:pPr/a:buChar"))
+                    section.add(
+                        "bullet" if bulleted else "paragraph",
+                        _one_line(paragraph.text),
+                    )
+        else:
+            # A card, a column, a step or a statement: its label and text are
+            # one point ("Budget :" then "12 400 €" reads "Budget : 12 400 €").
+            section.add("bullet", text)
+
+
 def _pptx(raw: bytes) -> Readback:
     from pptx import Presentation
     from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -261,7 +329,10 @@ def _pptx(raw: bytes) -> Readback:
         section = Section(unit=number)
         headed = False
         table: list[list[str]] | None = None
-        for shape in shapes:
+        themed = any(shape.name.startswith(ROLE) for shape in shapes)
+        if themed:
+            _themed(shapes, section, result)
+        for shape in shapes if not themed else ():
             if getattr(shape, "has_table", False) and shape.has_table:
                 rows = [
                     [_one_line(cell.text) for cell in row.cells]

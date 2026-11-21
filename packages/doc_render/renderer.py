@@ -47,9 +47,15 @@ from .verify import Verification, verify
 EPOCH = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
 
-def normalize_zip(path: Path) -> None:
+def normalized_package(raw: bytes) -> bytes:
+    """An OOXML package with fixed timestamps and metadata, nested ones included.
+
+    A chart embeds the workbook of its numbers (ppt/embeddings/*.xlsx), whose
+    own properties carry the time of writing: a deck with a chart changed
+    bytes on every build (2026-11-21).
+    """
     output = BytesIO()
-    with ZipFile(path) as source, ZipFile(output, "w", ZIP_DEFLATED) as target:
+    with ZipFile(BytesIO(raw)) as source, ZipFile(output, "w", ZIP_DEFLATED) as target:
         for name in sorted(source.namelist()):
             data = source.read(name)
             if name == "docProps/core.xml":
@@ -64,11 +70,17 @@ def normalize_zip(path: Path) -> None:
                     elif local not in {"title"}:
                         element.text = ""
                 data = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+            elif name.endswith((".xlsx", ".docx", ".pptx")) and data[:2] == b"PK":
+                data = normalized_package(data)
             info = ZipInfo(name, (2000, 1, 1, 0, 0, 0))
             info.compress_type = ZIP_DEFLATED
             info.external_attr = 0o600 << 16
             target.writestr(info, data)
-    path.write_bytes(output.getvalue())
+    return output.getvalue()
+
+
+def normalize_zip(path: Path) -> None:
+    path.write_bytes(normalized_package(path.read_bytes()))
 
 
 def build_slides(content: Content, path: Path, root: Path) -> None:
