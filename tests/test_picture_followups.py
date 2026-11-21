@@ -37,6 +37,7 @@ from services.orchestrator.pictures.followup import process_picture_followup
 import test_picture_cpu
 from test_picture_cpu import CpuGateway, FakeServer, png, rewrite_reply
 from test_picture_turn import Request
+from picture_jobs import memoise_drafts
 
 FIRST = "A single gardener in a green coat waters a row of tulips in a garden."
 REQUIREMENTS = ["a single gardener", "a green coat", "the whole head is visible"]
@@ -151,6 +152,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
     """The CPU picture turn's environment and helpers (as test_picture_cpu)."""
 
     def setUp(self) -> None:
+        memoise_drafts(self)
         self.folder = Path(tempfile.mkdtemp(prefix="picture-followups-"))
         self.addCleanup(shutil.rmtree, self.folder, True)
         environment = test_picture_cpu.CPU_ENVIRONMENT | {

@@ -8,6 +8,7 @@ import test_project_forge as fixture
 from services.orchestrator.project_forge import ForgeUnknown
 from services.retrieval.project_forge import run_operation
 from services.retrieval.project_scoped_api import store
+import own_tests
 
 
 class PublishChangeTests(fixture.ProjectForgeTests):
@@ -619,3 +620,6 @@ class PublishChangeTests(fixture.ProjectForgeTests):
         self.assertEqual(
             self.case.request("GET", path, "editor").json()["pending_approvals"], []
         )
+
+
+load_tests = own_tests.only_own(__name__)

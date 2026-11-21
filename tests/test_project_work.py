@@ -22,6 +22,7 @@ from services.retrieval.project_files import ProjectFiles
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_project_isolation import ProjectIsolationTests
 import test_project_auth as auth
+import own_tests
 
 
 class ProjectWorkTests(ProjectIsolationTests):
@@ -1369,3 +1370,6 @@ class ProjectWorkHTTPTests(ProjectWorkTests):
                 scope.usage("monthly_model_eur"),
                 self.policy["quotas"]["per_turn"]["cost_eur"],
             )
+
+
+load_tests = own_tests.only_own(__name__)

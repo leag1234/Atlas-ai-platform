@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_project_conversations as conversations
 import test_project_work as work_tests
 import test_project_auth as auth_tests
+import own_tests
 
 
 class SharedProjectsTests(conversations.ProjectConversationTests):
@@ -622,3 +623,6 @@ class SharedWorkTests(work_tests.ProjectWorkTests):
             ).status_code,
             202,
         )
+
+
+load_tests = own_tests.only_own(__name__)

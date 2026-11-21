@@ -19,6 +19,7 @@ from services.orchestrator.loop import GatewayError
 from services.orchestrator import pictures
 from services.orchestrator.pictures import choice, painter, store, turn
 from services.orchestrator.pictures.choice import choice_number, latest_set_id
+from picture_jobs import memoise_drafts
 
 FIXTURES = Path(__file__).parent / "fixtures" / "pictures" / "judge"
 # sha256 of the spike's painter messages (round 23, variant A2) for two
@@ -210,6 +211,7 @@ class ChoiceTests(unittest.TestCase):
 
 class TurnTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        memoise_drafts(self)
         self.folder = Path(tempfile.mkdtemp(prefix="picture-turn-"))
         self.addCleanup(shutil.rmtree, self.folder, True)
         environment = ENVIRONMENT | {
@@ -539,6 +541,7 @@ class FollowupTests(unittest.IsolatedAsyncioTestCase):
     """A change to a chosen picture goes through the painter and the kits."""
 
     def setUp(self) -> None:
+        memoise_drafts(self)
         self.folder = Path(tempfile.mkdtemp(prefix="picture-change-"))
         self.addCleanup(shutil.rmtree, self.folder, True)
         environment = ENVIRONMENT | {
