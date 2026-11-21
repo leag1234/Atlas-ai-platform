@@ -317,7 +317,8 @@ def replayed_turn(level: str) -> Iterator[list[dict[str, object]]]:
 
     async def post(url: str, payload: Message, timeout: float) -> Message:
         if url.endswith("/agent/complete"):
-            return await receive(url, payload, timeout, ignored)
+            answer: Message = await receive(url, payload, timeout, ignored)
+            return answer
         if url.endswith("/search"):
             return {"passages": []}
         raise AssertionError("unexpected call to " + url)
