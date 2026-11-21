@@ -264,6 +264,49 @@ def source_check(
     return asyncio.create_task(run())
 
 
+UNITS_CHANGED = (
+    "figures whose unit or currency differs from the request or the source "
+    "document: {figures} (write each figure with the unit and currency its source "
+    "gives, none where the source gives none, and never convert one)"
+)
+
+
+def unit_gaps(tools: Any, content: Any, preview: bytes) -> list[str]:
+    """A figure keeps the unit and currency of its source (figure_units.py).
+
+    The sources are the request, the earlier messages and the document the
+    turn read; the file is judged by its written texts.
+    """
+    from services.orchestrator import figure_units
+
+    earlier = getattr(tools, "earlier_requests", None)
+    sources = [
+        text
+        for text in (
+            getattr(tools, "request_text", ""),
+            *(earlier if isinstance(earlier, list) else []),
+        )
+        if isinstance(text, str) and text.strip()
+    ]
+    try:
+        from services.orchestrator import document_quotes
+        from services.orchestrator import source_faithfulness as faith
+
+        provided = faith.provided(document_quotes.current.get())
+        if provided is not None:
+            sources.append(provided.text)
+    except Exception:  # noqa: BLE001 - the request alone is still a source
+        pass
+    if not sources:
+        return []
+    if content is not None:
+        written = list(content.texts())
+    else:
+        written = [preview.decode("utf-8", errors="replace")]
+    found = figure_units.mismatches(written, sources)
+    return [UNITS_CHANGED.format(figures="; ".join(found[:6]))] if found else []
+
+
 def planned_gaps(tools: Any, content: Any) -> list[str]:
     """What code knows the file lacks against the pictures planned for it.
 
@@ -630,7 +673,7 @@ async def review(
     seconds = min(CHECK_SECONDS, seconds)
     started = time.monotonic()
     outcome = Outcome()
-    certain = planned_gaps(tools, content)
+    certain = planned_gaps(tools, content) + unit_gaps(tools, content, preview)
     if revision is not None and revision.get("identical"):
         certain.append(
             IDENTICAL.format(name=revision.get("previous_file") or "the file")

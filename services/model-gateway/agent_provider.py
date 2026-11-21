@@ -284,6 +284,8 @@ class AgentProvider:
 
     async def complete(self, payload: object) -> dict[str, object]:
         request = AgentRequest.model_validate(payload)
+        if request.privacy == "strict" and request.profile is not None:
+            return await self.owned_answer(payload)
         if request.privacy == "strict":
             return await self.owned_complete(request)
         if request.profile is not None:
@@ -355,6 +357,27 @@ class AgentProvider:
                 remaining,
             )
             return observed(answer, "escalade")
+
+    async def owned_answer(self, payload: object) -> dict[str, object]:
+        """A strict assistant call that is not streamed to its caller.
+
+        It runs the streamed owned call and returns its result, so a profile
+        answer carries what the orchestrator checks on every profile call (its
+        measured cost, 0 on the owned server; the answer's output allowance;
+        the model name). The plain owned completion has no cost and a
+        2048-token cap: every non-streamed strict API turn failed as
+        provider_error (staging -141 and -142, 2026-11-21).
+        """
+        from contextlib import aclosing
+
+        result: dict[str, object] | None = None
+        async with aclosing(self.stream(payload)) as events:
+            async for event in events:
+                if isinstance(event.get("result"), dict):
+                    result = event["result"]  # type: ignore[assignment]
+        if result is None:
+            raise RuntimeError("provider_error")
+        return result
 
     async def owned_complete(self, request: AgentRequest) -> dict[str, object]:
         endpoint = provider_settings.owned_endpoint()
