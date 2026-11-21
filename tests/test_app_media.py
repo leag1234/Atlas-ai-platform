@@ -222,13 +222,9 @@ class FetchTests(unittest.IsolatedAsyncioTestCase):
                 200, b"<!DOCTYPE html><p>Not found</p>", {"Content-Type": "audio/wav"}
             ),
         )
-        svg_url = "https://a.example/logo.png"
-        svg = await fetch(
-            svg_url,
-            Response(200, b"<svg xmlns='http://www.w3.org/2000/svg'><script/></svg>"),
-        )
         self.assertEqual(page, MediaFailure(KICK, "wrong_type"))
-        self.assertEqual(svg, MediaFailure(svg_url, "wrong_type"))
+        # An SVG is never embedded as such: it is drawn as a picture first
+        # (tests/test_svg_raster.py).
 
     async def test_private_and_local_addresses_are_refused(self) -> None:
         for url in (
@@ -451,11 +447,15 @@ class EmbeddedMediaInTheBrowserTests(unittest.IsolatedAsyncioTestCase):
             '<!DOCTYPE html>\n<html lang="en">\n<head><title>Drums</title></head>\n'
             '<body>\n<img src="atlas-media:logo" alt="logo" width="40" height="40">\n'
             '<button id="k">Kick</button><p id="state">loading</p>\n<script>\n'
-            "const ctx = new AudioContext(); let kick = null;\n"
-            "ctx.decodeAudioData(atlasMedia.buffer('atlas-media:kick')).then((b) => {\n"
+            # Decoded at load without sound; the AudioContext starts on the
+            # press (a context made at load stays silent: app_render).
+            "let ctx = null; let kick = null;\n"
+            "new OfflineAudioContext(1, 1, 44100)"
+            ".decodeAudioData(atlasMedia.buffer('atlas-media:kick')).then((b) => {\n"
             "  kick = b; document.getElementById('state').textContent = 'ready';\n"
             "});\n"
-            "document.getElementById('k').onclick = () => { const s = ctx.createBufferSource();"
+            "document.getElementById('k').onclick = () => { ctx = ctx || new AudioContext();"
+            " const s = ctx.createBufferSource();"
             " s.buffer = kick; s.connect(ctx.destination); s.start(); };\n"
             "</script>\n</body>\n</html>"
         )

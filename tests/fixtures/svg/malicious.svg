@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/css" href="https://evil.example/sheet.css"?>
+<!-- Test fixture: every way an SVG can run code or reach the network.
+     Only the green disc is a drawing. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="200" height="200" viewBox="0 0 200 200"
+     onload="fetch('https://evil.example/onload')">
+  <script type="text/javascript">
+    document.documentElement.setAttribute('data-ran', 'yes');
+    new Image().src = 'https://evil.example/script';
+  </script>
+  <style>
+    @import url("https://evil.example/import.css");
+    rect.leak { fill: url("https://evil.example/paint.svg#p"); }
+    circle { background-image: url(https://evil.example/css-url.png); }
+  </style>
+  <image xlink:href="https://evil.example/picture.png" width="200" height="200" />
+  <use href="https://evil.example/sprites.svg#icon" />
+  <foreignObject width="200" height="200">
+    <iframe xmlns="http://www.w3.org/1999/xhtml" src="https://evil.example/frame"></iframe>
+  </foreignObject>
+  <rect class="leak" width="10" height="10" />
+  <a xlink:href="javascript:fetch('https://evil.example/link')">
+    <circle cx="100" cy="100" r="80" fill="#00a000" onclick="alert(1)">
+      <set attributeName="fill" to="#00a000" begin="0s" />
+    </circle>
+  </a>
+  <a href="#"><animate attributeName="href" values="javascript:alert(1)" /></a>
+</svg>

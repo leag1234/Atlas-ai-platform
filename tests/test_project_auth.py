@@ -34,6 +34,7 @@ from services.retrieval.project_identity import verify
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_project_isolation as isolation
+import own_tests
 
 
 class ProjectAuthTests(isolation.ProjectIsolationTests):
@@ -494,3 +495,6 @@ class ProjectAuthTests(isolation.ProjectIsolationTests):
                 self.validator.validate(
                     denied.json(), self.contract["components"]["schemas"]["Error404"]
                 )
+
+
+load_tests = own_tests.only_own(__name__)

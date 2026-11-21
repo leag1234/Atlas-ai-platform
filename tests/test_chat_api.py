@@ -382,9 +382,13 @@ class ChatAPITests(unittest.TestCase):
             with patch(
                 "services.orchestrator.chat_api.process", side_effect=TimeoutError
             ):
-                self.assertEqual(
-                    client.post("/v1/chat/completions", json=payload).status_code, 504
-                )
+                # A turn cut by its deadline answers with one sentence, never a
+                # raw code (time_cut.py); the measured values stay in atlas.cut.
+                cut = client.post("/v1/chat/completions", json=payload)
+                self.assertEqual(cut.status_code, 200)
+                self.assertEqual(cut.json()["choices"][0]["finish_reason"], "length")
+                self.assertEqual(cut.json()["atlas"]["cut"]["code"], "timeout")
+                self.assertNotIn("Timeout:", cut.text)
             with (
                 patch("services.orchestrator.chat_api.process", side_effect=slow),
                 patch(

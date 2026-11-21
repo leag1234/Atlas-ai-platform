@@ -37,7 +37,7 @@ from pptx.util import Pt
 
 from .cells import Span, prose, shown
 from .layout import font, image_path, width_of
-from .schema import Content, Section, Table
+from .schema import Content, Metric, Section, Table
 
 W, H = 960.0, 540.0
 SIDE = 56.0
@@ -376,8 +376,11 @@ def cards(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
             write(content, [text], size, theme.text, gap=0.35)
 
 
-def pillars(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
-    """Two to four short points side by side, each under a numbered disc."""
+def process(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
+    """Two to four ordered steps or dates, numbered discs joined by a line.
+
+    Only for a sequence (see ordered): parallel attributes drawn as steps
+    read as a process that does not exist (owner review 2026-11-21)."""
     count = len(texts)
     gap = 28.0
     width = (area.w - gap * (count - 1)) / count
@@ -439,19 +442,52 @@ def pillars(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
             write(content, [text], size, theme.text, align=PP_ALIGN.CENTER, gap=0.3)
 
 
+def pillars(slide: Any, theme: Theme, texts: list[str], area: Rect) -> None:
+    """Two to four parallel points as columns under an accent rule, unnumbered."""
+    count = len(texts)
+    gap = 24.0
+    width = (area.w - gap * (count - 1)) / count
+    pairs = [labelled(text) for text in texts]
+    inner = width - 2 * 20
+    size = min(
+        fit(measured_for(text, pair), inner, area.h - 60, 24, 13, gap=0.35)
+        for text, pair in zip(texts, pairs, strict=True)
+    )
+    fullest = max(
+        needed(measured_for(text, pair), inner, size, 0.35)
+        for text, pair in zip(texts, pairs, strict=True)
+    )
+    height = min(area.h, max(area.h * 0.5, fullest + 56))
+    top = area.y + (area.h - height) / 2
+    for index, (text, pair) in enumerate(zip(texts, pairs, strict=True)):
+        x = area.x + index * (width + gap)
+        box(slide, x, top, width, height, theme.tint)
+        box(slide, x, top, width, 6, theme.accent)
+        content = frame(slide, x + 20, top + 28, inner, height - 40, role="point")
+        if pair:
+            colon = " :" if " :" in shown(text) else ":"
+            write(content, [pair[0] + colon], size, theme.primary, bold=True, gap=0.35)
+            more = content.add_paragraph()
+            more.line_spacing = 1.1
+            runs(more, (Span(pair[1]),), size, theme.text, False)
+        else:
+            write(content, [text], size, theme.text, gap=0.35)
+
+
 def measured_for(text: str, pair: tuple[str, str] | None) -> list[tuple[str, bool]]:
     return [(pair[0], True), (pair[1], False)] if pair else [(shown(text), False)]
 
 
 def metrics_row(slide: Any, theme: Theme, section: Section, area: Rect) -> None:
-    count = len(section.metrics)
+    metrics = callouts(section)
+    count = len(metrics)
     gap = 18.0
     width = (area.w - gap * (count - 1)) / count
-    values = [(m.value, True) for m in section.metrics]
+    values = [(m.value, True) for m in metrics]
     size = min(fit([v], width - 32, 62, 54, 20, gap=0, spacing=1.0) for v in values)
-    labels = [(m.label, False) for m in section.metrics]
+    labels = [(m.label, False) for m in metrics]
     label = min(fit([v], width - 32, area.h - 96, 18, 11, gap=0) for v in labels)
-    for index, metric in enumerate(section.metrics):
+    for index, metric in enumerate(metrics):
         x = area.x + index * (width + gap)
         box(
             slide,
@@ -639,6 +675,48 @@ def bare(section: Section) -> bool:
     return not (section.tables or section.images or section.metrics or section.chart)
 
 
+# A year, a quarter or half (Q1, T2, H1, S2), a day and month (12/03,
+# 12.03.2026) or a leading step number ("1.", "2)"): signs of order that
+# read the same in every language.
+STEP = re.compile(
+    r"(?<!\d)(?:1[5-9]\d\d|2[01]\d\d)(?!\d)"
+    r"|(?<![\w])[QTHS][1-4](?![\w])"
+    r"|(?<!\d)\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?(?!\d)"
+    r"|^\s*\d{1,2}\s*[.)]\s"
+)
+
+
+def ordered(section: Section) -> bool:
+    """Whether a slide's points are ordered steps or dates (a timeline).
+
+    The planner says so with sequence; otherwise every point must carry a
+    sign of order in its label or its opening words.
+    """
+    if section.sequence:
+        return True
+    heads = []
+    for text in section.bullets:
+        pair = labelled(text)
+        heads.append(pair[0] if pair else shown(text)[:40])
+    return bool(heads) and all(STEP.search(head) for head in heads)
+
+
+def numeric(value: str) -> bool:
+    """A callout shows a number: "14", "8k", "2 490 €"; "unknown" is a line."""
+    return any(character.isdigit() for character in value)
+
+
+def callouts(section: Section) -> tuple[Metric, ...]:
+    return tuple(m for m in section.metrics if numeric(m.value))
+
+
+def section_items(section: Section) -> list[tuple[str, bool]]:
+    """The slide's text items; a key number without digits is one of them."""
+    return text_items(section) + [
+        (f"{m.label}: {m.value}", True) for m in section.metrics if not numeric(m.value)
+    ]
+
+
 def kind(section: Section, index: int, count: int) -> str:
     texts = section.paragraphs + section.bullets
     if index == 0 and bare(section) and short(texts, 3, 160):
@@ -656,6 +734,8 @@ def kind(section: Section, index: int, count: int) -> str:
         developed = sum(len(shown(text)) for text in section.bullets) / len(
             section.bullets
         )
+        if ordered(section):
+            return "process"
         if developed >= 45 or all(labelled(text) for text in section.bullets):
             return "cards"
         return "pillars"
@@ -780,7 +860,7 @@ def content_slide(
     chrome(slide, theme, section.heading, deck, number)
     area = Rect(SIDE, BODY_TOP, W - 2 * SIDE, BODY_BOTTOM - BODY_TOP)
     items: list[tuple[str, bool]] = part["items"]
-    if section.metrics and part["metrics"]:
+    if callouts(section) and part["metrics"]:
         alone = not (items or part.get("visual"))
         height = 170.0 if alone else 150.0
         # Numbers alone sit in the middle of the body, not above an empty half.
@@ -856,8 +936,8 @@ def parts(section: Section) -> list[dict[str, Any]]:
     it, and its visual (chart, table rows or picture).
     """
     area = Rect(SIDE, BODY_TOP, W - 2 * SIDE, BODY_BOTTOM - BODY_TOP)
-    items = text_items(section)
-    numbers = 174.0 if section.metrics else 0.0
+    items = section_items(section)
+    numbers = 174.0 if callouts(section) else 0.0
     lead = bool(items) and sum(len(shown(text)) for text, _ in items) <= 90
     has_visual = bool(section.chart or section.tables or section.images)
     beside = bool(items) and not lead and has_visual
@@ -924,9 +1004,9 @@ def build_deck(content: Content, path: Path, root: Path) -> None:
                 cover(slide, theme, content, section, layout == "closing")
             elif layout == "statement":
                 statement(slide, theme, section, content.title, number)
-            elif layout in ("cards", "pillars"):
+            elif layout in ("cards", "pillars", "process"):
                 chrome(slide, theme, section.heading, content.title, number)
-                (cards if layout == "cards" else pillars)(
+                {"cards": cards, "pillars": pillars, "process": process}[layout](
                     slide,
                     theme,
                     list(section.bullets),

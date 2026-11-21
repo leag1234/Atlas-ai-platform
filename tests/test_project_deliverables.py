@@ -30,6 +30,7 @@ from services.retrieval.project_scoped_api import store
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_project_work import ProjectWorkTests
 import test_project_auth as auth
+import own_tests
 
 
 RENDER_TOOLS = deliverable_render.tools
@@ -1602,3 +1603,6 @@ class LocalizedDeliverableLinkTests(unittest.TestCase):
         # The link of another file does not count for this one.
         other = f"[Other]({prefix[:-36]}{uuid4()}/download)"
         self.assertEqual(add(other), other + "\n\n" + english)
+
+
+load_tests = own_tests.only_own(__name__)

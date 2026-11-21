@@ -13,6 +13,7 @@ from services.retrieval.project_schedules import Schedules, clock
 from services.retrieval.project_schedule_api import take_due
 from services.retrieval.project_identity import ProjectError
 from test_project_isolation import ProjectIsolationTests
+import own_tests
 
 
 class ScheduledTaskTests(ProjectIsolationTests):
@@ -694,3 +695,6 @@ class ScheduledTaskTests(ProjectIsolationTests):
                 "GET", self.project_path() + "/scheduled-tasks", "viewer"
             ).json()["can_manage"]
         )
+
+
+load_tests = own_tests.only_own(__name__)

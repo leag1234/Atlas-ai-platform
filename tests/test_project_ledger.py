@@ -17,6 +17,7 @@ from services.retrieval.project_ledger import (
     summary,
 )
 from services.retrieval.project_scoped_api import store
+import own_tests
 
 if TYPE_CHECKING:
 
@@ -192,3 +193,6 @@ class ProjectLedgerTests(ProjectIsolationTests):
                 ).fetchall(),
                 [],
             )
+
+
+load_tests = own_tests.only_own(__name__)

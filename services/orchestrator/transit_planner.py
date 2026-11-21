@@ -1053,9 +1053,10 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Caution: {why}. The open timetable data may lack a direct service on this route (for example a cross-border train): check the operators' timetables before you rely on this plan.",
         "doubt_slow": "the fastest itinerary found takes {m} for {km} km",
         "doubt_night": "every itinerary found leaves at night (from {t})",
-        "late_doubt": "No reasonable itinerary found arrives by {d}: {why}. The options below are the first reasonable ones found; they arrive after {d}.",
-        "late_empty": "No itinerary found arrives by {d}. The options below are the first ones found; they arrive after {d}.",
-        "late_first": "The first reasonable arrival found is at {a}, {m} after the {d} requested.",
+        "late_none": "No itinerary found arrives by {d}.",
+        "late_night": "No itinerary found arrives by {d} without travelling at night.",
+        "late_longer": "No itinerary found arrives by {d} without a much longer trip.",
+        "late_first": "The options below arrive after {d}; the first arrives at {a}, {m} after the time asked.",
         "long": "Long trip: {m}; no faster itinerary found arrives at a comparable time.",
         "night_option": "Only if you can travel at night: this itinerary arrives in time, leaving at {t}.",
         "late": "Arrives {a}, {m} after the {d} requested.",
@@ -1099,9 +1100,10 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Attention : {why}. Les donn\u00e9es horaires ouvertes n\u2019ont peut-\u00eatre pas de liaison directe sur ce trajet (par exemple un train transfrontalier) : v\u00e9rifiez les horaires des exploitants avant de vous fier \u00e0 ce plan.",
         "doubt_slow": "l\u2019itin\u00e9raire le plus rapide trouv\u00e9 met {m} pour {km} km",
         "doubt_night": "tous les itin\u00e9raires trouv\u00e9s partent la nuit (d\u00e8s {t})",
-        "late_doubt": "Aucun itin\u00e9raire raisonnable trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d} : {why}. Les options ci-dessous sont les premi\u00e8res raisonnables trouv\u00e9es ; elles arrivent apr\u00e8s {d}.",
-        "late_empty": "Aucun itin\u00e9raire trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d}. Les options ci-dessous sont les premi\u00e8res trouv\u00e9es ; elles arrivent apr\u00e8s {d}.",
-        "late_first": "La premi\u00e8re arriv\u00e9e raisonnable trouv\u00e9e est \u00e0 {a}, {m} apr\u00e8s l\u2019heure demand\u00e9e ({d}).",
+        "late_none": "Aucun itin\u00e9raire trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d}.",
+        "late_night": "Aucun itin\u00e9raire trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d} sans voyager de nuit.",
+        "late_longer": "Aucun itin\u00e9raire trouv\u00e9 n\u2019arrive au plus tard \u00e0 {d} sans un trajet bien plus long.",
+        "late_first": "Les options ci-dessous arrivent apr\u00e8s {d} ; la premi\u00e8re arrive \u00e0 {a}, {m} apr\u00e8s l\u2019heure demand\u00e9e.",
         "long": "Trajet long : {m} ; aucun itin\u00e9raire plus rapide trouv\u00e9 n\u2019arrive \u00e0 une heure comparable.",
         "night_option": "Seulement si vous pouvez voyager de nuit : cet itin\u00e9raire arrive \u00e0 l\u2019heure, avec un d\u00e9part \u00e0 {t}.",
         "late": "Arriv\u00e9e {a}, {m} apr\u00e8s l\u2019heure demand\u00e9e ({d}).",
@@ -1145,9 +1147,10 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Achtung: {why}. In den offenen Fahrplandaten fehlt auf dieser Strecke vielleicht eine direkte Verbindung (zum Beispiel ein grenz\u00fcberschreitender Zug): pr\u00fcfen Sie die Fahrpl\u00e4ne der Verkehrsunternehmen, bevor Sie sich auf diesen Plan verlassen.",
         "doubt_slow": "die schnellste gefundene Verbindung braucht {m} f\u00fcr {km} km",
         "doubt_night": "alle gefundenen Verbindungen fahren nachts ab (ab {t})",
-        "late_doubt": "Keine sinnvolle gefundene Verbindung kommt bis {d} an: {why}. Die folgenden Optionen sind die ersten sinnvollen gefundenen; sie kommen nach {d} an.",
-        "late_empty": "Keine gefundene Verbindung kommt bis {d} an. Die folgenden Optionen sind die ersten gefundenen; sie kommen nach {d} an.",
-        "late_first": "Die erste sinnvolle gefundene Ankunft ist um {a}, {m} nach der gew\u00fcnschten Zeit ({d}).",
+        "late_none": "Keine gefundene Verbindung kommt bis {d} an.",
+        "late_night": "Keine gefundene Verbindung kommt bis {d} an, ohne nachts zu fahren.",
+        "late_longer": "Keine gefundene Verbindung kommt bis {d} an, ohne viel l\u00e4nger zu fahren.",
+        "late_first": "Die folgenden Optionen kommen nach {d} an; die erste um {a}, {m} nach der gew\u00fcnschten Zeit.",
         "long": "Lange Fahrt: {m}; keine schnellere gefundene Verbindung kommt zu einer vergleichbaren Zeit an.",
         "night_option": "Nur wenn Sie nachts reisen k\u00f6nnen: Diese Verbindung kommt rechtzeitig an, mit Abfahrt um {t}.",
         "late": "Ankunft {a}, {m} nach der gew\u00fcnschten Zeit ({d}).",
@@ -1191,9 +1194,10 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Atenci\u00f3n: {why}. Puede que los datos horarios abiertos no tengan un servicio directo en este trayecto (por ejemplo un tren transfronterizo): compruebe los horarios de los operadores antes de fiarse de este plan.",
         "doubt_slow": "el itinerario m\u00e1s r\u00e1pido encontrado tarda {m} para {km} km",
         "doubt_night": "todos los itinerarios encontrados salen de noche (desde las {t})",
-        "late_doubt": "Ning\u00fan itinerario razonable encontrado llega antes de las {d}: {why}. Las opciones siguientes son las primeras razonables encontradas; llegan despu\u00e9s de las {d}.",
-        "late_empty": "Ning\u00fan itinerario encontrado llega antes de las {d}. Las opciones siguientes son las primeras encontradas; llegan despu\u00e9s de las {d}.",
-        "late_first": "La primera llegada razonable encontrada es a las {a}, {m} despu\u00e9s de la hora pedida ({d}).",
+        "late_none": "Ning\u00fan itinerario encontrado llega antes de las {d}.",
+        "late_night": "Ning\u00fan itinerario encontrado llega antes de las {d} sin viajar de noche.",
+        "late_longer": "Ning\u00fan itinerario encontrado llega antes de las {d} sin un trayecto mucho m\u00e1s largo.",
+        "late_first": "Las opciones siguientes llegan despu\u00e9s de las {d}; la primera llega a las {a}, {m} despu\u00e9s de la hora pedida.",
         "long": "Trayecto largo: {m}; ning\u00fan itinerario m\u00e1s r\u00e1pido encontrado llega a una hora comparable.",
         "night_option": "Solo si puede viajar de noche: este itinerario llega a tiempo, con salida a las {t}.",
         "late": "Llegada {a}, {m} despu\u00e9s de la hora pedida ({d}).",
@@ -1237,9 +1241,10 @@ WORDS: dict[str, dict[str, Any]] = {
         "doubt": "Attenzione: {why}. I dati orari aperti forse non hanno un servizio diretto su questo tragitto (per esempio un treno transfrontaliero): verifichi gli orari degli operatori prima di affidarsi a questo piano.",
         "doubt_slow": "l\u2019itinerario pi\u00f9 veloce trovato impiega {m} per {km} km",
         "doubt_night": "tutti gli itinerari trovati partono di notte (dalle {t})",
-        "late_doubt": "Nessun itinerario ragionevole trovato arriva entro le {d}: {why}. Le opzioni seguenti sono le prime ragionevoli trovate; arrivano dopo le {d}.",
-        "late_empty": "Nessun itinerario trovato arriva entro le {d}. Le opzioni seguenti sono le prime trovate; arrivano dopo le {d}.",
-        "late_first": "Il primo arrivo ragionevole trovato \u00e8 alle {a}, {m} dopo l\u2019ora richiesta ({d}).",
+        "late_none": "Nessun itinerario trovato arriva entro le {d}.",
+        "late_night": "Nessun itinerario trovato arriva entro le {d} senza viaggiare di notte.",
+        "late_longer": "Nessun itinerario trovato arriva entro le {d} senza un viaggio molto pi\u00f9 lungo.",
+        "late_first": "Le opzioni seguenti arrivano dopo le {d}; la prima arriva alle {a}, {m} dopo l\u2019ora richiesta.",
         "long": "Viaggio lungo: {m}; nessun itinerario pi\u00f9 veloce trovato arriva a un\u2019ora paragonabile.",
         "night_option": "Solo se pu\u00f2 viaggiare di notte: questo itinerario arriva in tempo, con partenza alle {t}.",
         "late": "Arrivo {a}, {m} dopo l\u2019ora richiesta ({d}).",
@@ -1274,6 +1279,118 @@ WORDS: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+
+# The block's phrases that address the person, formal as WORDS writes them,
+# then informal, per language; English has one form.
+INFORMAL: dict[str, tuple[tuple[str, str], ...]] = {
+    "fr": (
+        ("votre position", "ta position"),
+        (
+            "v\u00e9rifiez-les aupr\u00e8s de l\u2019exploitant",
+            "v\u00e9rifie-les aupr\u00e8s de l\u2019exploitant",
+        ),
+        ("si vous pouvez voyager de nuit", "si tu peux voyager de nuit"),
+        (
+            "v\u00e9rifiez les horaires des exploitants avant de vous fier",
+            "v\u00e9rifie les horaires des exploitants avant de te fier",
+        ),
+        (
+            "de liaison directe : v\u00e9rifiez les horaires",
+            "de liaison directe : v\u00e9rifie les horaires",
+        ),
+    ),
+    "es": (
+        ("su posici\u00f3n", "tu posici\u00f3n"),
+        ("compru\u00e9belas con el operador", "compru\u00e9balas con el operador"),
+        ("si puede viajar de noche", "si puedes viajar de noche"),
+        (
+            "compruebe los horarios de los operadores antes de fiarse",
+            "comprueba los horarios de los operadores antes de fiarte",
+        ),
+        (
+            "servicio directo: compruebe los horarios",
+            "servicio directo: comprueba los horarios",
+        ),
+    ),
+    "de": (
+        ("Ihr Standort", "dein Standort"),
+        ("wenn Sie nachts reisen k\u00f6nnen", "wenn du nachts reisen kannst"),
+        (
+            "pr\u00fcfen Sie die Fahrpl\u00e4ne der Verkehrsunternehmen, bevor Sie sich auf diesen Plan verlassen",
+            "pr\u00fcfe die Fahrpl\u00e4ne der Verkehrsunternehmen, bevor du dich auf diesen Plan verl\u00e4sst",
+        ),
+        (
+            "direkte Verbindung: Pr\u00fcfen Sie die Fahrpl\u00e4ne",
+            "direkte Verbindung: Pr\u00fcfe die Fahrpl\u00e4ne",
+        ),
+    ),
+    "it": (
+        ("la sua posizione", "la tua posizione"),
+        ("se pu\u00f2 viaggiare di notte", "se puoi viaggiare di notte"),
+        (
+            "verifichi gli orari degli operatori prima di affidarsi",
+            "verifica gli orari degli operatori prima di affidarti",
+        ),
+        (
+            "servizio diretto: verifichi gli orari",
+            "servizio diretto: verifica gli orari",
+        ),
+    ),
+}
+# How a text addresses the person, per language: informal and formal marks
+# (folded text, except German and Italian formal pronouns, capitalised).
+_FAMILIAR = {
+    "fr": re.compile(r"\b(?:tu|toi|ton|ta|tes|te|t)\b"),
+    "es": re.compile(r"\b(?:tu|tus|ti|contigo|te)\b"),
+    "de": re.compile(r"\b(?:du|dich|dir|dein|deine|deinen|deinem|deiner|deines)\b"),
+    "it": re.compile(r"\b(?:tu|ti|tuo|tua|tuoi|tue|puoi|vuoi|devi)\b"),
+}
+_POLITE = {
+    "fr": (re.compile(r"\b(?:vous|votre|vos)\b"), False),
+    "es": (re.compile(r"\b(?:usted|ustedes)\b"), False),
+    "de": (
+        re.compile(
+            r"\b(?:Ihnen|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihres)\b|(?<![.!?:\n]\s)(?<!^)\bSie\b"
+        ),
+        True,
+    ),
+    "it": (re.compile(r"\b(?:Lei|Le consiglio|La invito)\b"), True),
+}
+
+
+def register(text: str, language: str) -> str:
+    """How ``text`` addresses the person: "informal", "formal", or "" when it
+    does not say (no mark, or both)."""
+    familiar = _FAMILIAR.get(language)
+    polite = _POLITE.get(language)
+    if familiar is None or polite is None or not text.strip():
+        return ""
+    pattern, cased = polite
+    informal = bool(familiar.search(_folded(text)))
+    formal = bool(pattern.search(text if cased else _folded(text)))
+    if informal == formal:
+        return ""
+    return "informal" if informal else "formal"
+
+
+def in_register(block: str, language: str, *texts: str) -> str:
+    """The block in the register the conversation uses: the model's own words
+    first, then the person's; formal (WORDS) when neither says (staging -142:
+    a Spanish opening in the tu form over a plan written in the usted form)."""
+    pairs = INFORMAL.get(language)
+    if not pairs or not block:
+        return block
+    found = ""
+    for text in texts:
+        found = register(text, language)
+        if found:
+            break
+    if found != "informal":
+        return block
+    for formal, informal in pairs:
+        block = block.replace(formal, informal)
+    return block
 
 
 def words(language: str) -> dict[str, Any]:
@@ -1507,9 +1624,10 @@ NEXT_STEPS = {
     "position their device shared.",
     "no_itinerary": "The planner has no timetable data for this trip: research "
     "it on the web and use journey_plan.",
-    "planned_late": "No reasonable itinerary arrives by `arrive_by` (see "
-    "`on_time_doubt`): say so first, with the first reasonable arrival `rendered` "
-    "gives, then put `rendered` unchanged. Its options are the first reasonable "
+    "planned_late": "No reasonable itinerary arrives by `arrive_by`: say so "
+    "first, in the words of the paragraph opening `rendered` (`on_time_doubt` "
+    "is about itineraries it does not show: never present it as true of its "
+    "options), then put `rendered` unchanged. Its options are the first reasonable "
     "ones found; each says how late it arrives. Never present them as on time. "
     "A last option under a night-travel line (`night_option`) arrives in time "
     "only by travelling at night: never give it as the answer.",
@@ -1796,20 +1914,7 @@ async def compute(
                 "after_deadline" if late else ("on_time" if deadline else "listed")
             )
             if late and deadline is not None:
-                at = _clock(deadline, deadline.date())
-                first = min(itineraries, key=lambda i: i["latest"])
-                note = " ".join(
-                    (
-                        w["late_doubt"].format(d=at, why=on_time_doubt)
-                        if on_time_doubt
-                        else w["late_empty"].format(d=at),
-                        w["late_first"].format(
-                            a=_clock(first["arrive"], deadline.date()),
-                            m=_duration(_late_by(first, deadline)),
-                            d=at,
-                        ),
-                    )
-                )
+                note = late_note(first_found, itineraries, deadline, now, w)
                 night = night_option(first_found, itineraries, deadline, now)
     rendered, passages = render(
         itineraries,
@@ -2020,6 +2125,46 @@ def usable(
         ):
             kept.append({**itinerary, "long": True})
     return kept
+
+
+def late_note(
+    found: list[dict[str, Any]],
+    shown: list[dict[str, Any]],
+    deadline: datetime,
+    now: datetime,
+    w: dict[str, Any],
+) -> str:
+    """The paragraph over options that all arrive late, built from what is
+    shown: why none in time is shown (the first search's itineraries that
+    arrive in time leave at night, or take much longer, or there are none),
+    then when the first shown option arrives. Every sentence is complete and
+    true of the final options (staging -142: the note kept the first
+    search's "every itinerary found leaves at night (from 01:30)" and "the
+    fastest takes 3 h 22" over options leaving at 05:38 and taking 2 h 53 to
+    3 h 37)."""
+    at = _clock(deadline, deadline.date())
+    on_time = [
+        i
+        for i in found
+        if i["latest"] <= deadline and i["depart"] >= now - timedelta(minutes=1)
+    ]
+    if not on_time:
+        why = w["late_none"]
+    elif all(_at_night(i, deadline) for i in on_time):
+        why = w["late_night"]
+    else:
+        why = w["late_longer"]
+    first = min(shown, key=lambda i: i["latest"])
+    return " ".join(
+        (
+            why.format(d=at),
+            w["late_first"].format(
+                a=_clock(first["arrive"], deadline.date()),
+                m=_duration(_late_by(first, deadline)),
+                d=at,
+            ),
+        )
+    )
 
 
 def _late_by(itinerary: dict[str, Any], deadline: datetime) -> int:
@@ -2287,6 +2432,7 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
             turn.plan, turn.plan_times, turn.plan_ends = "", set(), []
             turn.plan_starts, turn.plan_origin = [], ""
             turn.plan_walks_first = False
+            turn.plan_services = []
         else:
             # The plan is the answer's block, given unaltered (planned_answer).
             turn.plan = str(data["rendered"])
@@ -2296,6 +2442,7 @@ async def execute(arguments: str, timeout: float, home_zone: str = "UTC") -> Mes
             turn.plan_origin = str(data.get("origin") or "")
             turn.plan_from_device = bool(request.from_device_position)
             turn.plan_walks_first = _walks_first(data["itineraries"])
+            turn.plan_services = _plan_services(data["itineraries"])
             turn.doubtful = turn.doubt_reason = ""
     if data.get("rendered"):
         # Computed facts of this turn (D7): the plan as written, and each
@@ -2433,6 +2580,23 @@ def _plan_starts(itineraries: object) -> list[str]:
         if isinstance(target, str) and target not in _ENDPOINTS | set(starts):
             starts.append(target)
     return starts
+
+
+def _plan_services(itineraries: object) -> list[list[str]]:
+    """The lines and trains each option rides, in the plan's order."""
+    services: list[list[str]] = []
+    for itinerary in itineraries if isinstance(itineraries, list) else []:
+        legs = itinerary.get("legs") if isinstance(itinerary, dict) else None
+        services.append(
+            [
+                str(leg.get("line") or "")
+                for leg in (legs if isinstance(legs, list) else [])
+                if isinstance(leg, dict)
+                and leg.get("kind") != "walk"
+                and leg.get("line")
+            ]
+        )
+    return services
 
 
 def _walks_first(itineraries: object) -> bool:
@@ -2768,10 +2932,23 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
 
     body, fold, footer = answer.partition("<details>")
     lines = body.splitlines()
-    if _block_span(lines, block) is not None:
-        return answer
-    own = own_urls()
     language = str(getattr(turn, "language", "") or "en")
+    span = _block_span(lines, block)
+    own_words = "\n".join(
+        lines if span is None else lines[: span[0]] + lines[span[1] + 1 :]
+    )
+    styled = in_register(
+        block, language, own_words, " ".join(getattr(turn, "asked", []) or [])
+    )
+    if styled != block:
+        # Later steps find the block as it is now given.
+        turn.plan = styled
+    if span is not None:
+        if styled == block:
+            return answer
+        lines = lines[: span[0]] + styled.splitlines() + lines[span[1] + 1 :]
+        return "\n".join(lines) + (fold + footer if fold else "")
+    own = own_urls()
     marks = _plan_marks(lines, block, turn.plan_times, own)
     _title_copies(lines, marks, block, own, language)
     notes = _notes(block)
@@ -2782,7 +2959,7 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
         notes,
         own,
         language,
-        covered=_start_covered(turn),
+        covered=_either(_start_covered(turn), _restates(turn)),
     )
     hits = [
         index
@@ -2810,7 +2987,7 @@ def planned_answer(answer: str, turn: Any, *, first: bool = False) -> str:
     tail = "\n".join(line for line, mark in zip(lines[at:], marks[at:]) if not mark)
     parts = [
         _tidy(travel_claims.wellformed(head)),
-        block,
+        styled,
         _tidy(travel_claims.wellformed(tail)),
     ]
     final = "\n\n".join(part for part in parts if part)
@@ -2989,6 +3166,15 @@ _WAY = re.compile(
 )
 
 
+def _either(
+    *checks: Callable[[str], bool] | None,
+) -> Callable[[str], bool] | None:
+    found = [check for check in checks if check is not None]
+    if not found:
+        return None
+    return lambda sentence: any(check(sentence) for check in found)
+
+
 def _start_covered(turn: Any) -> Callable[[str], bool] | None:
     """Whether a sentence only says that the way from the start to a first
     stop of the plan is not covered, when that first leg is in the plan: it
@@ -3045,6 +3231,59 @@ def _start_covered(turn: Any) -> Callable[[str], bool] | None:
         return from_start
 
     return covered
+
+
+# The walk legs as the block writes them, every language: a model line in
+# that form outside the block is a leg of the plan out of its place.
+_WALK_LEG = re.compile(
+    r"^[\W_]*+(?:walk|marche|fu(?:ss|\u00df)weg|a pie|a piedi)[ \t]++\d{1,3}[ \t]*+min\b",
+    re.IGNORECASE,
+)
+# Words that rank options, five languages (folded).
+_RANKING = re.compile(
+    r"(?<![\w-])(?:best|better|fastest|quickest|recommended|recommend|ideal|"
+    r"optimal|top choice|meilleure?s?|plus rapides?|recommande\w*|conseille\w*|"
+    r"ideale?s?|beste\w*|besser\w*|schnellste\w*|empfohlen\w*|empfehle\w*|"
+    r"mejor(?:es)?|mas rapid[oa]s?|recomend\w*|recomiendo|migliore?|"
+    r"piu veloc[ei]|consigliat\w*|consiglio)(?![\w-])"
+)
+
+
+def _restates(turn: Any) -> Callable[[str], bool] | None:
+    """Whether a model sentence outside the block restates or reorders it: a
+    walk leg written as the block writes its legs, naming a place of the
+    plan, or a ranking ("the best actual train is ...") of a service that
+    rides only in an option after the first (staging -142: "the best actual
+    train is the Amtrak Northeast Regional 66:" and its first walk above a
+    plan whose option 1 is a coach). The plan gives its options in order;
+    the model neither reorders nor repeats them."""
+    services = [
+        [_folded(name) for name in option if _folded(name)]
+        for option in getattr(turn, "plan_services", []) or []
+    ]
+    places = {
+        word
+        for word in _words(str(getattr(turn, "plan", "") or ""))
+        if len(word) >= 4 and not word.isdigit()
+    }
+    if not services and not places:
+        return None
+    first = set(services[0]) if services else set()
+    later = {name for option in services[1:] for name in option} - first
+
+    def restates(sentence: str) -> bool:
+        plain = _MD_LINK.sub(r"\1", sentence)
+        if _WALK_LEG.match(plain) and places & set(_words(plain)):
+            return True
+        folded = _folded(plain)
+        if not _RANKING.search(folded):
+            return False
+        named = {name for name in later if re.search(rf"\b{re.escape(name)}\b", folded)}
+        return bool(named) and not any(
+            re.search(rf"\b{re.escape(name)}\b", folded) for name in first
+        )
+
+    return restates
 
 
 _HEADING = re.compile(
@@ -3118,7 +3357,15 @@ def doubtful_answer(answer: str, language: str, turn: Any = None) -> str:
             w["pages"].format(links=links) if links else "",
             fallback,
         ]
-    final = "\n\n".join(part for part in parts if part)
+    asked = " ".join(getattr(turn, "asked", []) or [])
+    styled = [
+        part if part is kept else in_register(part, language, kept, asked)
+        for part in parts
+    ]
+    if fallback in parts:
+        # Later steps find the fallback as it is now given.
+        turn.doubtful = styled[parts.index(fallback)]
+    final = "\n\n".join(part for part in styled if part)
     return final + ("\n\n" + fold + footer if fold else "")
 
 

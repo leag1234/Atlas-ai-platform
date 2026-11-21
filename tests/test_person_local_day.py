@@ -358,9 +358,20 @@ class Good133Test(TripTextTest):
             "arriver à Gare de Lyon avant 12:30, depuis chez toi (12 rue Fictive, Caen) :"
         )
         answer = opening + "\n\n" + data["rendered"]
-        self.assertEqual(tp.planned_answer(answer, turn), answer)
+        # Staging -142: the block follows the opening's "toi" (tu).
+        informal = (
+            opening
+            + "\n\n"
+            + data["rendered"]
+            .replace("votre position", "ta position")
+            .replace("vérifiez-les", "vérifie-les")
+        )
         rest, first = tp.without_plans(answer, turn)
-        self.assertEqual(tp.planned_answer(rest, turn, first=first), answer)
+        self.assertEqual(tp.planned_answer(rest, turn, first=first), informal)
+        self.assertEqual(turn.plan + "", informal.split("\n\n", 1)[1])
+        # Given whole, the block is put in the same register.
+        turn, data = self.caen()
+        self.assertEqual(tp.planned_answer(answer, turn), informal)
 
     def test_madrid_opening_and_block(self) -> None:
         turn, data = self.madrid()

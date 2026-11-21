@@ -33,6 +33,7 @@ from services.orchestrator.pictures import (
 )
 from services.orchestrator.pictures.choice import latest_set_id
 from test_picture_turn import ENVIRONMENT, FakeGateway, Request
+from picture_jobs import memoise_drafts
 
 CPU_ENVIRONMENT = ENVIRONMENT | {
     "ATLAS_PICTURES_CPU": "1",
@@ -355,6 +356,7 @@ class ServerConfigTests(unittest.TestCase):
 
 class CpuTurnTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        memoise_drafts(self)
         self.folder = Path(tempfile.mkdtemp(prefix="picture-cpu-"))
         self.addCleanup(shutil.rmtree, self.folder, True)
         environment = CPU_ENVIRONMENT | {

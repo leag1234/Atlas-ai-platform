@@ -100,7 +100,8 @@ class VisionAPITests(unittest.TestCase):
             patch.dict(os.environ, {"ATLAS_INTERACTION_DIR": root}),
             TestClient(app) as client,
         ):
-            for value, status in zip(cases, (504, 504, 502, 200), strict=True):
+            # A turn cut by its deadline answers with a sentence (time_cut.py).
+            for value, status in zip(cases, (200, 504, 502, 200), strict=True):
                 upstream = (
                     AsyncMock(side_effect=value)
                     if isinstance(value, Exception)
@@ -112,6 +113,10 @@ class VisionAPITests(unittest.TestCase):
                     response = client.post("/v1/chat/completions", json=payload(url))
                     self.assertEqual(response.status_code, status)
                     self.assertNotIn(url.split(",")[1], response.text)
+                    if isinstance(value, TimeoutError):
+                        self.assertEqual(
+                            response.json()["atlas"]["cut"]["code"], "timeout"
+                        )
             rows = [
                 json.loads(line)
                 for p in Path(root).glob("*.jsonl")

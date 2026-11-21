@@ -141,6 +141,8 @@ class Section(ContentModel):
     notes: tuple[Text, ...] = Field(default=(), max_length=5)
     metrics: tuple[Metric, ...] = Field(default=(), max_length=4)
     chart: Chart | None = None
+    # The bullets are ordered steps or dates: a deck draws a timeline.
+    sequence: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def substantive(self) -> Self:
@@ -290,6 +292,11 @@ class PresentationSlide(ContentModel):
         default=None,
         description="a bar chart of numbers given or read, never invented",
     )
+    sequence: bool = Field(
+        default=False,
+        strict=True,
+        description="true only when the bullets are ordered steps or dates",
+    )
     # Pictures drawn for the deck (make_pictures references), shown on the slide.
     images: tuple[Text, ...] = Field(
         default=(),
@@ -324,6 +331,7 @@ class PresentationOutline(ContentModel):
                     notes=(slide.notes,) if slide.notes else (),
                     metrics=slide.metrics,
                     chart=slide.chart,
+                    sequence=slide.sequence,
                 )
                 for slide in self.slides
             ),

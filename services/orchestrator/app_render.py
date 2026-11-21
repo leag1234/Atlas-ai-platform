@@ -10,7 +10,19 @@ settle, presses up to three visible buttons and reports, as problems:
 - a Content Security Policy violation (a request the preview blocks);
 - a blank page: no visible text, control, drawing or painted box;
 - buttons on the page and no event handler anywhere (nothing can react);
-- a page that does not finish loading or stops responding.
+- a page that does not finish loading or stops responding;
+- an uncaught error once its timers have run LATER_MS on the page's clock
+  with nobody touching it (a countdown that ends, a sound at the end of a
+  question);
+- an <img> without a source, or whose source does not load, shown or hidden
+  (the side view draws a broken picture as soon as it is displayed);
+- a sound started before the person's first press or key (an AudioContext
+  created, or a media element played, without a gesture): the browser keeps
+  it silent ("The AudioContext was not allowed to start").
+
+The last two are defects the repair must fix, but a page that still has one
+after the repair works otherwise: it is delivered and the answer says what
+does not (SOFT_CODES, soft_note).
 
 Runtime (docs/27-app-render-check.md): one throwaway container per check from
 the atlas-app-render image (infra/docker/Dockerfile.app-render), without
@@ -50,6 +62,10 @@ MINIMUM_SECONDS = 6.0
 LOAD_MS = 6000
 SETTLE_MS = 800
 CLICKS = 3
+# Page-clock time run forward after the load, within LATER_BUDGET_MS of real
+# time (an interval-driven page runs 30 s in about 0.1 s).
+LATER_MS = 30000
+LATER_BUDGET_MS = 2500
 MEMORY = "512m"
 PIDS = "256"
 MAX_PROBLEMS = 6
@@ -62,13 +78,18 @@ CODES = (
     "not_loaded",
     "not_responding",
     "page_error",
+    "later_error",
     "control_error",
     "csp_violation",
     "blocked_request",
     "blank_page",
     "dead_controls",
+    "broken_image",
+    "audio_without_gesture",
 )
 NETWORK_CODES = frozenset({"csp_violation", "blocked_request"})
+# Defects of a page that otherwise works: repaired once, then said.
+SOFT_CODES = frozenset({"broken_image", "audio_without_gesture"})
 
 
 @dataclass(frozen=True)
@@ -124,6 +145,8 @@ def settings() -> dict[str, object]:
         "load_ms": LOAD_MS,
         "settle_ms": SETTLE_MS,
         "clicks": CLICKS,
+        "later_ms": LATER_MS,
+        "later_budget_ms": LATER_BUDGET_MS,
     }
 
 
@@ -308,6 +331,8 @@ def problems(result: dict[str, Any]) -> list[RenderProblem]:
         elif error.get("phase") == "click":
             control = _text(error.get("control"))[:40]
             found.append(RenderProblem("control_error", f"{control}␟{message}"))
+        elif error.get("phase") == "later":
+            found.append(RenderProblem("later_error", message))
         else:
             found.append(RenderProblem("page_error", message))
     for violation in result.get("violations") or []:
@@ -329,6 +354,19 @@ def problems(result: dict[str, Any]) -> list[RenderProblem]:
     if result.get("loaded") and int(result.get("buttons") or 0) > 0:
         if not result.get("handlers"):
             found.append(RenderProblem("dead_controls"))
+    for image in result.get("images") or []:
+        if not isinstance(image, dict):
+            continue
+        reason = "empty" if image.get("reason") == "empty" else "unloadable"
+        found.append(
+            RenderProblem(
+                "broken_image",
+                f"{_text(image.get('name'))[:60]}␟{reason}␟"
+                f"{_text(image.get('src'))[:60]}",
+            )
+        )
+    for started in result.get("audio") or []:
+        found.append(RenderProblem("audio_without_gesture", _text(started)[:40]))
     unique: list[RenderProblem] = []
     for problem in found:
         if problem not in unique:
@@ -343,6 +381,8 @@ REPAIR_LINES = {
     "or blocking code when it loads)",
     "not_responding": "the page stopped responding after it loaded (an endless loop)",
     "page_error": "uncaught error when the page loads: {0}",
+    "later_error": "uncaught error once the page has been left alone for a while "
+    "(a timer or an animation ran): {0}",
     "control_error": 'pressing the button "{0}" throws: {1}',
     "csp_violation": "blocked by the preview's security policy ({0}): {1}",
     "blocked_request": "the page tried to open another address: {0}",
@@ -350,6 +390,18 @@ REPAIR_LINES = {
     "after it loads",
     "dead_controls": "the page shows buttons but no event handler is attached "
     "anywhere, so nothing reacts",
+    "broken_image": "the image {0} {1} (shown or hidden, it is a broken picture "
+    "in the preview): give every <img> a source that loads (an embedded data: "
+    "URI or an atlas-media reference), or create or keep the element only while "
+    "there is a picture to show",
+    "audio_without_gesture": "sound is started before the user's first click or "
+    "key ({0}), so the browser keeps it silent: create the AudioContext (or call "
+    "resume()) and start media only inside a click, touch or key handler, never "
+    "when the page loads or from a timer before the first press",
+}
+IMAGE_REASONS = {
+    "empty": "has no source",
+    "unloadable": "has a source that does not load ({0})",
 }
 
 
@@ -357,5 +409,16 @@ def repair_lines(report: RenderReport) -> str:
     lines = []
     for problem in report.problems:
         parts = problem.detail.split("␟") if problem.detail else []
+        if problem.code == "broken_image":
+            name, reason, src = (parts + ["", "", ""])[:3]
+            parts = [
+                name,
+                IMAGE_REASONS.get(reason, IMAGE_REASONS["empty"]).format(src),
+            ]
         lines.append("- " + REPAIR_LINES[problem.code].format(*parts, "", ""))
     return "\n".join(lines)
+
+
+def hard(report: RenderReport) -> bool:
+    """Whether the report has a problem that keeps the page from working."""
+    return any(problem.code not in SOFT_CODES for problem in report.problems)

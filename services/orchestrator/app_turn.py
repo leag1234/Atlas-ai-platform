@@ -43,8 +43,14 @@ from packages.artifact_source import (
 from packages.language import LANGUAGES, language_instruction
 from packages.limits import LimitError
 from packages.ports import atlas_ports
-from packages.user_errors import app_failure, app_quota, app_render_failure
-from services.orchestrator import app_media, app_render, artifact_store
+from packages.user_errors import (
+    app_failure,
+    app_lost_features,
+    app_quota,
+    app_render_failure,
+    app_soft_defects,
+)
+from services.orchestrator import app_features, app_media, app_render, artifact_store
 from services.orchestrator.artifact_store import ArtifactError
 from services.orchestrator.artifact_tools import (
     PROBLEM_DETAILS,
@@ -99,8 +105,13 @@ _FILE_RULES = """\
 - Usable at once: short on-screen instructions; keyboard controls when relevant and
   touch controls (buttons or swipe) for phones; layout from 360 px wide; visible
   focus; good contrast.
-- Sound: generate it with the Web Audio API (oscillators, noise buffers), started by a
-  user gesture.
+- Sound: generate it with the Web Audio API (oscillators, noise buffers). Browsers keep
+  sound silent until the user's first click or key: create the AudioContext (or call
+  resume()) and start any media inside a click, touch or key handler, never when the
+  page loads or from a timer before the first press.
+- Pictures: every <img> has a source that loads (an embedded data: URI, or an
+  atlas-media reference Atlas lists); never leave an <img> without src, even hidden:
+  create or show it only when there is a picture.
 - Compact code: loops and small functions instead of repeated markup, no dead code,
   few comments. Everything that is asked works.
 - A requested language, framework or platform is always used; never substitute
@@ -159,8 +170,13 @@ CURRENT_SOURCE = {
         "The current app of this conversation (version {version}) is below. To change "
         "it, apply the user's request and write the COMPLETE new file in one ```html "
         "block: all of it, not only the changed part. Keep everything the user did not "
-        "ask to change. If the user only asks a question about the app, answer in a few "
-        "sentences without any block.\n```html\n{source}\n```"
+        "ask to change exactly as it is written there: every feature, text, element, "
+        "embedded picture or sound and the code that already works; change only what "
+        "the request needs. Web addresses from earlier messages that the app does "
+        "not embed cannot be loaded by the preview, now as before: never write "
+        "them. After the block, describe only what the new file does. If "
+        "the user only asks a question about the app, answer in a few sentences "
+        "without any block.\n```html\n{source}\n```"
     ),
     "drawing": (
         "The current drawing of this conversation (version {version}) is below. To "
@@ -202,8 +218,9 @@ MEDIA_FILES = (
     '<audio src="atlas-media:NAME">, url(atlas-media:NAME).\n'
     "- For Web Audio, decode it with ctx.decodeAudioData("
     'atlasMedia.buffer("atlas-media:NAME")); atlasMedia is provided by Atlas and '
-    "returns an ArrayBuffer. Never fetch a reference and never write other "
-    "addresses for these files."
+    "returns an ArrayBuffer. Create the AudioContext in the first click or key "
+    "handler (to decode at load, use an OfflineAudioContext). Never fetch a "
+    "reference and never write other addresses for these files."
 )
 MEDIA_FAILED = (
     "These files named by the user could not be downloaded, so the app cannot use "
@@ -221,6 +238,49 @@ RENDER_REPAIR = (
     "all network access, as the user's side panel does) and it does not work:\n"
     "{problems}\n{network}Fix the cause of every listed problem and write the "
     "complete corrected file in one fenced ```html block, " + DESCRIBE
+)
+# On a follow-up, Atlas opens the current version before the model writes the
+# next one (staging -142: after "it does not work, nothing shows", the model
+# guessed a cause, rewrote code that worked and said that was the problem).
+CURRENT_CHECK = (
+    "Atlas opened version {version} in the preview just before this turn (a "
+    "sandboxed browser page without network, like the user's side panel; its "
+    "timers ran {seconds} s and up to three buttons were pressed). {found}"
+)
+CURRENT_PROBLEMS = (
+    "It saw these problems:\n{problems}\nWhen the user says something does not "
+    "work, these are the measured causes: fix them and keep the rest as written."
+)
+CURRENT_FINE = (
+    "It saw no error, no broken image and no blocked sound. When the user says "
+    "something does not work, look for the cause in the file and change only what "
+    "fixes it; say plainly what you changed and never claim a cause that was not "
+    "found."
+)
+# A follow-up that drops features of the version it changes (app_features.py).
+LOSS_REPAIR = (
+    "Compared with version {version}, the version the user has now, this file no "
+    "longer has:\n{losses}\nOnly the user's request (with the earlier messages) "
+    "removes or replaces something. Restore every item the request did not ask to "
+    "remove, as it is written in version {version}, keep the requested change, and "
+    "write the complete corrected file in one fenced ```html block, " + DESCRIBE
+)
+LOSS_KEEP = (
+    " If the request asked to remove or replace exactly these items, answer only "
+    "with the word KEEP instead of a file: Atlas then stores the file you wrote."
+)
+KEEP_WORD = "KEEP"
+ALSO_LOST = (
+    "Also, compared with version {version}, this file no longer has:\n{losses}\n"
+    "Restore every item the request did not ask to remove, as it is written in "
+    "version {version}."
+)
+# Every repair of a follow-up (staging -142: the repair of a file rejected for
+# its web addresses wrote the whole app again and lost what version 3 had).
+FOLLOW_UP_REPAIR = (
+    "\nThis file changes version {version}: start again from version {version} as "
+    "it is written above, keep everything the request did not change, and never "
+    "write the app again from scratch."
 )
 EXTRA_DETAILS = {
     "svg_syntax": "the SVG is not well-formed XML here (unclosed element, unquoted "
@@ -389,6 +449,51 @@ class Progress:
 
 
 @dataclass
+class Candidate:
+    """A file that works, delivered unless its repair gives a better one."""
+
+    document: str
+    title: str
+    summary: str
+    # The written block (atlas-media references or stand-ins), for the media note.
+    content: str
+    soft: list[str] = field(default_factory=list)
+    losses: list[app_features.Feature] = field(default_factory=list)
+
+    def weight(self) -> int:
+        return len(self.soft) + len(self.losses)
+
+
+def _follow_up(previous: Current | None) -> str:
+    """What every repair of a follow-up adds: start from the stored version."""
+    if previous is None or is_drawing(previous.source):
+        return ""
+    return FOLLOW_UP_REPAIR.format(version=previous.version)
+
+
+def _also_lost(previous: Current | None, written: str, kind: Kind) -> str:
+    """The losses of a rejected follow-up file, fixed in the same repair.
+
+    Staging -142 replays: the first file of "it does not work" used web
+    addresses and was rejected; its repair wrote the app again and dropped the
+    sound, with no call left to restore it.
+    """
+    if previous is None or kind != "app":
+        return ""
+    losses = app_features.lost(previous.source, written)
+    if not losses:
+        return ""
+    return "\n" + ALSO_LOST.format(
+        version=previous.version, losses=app_features.repair_lines(losses)
+    )
+
+
+def _keeps(text: str) -> bool:
+    """The model's answer to a loss repair is the one word that keeps the file."""
+    return prose(text).strip().strip(".!*`'\"").upper() == KEEP_WORD
+
+
+@dataclass
 class Current:
     artifact_id: str
     version: int
@@ -498,6 +603,52 @@ async def process_app_turn(
     plan = _app_plan(request, previous is not None) if kind == "app" else None
     built = False
     render_codes: list[str] = []
+    # The best file written so far that works (render check passed, or only
+    # soft defects), kept while a repair is tried.
+    pending: Candidate | None = None
+    keep_offered = False
+    store_failed = False
+    fetched: list[Media] = []
+    failed: list[app_media.MediaFailure] = []
+
+    def deliver(candidate: Candidate) -> str:
+        """Store the file and answer with its link; the store error code, or ""."""
+        nonlocal built
+        stored = _store(
+            request, item, candidate.document, candidate.title, kind, previous
+        )
+        if isinstance(stored, str):
+            return stored
+        artifact_id, version, filename = stored
+        notes = [
+            # Which of the person's files the app embeds, and which not.
+            _media_answer(language, fetched, failed, candidate.content),
+            app_soft_defects(language, candidate.soft),
+            app_lost_features(
+                language,
+                previous.version,
+                [(feature.kind, feature.name) for feature in candidate.losses],
+            )
+            if previous is not None and candidate.losses
+            else "",
+        ]
+        item.reponse = compose_answer(
+            "",
+            candidate.summary,
+            artifact_id,
+            version,
+            candidate.title,
+            filename,
+            language,
+            # A drawing has no data to lose on reload.
+            temporary=kind == "app",
+            note="\n\n".join(note for note in notes if note),
+        )
+        item.state = "done"
+        item.latence_ms["artifact_ready"] = (time.monotonic() - started) * 1000
+        built = True
+        return ""
+
     await progress.status(0)
     try:
         model = await GatewayModel.connect(
@@ -541,9 +692,47 @@ async def process_app_turn(
             messages.append(
                 {"role": "system", "content": PREVIOUS_UNAVAILABLE.format(noun=noun)}
             )
-        media, fetched, failed = await _media(
-            request, kind, previous, deadline - time.monotonic()
+        # The current app is opened while its files are fetched: the model
+        # changes a version whose measured problems it knows.
+        baseline = (
+            asyncio.create_task(
+                app_render.check(
+                    artifact_media.embed(previous.source, previous.media),
+                    deadline
+                    - time.monotonic()
+                    - MINIMUM_CALL_SECONDS
+                    - DEADLINE_MARGIN,
+                )
+            )
+            if previous is not None and kind == "app" and app_render.mode() != "off"
+            else None
         )
+        try:
+            media, fetched, failed = await _media(
+                request, kind, previous, deadline - time.monotonic()
+            )
+        except BaseException:
+            if baseline is not None:
+                baseline.cancel()
+            raise
+        if baseline is not None and previous is not None:
+            seen = await baseline
+            item.latence_ms["current_render_check"] = seen.ms
+            if seen.status in {"ok", "problems"}:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": CURRENT_CHECK.format(
+                            version=previous.version,
+                            seconds=app_render.LATER_MS // 1000,
+                            found=CURRENT_PROBLEMS.format(
+                                problems=app_render.repair_lines(seen)
+                            )
+                            if seen.problems
+                            else CURRENT_FINE,
+                        ),
+                    }
+                )
         if media:
             # New downloads, and on a follow-up the files the app embeds already.
             messages.append(
@@ -577,6 +766,7 @@ async def process_app_turn(
                     "artifact_invalid",
                     "artifact_missing",
                     "artifact_render",
+                    "artifact_lost",
                 }
                 await progress.status(3 if repair else 0)
             # The gateway accepts at most 300 s for a file turn.
@@ -620,6 +810,17 @@ async def process_app_turn(
                 # (DESCRIBE).
                 summary = _summary(text) or summary
                 redescribe = False
+            if block is None and pending is not None:
+                # The repair of a working file that lost features or kept a
+                # defect: KEEP when the request asked for the removal, any
+                # other answer keeps the file with what it lacks said.
+                if keep_offered and _keeps(text):
+                    pending = dataclasses.replace(pending, losses=[])
+                failure = deliver(pending)
+                if not failure:
+                    return
+                store_failed = True
+                break
             if block is None:
                 answer = prose(text)
                 question = answer.rstrip().endswith("?") and len(answer) <= 800
@@ -643,6 +844,9 @@ async def process_app_turn(
                 or (previous.title if previous is not None else "")
                 or DEFAULT_TITLES[kind].get(language, DEFAULT_TITLES[kind]["en"])
             )
+            # What the model wrote, with its atlas-media references: compared
+            # with the current version, which the model read the same way.
+            written = block.content
             if media:
                 # The static checks read the code: references become short
                 # stand-ins, the bytes are embedded once the file passes.
@@ -690,7 +894,9 @@ async def process_app_turn(
                             problems=_problem_lines(prepared.problems, prepared.source),
                             network=NETWORK_REPAIR if network else "",
                             fence="svg" if block.kind == "svg" else "html",
-                        ),
+                        )
+                        + _follow_up(previous)
+                        + _also_lost(previous, written, kind),
                     },
                 ]
                 continue
@@ -702,52 +908,101 @@ async def process_app_turn(
                     document,
                     deadline - time.monotonic() - DEADLINE_MARGIN,
                 )
-                item.latence_ms["render_check"] = report.ms
+                item.latence_ms["render_check"] = (
+                    item.latence_ms.get("render_check", 0.0) + report.ms
+                )
+                soft: list[str] = []
                 if report.status == "problems":
-                    failure = "artifact_render"
                     render_codes = report.codes
                     network = any(
                         code in app_render.NETWORK_CODES for code in report.codes
                     )
-                    redescribe = network
                     logging.getLogger(__name__).warning(
                         "app_turn_render attempt=%d codes=%s",
                         attempt + 1,
                         ",".join(report.codes),
                     )
+                    if app_render.hard(report):
+                        failure = "artifact_render"
+                        redescribe = network
+                        messages += [
+                            {"role": "assistant", "content": text},
+                            {
+                                "role": "user",
+                                "content": RENDER_REPAIR.format(
+                                    problems=app_render.repair_lines(report),
+                                    network=NETWORK_REPAIR if network else "",
+                                )
+                                + _follow_up(previous)
+                                + _also_lost(previous, written, kind),
+                            },
+                        ]
+                        continue
+                    soft = report.codes
+                # A follow-up keeps every feature of the version it changes
+                # unless the request removes it (app_features.py).
+                losses = (
+                    app_features.lost(previous.source, written)
+                    if previous is not None
+                    else []
+                )
+                if losses:
+                    logging.getLogger(__name__).warning(
+                        "app_turn_lost attempt=%d kinds=%s",
+                        attempt + 1,
+                        ",".join(sorted({feature.kind for feature in losses})),
+                    )
+                candidate = Candidate(
+                    document, title, summary, block.content, soft, losses
+                )
+                if pending is None or candidate.weight() <= pending.weight():
+                    pending = candidate
+                if (soft or losses) and attempt + 1 < MAX_CALLS:
+                    failure = "artifact_render" if soft else "artifact_lost"
+                    keep_offered = bool(losses) and not soft
+                    repair_text = (
+                        RENDER_REPAIR.format(
+                            problems=app_render.repair_lines(report), network=""
+                        )
+                        if soft
+                        else ""
+                    )
+                    if losses and previous is not None:
+                        repair_text = "\n".join(
+                            filter(
+                                None,
+                                (
+                                    repair_text,
+                                    LOSS_REPAIR.format(
+                                        version=previous.version,
+                                        losses=app_features.repair_lines(losses),
+                                    )
+                                    + (LOSS_KEEP if keep_offered else ""),
+                                ),
+                            )
+                        )
                     messages += [
                         {"role": "assistant", "content": text},
                         {
                             "role": "user",
-                            "content": RENDER_REPAIR.format(
-                                problems=app_render.repair_lines(report),
-                                network=NETWORK_REPAIR if network else "",
-                            ),
+                            "content": repair_text
+                            + ("" if losses else _follow_up(previous)),
                         },
                     ]
                     continue
-            stored = _store(request, item, document, title, kind, previous)
-            if isinstance(stored, str):
-                failure = stored
-                break
-            artifact_id, version, filename = stored
-            item.reponse = compose_answer(
-                "",
-                summary,
-                artifact_id,
-                version,
-                title,
-                filename,
-                language,
-                # A drawing has no data to lose on reload.
-                temporary=kind == "app",
-                # Which of the person's files the app embeds, and which not.
-                note=_media_answer(language, fetched, failed, block.content),
-            )
-            item.state = "done"
-            item.latence_ms["artifact_ready"] = (time.monotonic() - started) * 1000
-            built = True
-            return
+            else:
+                pending = Candidate(document, title, summary, block.content)
+            failure = deliver(pending)
+            if not failure:
+                return
+            store_failed = True
+            break
+        if pending is not None and not store_failed:
+            # The repair did not give a better file (no time, failed call,
+            # broken file): the working file is delivered with what it lacks.
+            failure = deliver(pending)
+            if not failure:
+                return
         item.erreurs.append(failure)
         item.reponse = (
             # D5: a storage quota is said with its limits, never as a failure
@@ -845,6 +1100,8 @@ def _media_line(item: Media) -> str:
     kind = item.mime.split("/", 1)[0]
     size = f"{max(1, len(item.data) // 1000)} KB"
     origin = item.filename or item.url or "already in the app"
+    if item.converted_from:
+        origin += ", drawn by Atlas as a PNG picture from the SVG file"
     return f"- {item.reference}: {kind} ({item.mime}, {size}), {origin}"
 
 

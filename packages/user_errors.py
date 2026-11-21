@@ -38,6 +38,44 @@ _TOO_LONG = {
     "es": "La respuesta tardó demasiado y se detuvo. Inténtelo de nuevo o divida la solicitud en pasos más cortos.",
     "it": "La risposta ha richiesto troppo tempo ed è stata interrotta. Riprova o dividi la richiesta in passaggi più brevi.",
 }
+# A turn cut by a time limit (services/orchestrator/time_cut.py): the answer
+# written so far, then one of these sentences; never only steps or a code.
+_CUT_PARTIAL = {
+    "fr": "La réponse a été coupée ici par la limite de temps ({limit} s) avant d'être terminée.",
+    "en": "The answer was cut here by the time limit ({limit} s) before it was finished.",
+    "de": "Die Antwort wurde hier durch das Zeitlimit ({limit} s) abgebrochen, bevor sie fertig war.",
+    "es": "La respuesta se cortó aquí por el límite de tiempo ({limit} s) antes de terminarse.",
+    "it": "La risposta è stata interrotta qui dal limite di tempo ({limit} s) prima di essere finita.",
+}
+# The answer was written in full, but its checks ran into the limit.
+_CUT_UNCHECKED = {
+    "fr": "La limite de temps ({limit} s) a été atteinte avant que cette réponse ait pu être vérifiée.",
+    "en": "The time limit ({limit} s) was reached before this answer could be checked.",
+    "de": "Das Zeitlimit ({limit} s) wurde erreicht, bevor diese Antwort geprüft werden konnte.",
+    "es": "Se alcanzó el límite de tiempo ({limit} s) antes de poder comprobar esta respuesta.",
+    "it": "Il limite di tempo ({limit} s) è stato raggiunto prima che questa risposta potesse essere verificata.",
+}
+# Nothing was written on the owned (private) server.
+_OWNED_TOO_SLOW = {
+    "fr": "Le modèle privé n'a pas pu répondre dans la limite de temps ({limit} s). Posez une question plus courte ou plus précise, ou renvoyez-la.",
+    "en": "The private model could not answer within the time limit ({limit} s). Ask a shorter or more precise question, or send it again.",
+    "de": "Das private Modell konnte nicht innerhalb des Zeitlimits ({limit} s) antworten. Stellen Sie eine kürzere oder genauere Frage, oder senden Sie sie erneut.",
+    "es": "El modelo privado no pudo responder dentro del límite de tiempo ({limit} s). Haga una pregunta más corta o más precisa, o vuelva a enviarla.",
+    "it": "Il modello privato non è riuscito a rispondere entro il limite di tempo ({limit} s). Fai una domanda più breve o più precisa, oppure inviala di nuovo.",
+}
+
+
+def time_cut_sentence(
+    language: str, *, written: bool, finished: bool, owned: bool, limit: float
+) -> str:
+    """The one sentence that closes a turn cut by a time limit."""
+    if written:
+        labels = _CUT_UNCHECKED if finished else _CUT_PARTIAL
+    elif owned:
+        labels = _OWNED_TOO_SLOW
+    else:
+        labels = _TOO_LONG
+    return labels.get(language, labels["en"]).format(limit=f"{limit:.0f}")
 
 
 # Any other failure of a chat answer: the person reads one sentence in their
@@ -346,6 +384,230 @@ def app_render_failure(
         parts.append(_UNCHANGED_SHORT[language].format(version=unchanged_version))
     parts.append(_RETRY[language])
     return " ".join(parts)
+
+
+# An app delivered with a defect the render check still saw after its repair
+# (app_render.SOFT_CODES): the page works otherwise, and the answer says what
+# does not.
+_APP_SOFT = {
+    "fr": "Attention : en ouvrant l'application pour la vérifier, j'ai constaté ceci : {reasons}.",
+    "en": "Note: when I opened the app to check it, {reasons}.",
+    "de": "Hinweis: Beim Öffnen der App zur Prüfung habe ich gesehen: {reasons}.",
+    "es": "Atención: al abrir la aplicación para comprobarla, vi que {reasons}.",
+    "it": "Attenzione: aprendo l'app per verificarla ho visto che {reasons}.",
+}
+_APP_SOFT_REASONS = {
+    "broken_image": {
+        "fr": "une image ne s'affiche pas",
+        "en": "an image does not show",
+        "de": "ein Bild wird nicht angezeigt",
+        "es": "una imagen no se muestra",
+        "it": "un'immagine non viene mostrata",
+    },
+    "audio_without_gesture": {
+        "fr": "le son est lancé avant votre premier clic, donc le navigateur le coupe",
+        "en": "the sound starts before your first click, so the browser keeps it silent",
+        "de": "der Ton startet vor Ihrem ersten Klick, daher bleibt er im Browser stumm",
+        "es": "el sonido empieza antes de su primer clic, así que el navegador lo silencia",
+        "it": "il suono parte prima del tuo primo clic, quindi il browser lo silenzia",
+    },
+}
+_AND = {"fr": " et ", "en": " and ", "de": " und ", "es": " y ", "it": " e "}
+
+
+def app_soft_defects(language: str, codes: list[str]) -> str:
+    """The defects an otherwise working app still has, said with it."""
+    language = language if language in _APP_SOFT else "en"
+    reasons = [
+        _APP_SOFT_REASONS[code][language]
+        for code in dict.fromkeys(codes)
+        if code in _APP_SOFT_REASONS
+    ]
+    if not reasons:
+        return ""
+    return _APP_SOFT[language].format(reasons=_AND[language].join(reasons))
+
+
+# A follow-up version stored without some features of the version it changed
+# (services/orchestrator/app_features.py), after its repair: said, never
+# claimed as kept.
+_APP_LOST = {
+    "fr": "Attention : par rapport à la version {version}, cette version n'a plus {items}.",
+    "en": "Note: compared with version {version}, this version no longer has {items}.",
+    "de": "Hinweis: Gegenüber Version {version} fehlt in dieser Version {items}.",
+    "es": "Atención: respecto a la versión {version}, esta versión ya no tiene {items}.",
+    "it": "Attenzione: rispetto alla versione {version}, questa versione non ha più {items}.",
+}
+_APP_LOST_ITEMS = {
+    "picture": {
+        "fr": "une partie de ses images intégrées",
+        "en": "some of its embedded pictures",
+        "de": "einige eingebettete Bilder",
+        "es": "parte de sus imágenes integradas",
+        "it": "parte delle immagini integrate",
+    },
+    "sound": {
+        "fr": "une partie de ses sons intégrés",
+        "en": "some of its embedded sounds",
+        "de": "einige eingebettete Töne",
+        "es": "parte de sus sonidos integrados",
+        "it": "parte dei suoni integrati",
+    },
+    "media": {
+        "fr": "le fichier « {name} »",
+        "en": "the file “{name}”",
+        "de": "die Datei „{name}“",
+        "es": "el archivo «{name}»",
+        "it": "il file «{name}»",
+    },
+}
+_APP_LOST_ABILITIES = {
+    "timer": ("son minuteur", "its timer", "den Timer", "su temporizador", "il timer"),
+    "animation": (
+        "son animation",
+        "its animation",
+        "die Animation",
+        "su animación",
+        "l'animazione",
+    ),
+    "sound": ("son son", "its sound", "den Ton", "su sonido", "il suono"),
+    "keyboard": (
+        "ses commandes au clavier",
+        "its keyboard controls",
+        "die Tastatursteuerung",
+        "sus controles de teclado",
+        "i comandi da tastiera",
+    ),
+    "touch": (
+        "ses commandes tactiles",
+        "its touch controls",
+        "die Touch-Steuerung",
+        "sus controles táctiles",
+        "i comandi touch",
+    ),
+    "drawing": (
+        "son dessin",
+        "its drawing",
+        "die Zeichnung",
+        "su dibujo",
+        "il disegno",
+    ),
+    "saving": (
+        "sa sauvegarde",
+        "its saving",
+        "das Speichern",
+        "su guardado",
+        "il salvataggio",
+    ),
+    "speech": (
+        "sa lecture à voix haute",
+        "its speech",
+        "die Sprachausgabe",
+        "su lectura en voz alta",
+        "la lettura ad alta voce",
+    ),
+    "vibration": (
+        "sa vibration",
+        "its vibration",
+        "die Vibration",
+        "su vibración",
+        "la vibrazione",
+    ),
+    "fullscreen": (
+        "son plein écran",
+        "its full screen mode",
+        "den Vollbildmodus",
+        "su pantalla completa",
+        "lo schermo intero",
+    ),
+    "drag": (
+        "son glisser-déposer",
+        "its drag and drop",
+        "Drag-and-drop",
+        "su arrastrar y soltar",
+        "il trascinamento",
+    ),
+}
+_APP_LOST_PARTS = {
+    "picture": (
+        "ses images",
+        "its pictures",
+        "die Bilder",
+        "sus imágenes",
+        "le immagini",
+    ),
+    "sound element": (
+        "son lecteur de son",
+        "its sound player",
+        "den Audioplayer",
+        "su reproductor de sonido",
+        "il lettore audio",
+    ),
+    "video": ("sa vidéo", "its video", "das Video", "su vídeo", "il video"),
+    "slider": (
+        "son curseur",
+        "its slider",
+        "den Schieberegler",
+        "su control deslizante",
+        "il cursore",
+    ),
+    "list box": (
+        "sa liste de choix",
+        "its choice list",
+        "die Auswahlliste",
+        "su lista de opciones",
+        "l'elenco di scelta",
+    ),
+    "text area": (
+        "sa zone de texte",
+        "its text area",
+        "das Textfeld",
+        "su área de texto",
+        "l'area di testo",
+    ),
+    "table": ("son tableau", "its table", "die Tabelle", "su tabla", "la tabella"),
+}
+_LANGUAGE_INDEX = {"fr": 0, "en": 1, "de": 2, "es": 3, "it": 4}
+APP_LOST_LISTED = 4
+
+
+def app_lost_features(
+    language: str, version: int, losses: list[tuple[str, str]]
+) -> str:
+    """The features (kind, name) of version `version` this version no longer has."""
+    language = language if language in _APP_LOST else "en"
+    index = _LANGUAGE_INDEX[language]
+    items: list[str] = []
+    # What the person sees first. Element ids and texts are not listed: a
+    # version that renames or rewords them may keep everything the person
+    # uses (the repair lists them to the model).
+    order = ("ability", "part", "picture", "sound", "media")
+    ranked = sorted(
+        losses, key=lambda loss: order.index(loss[0]) if loss[0] in order else 9
+    )
+    for kind, name in ranked:
+        if kind == "ability" and name in _APP_LOST_ABILITIES:
+            item = _APP_LOST_ABILITIES[name][index]
+        elif kind == "part" and name in _APP_LOST_PARTS:
+            item = _APP_LOST_PARTS[name][index]
+        elif kind in _APP_LOST_ITEMS:
+            item = _APP_LOST_ITEMS[kind][language].format(name=name)
+        else:
+            continue
+        if item not in items:
+            items.append(item)
+    if not items:
+        return ""
+    listed = items[:APP_LOST_LISTED]
+    more = len(items) - len(listed)
+    text = (
+        ", ".join(listed[:-1])
+        + (_AND[language] if len(listed) > 1 else "")
+        + listed[-1]
+    )
+    if more:
+        text += f" (+{more})"
+    return _APP_LOST[language].format(version=version, items=text)
 
 
 _QUOTA = {

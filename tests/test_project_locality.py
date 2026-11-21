@@ -16,6 +16,7 @@ from services.retrieval.project_work import Work
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_project_isolation import ProjectIsolationTests
+import own_tests
 
 
 class ProjectLocalityTests(ProjectIsolationTests):
@@ -88,3 +89,6 @@ class ProjectLocalityTests(ProjectIsolationTests):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+load_tests = own_tests.only_own(__name__)
