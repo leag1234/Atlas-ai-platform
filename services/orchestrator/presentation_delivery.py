@@ -185,10 +185,10 @@ async def deliver_presentation(
                 verified = verify(
                     path,
                     expected=content,
-                    expected_count=len(outline.slides),
                     require_pagination=True,
                 )
-                if verified.count != len(outline.slides) or any(
+                # A long slide continues on the next one: never fewer slides.
+                if verified.count < len(outline.slides) or any(
                     not slide.strip() for slide in verified.text
                 ):
                     raise ValueError("presentation_verification_failed")

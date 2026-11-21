@@ -76,6 +76,12 @@ class DocumentRenderTests(unittest.TestCase):
         for suffix in ("pdf", "pptx", "docx", "xlsx"):
             path = self.root / f"literal.{suffix}"
             result = render(content, path, image_root=self.root)
+            if suffix == "pptx":
+                # A deck adds its footer (the title again) and slide numbers.
+                written = "".join("".join(result.text).split())
+                for text in content.texts():
+                    self.assertIn("".join(text.split()), written)
+                continue
             self.assertEqual(
                 "".join("".join(result.text).split()),
                 "".join("".join(content.texts()).split()),
@@ -164,15 +170,18 @@ class DocumentRenderTests(unittest.TestCase):
             )
         report = pages(content, self.root, geometry=report_geometry(content))
         self.assertGreater(len(report), 1)
-        for suffix, count in (("pdf", len(report)), ("pptx", len(layout))):
-            path = self.root / f"long.{suffix}"
-            render(content, path, image_root=self.root)
-            verify(
-                path,
-                expected=content,
-                expected_count=count,
-                require_pagination=True,
-            )
+        path = self.root / "long.pdf"
+        render(content, path, image_root=self.root)
+        verify(
+            path, expected=content, expected_count=len(report), require_pagination=True
+        )
+        # A deck continues a long text on further slides under the same title
+        # (deck.chunked): every paragraph is there, none shrunk out of sight.
+        path = self.root / "long.pptx"
+        render(content, path, image_root=self.root)
+        checked = verify(path, expected=content, require_pagination=True)
+        self.assertGreater(checked.count, 2)
+        self.assertTrue(all("Source heading" in text for text in checked.text))
 
     def test_a_pdf_report_flows_on_a4_and_does_not_repeat_headings(self) -> None:
         # Staging 2026-11-12: a short report took 16 slide-size pages, one section
