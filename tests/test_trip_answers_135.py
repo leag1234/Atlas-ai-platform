@@ -171,11 +171,14 @@ class LateTrainTest(GenevaTest):
         )
         self.assertIn("TER 96500", rendered)
         self.assertIn("Lyon Part Dieu 06:38 → Genève Cornavin 08:43", rendered)
+        # Staging -142: the note says only what holds of the options shown.
         self.assertIn(
-            "Aucun itinéraire raisonnable trouvé n’arrive au plus tard à 09:00 : ",
+            "Aucun itinéraire trouvé n’arrive au plus tard à 09:00 sans voyager de "
+            "nuit. Les options ci-dessous arrivent après 09:00 ; la première arrive "
+            "à 09:08, 8 min après l’heure demandée.",
             rendered,
         )
-        self.assertIn("partent la nuit (dès 22:24)", rendered)
+        self.assertNotIn("dès 22:24", rendered)
         self.assertIn(
             "Arrivée 09:08, 8 min après l’heure demandée (09:00).",
             rendered,

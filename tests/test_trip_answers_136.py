@@ -370,7 +370,13 @@ class GoodAnswersTest(Trips136):
                 block = data["rendered"]
                 answer = "\n\n".join(p for p in (opening, block, closing) if p)
                 final, _ = checked(turn, answer, turn.language, question)
-                self.assertEqual(final, answer, final)
+                # Staging -142: the block follows the register of the model's
+                # words (Caen "chez toi", Madrid "te deja"); nothing else moves.
+                styled = tp.in_register(block, turn.language, opening + " " + closing)
+                expected = "\n\n".join(p for p in (opening, styled, closing) if p)
+                self.assertEqual(final, expected, final)
+                if name in {"caen", "madrid"}:
+                    self.assertNotEqual(styled, block)
 
     def test_the_late_geneva_plan_keeps_its_lateness_lines(self) -> None:
         turn, data = self.geneva()
@@ -383,7 +389,7 @@ class GoodAnswersTest(Trips136):
         final, _ = checked(turn, answer, "fr", GENEVA_QUESTION)
         self.assertEqual(final, answer, final)
         for line in (
-            "Aucun itinéraire raisonnable trouvé n’arrive au plus tard à 09:00 : ",
+            "Aucun itinéraire trouvé n’arrive au plus tard à 09:00 sans voyager de nuit.",
             "Arrivée 09:08, 8 min après l’heure demandée (09:00).",
             "TER 96500",
         ):

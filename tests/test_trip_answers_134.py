@@ -347,7 +347,15 @@ class Good134Test(Trips134):
         )
         answer = opening + "\n\n" + data["rendered"]
         rest, first = tp.without_plans(answer, turn)
-        self.assertEqual(tp.planned_answer(rest, turn, first=first), answer)
+        # Staging -142: the block follows the opening's "te" (tú).
+        informal = (
+            data["rendered"]
+            .replace("su posición", "tu posición")
+            .replace("compruébelas", "compruébalas")
+        )
+        self.assertEqual(
+            tp.planned_answer(rest, turn, first=first), opening + "\n\n" + informal
+        )
         turn, data = self.sydney()
         advice = (
             "Option 1 gives the most buffer before your flight. No source covers "
