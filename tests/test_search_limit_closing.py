@@ -307,9 +307,9 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         model = Scripted([Turn("", (search("s1"),)), Turn("", (search("s2"),))])
         tools = Research()
         result = await chat_turn(model, tools)
-        # One sentence, not the loop's stop summary (staging -139).
-        self.assertEqual((result.state, result.reason), ("done", "answer_step_limit"))
-        self.assertNotIn("Explicit stop", result.text)
+        self.assertEqual(
+            (result.state, result.reason), ("stopped", "answer_step_limit")
+        )
         self.assertEqual(tools.executed, ["web_search"])
         self.assertEqual(len(model.seen), 2)
 

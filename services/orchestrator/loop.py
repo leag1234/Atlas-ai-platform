@@ -28,7 +28,7 @@ from packages.profiles import accepted_profile
 from packages.limits import LimitError
 from packages.privacy import STATUS, StrictPrivacyUnavailable, describe, refusal
 from packages.owned_server import OwnedServerUnavailable
-from packages.user_errors import STOP_CATEGORIES, stop_answer
+from packages.user_errors import STOP_CATEGORIES
 
 import asyncio
 import json
@@ -469,15 +469,15 @@ async def run(
             return None
         return text
 
-    async def close_after_stop(reason: str) -> Result:
+    async def close_after_stop(reason: str) -> bool:
         """Chat: a stop of the tool loop ends with an answer, never its summary.
 
         The model writes the answer from what it has, offered no tool, when the
-        stop leaves time and budget for that call; otherwise, or when that call
-        fails, the person reads why in one sentence of their language. The stop
-        summary (counts and limits) goes to the log only (staging -139).
+        stop leaves time and budget for that call: the turn is then done. When
+        it cannot, or that call fails, the turn stays stopped with its summary
+        for the record and the API error, and the stream writes the sentence
+        the person reads (chat_stream, user_errors.stop_answer; staging -139).
         """
-        language = query.prose_lang or query.lang
         logging.getLogger(__name__).warning(
             json.dumps(
                 {
@@ -509,9 +509,10 @@ async def run(
                 }
             )
         )
-        result.text = text if text is not None else str(stop_answer(reason, language))
-        result.state = "done"
-        return result
+        if text is None:
+            return False
+        result.text, result.state = text, "done"
+        return True
 
     try:
         while True:
@@ -521,6 +522,7 @@ async def run(
             if skill_messages is not None:
                 messages.extend(dict(m) for m in skill_messages[skills_inserted:])
                 skills_inserted = len(skill_messages)
+            planned = bool(initial_calls)
             if initial_calls:
                 turn = Turn("", initial_calls, Reservation(0, Decimal(0)))
                 initial_calls = ()
@@ -1001,10 +1003,18 @@ async def run(
                 if call.name == "web_fetch" and counts[call.name] >= 8:
                     raise Stop("fetch_limit")
                 recent.append((call.name, canonical))
-                if closes_on_limit and len(recent) >= 2 and recent[-1] == recent[-2]:
-                    # Chat: the same call as the previous one. A third time in a
-                    # row closes the research; the answer is then written from
-                    # what is there (close_after_stop).
+                if (
+                    closes_on_limit
+                    and not planned
+                    and call in turn.calls
+                    and len(recent) >= 2
+                    and recent[-1] == recent[-2]
+                ):
+                    # Chat: the model asked for the same call as the previous
+                    # one. A third time in a row closes the research; the answer
+                    # is then written from what is there (close_after_stop).
+                    # Calls planned by code (page reads after a search, link
+                    # recovery, retries) are not the model repeating itself.
                     key = call.name, canonical
                     if (
                         len(recent) >= REPEAT_LIMIT
@@ -1312,8 +1322,12 @@ async def run(
                     messages.append({"role": "user", "content": step})
     except Stop as exc:
         result.reason = str(exc)
-        if closes_on_limit and result.reason in STOP_CATEGORIES:
-            return await close_after_stop(result.reason)
+        if (
+            closes_on_limit
+            and result.reason in STOP_CATEGORIES
+            and await close_after_stop(result.reason)
+        ):
+            return result
     except ValidationError as exc:
         result.state, result.reason, result.text = (
             "stopped",

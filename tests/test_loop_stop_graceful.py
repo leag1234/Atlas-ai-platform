@@ -243,9 +243,12 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(ids, answered)
                 self.assertEqual(len(model.seen), 4)
 
-    async def test_a_closing_call_that_fails_ends_with_one_honest_sentence(
+    async def test_a_closing_call_that_fails_keeps_the_stop_for_the_stream(
         self,
     ) -> None:
+        # No answer was written: the turn stays stopped, its summary goes to the
+        # record and the API error, and the stream writes the sentence of
+        # stop_answer (test_a_stopped_turn_streams_its_sentence_not_its_summary).
         class Failing(Repeating):
             async def complete(self, messages: list[Message], timeout: float) -> Turn:
                 if not offered(messages):
@@ -255,9 +258,11 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         for model in (Repeating(stubborn), Failing(repeating)):
             with self.subTest(model=type(model).__name__):
                 result = await chat_turn(model, Lookup(), privacy.STRICT)
-                self.assertEqual(result.state, "done")
-                self.assertEqual(result.text, stop_answer("loop_detected", "fr"))
-                self.assertIsNone(DIAGNOSTIC.search(result.text))
+                self.assertEqual(
+                    (result.state, result.reason), ("stopped", "loop_detected")
+                )
+                self.assertIsNotNone(DIAGNOSTIC.search(result.text))
+                self.assertIsNotNone(stop_answer("loop_detected", "fr"))
 
     async def test_a_transient_failure_runs_once_more(self) -> None:
         tools = Lookup([{"error": "timeout"}, EMPTY])
@@ -272,14 +277,18 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Cost reserved", result.text)
 
 
-def observed(level: str, payloads: list[dict[str, object]]) -> Any:
+def observed(
+    level: str,
+    payloads: list[dict[str, object]],
+    reply: Callable[[list[Message]], tuple[str, tuple[Call, ...]]] = repeating,
+) -> Any:
     """The gateway's answer for the -139 model, with what the gateway reports.
 
     The chat pipeline observes every call (model.observing) and runs on a
     profile, whose cost is the one the gateway measured: the real gateway
     always reports both, the call running on an owned server in strict mode.
     """
-    stream = gateway(repeating, payloads)
+    stream = gateway(reply, payloads)
     where = {
         "provider": "escalade" if level == privacy.STANDARD else "owned",
         "route": "simple",
@@ -295,7 +304,10 @@ def observed(level: str, payloads: list[dict[str, object]]) -> Any:
 
 
 @contextmanager
-def replayed_turn(level: str) -> Iterator[list[dict[str, object]]]:
+def replayed_turn(
+    level: str,
+    reply: Callable[[list[Message]], tuple[str, tuple[Call, ...]]] = repeating,
+) -> Iterator[list[dict[str, object]]]:
     """The -139 sequence through the real chat pipeline, with fake services.
 
     The router's two calls fail (GatewayCallError), the internal document
@@ -307,7 +319,7 @@ def replayed_turn(level: str) -> Iterator[list[dict[str, object]]]:
     from services.orchestrator.model import Configuration, GatewayModel
 
     payloads: list[dict[str, object]] = []
-    receive = observed(level, payloads)
+    receive = observed(level, payloads, reply)
 
     async def router(payload: Message, seconds: float) -> Message:
         raise GatewayCallError("provider_error", 502)
@@ -371,7 +383,10 @@ def request_body(level: str, **extra: object) -> dict[str, object]:
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
     async def streamed(
-        self, level: str, atlas_ui: bool
+        self,
+        level: str,
+        atlas_ui: bool,
+        reply: Callable[[list[Message]], tuple[str, tuple[Call, ...]]] = repeating,
     ) -> tuple[str, list[dict[str, Any]], Interaction]:
         from services.orchestrator.chat_pipeline import process
 
@@ -381,7 +396,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         item = Interaction()
         token = privacy.elevate(level)
         try:
-            with replayed_turn(level) as payloads:
+            with replayed_turn(level, reply) as payloads:
                 rows = [
                     json.loads(str(row).removeprefix("data: "))
                     async for row in response(
@@ -409,6 +424,23 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(rows[-1]["choices"][0]["finish_reason"], "stop")
                     self.assertEqual(item.state, "done")
                     self.assertIn("loop_detected", item.erreurs)
+
+    async def test_a_failed_closing_call_streams_the_plain_sentence(self) -> None:
+        # The closing call fails (the model asks for a tool again with none
+        # offered): the person reads the sentence of stop_answer, never the
+        # loop's summary nor the stop code.
+        for level in (privacy.STANDARD, privacy.STRICT):
+            for atlas_ui in (True, False):
+                with self.subTest(level=level, atlas_ui=atlas_ui):
+                    text, rows, item = await self.streamed(level, atlas_ui, stubborn)
+                    self.assertFalse(any("error" in row for row in rows), rows[-3:])
+                    self.assertIn(str(stop_answer("loop_detected", "fr")), text)
+                    self.assertIsNone(DIAGNOSTIC.search(text))
+                    self.assertNotIn("loop_detected", text)
+                    self.assertNotIn(ANSWER, text)
+                    self.assertEqual(rows[-1]["choices"][0]["finish_reason"], "stop")
+                    self.assertIn("loop_detected", item.erreurs)
+                    self.assertEqual(item.reponse, stop_answer("loop_detected", "fr"))
 
     async def test_a_stopped_turn_streams_its_sentence_not_its_summary(self) -> None:
         summary = (
