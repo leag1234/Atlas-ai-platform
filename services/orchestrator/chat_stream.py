@@ -81,6 +81,21 @@ _TRAILING_IMAGE = linear_scan.Scan(
 )
 
 
+_WRITTEN = {
+    "fr": "Rédaction… {words} mots écrits",
+    "en": "Writing… {words} words so far",
+    "de": "Schreiben… {words} Wörter bisher",
+    "es": "Redactando… {words} palabras hasta ahora",
+    "it": "Scrittura… {words} parole finora",
+}
+
+
+def _written(language: str, words: object) -> str:
+    """The status of an answer written while it is held for its check."""
+    count = words if isinstance(words, int) and words >= 0 else 0
+    return _WRITTEN.get(language, _WRITTEN["en"]).format(words=count)
+
+
 def _after_last_stop(text: str) -> int:
     """Where a URL tail can start: after the last stop, a final newline aside
     ("$" matches before it)."""
@@ -247,7 +262,7 @@ def response(
                 guest
                 and not owned_waiting
                 and not (
-                    activity in {"artifact_progress", "work_step"}
+                    activity in {"artifact_progress", "work_step", "answer_progress"}
                     and activity_description
                     and not done
                 )
@@ -467,6 +482,17 @@ def response(
             nonlocal received_content, owned_wait_since, owned_expected, call_shown
             if event.get("phase") == "connector_approval":
                 await queue.put({"atlas": event})
+                return
+            written = event.get("answer_progress")
+            if isinstance(written, dict):
+                # An answer held for its check (chat_pipeline._HeldAnswer): the
+                # status line counts its words; the text comes once checked.
+                if payload.atlas_ui:
+                    activity = "answer_progress"
+                    activity_description = _written(language, written.get("words"))
+                    await queue.put(
+                        {"atlas": {"phase": "answer_progress"}, "event": status_event()}
+                    )
                 return
             announced = event.get("work_step")
             if isinstance(announced, dict):
