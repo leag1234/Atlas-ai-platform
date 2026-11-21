@@ -120,11 +120,28 @@ PICTURES = re.compile(
 # Pictures the script builds at run time from one template (a flag per
 # country from a colour map): the file writes one <svg> and the page shows
 # many, so the written count is no measure of what is shown.
-RUNTIME_PICTURES = re.compile(
-    r"`[^`]*(?:<svg\b|%3Csvg\b)[^`]*\$\{"
-    r"""|\bcreateElementNS\s*\(\s*['"]http://www\.w3\.org/2000/svg['"]""",
-    re.I,
+# A template literal (possessive: each backtick run is read once) and the
+# SVG builder the script calls.
+TEMPLATE = re.compile(r"`[^`]*+")
+SVG_ELEMENT = re.compile(
+    r"""\bcreateElementNS\s*+\(\s*+['"]http://www\.w3\.org/2000/svg['"]"""
 )
+
+
+def _runtime_pictures(document: str) -> bool:
+    """Whether the script builds SVG pictures: a template literal holding an
+    <svg> and an interpolation, or createElementNS with the SVG namespace."""
+    if SVG_ELEMENT.search(document):
+        return True
+    for literal in TEMPLATE.finditer(document):
+        body = literal.group(0)
+        lowered = body.lower()
+        starts = [i for i in (lowered.find("<svg"), lowered.find("%3csvg")) if i >= 0]
+        if starts and "${" in body[min(starts) :]:
+            return True
+    return False
+
+
 # A clock read in an animation loop: a countdown drawn with
 # requestAnimationFrame is a timer too.
 CLOCK = re.compile(r"\b(?:performance|Date)\.now\s*\(")
@@ -277,7 +294,7 @@ def lost(previous: str, new: str) -> list[Feature]:
         if feature.kind in {"picture", "sound"}
     }
     text = _norm(new)
-    runtime = bool(RUNTIME_PICTURES.search(new))
+    runtime = _runtime_pictures(new)
     missing: list[Feature] = []
     for feature in features(previous):
         if feature.kind == "element":
