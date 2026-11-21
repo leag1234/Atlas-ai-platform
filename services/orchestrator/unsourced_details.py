@@ -5,12 +5,15 @@ then adds precise details nobody retrieved: founding members, a full birth date,
 a height, the origin of a name. The code finds them, the model decides what to do
 with them (owner principle "the code does and checks, the model decides"):
 
-1. every precise detail of the answer is extracted (a full date, a year, a number
-   with its scale word, a proper name, a quoted title);
+1. every precise detail of the answer is extracted (a full date, a calendar
+   quarter, a version number, a year, a number with its scale word or unit, a
+   proper name, a quoted title);
 2. each one is looked up in the texts the turn retrieved (search results, fetched
    pages, specialized sources such as the encyclopedia facts), in the person's own
    messages, or as the same value in another written form (another language's
-   month name, an ISO date, another thousands separator, a rounded number);
+   month name, an ISO date, another thousands separator, a rounded number, a
+   scale written short such as "1,5 Mio.", "Q3 2024" for "third quarter of
+   2024", "version 5.0" for "5", a name without its accents);
    a value the turn computed is no added detail either (``Computed``): a result
    of a computation tool (calculator, date_time, unit_convert, currency_convert),
    arithmetic on the person's own numbers (a difference, a percentage, a share),
@@ -19,14 +22,29 @@ with them (owner principle "the code does and checks, the model decides"):
    "There are **261** days between 3 March and 19 November 2026" became "There
    are **days** between...", the date_time result being in no page read;
 3. the details no retrieved text holds go to one bounded revision call: the model
-   removes each one, or replaces it with what the given source excerpts state, and
-   changes nothing else;
+   removes each one, replaces it with what the given source excerpts state, or
+   keeps it followed by a "not verified" marker in the answer language (UNVERIFIED)
+   when the sentence would lose its point without it, and changes nothing else;
 4. the revision is checked by code and kept only when it removes unsupported
    details without adding any new one, keeps every link, and stays an answer; a
    sentence left with its detail cut out and nothing rewritten ("There are
    **days**") goes as a whole, never stays hollow;
    otherwise the original answer is kept, and in ``revise_mark`` mode the details
-   still unsupported are marked next to their sentence, in the answer language.
+   still unsupported after this second and last check are marked next to their
+   sentence, in the answer language.
+
+Survey (2026-11-21, owner rule: existing work first). FActScore (Min et al.
+2023) splits an answer into atomic facts and scores each against retrieved
+passages with a model; SAFE (Wei et al. 2024) adds a search per fact;
+RefChecker (Hu et al. 2024) extracts claim triplets with a model and checks
+them against the reference. All three spend one or more model calls per claim
+(seconds to tens of seconds per answer). Their measured weak point is the same
+as here: names, dates and numbers carry most errors, and these are exactly what
+string and value matching checks for free. So code extracts and matches the
+specific details (dates, quarters, versions, numbers, names, titles) in under a
+second, and a model is called once, only when something is unmatched, to decide
+what to do with it. A relation between sourced facts (a cause the source never
+states) is not a detail: source_faithfulness checks it for provided documents.
 
 Before the revision, the details no retrieved text holds are looked up in the
 subject's full encyclopedia articles (the pages the turn reached, the article the
@@ -37,8 +55,15 @@ the answer): a stadium's page holding "21" never supports a percentage, nor
 joins its sources (staging 2026-11-20). Only standard and enhanced levels read
 the live encyclopedia here.
 
+A turn that streams (no held check) cannot have its text taken back (owner
+decision 2026-11-21): once it ends, ``streamed_check`` looks its details up in
+the texts it read (collected in ``anchors``) and names those none holds in one
+closing note in the person's language, without a model call; an answer whose
+details are all found gets no note. The interface stream receives the note as
+a last delta; an API answer, streamed or not, is sent whole with it.
+
 ``ATLAS_UNSOURCED_DETAILS``: ``off`` (default), ``mark``, ``revise``,
-``revise_mark``. It applies to a held factual turn (grounding's cue, or a
+``revise_mark`` (the streamed note runs in the two marking modes). It applies to a held factual turn (grounding's cue, or a
 question about a named subject when the setting is on), with or without
 retrieved sources; grounding runs after it on the final text. An answer whose
 details are mostly unsupported (the sources do not cover it) is left as it is.
@@ -49,6 +74,7 @@ from __future__ import annotations
 
 import asyncio
 from bisect import bisect_left
+from contextvars import ContextVar
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date
@@ -72,6 +98,7 @@ from services.orchestrator.link_requests import own_words
 from services.orchestrator.grounding import STOP as STOP_WORDS
 from services.orchestrator.grounding import (
     CREATIVE,
+    Grounding,
     needs_grounding,
     normalized,
     question_entities,
@@ -94,6 +121,8 @@ MAX_DETAILS = 40
 # broad answer from memory): stripping or flagging most of it would leave no answer,
 # so it is left as it is and counted.
 UNCOVERED_SHARE = 0.4
+# Details an uncovered answer's closing note names at most.
+NOTE_DETAILS = 8
 
 MONTHS: dict[str, int] = {}
 for _number, _names in enumerate(
@@ -155,6 +184,14 @@ SCALES = {
     "miliardi": 1e9,
     "miliardo": 1e9,
     "milliarde": 1e9,
+    # Written short: "1,5 Mio.", "2 Mrd.", "3 Md€", "4 bn".
+    "mio": 1e6,
+    "mln": 1e6,
+    "mrd": 1e9,
+    "md": 1e9,
+    "mds": 1e9,
+    "mld": 1e9,
+    "bn": 1e9,
 }
 # Words written with a capital at the start of a sentence that are not names.
 COMMON = frozenset(
@@ -213,15 +250,48 @@ NUMERIC_DATE = re.compile(
 # A number: grouped thousands or plain digits, a decimal part, a scale word.
 NUMBER = re.compile(
     r"(?<![\w.,])(?:\d{1,3}(?:[   .,]\d{3})++|\d++)(?:[.,]\d++)?+"
-    r"(?:\s?(?:%|[^\W\d_]{4,11}))?+"
+    r"(?:\s?(?:%|(?i:mio|mln|mrd|mds?|mld|bn)\b\.?|[^\W\d_]{4,11}))?+"
 )
+# A version number: after a version word ("version 4.2.1", "Version 5",
+# "release 3.0", "v2.1"), or three or four dotted parts ("4.2.1"). Its digits
+# are no year or amount: "4.2.7" read as the number 4.2 matched a source's
+# "4.2.1" (2026-11-21).
+VERSION = re.compile(
+    r"(?i)(?<![\w.])(?:(?:version|versión|versione|release|révision|revision|build)"
+    r"\s|v(?=\d))(\d{1,4}(?:\.\d{1,4}){0,3})(?![\w]|\.\d)"
+    r"|(?<![\w.,])(\d{1,4}\.\d{1,4}\.\d{1,4}(?:\.\d{1,4})?)(?![\w]|\.\d)"
+)
+# Dotted numbers of a source, as the versions it may name ("Tarnweld 4.2").
+DOTTED = re.compile(r"(?<![\w.,])\d{1,4}(?:\.\d{1,4})+(?![\w]|\.\d)")
+# A calendar quarter: "Q3 2024", "T3 2024", "2024 Q3", "3. Quartal 2024",
+# "third quarter of 2024", "troisième trimestre 2024", "drittes Quartal 2024".
+QUARTER = re.compile(
+    r"(?i)\b(?:[QT]([1-4])|([1-4])\.\s?Quartals?)\s?[/-]?\s?(\d{4})\b"
+    r"|\b(\d{4})\s?[/-]?\s?Q([1-4])\b"
+    r"|\b([^\W_]{2,10})\s(?:quarter|trimestre|quartals?)\s(?:of\s|de\s|del\s|des\s)?"
+    r"(\d{4})\b"
+)
+QUARTER_WORDS: dict[str, int] = {
+    word: number
+    for number, words in enumerate(
+        (
+            "first 1st premier 1er erstes ersten erste erster primer primero primo",
+            "second 2nd deuxieme 2e 2eme zweites zweiten zweite zweiter segundo secondo",
+            "third 3rd troisieme 3e 3eme drittes dritten dritte dritter tercer tercero "
+            "terzo",
+            "fourth 4th quatrieme 4e 4eme viertes vierten vierte vierter cuarto quarto",
+        ),
+        start=1,
+    )
+    for word in words.split()
+}
 QUOTE = re.compile(r"[«“\"]\s?([^«»“”\"\n]{3,80})\s?[»”\"]")
 WORD = re.compile(r"[^\W_]++(?:['’\-][^\W_]++)*+")
 SENTENCE_END = re.compile(r"[.!?](?=\s)|\n")
 # Abbreviations that a full stop does not end a sentence after ("No. 2", "St. Paul").
 ABBREVIATIONS = frozenset(
     "no nos nr st ste dr mr mrs ms jr sr mt vs etc cf p pp vol art ch fig ca env "
-    "mme mlle m av apr bd".split()
+    "mme mlle m av apr bd mio mrd md mds mln mld bn".split()
 )
 MARKUP = re.compile(r"\*\*|__|`|^\s*(?:[-*+>]|\d{1,3}[.)]|#{1,6})\s", re.M)
 
@@ -229,6 +299,17 @@ MARKUP = re.compile(r"\*\*|__|`|^\s*(?:[-*+>]|\d{1,3}[.)]|#{1,6})\s", re.M)
 def mode() -> str:
     value = os.environ.get("ATLAS_UNSOURCED_DETAILS", "off").strip().lower()
     return value if value in MODES else "off"
+
+
+def marks() -> bool:
+    """The modes that tell the person what no source holds (streamed_check)."""
+    return mode() in {"mark", "revise_mark"}
+
+
+# The texts a streamed turn read (search results, fetched pages, specialized
+# sources) and its computation results, collected like the held check's
+# (chat_pipeline sets it on turns without one).
+anchors: ContextVar[Grounding | None] = ContextVar("atlas_anchors", default=None)
 
 
 # Questions about a named subject that grounding's precise-fact cues miss. A request
@@ -276,7 +357,7 @@ def wants_review(question: str) -> bool:
 
 @dataclass(frozen=True)
 class Detail:
-    kind: str  # date, year, number, name, title
+    kind: str  # date, quarter, version, year, number, name, title
     text: str
     start: int  # offset of the sentence holding it in the answer body
     end: int
@@ -330,10 +411,103 @@ def _number_value(text: str) -> tuple[float, float] | None:
         precision = 10.0**zeros if zeros >= 3 else 0.0
     word = normalized(text[match.end() :]).split()
     scale = SCALES.get(word[0], 1.0) if word else 1.0
+    if scale > 1 and not decimals:
+        # "about 12 million" for a source's 12.4 million: a figure written with
+        # a scale word is rounded to one unit of that scale.
+        precision = max(precision, 1.0)
     if not math.isfinite(value * scale):
         # Hundreds of digit groups read as one number: no value.
         return None
     return value * scale, precision * scale
+
+
+def version_of(text: str) -> str | None:
+    """A version as compared: its numbers without a trailing ".0" ("5.0" is 5).
+
+    None for a grouped number ("1.234.567") read as three dotted parts.
+    """
+    numbers = re.findall(r"\d+(?:\.\d+)*", text)
+    if not numbers:
+        return None
+    parts = numbers[-1].split(".")
+    if len(parts) >= 3 and all(len(part) == 3 for part in parts[1:]):
+        return None
+    canonical = [str(int(part)) for part in parts]
+    while len(canonical) > 1 and canonical[-1] == "0":
+        canonical.pop()
+    return ".".join(canonical)
+
+
+def quarter_of(text: str) -> str | None:
+    """A calendar quarter as compared ("q3 2024"), None when it names none."""
+    match = QUARTER.search(text)
+    if match is None:
+        return None
+    if match[3]:
+        number, year = match[1] or match[2], match[3]
+    elif match[4]:
+        number, year = match[5], match[4]
+    else:
+        found = QUARTER_WORDS.get(normalized(match[6]))
+        if found is None:
+            return None
+        number, year = str(found), match[7]
+    return f"q{number} {year}"
+
+
+# The capitalised word right before a version ("Tarnweld version 4").
+PRODUCT = re.compile(r"(?<![\w-])([^\W\d_][^\W_]*+) $")
+GERMAN_ARTICLES = frozenset("der die das den dem des".split())
+# Function words that tell a German text: German writes every noun with a
+# capital, which read as names flagged 6 ordinary nouns in a 4-sentence answer
+# (2026-11-21).
+GERMAN_WORDS = frozenset(
+    "der das und ist nicht mit fur auf wurde wurden eine einen einem einer dem den "
+    "sich auch werden hat haben sind oder bei nach zum zur vom uber wird seit "
+    "auf ein im sie".split()
+)
+OTHER_WORDS = frozenset(
+    "the and is of to with for was were that which are "
+    "le la les et est une du pour avec dans sur qui que pas "
+    "el los las y es con para por que una lo il gli e per con che".split()
+)
+# Before a single capitalised word in German, these introduce a place or a name
+# ("in Vasselin", "nach Ostrelach", "namens Brelune"); any other word before it
+# (an article, an adjective, a preposition) makes it an ordinary noun.
+GERMAN_INTRODUCERS = frozenset("in nach namens genannt heisst".split())
+GERMAN_NOUN = re.compile(
+    r"(?:ung|heit|keit|schaft|tion|sion|tat|ismus|nis|tum|ling|chen|ment|enz|anz)"
+    r"(?:en|s)?$"
+)
+GERMAN_COMMON_NOUNS = frozenset(
+    "zukunft kraft hohe bezug betrieb form folge zeit summe frage gang zahlen".split()
+)
+
+
+def is_german(body: str) -> bool:
+    words = normalized(body[:4000]).split()
+    german = sum(word in GERMAN_WORDS for word in words)
+    return german >= 2 and german > sum(word in OTHER_WORDS for word in words)
+
+
+def _german_noun(
+    plain: str, words: list[re.Match[str]], index: int, sentence_start: bool
+) -> bool:
+    """A single capitalised word of a German text that reads as an ordinary noun.
+
+    A sentence opener keeps the rule of every language (a name when it reads as
+    a list entry); inside a sentence, only an introducer makes it a name.
+    """
+    word = normalized(words[index][0])
+    if GERMAN_NOUN.search(word) or word in GERMAN_COMMON_NOUNS:
+        return True
+    if words[index][0].isupper() or any(c.isupper() for c in words[index][0][1:]):
+        return False  # an acronym or an inner capital: a name
+    if sentence_start or index == 0:
+        return False
+    if plain[words[index - 1].end() : words[index].start()] != " ":
+        return True
+    return normalized(words[index - 1][0]) not in GERMAN_INTRODUCERS
 
 
 def extract(answer: str) -> list[Detail]:
@@ -341,6 +515,9 @@ def extract(answer: str) -> list[Detail]:
     body = answer.split("<details>", 1)[0]
     found: dict[str, Detail] = {}
     in_fence = False
+    german = is_german(body)
+    # German genitives ("die Auswahl der Lieferanten") join two nouns, not a name.
+    connectors = CONNECTORS - GERMAN_ARTICLES if german else CONNECTORS
     for start, end in _sentences(body):
         sentence = body[start:end]
         if sentence.lstrip().startswith("```"):
@@ -382,6 +559,25 @@ def extract(answer: str) -> list[Detail]:
             for match in pattern.finditer(plain):
                 if normalized(match[month_group]) in MONTHS:
                     add("date", match[0], match.span())
+        for match in QUARTER.finditer(plain):
+            if not taken[match.start()] and quarter_of(match[0]):
+                add("quarter", match[0], match.span())
+        for match in VERSION.finditer(plain):
+            if taken[match.start()] or version_of(match[0]) is None:
+                continue
+            text = match[0]
+            if match[1]:
+                # "Tarnweld version 4": the product the version belongs to.
+                before = PRODUCT.search(
+                    plain, max(0, match.start() - 40), match.start()
+                )
+                if (
+                    before
+                    and before[1][0].isupper()
+                    and normalized(before[1]) not in STOP | COMMON
+                ):
+                    text = before[1] + " " + text
+            add("version", text, match.span())
         for match in YEAR.finditer(plain):
             if not taken[match.start()]:
                 add("year", match[0], match.span())
@@ -408,7 +604,9 @@ def extract(answer: str) -> list[Detail]:
         index = 0
         while index < len(words):
             word = words[index][0]
-            if not word[0].isupper():
+            if not word[0].isupper() or taken[words[index].start()]:
+                # A version word, a quarter or a scale ("Version", "Q3", "Mio.")
+                # read as part of a detail is no name.
                 index += 1
                 continue
             last = index
@@ -417,12 +615,14 @@ def extract(answer: str) -> list[Detail]:
                 gap = plain[words[following - 1].end() : words[following].start()]
                 if gap not in {" ", " "}:
                     break
+                if taken[words[following].start()]:
+                    break  # "Im Q3 2024": the quarter is no part of a name
                 candidate = words[following][0]
                 if candidate[0].isupper():
                     last = following
                     following += 1
                 elif (
-                    normalized(candidate) in CONNECTORS
+                    normalized(candidate) in connectors
                     and following + 1 < len(words)
                     and words[following + 1][0][0].isupper()
                     and plain[words[following].end() : words[following + 1].start()]
@@ -460,6 +660,11 @@ def extract(answer: str) -> list[Detail]:
                 or heading
                 or (single and (first in COMMON or len(word) < 3))
                 or (single and sentence_start and not name_like)
+                or (
+                    single
+                    and german
+                    and _german_noun(plain, words, index, sentence_start)
+                )
             ):
                 add("name", text, (words[index].start(), words[last].end()))
             index = following
@@ -476,6 +681,9 @@ class Evidence:
     words: frozenset[str] = frozenset()
     values: list[float] = field(default_factory=list)
     lowercase: frozenset[str] = frozenset()
+    # Versions ("4.2.1", "v5") and calendar quarters ("q3 2024") as compared.
+    versions: frozenset[str] = frozenset()
+    quarters: frozenset[str] = frozenset()
 
     @classmethod
     def of(cls, passages: list[str]) -> Evidence:
@@ -492,7 +700,18 @@ class Evidence:
             for match in WORD.finditer(joined)
             if match[0][0].islower()
         )
-        return cls(text, frozenset(text.split()), values, lowercase)
+        versions = frozenset(
+            version
+            for pattern in (VERSION, DOTTED)
+            for match in pattern.finditer(joined)
+            if (version := version_of(match[0])) is not None
+        )
+        quarters = frozenset(
+            quarter
+            for match in QUARTER.finditer(joined)
+            if (quarter := quarter_of(match[0])) is not None
+        )
+        return cls(text, frozenset(text.split()), values, lowercase, versions, quarters)
 
     def holds(self, phrase: str) -> bool:
         return bool(phrase) and f" {phrase} " in self.text
@@ -508,6 +727,27 @@ def supported(detail: Detail, evidence: Evidence, own: Evidence) -> bool:
     phrase = normalized(detail.text)
     if evidence.holds(phrase) or own.holds(phrase):
         return True
+    if detail.kind == "version":
+        wanted = version_of(detail.text)
+        if wanted is None:
+            return False
+        if wanted in evidence.versions or wanted in own.versions:
+            return True
+        # "Tarnweld version 4" for a source's "Tarnweld 4".
+        head = detail.text.split()[0]
+        product = head[0].isupper() and not re.match(
+            r"(?i)v?\d|version|versión|versione|release|révision|revision|build", head
+        )
+        return (
+            product
+            and "." not in wanted
+            and evidence.holds(normalized(head) + " " + wanted)
+        )
+    if detail.kind == "quarter":
+        wanted = quarter_of(detail.text)
+        return wanted is not None and (
+            wanted in evidence.quarters or wanted in own.quarters
+        )
     if detail.kind == "name":
         tokens = [
             token
@@ -893,8 +1133,10 @@ INSTRUCTION = (
     "For each listed detail: if an excerpt states the correct value, use the "
     "excerpt's value; otherwise remove the detail, or the part of the sentence that "
     "only exists to state it, so the sentence stays correct, natural and in its "
-    "language. Never add a name, date, number or title that is not already in the "
-    "sentence or in the excerpts. Keep the sentence's markdown (list marker, bold, "
+    "language. When the sentence would lose its point without the detail, you may "
+    "instead keep it and write the MARKER right after it, so the person sees it "
+    "is not verified. Never add a name, date, number or title that is not already "
+    "in the sentence or in the excerpts. Keep the sentence's markdown (list marker, bold, "
     "links, citation markers) and every other word. If nothing correct remains, "
     "return an empty string for it.\n"
     "Return only a JSON object mapping each sentence number to its corrected text, "
@@ -910,6 +1152,14 @@ class Report:
     unsupported_after: int = 0
     revised: str = ""  # kept, rejected:<reason>, failed, late, skipped:<reason>
     marked: int = 0
+    # Details found in no source, by kind (date, version, name...), first check.
+    kinds: dict[str, int] = field(default_factory=dict)
+    # Details the revision removed or replaced with a sourced value, and those
+    # it kept with the not-verified marker.
+    fixed: int = 0
+    model_marked: int = 0
+    # Time of code's lookup alone (extraction and matching, both checks).
+    match_seconds: float = 0.0
     cost_eur: Decimal = Decimal(0)
     seconds: float = 0.0
     removed: list[str] = field(default_factory=list)
@@ -922,9 +1172,14 @@ class Report:
             "mode": self.mode,
             "details": self.details,
             "unsupported": self.unsupported,
+            "matched": max(0, self.details - self.unsupported),
             "unsupported_after": self.unsupported_after,
+            "kinds": self.kinds,
             "revised": self.revised,
+            "fixed": self.fixed,
+            "model_marked": self.model_marked,
             "marked": self.marked,
+            "match_seconds": round(self.match_seconds, 4),
             "referenced": self.referenced,
             "reference_articles": len(self.reference_urls),
             "cost_eur": str(self.cost_eur),
@@ -981,7 +1236,7 @@ async def _revise(
         for number, (start, end, texts) in enumerate(targets, start=1)
     )
     content = (
-        f"LANGUAGE: {language}\n\nSENTENCES:\n{numbered}\n\n"
+        f"LANGUAGE: {language}\nMARKER: {marker(language)}\n\nSENTENCES:\n{numbered}\n\n"
         f"SOURCE EXCERPTS:\n{excerpts(body, details, passages) or '(none)'}"
     )
     payload: dict[str, object] = {
@@ -1077,15 +1332,23 @@ LINK = re.compile(r"https?://[^\s)>\]]++|\]\([^)\s]++\)")
 
 
 def acceptable(
-    original: str, revised: str, before: list[Detail], after: list[Detail]
+    original: str,
+    revised: str,
+    before: list[Detail],
+    after: list[Detail],
+    marked: list[Detail] | None = None,
 ) -> str:
-    """Empty when the revision is kept, else the reason it is not."""
+    """Empty when the revision is kept, else the reason it is not.
+
+    ``marked``: details the revision kept with the not-verified marker; they
+    count as treated, but never as new details.
+    """
     if len(revised) < 0.35 * len(original) or len(revised) > 1.3 * len(original) + 200:
         return "length"
     if not set(LINK.findall(revised)) <= set(LINK.findall(original)):
         return "links"
     original_keys = {detail.key for detail in before}
-    if any(detail.key not in original_keys for detail in after):
+    if any(detail.key not in original_keys for detail in [*after, *(marked or [])]):
         return "new_details"
     if len(after) >= len(before):
         return "unchanged"
@@ -1099,6 +1362,44 @@ NOTE = {
     "es": "no encontrado en las fuentes consultadas: {details}",
     "it": "non trovato nelle fonti consultate: {details}",
 }
+
+
+# What the revision writes after a detail it keeps without a source.
+UNVERIFIED = {
+    "en": "not verified",
+    "fr": "non vérifié",
+    "de": "nicht überprüft",
+    "es": "no verificado",
+    "it": "non verificato",
+}
+_UNVERIFIED_FORMS = tuple(f" {normalized(text)} " for text in UNVERIFIED.values())
+
+
+def marker(language: str) -> str:
+    return "(" + UNVERIFIED.get(language, UNVERIFIED["en"]) + ")"
+
+
+def model_marked(detail: Detail, body: str) -> bool:
+    """True when the revision kept the detail with the not-verified marker after it."""
+    sentence = body[detail.start : detail.end]
+    position = sentence.find(detail.text)
+    rest = " " + normalized(sentence[max(position, 0) :]) + " "
+    return any(form in rest for form in _UNVERIFIED_FORMS)
+
+
+def uncovered_note(
+    answer: str, details: list[Detail], language: str
+) -> tuple[str, int]:
+    """One closing note naming the details of an answer the sources do not cover.
+
+    Marking most sentences of such an answer would bury it; saying nothing would
+    present its unsourced details as sourced.
+    """
+    body, separator, footer = answer.partition("<details>")
+    text = NOTE.get(language, NOTE["en"]).format(details=_listed(details))
+    note = "*(" + text[0].upper() + text[1:] + ")*"
+    final = body.rstrip() + "\n\n" + note
+    return final + ("\n\n" + separator + footer if separator else ""), 1
 
 
 def mark(answer: str, details: list[Detail], language: str) -> tuple[str, int]:
@@ -1309,6 +1610,78 @@ def with_sources(answer: str, urls: list[str]) -> str:
     return answer[:closing] + listed + answer[closing:]
 
 
+# The closing note of a streamed answer (streamed_check).
+STREAM_NOTE = {
+    "en": "Not found in the sources read: {details}",
+    "fr": "Non retrouvé dans les sources lues : {details}",
+    "de": "In den gelesenen Quellen nicht gefunden: {details}",
+    "es": "No encontrado en las fuentes leídas: {details}",
+    "it": "Non trovato nelle fonti lette: {details}",
+}
+
+
+def _listed(details: list[Detail]) -> str:
+    names = list(dict.fromkeys(detail.text for detail in details))
+    more = ", …" if len(names) > NOTE_DETAILS else ""
+    return ", ".join(names[:NOTE_DETAILS]) + more
+
+
+def streamed_check(
+    answer: str,
+    passages: list[str],
+    own_texts: list[str],
+    *,
+    language: str,
+    computed: list[str] | None = None,
+    given: list[str] | None = None,
+) -> tuple[str, Report]:
+    """The closing note of an answer already streamed, empty when all is sourced.
+
+    Text already sent cannot be taken back (owner decision 2026-11-21): once a
+    streamed answer ends, its specific details are looked up in the texts the
+    turn read, as for a held answer, and those none holds are named in one
+    short note in the person's language. Code only: no model call, no
+    encyclopedia read; a turn without a text read is not checked.
+    """
+    started = time.monotonic()
+    report = Report(mode="note")
+    if not answer.strip() or not passages:
+        report.revised = "skipped:no_source"
+        return "", report
+    today = time.strftime("%Y-%m-%d")
+    results = list(computed or [])
+    own = Evidence.of([*own_texts, *results, today])
+    worked = Computed.of(own_texts if given is None else given, results, today)
+    report.details = len(extract(answer))
+    found = unsupported(answer, Evidence.of(passages), own, worked)
+    report.unsupported = report.unsupported_after = len(found)
+    for detail in found:
+        report.kinds[detail.kind] = report.kinds.get(detail.kind, 0) + 1
+    note = ""
+    if found:
+        template = STREAM_NOTE.get(language, STREAM_NOTE["en"])
+        note = "*" + template.format(details=_listed(found)) + "*"
+        report.marked = 1
+        report.revised = "noted"
+    else:
+        report.revised = "skipped:none"
+    report.seconds = report.match_seconds = time.monotonic() - started
+    LOGGER.info("unsourced_details_streamed %s", json.dumps(report.metadata()))
+    return note, report
+
+
+def with_note(answer: str, note: str, streamed: bool) -> str:
+    """The stored answer with its closing note, as the person reads it.
+
+    Streamed, the note came after everything sent; otherwise it goes before
+    the consulted-sources block.
+    """
+    body, separator, footer = answer.partition("<details>")
+    if streamed or not separator:
+        return answer.rstrip() + "\n\n" + note
+    return body.rstrip() + "\n\n" + note + "\n\n" + separator + footer
+
+
 async def review(
     answer: str,
     passages: list[str],
@@ -1345,6 +1718,7 @@ async def review(
     # question gave once counted as found in an unrelated article, which then
     # joined the sources, staging 2026-11-20).
     found = unsupported(answer, evidence, own, worked)
+    report.match_seconds = time.monotonic() - started
     if found and reference:
         articles = [
             (url, text)
@@ -1377,11 +1751,17 @@ async def review(
         report.seconds = time.monotonic() - started
         return answer, report
     report.unsupported = report.unsupported_after = len(found)
+    for detail in found:
+        report.kinds[detail.kind] = report.kinds.get(detail.kind, 0) + 1
     if len(found) > max(3, UNCOVERED_SHARE * report.details):
         report.revised = "skipped:uncovered"
+        final = answer
+        if report.mode in {"mark", "revise_mark"}:
+            # Not rewritten (most of it would go), never presented as sourced.
+            final, report.marked = uncovered_note(answer, found, language)
         report.seconds = time.monotonic() - started
         LOGGER.info("unsourced_details %s", json.dumps(report.metadata()))
-        return with_sources(answer, report.reference_urls), report
+        return with_sources(final, report.reference_urls), report
     final = answer
     remaining = found
     if found and report.mode in {"revise", "revise_mark"}:
@@ -1390,14 +1770,22 @@ async def review(
             body.rstrip(), found, passages, profile, language, report
         )
         if revised is not None:
-            after = unsupported(revised, evidence, own, worked)
-            reason = acceptable(body, revised, found, after)
+            # The second and last check: what the revision still states without
+            # a source, apart from what it marked as not verified.
+            checked_at = time.monotonic()
+            left = unsupported(revised, evidence, own, worked)
+            flagged = [d for d in left if model_marked(d, revised)]
+            after = [d for d in left if not model_marked(d, revised)]
+            report.match_seconds += time.monotonic() - checked_at
+            reason = acceptable(body, revised, found, after, flagged)
             if reason:
                 report.revised = "rejected:" + reason
             else:
                 report.revised = "kept"
-                kept = {detail.key for detail in after}
+                kept = {detail.key for detail in left}
                 report.removed = [d.text for d in found if d.key not in kept]
+                report.fixed = len(report.removed)
+                report.model_marked = len(flagged)
                 final = revised + ("\n\n" + separator + footer if separator else "")
                 remaining = after
                 report.unsupported_after = len(after)
