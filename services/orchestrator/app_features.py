@@ -25,8 +25,9 @@ Markers, chosen to survive a rewrite that keeps the feature:
 - part: a kind of element the page uses (picture, canvas, SVG drawing, sound
   or video element, slider, list box, text area, table);
 - picture / sound: the number of embedded data: images or sounds written in
-  the file (kept when the new file has at least as many), and each
-  atlas-media file it uses (app_media.py);
+  the file (kept when the new file has at least as many, or, for pictures,
+  builds them at run time from a template), and each atlas-media file it
+  uses (app_media.py);
 - ability: what the script does (timer, animation, sound, keyboard or touch
   controls, drawing, saving, speech, vibration, full screen, drag and drop).
 """
@@ -116,6 +117,34 @@ SCRIPT_TEXT = re.compile(
 PICTURES = re.compile(
     r"<svg\b|%3Csvg\b|data:image/(?!svg)|data:image/svg\+xml;base64", re.I
 )
+# Pictures the script builds at run time from one template (a flag per
+# country from a colour map): the file writes one <svg> and the page shows
+# many, so the written count is no measure of what is shown.
+# A template literal (possessive: each backtick run is read once) and the
+# SVG builder the script calls.
+TEMPLATE = re.compile(r"`[^`]*+")
+SVG_ELEMENT = re.compile(
+    r"""\bcreateElementNS\s*+\(\s*+['"]http://www\.w3\.org/2000/svg['"]"""
+)
+
+
+def _runtime_pictures(document: str) -> bool:
+    """Whether the script builds SVG pictures: a template literal holding an
+    <svg> and an interpolation, or createElementNS with the SVG namespace."""
+    if SVG_ELEMENT.search(document):
+        return True
+    for literal in TEMPLATE.finditer(document):
+        body = literal.group(0)
+        lowered = body.lower()
+        starts = [i for i in (lowered.find("<svg"), lowered.find("%3csvg")) if i >= 0]
+        if starts and "${" in body[min(starts) :]:
+            return True
+    return False
+
+
+# A clock read in an animation loop: a countdown drawn with
+# requestAnimationFrame is a timer too.
+CLOCK = re.compile(r"\b(?:performance|Date)\.now\s*\(")
 SOUNDS = re.compile(r"data:audio/", re.I)
 MEDIA = re.compile(r"atlas-media:([a-z0-9][a-z0-9-]{0,63})")
 LETTER = re.compile(r"[^\W\d_]", re.U)
@@ -238,7 +267,11 @@ def features(document: str) -> list[Feature]:
     for name in dict.fromkeys(MEDIA.findall(document)):
         found.append(Feature("media", name))
     for name, pattern in ABILITIES.items():
-        if pattern.search(script):
+        if pattern.search(script) or (
+            name == "timer"
+            and ABILITIES["animation"].search(script)
+            and CLOCK.search(script)
+        ):
             found.append(Feature("ability", name))
     return found
 
@@ -261,6 +294,7 @@ def lost(previous: str, new: str) -> list[Feature]:
         if feature.kind in {"picture", "sound"}
     }
     text = _norm(new)
+    runtime = _runtime_pictures(new)
     missing: list[Feature] = []
     for feature in features(previous):
         if feature.kind == "element":
@@ -278,7 +312,9 @@ def lost(previous: str, new: str) -> list[Feature]:
                 feature.name == "picture" and counts.get("picture", 0) > 0
             )
         elif feature.kind in {"picture", "sound"}:
-            kept = counts.get(feature.kind, 0) >= feature.count
+            kept = counts.get(feature.kind, 0) >= feature.count or (
+                feature.kind == "picture" and runtime
+            )
         elif feature.kind == "media":
             kept = feature.name in media
         else:

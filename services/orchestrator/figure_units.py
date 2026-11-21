@@ -61,6 +61,73 @@ UNITS = (
     "TB",
     "To",
 )
+# Units of measure written as words, by their symbol: "10 secondes" is "10 s".
+UNIT_WORDS = {
+    "s": (
+        "seconds",
+        "second",
+        "secondes",
+        "seconde",
+        "Sekunden",
+        "Sekunde",
+        "segundos",
+        "segundo",
+        "secondi",
+        "secondo",
+    ),
+    "min": ("minutes", "minute", "Minuten", "minutos", "minuto", "minuti"),
+    "h": (
+        "hours",
+        "hour",
+        "heures",
+        "heure",
+        "Stunden",
+        "Stunde",
+        "horas",
+        "hora",
+        "ore",
+    ),
+    "km": (
+        "kilometres",
+        "kilometre",
+        "kilometers",
+        "kilometer",
+        "kilomètres",
+        "kilomètre",
+        "Kilometer",
+        "kilómetros",
+        "kilómetro",
+        "chilometri",
+        "chilometro",
+    ),
+    "m": (
+        "metres",
+        "metre",
+        "meters",
+        "meter",
+        "mètres",
+        "mètre",
+        "Meter",
+        "metros",
+        "metri",
+    ),
+    "kg": (
+        "kilograms",
+        "kilogram",
+        "kilogrammes",
+        "kilogramme",
+        "kilos",
+        "kilo",
+        "Kilogramm",
+        "kilogramos",
+        "kilogramo",
+        "chilogrammi",
+    ),
+    "l": ("litres", "litre", "liters", "liter", "Liter", "litros", "litro", "litri"),
+}
+_UNIT_WORD = {
+    word.casefold(): symbol for symbol, words in UNIT_WORDS.items() for word in words
+}
 # Magnitude words and suffixes: "8k", "1,2 M€", "3 millions".
 MAGNITUDES = {
     "k": 1e3,
@@ -92,7 +159,9 @@ _NUMBER = r"\d{1,3}(?:[   .,’']\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?"
 _MAGNITUDE = "|".join(sorted(map(re.escape, MAGNITUDES), key=len, reverse=True))
 _CURRENCY = "|".join(re.escape(form) for form, _ in _CURRENCY_FORMS)
 _UNIT = "|".join(
-    [_CURRENCY] + [re.escape(unit) for unit in sorted(UNITS, key=len, reverse=True)]
+    [_CURRENCY]
+    + [re.escape(word) for word in sorted(_UNIT_WORD, key=len, reverse=True)]
+    + [re.escape(unit) for unit in sorted(UNITS, key=len, reverse=True)]
 )
 # A currency may come first ("$8k", "EUR 600"); a unit of measure never does.
 FIGURE = re.compile(
@@ -117,6 +186,8 @@ def _unit(form: str | None) -> str:
     for written, code in _CURRENCY_FORMS:
         if lowered == written:
             return code
+    if form.casefold() in _UNIT_WORD:
+        return _UNIT_WORD[form.casefold()]
     for unit in UNITS:
         if form == unit or (lowered == unit.lower() and unit not in ("m", "M", "L")):
             return {
@@ -181,7 +252,8 @@ def mismatches(file_texts: list[str], source_texts: list[str]) -> list[str]:
 
     Each entry quotes the file's figure and the source's: "8 000 €" against
     "8k". A currency added to a bare source value, a currency changed, and a
-    unit changed for the same value are all mismatches.
+    unit changed for the same value are all mismatches; a unit of measure on
+    a value the sources give bare is not (a coincidence of small numbers).
     """
     sources = [figure for text in source_texts for figure in figures(text)]
     result: list[str] = []
@@ -190,6 +262,11 @@ def mismatches(file_texts: list[str], source_texts: list[str]) -> list[str]:
             if not figure.unit or figure.unit in ("%",):
                 continue
             same = [s for s in sources if s.values & figure.values]
+            if figure.unit not in CURRENCIES:
+                # A unit of measure is judged against a source that gives one:
+                # "3 h" is not "3 personnes" with a unit added (audit
+                # 2026-11-21), only a currency on a bare value is.
+                same = [s for s in same if s.unit]
             if not same or any(s.unit == figure.unit for s in same):
                 continue
             entry = f"“{figure.text}” (source: “{same[0].text}”)"

@@ -1359,6 +1359,14 @@ _POLITE = {
 }
 
 
+# Words that read as a familiar mark once folded but are not one: the French
+# euphonic t of "y a-t-il", the Spanish "té" (tea) (audit 2026-11-21).
+_NOT_FAMILIAR = {
+    "fr": re.compile(r"-t-(?=(?:il|elle|on|ils|elles)\b)", re.I),
+    "es": re.compile(r"\bté\b", re.I),
+}
+
+
 def register(text: str, language: str) -> str:
     """How ``text`` addresses the person: "informal", "formal", or "" when it
     does not say (no mark, or both)."""
@@ -1367,7 +1375,8 @@ def register(text: str, language: str) -> str:
     if familiar is None or polite is None or not text.strip():
         return ""
     pattern, cased = polite
-    informal = bool(familiar.search(_folded(text)))
+    marks = _NOT_FAMILIAR.get(language)
+    informal = bool(familiar.search(_folded(marks.sub(" ", text) if marks else text)))
     formal = bool(pattern.search(text if cased else _folded(text)))
     if informal == formal:
         return ""

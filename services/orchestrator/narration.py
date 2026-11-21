@@ -36,8 +36,12 @@ _SCOPE = re.compile(r'"scope"\s*:\s*"[^"}]*?(?:current request|requete actuelle)
 _TOOL_HISTORY = re.compile(r'"untrusted_tool_history"\s*:', re.I)
 _RAW_TOOL_CALL = re.compile(r'"name"\s*:\s*"[^"}]+"\s*,\s*"arguments"\s*:', re.I)
 _FENCED_CODE = re.compile(r"```.*?```", re.S)
+# One clause, no colon and no further sentence: "Let me check the math: 12 x 7
+# = 84" and "Let me check. It is Canberra." are answers; the dot of "U.S."
+# does not end the clause (audit 2026-11-21).
 _UNFINISHED = re.compile(
-    r"\s*(?:i need to|i(?:'ll| will)|let me) (?:search|look(?: this)? up|verify|check)\b.*[.!?]?\s*",
+    r"\s*(?:i need to|i(?:'ll| will)|let me) (?:search|look(?: this)? up|verify|check)\b"
+    r"(?:[^:.!?\n]|\.(?=\S|[ \t]+(?-i:[a-zà-ÿ])))*[.!?…]*\s*",
     re.I,
 )
 

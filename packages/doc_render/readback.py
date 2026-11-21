@@ -863,6 +863,8 @@ _SAME = str.maketrans(
         "„": '"',
         "«": '"',
         "»": '"',
+        "‐": "-",
+        "‑": "-",
         "–": "-",
         "—": "-",
         "−": "-",
@@ -884,6 +886,14 @@ def _tokens(document: Readback) -> list[str]:
     if len(words) <= MAX_WORDS:
         return words
     return [normal(block) for block in document.blocks() if normal(block)]
+
+
+def _emphasis(document: Readback) -> list[str]:
+    """The blocks with their emphasis markers (normal() removes them)."""
+    return [
+        " ".join(unicodedata.normalize("NFKC", block).translate(_SAME).split())
+        for block in document.blocks()
+    ]
 
 
 CONTEXT_WORDS = 6
@@ -935,8 +945,11 @@ def changes(before: Readback, after: Readback) -> dict[str, Any]:
         removed.remove(entry)
         added.remove(inserted[entry["text"]])
     count = len(removed) + len(replaced) + len(added)
+    # Same words, other emphasis ("put Friday in bold"): a change, never the
+    # identical version the check refuses (audit 2026-11-21).
+    emphasis = count == 0 and not moved and _emphasis(before) != _emphasis(after)
     result: dict[str, Any] = {
-        "identical": count == 0 and not moved,
+        "identical": count == 0 and not moved and not emphasis,
         "kept_share": round(kept / len(old), 3) if old else 1.0,
         "removed": removed[:MAX_ENTRIES],
         "replaced": replaced[:MAX_ENTRIES],
@@ -944,6 +957,8 @@ def changes(before: Readback, after: Readback) -> dict[str, Any]:
     }
     if moved:
         result["moved"] = [entry["text"] for entry in moved[:MAX_ENTRIES]]
+    if emphasis:
+        result["emphasis_changed"] = True
     shown = len(result["removed"]) + len(result["replaced"]) + len(result["added"])
     if count > shown:
         result["more_changes"] = count - shown

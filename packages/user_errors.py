@@ -709,6 +709,14 @@ def without_diagnostics(text: str) -> str:
 # keep their own message with its measured values (D5).
 NAMED_REFUSALS = frozenset({"cost", "cost_budget", "budget_limit", "quota_exceeded"})
 _BARE_CODE = re.compile(r"[a-z][a-z0-9]*(?:[_.:-][a-z0-9]+)*")
+# Text written for logs, not people: a traceback, a Python frame, an exception
+# name with its message, a JSON body (audit 2026-11-21: they passed as the
+# human text of a 5xx error).
+_INTERNAL_TEXT = re.compile(
+    r"Traceback \(most recent call last\)|File \"[^\"\n]+\.py\", line \d+"
+    r"|\b[A-Z][A-Za-z]*(?:Error|Exception)\b\s*[:(]|^\s*[\[{]\s*\"",
+    re.M,
+)
 PUBLIC_SENTENCES = frozenset(
     sentence
     for table in (_INTERRUPTED, _TOO_LONG, _UNEXPECTED, *_STOPPED.values())
@@ -735,7 +743,12 @@ def public_message(
     text = message.strip() if isinstance(message, str) else ""
     if code in NAMED_REFUSALS:
         return text or code
-    if text and not internal_diagnostic(text) and not _BARE_CODE.fullmatch(text):
+    if (
+        text
+        and not internal_diagnostic(text)
+        and not _BARE_CODE.fullmatch(text)
+        and not _INTERNAL_TEXT.search(text)
+    ):
         return text
     return failure_sentence(language, reason, code, text)
 
