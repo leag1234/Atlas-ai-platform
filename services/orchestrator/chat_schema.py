@@ -2,8 +2,13 @@
 
 from collections.abc import Callable
 
-from packages import attached_blocks, linear_scan
-from packages.profiles import accepted_profile, context_window, default_profile
+from packages import attached_blocks, linear_scan, privacy
+from packages.profiles import (
+    accepted_profile,
+    chat_seconds,
+    context_window,
+    default_profile,
+)
 from packages.file_intent import produces_file
 from packages.work_intent import continues_work
 from packages.evidence import estimated_tokens
@@ -326,7 +331,9 @@ class ChatRequest(VisionInput):
                     else continues_work(self.user_text)
                 )
             )
-            else 120.0
+            # A plain chat answer: the limit follows the endpoint that writes it
+            # (the owned server writes at its own measured speed).
+            else chat_seconds(privacy.owned_only())
         )
 
     @property

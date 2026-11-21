@@ -6,7 +6,7 @@ import upstream
 from packages.limits import LimitError, ProviderLimitError, MalformedToolCall
 from packages import privacy
 
-from packages.profiles import accepted_profile
+from packages.profiles import accepted_profile, chat_seconds
 
 import asyncio
 import json
@@ -182,11 +182,12 @@ class AgentRequest(BaseModel):
         deadline = (
             300
             if (self.has_attachments or self.produces_files) and self.profile
-            else 120
+            # A chat call: the limit of the endpoint that answers it.
+            else chat_seconds(self.privacy == "strict")
         )
         if self.timeout > deadline:
             raise LimitError(
-                "timeout_budget", int(self.timeout * 1000), deadline * 1000, "ms"
+                "timeout_budget", int(self.timeout * 1000), int(deadline * 1000), "ms"
             )
         if self.progress_timeout is not None and (
             self.profile is None or self.privacy == "strict"

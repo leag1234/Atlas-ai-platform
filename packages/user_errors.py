@@ -38,6 +38,44 @@ _TOO_LONG = {
     "es": "La respuesta tardó demasiado y se detuvo. Inténtelo de nuevo o divida la solicitud en pasos más cortos.",
     "it": "La risposta ha richiesto troppo tempo ed è stata interrotta. Riprova o dividi la richiesta in passaggi più brevi.",
 }
+# A turn cut by a time limit (services/orchestrator/time_cut.py): the answer
+# written so far, then one of these sentences; never only steps or a code.
+_CUT_PARTIAL = {
+    "fr": "La réponse a été coupée ici par la limite de temps ({limit} s) avant d'être terminée.",
+    "en": "The answer was cut here by the time limit ({limit} s) before it was finished.",
+    "de": "Die Antwort wurde hier durch das Zeitlimit ({limit} s) abgebrochen, bevor sie fertig war.",
+    "es": "La respuesta se cortó aquí por el límite de tiempo ({limit} s) antes de terminarse.",
+    "it": "La risposta è stata interrotta qui dal limite di tempo ({limit} s) prima di essere finita.",
+}
+# The answer was written in full, but its checks ran into the limit.
+_CUT_UNCHECKED = {
+    "fr": "La limite de temps ({limit} s) a été atteinte avant que cette réponse ait pu être vérifiée.",
+    "en": "The time limit ({limit} s) was reached before this answer could be checked.",
+    "de": "Das Zeitlimit ({limit} s) wurde erreicht, bevor diese Antwort geprüft werden konnte.",
+    "es": "Se alcanzó el límite de tiempo ({limit} s) antes de poder comprobar esta respuesta.",
+    "it": "Il limite di tempo ({limit} s) è stato raggiunto prima che questa risposta potesse essere verificata.",
+}
+# Nothing was written on the owned (private) server.
+_OWNED_TOO_SLOW = {
+    "fr": "Le modèle privé n'a pas pu répondre dans la limite de temps ({limit} s). Posez une question plus courte ou plus précise, ou renvoyez-la.",
+    "en": "The private model could not answer within the time limit ({limit} s). Ask a shorter or more precise question, or send it again.",
+    "de": "Das private Modell konnte nicht innerhalb des Zeitlimits ({limit} s) antworten. Stellen Sie eine kürzere oder genauere Frage, oder senden Sie sie erneut.",
+    "es": "El modelo privado no pudo responder dentro del límite de tiempo ({limit} s). Haga una pregunta más corta o más precisa, o vuelva a enviarla.",
+    "it": "Il modello privato non è riuscito a rispondere entro il limite di tempo ({limit} s). Fai una domanda più breve o più precisa, oppure inviala di nuovo.",
+}
+
+
+def time_cut_sentence(
+    language: str, *, written: bool, finished: bool, owned: bool, limit: float
+) -> str:
+    """The one sentence that closes a turn cut by a time limit."""
+    if written:
+        labels = _CUT_UNCHECKED if finished else _CUT_PARTIAL
+    elif owned:
+        labels = _OWNED_TOO_SLOW
+    else:
+        labels = _TOO_LONG
+    return labels.get(language, labels["en"]).format(limit=f"{limit:.0f}")
 
 
 # Any other failure of a chat answer: the person reads one sentence in their

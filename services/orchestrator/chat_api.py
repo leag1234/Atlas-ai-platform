@@ -32,6 +32,7 @@ from services.orchestrator.chat_schema import ChatRequest
 from services.orchestrator.source_truth import visible_sources
 from services.orchestrator.stream_client import sink_context, metadata_only_context
 from services.orchestrator.deadline import request_deadline
+from services.orchestrator import time_cut
 from services.orchestrator.chat_stream import response as stream_response
 from services.orchestrator.model import GatewayError
 from packages.provider_calls import track, use
@@ -217,6 +218,40 @@ async def process_request(payload: ChatRequest, item: Interaction) -> None:
         key_call.reset(token)
 
 
+def end_by_time(
+    payload: ChatRequest, item: Interaction, elapsed: float
+) -> dict[str, object]:
+    """A non-streamed turn cut by a time limit (time_cut.py): never empty.
+
+    The answer is what was written, then one sentence in the person's language;
+    the measured values stay in the record and in ``atlas.cut``.
+    """
+    limit = payload.timeout_seconds + item.startup_seconds
+    item.state = "error"
+    if not time_cut.by_time(item.erreurs):
+        item.erreurs.append("timeout")
+    item.rejection = {
+        "code": "timeout",
+        "message": f"Timeout: {elapsed:.3f} seconds elapsed, limit {limit:.3f} seconds",
+    }
+    draft = time_cut.current.get()
+    text = time_cut.written(draft)
+    item.reponse = time_cut.answer(
+        text,
+        time_cut.closing(
+            payload.answer_language,
+            written=bool(text),
+            finished=bool(text) and draft is not None and draft.finished,
+            limit=limit,
+        ),
+    )
+    return {
+        "code": "timeout",
+        "elapsed_seconds": round(elapsed, 3),
+        "limit_seconds": round(limit, 3),
+    }
+
+
 async def execute(
     request: Request, payload: ChatRequest, item: Interaction, remaining: float
 ) -> None:
@@ -260,6 +295,8 @@ async def chat(request: Request) -> Response:
     billing = {"kind": "measured"}
     status, code, payload = 200, "", None
     streaming = False
+    # A non-streamed turn cut by a time limit: its measured values.
+    cut: dict[str, object] | None = None
     detail = ""
     retry_after: int | None = None
     from services.orchestrator import owned_wait
@@ -506,6 +543,8 @@ async def chat(request: Request) -> Response:
                         settle(result)
 
                 return stream_response(payload, item, started, budgeted)
+            # What the turn's model calls write (time_cut.py).
+            time_cut.current.set(time_cut.Draft())
             try:
                 await execute(
                     request,
@@ -513,18 +552,25 @@ async def chat(request: Request) -> Response:
                     item,
                     max(0, payload.timeout_seconds - (time.monotonic() - started)),
                 )
+            except TimeoutError:
+                # The turn ran into its deadline: an answer, not an error.
+                cut = end_by_time(payload, item, time.monotonic() - started)
             finally:
                 settle(item)
-            if item.state != "done":
-                status = (
-                    429
-                    if any(e in {"cost", "cost_budget"} for e in item.erreurs)
-                    else 502
-                    if "provider_error" in item.erreurs
-                    else 504
-                )
-                code = "cost_budget" if status == 429 else "request_stopped"
-                detail = item.reponse
+            if cut is None and item.state != "done":
+                if time_cut.by_time(item.erreurs) and payload.project_action != "work":
+                    # The loop's own clock or the answer call's share of it.
+                    cut = end_by_time(payload, item, time.monotonic() - started)
+                else:
+                    status = (
+                        429
+                        if any(e in {"cost", "cost_budget"} for e in item.erreurs)
+                        else 502
+                        if "provider_error" in item.erreurs
+                        else 504
+                    )
+                    code = "cost_budget" if status == 429 else "request_stopped"
+                    detail = item.reponse
     except KeyQuotaError as exc:
         from services.orchestrator.api_key_edge import error
 
@@ -677,9 +723,17 @@ async def chat(request: Request) -> Response:
         {
             **base,
             "object": "chat.completion",
-            "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
+            "choices": [
+                {
+                    "index": 0,
+                    "message": message,
+                    # A time cut is told apart from a finished answer.
+                    "finish_reason": "length" if cut else "stop",
+                }
+            ],
             "usage": usage,
             "atlas": {
+                **({"cut": cut} if cut else {}),
                 "steps": item.steps,
                 "sources": visible_sources(item),
                 "deadline_seconds": payload.timeout_seconds,

@@ -28,6 +28,7 @@ from services.orchestrator.chat_schema import ChatRequest, markdown_tail_viable
 from services.orchestrator.deadline import request_deadline
 from services.orchestrator.interactions import Interaction, write_interaction
 from services.orchestrator.stream_client import sink_context
+from services.orchestrator import time_cut
 from services.orchestrator.loop import OwnedServerAnswer
 from services.orchestrator.model import GatewayError
 from services.retrieval.project_identity import ProjectError
@@ -147,6 +148,10 @@ def response(
         queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue(maxsize=8)
         pending = ""
         received_content = False
+        # Answer text of the model call under way that reached the person, and
+        # the text written by that call (time_cut.py), for a turn cut by time.
+        call_shown = False
+        draft = time_cut.Draft()
         turn = 0
         activity = "reading_document" if payload.has_attachments else "thinking"
         answer_started = False
@@ -311,6 +316,7 @@ def response(
             )
 
         async def content(text: str, *, final: bool = False) -> None:
+            nonlocal call_shown
             # Retain only a possible citation suffix. Never expose an unresolved link.
             from services.orchestrator.chat_pipeline import render_citations
             from services.orchestrator.file_results import canonical_links
@@ -430,6 +436,8 @@ def response(
                 lambda match: f"[Source {labels.get(match[1], match[1])}]",
                 temporary.reponse,
             )
+            if temporary.reponse:
+                call_shown = True
             await queue.put(
                 {
                     "delta": {"content": temporary.reponse},
@@ -455,7 +463,7 @@ def response(
 
         async def sink(event: dict[str, object]) -> None:
             nonlocal pending, turn, activity, activity_urls, activity_description
-            nonlocal received_content, owned_wait_since, owned_expected
+            nonlocal received_content, owned_wait_since, owned_expected, call_shown
             if event.get("phase") == "connector_approval":
                 await queue.put({"atlas": event})
                 return
@@ -634,6 +642,9 @@ def response(
                         str(description) if isinstance(description, str) else ""
                     )
                 elif phase == "generating":
+                    # A new model call: what the person read so far was written
+                    # by an earlier one.
+                    call_shown = False
                     activity = (
                         "thinking"
                         if payload.reasoning_effort == "high"
@@ -765,9 +776,68 @@ def response(
                 await content(pending[:end])
                 pending = pending[end:]
 
+        async def close_by_time() -> None:
+            """End a turn cut by a time limit (time_cut.py): never empty.
+
+            The answer written so far, then one sentence in the person's
+            language; a normal end of stream, not an error event.
+            """
+            nonlocal pending
+            limit = payload.timeout_seconds + item.startup_seconds
+            elapsed = time.monotonic() - started
+            item.state = "error"
+            if not time_cut.by_time(item.erreurs):
+                item.erreurs.append("timeout")
+            item.rejection = {
+                "code": "timeout",
+                "message": f"Timeout: {elapsed:.3f} seconds elapsed, limit {limit:.3f} seconds",
+            }
+            text = time_cut.written(draft)
+            written = bool(text)
+            if payload.code_mode:
+                if text:
+                    await queue.put({"delta": {"content": text}})
+            elif call_shown:
+                # The answer was streaming: what waits for the end of its line
+                # ends it.
+                await content(
+                    pending + protocol.feed(narration.finish()) + protocol.finish()
+                )
+                written = True
+            elif text:
+                # Held until the call ended (a researched turn) or until its
+                # check (a factual turn), or an API stream that sends the answer
+                # at the end: the text written so far, rendered as an answer.
+                await content(text, final=True)
+            pending = ""
+            sentence = time_cut.closing(
+                payload.answer_language,
+                written=written,
+                finished=written and draft.finished,
+                limit=limit,
+            )
+            item.reponse = time_cut.answer(text, sentence)
+            await queue.put(
+                {
+                    "delta": {"content": ("\n\n" if written else "") + sentence},
+                    "atlas": {"turn": turn, "phase": "time_cut"},
+                }
+            )
+            await queue.put(
+                {
+                    "finish": True,
+                    "cut": {
+                        "code": "timeout",
+                        "elapsed_seconds": round(elapsed, 3),
+                        "limit_seconds": round(limit, 3),
+                    },
+                }
+            )
+
         async def produce() -> None:
             token = sink_context.set(sink)
             plan_token = work_plan.current.set(chat_plan)
+            draft_token = time_cut.current.set(draft)
             try:
                 async with request_deadline(
                     max(0, payload.timeout_seconds - (time.monotonic() - started))
@@ -813,6 +883,14 @@ def response(
                         item.reponse = str(words["budget"])
                     elif item.state != "done" and not work_failed:
                         from packages.user_errors import PROVIDER_FAILURES
+
+                        if (
+                            time_cut.by_time(item.erreurs)
+                            and payload.project_action != "work"
+                        ):
+                            # The loop's own clock or the answer call's share
+                            # of it: ended like the request deadline, below.
+                            raise TimeoutError("turn_time_limit")
 
                         # A model answer that failed is said as such (D5),
                         # not as an unexpected error (staging 2026-11-17).
@@ -926,25 +1004,14 @@ def response(
                 item.erreurs.append(str(exc.body["error"]))
                 await queue.put({"error": exc.body})
             except TimeoutError:
-                item.state = "error"
-                item.erreurs.append("stream_error")
-                detail = f"Timeout: {time.monotonic() - started:.3f} seconds elapsed, limit {payload.timeout_seconds + item.startup_seconds:.3f} seconds"
-                item.rejection = {"code": "timeout", "message": detail}
-                await queue.put(
-                    {
-                        "error": {
-                            "code": "stream_error",
-                            "type": "stream_error",
-                            "message": (
-                                ui_failure("timeout", payload.answer_language)
-                                if payload.atlas_ui
-                                else None
-                            )
-                            or detail,
-                        }
-                    }
-                )
+                await close_by_time()
             except GatewayError as exc:
+                if exc.code == "timeout" and payload.project_action != "work":
+                    # A model call cut by its own time limit: same ending.
+                    item.provider_retries += exc.retries
+                    await close_by_time()
+                    await queue.put(None)
+                    return
                 item.provider_retries += exc.retries
                 item.state = "error"
                 item.erreurs.append(exc.code)
@@ -1049,6 +1116,7 @@ def response(
                     }
                 )
             finally:
+                time_cut.current.reset(draft_token)
                 work_plan.current.reset(plan_token)
                 sink_context.reset(token)
             await queue.put(None)
@@ -1067,7 +1135,9 @@ def response(
                     # A direct user cancellation can interrupt the producer while
                     # it is finalizing, before it can enqueue the sentinel.
                     # Never leave the SSE response (and its budget finally) orphaned.
-                    if task.done():
+                    # A producer that ended while this wait timed out may have
+                    # left its last events (a turn's closing sentence): sent first.
+                    if task.done() and queue.empty():
                         break
                     last_activity = time.monotonic()
                     if not answer_started:
@@ -1112,7 +1182,14 @@ def response(
                             {
                                 "index": 0,
                                 "delta": event.get("delta", {}),
-                                "finish_reason": "stop"
+                                "finish_reason": (
+                                    # An API caller can tell a time cut from
+                                    # a finished answer; the interface reads
+                                    # the closing sentence.
+                                    "length"
+                                    if event.get("cut") and not payload.atlas_ui
+                                    else "stop"
+                                )
                                 if event.get("finish")
                                 else None,
                             }
@@ -1148,6 +1225,7 @@ def response(
                                 else {}
                             ),
                             "cost_eur": item.cout_eur,
+                            **({"cut": event["cut"]} if event.get("cut") else {}),
                             "provider_model": item.provider_model,
                             "reasoning_effort": item.reasoning_effort,
                             "max_output_tokens": payload.max_tokens,
