@@ -23,9 +23,44 @@ BUTTONS = "button, [role=button], input[type=button], input[type=submit]"
 MAX_ITEMS = 8
 MAX_TEXT = 160
 
+# The page records its own policy violations, listeners and sound starts.
+# A sound started before the person's first press or key is blocked by the
+# browser's autoplay rule ("The AudioContext was not allowed to start"): the
+# check's own evaluate() calls count as a gesture for the browser, so the page
+# notes trusted presses itself.
 INIT_SCRIPT = """
 (() => {
-  const s = (window.__atlasRender = { violations: [], listeners: {} });
+  const s = (window.__atlasRender = { violations: [], listeners: {}, gesture: false, audio: [] });
+  // A fixed sequence for Math.random: the same file shows the same states
+  // (questions, levels) at each check, so a repair is judged on the same run.
+  let seed = 0x2f6b4c1d;
+  Math.random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (const type of ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'click']) {
+    window.addEventListener(type, (e) => { if (e.isTrusted) s.gesture = true; }, true);
+  }
+  const early = (what) => {
+    if (!s.gesture && s.audio.length < 4 && !s.audio.includes(what)) s.audio.push(what);
+  };
+  for (const name of ['AudioContext', 'webkitAudioContext']) {
+    const Original = window[name];
+    if (typeof Original !== 'function') continue;
+    const Wrapped = function (...args) {
+      early(name);
+      return new Original(...args);
+    };
+    Wrapped.prototype = Original.prototype;
+    try { Object.defineProperty(window, name, { value: Wrapped, configurable: true, writable: true }); } catch (e) {}
+  }
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function (...args) {
+    if (!this.muted) early(this.tagName.toLowerCase() + '.play()');
+    return play.apply(this, args);
+  };
   document.addEventListener('securitypolicyviolation', (e) => {
     s.violations.push({
       directive: String(e.effectiveDirective || e.violatedDirective || ''),
@@ -88,6 +123,20 @@ INSPECT = """
 }
 """ % json.dumps(BUTTONS)
 
+# Every <img> of the page, shown or not: one without a source, or whose source
+# did not decode, is a broken picture in the side view.
+IMAGES = """
+() => [...document.images].map((img) => {
+  const src = (img.getAttribute('src') || '').trim();
+  const srcset = (img.getAttribute('srcset') || '').trim();
+  const name = img.id ? '#' + img.id : (img.alt ? 'alt="' + img.alt.slice(0, 40) + '"' : 'img');
+  if (!src && !srcset) return { name, src: '', reason: 'empty' };
+  if (img.complete && img.naturalWidth === 0) return { name, src: src.slice(0, 60), reason: 'unloadable' };
+  return null;
+}).filter(Boolean).slice(0, 8)
+"""
+AUDIO = "() => ((window.__atlasRender || {}).audio || []).slice(0, 4)"
+
 
 def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload) + "\n")
@@ -110,6 +159,11 @@ def main() -> int:
     load_ms = int(settings.get("load_ms", 6000))
     settle_ms = int(settings.get("settle_ms", 800))
     clicks = int(settings.get("clicks", 3))
+    # Timers run forward on the page's clock (a countdown, a turn timer, a
+    # sound at the end of a question): what happens after a while with nobody
+    # touching the page is checked too, in little real time.
+    later_ms = int(settings.get("later_ms", 0))
+    later_budget_ms = int(settings.get("later_budget_ms", 2500))
     from playwright.sync_api import ConsoleMessage, Error, Route, sync_playwright
 
     errors: list[dict[str, str]] = []
@@ -132,6 +186,8 @@ def main() -> int:
         page = browser.new_page(viewport={"width": 480, "height": 720})
         page.set_default_timeout(2000)
         page.add_init_script(INIT_SCRIPT)
+        if later_ms > 0:
+            page.clock.install()
         page.on(
             "pageerror",
             lambda error: errors.append(
@@ -165,6 +221,39 @@ def main() -> int:
         emit({"stage": "loaded"})
         page.wait_for_timeout(settle_ms)
         state: dict[str, Any] = page.evaluate(INSPECT) if loaded else {}
+        images: list[dict[str, str]] = []
+
+        def note_images() -> None:
+            for image in page.evaluate(IMAGES):
+                if isinstance(image, dict) and image not in images:
+                    images.append(image)
+
+        def run_later(step: int) -> None:
+            try:
+                page.clock.run_for(step)
+            except Error as error:
+                # A timer callback that throws surfaces here, not as a
+                # pageerror: the fake clock calls it from evaluate().
+                first = str(error).split("\n", 1)[0]
+                message = first.removeprefix("Clock.run_for: ")
+                entry = {"phase": "later", "message": short(message)}
+                if entry not in errors and len(errors) < MAX_ITEMS:
+                    errors.append(entry)
+
+        if loaded:
+            note_images()
+        waited = 0
+        if loaded and later_ms > 0:
+            phase["name"] = "later"
+            spent = time.monotonic()
+            while (
+                waited < later_ms
+                and (time.monotonic() - spent) * 1000 < later_budget_ms
+            ):
+                step = min(1000, later_ms - waited)
+                run_later(step)
+                waited += step
+            note_images()
         clicked: list[str] = []
         if loaded and clicks > 0:
             phase["name"] = "click"
@@ -184,8 +273,13 @@ def main() -> int:
                 except Error:
                     continue
             if clicked:
+                if later_ms > 0:
+                    # What the presses scheduled (the next question) is shown.
+                    run_later(2000)
                 final = page.evaluate("() => (window.__atlasRender||{}).violations||[]")
                 state["violations"] = final[:20]
+                note_images()
+        audio = list(page.evaluate(AUDIO)) if loaded else []
         browser.close()
     emit(
         {
@@ -199,6 +293,9 @@ def main() -> int:
                 "refused": refused[:MAX_ITEMS],
                 "blocked": blocked[:MAX_ITEMS],
                 "clicked": clicked,
+                "images": images[:MAX_ITEMS],
+                "audio": audio,
+                "waited_ms": waited,
                 "ms": int((time.monotonic() - started) * 1000),
             }
         }
