@@ -108,6 +108,8 @@ class Wire:
             result["served_by"] = self.output.served_by
         if self.output.privacy:
             result["privacy"] = self.output.privacy
+        if (atlas := self.output.atlas()) is not None:
+            result["atlas"] = atlas
         return result
 
     def start(self) -> list[dict[str, Any]]:

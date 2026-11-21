@@ -733,7 +733,7 @@ async def _attempt_frames(
         "choices": [],
         "usage": usage.model_dump(exclude_none=True),
         "cost_micro_eur": attempt.cost,
-        "served_by": plan.provider + "/" + plan.model if plan.provider else None,
+        "served_by": _target(plan),
         "privacy": plan.privacy,
     }
 
@@ -794,6 +794,36 @@ def _settle(
     return frame
 
 
+def _target(plan: Plan) -> str | None:
+    return plan.provider + "/" + plan.model if plan.provider else None
+
+
+def substitution_reason(exc: BaseException) -> str:
+    """Public class of the failure that moved a call to its fallback target."""
+    if str(exc) == "provider_quota":
+        return "provider_quota"
+    refusal = getattr(exc, "refusal", None)
+    if refusal is not None and refusal.kind == "capacity":
+        return "capacity"
+    status = getattr(exc, "status", None)
+    if status == 429:
+        return "rate_limit"
+    if str(exc) == "provider_timeout":
+        return "provider_timeout"
+    if isinstance(status, int) and status >= 500:
+        return "provider_unavailable"
+    return "provider_error"
+
+
+def _substituted(frame: dict[str, Any], substitution: dict[str, Any]) -> dict[str, Any]:
+    """A fallback frame names the target asked first and why it did not answer.
+
+    Every frame carries it, so the first chunk the caller receives already names
+    the model that answers (C15: a substitution is never silent)."""
+    frame["substitution"] = substitution
+    return frame
+
+
 async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     from contextlib import aclosing
 
@@ -848,8 +878,14 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
             raise ValueError("reasoning_only_answer")
         held = []
         visible = False
+        reasoned = {
+            "from": _target(plan),
+            "served": _target(plan.fallback),
+            "reason": "reasoning_only_answer",
+        }
         async with aclosing(attempt_events(plan.fallback, meter)) as attempt:
             async for frame in attempt:
+                _substituted(frame, reasoned)
                 if visible:
                     if "cost_micro_eur" in frame:
                         _settle(frame, attempts)
@@ -878,6 +914,13 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
         failed_primary_started = exc.started
         fallback_reason = f"{exc} {exc.detail}".strip()
         fallback_refusal = exc.refusal or Refusal()
+        substitution: dict[str, Any] = {
+            "from": _target(plan),
+            "served": _target(plan.fallback),
+            "reason": substitution_reason(exc),
+        }
+        if isinstance(exc.status, int):
+            substitution["provider_status"] = exc.status
     except Exception:
         # Keep the stream shape of a failed attempt: frames held back while
         # waiting for visible content still reach the client before the error.
@@ -900,6 +943,7 @@ async def events(plan: Plan) -> AsyncGenerator[dict[str, Any], None]:
     )
     async with aclosing(attempt_events(plan.fallback, meter)) as attempt:
         async for frame in attempt:
+            _substituted(frame, substitution)
             if "cost_micro_eur" in frame:
                 # The failed primary sent no usage: it is charged an estimate from
                 # the request sent and the text it streamed (nothing when the

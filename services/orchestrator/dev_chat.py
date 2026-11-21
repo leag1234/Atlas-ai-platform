@@ -187,6 +187,47 @@ class Output:
         self.usage: dict[str, Any] | None = None
         self.served_by: str | None = None
         self.privacy: str | None = None
+        # The model the caller asked for, the fallback that replaced it (C15) and
+        # the charge of the call in micro-euros: reported, never silent.
+        self.requested_model = model
+        self.substitution: dict[str, Any] | None = None
+        self.cost_micro_eur: int | None = None
+
+    def substitute(self, substitution: dict[str, Any]) -> None:
+        """Another target answers: ``model`` names it from the first chunk on."""
+        self.substitution = {
+            key: substitution[key]
+            for key in ("from", "reason", "provider_status")
+            if substitution.get(key) is not None
+        }
+        if substitution.get("served"):
+            self.base["model"] = str(substitution["served"])
+
+    def atlas(self) -> dict[str, Any] | None:
+        """Requested and served model, substitution and cost; None before an answer."""
+        if not self.served_by:
+            return None
+        return {
+            "requested_model": self.requested_model,
+            "served_model": self.served_by,
+            "substitution": self.substitution,
+            "cost_micro_eur": self.cost_micro_eur,
+        }
+
+    def headers(self) -> dict[str, str]:
+        """Response headers of a non-streamed answer (C15)."""
+        values = {"X-Atlas-Requested-Model": self.requested_model}
+        if self.served_by:
+            values["X-Atlas-Served-By"] = self.served_by
+        if self.substitution:
+            values["X-Atlas-Substitution"] = "; ".join(
+                f"{key}={self.substitution[key]}"
+                for key in ("reason", "from", "provider_status")
+                if key in self.substitution
+            )
+        if self.cost_micro_eur is not None:
+            values["X-Atlas-Cost-Micro-EUR"] = str(self.cost_micro_eur)
+        return values
 
     # The first choice keeps the single-answer interface used by every route.
     @property
@@ -221,6 +262,8 @@ class Output:
         return getattr(self.request, "n", 1)
 
     def feed(self, frame: dict[str, Any]) -> dict[str, Any]:
+        if frame.get("substitution") and self.substitution is None:
+            self.substitute(frame["substitution"])
         chunk: dict[str, Any] = dict(
             self.base, object="chat.completion.chunk", choices=[]
         )
@@ -231,6 +274,8 @@ class Output:
                 self.usage["prompt_tokens"] + self.usage["completion_tokens"]
             )
             chunk["usage"] = self.usage
+            if isinstance(frame.get("cost_micro_eur"), int):
+                self.cost_micro_eur = frame["cost_micro_eur"]
             if frame.get("served_by"):
                 self.served_by = str(frame["served_by"])
                 chunk["served_by"] = self.served_by
@@ -445,4 +490,6 @@ class Output:
             result["served_by"] = self.served_by
         if self.privacy:
             result["privacy"] = self.privacy
+        if (atlas := self.atlas()) is not None:
+            result["atlas"] = atlas
         return result

@@ -133,8 +133,11 @@ class KeyResponsesTests(unittest.TestCase):
     def result(self, reply: Any, stream: bool) -> dict[str, Any]:
         self.assertEqual(reply.status_code, 200, reply.text)
         self.assertEqual(reply.headers["cache-control"], "no-store")
+        # A stream's headers leave before the provider answers: they name the
+        # planned target, and the stream names the one that answered (C15).
         self.assertEqual(
-            reply.headers["x-atlas-served-by"], "mistral/zai-glm-5-3-flash"
+            reply.headers["x-atlas-planned-target" if stream else "x-atlas-served-by"],
+            "mistral/zai-glm-5-3-flash",
         )
         if not stream:
             result = dict(reply.json())

@@ -44,7 +44,8 @@ print(reply.choices[0].message.content)
 
 Streaming works as usual (`"stream": true`). Add `"stream_options": {"include_usage": true}` to
 receive token usage in the final chunk before `[DONE]`. Responses report the model that answered in
-`model`, and for direct models the provider route in `served_by`.
+`model`, and for direct models the provider route in `served_by` and the `atlas` field (section 2,
+"Fallbacks never go unreported").
 
 ## 2. Models
 
@@ -59,7 +60,8 @@ receive token usage in the final chunk before `[DONE]`. Responses report the mod
 | `atlas-chat` | A direct model, no Atlas layer: the same models as `atlas-dev`; GLM 5.2 as fallback | Volume processing: summaries, translation, classification, extraction | All three |
 
 `atlas-code` (the former name of `atlas-dev`) and the dated aliases listed by `GET /models` remain
-accepted; responses to `atlas-dev` still report `atlas-code` in `model`. Both direct models try Mistral first and fall back to Scaleway when it is unavailable; the
+accepted; responses to `atlas-dev` still report `atlas-code` in `model`, unless a fallback target
+answered (see below). Both direct models try Mistral first and fall back to Scaleway when it is unavailable; the
 assistant runs on Scaleway.
 
 `GET /models` also lists one precise id per routing target, for example `mistral/zai-glm-5-3`,
@@ -70,9 +72,51 @@ the error carries its cause — 429 `rate_limit` (with `Retry-After` when the pr
 `provider_quota`, 503 `provider_unavailable`, 504 `provider_timeout` — as a JSON error with `type`,
 `message` and `provider_status`; the answer never comes from another model. An exhausted provider
 account is always reported as 402 `provider_quota`, never as a rate limit or an outage, whatever
-status the provider used to say so; `provider_status` carries that status. `served_by` (the
-`X-Atlas-Served-By` header and the response field) names the target that answered on every response,
-pinned or not, and pricing and the ledger use the pinned target's price.
+status the provider used to say so; `provider_status` carries that status. `served_by` (the response
+field, and the `X-Atlas-Served-By` header of a non-streamed response) names the target that answered
+on every response, pinned or not, and pricing and the ledger use the price of the target that answered.
+
+### Fallbacks never go unreported
+
+A request for a model is served by that model, or the response says which model answered instead.
+When the first target of an alias fails before answering (account credit exhausted, rate limit,
+capacity, timeout, outage, or an answer with reasoning only) and its fallback answers:
+
+- `model` carries the precise id of the target that answered, for example
+  `scaleway/deepseek-v4-flash-0731`, as OpenAI and Anthropic name the snapshot that served an alias.
+  An answer of the first target keeps the name you sent (`atlas-code`, `atlas-chat`…).
+- The `atlas` field names both models, the reason and the charge, on every format:
+
+  ```json
+  "atlas": {
+    "requested_model": "atlas-code",
+    "served_model": "scaleway/deepseek-v4-flash-0731",
+    "substitution": {"from": "mistral/zai-glm-5-3", "reason": "provider_quota", "provider_status": 402},
+    "cost_micro_eur": 800
+  }
+  ```
+
+  `substitution` is `null` when the first target answered. `reason` is one of `provider_quota`
+  (account credit exhausted), `rate_limit`, `capacity` (the provider's service tier is saturated),
+  `provider_timeout`, `provider_unavailable`, `provider_error` or `reasoning_only_answer`;
+  `provider_status` is the HTTP status of the failed call, when there was one. `cost_micro_eur` is
+  what the call was charged, in millionths of a euro, at the price of the model that answered (plus
+  an estimate for a failed attempt that streamed part of an answer); it is the amount
+  `GET /usage` counts. With hosted tools, each model turn is its own call: the cost is their sum and
+  `substitution` names a substituted turn.
+- A non-streamed response has the headers `X-Atlas-Requested-Model`, `X-Atlas-Served-By`,
+  `X-Atlas-Cost-Micro-EUR` and, after a fallback, `X-Atlas-Substitution`
+  (`reason=provider_quota; from=mistral/zai-glm-5-3; provider_status=402`).
+- A stream's headers leave before any provider answers: they carry `X-Atlas-Requested-Model` and
+  `X-Atlas-Planned-Target` (the first target of the route), never a served model a fallback would
+  make false. The stream itself names the answer: on Chat Completions every chunk carries the served
+  model in `model` and the last chunk before `[DONE]` has `served_by` and `atlas`; on Responses,
+  `response.created` names the requested model and `response.completed` carries the served `model`,
+  `served_by` and `atlas` in `response`; on Messages, `message_start` names the requested model and
+  `message_stop` carries `served_by` and `atlas`.
+
+Whether a fallback is tried does not change: send `"fallback": false`, or a precise id, to get the
+provider's error instead of another model.
 
 **Assistant or direct model.** The assistant adds its own instructions and tools: it searches the web
 and cites what it retrieved, reads attached documents, and answers in the user's language. You do not

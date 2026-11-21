@@ -262,6 +262,8 @@ class Wire:
             result["served_by"] = self.output.served_by
         if self.output.privacy:
             result["privacy"] = self.output.privacy
+        if (atlas := self.output.atlas()) is not None:
+            result["atlas"] = atlas
         return result
 
     def start(self) -> list[dict[str, Any]]:
@@ -439,6 +441,13 @@ class Wire:
                         **(
                             {"served_by": self.output.served_by}
                             if self.output.served_by
+                            else {}
+                        ),
+                        # message_start left before the provider answered: the
+                        # model that answered and any substitution are named here.
+                        **(
+                            {"atlas": result["atlas"]}
+                            if result.get("atlas") is not None
                             else {}
                         ),
                     },
