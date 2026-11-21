@@ -8,6 +8,7 @@ import hashlib
 import logging
 import json
 import os
+import re
 import time
 from functools import lru_cache
 from typing import Any
@@ -816,6 +817,56 @@ def index_active_memory(identity: Identity, identifier: str) -> None:
         logging.getLogger(__name__).warning("project_memory_index_unavailable")
 
 
+PREVIEW_PATH = re.compile(
+    r"orgs/[0-9a-f-]{36}/projects/([0-9a-f-]{36})/deliverables/([0-9a-f-]{36})/preview"
+)
+
+
+def preview_target(method: str, path: str, result: Any) -> tuple[str, str] | None:
+    """(project, deliverable) of a preview served as text that may be rendered."""
+    match = PREVIEW_PATH.fullmatch(path)
+    if (
+        method != "GET"
+        or match is None
+        or not isinstance(result, tuple)
+        or len(result) != 3
+        or not isinstance(result[2], dict)
+        or str(result[2].get("Content-Type", "")).startswith("text/html")
+    ):
+        return None
+    try:
+        return str(UUID(match[1])), str(UUID(match[2]))
+    except ValueError:
+        return None
+
+
+def render_published(identity: Identity, deliverable_id: str) -> None:
+    """Runs after the publication commits: its preview is ready when opened."""
+    from services.retrieval.deliverable_render import (
+        BACKGROUND_SECONDS,
+        ensure_rendered,
+    )
+
+    ensure_rendered(
+        store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+        identity,
+        deliverable_id,
+        timeout=BACKGROUND_SECONDS,
+    )
+
+
+def render_on_request(identity: Identity, deliverable_id: str) -> bytes | None:
+    """A preview opened before (or without) its background rendering."""
+    from services.retrieval.deliverable_render import REQUEST_SECONDS, ensure_rendered
+
+    return ensure_rendered(
+        store(os.environ.get("ATLAS_PROJECT_DSN", "")),
+        identity,
+        deliverable_id,
+        timeout=REQUEST_SECONDS,
+    )
+
+
 def index_created_upload(identity: Identity, file_id: str, version_id: str) -> None:
     from services.retrieval.project_index import index_upload
 
@@ -873,6 +924,16 @@ async def projects(request: Request, path: str) -> Response:
             bytes(body),
             dict(request.headers),
         )
+        rendering = preview_target(request.method, path, result)
+        if rendering is not None:
+            # No gallery yet: render it now from the same authorized deliverable.
+            page = await asyncio.to_thread(
+                render_on_request, replace(identity, project=rendering[0]), rendering[1]
+            )
+            if page is not None:
+                from services.retrieval.deliverable_render import gallery_headers
+
+                status, result = 200, (200, page, gallery_headers())
         upload_task = None
         if request.method == "POST" and status == 201 and isinstance(result, dict):
             value = result.get("file")
@@ -1307,6 +1368,11 @@ async def execution_broker(request: Request, operation: str) -> Response:
                 if operation == "forge"
                 and isinstance(result, dict)
                 and result.get("state") == "running"
+                else BackgroundTask(render_published, identity, result["id"])
+                if operation == "publish"
+                and status == 201
+                and isinstance(result, dict)
+                and isinstance(result.get("id"), str)
                 else None
             ),
         )

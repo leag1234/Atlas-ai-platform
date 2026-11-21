@@ -855,7 +855,14 @@ class ProjectFiles:
         return value
 
     def preview(self, identifier: str) -> tuple[int, bytes, dict[str, str]]:
+        from services.retrieval.deliverable_render import gallery_headers
+
         value = self.deliverable(identifier)
+        # The server's own rendering of the verified bytes comes first; the
+        # text read back at publication remains the fallback.
+        rendered = self.rendered_preview(value)
+        if rendered is not None:
+            return 200, rendered, gallery_headers()
         private = self.row("deliverable", identifier)["private"]
         if "preview_id" not in private:
             raise ProjectError(
@@ -881,6 +888,95 @@ class ProjectFiles:
                 "X-Content-Type-Options": "nosniff",
             },
         )
+
+    def rendered_preview(self, value: dict[str, Any]) -> bytes | None:
+        """The stored gallery of a deliverable's current bytes, if any."""
+        from services.retrieval.deliverable_render import RENDER_VERSION, render_id
+
+        try:
+            row = self.row("derived", render_id(value["id"]))
+            derived = self.checked("derived", row)
+        except ProjectError as exc:
+            if exc.status == 404:
+                return None
+            raise
+        if (
+            derived.get("processor_version") != RENDER_VERSION
+            or derived.get("source_version_id") != value["file_version_id"]
+            or derived.get("mime") != "text/html"
+        ):
+            return None
+        content = base64.b64decode(row["private"]["content"], validate=True)
+        if (
+            len(content) != derived["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != derived["sha256"]
+        ):
+            raise ProjectError(503, "dependency_unavailable")
+        return content
+
+    def deliverable_source(
+        self, value: dict[str, Any]
+    ) -> tuple[bytes, str, str] | None:
+        """Verified bytes, format and name of a deliverable the gallery can show."""
+        from services.retrieval.deliverable_render import RENDER_SUFFIXES
+
+        version = self.get("version", value["file_version_id"])
+        file = self.get("file", version["file_id"])
+        suffix = Path(file["relative_path"]).suffix.lower()
+        if suffix not in RENDER_SUFFIXES:
+            return None
+        content = self.blob_path(file["id"], version["id"]).read_bytes()
+        if (
+            len(content) != version["size_bytes"]
+            or hashlib.sha256(content).hexdigest() != version["sha256"]
+        ):
+            raise ProjectError(
+                503,
+                "dependency_unavailable",
+                "Canonical bytes failed integrity verification",
+            )
+        return content, suffix, Path(file["relative_path"]).name
+
+    def store_rendered_preview(self, value: dict[str, Any], page: bytes) -> None:
+        """Keep a gallery derived by the server from the deliverable's bytes.
+
+        Its parent is the deliverable, not the file version: readers of a
+        version's extraction record never meet it.
+        """
+        from services.retrieval.deliverable_render import (
+            RENDER_LIMIT,
+            RENDER_VERSION,
+            render_id,
+        )
+
+        if not 0 < len(page) <= RENDER_LIMIT:
+            raise ProjectError(413, "size_limit")
+        self.scope.check_quota("stored_bytes", len(page))
+        self.scope.check_quota("derived_bytes", len(page))
+        derived = dict(
+            self.new(render_id(value["id"])),
+            source_version_id=value["file_version_id"],
+            processor_version=RENDER_VERSION,
+            chunks=[],
+            mime="text/html",
+            size_bytes=len(page),
+            sha256=hashlib.sha256(page).hexdigest(),
+        )
+        for resource in ("derived_bytes", "stored_bytes"):
+            self.scope.reserve(derived["id"], {resource: len(page)})
+            self.scope.reconcile(derived["id"], resource, len(page))
+        self.put(
+            "derived",
+            derived,
+            value["id"],
+            retention="E",
+            private=dict(content=base64.b64encode(page).decode()),
+        )
+        for source in [value["file_version_id"], *value["source_version_ids"]]:
+            self.db.execute(
+                "INSERT INTO atlas_projects.resource_sources VALUES(%s,%s,%s,%s)",
+                (self.org, self.project, derived["id"], source),
+            )
 
     def version(
         self,

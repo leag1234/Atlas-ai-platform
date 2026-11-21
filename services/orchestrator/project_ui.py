@@ -3,12 +3,14 @@
 from packages.limits import LimitError
 from packages.ports import atlas_ports
 from packages.profiles import default_profile
+from services.retrieval.deliverable_render import GALLERY_CSP
 from services.retrieval.project_identity import ProjectError
 
 import asyncio
 import hmac
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
@@ -142,6 +144,12 @@ def public_error(exc: ProjectError) -> JSONResponse:
     return JSONResponse(
         exc.body, status_code=exc.status, headers={"Cache-Control": "private, no-store"}
     )
+
+
+# Deliverable previews, the one HTML this proxy shows inline (see scoped_proxy).
+GALLERY_ROUTE = re.compile(
+    r"orgs/[0-9a-f-]{36}/projects/[0-9a-f-]{36}/deliverables/[0-9a-f-]{36}/preview"
+)
 
 
 def browser_origin(request: Request) -> None:
@@ -346,8 +354,16 @@ async def scoped_proxy(request: Request, path: str) -> Response:
         ) and not response_headers.get("Content-Disposition", "").startswith(
             "attachment"
         ):
-            # Project content is never rendered as HTML on the Atlas origin.
-            response_headers["Content-Disposition"] = "attachment"
+            if request.method == "GET" and GALLERY_ROUTE.fullmatch(path):
+                # A deliverable preview is the server's own rendering of the
+                # verified file: pictures in a page without script. It shows
+                # inline under this proxy's policy, whatever upstream sent.
+                response_headers["Content-Security-Policy"] = GALLERY_CSP
+                response_headers["Content-Disposition"] = "inline"
+                response_headers["Referrer-Policy"] = "no-referrer"
+            else:
+                # Project content is never rendered as HTML on the Atlas origin.
+                response_headers["Content-Disposition"] = "attachment"
         upstream = reply
 
         async def content() -> AsyncIterator[bytes]:
