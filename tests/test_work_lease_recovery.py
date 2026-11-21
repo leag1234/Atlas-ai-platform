@@ -10,6 +10,7 @@ import psycopg
 from services.retrieval.project_schedule_api import take_due
 from services.retrieval.project_scoped_api import store
 import test_project_work as fixtures
+import own_tests
 
 
 class WorkLeaseRecoveryTests(fixtures.ProjectWorkTests):
@@ -286,3 +287,6 @@ class WorkLeaseRecoveryTests(fixtures.ProjectWorkTests):
                     (self.org,),
                 )
         self.assertEqual(self.snapshot(), before)
+
+
+load_tests = own_tests.only_own(__name__)
