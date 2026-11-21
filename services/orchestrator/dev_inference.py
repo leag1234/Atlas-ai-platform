@@ -3,11 +3,12 @@
 from packages.limits import LimitError
 from packages.validation import describe_validation
 from packages.privacy import PrivacyRefusal
-from packages.owned_server import OwnedServerUnavailable
+from packages.owned_server import STARTING, OwnedServerUnavailable
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator, Callable
+import uuid
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import aclosing
 import json
 import logging
@@ -20,6 +21,7 @@ from pydantic import ValidationError
 import api_routing
 import dev_gateway as gateway
 import owned_start
+from services.orchestrator import owned_wait
 from services.orchestrator.dev_auth import QuotaError, Store
 from services.orchestrator.call_repair import repaired_frames
 from services.orchestrator.dev_chat import ChatInput, Output, RawChatInput
@@ -42,6 +44,94 @@ def error(code: str, status: int, detail: str = "", **values: Any) -> JSONRespon
             if values.get("retry_after") is not None
             else None
         ),
+    )
+
+
+def stream_refusal(
+    protocol: str,
+    parsed: Any,
+    raw: Any,
+    model: str,
+    code: str,
+    message: str,
+    values: dict[str, Any],
+) -> str:
+    """The SSE frames ending a stream that was refused after it opened (a strict
+    request that waited for the owned server), in the client's protocol."""
+    if protocol == "chat":
+        body = {"error": {"type": code, "code": code, "message": message, **values}}
+        return "data: " + json.dumps(body) + "\n\n" + "data: [DONE]\n\n"
+    output = Output(uuid.uuid4().hex, parsed, model)
+    request = raw if isinstance(raw, dict) else {}
+    wire = (
+        Wire(output, request)
+        if protocol == "responses"
+        else MessagesWire(output, request)
+    )
+    events = [*wire.start(), *wire.feed({"error": {"type": code, "message": message}})]
+    return "".join(
+        "event: " + event["type"] + "\ndata: " + json.dumps(event) + "\n\n"
+        for event in events
+    )
+
+
+def owned_wait_stream(
+    first: OwnedServerUnavailable,
+    accepted: int,
+    resume: Callable[[], Awaitable[Response]],
+    refusal: Callable[[str, str, dict[str, Any]], str],
+) -> StreamingResponse:
+    """A streamed strict request waiting for the owned server to start: SSE comments
+    keep the stream alive, then the request is served as usual (``resume``), or ends
+    with the starter's named answer (refused, failed, still starting after the wait)."""
+
+    async def frames() -> AsyncGenerator[str | bytes, None]:
+        try:
+            async for _ in owned_wait.waiting(first, accepted):
+                yield ": owned server starting\n\n"
+        except OwnedServerUnavailable as exc:
+            values = {k: v for k, v in exc.fields().items() if k != "code"}
+            yield refusal(exc.code, exc.message, values)
+            return
+        try:
+            response = await resume()
+        except Exception as exc:  # noqa: BLE001 - the stream is already open
+            from services.orchestrator.daily_budget import BudgetRefusal
+
+            if isinstance(exc, BudgetRefusal):
+                yield refusal(
+                    "budget_limit",
+                    "budget_limit",
+                    {
+                        "used": str(exc.used),
+                        "limit": str(exc.limit),
+                        "category": exc.category,
+                    },
+                )
+                return
+            yield refusal("unavailable", "unavailable", {})
+            return
+        if isinstance(response, StreamingResponse):
+            # Closed with this stream: a client that leaves ends the served request.
+            served = cast(AsyncGenerator[Any, None], response.body_iterator)
+            async with aclosing(served) as pieces:
+                async for piece in pieces:
+                    yield piece if isinstance(piece, (str, bytes)) else bytes(piece)
+            return
+        try:
+            failure = json.loads(bytes(response.body)).get("error") or {}
+        except (ValueError, AttributeError):
+            failure = {}
+        if not isinstance(failure, dict):
+            failure = {}
+        code = str(failure.get("type") or failure.get("code") or "unavailable")
+        extra = {
+            k: v for k, v in failure.items() if k not in {"type", "code", "message"}
+        }
+        yield refusal(code, str(failure.get("message") or code), extra)
+
+    return StreamingResponse(
+        frames(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
     )
 
 
@@ -643,6 +733,7 @@ async def chat(
     *,
     raw_model: str | None = None,
     public_model: str | None = None,
+    owned_waited: bool = False,
 ) -> Response:
     # nginx allows 300 s on the API; long streamed agent turns need more than 120 s.
     started = monotonic()
@@ -825,10 +916,46 @@ async def chat(
         )
         if strict and plan.privacy == "owned":
             # The owned server may be powered off between uses: when it does not
-            # answer, its starter is asked to power it on and the client gets the
-            # starter's answer (503 with Retry-After, or a named refusal) before
-            # anything is reserved or streamed.
-            await owned_start.ensure()
+            # answer, its starter is asked to power it on, before anything is
+            # reserved or streamed. A start under way is waited for (owned_wait.py):
+            # a streamed request keeps its stream alive meanwhile and is then
+            # served as usual; a client that accepts no wait (X-Atlas-Owned-Wait:
+            # 0) gets 503 with Retry-After. A refusal of the starter is named.
+            try:
+                await owned_start.ensure()
+            except OwnedServerUnavailable as exc:
+                accepted = 0 if owned_waited else owned_wait.request_wait(request)
+                if exc.code != STARTING or accepted <= 0:
+                    raise
+                if parsed.stream:
+                    request._body = bytes(body)
+
+                    async def resume() -> Response:
+                        return await chat(
+                            request,
+                            protocol,
+                            raw_model=raw_model,
+                            public_model=public_model,
+                            owned_waited=True,
+                        )
+
+                    return owned_wait_stream(
+                        exc,
+                        accepted,
+                        resume,
+                        lambda code, message, values: stream_refusal(
+                            protocol,
+                            parsed,
+                            raw,
+                            public_model or raw_model or "atlas-code",
+                            code,
+                            message,
+                            values,
+                        ),
+                    )
+                # Not streamed: a bounded silent wait inside the API deadline.
+                async for _ in owned_wait.waiting(exc, accepted):
+                    pass
         store, developer = request.state.store, request.state.developer
         request_id = store.reserve(
             developer, plan.reserved, monetary=plan.reserved > 0 and not plan.unpriced

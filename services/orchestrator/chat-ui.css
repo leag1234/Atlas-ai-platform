@@ -662,7 +662,7 @@ html.dark .atlas-privacy-error { color:#ff8a80; }
   :is(.chat-assistant,.user-message) .markdown-prose h3 { font-size:calc(var(--atlas-body-size) * 1.0625)!important; }
 }
 
-/* Plan of a long turn (work_plan.py), drawn by chat-ui.js under the status line of the answer being written. */
+/* Plan of a long turn (work_plan.py), drawn by chat-ui.js under the status line for the whole turn, then checked at the top of the answer. */
 .atlas-plan { margin:.25rem 0 .75rem; padding:.625rem .875rem; max-width:40rem; box-sizing:border-box; border:1px solid var(--atlas-border); border-radius:min(var(--atlas-radius),14px); background:var(--atlas-surface); color:var(--atlas-text); font-size:.875rem; line-height:1.4; }
 /* Title with the estimate: muted, one line on a phone where it fits. */
 .atlas-plan-title { margin:0 0 .375rem; font-weight:600; color:var(--atlas-muted); }
@@ -670,7 +670,7 @@ html.dark .atlas-privacy-error { color:#ff8a80; }
 .atlas-plan-steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:.25rem; }
 /* One step: symbol column, then the text wrapping under itself. */
 .atlas-plan-steps li { display:flex; gap:.5rem; align-items:baseline; overflow-wrap:anywhere; }
-/* State symbol (○ ◉ ✓ ✗), fixed width so the texts align; circles drawn in CSS, the glyphs are tiny in some fonts. */
+/* State symbol (○ ◉ ✓ ✗ ⊘), fixed width so the texts align; circles drawn in CSS, the glyphs are tiny in some fonts. */
 .atlas-plan-steps .atlas-plan-mark { flex:0 0 1rem; display:inline-flex; justify-content:center; text-align:center; color:var(--atlas-muted); }
 /* To-do and in-progress marks: an outlined circle instead of the glyph. */
 .atlas-plan-steps li:is([data-status="pending"],[data-status="in_progress"]) .atlas-plan-mark { font-size:0; }
@@ -692,6 +692,8 @@ html.dark .atlas-privacy-error { color:#ff8a80; }
 .atlas-plan-steps li[data-status="failed"] .atlas-plan-mark { color:#c0392b; }
 /* Failed step in dark mode: lighter red for contrast. */
 html.dark .atlas-plan-steps li[data-status="failed"] .atlas-plan-mark { color:#ff8a80; }
+/* Not done when the plan closed: muted mark and text, nothing struck through. */
+.atlas-plan-steps li[data-status="skipped"] :is(.atlas-plan-mark,.atlas-plan-text) { color:var(--atlas-muted); }
 /* Pulse of the in-progress symbol. */
 @keyframes atlas-plan-pulse { 50% { opacity:.35; } }
 /* Reduced motion: no pulse. */

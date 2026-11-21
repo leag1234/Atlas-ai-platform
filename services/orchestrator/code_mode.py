@@ -404,6 +404,16 @@ async def execute_turn(
     if isinstance(tools, WorkTools):
         tools.verification.explicit = explicit_tests(request.user_text)
     guard = tools.run_guard if isinstance(tools, WorkTools) else None
+    from services.orchestrator.work_delivery import MISSING_KEY, file_guard
+
+    # A requested file holds the final answer until it is published, like a
+    # requested run (work_delivery.py).
+    delivery = file_guard(tools, model) if isinstance(tools, WorkTools) else None
+
+    def before_final(executed: list[str]) -> str | None:
+        step = guard.next_step(RUN_TOOL, executed) if guard is not None else None
+        return step or (delivery.next_step() if delivery is not None else None)
+
     if isinstance(model, GatewayModel):
         # A step still receiving output runs on within the turn's own time
         # instead of being cut at its per-call deadline (staging 2026-11-13:
@@ -437,7 +447,7 @@ async def execute_turn(
         # tool calls ("I will first…", "that failed, let me retry…") is progress,
         # not the answer: it was glued in front of the result without a space.
         final_only=isinstance(tools, WorkTools),
-        before_final=None if guard is None else partial(guard.next_step, RUN_TOOL),
+        before_final=None if guard is None and delivery is None else before_final,
         # Once the requested file is published, the turn ends with a short
         # closing message instead of answering the request again.
         after_tools=partial(
@@ -453,6 +463,19 @@ async def execute_turn(
             await tools.emit(
                 "honesty",
                 label="Run not executed",
+                status="completed",
+                output={"text": result.text},
+            )
+    if delivery is not None and result.state == "done":
+        # Still no file: the answer says so first, never that it was created.
+        result.text, missing = delivery.answer(
+            result.text, request.lang, request.user_text
+        )
+        if missing:
+            request.__dict__[MISSING_KEY] = True
+            await tools.emit(
+                "honesty",
+                label="Requested file not created",
                 status="completed",
                 output={"text": result.text},
             )

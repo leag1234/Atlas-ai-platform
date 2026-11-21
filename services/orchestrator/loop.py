@@ -257,6 +257,7 @@ class OwnedServerAnswer(GatewayError):
     """
 
     def __init__(self, answer: OwnedServerUnavailable) -> None:
+        self.answer = answer
         self.retry_after = answer.retry_after
         GatewayError.__init__(
             self,

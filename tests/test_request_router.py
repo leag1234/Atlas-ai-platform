@@ -94,6 +94,33 @@ class ParseTests(unittest.TestCase):
             "[delivered: an interactive app", data["earlier_turns"][1]["text"]
         )
 
+    def test_an_app_delivered_before_the_window_is_named(self) -> None:
+        # Staging 2026-11-20: sample links sent for the app four turns after
+        # its last version were routed as a new question.
+        history = [
+            {"role": "user", "content": "fais une boîte à rythme"},
+            {"role": "assistant", "content": "Voici: " + ARTIFACT_LINK},
+            {"role": "user", "content": "ce sont de vrais sons ?"},
+            {"role": "assistant", "content": "Non, ils sont synthétisés."},
+            {"role": "user", "content": "trouve de vrais sons"},
+            {"role": "assistant", "content": "Donne-moi les liens et je les intègre."},
+        ]
+        data = json.loads(
+            request_router.messages("voici les liens", history)[1]["content"]
+        )
+        self.assertEqual(
+            data["delivered_before"], "an interactive app or drawing in the side panel"
+        )
+        self.assertEqual(
+            list(data), ["earlier_turns", "delivered_before", "last_message"]
+        )
+        self.assertIn("delivered_before", request_router.SYSTEM)
+        # Inside the window the turn itself is marked, and nothing is added.
+        recent = json.loads(
+            request_router.messages("plus grand", history[:2])[1]["content"]
+        )
+        self.assertNotIn("delivered_before", recent)
+
     def test_profile_comes_from_the_routing_table(self) -> None:
         import yaml
 

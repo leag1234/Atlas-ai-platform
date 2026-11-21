@@ -262,6 +262,11 @@ async def chat(request: Request) -> Response:
     streaming = False
     detail = ""
     retry_after: int | None = None
+    from services.orchestrator import owned_wait
+
+    # Strict privacy: how long this request may wait for the owned server to start
+    # (X-Atlas-Owned-Wait, the full wait by default; owned_wait.py).
+    owned_wait.accepted.set(owned_wait.request_wait(request))
     try:
         body = bytearray()
         async with asyncio.timeout(5):
