@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import io
 import json
 import os
 import subprocess
@@ -103,6 +104,79 @@ class ProjectDeliverableTests(ProjectWorkTests):
         self.assertEqual(response.status_code, 201, response.text)
         self.session = response.json()
         return [dict(file_id=f["id"], version=f["version_id"]) for f in sources]
+
+    def test_a_deck_from_a_project_file_publishes(self) -> None:
+        """Staging -142 (2026-11-21): "from notes/projet.txt, make a 5-slide
+        deck" failed twice at publication and the turn ran out of steps. A
+        deck summarises its source and never holds the whole text, and the
+        excerpts of a declared source were only appended to Markdown input:
+        the deck failed the source coverage check. The excerpts now go in the
+        speaker notes of a closing Sources slide."""
+        from pptx import Presentation
+
+        from services.orchestrator.code_api import ExecutionBroker
+        from services.orchestrator.code_mode import WorkExecution
+        from services.orchestrator.code_tools import WorkTools
+        from services.orchestrator.code_worker import perform
+        from services.orchestrator.loop import Call
+
+        self.publication_setup()
+        sources = self.selected_sources()
+        acquired = self.acquire()
+        self.assertEqual(acquired.status_code, 200)
+        execution = WorkExecution(
+            ExecutionBroker("editor", self.org, self.project),
+            acquired.json()["session"],
+            self.turn_id,
+        )
+        args = dict(
+            path="plan.pptx",
+            title="Evidence review",
+            slides=[
+                dict(title="Evidence review", bullets=["Two notes back the plan"]),
+                dict(
+                    title="What the notes say",
+                    bullets=["The first note and the second agree", "Both are recent"],
+                ),
+                dict(title="Next step", bullets=["Present the plan on Monday"]),
+            ],
+            sources=sources,
+        )
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict(
+                os.environ,
+                {
+                    "ATLAS_RETRIEVAL_URL": self.retrieval_url,
+                    "ATLAS_PROJECT_IDENTITY_SECRET": os.urandom(32).hex(),
+                },
+            ),
+        ):
+            workspace = MagicMock()
+            workspace.invoke = AsyncMock(
+                side_effect=lambda name, data, timeout: perform(
+                    Path(directory), name, data
+                )
+            )
+            tools = WorkTools(workspace, execution)
+            reply = asyncio.run(
+                tools.execute(
+                    Call(str(uuid4()), "publish_document", json.dumps(args)), 60
+                )
+            )
+        self.assertNotIn("error", reply, reply)
+        receipt = reply["deliverable"]
+        assert isinstance(receipt, dict)
+        self.assertEqual(receipt["source_version_ids"], [s["version"] for s in sources])
+        downloaded = self.request("GET", receipt["download_route"], "viewer")
+        self.assertEqual(downloaded.status_code, 200)
+        deck = Presentation(io.BytesIO(downloaded.content))
+        # The person's slides first, then one Sources slide with the excerpts
+        # in its speaker notes.
+        self.assertEqual(len(deck.slides), 4)
+        notes = deck.slides[3].notes_slide.notes_text_frame.text
+        self.assertIn("First source evidence", notes)
+        self.assertIn("Second source evidence", notes)
 
     def test_work_dispatch_publishes_all_formats_with_source_bound_receipts(
         self,
